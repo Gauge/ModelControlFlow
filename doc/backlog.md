@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 49 |
+| **Version** | 50 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (25 done, 1 dropped, 3 in progress, 56 blocked on a decision, 109 open).** Every item cites
+**244 items: 50 decisions (33 open, 1 drafted, 2 narrowed, 14 resolved) and 194
+build items (25 done, 1 dropped, 4 in progress, 54 blocked on a decision, 110 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -71,10 +71,10 @@ implemented, only gestured at, until the decision is made.
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
 | DEC-034 | The identity of a measured configuration | §7.34 | §IV, D6 | M0 | **resolved** — D17 principle, D18 sampling, D19 seed; placement declared-vs-realized, engine build is identity |
 | DEC-046 | Sampling and seeding | §7.34 | §IV, §7.6 | M0 | **resolved** — D18 sampling is identity; D19 the seed set is a condition |
-| DEC-047 | GPL-3.0 or AGPL-3.0, and the compatibility matrix of every candidate engine | §7.47 | §XVI, §7.4 | M0 | **narrowed** — D22 copyleft; D23 settles the runtime question |
+| DEC-047 | GPL-3.0 or AGPL-3.0, and the compatibility matrix of every candidate engine | §7.47 | §XVI, §7.4 | M0 | **narrowed** — D22 copyleft; D23 the runtime question; **D28 the licence: GPL-3.0-only**. What remains is the per-engine compatibility matrix (B-330) |
 | DEC-049 | What protects the record from loss | §7.49 | §II, D6 | M0 | **resolved** — D20: rebuildable index over an append-only journal |
 | DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
-| DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
+| DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | **resolved** — D29: all platforms, Linux first; three states as D25 gives a device; per-platform artifacts, since the target triple is already a §3.4 condition |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
@@ -132,7 +132,7 @@ first and importance second.
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | open |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
-| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI | Asserted in CI on every platform in DEC-035's scope | blocked (DEC-035) |
+| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29; the first token needs an engine (DEC-004) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
@@ -145,7 +145,7 @@ first and importance second.
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
-| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | blocked (DEC-047) |
+| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **in progress** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; the matrix has no rows because nothing is vendored yet, and the check refuses a vendored component with no finding |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
 ### M1 — Acquire
@@ -362,6 +362,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 50 — the author answers two, and both were his to answer
+
+DEC-047's licence half and DEC-035 are resolved, by D28 and D29. Neither was
+derivable: the first is a commitment about distribution that only the copyright
+holder can make, and the second is a scope decision that spends somebody's time.
+
+**GPL-3.0-only.** `LICENSE` holds the verbatim text and a check asserts it stays
+the text the manifest declares — the mundane failure being a licence file that
+drifts from the terms a redistributor is told about. B-330 moves to in progress:
+the matrix has no rows because nothing is vendored, and the check refuses a
+vendored component with no recorded finding rather than passing an empty world
+silently.
+
+**All platforms, Linux first.** The reading that made this tractable is B7's:
+coverage governs attempt and diagnosis, not success. So a platform gets D25's
+three states for the same reason a device does. B-183 unblocks, though its *first
+token* still waits on an engine.
 
 ### Version 49 — the clock anomaly closes B-184
 
