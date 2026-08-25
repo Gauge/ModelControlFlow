@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 15 |
+| **Version** | 16 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -3036,28 +3036,29 @@ D17 settles the principle: identity is the runnable configuration, hardware is a
 condition, grouping is a view. Three parameters sit awkwardly at the boundary
 and none is obviously one or the other.
 
-**Placement.** A layer-offload split — thirty-five of forty-eight layers on the
-accelerator — is a configuration parameter that only means anything given a
-particular memory size. Treating it as identity makes a configuration
-unportable, which breaks §XV. Treating it as a condition means an identifier
-resolves to something different on a different machine, which may be exactly
-right: the likely answer is that a configuration carries a *declared* intent and
-the *realized* placement is recorded alongside, with divergence between them a
-finding (§6.29).
+**Placement — settled.** A configuration carries a *declared* placement intent;
+the *realized* placement is a condition recorded alongside it. A layer-offload
+split only means something given a particular memory size, so treating it as
+identity would make every configuration unportable and break §XV. Divergence
+between declared and realized is a finding (§6.29), and often an informative one
+— it is the mechanism by which a configuration visibly fails to transfer.
 
-**Engine build.** `llama.cpp b4321` and `b4400` are not the model and not the
-hardware. As identity, every engine update forks every configuration and the
-corpus fragments. As a condition, timings taken across builds get compared when
-they should not be. A candidate answer: the engine *family* is identity, the
-*build* is a condition — groupable, and honest about what changed.
+**Engine build — settled: identity, not a condition.** Any engine change is
+tracked as a change of configuration, because an engine that changes silently
+colours every measurement taken after it. The fragmentation cost is real and is
+paid deliberately: D17's grouping-is-a-view rule recovers what is needed, since
+results across builds can be collapsed at query time when the question warrants
+and stay separate when it does not. The reverse — discovering that a corpus
+silently mixed two engines — is unrecoverable.
 
-**Sampling parameters.** Temperature changes behaviour profoundly and throughput
-not at all, so it is identity for one laboratory and noise for another. D17's
-grouping-is-a-view rule suggests including it in identity and collapsing it at
-query time, since the reverse is impossible.
-
-The general principle to test each against: **err toward more in the identity,
-because a group can always be widened and never narrowed.**
+**Sampling parameters — open.** Temperature, top-p, top-k, penalties, maximum
+tokens and seed. The tension is that they change *behaviour* profoundly and
+*throughput* not at all, so they look like identity to one laboratory and noise
+to another. Against fixing them globally: §6.6 lists sampling among the things
+MCF tunes, §6.17 holds that temperature zero is a different experiment rather
+than a fix, and D17's own definition puts them in the identity since a model
+cannot run without them. In favour: a fixed constant makes every result
+trivially comparable. See §7.46.
 
 ### 7.35 Host platform scope, and the containment mechanism — **structural**
 
@@ -3227,6 +3228,52 @@ user to interpret.
 The failure mode is silent and slow: a user compares a result from before a
 driver update with one from after and reads the driver's effect as the model's.
 §3.1 forbids exactly that kind of quiet corruption.
+
+### 7.46 Sampling parameters: configuration, constant, or the lab's to pin
+
+Split out of §7.34 because it is a bigger question than the other two edges and
+deserves its own answer.
+
+**What is in scope:** temperature, top-p, top-k, min-p, repetition and presence
+penalties, maximum tokens, and seed where the engine supports one. Deliberately
+*not* in scope: chat template and stop conditions, which are not preferences at
+all — they are correctness, established by calibration (D13) and verified by
+probe (§3.18). Getting those wrong makes a capable model look mediocre; getting
+temperature "wrong" produces a different, still-valid experiment.
+
+**Three positions, and they are not equally supported by what is already
+decided.**
+
+*A fixed global constant* makes every result trivially comparable and every
+contribution aggregable. It also measures models under settings some were not
+designed for, which is §X's misconfiguration-is-a-measurement-error problem
+arriving through the front door, and it contradicts D13's calibration tier,
+which exists to adjust a configuration to what the model needs rather than force
+it into a house style.
+
+*Part of the configuration's identity* follows from D17's own definition — a
+model cannot run without them, so they are part of what the hosting system needs
+— and from §6.6, which lists sampling among the things MCF tunes when it
+composes a configuration, and from §XV, since an imported identifier that did
+not reproduce sampling would not reproduce behaviour. Its cost is
+fragmentation, which grouping-as-a-view (D17) is designed to absorb.
+
+*Pinned by the laboratory* is a third position that is compatible with the
+second rather than opposed to it: a lab may declare that it overrides the
+configuration's sampling with its own, as part of its method, provided it says
+so and its results are not compared with those of a lab that inherits. Some
+questions genuinely need it — a determinism lab (L19) cannot be run at the
+user's temperature and mean anything.
+
+**What is settled regardless of the answer:** within any single comparison,
+sampling is held still like every other variable (A8, B53), unless sampling
+*is* the variable being swept — which is itself a legitimate laboratory, and one
+the catalogue does not yet contain.
+
+**Also open beneath it:** whether the seed is identity or a condition. §6.17
+holds that irreducible stochasticity is reported rather than engineered away,
+which argues for condition; §7.6's reproducibility tolerance may argue the
+other way.
 
 ### Retired voids
 

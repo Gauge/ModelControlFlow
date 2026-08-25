@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**220 items: 45 decisions (40 open, 1 drafted, 2 narrowed, 2 resolved) and 175 build items.** Every item cites the clause that
+**221 items: 46 decisions (41 open, 1 drafted, 2 narrowed, 2 resolved) and 175 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -66,7 +66,8 @@ implemented, only gestured at, until the decision is made.
 | DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
 | DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
-| DEC-034 | The edges of identity: placement, engine build, sampling parameters — which are identity and which are conditions | §7.34 | §IV, D6 | M0 | **narrowed** — D17 settles the principle; three boundary parameters remain |
+| DEC-034 | The edges of identity | §7.34 | §IV, D6 | M0 | **narrowed** — D17 settles the principle; placement and engine build settled; sampling split to DEC-046 |
+| DEC-046 | Sampling parameters: a fixed global constant, part of configuration identity, or pinned per laboratory — and whether the seed is identity or a condition | §7.46 | §IV, §XV, D13 | M0 | open |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
@@ -335,6 +336,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 13 — sampling split out
+
+DEC-046 registered for §7.46. Placement and engine build settled inside DEC-034;
+sampling is a larger question than either and gets its own decision.
 
 ### Version 12 — two M0 gates close
 
