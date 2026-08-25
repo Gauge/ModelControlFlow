@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**204 items: 42 decisions (39 open, 1 drafted, 1 narrowed, 1 resolved) and 162 build items.** Every item cites the clause that
+**209 items: 43 decisions (40 open, 1 drafted, 1 narrowed, 1 resolved) and 166 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -74,6 +74,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-040 | What makes two machines alike — which attributes constitute similarity, whether it is one relation or several, and how a machine outside every class is treated | §7.40 | §XIV, D14 | M9 | open |
+| DEC-043 | Which box dimensions are enforceable on which platforms, and whether a partially-enforceable box is offered or refused as misleading | §7.43 | **D15** | M6 | open |
 | DEC-042 | What yielding guarantees, and how it is achieved per platform — process and accelerator priority, memory reservation, foreground detection without ambient polling, automatic versus offered pausing | §7.42 | **§3.26, D8** | M6 | open |
 | DEC-041 | The environment-control surface: which knobs, how scope is granted, what happens to a suspended process if MCF is killed, and how the ladder's maximum height differs by platform | §7.41 | §6.39 | M6 | open |
 | DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | **drafted** — [labs.md](labs.md) proposes 20 in 4 families, first three named; ordering and slot contents unratified |
@@ -233,6 +234,10 @@ first and importance second.
 | B-232 | Serving latency under a concurrent behaviour-class run stays within its budget; hosting yields to the user and nothing yields to hosting | B50, §3.26, §VI | Asserted in CI against the interposed-latency budget | blocked (DEC-016) |
 | B-233 | Environment failures are a distinct taxonomy branch from model failures: an out-of-memory from competition is a condition of the run, never the model giving up | B49, §7.10, §3.1 | Every yielding run's failures classify to one branch or the other, never ambiguously | blocked (DEC-010) |
 | B-234 | Yielding mechanism: low priority, foreground-aware, pausable and resumable, per platform | B49, §3.26, §7.42 | A background run does not stutter an interactive application, measured rather than asserted | blocked (DEC-042) |
+| B-236 | Resource boxes: a declared allocation of cores, host memory, accelerator share and I/O that a model runs inside, enforced where the platform allows and reported as unavailable where it does not | D15, §XVII, A7 | A model runs inside a stated box; unenforceable dimensions are named rather than silently unbounded | blocked (DEC-043) |
+| B-240 | A result carries its box or the explicit absence of one, names the dimensions the box could not bound, and cannot be compared with a result from a different box | B51, D15, A8 | Boxed and unboxed results are not comparable by construction | open |
+| B-241 | Interactive degradation under a background run is asserted against a budget | B52, §3.26, D10 | A background behaviour run does not degrade an interactive workload beyond the stated budget, measured in CI | blocked (DEC-016) |
+| B-242 | Degradation curves are produced rather than assumed: L24's dose-response sweep and L25's contention sweep | B52, §3.26, §6.41 | Both curves exist for the reference model before yielding is claimed to be unobtrusive | blocked (DEC-029) |
 | B-235 | Scheduling: an exclusive window may be deferred to a stated time or to a stated period of machine idleness | B35, §6.40, §3.26 | A user can say "overnight" or "after ten minutes idle" and the window opens then | open |
 | B-182 | Suspension is declared: a request during a lab receives an immediate refusal naming the lab and the expected remaining time, never a queue or a timeout; a lab is bounded and interruptible with its partial result preserved | B35, §6.33, §3.1 | Requests during a lab are refused within one round trip; interrupting preserves and marks the partial result | open |
 | B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | open |
@@ -319,6 +324,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 9 — boxes and measured politeness
+
+B-236 registers resource boxes, gated on DEC-043 since a box that appears to
+isolate and does not is worse than no box. B-240 makes the box a measurement
+condition at the type level. B-241 and B-242 are the two halves of B52: an
+application test for what yielding costs the user, a laboratory for what
+constrained resources cost the model.
 
 ### Version 8 — exclusivity narrowed to timings
 

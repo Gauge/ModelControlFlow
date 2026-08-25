@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Catalogue — candidate laboratories, drafted not ratified |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living. Nothing here is committed; §7.29 remains open. |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12, governed by [rules.md](rules.md) |
 | **Answers** | §7.29 in draft · registered as DEC-029 in [backlog.md](backlog.md) |
 
 **A laboratory measures one property of a model under controlled conditions.**
@@ -13,7 +13,7 @@ It is an instrument, not a test: it has no pass condition, produces a
 distribution rather than a verdict, and never gates a build (§6.7, D10). It owns
 the machine while it runs and may be as greedy as accuracy requires (D8, B35).
 
-**Twenty candidates, four families.** The families differ in what gates them, in
+**Twenty-two candidates, four families.** The families differ in what gates them, in
 what they can claim, and in whether they need the machine to themselves:
 
 | Family | Gate | Class | What it establishes |
@@ -311,6 +311,43 @@ labs §IV depends on most directly.
   quantizations. This is the lab that makes that a resource rather than a
   problem, and it is a §3.4-clean comparison: one variable, many points.
 
+### L24 — Resource dose-response
+
+- **Question** How much does this model need before more stops helping, and how
+  gracefully does it degrade below that?
+- **Family** D · Comparative. **Class** Timing, so each point needs its own
+  quiet window (D8) — the sweep is a sequence of short windows rather than one
+  long occupation.
+- **Method** The same workload run in boxes of decreasing size (D15): cores,
+  host memory, accelerator share, each swept independently and then jointly.
+  Reports the curve and its knees — the point below which throughput collapses,
+  the point above which more buys nothing.
+- **Telemetry** Per-box throughput and latency, plus what the box *failed* to
+  bound: memory-bandwidth saturation, cache pressure and thermal state, since
+  those are the dimensions §6.41 says a consumer box does not partition.
+- **Slot** Your box sizes, and your workload.
+- **Why it matters** Three separate uses. It tells a user the minimum viable
+  allocation for a latency target, which no other lab answers. It quantifies
+  what yielding costs the run, which §3.26 requires be measured rather than
+  asserted. And it measures how much a box actually isolates on *this* hardware
+  — the open question §6.41 rates its own confidence "medium" on.
+
+### L25 — Contention response
+
+- **Question** What happens to this model when the machine is busy?
+- **Family** D · Comparative. **Class** Timing.
+- **Method** A fixed workload run against graded synthetic background load —
+  CPU-bound, memory-bandwidth-bound, accelerator-bound, I/O-bound, each
+  separately — from idle to saturated. Reports degradation per contention type,
+  which is more useful than one "busy machine" number because the four have
+  different remedies.
+- **Distinct from L24** L24 restricts what the model *may take*; L25 varies what
+  it *may be denied*. §6.41's whole point is that these are different
+  quantities, and measuring both is how MCF learns which one dominates here.
+- **Why it matters** It converts D8's yielding mode from a promise into a
+  quantity: "a behaviour run in the background costs the foreground this much,
+  and costs itself this much."
+
 ---
 
 ## What to build first
@@ -320,7 +357,7 @@ framework: a timing-class lab with no gate, a cheap behaviour-class lab with a
 capability gate, and a heavy multi-turn lab with a sandbox and a distribution.
 If the framework carries those three, it carries the family.
 
-**Then L10 and L2.** L10 produces the declared-versus-verified divergence that
+**Then L10 and L2.**  L10 produces the declared-versus-verified divergence that
 is often the most useful thing MCF can say about a model; L2 populates the
 frontier axis §3.9 has never been able to fill.
 
@@ -330,6 +367,13 @@ how much to believe every other number in the system.
 ---
 
 ## Changelog
+
+### Version 4 — the resource labs
+
+L24 and L25 added. They are the pair that makes D8's yielding mode and D15's
+boxes measurable rather than asserted: L24 restricts what the model may take,
+L25 varies what it may be denied, and §6.41 turns on those being different
+quantities.
 
 ### Version 3 — which families take the machine
 

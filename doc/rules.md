@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**85 rules in three tiers, each carrying a citation and a check.** Cite them by
+**87 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 50 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 52 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**68 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**70 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Fifty rules. Each holds under a stated condition, or permits something
+Fifty-two rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -988,6 +988,32 @@ measurement condition (§3.4) and is restored (A27).
 - **Violation looks like:** a "focus mode" that kills processes, which may
   destroy unsaved work MCF cannot see.
 
+### B51 — A box is a measurement condition, and names what it did not bound
+A declared resource allocation travels with every result taken inside it, and so
+does the list of dimensions it could not enforce — memory bandwidth, cache,
+accelerator time-slicing, PCIe, thermal. Boxed and unboxed results are never
+compared, and neither are results from different boxes (A8). Where a platform
+cannot enforce a dimension, that dimension is `unknown` and the box does not
+claim it (A7).
+- **Absorbs:** D15, §6.41, §3.4, §7.43
+- **Check:** `compiler` — a result carries its box or the explicit absence of
+  one, and the two cannot be compared (B-240).
+- **Violation looks like:** a box that appears to isolate and does not, which
+  attaches a reproducible-looking number to an unreproducible quantity.
+
+### B52 — Politeness is measured, not asserted
+Yielding has two costs and they belong to different disciplines (D10). What it
+costs the **user** is an application test: a background run must not degrade an
+interactive workload beyond a stated budget. What it costs the **model** is a
+laboratory: L24's dose-response and L25's contention sweep. A claim that MCF is
+a good guest is worth exactly what those two measurements say.
+- **Absorbs:** §3.26, D10, §6.40, §3.13
+- **Check:** `CI` — interactive degradation under a background run is asserted
+  against a budget (B-241); `lab` — degradation curves are produced rather than
+  assumed (B-242).
+- **Violation looks like:** "runs at low priority" offered as evidence that it
+  is unobtrusive.
+
 ---
 
 ## C — Low value
@@ -1077,7 +1103,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 85 rules
+   is whether an existing rule already covers it. This file holds 87 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1117,7 +1143,9 @@ no rule is a defect in this file.
 | §XVI Self-contained | B36, B15 |
 | §XVII Full utilization | A26, B35 |
 | D8 Exclusivity by measurement class | B35, B49 |
-| §3.26 MCF is a guest | B50, B49 |
+| §3.26 MCF is a guest | B50, B49, B52 |
+| D15 Resource boxes | B51 |
+| §6.41 Boxes vs the window | B51, A8 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1199,6 +1227,19 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 8 — boxes, and measured politeness
+
+B51 makes a resource box a measurement condition that names its own limits. The
+rule exists because the attractive error is treating a box as isolation: it
+bounds what a process may take, not what it may be denied, and the dimensions it
+cannot bound on consumer hardware — memory bandwidth, cache, accelerator
+time-slicing, thermal — are the ones that determine tokens per second.
+
+B52 turns §3.26's politeness from an intention into two measurements on
+different sides of D10's split: an application test for what yielding costs the
+user, and a laboratory for what it costs the model. "Runs at low priority" is
+not evidence of anything.
 
 ### Version 7 — exclusivity narrowed to timings
 

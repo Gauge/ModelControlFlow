@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -339,6 +339,12 @@ harness §XIII would have to be retrofitted onto.
 - The exclusive window for timing-class work (B-181, B-182, B-235): announced,
   bounded, schedulable to overnight or to a stated period of idleness, and
   draining the endpoint only for the tens of minutes a timing needs
+- Resource boxes (B-236, B-240): a model confined to a declared allocation so
+  contention stops being a confound without the machine being surrendered — with
+  every boxed result naming what its box could *not* bound (§6.41)
+- The two politeness measurements (B-241, B-242): what yielding costs the user
+  asserted in CI, what constrained resources cost the model produced as a curve
+  — §3.26 requires both be measured rather than intended
 - Yielding for behaviour-class work (B-230, B-231, B-232, B-233, B-234): the
   long runs stay out of the user's way — low priority, behind user traffic,
   token-budget deadlines rather than wall clocks, and environment failures
@@ -377,7 +383,7 @@ harness §XIII would have to be retrofitted onto.
 - Zero cost during ordinary serving (B-108) and a minimality guard on the
   harness (B-109) — §6.18, because harnesses of this kind grow into frameworks
 
-**Gated on:** DEC-023, DEC-029, DEC-042, DEC-003, DEC-010.
+**Gated on:** DEC-023, DEC-029, DEC-042, DEC-043, DEC-003, DEC-010.
 
 **Exit criteria**
 - Two models are evaluated unattended and the output either distinguishes them
@@ -524,7 +530,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 85. A milestone that can only be
+Every milestone above is subject to all 87. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -532,6 +538,12 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 9 — boxes join M6
+
+M6 gains resource boxes and the two measurements that turn politeness from a
+claim into a quantity. DEC-043 becomes a gate: a box that appears to isolate and
+does not attaches a reproducible-looking number to an unreproducible quantity.
 
 ### Version 8 — the long runs stop taking the machine
 

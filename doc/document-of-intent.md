@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -723,6 +723,49 @@ a budget rather than picking a list.
   early keeps what it produced, marked incomplete (§3.1). This is what makes a
   laboratory measured in days usable by somebody with an afternoon.
 
+### D15 — Resource boxes: a declared allocation a model runs inside
+
+A model may be confined to a **box**: a declared allocation of cores, host
+memory, accelerator share and I/O that it runs inside and cannot exceed. The box
+is stated, reproducible, and is part of every measurement taken in it (§3.4).
+
+**What a box buys.**
+
+- **Reproducibility across sessions** (§7.6). A measurement taken on "the
+  machine" depends on whatever else the machine was doing. A measurement taken
+  in a 6-core, 16 GiB box is the same measurement next Tuesday.
+- **Isolation without exclusivity** (§3.4, §3.26). A box removes contention as a
+  *confound* without requiring the user to surrender the machine — the third
+  answer alongside D8's exclusive window and its yielding mode.
+- **Comparability between models.** Two models in identical boxes differ by one
+  variable. Two models measured on a whole machine at different times differ by
+  however busy it was.
+- **A real question answered honestly:** *what do I get while I am working?*
+  A boxed run under stated load is not a degraded timing; it is a different
+  measurement, and often the one a user actually cares about.
+
+**What a box cannot buy, and this is the limit that must never be papered
+over.** A box bounds **what a process may take**; it does not bound **what a
+process may be denied.** Memory bandwidth, cache, accelerator time-slicing, PCIe
+and thermal headroom are shared on consumer hardware and largely unpartitionable
+there. A model boxed to six cores still contends for memory bandwidth with
+everything else running, and no allocation prevents it.
+
+Therefore:
+
+- **Every boxed result names what its box did not bound.** The unpartitionable
+  dimensions are listed, not implied, so nobody reads a box as a guarantee of
+  isolation it cannot provide.
+- **Boxed and unboxed results are never compared** (A8), and neither are results
+  from different boxes.
+- **A box is not a substitute for the exclusive window** when the goal is a
+  best-case timing (§6.41).
+- **Thermal state remains global and uncontrollable** and is recorded rather
+  than claimed away (D11, L21).
+- **Box capability varies by platform and is stated, never assumed.** Where a
+  platform offers no mechanism, boxing is `unknown` and unavailable (A7), not
+  approximated. Where it requires privilege, §XVII and A26 govern.
+
 ## 3. Principles
 
 These are the load-bearing beliefs. When a decision is genuinely close, decide
@@ -1251,6 +1294,13 @@ The spirit:
 The test this principle is meant to survive: *can the user keep working while
 MCF works?* Where the answer must be no, the window is short, announced and
 chosen by them.
+
+**And the answer is measured, not asserted.** Politeness is a claim like any
+other, and it has two costs that are measured separately because they are
+different disciplines (D10): what yielding costs the *user* is an application
+test — does a background run stutter an interactive workload — and what
+constrained resources cost the *model* is a laboratory (L24). Neither is
+established by intending to be considerate.
 
 ---
 
@@ -2435,6 +2485,37 @@ background run genuinely unobtrusive on a contended machine is real engineering,
 and a "low priority" that still stutters a game is a broken promise. §7.42
 records what has to be decided.
 
+### 6.41 Resource boxes vs. the exclusive window
+
+**Tension.** D15 looks like it makes D8's exclusive window unnecessary: if a
+model can be confined to a declared allocation, why suspend the machine to time
+it? The reasoning is attractive and wrong, and getting it wrong would put a
+reproducible number on an unreproducible quantity.
+
+**Resolution — a box controls the *allocation*; only a quiet machine controls
+the *conditions*, and the difference is exactly the dimensions that dominate
+inference.** Memory bandwidth, cache pressure, accelerator time-slicing and
+thermal headroom are what determine tokens per second, and they are the
+dimensions a consumer box does not partition.
+
+So both survive, answering different questions:
+
+- **Best-case timing** — what this machine can do — requires the exclusive
+  window. It is the number that belongs in a comparison between models or
+  quantizations, because it is the one taken with the fewest uncontrolled
+  variables.
+- **In-practice timing** — what the user gets while working — is taken in a box
+  under a *stated* load, and is a first-class result rather than a spoiled one.
+  It answers the question most users actually have, and §3.19's
+  resemble-the-work argument favours it.
+- **The two are never compared,** and a surface that renders them in the same
+  column has produced a confounded comparison (A8).
+
+**Confidence: high on the split, medium on how much a box helps at all.** On
+hardware with real partitioning the box may approach the window; on a consumer
+machine it may bound very little of what matters. That is measurable rather than
+arguable, and L24 measures it.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -2922,6 +3003,23 @@ and how any of it is expressed per platform (§7.35).
 
 A "low priority" that still stutters a game is a broken promise, and §3.26 makes
 this a correctness question rather than a comfort one.
+
+### 7.43 What can actually be boxed, per platform
+
+D15 declares boxes and §6.41 bounds what they buy. Neither says which dimensions
+are enforceable where. Core pinning, memory ceilings, I/O limits, accelerator
+share and priority have different mechanisms and different guarantees across
+operating systems, and some have no mechanism at all — and where a mechanism
+exists it may require privilege (§XVII), which changes the surface (§7.39).
+
+Open: which dimensions MCF offers, what it reports where a dimension cannot be
+enforced, whether a partially-enforceable box is offered at all or refused as
+misleading, and how any of it interacts with §7.35's platform scope and §7.42's
+yielding.
+
+The trap to avoid is a box that appears to isolate and does not, which would
+attach a reproducible-looking number to an unreproducible quantity — the §6.1
+failure mode with a configuration screen in front of it.
 
 ### Retired voids
 
