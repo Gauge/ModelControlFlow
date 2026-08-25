@@ -66,6 +66,14 @@ pub(super) const NEEDS_CREDENTIALS: Scenario = Scenario {
     run: needs_credentials,
 };
 
+/// Something was offered and the hub would not have it.
+pub(super) const CREDENTIAL_REFUSED: Scenario = Scenario {
+    id: "hub/credential-refused",
+    produces: Category::HubAuthRejected,
+    summary: "a credential the hub refuses is a different answer from no credential, and says so",
+    run: credential_refused,
+};
+
 /// The credentials are fine and the terms are not accepted.
 pub(super) const GATED: Scenario = Scenario {
     id: "hub/gated",
@@ -109,6 +117,13 @@ fn ask(behaviour: Behaviour, authenticated: bool) -> Outcome {
 
 fn needs_credentials(_world: &World) -> Outcome {
     ask(Behaviour::NeedsCredentials, false)
+}
+
+fn credential_refused(_world: &World) -> Outcome {
+    // Offered on purpose: *refused* is a thing that can only happen to a
+    // credential that exists, and the unauthenticated run is the other
+    // scenario.
+    ask(Behaviour::RejectsCredentials, true)
 }
 
 fn gated(_world: &World) -> Outcome {

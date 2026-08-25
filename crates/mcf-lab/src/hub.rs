@@ -27,6 +27,7 @@ use std::path::Path;
 
 use mcf_core::digest::sha256;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
+use mcf_hub::credentials::{self, Credential, Identity, Origin, Secret};
 use mcf_hub::reference::Reference;
 use mcf_hub::source::{Entry, Fetched, Listing, Source};
 
@@ -43,6 +44,12 @@ pub enum Behaviour {
     WellFormed,
     /// Exists, and will not be listed without credentials.
     NeedsCredentials,
+    /// Exists, and refuses the credential it is offered.
+    ///
+    /// A different world from [`Self::NeedsCredentials`]: something *was*
+    /// offered and the hub would not have it — expired, revoked, or scoped for
+    /// something else — and a better-worded request will not help.
+    RejectsCredentials,
     /// Exists, credentials accepted, terms not agreed for this account.
     Gated,
     /// Throttled, with the hint a hub usually gives.
@@ -141,12 +148,14 @@ impl Repository {
 #[derive(Debug, Default)]
 pub struct FakeHub {
     repositories: BTreeMap<String, Repository>,
-    /// Whether a caller has presented credentials.
+    /// The credential a caller has offered, where one has been.
     ///
-    /// A flag rather than a token: what MCF does differently is *ask again with
-    /// credentials*, and modelling a token's format would be modelling the
-    /// cause (D26).
-    credentials: bool,
+    /// The real type rather than a flag, so what the scenarios drive is what
+    /// the acquisition path will hold (B-024). What the hub does *not* do is
+    /// check the token's shape: which tokens a hub accepts is the cause, and
+    /// D26 keeps causes out of here — a repository declares that it refuses
+    /// what it is offered, and that is the observation.
+    credential: Option<Credential>,
 }
 
 impl FakeHub {
@@ -164,11 +173,27 @@ impl FakeHub {
         self
     }
 
-    /// The same hub, with credentials presented.
+    /// The same hub, offered a credential.
+    ///
+    /// The lab holds the real type rather than a boolean, so what the scenarios
+    /// exercise is what the acquisition path will hold: a secret that redacts
+    /// itself and an origin that is part of the conditions (B-024).
     #[must_use]
-    pub fn authenticated(mut self) -> Self {
-        self.credentials = true;
+    pub fn offered(mut self, credential: Credential) -> Self {
+        self.credential = Some(credential);
         self
+    }
+
+    /// The same hub, offered the laboratory's credential.
+    ///
+    /// Which token it is does not matter to any scenario — that a credential
+    /// was offered does — so the scenarios say the shorter thing.
+    #[must_use]
+    pub fn authenticated(self) -> Self {
+        self.offered(Credential::new(
+            Secret::new("hf_the-laboratory's-credential"),
+            Origin::Supplied,
+        ))
     }
 
     fn find(&self, reference: &Reference) -> Result<&Repository> {
@@ -186,29 +211,30 @@ impl FakeHub {
 
     /// The failure a repository's behaviour produces before anything else
     /// happens, if it produces one.
-    fn gate(&self, repository: &Repository, named: &str) -> Option<Failure> {
+    fn gate(&self, repository: &Repository, reference: &Reference) -> Option<Failure> {
+        // The refusals are `mcf_hub::credentials`' own, so a scenario asserts
+        // the words MCF will really say rather than words a simulator invented
+        // (D26: the observation is simulated, the response is not).
         match &repository.behaviour {
-            Behaviour::NeedsCredentials if !self.credentials => Some(failure(
-                Category::HubAuthRequired,
-                Attribution::User,
-                "this repository is not readable without credentials",
-                named,
+            Behaviour::NeedsCredentials if self.credential.is_none() => {
+                Some(credentials::missing(reference, &self.describe()))
+            }
+            Behaviour::RejectsCredentials => Some(credentials::rejected(
+                reference,
+                &self.describe(),
+                &self.identity(),
             )),
-            Behaviour::Gated => Some(
-                failure(
-                    Category::HubAccessGated,
-                    Attribution::User,
-                    "this repository's terms have not been accepted for this account",
-                    named,
-                )
-                .with_context("what_to_do", "accept the terms on the repository's page"),
-            ),
+            Behaviour::Gated => Some(credentials::gated(
+                reference,
+                &self.describe(),
+                &self.identity(),
+            )),
             Behaviour::RateLimited { retry_after } => Some(
                 failure(
                     Category::HubRateLimited,
                     Attribution::Machine,
                     "this account is throttled",
-                    named,
+                    &reference.repository(),
                 )
                 .with_context("retry_after_seconds", retry_after.to_string()),
             ),
@@ -225,11 +251,23 @@ impl FakeHub {
 }
 
 impl Source for FakeHub {
+    fn identity(&self) -> Identity {
+        // *Offered*, never *confirmed*: this hub has no account directory, and
+        // a simulator that named an account MCF was never told would be
+        // inventing the one thing identity exists to establish.
+        match &self.credential {
+            None => Identity::Anonymous,
+            Some(credential) => Identity::Offered {
+                fingerprint: credential.secret().fingerprint().to_owned(),
+            },
+        }
+    }
+
     fn describe(&self) -> String {
         format!(
             "the laboratory's simulated hub, {} repositories, credentials {}",
             self.repositories.len(),
-            if self.credentials {
+            if self.credential.is_some() {
                 "presented"
             } else {
                 "absent"
@@ -239,7 +277,7 @@ impl Source for FakeHub {
 
     fn list(&self, reference: &Reference) -> Result<Listing> {
         let repository = self.find(reference)?;
-        if let Some(failure) = self.gate(repository, &reference.repository()) {
+        if let Some(failure) = self.gate(repository, reference) {
             return Err(failure);
         }
 
@@ -270,7 +308,7 @@ impl Source for FakeHub {
 
     fn fetch(&self, reference: &Reference, entry: &Entry, into: &Path) -> Result<Fetched> {
         let repository = self.find(reference)?;
-        if let Some(failure) = self.gate(repository, &reference.repository()) {
+        if let Some(failure) = self.gate(repository, reference) {
             return Err(failure);
         }
         let bytes = repository.files.get(&entry.path).ok_or_else(|| {
@@ -298,6 +336,7 @@ impl Source for FakeHub {
                 .to_vec(),
             Behaviour::WellFormed
             | Behaviour::NeedsCredentials
+            | Behaviour::RejectsCredentials
             | Behaviour::Gated
             | Behaviour::RateLimited { .. }
             | Behaviour::DeceptiveMetadata
@@ -338,7 +377,7 @@ impl Source for FakeHub {
         into: &Path,
     ) -> Result<Fetched> {
         let repository = self.find(reference)?;
-        if let Some(failure) = self.gate(repository, &reference.repository()) {
+        if let Some(failure) = self.gate(repository, reference) {
             return Err(failure);
         }
         if repository.behaviour == Behaviour::NeverResumes {
@@ -382,6 +421,7 @@ impl Source for FakeHub {
             Behaviour::ServesDifferentBytes => rest.iter().map(|byte| byte ^ 0xFF).collect(),
             Behaviour::WellFormed
             | Behaviour::NeedsCredentials
+            | Behaviour::RejectsCredentials
             | Behaviour::Gated
             | Behaviour::RateLimited { .. }
             | Behaviour::DeceptiveMetadata
