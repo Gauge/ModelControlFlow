@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -108,7 +108,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-022, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL). ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** DEC-022, DEC-004, DEC-039, DEC-051. ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27; ~~DEC-047's licence half~~ by D28; ~~DEC-035~~ by D29. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
@@ -544,6 +544,14 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 14 — the author closes two gates
+
+D28 and D29 close the licence and the platform scope — the two M0 decisions
+nobody but the author could make, one being a commitment about distribution and
+the other a decision about where his time goes. M0 waits on the end-to-end
+boundary, engine ownership, the elevation list, and how a budget is asserted on
+a machine somebody is using.
 
 ### Version 13 — M0 is down to four gates
 

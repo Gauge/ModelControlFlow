@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 30 |
+| **Version** | 32 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,97 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D29 — Every platform is in scope; Linux is first, and the rest say what they cannot do *(answers §7.35)*
+
+§7.35 said that until this is drawn, *"runs on this machine" is as unfalsifiable
+as §VII was before §7.16*. The author has drawn it: **all platforms, with Linux
+taking priority.**
+
+**What "all platforms" commits MCF to, and it is not what it sounds like.** §III
+already faced the same shape and B7 settled it: *"any model" commits MCF to
+accepting any reference without special-casing, reaching a defined actionable
+outcome for every one, and never being damaged by a hostile or malformed one. It
+does not commit MCF to running any of them.* The same reading holds here. MCF
+runs everywhere, reaches a defined outcome everywhere, and states what it cannot
+do on each — it does not promise every capability on every platform.
+
+So a platform is in one of three states, and they are D25's states one level up
+because the reasoning is identical:
+
+- **Characterized.** MCF can read what §3.4's floor asks of a machine, contain a
+  benchmark by construction (A14), and elevate through a helper for the
+  operations that need it (A26). Results are comparable and contributable.
+- **Attempted, uncharacterized.** MCF runs, and one or more of those is
+  unavailable. It says which, marks every result taken there as degraded (A5),
+  and those results are not comparable with characterized ones (A8) and are not
+  contributable (B54).
+- **Unsupported.** MCF does not run at all, and says so: `platform.unsupported`.
+  This state is for a platform MCF cannot start on, not for one where it can
+  only do less.
+
+**Linux is first, and "first" is a schedule rather than a tier.** Every
+capability is built and proven on Linux before it is attempted elsewhere,
+because that is where the author works and because a capability that has never
+worked anywhere is not a portability problem. A platform reaching *characterized*
+later is the normal path, not an exception.
+
+**Per-platform artifacts are the expected shape, not a compromise.** The target
+triple is already a §3.4 condition — it is in every record MCF writes, through
+`BuildIdentity` — so a result taken on one platform already declares which. That
+means separate artifacts cost nothing in comparability: a run is *already*
+qualified by its operating system, and shipping one binary per platform simply
+matches the artifact to the qualification that was going to be recorded anyway.
+§XVI is unaffected: each artifact is self-contained on its own platform, which
+is what §XVI asks, rather than one artifact being self-contained on all of them.
+
+**The mechanism §7.35 warned about is where the cost actually sits.** A14
+requires the benchmark sandbox be a sandbox *by construction*, and the
+construction differs: namespaces and cgroups on Linux, sandbox profiles and
+`seatbelt` on macOS, job objects and AppContainer on Windows. §XVII's privileged
+helper multiplies it, since elevation is per-platform. Three consequences follow
+and are stated rather than discovered:
+
+- **The sandbox is an interface with per-platform implementations, and the
+  interface is the narrow part.** A14's test is that a capability be *absent*
+  rather than present-and-disabled, so the interface describes what the
+  environment *lacks*, and a platform that cannot remove a capability cannot
+  offer that environment — it is uncharacterized for the laboratories that need
+  it, and says so.
+- **A platform without a containment mechanism does not run untrusted code at
+  all.** A15 and A14 are absolute, and *degrade and say so* (§3.2) is not
+  available for a rule that admits no exception. The capability is refused on
+  that platform, which is a stated absence rather than a weaker sandbox.
+- **DEC-039's list is per-platform** and gets a column per platform rather than
+  one answer, and §6.32's *reconsider rather than grant* applies per column: a
+  helper that would need broad rights for a narrow job on one platform does not
+  get them there, and the measurement is marked untaken on that platform alone.
+
+### D28 — MCF is GPL-3.0-only *(closes the licence half of §7.47)*
+
+**GPL-3.0-only.** D22 narrowed §7.47 to the GPL family and reasoned its way to a
+lean; the author has taken it. `LICENSE` holds the verbatim text and every
+manifest declares `GPL-3.0-only`.
+
+**Why not AGPL, restated so the choice survives the decision.** AGPL's trigger
+is network interaction and MCF's core feature is serving over a network, so its
+clause reaches unusually far here — while what it would protect is narrower than
+it looks, since §5 already puts the aggregating website out of scope and a
+competing hosted service would be its own code rather than a fork of MCF. Set
+against that, AGPL carries an adoption cost with organizations that refuse it by
+policy, and those are much of the audience D7 imagines. The clause would cost
+reach and buy little.
+
+**What this settles for §XVI.** Every component MCF vendors must be
+GPL-3.0-compatible. Permissive terms — MIT, Apache-2.0, BSD — are, which is
+where the engines and libraries §XVI wants already sit (D22). A component whose
+terms are not is one MCF cannot ship whatever its merits, and D23's third tier
+is where it goes, recorded with the reason (B-321).
+
+**What it does not settle.** The per-engine compatibility matrix is still owed:
+each vendored component is checked against this licence *before* it is admitted,
+and the finding is recorded rather than assumed (B-330). §7.47's remaining half
+is that matrix, not the licence.
 
 ### D27 — A budget names a statistic, a window and a quiet machine *(answers §7.50)*
 
@@ -3458,18 +3549,6 @@ weaker than it sounds if the underlying distribution is discarded. Recorded here
 rather than assumed, because it decides the schema (D6) and therefore must be
 settled before the first row is written.
 
-### 7.35 Host platform scope, and the containment mechanism — **structural**
-
-§7.8 bounds accelerators and §6.11 bounds client devices. Nothing bounds the
-machines MCF itself runs on, and that omission hides a large architectural
-decision: A14 requires a sandbox *by construction*, and OS namespaces, a
-hypervisor, and a portable abstraction over both are three different daemons.
-§XVII's privileged helper multiplies it, since elevation mechanisms are
-per-platform.
-
-Until this is drawn, "runs on this machine" is as unfalsifiable as §VII was
-before §7.16.
-
 ### 7.36 Whether model licences constrain publishing measurements
 
 §III makes licences legible for *use*. §XIV publishes results *about* an
@@ -3679,11 +3758,10 @@ needs. Neither is a legal opinion; the choice deserves a real review before
 distribution, and the point of recording it here is that it must be *made* before
 §7.4 picks an engine.
 
-**Narrowed by D22: copyleft, GPL-3.0 family.** What remains open:
+**Narrowed by D22 and closed by D28: GPL-3.0-only.** What remains open:
 
-- **GPL-3.0 or AGPL-3.0.** D22 states the trade and leans GPL-3.0, since AGPL's
-  network trigger reaches unusually far for a tool whose core feature is serving
-  over a network, and what it would protect is narrower than it looks.
+- ~~**GPL-3.0 or AGPL-3.0.**~~ **Resolved by D28:** GPL-3.0-only. `LICENSE`
+  holds the text and every manifest declares it.
 - ~~**Proprietary accelerator runtimes.**~~ **Resolved by D23:** vendored,
   platform-provided, or declined. A closed runtime is used where the user already
   has it and never redistributed, which sidesteps compatibility rather than
@@ -3743,6 +3821,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 | §7.8 | Hardware scope | §3.8, §3.4 | **D25** — characterized means MCF can read the device's live state |
 | §7.21 | What the laboratory simulates | §3.17, §6.16, A13 | **D26** — the taxonomy, observed rather than caused; the clock is structural |
+| §7.35 | Host platform scope | §I, A14, §XVI | **D29** — all platforms, Linux first; three states, per-platform artifacts |
 | §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
@@ -3778,6 +3857,39 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 32 — every platform, with Linux first
+
+D29 answers §7.35, which said that until it was drawn, *"runs on this machine"*
+was as unfalsifiable as §VII had been before its budget existed.
+
+The answer is *all platforms, Linux first*, and the work was in reading what
+"all" commits MCF to. §III faced the same shape and B7 settled it: coverage
+governs **attempt and diagnosis, not success**. So a platform gets D25's three
+states — characterized, attempted-uncharacterized, unsupported — for the same
+reason a device does, and MCF states what it cannot do on each rather than
+promising every capability everywhere.
+
+Two things follow that are worth having written down. **Per-platform artifacts
+cost nothing**, because the target triple is already a §3.4 condition in every
+record MCF writes: a run is already qualified by its operating system, so
+shipping one binary per platform matches the artifact to a qualification that
+was going to be recorded anyway. And **a platform with no containment mechanism
+does not run untrusted code at all** — A14 and A15 admit no exception, so
+*degrade and say so* is not available, and the capability is refused there
+rather than weakened.
+
+### Version 31 — the licence is GPL-3.0
+
+D28 closes the half of §7.47 that only the author could close. D22 had narrowed
+it to the GPL family and stated the lean; taking it is a commitment about
+distribution, and `LICENSE` now holds the verbatim text.
+
+The consequence for §XVI is the part worth carrying forward: every component MCF
+vendors must be GPL-3.0-compatible, which the permissive terms §XVI wants
+already are, and one whose terms are not is one MCF cannot ship whatever its
+merits — it goes to D23's third tier with its reason recorded. The remaining
+half of §7.47 is the per-engine matrix, not the licence.
 
 ### Version 30 — a void the budget tier found by running
 

@@ -26,11 +26,10 @@ members = [
 version = "0.1.0-m0"
 edition = "2024"
 rust-version = "1.98.0"
-# D22 settles that MCF is copyleft and reasons its way to GPL-3.0 over
-# AGPL-3.0 for a locally-installed tool. DEC-047 is still open on the
-# per-engine compatibility matrix, and B-330 adds the LICENSE file with it, so
-# this field states the decided half rather than leaving a manifest that claims
-# nothing.
+# D28. `LICENSE` holds the verbatim text. Every component MCF vendors is
+# checked against this before it is admitted (B-330), and one whose terms are
+# incompatible goes to D23's third tier with its reason recorded rather than
+# being shipped anyway.
 license = "GPL-3.0-only"
 # No `repository` and no `authors`. A7 forbids filling an unknown with a
 # plausible value, this tree has no published remote yet, and git already
