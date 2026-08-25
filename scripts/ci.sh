@@ -49,6 +49,9 @@ set -o errexit -o nounset -o pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
+# shellcheck source=scripts/lib-tiers.sh
+. "$root/scripts/lib-tiers.sh"
+
 with_reproducibility=false
 with_budget=false
 with_fuzz=false
@@ -113,11 +116,13 @@ gating_seconds=$((SECONDS - started))
 if [ "$with_fuzz" = true ]; then
     step "fuzz (B-191)"
     cargo test --locked --offline -p mcf-checks --test fuzz -- --ignored --nocapture
+    tier_stamp "$root" fuzz
 fi
 
 if [ "$with_load" = true ]; then
     step "load (B-191)"
     cargo test --locked --offline -p mcf-checks --test load -- --ignored --nocapture
+    tier_stamp "$root" load
 fi
 
 if [ "$with_soak" = true ]; then
@@ -125,6 +130,7 @@ if [ "$with_soak" = true ]; then
     # process, so a second test allocating in parallel reads as growth.
     step "soak (B-191)"
     cargo test --locked --offline -p mcf-checks --test soak -- --ignored --nocapture --test-threads=1
+    tier_stamp "$root" soak
 fi
 
 if [ "$with_budget" = true ]; then
@@ -132,11 +138,17 @@ if [ "$with_budget" = true ]; then
     # Release, because D24's ceilings are about the shipped artifact and a debug
     # binary is a different one. `--ignored` because the tier is scheduled.
     cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
+    tier_stamp "$root" performance
 fi
 
 if [ "$with_mutation" = true ]; then
     step "mutation (B-191; the floor is B-186)"
-    "$root/scripts/check-mutants.sh"
+    # The score travels into the stamp, so that a later run can say what the
+    # previous one scored — which is what B-186's floor will be compared
+    # against and what B20 means by a before and an after.
+    mutation_output=$("$root/scripts/check-mutants.sh" | tee /dev/stderr)
+    tier_stamp "$root" mutation \
+        "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
 fi
 
 if [ "$with_reproducibility" = true ]; then
@@ -144,9 +156,14 @@ if [ "$with_reproducibility" = true ]; then
     "$root/scripts/check-reproducible-build.sh"
 fi
 
-# What did not run in this invocation, named. B38: a tier that has not run is
-# reported as such, never assumed green.
-printf '\n=== not run in this tier\n'
+# Every scheduled tier's age, and what did not run in this invocation. B38: a
+# tier that has not run is reported as such, never assumed green, and an age is
+# the stronger form of the same statement — `scripts/check-tier-ages.sh
+# --release` is what refuses on one (B-185).
+printf '\n=== the scheduled tiers\n'
+"$root/scripts/check-tier-ages.sh" | sed -n '3,$p' | sed '/^$/,$d'
+
+printf '\n=== not run in this invocation\n'
 not_run=false
 report_absent() {
     # `if` rather than `[ … ] && printf`: under `errexit` a false test at the
@@ -166,6 +183,6 @@ report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/
 if [ "$not_run" = false ]; then
     printf '  nothing: every tier ran in this invocation\n'
 fi
-printf '  tier ages and a mutation floor are not built yet: B-185, B-186\n'
+printf '  a mutation floor is not built yet: B-186\n'
 
 printf '\nci: green — the gating tiers took %ds\n' "$gating_seconds"

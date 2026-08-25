@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 58 |
+| **Version** | 59 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
-build items (30 done, 1 dropped, 4 in progress, 54 blocked on a decision, 109 open).** Every item cites
+build items (31 done, 1 dropped, 4 in progress, 54 blocked on a decision, 108 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -127,7 +127,7 @@ first and importance second.
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **done** — `mcf_core::time` keeps the two apart by type; `mcf_record::journal::anomaly` notices a moved calendar by holding *both* clocks across an append, and two scenarios produce a backward step and a forward jump with a disposition of `invalidated`. The entry is still written: what an anomaly invalidates is what was measured across it, not the event |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | **done** — `mcf_core::time::zone` reads the zone file in safe Rust, resolves the offset in force *at the moment* rather than now, and is unknown beyond what the file records rather than extrapolating. Checked against what the system itself reports |
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | **done** — all ten exist, declared in `checks/src/tiers.rs` and compared against `scripts/ci.sh`, the tree and [build.md](build.md) in both directions. Five gate, in five seconds; five are scheduled behind flags. The whole-system tier covers the one of §7.22's four questions M0 has anything to answer and names the other three, so DEC-022 governs its extension rather than its existence |
-| B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
+| B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | **done** — `scripts/check-tier-ages.sh [--release]`, and every `scripts/ci.sh` run reports the ages. Stale is *the source changed*, not *a clock advanced*: no clause states how old a soak result may be (A23), and what actually invalidates one is decidable — each tier stamps a digest of the manifests, the toolchain pin, the crates, the checks and the scripts. The stamps are machine-local, so a fresh checkout says it has run nothing rather than inheriting a result |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
 | B-193 | The storage an artifact is read from is a measurement condition; and a measurement whose cost is in another process is judged by that process's scheduling, not the measurer's | §3.4, D27, D30, B35 | The condition floor carries where the artifact was executed from, and a cold start on a slow filesystem is refused as unattributable rather than reported as over its ceiling | open — [findings.md](findings.md) F5 has the evidence: one binary, two filesystems, p99s a factor of 1 067 apart with identical stated conditions; and the same tier over its ceiling and two orders of magnitude within it on one machine within the hour |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
@@ -366,6 +366,19 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 59 — the tiers have ages
+
+B-185 done. Every scheduled tier stamps what source it ran against, every
+`ci.sh` run reports the ages, and `scripts/check-tier-ages.sh --release`
+refuses a release on a tier that has not run against the code it would be a
+release of.
+
+The interesting half is what *stale* was allowed to mean. A maximum age in days
+needs a figure nobody has stated, so the register would have acquired intent
+nobody chose; the source a result was taken against is the thing that actually
+invalidates it, and it is decidable. B-186's floor now has somewhere to keep a
+previous score, which was the other thing blocking it.
 
 ### Version 58 — the budget that measures the filesystem
 

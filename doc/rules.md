@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 18 |
+| **Version** | 19 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
@@ -864,9 +864,10 @@ regress silently.
 - **Check:** `CI` — the ten tiers are declared in `checks/src/tiers.rs` and
   compared against the script that runs them, the tree that holds them and
   [build.md](build.md), in both directions; a gating tier that ignores its own
-  tests fails the build (B-191). Tier ages are published with every result set
-  and a stale tier fails a release (B-185); mutation score has a floor
-  (B-186).
+  tests fails the build (B-191). Every scheduled tier stamps the source it ran
+  against, every run reports the ages, and `scripts/check-tier-ages.sh
+  --release` refuses a release on a tier that has not run against the code in
+  the tree (B-185). Mutation score has a floor (B-186).
 - **Violation looks like:** a green badge that means "the fast tests passed" and
   is read as "the software works".
 
@@ -1428,6 +1429,12 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 19 — B38's ages are real
+
+No rule changed. B38's check named tier ages as future work and B-185 built
+them, so it now names what refuses a release today and keeps the mutation floor
+(B-186) as the one half still owed.
 
 ### Version 18 — B38's check has a machine-checked half
 

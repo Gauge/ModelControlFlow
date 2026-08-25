@@ -2,3 +2,9 @@
 # pinned toolchain, and B-001's reproducibility check exists so that it can be
 # thrown away without losing anything.
 /target
+
+# Tier stamps (B-185): when each scheduled tier last ran, and against which
+# source. Machine-local evidence, not part of the tree — a fresh checkout has
+# not run anything, and should say so rather than inheriting somebody else's
+# result.
+/.mcf-tiers
