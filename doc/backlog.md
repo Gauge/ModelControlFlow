@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 61 |
+| **Version** | 62 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
-build items (33 done, 1 dropped, 4 in progress, 54 blocked on a decision, 106 open).** Every item cites
+build items (34 done, 1 dropped, 3 in progress, 54 blocked on a decision, 106 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -115,7 +115,7 @@ first and importance second.
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
-| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **in progress** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`. Every figure measurable without a daemon is now *asserted* rather than merely reported (D30), and refused under deliberate load: [findings.md](findings.md) F3 §3.3. Two things are still owed: the before-and-after needs a stored baseline and tier ages (B-185), and the one event-class figure is dominated by a condition nothing records (B-193, F5) |
+| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **done** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`. Every figure measurable without a daemon is asserted rather than reported (D30) and refused under deliberate load ([findings.md](findings.md) F3); each is compared with the last reading recorded in `.mcf-tiers/performance/`, and a figure that got worse by more than a stated tolerance fails with both readings and both condition sets (B20). Two figures are judged and one is only reported, because the cold start is dominated by a condition nothing records (B-193, F5). The figures that need a daemon — idle CPU, timer wakeups, added latency — arrive with it at M2 |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | **done** — at M0 MCF's observation *is* the record write, and `mcf_record::overhead` measures it beside the real record over D27's hundred trials. The instrumentation profile joins the condition floor as its tenth question, so `mcf doctor` and `mcf doctor --no-record` produce results a reader can tell apart |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
@@ -366,6 +366,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 62 — the budget tier has a before
+
+B-011 done. What it was waiting for was somewhere to keep a previous reading,
+which B-185's stamps supplied: each figure is now compared with the last one
+recorded and a regression fails with both readings and both condition sets.
+
+Two of the three figures are judged. The cold start is reported and not judged,
+because F5 established that its reading is decided by storage nothing records —
+that is B-193, and naming it is better than a detector that fires on a page
+cache.
 
 ### Version 61 — what the artifact requires of a machine
 

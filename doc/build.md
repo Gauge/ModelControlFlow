@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -414,11 +414,28 @@ spinning processes, because it cannot answer a question about a
 `mcf_core::hardware::TOLERATED_DELAY_PPM`, and the two states F3 measured are
 three orders of magnitude apart.
 
-An unattributable run is not a pass either. Nothing yet enforces that, because
-tier ages are B-185 and a stored baseline is what a regression is measured
-against; until those exist the tier asserts each figure and does not compare it
-with a previous one. B20's before-and-after is not yet possible and the tier says
-so rather than implying otherwise.
+**Every figure is also compared with the last one recorded** (B-011, B20). A
+ceiling catches a figure that became bad; a baseline catches one that became
+worse, which is earlier and more useful. The previous readings live in
+`.mcf-tiers/performance/`, one file per figure, machine-local for the same
+reason the tier ages are: a baseline from somebody else's machine is not a
+baseline. A comparison is refused rather than made wrong when the two are not
+comparable — a different profile is a different artifact (A8) — and a run that
+fails leaves the baseline it failed against rather than adopting the worse
+number.
+
+**Not every figure is judged against its baseline, and the ones that are not say
+so.** A18 makes a regression detector a third thing whose thresholds are
+statistical judgments rather than assertions:
+
+| Figure | Tolerance | Why |
+|---|---|---|
+| Core binary | +2 % | The build is reproducible byte for byte, so a file's size does not move on its own. Two per cent tolerates a different inlining decision about the same code and catches a dependency arriving unnoticed |
+| Resident memory | +10 % | A fresh process's resident set is nearly deterministic, and the allocator's policy is not MCF's |
+| Cold start | not judged | Dominated on some storage by conditions MCF does not record ([findings.md](findings.md) F5). The change is reported; B-193 is what would make it judgeable |
+
+An unattributable run is still not a pass. Nothing yet enforces that, and a
+stale-tier refusal now exists to build it on (B-185).
 
 **On a tree kept on a slow filesystem this tier currently fails, and the reason
 is understood.** [findings.md](findings.md) F5: the cold-start figure is
@@ -531,6 +548,15 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 13 — the budget tier has a before
+
+§9's performance section gains B-011's last half. The tier asserted each figure
+against D24's ceiling and had nothing to compare it with; it now keeps the
+previous reading beside the tier ages and refuses a figure that got worse by
+more than a stated tolerance, printing both readings and both sets of
+conditions. Which figures are judged and which are only reported is a table,
+because a detector that cries wolf is one people switch off.
 
 ### Version 12 — what the artifact requires of a machine
 
