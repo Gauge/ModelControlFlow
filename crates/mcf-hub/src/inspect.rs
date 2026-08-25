@@ -34,6 +34,8 @@
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 
+use mcf_core::provenance::Licence;
+
 use crate::source::{Entry, Listing};
 
 const WHERE: Subsystem = Subsystem::new("mcf-hub::inspect");
@@ -120,23 +122,36 @@ impl Architecture {
 
 /// Whether a listing says enough about itself to be acted on.
 ///
+/// Returns the licence as one of [`Licence`]'s states: an identifier MCF
+/// recognizes, or terms that are present and unmatched. The second is not a
+/// failure — a licence MCF cannot name is still a licence, and the answer *the
+/// terms are there and you must read them* is one a reader can act on
+/// ([`crate::licence`] is where that matching lives, and where MCF's refusal to
+/// summarize terms is argued).
+///
 /// # Errors
 ///
 /// `hub.metadata.absent` when the repository declares no licence: §III makes a
 /// licence something MCF surfaces *before* use (B-023), and a repository that
 /// declares none is a repository whose terms nobody can read — which is a state
-/// to report, not one to fill in.
-pub fn terms_are_legible(listing: &Listing) -> Result<&str> {
-    listing.declared_licence.as_deref().ok_or_else(|| {
-        Failure::new(
-            Category::HubMetadataAbsent,
-            Attribution::Artifact,
-            Disposition::Refused,
-            WHERE,
-            "the repository declares no licence, so its terms cannot be surfaced before use",
-        )
-        .with_context("repository", listing.reference.repository())
-    })
+/// to report, not one to fill in. A declaration that is blank declares nothing
+/// and is reported the same way.
+pub fn terms_are_legible(listing: &Listing) -> Result<Licence> {
+    if let Some(licence) = listing
+        .declared_licence
+        .as_deref()
+        .and_then(crate::licence::recognize)
+    {
+        return Ok(licence);
+    }
+    Err(Failure::new(
+        Category::HubMetadataAbsent,
+        Attribution::Artifact,
+        Disposition::Refused,
+        WHERE,
+        "the repository declares no licence, so its terms cannot be surfaced before use",
+    )
+    .with_context("repository", listing.reference.repository()))
 }
 
 /// How much more than its stated size a file may arrive as before the transfer
