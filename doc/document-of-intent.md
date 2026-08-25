@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -3116,6 +3116,42 @@ being the sole basis of a cross-session comparison.** The remaining decision is
 whether any dimension is so weakly enforced that offering it is worse than
 refusing it.
 
+### 7.44 How a user declares a workflow — **blocking §6.36**
+
+§6.36 resolves that MCF ranks against a *declared workflow* and refuses to rank
+in general, and B41 encodes it. Neither says how a workflow is declared, or what
+the vocabulary is.
+
+The options are not equivalent. A fixed list of named workflows is legible and
+immediately usable, and wrong for everyone whose work sits between two entries.
+A weighting across laboratories is exact and asks the user to have opinions
+about instruments they have never run. Inferring it from the user's own traffic
+is the most accurate and the most invasive (§3.10), and inferring it from an
+imported configuration assumes the emitter's work resembles theirs.
+
+Until this is answered, §6.36's promise — *MCF answers plainly within a declared
+workflow* — has no surface, and §6.5's "explicit, visible, overridable default"
+has nothing to default to. It is the practical half of §7.2's objective
+function, and probably should be answered with it.
+
+### 7.45 What happens when the machine changes underneath
+
+§7.13 asks whether measurements survive MCF's own upgrades. Nobody has asked the
+same question about the hardware, which changes far more often: a driver update,
+a firmware revision, a second stick of memory, a swapped accelerator, a repasted
+cooler, a different power profile.
+
+§3.4 makes the machine a condition of every measurement, so a changed machine
+means yesterday's results describe an apparatus that no longer exists. Open:
+which changes invalidate comparability and which are cosmetic, whether MCF
+detects them at all (a profile diff against the last known state is cheap), what
+it does on discovery, and whether history is marked, partitioned, or left to the
+user to interpret.
+
+The failure mode is silent and slow: a user compares a result from before a
+driver update with one from after and reads the driver's effect as the model's.
+§3.1 forbids exactly that kind of quiet corruption.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3123,7 +3159,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | Void | Question | Answered by | Substance lives in |
 |---|---|---|---|
 | §7.1 | What "deployed" means | §VI | **D1** — MCF is a daemon |
-| §7.3 | What quality is measured against | §IX | **D2** — agentic task success |
+| §7.3 | What quality is measured against | §IX | **D2** — quality is plural, measured per workflow |
 | §7.12 | The user surface | §XI | **D3** — both surfaces, headless primary |
 | §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |

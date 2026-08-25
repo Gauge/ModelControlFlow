@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**212 items: 43 decisions (40 open, 1 drafted, 1 narrowed, 1 resolved) and 169 build items.** Every item cites the clause that
+**216 items: 45 decisions (42 open, 1 drafted, 1 narrowed, 1 resolved) and 171 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -73,6 +73,8 @@ implemented, only gestured at, until the decision is made.
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
+| DEC-044 | How a user declares a workflow — a named list, a weighting across laboratories, inference from their own traffic, or from an imported configuration | §7.44 | **§6.36, B41** | M7 | open |
+| DEC-045 | Which changes to the machine invalidate comparability, whether MCF detects them, and what it does on discovery | §7.45 | §3.4, §3.8 | M5 | open |
 | DEC-040 | What makes two machines alike — which attributes constitute similarity, whether it is one relation or several, and how a machine outside every class is treated | §7.40 | §XIV, D14 | M9 | open |
 | DEC-043 | Which box dimensions are enforceable on which platforms, and whether a partially-enforceable box is offered or refused as misleading | §7.43 | **D15** | M6 | open |
 | DEC-042 | What yielding guarantees, and how it is achieved per platform — process and accelerator priority, memory reservation, foreground detection without ambient polling, automatic versus offered pausing | §7.42 | **§3.26, D8** | M6 | open |
@@ -294,6 +296,8 @@ first and importance second.
 | B-146 | Content-versus-system separation enforced structurally: suite fixture data and user traffic are different categories with different retention, not the same store with a flag | §6.8 | The separation is structural and cannot be defeated by configuration | open |
 | B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | blocked (DEC-011) |
 | B-148 | Long-run endurance scenario: days of simulated operation with faults, restarts, thermal excursions and upgrades | §I, §3.17 | MCF remains coherent, queryable and restartable throughout, with no unclassified outcome | open |
+| B-260 | Longitudinal regression detection: compare like with like, detect against historical spread rather than a threshold, correlate with the diff of everything that changed, report as a labelled hypothesis and never as a cause | [P7](proposals.md#p7--longitudinal-regression-detection), §6.7, A18 | A drop exceeding historical spread is surfaced with what changed alongside it; improvements are reported the same way | blocked (DEC-045, DEC-007) |
+| B-261 | Machine-change detection: a profile diff against the last known state, with affected history marked rather than silently carried forward | §7.45, DEC-045, §3.4 | A driver update marks prior results non-comparable rather than leaving them to be misread | blocked (DEC-045) |
 | B-149 | Answer §7.14 with evidence: the state that lets us say MCF works | §7.14 | The definition is written, and the suite is measured against it | blocked (DEC-014) |
 
 ### M9 — The exchange
@@ -327,6 +331,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 11 — three gaps registered
+
+DEC-044 (how a workflow is declared, blocking §6.36) and DEC-045 (what happens
+when the machine changes underneath) registered. B-260 and B-261 for P7's
+regression detection and the machine-change detection it depends on.
 
 ### Version 10 — pairing and generalization
 

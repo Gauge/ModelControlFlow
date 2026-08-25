@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
 
 **Why this document exists.** B15 admits weight only against a stated cost, B32
@@ -30,6 +30,7 @@ reasoning, so it is not re-proposed later as an oversight.
 | P4 | [Your own second machine](#p4--your-own-second-machine) | **Dropped** — subsumed by §6.38 | — |
 | P5 | [Contention diagnosis](#p5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
 | P6 | [The stop control](#p6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
+| P7 | [Longitudinal regression detection](#p7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
 
 ---
 
@@ -653,7 +654,100 @@ control of hardware.
 
 ---
 
+## P7 — Longitudinal regression detection
+
+**One line.** MCF tells you when something on *your* machine got worse, and what
+changed at the same time.
+
+### Where this comes from
+
+§6.7 separates tests from benchmarks and then names a third thing in passing: *"a
+regression detector built on benchmark results is a third thing again, and its
+thresholds are statistical judgments, not assertions."* It is the only artifact
+the intent document names and no milestone builds.
+
+The gap matters because the data is already being kept. MCF accumulates
+conditioned measurements over months (D6), records MCF's own version and
+configuration with each (§3.4), and knows the machine's profile at the time
+(§3.8). Everything needed to say *"your throughput dropped 14 % on the 3rd, and
+the only thing that changed was your driver"* is in the record, unused.
+
+For a solo operator this may be the single most valuable sentence MCF can
+produce, and no leaderboard, corpus or benchmark suite can produce it — it is a
+statement about one machine over time, which is the one thing MCF is uniquely
+positioned to know.
+
+### How it works
+
+**1. Compare like with like.** A regression is only meaningful between results
+sharing an identity (§7.34) — same model, quantization, context, runtime,
+workload. Everything else is a different measurement, not a regression.
+
+**2. Detect against noise, not against a threshold.** A drop is a candidate only
+when it exceeds the historical spread of that same measurement. §3.27's paired
+data helps here: a run whose *internal* ratios held while its absolutes fell
+points at the machine rather than the configuration.
+
+**3. Correlate with what changed.** The record already holds MCF's version, the
+driver, the runtime build, the thermal baseline and the hardware profile. A
+detected drop is reported alongside the diff of everything that changed since
+the last comparable result — which is a *hypothesis*, labelled as one, never a
+cause.
+
+**4. Report, never gate** (A18). A benchmark has no pass condition, so neither
+does this. It is a finding, surfaced when the user looks, and it never fails a
+build or blocks a run.
+
+### What it costs
+
+Small. No new measurement, no new instrumentation, no runtime cost — it is a
+query over data already stored, run when the user asks or when a new result
+lands. Its real cost is statistical judgment: a detector that cries wolf is
+worse than none, because it trains the user to ignore it.
+
+### Collisions
+
+- **A18.** Benchmarks are never a gate, and this is built on benchmarks. It
+  reports; it does not fail anything.
+- **§3.4, A8.** A "regression" across a changed condition is not a regression —
+  it is a confounded comparison. §7.45's machine-change question is a hard
+  dependency: without knowing what changed, the detector attributes a driver's
+  effect to a model.
+- **B4, D5.** Detection runs on demand or on new data, never on a timer. It is
+  a query, not a monitor.
+- **§3.24.** A drop with two prior data points is not a trend, and the report
+  says so.
+
+### Open questions
+
+- What statistic distinguishes a real regression from noise, given that §7.7's
+  acceptance criteria do not exist yet? Probably answered with DEC-007.
+- Does MCF ever surface a regression unprompted, or only when asked? §7.31 asks
+  the same question about contribution prompts, and the answer should probably
+  match.
+- Should improvements be reported too? Almost certainly — a driver update that
+  made things 9 % faster is the same finding with the sign reversed, and
+  reporting only bad news is its own bias.
+
+### Recommendation
+
+**Accept, at M8**, once there is enough history for a comparison to mean
+anything. Blocked in substance on §7.34 (what makes two results comparable),
+§7.45 (what changed underneath) and DEC-007 (what counts as a real difference) —
+all three of which are already open for other reasons, which is a good sign that
+this is a natural consequence of the design rather than an addition to it.
+
+---
+
 ## Changelog
+
+### Version 5 — P7 added
+
+Longitudinal regression detection: the "third thing" §6.7 names in passing and
+no milestone builds, despite the data for it already being kept. It is the one
+statement no corpus or leaderboard can make — what changed on *your* machine —
+and it costs almost nothing, being a query over stored results rather than a new
+measurement.
 
 ### Version 4 — P4 dropped
 

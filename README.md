@@ -33,7 +33,7 @@ know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
 | [rules.md](doc/rules.md) | Rules | 90 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [labs.md](doc/labs.md) | Catalogue | Twenty-two candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
-| [proposals.md](doc/proposals.md) | Proposals | Six features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
+| [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
 | [mockup/](doc/mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
 
