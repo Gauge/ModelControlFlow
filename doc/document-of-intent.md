@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 24 |
+| **Version** | 25 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -860,7 +860,7 @@ of a lab that inherits.
 optimization, and picking the best of eight arms inflates the apparent gain
 whether or not any real difference exists — the garden of forking paths. So a
 swept value is **selected on one split and its improvement reported from
-another** (A10, B125). The number MCF publishes is the validated one, never the
+another** (A10, B-125). The number MCF publishes is the validated one, never the
 winning one, and a sweep whose winner does not survive validation reports *no
 improvement found*, which is a §3.4 null result and a useful one.
 
@@ -3597,6 +3597,495 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 25 — the changelog catches up
+
+Sixteen entries added, for versions 9 through 24. The document had carried
+those changes since they were made and had recorded the *reasoning* for them
+only in the commits that made them, which §8 does not allow: it requires that
+the reasoning outlive the change, and a reader of this document is not a reader
+of a version-control history.
+
+Nothing above this section changed. The entries below were reconstructed from
+the commit that made each change, so they state that change's own reasoning
+rather than a later reading of it.
+
+The gap was found mechanically, by the documentation conformance check B-041
+builds — the front matter claimed version 24 and the newest entry was version
+8. It is the fourth stale-figure defect that check has found and the largest,
+and it is the argument for the check existing.
+
+### Version 24 — the budget has numbers, and failures have a scheme
+
+D24 answers §7.16. Eight figures for MCF's own cost, two for installed
+footprint — separated because §6.31 holds that §VII governs behaviour rather
+than download size and one number cannot honestly do both — and six for the
+interface, with the reference client bounded at a mid-range phone about ten
+years old. Two of the figures are prohibitions rather than thresholds: zero
+timer wakeups while idle, zero external requests from the interface. Until this
+existed §VII was unfalsifiable and six M0 items had nothing to assert against.
+
+The footprint figures are the least certain, since §XVI's vendoring and D23's
+tiering decide them and neither has been built. D4's prototype exists partly to
+check them, and the entry is amended if it goes badly rather than defended.
+Every figure is a ceiling rather than a target.
+
+[taxonomy.md](taxonomy.md) answers §7.10, open since the first version of this
+document. The design decision worth recording is the split into three axes —
+category, attribution, disposition — rather than one tree, because a single tree
+would have had to encode what failed, whose fault it was and what MCF did about
+it, and the product of those is unmanageably large. Sixteen domains, 110 codes,
+nothing deeper than three segments.
+
+Two of its features are load-bearing elsewhere. `model.*` classifies the model
+under test's behaviour and is a measurement rather than a failure of MCF, which
+makes §6.17's *how it failed matters more than the pass rate* structural rather
+than aspirational. And `internal.unclassified` is a tracked defect metric with a
+target of zero rather than a bucket: every occurrence is a missing category, and
+adding the category is the fix.
+
+### Version 23 — a fully-vendored stack, for now
+
+D23's second tier was deferred rather than adopted. MCF ships a stack it
+controls end to end, and anything requiring a component it cannot vendor is
+avoided and recorded as a candidate for later — the same treatment as the
+declined tier, reached by a different route.
+
+The scientific argument points the same way as the simplicity one, which is why
+this is comfortable rather than a compromise. A stack MCF ships entirely is a
+stack MCF has pinned entirely, so measurements are taken against conditions MCF
+controls rather than conditions it merely records. §3.12 puts reproducibility
+above convenience, and a platform-provided runtime would be an unpinned variable
+in every result taken through it, permanently.
+
+The cost is stated rather than discovered later. Vendorable accelerator paths
+are the open ones, and on hardware whose vendor-optimized runtime is closed a
+vendored path is frequently slower. So MCF's numbers describe *the stack MCF
+ships, not the hardware's ceiling* — a §3.4 condition that travels with every
+absolute figure, because a user comparing against a vendor-optimized tool would
+otherwise conclude their hardware is slow.
+
+What survives is what MCF is for: §3.27 already holds that the durable output is
+the comparison, and a ratio between two configurations on one pinned stack is
+unaffected by that stack being slower than another. What degrades is the
+absolute figure, which is the least transferable quantity anyway.
+
+B-321 registers the deferred-engine list, so the omissions are maintained rather
+than silent.
+
+### Version 22 — three tiers of engine support
+
+D23 resolves the sharp half of §7.47 by separating two questions that had been
+conflated: whether a component is free to use, and whether its terms permit
+redistribution inside a copyleft binary. Most accelerator runtimes are the first
+and not the second, and only the second is what D22 makes difficult.
+
+*Vendored* — permissive, shipped, pinned — is the preferred tier and where the
+engines MCF principally wants already sit. *Platform-provided* — present on the
+user's machine already, detected and used but never redistributed — supports a
+closed vendor runtime without shipping it and without negotiating anything,
+because nothing is being distributed. *Declined* covers anything needing a
+negotiated licence or payment, which is a normal outcome under §3.13 rather than
+a failure, recorded with its reason and revisited if the project matures enough
+for negotiating to be worth someone's time.
+
+Two constraints keep this from eroding what it touches. Tier one is never empty:
+a vendored engine always works with no external dependency, so tier two is an
+accelerated path on top of a working baseline and §XVI's no-errand rule
+survives. And tier two's cost is recorded rather than absorbed: a runtime MCF
+did not ship is one it did not pin, so its version joins engine identity, and
+measurements taken across two vendor runtime versions are not the same
+configuration.
+
+Declining a tier-three engine does not weaken §III, since §6.3 governs attempt
+and diagnosis rather than success.
+
+### Version 21 — copyleft, journal durability, dedicated contributions
+
+D22 puts MCF under the GPL-3.0 family. Spin-offs are welcome and must stay open;
+selling remains permitted, but the source travels with the binary, which
+extinguishes the close-it-and-sell-it case without a non-commercial licence that
+would have narrowed what §XVI may vendor.
+
+The GPL-versus-AGPL choice stays open and leans GPL-3.0. AGPL's trigger is
+network interaction and MCF's core feature is serving over a network, so its
+clause reaches further here than it would for a desktop application — while what
+it protects is narrower than it looks, since §5 already puts the aggregating
+website out of scope and a competing hosted service would be its own code rather
+than a fork.
+
+One consequence surfaced only once the choice was made: copyleft interacts
+awkwardly with proprietary accelerator runtimes. The engines and libraries MCF
+wants are permissive and unproblematic, but vendor inference runtimes are
+frequently closed, and §XVI's instruction to *ship* rather than *link against*
+weakens the system-library argument copyleft software normally relies on. §XVI
+and D22 may therefore collide exactly where MCF wants to support an accelerator.
+The likely resolution — treat a vendor runtime as a detected platform capability
+rather than something shipped — is recorded rather than assumed, and it may
+exclude an engine §7.4 would otherwise prefer.
+
+D20 answers §7.49: the database is a rebuildable index over an append-only
+journal, crash safety is configuration, export is one command sharing the
+serialization §XIV and P2 need, nothing automatic leaves the machine, and a
+failed replay reports the extent of the loss rather than opening with a shorter
+history.
+
+D21 answers §7.48: contributions are dedicated to the public domain, stated at
+the moment of sharing, with no withdrawal right — because an unkeepable promise
+is worse than an honest refusal.
+
+### Version 20 — candidate answers for the licence, durability and rights gaps
+
+None of the three resolved; all three narrowed to a choice small enough to make.
+
+§7.47 records the stated intent — as open as possible, spin-offs welcome, a mild
+and loosely held preference against others selling it — and the tension that
+decides it. Every licence recognised as open source permits commercial use, and
+a non-commercial licence would narrow what §XVI may vendor rather than widen it,
+being incompatible with copyleft components. The concern behind keeping people
+from selling it is usually narrower than the words, and copyleft answers that
+while staying open. The choice is permissive versus copyleft, and both honour
+the intent.
+
+§7.49 gets a recommended architecture proportionate to what most installations
+do: the database is a rebuildable index over an append-only journal, which is
+D16's principle applied to durability and converts corruption from fatal to
+recoverable at the cost of a write path rather than a subsystem. Crash safety is
+configuration. Export is one command and one file, nearly free because §XIV and
+P2 need the serialization anyway. No replication and no automatic off-machine
+backup, since §3.13 refuses the weight and A17 forbids the egress.
+
+§7.48 gets a minimal candidate so that the absence of an answer does not become
+one: contributions offered under a public-domain dedication, stated at the
+moment of sharing, with no withdrawal right — because §3.20 already establishes
+that publication cannot be undone, and offering to undo it would be a promise
+MCF cannot keep.
+
+### Version 19 — three critical gaps recorded
+
+§7.47, and it is structural: MCF never states its own licence, which is odd for
+something D7 puts in other people's hands — and the larger half is inherited.
+§XVI requires MCF ship everything it needs, so vendoring an inference engine
+means inheriting that engine's obligations. An engine whose terms are
+incompatible is one MCF cannot ship whatever its merits, which means §7.4's
+engine question cannot be settled without knowing which candidates are eligible.
+
+§7.48: what rights a contribution carries. §7.36 asks whether model licences
+constrain publishing measurements about a model; nobody had asked what the
+contributor grants or retains. It has to be answered before anything is
+collected, because data gathered under unstated terms cannot be retroactively
+given terms, and a withdrawal right may be a promise §3.20's irreversibility
+makes unkeepable.
+
+§7.49: what protects the record from loss. D6 notes that a single file is a
+single point of corruption and calls it a §3.1 obligation, and nothing
+discharged it. The record is the science — months of measurements whose
+conditions are gone, so none of it is reconstructible by re-running. A lost
+record is the loss of every claim MCF has made.
+
+B-301 registered alongside: artifact checksums were verified at acquisition and
+never again, so re-verifying before a long run catches silent disk corruption
+before it produces a garbage result rather than after.
+
+### Version 18 — the seed set closes the identity question
+
+D19 settles the last edge of identity, against the intuitive answer. A single
+fixed seed looks like the reproducible choice and is not: thirty trials at one
+seed with identical inputs produce thirty identical outputs, which is `n=1`
+wearing the costume of `n=30` and destroys §3.4's uncertainty requirement
+precisely where it matters. Fixing one seed conceals variance rather than
+reducing it.
+
+The answer is a declared seed set — trial *i* uses seed *i*, the same list on
+every machine. Reproducible across systems, genuinely varied within a run, and
+not exposed to an unlucky draw, since the result rests on the whole set. Its
+size is the trial count, so it is the same decision as §7.23's statistics.
+
+A seed is neither good nor bad: it selects a trajectory, and the mapping from
+seed to outcome is chaotic and task-specific, so there are seed-by-task
+interactions but no systematically underperforming seed. The seed is a condition
+rather than identity, since sampling parameters change the distribution and a
+seed only draws from it — which also honours §6.17's refusal to engineer
+stochasticity away.
+
+Two caveats are recorded with it. Identical seeds do not guarantee identical
+output, because floating-point reduction order and kernel scheduling make
+accelerator inference non-deterministic anyway, so a seed set buys comparable
+inputs rather than identical outputs. And the set is validated periodically
+against a larger random one, because §6.16's rule that the instrument does not
+grade itself applies here too.
+
+§7.34 closed. Two of the three structural M0 gates answered; only the
+performance budget remained.
+
+### Version 17 — sampling is identity, and the recommendation is verified
+
+D18 answers §7.46. Sampling parameters belong to a configuration's identity: a
+model cannot run without them, §6.6 already lists them among what MCF tunes, and
+§XV cannot reproduce behaviour without them.
+
+The model's own recommendation becomes the default rather than a house style,
+and is marked *declared* until MCF has tested it. This is §3.18 applied one
+level out from capabilities — recommendations are measured, not believed. A
+global default temperature would measure every model under settings some were
+never designed for, which is §X's misconfiguration problem arriving through the
+front door.
+
+Sweeps do the verifying, and a publisher's recommendation turning out not to be
+optimal here, or not optimal for this workload, is exactly the kind of finding
+this project exists to produce. *Better* stays per workflow, so a sweep reports
+per laboratory rather than crowning one value.
+
+One hazard is written into the decision rather than left to be discovered. A
+sweep is hyperparameter optimization, and picking the best of eight arms
+inflates the apparent gain whether or not a real difference exists. A swept value
+is selected on one split and its improvement reported from another, so the
+published number is the validated one and never the winning one — and a winner
+that fails validation reports *no improvement found*, which is a useful null
+result.
+
+L26 added for the sweep itself, with coordinate descent around the declared
+values rather than a full grid, and the declared value always present as an arm
+so the output is a comparison against the recommendation.
+
+### Version 16 — placement and engine build settled; sampling split out
+
+Placement became a declared intent in the configuration, with the realized
+layout recorded as a condition. Divergence between them is a finding, and often
+an informative one — it is how a configuration visibly fails to transfer.
+
+Engine build became identity. An engine that changes silently colours every
+measurement taken after it, so the fragmentation cost is paid deliberately:
+grouping-as-a-view recovers what is needed, while discovering that a corpus
+silently mixed two engines is unrecoverable.
+
+Sampling parameters got their own void, §7.46, since they pull in three
+directions rather than two and the scope needed narrowing: chat template and
+stop conditions are not sampling preferences but correctness, established by
+calibration and verified by probe. Getting those wrong makes a capable model look
+mediocre; getting temperature wrong produces a different, still-valid experiment.
+
+### Version 15 — raw trials kept, identity is the configuration
+
+D16 answers §7.33. Raw trials always; summaries are derived at query time and
+never written in place of what produced them. Barely a choice: §6.17 needs the
+shape of a bimodal distribution, §3.27 needs the pairing, and §7.7 has not
+decided what statistic matters, so a frozen summary is a question that can never
+be re-asked. Interior detail is declared per laboratory and off by default,
+because the constraint is cardinality rather than disk — a trial row is a hundred
+bytes and a year of heavy use is tens of megabytes against weights measured in
+gigabytes. Where it grows, it is downsampled with the thinning recorded, since a
+thinned series that does not say so is a silent alteration of evidence.
+
+D17 answers §7.34 in principle. Identity is the runnable configuration and
+hardware is a condition, so the same configuration on two machines is one thing
+observed twice. Excluding hardware is what makes the corpus possible at all:
+measurements group by configuration, and hardware becomes the axis they are
+analysed along rather than a key giving every machine its own universe. Grouping
+is a query-time view, which is D16's principle one level up — keep the
+fine-grained thing, derive the coarse one.
+
+§7.34 narrowed to three boundary parameters — placement, engine build, sampling
+— with candidate answers and the test recorded: err toward more in the identity,
+because a group can be widened and never narrowed.
+
+B58 gives a laboratory freedom over its own tooling and binds it to A27's
+restore obligation, since a lab that leaves a warm cache behind silently changes
+the next lab's first trial.
+
+### Version 14 — three gaps found by auditing what is unanswered
+
+§7.44: §6.36 and B41 both rest on a *declared workflow*, and nothing said how
+one is declared or what the vocabulary is. A fixed list is legible and wrong for
+anyone between two entries; a weighting is exact and asks users to have opinions
+about instruments they have never run; inference from their own traffic is
+accurate and invasive. It is the practical half of §7.2 and should probably be
+answered with it.
+
+§7.45: §7.13 asks whether measurements survive MCF's own upgrades, and nobody
+had asked the same of the hardware, which changes far more often. A driver update
+makes yesterday's results describe an apparatus that no longer exists, and the
+failure is silent — a user reads the driver's effect as the model's.
+
+P7 registers longitudinal regression detection, the third thing §6.7 names in
+passing and no milestone builds. The data for it is already kept: conditioned
+measurements over months, MCF's version, the driver, the thermal baseline. For a
+solo operator it may be the most valuable sentence MCF can produce, and it is
+the one statement no corpus can make.
+
+Also corrected: the retired-void index still described §7.3 as answered by
+agentic task success, which version 9 replaced with *quality is plural*. A stale
+pointer in an index is how a superseded answer survives its own correction.
+
+### Version 13 — the comparison is durable, and the two directions
+
+Two principles, both following from the observation that MCF runs on machines
+nobody controls.
+
+§3.27: common-mode noise cancels in a ratio and accumulates in a scalar, so the
+comparison is the durable output and the absolute number is local. The
+consequences are technique rather than philosophy — arms are interleaved within
+one session rather than run in blocks, order is randomized, and the reported
+quantity is the paired difference distribution rather than two summaries
+subtracted. Thirty runs of A followed by thirty of B reports the afternoon's
+drift as a difference between configurations, and on these machines that drift
+is not small.
+
+This changed what §XIV should accumulate. A tokens-per-second figure from a
+stranger's machine is nearly uninterpretable; *on hardware like this, A beat B by
+roughly this much* is what another user needs, and it survives the mess it came
+from. The corpus should chiefly hold comparisons.
+
+It narrows the exclusive window to two jobs — small effects, and numbers intended
+to leave the machine — because interleaving already cancels what the window
+would have excluded. Most of what a user wants does not need a quiet machine at
+all. And it largely defuses §7.43: a partial box misleads mainly by licensing a
+cross-session comparison, and if comparisons are paired within a session the box
+is never what holds conditions still. A candidate answer was recorded there
+rather than the void being resolved.
+
+§3.28: gather precisely, recommend generally. Inward, as accurate as the machine
+allows. Outward, as general as the evidence supports, because false precision is
+noise wearing the costume of rigour. Reconciled by direction rather than
+compromise — generalization happens in the rendering and never in the record, and
+the precision is always one step away.
+
+### Version 12 — resource boxes, and measuring the politeness
+
+Two additions, both turning a comfort claim into a measured quantity.
+
+Yielding is itself a measurement, on both sides. §3.26 promised MCF would be a
+good guest, which was resting on intention. There are two costs and they belong
+to different disciplines under D10: what yielding costs the *user* is an
+application test — does a background run stutter an interactive workload — and
+what constrained resources cost the *model* is a laboratory. L24 and L25 were
+added for the second, B52 for both.
+
+D15 adds resource boxes: a declared allocation a model runs inside. This is the
+third answer to contention alongside the exclusive window and yielding, and the
+most useful on a machine somebody is using, because it removes contention as a
+confound without removing the machine from its owner, and makes a measurement
+reproducible across sessions.
+
+The limit is stated in the same breath, because building on it unstated would be
+worse than not having it: a box bounds what a process may take, not what it may
+be denied. Memory bandwidth, cache, accelerator time-slicing, PCIe and thermal
+headroom are shared and largely unpartitionable on consumer hardware, and those
+are the dimensions that determine tokens per second. Every boxed result names
+what its box did not bound, boxed and unboxed results are never compared, and
+§6.41 keeps the exclusive window rather than letting a box quietly replace it.
+
+That split is a feature: a best-case timing on a quiet machine answers *what this
+machine can do*; a boxed timing under stated load answers *what the user gets
+while working*. Both are first-class, neither is comparable with the other, and
+§3.19 arguably favours the second.
+
+§7.43 and DEC-043 record what nobody has established — which box dimensions are
+enforceable per platform, and whether a partially-enforceable box should be
+offered at all or refused as misleading.
+
+### Version 11 — MCF is a guest on the user's machine
+
+D8 had held that a laboratory owns the machine for the duration of its run. On a
+dedicated rig that is rigorous; on the average machine MCF is actually installed
+on, it makes the heavy laboratories unusable, and a tool that takes the hardware
+for a day is a tool nobody runs twice.
+
+The correction was already latent in §6.25 and had been generalized past its
+evidence. Exclusivity is a property of *timings*, never of laboratories. A timing
+under contention measures the contention; whether a tool call parsed or a loop
+terminated is unperturbed by the user opening a browser.
+
+The consequence is favourable rather than a compromise: the runs that need a
+quiet machine are the short ones. Timing work is tens of minutes and opens an
+announced, bounded, schedulable window. Behaviour work is hours to days and
+yields — low priority, behind user traffic, pausable, with contention recorded
+rather than prevented.
+
+Two caveats make that honest and are obligatory rather than advisory. A yielding
+run's deadlines are token budgets rather than wall clocks, because a task that
+failed on a busy machine is a measurement of the machine. And an environment
+failure is classified apart from a model failure, because an out-of-memory
+caused by competition is not the model giving up. Without both, every yielding
+run is quietly contaminated.
+
+§3.26 states what §1 already implied one level out: a support structure that
+consumes what it supports has failed, and so has a tool that makes the machine
+unusable while it works. Hosting yields to the user; nothing yields to hosting.
+
+§7.42 records what this rests on — what yielding actually guarantees, given that
+a submitted accelerator kernel does not yield mid-flight — and DEC-042 is marked
+a hard gate, since a background run that stutters an interactive application
+fails §3.26 rather than merely disappointing.
+
+### Version 10 — tiers, budgets, and the boundary of autonomy
+
+D12 settles §XV: import is convenience. Paste an identifier, host it, done —
+nothing conditional on measuring anything. Where diagnostics happen to correct
+it, the delta is recorded because it is unusually clean data and costs nothing,
+but it is a byproduct that may never gate or slow an import. The earlier reading
+had the tail wagging the dog.
+
+D13 records four tiers — smoke, calibration, characterization, evaluation — and
+the finding that their order is a correctness requirement rather than a
+courtesy: §X calls a misconfigured model a measurement error, so evaluating an
+uncalibrated configuration spends a day measuring the misconfiguration.
+
+D14 answers the cost problem. The product of models, configurations,
+laboratories and trials is unbounded, so selection is a first-class feature and
+the interaction inverts: the user spends a budget rather than picking a list. A
+lab declares its work in units it can count, the machine supplies the rate from
+the characterization tier, and the product is a banded estimate scored against
+what actually happens. Budgets produce proposals that state their exclusions,
+never silent truncations, and results are anytime.
+
+§6.38 gives the corpus a job without breaking §6.28: it narrows the search,
+local measurement decides. §3.24 guards the failure mode a corpus makes
+available — the confident negative drawn from silence — with *unreported* rather
+than *unsupported*, a sample count on every claim, and no option hidden.
+
+§3.25 draws the boundary the widest reading of *improve* needed: reversibility.
+§6.39 applies it to environment control as a ladder — report, wait,
+ask-suspend-restore, never terminate — with everything changed recorded as a
+measurement condition and restored afterwards.
+
+P4 dropped, superseded by §6.38: a pairwise comparison is a sample of two, and
+the corpus is a sample of everyone.
+
+### Version 9 — quality is plural, and a catalogue of laboratories
+
+The correction: D2 had held that quality *is* agentic task success. That fails
+on contact with the ecosystem, because many models have no tool-calling
+capability at all, and scoring them near zero says nothing about them except
+that the suite was the wrong instrument. A number that is precise, reproducible
+and meaningless is §6.1's failure mode reached by a new route.
+
+D2 rewritten. Quality is a set of separately measured, separately reported
+qualities, each from a laboratory built for one workflow class, each run only
+where the model is capable of it, each mattering in proportion to how much the
+user's work resembles it. MCF publishes a profile and never a score. §IX amended
+to match: agentic remains the first laboratory built, because it is the shape
+this author uses, but it is one shape rather than the definition.
+
+§3.23 is the joining rule between capability discovery and the laboratories, and
+the reason the correction was needed: four outcomes, never three — measured, not
+applicable, unknown, failed. Collapsing the middle two into the last is what made
+the old D2 look reasonable. §6.36 keeps plural quality from becoming a research
+project handed to the user; §6.37 admits customizable laboratories whose results
+are local, non-comparable and never contributed.
+
+B40, B41 and B42 encode those, all three as types rather than conventions,
+because an absent capability rendering as a low number looks like data and reads
+like a verdict.
+
+[labs.md](labs.md) drafts twenty laboratories in four families, split by what
+gates them rather than by subject, since the gate determines whether a lab can
+make a claim about a given model at all. The first three are named: throughput,
+structured output, agentic — one timing-class lab with no gate, one cheap gated
+behaviour-class lab, one heavy multi-turn lab.
+
+P1 rescoped from automatic session capture to a workload slot, with the capture
+version recorded as refused rather than deleted. P6 accepted as B-210.
 
 ### Version 8 — self-containment, privilege, and what the laboratories are allowed to do
 

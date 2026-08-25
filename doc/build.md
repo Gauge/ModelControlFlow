@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -29,6 +29,7 @@ with B-014.
 | 5 | [Reproducibility](#5--reproducibility) |
 | 6 | [Dependencies](#6--dependencies) |
 | 7 | [Generated code](#7--generated-code) |
+| 8 | [The documents](#8--the-documents) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -204,7 +205,37 @@ taxonomy makes it a tracked defect metric with a target of zero rather than a
 bucket: every occurrence is a missing category, and adding the category is the
 fix.
 
+## 8 · The documents
+
+The format contract in the repository README governs every Markdown file in
+`doc/`, and `checks/tests/documents_conform.rs` is what fails when one leaves
+it. Twelve checks, in the gating tier: a title, front matter naming type,
+version and status, a numeric version, a changelog that is the last section and
+that accounts for the version the front matter claims, no derived document
+claiming a source version that does not exist, every relative link resolving,
+and every `B-*`, `DEC-*`, `§`, rule, resolution, laboratory, milestone and
+proposal citation resolving to the document that defines it.
+
+It exists because reading does not catch this class of defect. Its first run
+found the intent document's changelog stopped at version 8 while its front
+matter claimed version 24, a citation written without its hyphen so that it
+named a rule that does not exist, and — before it was written — a register whose
+front matter was two versions behind its own changelog and whose header counts
+were three revisions stale.
+
+**One clause is deliberately not fully checked.** The contract asks for present
+tense outside changelogs, and that resists a machine. Only the constructions the
+README names outright are checked; the rest stays a stated `review` obligation.
+B16 counts a review check as a cost, and claiming a machine check that is really
+a keyword search would be worse than counting it.
+
 ## Changelog
+
+### Version 3 — the documents are checked too
+
+§8 added when B-041 landed. The build document is where the checks that gate a
+change are described, and the documentation checks gate a change in exactly the
+way the code checks do — they run in the same command and fail it the same way.
 
 ### Version 2 — the lints are checked, and one file is generated
 
