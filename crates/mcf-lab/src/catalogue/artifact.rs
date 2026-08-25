@@ -32,6 +32,22 @@ pub(super) const MISSING: Scenario = Scenario {
     run: missing,
 };
 
+/// The file is not a format MCF reads.
+pub(super) const FORMAT_UNSUPPORTED: Scenario = Scenario {
+    id: "artifact/format-unsupported",
+    produces: Category::ArtifactFormatUnsupported,
+    summary: "a file MCF does not read is refused by name, not attempted",
+    run: format_unsupported,
+};
+
+/// The file is the format MCF reads, and disagrees with itself.
+pub(super) const FORMAT_MALFORMED: Scenario = Scenario {
+    id: "artifact/format-malformed",
+    produces: Category::ArtifactFormatMalformed,
+    summary: "a GGUF that ends before what it says is in it names where it stopped",
+    run: format_malformed,
+};
+
 /// The artifact is there and will not be read.
 pub(super) const UNREADABLE: Scenario = Scenario {
     id: "artifact/unreadable",
@@ -44,6 +60,48 @@ pub(super) const UNREADABLE: Scenario = Scenario {
 ///
 /// Computed rather than written out, so there is no parse to fail and no
 /// unreachable arm to explain (see `Checksum::of`).
+/// A GGUF header, as far as a scenario needs one: the magic, a version this
+/// reader reads, and counts. Written out here rather than borrowed from the
+/// reader's tests, because a scenario that shared a builder with the code under
+/// test would be a scenario about the builder.
+fn gguf_header(tensors: u64, metadata: u64) -> Vec<u8> {
+    let mut bytes = b"GGUF".to_vec();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(&tensors.to_le_bytes());
+    bytes.extend_from_slice(&metadata.to_le_bytes());
+    bytes
+}
+
+fn format_unsupported(world: &World) -> Outcome {
+    let path = world.path("model.onnx");
+    // A real file, in a format MCF has no reader for. The observable, not its
+    // cause (D26): what MCF meets is bytes that are not GGUF.
+    if let Err(error) = std::fs::write(&path, b"ONNX\x00\x00\x00\x08not a gguf") {
+        return Outcome::Unexpected(format!("could not write the artifact: {error}"));
+    }
+    match mcf_standin::gguf::read(&path) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a file that is not GGUF was read as one".to_owned()),
+    }
+}
+
+fn format_malformed(world: &World) -> Outcome {
+    let path = world.path("model.gguf");
+    // A GGUF that says it holds one metadata entry and then stops. This is what
+    // a truncated download leaves behind, and what a reader must refuse rather
+    // than fill in.
+    let mut bytes = gguf_header(0, 1);
+    bytes.extend_from_slice(&12_u64.to_le_bytes());
+    bytes.extend_from_slice(b"general.arch");
+    if let Err(error) = std::fs::write(&path, &bytes) {
+        return Outcome::Unexpected(format!("could not write the artifact: {error}"));
+    }
+    match mcf_standin::gguf::read(&path) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a truncated GGUF was read as complete".to_owned()),
+    }
+}
+
 fn any_digest() -> Checksum {
     Checksum::of(mcf_core::digest::sha256(b""))
 }

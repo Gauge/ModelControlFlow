@@ -22,3 +22,6 @@ workspace = true
 mcf-core = { path = "../crates/mcf-core" }
 mcf-lab = { path = "../crates/mcf-lab" }
 mcf-record = { path = "../crates/mcf-record" }
+# The model-file reader is the fifth place untrusted bytes enter (B-360, §3.7),
+# and the fuzz tier examines it for the same reason it examines the others.
+mcf-standin = { path = "../crates/mcf-standin" }

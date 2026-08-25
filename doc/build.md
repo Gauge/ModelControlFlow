@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 15 |
+| **Version** | 16 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -63,7 +63,8 @@ reach back and weaken a type in `mcf-core`.
 |---|---|---|
 | `mcf-core` | The types every rule is enforced through — failure (B-003), `Measurement` (B-005), `Provenance` (B-006), the time model (B-184), configuration identity (B-272), degradation (B-008), build identity — and the machine profiler those types describe (B-013) | — |
 | `mcf-record` | The journal, and the index derived from it (D20, D6) | `mcf-core` |
-| `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-record` |
+| `mcf-standin` | MCF's own implementation of inference: the model-file reader, and the operations that will run one (D31, B-360) | `mcf-core` |
+| `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-record`, `mcf-standin` |
 | `mcf-hub` | Resolving, fetching and pinning artifacts (§III) | `mcf-core`, `mcf-record` |
 | `mcf-serve` | The daemon, engine adapters, the serving surface (§VI) | `mcf-core`, `mcf-record` |
 | `mcf-bench` | Measurement, and the laboratories that produce it (§II, §XIII) | `mcf-core`, `mcf-record`, `mcf-serve` |
@@ -78,6 +79,13 @@ the declaration has drifted and can no longer be read as the architecture.
 `mcf-bench` depends on `mcf-serve` and not the reverse, so no serving path can
 acquire a dependency on the benchmark harness — A18's separation of tests from
 benchmarks, drawn in the dependency graph.
+
+`mcf-standin` is an engine rather than an adapter, which is why it is its own
+crate and not part of `mcf-serve`: B65 forbids a stand-in from reporting a
+speed, and a crate boundary is how a result from it reaches a surface only
+through the handle that carries its mark (A5). `mcf-lab` depends on it because
+A13 requires a scenario for every category MCF's code constructs, and the
+model-file reader constructs two.
 
 ## 3 · Building
 
@@ -568,6 +576,13 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 16 — the stand-in engine has a crate
+
+§2 gains `mcf-standin` with the reason it is separate: an engine that cannot
+report a speed keeps that prohibition through a crate boundary as well as
+through a type. `mcf-lab` gains an edge to it, because a scenario that produced
+a model-file failure by hand would be a scenario about a mock.
 
 ### Version 15 — how a figure is grown on purpose
 
