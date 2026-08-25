@@ -1,52 +1,42 @@
-# ModelControlFlow — Roadmap
+# Roadmap
 
-**Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
-Revision 6. Rules: [rules.md](rules.md). Work register: [backlog.md](backlog.md).
-Stage mockups: [mockup/](mockup/).
+| | |
+|---|---|
+| **Type** | Plan — nine milestones, each a vertical MVP slice |
+| **Version** | 2 |
+| **Status** | Living |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6 and governed by [rules.md](rules.md) |
+| **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
----
+**Every milestone is a product, not a phase.** The MVP rule applies per
+milestone rather than once to the project: each ends with something a competent
+operator can install, run and get value from on its own, and each is a
+*vertical* slice — acquisition, record, failure handling, lab coverage, budget
+assertion and surface, at whatever depth that milestone requires. A milestone
+that delivers a layer rather than a capability is mis-drawn; horizontal layering
+is the specific failure mode this ordering prevents.
 
-## How this roadmap is built
+## How to read it
 
-**Every milestone is a product, not a phase.** The MVP rule is applied per
-milestone rather than once to the project: each one ends with something a
-competent operator can install, run, and get value from on its own, and each one
-is a *vertical* slice — acquisition, record, failure handling, lab coverage,
-budget assertion and surface, all present at whatever depth that milestone
-requires. A milestone that delivers a layer rather than a capability has been
-mis-drawn, and horizontal layering is the specific failure mode this ordering
-exists to prevent.
+**Nothing is deferred that is ruinous to retrofit.** The record (§3.3, A6), the
+laboratory (§3.17, A13) and the performance budget (§3.13, B20) are present from
+M0. A milestone producing numbers without conditions produces nothing that
+survives §3.4; a budget introduced late is a budget already blown.
 
-**Three properties are never deferred to a later milestone.** They are cheap to
-build in and ruinous to retrofit, and each one is a direct instruction of the
-Document of Intent:
+**The ordering is dependency-truthful, then value-ordered.** §1 names the third
+of the four verbs — *Judge* — as the point of the project, and acquisition and
+serving as table stakes. That does not put Judge first: it makes Judge the thing
+everything else exists to enable, and it cannot be honest before the instrument
+is trustworthy (M0), before there is anything to judge (M1–M2), or before models
+under test are configured the way they were designed to run (M3) — §X calls a
+misconfigured model a measurement error. Earliest is therefore the work with the
+most downstream design blocked behind it, which is §7's own ordering principle.
 
-1. **The record** (§3.3) — conditions, failure context and provenance, from the
-   first commit. A milestone that produces numbers without them has produced
-   nothing that survives §3.4.
-2. **The laboratory** (§3.17) — every failure a milestone claims to handle has a
-   scenario that produces it, in that same milestone. §VIII is how anything here
-   gets believed.
-3. **The budget** (§3.13) — footprint, idle cost, cold start and added latency
-   are asserted in CI from M0 onward. §VII is a mood until numbers exist, and a
-   budget introduced late is a budget already blown.
-
-**Ordering rationale.** §1 of the Document of Intent says the third of the four
-verbs — *Judge* — is the point, and that acquisition and serving are table
-stakes. That does not make Judge first: it makes it the thing everything else is
-built to enable, and it cannot be honest before the instrument is trustworthy
-(M0), before there is anything to judge (M1–M2), or before the models under test
-are configured the way they were designed to run (M3), since §X calls a
-misconfigured model a measurement error. The ordering below is therefore
-**dependency-truthful and value-ordered within that constraint**: earliest is the
-work with the most downstream design blocked behind it, which is §7's own
-ordering principle.
-
-**Milestones are gated by decisions, not by dates.** Each names the §7 voids it
-must close first. Per §8, closing one means amending the Document of Intent in
-place, not settling it in code and hoping the document catches up. No dates
-appear here deliberately: §4 accepts that rigor costs time, and a schedule would
-be the first thing to erode it.
+**Milestones are gated by decisions, not dates.** Each names the §7 voids it
+closes first; closing one means amending the intent document in place (§8), not
+settling it in code and hoping the document catches up. Dates are omitted
+deliberately — §4 accepts that rigor costs time, and a schedule is the first
+thing to erode it.
 
 ---
 
@@ -64,8 +54,8 @@ be the first thing to erode it.
 | **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2, §7.26 |
 | **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14, §7.15 |
 
-Each milestone's finished state is drawn in `mockup/M<n>-*.md`. Those are
-sketches of intent, not committed designs — see [mockup/README.md](mockup/README.md).
+Each milestone's finished state is drawn in `mockup/M<n>-*.md`: sketches of
+intent, not committed designs ([README.md](README.md#mockups)).
 
 ---
 
@@ -421,3 +411,25 @@ Every milestone above is subject to all 60. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
+
+---
+
+## Changelog
+
+### Version 2 — standardized
+
+Restated to the format contract in [README.md](README.md): front matter,
+present tense, changelog last. The three-properties block collapses into one
+paragraph citing A6, A13 and B20 rather than restating them — the roadmap is not
+where rules live. M7 gains DEC-026 as a gate, and M0, M1, M5 and M7 gain the
+reference-model work introduced by §XII.
+
+### Version 1 — the work is sequenced
+
+Nine milestones drawn from the intent document, each a vertical MVP slice with
+its own product, gating decisions, explicit non-goals and exit criteria.
+
+The ordering was the substantive decision. Judge is the point of the project and
+is nonetheless seventh, because a judgment made by an untrustworthy instrument
+on a misconfigured model is worse than no judgment. Everything ruinous to
+retrofit — the record, the laboratory, the budget — was pulled into M0 instead.

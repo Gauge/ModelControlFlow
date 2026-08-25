@@ -1,5 +1,13 @@
 # M3 — Right by construction
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M3](../roadmap.md#m3--right-by-construction) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf probe <model>` — MCF establishes what a model can actually do
 by asking it to do the thing, configures accordingly, and reports where the
 artifact's claims and its behaviour diverge.
@@ -182,7 +190,7 @@ MCF 0.1.0-m3 → 0.2.0-m3
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -195,3 +203,12 @@ MCF 0.1.0-m3 → 0.2.0-m3
 | §3.4 uncertainty | Capabilities are rates with intervals and n, never booleans |
 | §7.25 / DEC-025 | An upgrade that changes a probe asks rather than drifts |
 | §5 not a leaderboard | The numbers are local, conditioned and unpublished |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

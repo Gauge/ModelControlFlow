@@ -1,5 +1,13 @@
 # M5 — The measurement
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M5](../roadmap.md#m5--the-measurement) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf bench` — a performance number taken on this hardware, with a
 stated method, a sample count, a spread, and the conditions in force.
 
@@ -175,7 +183,7 @@ ESTIMATES  (fast, labelled, never comparable with the above)
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -190,3 +198,12 @@ ESTIMATES  (fast, labelled, never comparable with the above)
 | §6.16 no simulated timings | Every figure here comes from real hardware, by construction |
 | §6.7 not a gate | Benchmarks have no pass condition and never fail CI |
 | §4 estimates | Kept structurally separate and never promotable |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

@@ -1,89 +1,75 @@
-# ModelControlFlow — Backlog
+# Backlog
 
-**Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
-Revision 6. Companion to [roadmap.md](roadmap.md). Governed by [rules.md](rules.md).
+| | |
+|---|---|
+| **Type** | Register — every outstanding decision and build item |
+| **Version** | 2 |
+| **Status** | Living |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**What this is.** The single register of outstanding work. Every item here traces
-to a citation in the Document of Intent — an intent (§I–§XI), a principle (§3.x),
-a conflict resolution (§6.x), or a void (§7.x). An item with no citation is a
-finding, not a task: it means intent is missing, and the correct response is to
-record a void in §7 rather than invent the intent here.
+**130 items: 26 decisions, 104 build items.** Every item cites the clause that
+justifies it; an item that cannot cite is a finding, not a task, and the
+response is to record a void in §7 rather than invent intent here (A23).
 
-**Relationship to §7 (Voids).** The Document of Intent's §8 requires that voids
-be recorded and resolved *in place*, in §7, and migrated into §3 or §6 when
-answered. This backlog therefore **tracks** those voids rather than relocating
-them: §7 remains the authoritative statement of each open question, and the
-`DEC-*` items below are the scheduled acts of deciding them. Deleting §7 to
-populate this file would have destroyed the reasoning the document exists to
-preserve. Every other item — `B-*` — is implementation work that did not
-previously exist in written form anywhere.
+## How to read an item
 
-**How to read an item.**
+| Field | Meaning |
+|---|---|
+| **ID** | Stable for life (C5). `DEC-*` is a decision, `B-*` is build or verification work. |
+| **Cites** | The clause of intent that justifies the work. |
+| **Done when** | The falsifiable condition. §7.14 has no answer yet, so these are deliberately narrow local criteria. |
+| **M** | The owning milestone in [roadmap.md](roadmap.md). |
+| **Status** | `open` · `in progress` · `blocked (by ID)` · `done` · `dropped (reason)` |
 
-- **ID** — stable for life. Never reused, never renumbered.
-- **Kind** — `DEC` a decision that must be made and recorded in §7; `B` a build
-  or verification task.
-- **Cites** — the clause of intent that justifies the work. Per §8, work that
-  cannot cite is work nobody chose.
-- **Done when** — the falsifiable condition. §7.14 (Definition of Done) is
-  itself unanswered, so these are local acceptance criteria, deliberately
-  narrow, until it is.
-- **M** — the milestone in [roadmap.md](roadmap.md) that owns it.
+Nothing is deleted (C6): items that die are marked `dropped` with the reasoning,
+so they are not re-proposed later as oversights.
 
-**Status vocabulary:** `open`, `in progress`, `blocked (by ID)`, `done`,
-`dropped (reason)`. Per **C5** and **C6** in [rules.md](rules.md), IDs are stable
-for life and nothing is deleted from this file: items that die are marked
-`dropped` with the reasoning, so they are not re-proposed later as oversights.
+**Decisions are tracked here, stated in §7.** §8 of the intent document requires
+that a void be resolved *in place* and its substance migrated into §3, §6 or
+§2.1 — so §7 holds the question and its reasoning, and this file holds only its
+status and its owner. Restating them here would have produced two versions of
+each question, and the second reader would not know which is current.
 
 ---
 
-## 0. Blocking decisions
+## 0. Decisions
 
-These are §7 voids that block a named intent outright. Until each is answered,
-the intent it blocks can only be gestured at, and any code written under it is
-building on an undeclared assumption. They are ordered by how much downstream
-design they block, which is §7's own ordering.
+Ordered by how much downstream design each blocks, which is §7's own ordering.
+A **bold** entry in *Blocks* is a hard gate: the named intent cannot be
+implemented, only gestured at, until the decision is made.
 
-| ID | Kind | Title | Cites | M | Status |
+| ID | Question | Void | Blocks | M | Status |
 |---|---|---|---|---|---|
-| DEC-016 | DEC | The performance budget itself — real numbers for idle CPU, resident memory, cold start, added request→first-token latency, installed footprint; plus the oldest client "any device" commits to | §7.16, §VII, §3.13, §6.11 | M0 | open |
-| DEC-010 | DEC | Failure taxonomy — the classification scheme every failure is filed under, designed once because it surfaces in records, tests, the lab's fault catalogue, the recommender, and the UI | §7.10, §3.1, §3.17 | M0 | open |
-| DEC-019 | DEC | Validate the Rust decision adversarially rather than defend it — probe a GPU, supervise a child runtime made to die badly, record both under §3.1, measure against DEC-016 | §7.19, §3.13 | M0 | open |
-| DEC-004 | DEC | Engine ownership: does MCF perform inference or delegate it? §7.4 states the likely answer (lightest possible wrapper over the fastest available engine) and deliberately declines to resolve it | §7.4, §VI, §VII, §III | M0 | open |
-| DEC-021 | DEC | What the laboratory is obliged to simulate — the fault catalogue, and whether simulated time is structural (§3.17 implies yes); plus what the lab explicitly declines to model | §7.21, §3.17, §6.16 | M0 | open |
-| DEC-022 | DEC | What "full system" means for a daemon — does an end-to-end test drive real HTTP, cross a process boundary, start a real or simulated engine, exercise restart with persisted state | §7.22, §3.5 | M0 | open |
-| DEC-020 | DEC | How much reality validates the lab — what fraction of the suite needs a real-hardware counterpart, on which hardware, and what divergence declares the simulator defective | §7.20, §6.16, §VIII | M8 | open |
-| DEC-002 | DEC | The objective function — how quality, latency, throughput, memory, power and disk trade, and how a user states their weighting; §VI additionally requires a *default* opinion that is visible as a default | §7.2, §IV, §6.5 | M7 | open |
-| DEC-026 | DEC | The reference set — how many models beyond `unsloth/Qwen3.8-27B-GGUF`, chosen along which axes (family, format, size, quantization lineage, tuning style), and when models two and three join; §6.23 forbids a generality claim from a field of one but does not say how large "exists" is | §7.26, §6.23, §XII | M7 | open |
-| DEC-023 | DEC | The agentic suite: contents, statistics, and honesty over time — task provenance (published / authored / generated / user-derived), trial counts, what counts as a difference, difficulty calibration, contamination strategy, cost per run | §7.23, §IX, §6.17 | M6 | open |
-| DEC-024 | DEC | Scope and cost of capability probing — which capabilities, when probes run, what they cost, whether results cache across MCF versions, and how to act on *inconclusive* | §7.24, §X, §3.18 | M3 | open |
-| DEC-007 | DEC | Scientific acceptance criteria — minimum sample count, maximum variance, required warm-up, thermal steady state, what retroactively invalidates a run | §7.7, §II, §3.4 | M5 | open |
-
-## 1. Open decisions, non-blocking
-
-Answerable later without stalling a milestone, but each is load-bearing for the
-milestone named.
-
-| ID | Kind | Title | Cites | M | Status |
-|---|---|---|---|---|---|
-| DEC-008 | DEC | Hardware scope — which accelerators, vendors and runtimes are supported-and-characterized versus attempted-and-uncharacterized, and what happens on hardware MCF does not recognize | §7.8, §3.2 | M0 | open |
-| DEC-001 | DEC | Residual §7.1 sub-questions: which API surface is offered (OpenAI-compatible, native, both), the supervision contract when a served runtime dies, how many models may be resident at once | §7.1, §VI | M2 | open |
-| DEC-009 | DEC | Resource arbitration and concurrency — who decides what is resident; what happens when a benchmark and a served model both want the accelerator, or a download would exhaust the disk mid-flight; whether MCF may (or must) refuse to benchmark while serving | §7.9, §3.8, §3.11 | M2 | open |
-| DEC-018 | DEC | What happens to a served model when the user stops looking — indefinite residency versus unload-and-cold-start; whichever is chosen becomes a §3.4 measurement condition | §7.18, §3.13, §VI, §3.11 | M2 | open |
-| DEC-017 | DEC | Authentication and the trust posture of the control plane — what proportionate protection looks like once exposed, and whether the serving API and the control API deserve different answers | §7.17, §6.12 | M4 | open |
-| DEC-006 | DEC | Reproducibility guarantee level — reproducible to what tolerance across which changes (same machine same day / after a driver update / a different machine of the same model); determines how much environment is pinned | §7.6, §3.12, §6.13 | M5 | open |
-| DEC-011 | DEC | Offline and degraded-network operation — how much of MCF works with no network; and the distinction §7.11 draws between "no internet" and "no local network", which the interface conflates | §7.11, §3.2, §V | M1 | open |
-| DEC-013 | DEC | State, versioning and migration — whether historical measurements remain comparable across MCF versions, which implies MCF's own version is a measurement condition and some upgrades must invalidate history | §7.13, §3.4 | M8 | open |
-| DEC-005 | DEC | Retention and residency of the record — how long the record must be kept, whether anything may leave the machine, whether the user can inspect and purge it, and what happens when its disk budget is exhausted (§6.9 forbids a silent drop) | §7.5, §3.10, §6.8 | M8 | open |
-| DEC-025 | DEC | Whether automatic configuration may change under a user — silent improvement breaks §3.4 comparability; never changing lets configuration rot | §7.25, §X, §6.13 | M3 | open |
-| DEC-003 | DEC | Residual §7.3: whether non-agentic quality (prose, summarization, translation, tone) is measured at all, declined, or admitted via model-as-judge with biases declared | §7.3, §5 | M6 | open |
-| DEC-014 | DEC | Definition of done — what state lets us say MCF works; without it the test suites have no target to be complete against and the project cannot distinguish progress from motion | §7.14 | M8 | open |
-| DEC-015 | DEC | Success beyond the author — whether MCF is meant to be usable by others, which decides whether documentation, installation and interface stability are goals or incidents | §7.15, §V | M8 | open |
-| DEC-012 | DEC | Residual §7.12: behaviour when several clients attach at once (a concurrency question under DEC-009, not a surface question) | §7.12, §7.9 | M4 | open |
+| DEC-016 | The performance budget numbers, and the oldest client "any device" commits to | §7.16 | **§VII** | M0 | open |
+| DEC-010 | The failure classification scheme, designed once | §7.10 | **§3.1** | M0 | open |
+| DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | open |
+| DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
+| DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | open |
+| DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
+| DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | open |
+| DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
+| DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
+| DEC-009 | Who arbitrates the accelerator, the disk and memory between serving and benchmarking | §7.9 | §3.8 | M2 | open |
+| DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open |
+| DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
+| DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | open |
+| DEC-017 | Proportionate protection for an exposed control plane | §7.17 | §V | M4 | open |
+| DEC-012 | Behaviour when several clients attach at once | §7.12 | §XI | M4 | open |
+| DEC-007 | What makes a result publishable: sample count, variance, warm-up, thermal state | §7.7 | **§II** | M5 | open |
+| DEC-006 | Reproducible to what tolerance, across which changes | §7.6 | §3.12 | M5 | open |
+| DEC-023 | The agentic suite: tasks, trial counts, difference tests, contamination, cost | §7.23 | **§IX** | M6 | open |
+| DEC-003 | Whether non-agentic quality is measured, declined, or judged with biases declared | §7.3 | §IX | M6 | open |
+| DEC-002 | The objective function, and the default opinion §VI requires MCF to ship | §7.2 | **§IV** | M7 | open |
+| DEC-026 | How much breadth a generality claim requires, and along which axes | §7.26 | **§IV** | M7 | open |
+| DEC-020 | How much real hardware validates the lab, how often, and what divergence is fatal | §7.20 | **§VIII** | M8 | open |
+| DEC-013 | Whether measurements survive MCF's own upgrades | §7.13 | §3.4 | M8 | open |
+| DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
+| DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
+| DEC-015 | Whether MCF is meant to be usable by anyone but its author | §7.15 | §V | M8 | open |
 
 ---
 
-## 2. Build items
+## 1. Build items
 
 Grouped by the milestone that owns them. Within a group, ordered by dependency
 first and importance second.
@@ -108,6 +94,7 @@ first and importance second.
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
+| B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
 
@@ -238,7 +225,7 @@ first and importance second.
 
 ---
 
-## 3. Dropped and superseded
+## 2. Dropped and superseded
 
 Recorded rather than deleted, per §8.
 
@@ -249,3 +236,29 @@ Recorded rather than deleted, per §8.
 | — | Cross-machine leaderboard and result publication | §5 anti-goal. MCF measures *this* machine and is actively suspicious of numbers that did not originate locally. |
 | — | Plugin ecosystem, extension API, general configurability | §5 anti-goal. Every generalization is weight (§3.13). |
 | — | Chat product surface beyond an instrument for exercising a model and capturing evidence | §5 anti-goal. |
+
+---
+
+## Changelog
+
+### Version 2 — standardized, and the decisions stop being restated
+
+Restated to the format contract in [README.md](README.md). The two decision
+tables merge into one ordered by what each blocks, and each decision shrinks
+from a paragraph to a question: §7 of the intent document holds the question and
+its reasoning, and this file holds only its status and its owner. Restating them
+here produced two versions of every question, which is the duplication defect
+the contract exists to prevent.
+
+Adds DEC-026 and the reference-model items B-018, B-019, B-091, B-127 and B-128
+from §XII. Closes B-016.
+
+### Version 1 — the work is registered
+
+Created because every task reference in the project lived inside the intent
+document, as §7 voids and as principles that name work without naming a task.
+25 decisions and 80 build items were extracted; §7 was deliberately left intact,
+since §8 requires voids be resolved in place.
+
+Anti-goals and de-prioritized work were recorded as `dropped` with reasoning
+rather than left absent, so they are not re-proposed later as oversights.

@@ -1,5 +1,13 @@
 # M8 — Endurance
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M8](../roadmap.md#m8--endurance) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** a published fidelity report — what the laboratory models, what it
 declines to model, how far its predictions diverge from real hardware, and how
 much of MCF's confidence is therefore earned.
@@ -97,12 +105,12 @@ $ mcf lab reconstruct --sample last-90-days
       capture what the child had been sent, so the scenario cannot recreate
       the input that produced the hang.
       Fix: capture the request digest and the last-sent-bytes offset at the
-      point of hang. Filed as B-152.
+      point of hang. Filed as <backlog-id>.
 
     fail_…_9e04  accel.memory.exhausted
       Allocation failed at 23.1 GiB of 24.0 GiB, but the record did not
       capture what else held accelerator memory at the time.
-      Fix: capture the accelerator allocation table at failure. Filed as B-153.
+      Fix: capture the accelerator allocation table at failure. Filed as <backlog-id>.
 
     fail_…_c771  record.corrupt.truncated_entry
       Reconstructable only with the power-loss timing, which is not knowable.
@@ -223,7 +231,7 @@ $ mcf doctor --offline
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -238,3 +246,12 @@ $ mcf doctor --offline
 | §3.10 the user's data | Inspectable, purgeable, never exported by default, never left the machine |
 | §7.11 offline | Three tiers, labelled; "no internet" and "no local network" distinguished |
 | §7.14 definition of done | The reconstruction rate is the number the project is rated on, with a stated target |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

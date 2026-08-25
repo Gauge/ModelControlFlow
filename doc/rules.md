@@ -1,60 +1,73 @@
-# ModelControlFlow — Rules
+# Rules
 
-**Status:** Living document. The single place rules live. Derived from
-[document-of-intent.md](document-of-intent.md) Revision 5, which remains the
-authority: where a rule here and the intent document disagree, the intent
-document wins and the rule is corrected.
+| | |
+|---|---|
+| **Type** | Rules — enforceable, checkable |
+| **Version** | 2 |
+| **Status** | Living |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6, which wins on any disagreement |
+| **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**What changed and why this file exists.** Rules were previously scattered
-across four documents — §3 (principles), §4 (tensions), §5 (anti-goals) and §6
-(resolutions) of the intent document, the roadmap's standing rules, the
-backlog's conventions, and the mockup conventions. Roughly 120 normative
-statements, many restating one another in different words, none carrying a
-stated means of enforcement. This file refines them into **60 rules**, each with
-a citation, a check, and a description of what its violation looks like. Nothing
-was discarded: §"Coverage" at the end maps every source clause to the rule that
-absorbed it, so the refinement can be audited rather than trusted.
+**60 rules in three tiers, each carrying a citation and a check.** Cite them by
+ID. Where a rule and the intent document disagree, the intent document wins and
+the rule is corrected.
 
-**The three tiers, defined precisely,** because the labels are otherwise
-readings-in-the-eye-of-the-beholder:
+## Contents
+
+| § | Section | Holds |
+|---|---|---|
+| — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
+| A | [Absolute](#a--absolute) | 23 rules that admit no exception |
+| B | [Conditional](#b--conditional) | 29 rules that permit something provided a condition holds |
+| C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
+| — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
+| — | [Amending](#amending-this-file) | How a rule changes |
+| — | [Coverage](#coverage) | Every source clause, and the rule that absorbed it |
+| — | [Changelog](#changelog) | |
+
+## The tiers
+
+The labels are otherwise readings-in-the-eye-of-the-beholder, so they are
+defined:
 
 - **Absolute (A).** Admits no exception. No cost — performance, ergonomics,
   schedule, elegance — justifies violating one. A violation is a defect, not a
-  trade-off, and it is fixed rather than argued. If an absolute rule genuinely
-  cannot be held, that is an amendment to the intent document, not a local
-  decision.
+  trade-off, and it is fixed rather than argued. An absolute rule that genuinely
+  cannot be held is an amendment to the intent document, not a local decision.
 - **Conditional (B).** Holds under a stated condition, or *permits* something
   provided a condition is met. The condition is the rule; the permission is what
   makes it worth stating. Many conditional rules are the operational form of an
-  absolute one — B2 is how A6 is honoured while optimizing — and where they
-  meet, the absolute governs.
-- **Low value (C).** Real rules, kept, and the least load-bearing ones we have.
-  They are decided **last** when rules compete, and they may be dropped without
-  amending the intent document. *Low value does not mean optional to follow.* It
-  means the cost of enforcing them is closest to the benefit, so they are the
-  first candidates for deletion if this file grows unwieldy.
+  absolute — B2 is how A6 is honoured while optimizing — and where they meet,
+  the absolute governs.
+- **Low value (C).** Real rules, kept, and the least load-bearing we have. They
+  are decided **last** when rules compete, and may be dropped without amending
+  the intent document. *Low value does not mean optional to follow.* It means
+  the cost of enforcing them is closest to the benefit, so they are the first
+  candidates for deletion if this file grows unwieldy.
 
-**The low-value tier is deliberately small — eight rules.** That is itself a
+The low-value tier is deliberately small — eight rules. That is itself a
 finding. A document of intent whose statements are 87 % load-bearing is doing
 its job; if this tier ever grows large, the correct response is to delete from
 it rather than to organize it.
 
-**Every rule carries a check.** §3.16 holds that a principle depending on human
-discipline will eventually be violated by someone tired at the end of a long
-change. A rule with no check is a wish, so each rule names one of:
+## Checks
+
+§3.16 holds that a rule depending on human discipline is eventually violated by
+someone tired at the end of a long change. A rule with no check is a wish, so
+each names one:
 
 | Check | Meaning |
 |---|---|
 | `compiler` | The violation does not compile. Strongest available. |
 | `CI` | An automated test fails the build. |
 | `lab` | A laboratory scenario demonstrates the rule holds. |
-| `review` | A human check. Weakest; each instance is a candidate for promotion to `CI`. |
-| `blocked` | Not yet checkable. Names the backlog item or decision that will make it so. |
+| `review` | A human check. Weakest; each instance is a candidate for promotion. |
+| `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-Counted as *rules*: **44 carry at least one machine check, 14 rest on review
-alone, and 2 are not yet checkable at all.** That second figure is the number to
-drive down (B16) — it is the amount of this document that currently depends on
-somebody remembering it.
+**44 rules carry at least one machine check, 14 rest on review alone, and 2 are
+not yet checkable at all.** That middle figure is the number to drive down
+(B16): it is the amount of this document that depends on somebody remembering
+it.
 
 ---
 
@@ -736,10 +749,10 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file was built by
-   reducing about 120 statements to 58, and it is worth less the moment it
-   starts growing back. Revision 6 of the intent document added two, which is
-   what integrating a new intent should cost.
+   is whether an existing rule already covers it. This file holds 60 rules
+   refined from about 120 scattered statements, and it is worth less the moment
+   it starts growing back. Integrating a whole new intent should cost one or two
+   rules, not a section.
 4. **Tier changes are decisions, not edits.** Promoting a rule to absolute means
    asserting that no cost justifies violating it. Demoting one means the
    opposite. Both are recorded with reasoning.
@@ -816,3 +829,36 @@ no rule is a defect in this file.
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
 | Backlog conventions | C5, C6, A23 |
 | Mockup conventions | C7, C8, A7 |
+
+---
+
+## Changelog
+
+### Version 2 — standardized, and two rules for the reference model
+
+B28 and B29 added, absorbing §XII and its resolutions §6.22 and §6.23: the
+reference model is a fixture rather than a case in the code, and one model
+builds an instrument without ever supporting a generality claim. Integrating an
+entire new intent cost two rules, which is the right order of magnitude.
+
+Restated to the format contract in [README.md](README.md): front matter,
+contents, present tense, changelog last. The check counts move out of the lead
+and into their own section, where they are a metric rather than a preamble.
+
+### Version 1 — the rules are consolidated
+
+Rules were scattered across four documents: §3, §4, §5 and §6 of the intent
+document, the roadmap's standing rules, the backlog's conventions, and the
+mockup conventions. About 120 normative statements, many restating one another
+in different words, none carrying a stated means of enforcement.
+
+Refined to 58 rules in three defined tiers. Two things were added that the
+sources implied but never stated: a precedence order for genuine conflicts,
+taken from the orderings §6.1, §6.10, §3.12 and §4 already argue for; and a
+check on every rule, because §3.16 holds that an unchecked rule is a wish.
+
+Nothing was discarded — the coverage table maps every source clause to the rule
+that absorbed it, so the refinement is auditable rather than trusted — and the
+five statements deliberately not made rules are recorded rather than dropped
+silently, chiefly the unfalsifiable ones that cannot be checked against anything
+until DEC-016 and DEC-007 supply numbers.

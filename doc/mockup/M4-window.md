@@ -1,5 +1,13 @@
 # M4 — The window
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M4](../roadmap.md#m4--the-window) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** a page served by the daemon at `http://127.0.0.1:11711/` showing
 the catalogue, serving state, capability findings and the failure record —
 readable on the machine itself and on a handheld device once the operator
@@ -196,7 +204,7 @@ crossed.
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -209,3 +217,12 @@ crossed.
 | §3.6 unknown shown | `mystery-gguf` displays UNKNOWN licence and partial provenance prominently |
 | §6.12 exposure | Deliberate, informed, revocable, non-persistent by default |
 | §5 not a leaderboard | The footer states the numbers are local and incomparable |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

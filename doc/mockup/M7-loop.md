@@ -1,5 +1,13 @@
 # M7 — The loop
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M7](../roadmap.md#m7--the-loop) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf recommend` — a declared objective in, a configuration out,
 with its reasoning, its measurements, its runners-up, and a re-measurement
 confirming the prediction held.
@@ -198,7 +206,7 @@ $ mcf recommend
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -212,3 +220,12 @@ $ mcf recommend
 | §3.4 no training on the test | Selection and validation suites are structurally separate and audited |
 | §6.1 honesty first | A prediction that failed would be a recorded finding, not a smoothed one |
 | §5 not a leaderboard | Every claim is bounded to this machine and this suite |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

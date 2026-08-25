@@ -1,5 +1,13 @@
 # M1 — Custody
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M1](../roadmap.md#m1--custody) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf pull`, `mcf list`, `mcf show`, `mcf rm` — models enter, live
 on, and leave this machine with their provenance intact and their licence
 legible.
@@ -238,7 +246,7 @@ $ mcf lab list --group hub
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -251,3 +259,12 @@ $ mcf lab list --group hub
 | §3.11 nothing destroyed casually | `rm` previews cost, names references, keeps the record |
 | §3.18 declared ≠ verified | The catalogue says `unprobed`, not "supports tools" |
 | §3.17 the laboratory | 14 hub scenarios, all offline, all deterministic |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

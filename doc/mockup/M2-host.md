@@ -1,5 +1,13 @@
 # M2 — The host
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M2](../roadmap.md#m2--the-host) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf serve` (the daemon) and `mcf run <model>` — the distance
 between having a model and using a model is one command.
 
@@ -192,7 +200,7 @@ Expose? Type the interface name to confirm:
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -206,3 +214,12 @@ Expose? Type the interface name to confirm:
 | §6.12 local by default | Exposure is a typed confirmation, revocable, non-persistent by default |
 | §4 estimates | The chat figures are labelled as not-a-measurement at the point of display |
 | §3.18 unverified | The chat template is shown as declared, with the consequence spelled out |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

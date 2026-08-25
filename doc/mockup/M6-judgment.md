@@ -1,5 +1,13 @@
 # M6 — The judgment
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M6](../roadmap.md#m6--the-judgment) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf eval` — whether a model can do the work: multi-turn,
 tool-calling, instruction-bound tasks with checkable outcomes, run unattended in
 a sandbox, reported as a distribution with its failure modes classified.
@@ -208,7 +216,7 @@ $ mcf lab run harness-minimality
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -222,3 +230,12 @@ $ mcf lab run harness-minimality
 | §7.3 contamination | Procedural generation used as a detector, not just a defence |
 | §3.9 refuse to over-claim | "Weak evidence" is a verdict MCF is willing to return |
 | §5 not a quality authority | Every statement is about this suite under these conditions |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

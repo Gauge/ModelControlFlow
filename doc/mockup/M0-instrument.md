@@ -1,5 +1,13 @@
 # M0 — The instrument
 
+| | |
+|---|---|
+| **Type** | Mockup — what finished looks like at this stage |
+| **Milestone** | [M0](../roadmap.md#m0--the-instrument) |
+| **Version** | 2 |
+| **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
+| **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
+
 **Product:** `mcf doctor` — a static binary that reports what this machine is,
 what MCF costs on it, and what MCF will and will not promise here.
 
@@ -217,7 +225,7 @@ increased complexity.
 
 ---
 
-## Intent this stage is trying to satisfy
+## Intent this stage satisfies
 
 | Clause | How it shows up above |
 |---|---|
@@ -232,3 +240,12 @@ increased complexity.
 | §3.17 the laboratory | 41 scenarios, cross-checked against 41 taxonomy categories, deterministic over 100 runs |
 | §6.15 reproduce, don't observe | The `Reproduce` field names the scenario that rebuilds the failure |
 | §7.19 validate the substrate | The GPU probe and the badly-dying child are exactly the adversarial prototype §7.19 asked for |
+
+---
+
+## Changelog
+
+| Version | Change |
+|---|---|
+| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |
