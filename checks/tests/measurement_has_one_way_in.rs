@@ -77,6 +77,66 @@ fn every_constructor_takes_conditions() {
     }
 }
 
+/// Nothing converts between an estimate and a measurement, in either
+/// direction.
+///
+/// A20 is absolute: an estimate can never be promoted into a measurement,
+/// never compared with one, and can only be *replaced* by one. "Replaced"
+/// needs no mechanism, so the enforcement is that no mechanism exists — and
+/// the failure mode is a convenience added later for one call site.
+#[test]
+fn nothing_converts_between_an_estimate_and_a_measurement() {
+    for (file, forbidden) in [
+        (
+            "estimate.rs",
+            [
+                "for Measurement",
+                "-> Measurement",
+                "fn measure",
+                "fn promote",
+            ],
+        ),
+        (
+            "mod.rs",
+            [
+                "for Estimate",
+                "-> Estimate",
+                "fn estimate",
+                "fn as_estimate",
+            ],
+        ),
+    ] {
+        let source = code_only(&source_file(file));
+        for pattern in forbidden {
+            assert!(
+                !source.contains(pattern),
+                "`{pattern}` in {file} would let an estimate and a measurement meet (A20)"
+            );
+        }
+    }
+}
+
+/// A file with its documentation removed.
+///
+/// The documentation names the forbidden constructs in order to say they are
+/// absent, so a check that grepped the whole file would fail on the sentence
+/// explaining why it passes.
+fn code_only(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn source_file(name: &str) -> String {
+    let path = mcf_checks::workspace::root()
+        .join("crates/mcf-core/src/measurement")
+        .join(name);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
+}
+
 fn measurement_source() -> String {
     let path = mcf_checks::workspace::root().join("crates/mcf-core/src/measurement/mod.rs");
     std::fs::read_to_string(&path).unwrap_or_else(|error| {
