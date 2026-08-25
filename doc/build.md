@@ -406,6 +406,16 @@ against; until those exist the tier asserts each figure and does not compare it
 with a previous one. B20's before-and-after is not yet possible and the tier says
 so rather than implying otherwise.
 
+**On a tree kept on a slow filesystem this tier currently fails, and the reason
+is understood.** [findings.md](findings.md) F5: the cold-start figure is
+dominated by how long the kernel takes to fault the binary's pages in, and on a
+FUSE mount that tail is a thousand times the median. The storage an artifact is
+executed from is a measurement condition MCF does not yet record, and the
+attributability signal watches the measuring thread, which during a cold start
+is the one thread not doing the work. Both halves are B-193. Until then, a
+`--with-budget` run from such a tree reports a number about the filesystem, and
+`--all` is red for that reason rather than a regression.
+
 ### The mutation tier
 
 D10 calls mutation testing *the test of the tests*: a suite that does not fail
