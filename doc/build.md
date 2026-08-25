@@ -424,12 +424,27 @@ floor needs a previous result to compare against — B20's before-and-after, whi
 is B-300's work. Failing on the first survivor would make the tier unrunnable
 before there was anything to compare with.
 
-Two things keep the score honest. **An equivalent mutant is the control**: a
+Three things keep the score honest. **An equivalent mutant is the control**: a
 change with no semantic effect must *not* be killed, or the runner cannot tell a
 killed mutant from a broken copy and its other results mean nothing. **A mutant
 that does not compile is not a result**: it is excluded and named, because the
 question is what the *tests* notice and a compiler error is the compiler
-noticing.
+noticing. **Every mutated file is compared against a pristine copy at the end**,
+because a restore that silently failed would make every judgment after it a
+judgment about the wrong code — which is what happened, and what
+[findings.md](findings.md) F4.5 records. A control at the start of a run and a
+verification at the end answer different questions.
+
+A mutant may also hang: the digest entry takes the room left in a 64-byte buffer
+from 64 to 63, so the loop that fills it eventually takes nothing per pass. Each
+suite run is bounded at two minutes, a timeout is confirmed by a second run
+before it is believed, and anything still executing out of the run's own copy is
+killed — a spinning test process outliving the tier is a change to the machine
+A27 does not permit MCF's suite to make either.
+
+**Eleven mutants, eleven killed, one of them by hanging; four minutes.** The
+score is not evidence that the suite is complete. It is evidence about eleven
+specific claims, chosen because a rule rests on each.
 
 ## Changelog
 

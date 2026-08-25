@@ -141,6 +141,15 @@ trap 'rm -rf "$workdir"' EXIT
 # A27's habit: copy rather than mutate, and take nothing derived with us.
 tar -c -C "$root" --exclude=./target --exclude=./.git . | tar -x -C "$workdir"
 
+# A pristine copy of every file the catalogue touches, to compare against at the
+# end. Kept outside the workspace copy so that nothing in the build can see it.
+pristine="$workdir.pristine"
+mkdir -p "$pristine"
+for file in "${files[@]}" "$CONTROL_FILE"; do
+    cp "$workdir/$file" "$pristine/$(printf '%s' "$file" | tr / _)"
+done
+trap 'rm -rf "$workdir" "$pristine"' EXIT
+
 # One warm build, so that each mutant costs a recompilation of what it touched
 # rather than of the workspace.
 printf 'building the unmutated copy\n'
@@ -280,14 +289,20 @@ for index in "${!files[@]}"; do
         "${files[$index]}" "${finds[$index]}" "${replaces[$index]}" mutant
 done
 
-# The copy is the tree again. Every mutation is applied to a file that is put
-# back afterwards, and a restore that silently failed would make every judgment
-# after it a judgment about the wrong code. Cheap, and definitive.
-if ! diff -r -q --exclude=target --exclude=.git "$root" "$workdir" >/dev/null 2>&1; then
-    printf '\n' >&2
-    diff -r -q --exclude=target --exclude=.git "$root" "$workdir" >&2 || true
-    fail_cannot_check "the copy is not the tree again, so these results are about some other code"
-fi
+# Every mutated file is what it was before the run. A restore that silently
+# failed would make every judgment after it a judgment about the wrong code —
+# 4.5 of findings.md is that defect, found the hard way — and the control cannot
+# see it, because the control runs before anything has leaked.
+#
+# Compared against the pristine copies taken at the start rather than against
+# the repository, which may have been edited while a four-minute tier was
+# running. The question is whether *this run* put back what it changed.
+for index in "${!files[@]}"; do
+    file="${files[$index]}"
+    if ! cmp -s "$pristine/$(printf '%s' "$file" | tr / _)" "$workdir/$file"; then
+        fail_cannot_check "$file was not put back, so these results are about some other code"
+    fi
+done
 
 scored=$(( ${#killed[@]} + ${#survived[@]} ))
 printf '\nmutation score: %d killed of %d scored' "${#killed[@]}" "$scored"

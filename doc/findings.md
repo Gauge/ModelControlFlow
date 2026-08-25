@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -31,6 +31,7 @@ forward as one.
 | 1 | [F1 — The adversarial prototype (§7.19, DEC-019)](#1--f1--the-adversarial-prototype-719-dec-019) |
 | 2 | [F2 — The development machine cannot attribute a budget (DEC-051)](#2--f2--the-development-machine-cannot-attribute-a-budget-dec-051) |
 | 3 | [F3 — The load average answers the wrong question (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
+| 4 | [F4 — What the new tiers found on their first runs (B-191)](#4--f4--what-the-new-tiers-found-on-their-first-runs-b-191) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -286,7 +287,154 @@ refused under load:
 DEC-051's deadlock is gone rather than traded off: B38 and D27 both still hold,
 and the tier refreshes its age whenever a reading was clean.
 
+## 4 · F4 — What the new tiers found on their first runs (B-191)
+
+**What was run.** The five tiers B-191 built — property, whole-system, fuzz,
+load, soak — and the mutation runner, each on its first pass over the tree they
+were written against.
+
+**Conditions.** The same machine as F1–F3: 16 cores, 32 threads, 91 GiB. Debug
+profile, because these are tests rather than measurements of the artifact;
+`/tmp` is tmpfs, which matters for every figure below that involves a file. No
+timing figure appears here: A18 keeps a throughput assertion out of a test tier,
+and these tiers assert counts and invariants rather than speeds.
+
+**Why this is a finding and not a commit message.** Four of the six things below
+are about *MCF*, and three of those were not visible to any tier that already
+existed. The fifth and sixth are about the tiers themselves, and D10's whole
+argument for mutation testing is that a suite is a thing that has to be checked.
+
+### 4.1 A condition did not round-trip through the record
+
+The property tier's first run falsified `a_condition_floor_survives_the_record_including_its_unknowns`
+at its first case. `encode::conditions` rendered every known condition through
+`Display`, so `ConditionValue::Integer(4096)` — a context length, which is the
+one §3.4 floor question that is naturally a number — was written as `"4096"` and
+read back as `Text("4096")`.
+
+Nine of the ten floor questions never noticed, because nine of them are
+naturally strings, and B-007's round-trip test used a floor captured from a live
+machine where the numeric question is `Unknown`. That is exactly the gap a
+property closes: the existing test asked about the floor MCF happens to produce
+today, and the property asks about every floor MCF can represent.
+
+B-007's stated condition — *the §3.4 floor round-trips through the record store
+losslessly* — was therefore false, and had been since the capture path was
+written. Fixed, with the failing case kept as a fixture.
+
+### 4.2 A replay holds the whole journal, and it costs about a kilobyte an entry
+
+The soak tier, over a hundred thousand appends:
+
+| | |
+|---|---|
+| Growth of the writer over 100 000 appends | **0 bytes** |
+| Resident held by a replay of the same journal | ~100 MB |
+| Per entry, for an entry with one integer field | **~0.8–1.0 kB** |
+
+The first number is the leak check and it is asserted. The second is
+proportional by construction — `Replay` returns every entry it read — and it is
+D20's design rather than a defect: the journal is the record, and the index over
+it is derived. It is **reported and not asserted**, because asserting on it
+would be asserting that MCF never keeps a record long enough to matter.
+
+It is worth keeping because it puts a number on why D6's derived index exists
+(B-042, B-300): at a kilobyte an entry, a machine that has run a few million
+trials cannot answer a question by replaying its journal into memory.
+
+### 4.3 A process-wide reading cannot be taken beside another test
+
+The soak tier reported a 70 MB leak in the journal writer. There is no leak: the
+harness runs tests in parallel by default, resident memory is a property of the
+*process*, and the reading had another test's replay in it.
+
+This is B35's rule — *a reading taken under contention measures the
+contention* — arriving at memory instead of at a timing, and the resolution is
+the same one D30 reached: separate the reading from the thing that is not being
+measured. The tier runs on one thread, and measuring the writer and measuring a
+replay are two tests rather than two readings inside one.
+
+### 4.4 The fuzz campaign reaches the accept path
+
+Four parsers, 200 000 cases each by default, nothing found. That sentence is
+worth very little on its own — a campaign that refused every input would say the
+same thing — so each target counts what it reached:
+
+| Target | Damaged inputs accepted | Refused |
+|---|---|---|
+| `json::parse` | 11 484 | 89 623 |
+| `time::Zone::parse` | 20 637 | 179 363 |
+| `journal::replay` | 2 916 | 2 084 |
+| `export::read` | 181 | 4 819 |
+
+The two that write files run a fortieth of the cases, which is why their totals
+are smaller. `export::read`'s acceptance rate is low by construction: a bundle
+states a digest over its own contents, so most damage is refused by the check
+the reader exists to make. A target that never accepted anything would fail the
+tier rather than pass it.
+
+### 4.5 The mutation runner was judging mutants against the mutants before them
+
+The first working run of `scripts/check-mutants.sh` reported the `export` mutant
+as having hung. It does not hang: run alone, a unit test kills it in a tenth of
+a second.
+
+What hung was the **digest** mutant, still compiled in. Cargo decides what to
+rebuild from modification times, and the runner restored each file by moving
+back a backup taken *before* the mutation — so the restored file was older than
+the build made from it, cargo considered the crate fresh, and did not rebuild.
+The consequence is more general than the symptom: every mutant after the first
+was judged against a tree that still carried the earlier mutations, wherever
+those lived in a crate that had no other reason to be recompiled. A mutation in
+`mcf-core` survived a later mutation in `mcf-record`, because nothing asked for
+`mcf-core` again.
+
+That direction of error inflates a score rather than deflating it — extra
+breakage makes a mutant easier to kill — which is the kind that a green run
+hides. The fix is one `touch` on the restored file.
+
+The reason it took three runs to find is the part worth keeping. The
+equivalent-mutant control runs **first**, before anything has leaked, so it
+cannot see this class of defect at all. What sees it is a comparison of the
+whole copy against the tree at the **end** of the run, which the runner now
+makes and which refuses to report a score if a restore did not take. A control
+at the start of a run and a verification at the end answer different questions,
+and this tier needed both.
+
+### 4.6 The score, and the mutant that hangs
+
+Eleven mutants, each breaking something a rule depends on:
+
+| | |
+|---|---|
+| Killed | **11** |
+| Survived | 0 |
+| Invalid (did not compile) | 0 |
+| Of those killed, by hanging | 1 |
+
+A 11-of-11 score is not evidence that the suite is complete; it is evidence
+about eleven specific claims, chosen because a rule rests on each. What it does
+establish is that the tier itself works — the control is not killed, a mutant
+that does not compile would be excluded rather than counted, and the run refuses
+to report at all if the copy is not the tree again afterwards.
+
+The hanging mutant is the digest one: it takes the room left in a 64-byte buffer
+from 64 to 63, so the filling loop eventually takes zero bytes per pass. Every
+suite run is bounded, a timeout is confirmed by a second run before it is
+believed, and what a hung run leaves behind is reaped — a spinning test process
+outliving the tier is a change to the machine A27 does not permit MCF's own
+suite to make either.
+
 ## Changelog
+
+### Version 4 — what the new tiers found
+
+F4 added with B-191. Five tiers ran for the first time and four of the six
+things they found are about MCF rather than about themselves — a condition that
+did not round-trip, a replay whose footprint is proportional to the journal, a
+reading that could not be taken in parallel, and a fuzz campaign that had to be
+made to say what it reached. The other two are about the tiers, which is what
+D10 means by the test of the tests.
 
 ### Version 3 — the signal that answers F2, and the one that could not fail
 
