@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 22 |
+| **Version** | 23 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **241 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 192
-build items (2 done, 59 blocked on a decision, 131 open).** Every item cites
+build items (3 done, 59 blocked on a decision, 130 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -104,7 +104,7 @@ first and importance second.
 |---|---|---|---|---|
 | B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | **done** — [build.md](build.md); toolchain pinned to 1.98.0, layering asserted by test, `scripts/check-reproducible-build.sh` compares two checkouts byte for byte |
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | open |
-| B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | open |
+| B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | open |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | open |
@@ -357,6 +357,20 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 23 — the failure type closes
+
+B-003 is done. The taxonomy is now types the compiler holds, and the agreement
+between `crates/mcf-core/src/failure/` and [taxonomy.md](taxonomy.md) is
+checked in both directions rather than maintained by hand.
+
+What is worth recording is what the item's condition turned out to require. "CI
+denies the panicking constructs" is a claim about a lint table, and a lint table
+is exactly the kind of claim that reads as true while being false — deleted,
+reordered by a `priority`, or renamed by a compiler release. It is now checked
+by writing each construct into a copy of the workspace and requiring the build
+to refuse it, with a negative control that must *not* fire, because ten
+refusals and a probe that never compiled look identical from outside.
 
 ### Version 22 — the first build item closes, and the counts are recounted
 

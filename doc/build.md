@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -28,6 +28,7 @@ with B-014.
 | 4 | [The gating tier](#4--the-gating-tier) |
 | 5 | [Reproducibility](#5--reproducibility) |
 | 6 | [Dependencies](#6--dependencies) |
+| 7 | [Generated code](#7--generated-code) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -132,6 +133,18 @@ loudly is the honest outcome, and `crates/mcf-core/build.rs` carries the one
 documented opt-out: a build script has no MCF failure type available to it and
 no record to write to.
 
+**A lint table is itself a claim, so it is checked.**
+`scripts/check-lints-bite.sh` writes each forbidden construct into a copy of
+the workspace and requires the build to refuse it — ten constructs, plus a
+negative control (`clippy::dbg_macro`, deliberately not enabled) that must
+*not* be reported. Without the control, a probe that failed to compile or a
+grep that never matched would read as ten clean refusals, which is the
+vacuously green suite A19 exists to prevent. It runs in the gating tier and
+takes about twelve seconds. A test in `checks/tests/workspace_shape.rs` asserts
+separately that the table still claims each lint, because a lint quietly
+deleted from the manifest would leave that script checking a shorter list and
+still reporting every entry refused.
+
 ## 5 · Reproducibility
 
 ```
@@ -173,7 +186,32 @@ requires vendoring an entire inference stack (D23, B64), which is a great deal
 of weight admitted deliberately. It is the mechanism that keeps the admission
 deliberate.
 
+## 7 · Generated code
+
+One file is generated and then committed: `crates/mcf-core/src/failure/
+category.rs`, from `doc/taxonomy.md`.
+
+It is **not** regenerated at build time. A build that reads a Markdown file to
+decide what compiles is a build with an undeclared input, and §3.12 makes every
+input a condition of the artifact. What keeps the two together is a test —
+`checks/tests/taxonomy_agreement.rs` — which compares codes, meanings, domains
+and axis values in both directions and fails on any difference. Adding a
+taxonomy leaf therefore means editing the document and the code in one change,
+with a laboratory scenario (A13).
+
+The same test asserts that nothing constructs `internal.unclassified`. The
+taxonomy makes it a tracked defect metric with a target of zero rather than a
+bucket: every occurrence is a missing category, and adding the category is the
+fix.
+
 ## Changelog
+
+### Version 2 — the lints are checked, and one file is generated
+
+Two sections gained substance when B-003 landed. §4 records that the lint table
+is a claim and names the script that checks it, including why the negative
+control is not optional. §7 is new: it states which file is generated, why it is
+committed rather than regenerated at build time, and what keeps it honest.
 
 ### Version 1 — the workspace exists
 

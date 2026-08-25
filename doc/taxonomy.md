@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the classification scheme every failure is filed under |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living. Drafted, awaiting ratification. |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, governed by [rules.md](rules.md) |
 | **Answers** | §7.10 · registered as DEC-010 in [backlog.md](backlog.md) |
@@ -12,6 +12,12 @@
 This file is the classification. It appears in the record, in every error type,
 in the laboratory's fault catalogue, in the recommender and in the interface, so
 it is designed once and deliberately rather than accreted.
+
+**It is also code.** `crates/mcf-core/src/failure/` holds the three axes as
+types — generated from this file, then committed — and
+`checks/tests/taxonomy_agreement.rs` fails the build when a code, a meaning, a
+domain or an axis value differs between the two. Editing one of them means
+editing both, in the same change (B-003).
 
 **It is also a public interface.** Once §XIV ships, these codes travel between
 machines and versions. Codes are therefore stable for life (C5): never reused,
@@ -233,6 +239,13 @@ adding the category is the fix.
   §3.17 wants the rare paths exercised, and the laboratory is where that happens.
 
 ## Changelog
+
+### Version 2 — the classification becomes types
+
+`crates/mcf-core/src/failure/` expresses the three axes so the compiler holds
+them, and an agreement check fails the build when the document and the code
+disagree (B-003). Nothing about the classification changed; what changed is
+that it can no longer drift silently from the software that files against it.
 
 ### Version 1 — drafted
 

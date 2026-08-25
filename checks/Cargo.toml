@@ -11,3 +11,9 @@ publish = false
 workspace = true
 
 [dependencies]
+
+# A13 makes the taxonomy and the code one list. Reading it needs the types, so
+# the checks take mcf-core as a development dependency only — nothing this
+# crate builds is shipped, and no MCF crate depends on it.
+[dev-dependencies]
+mcf-core = { path = "../crates/mcf-core" }
