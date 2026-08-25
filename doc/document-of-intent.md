@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 18 |
+| **Version** | 19 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -3288,6 +3288,66 @@ user to interpret.
 The failure mode is silent and slow: a user compares a result from before a
 driver update with one from after and reads the driver's effect as the model's.
 §3.1 forbids exactly that kind of quiet corruption.
+
+### 7.47 MCF's own licence, and the licences it inherits by shipping — **structural**
+
+Nowhere in this document does MCF state what licence it is distributed under,
+which is an odd omission for a project D7 commits to putting in other people's
+hands.
+
+The larger half is inherited rather than chosen. §XVI requires MCF ship
+everything it needs, and §7.4's likely answer has it driving inference engines it
+did not write. **Vendoring an engine means inheriting that engine's licence
+obligations** — permissive for some, copyleft for others, and the difference
+propagates into what MCF itself may be. The same applies to tokenizers,
+quantization tools and anything else the self-contained artifact carries.
+
+This is structural because it can decide an architectural question: an engine
+whose terms are incompatible with MCF's intended licence is an engine MCF cannot
+ship, whatever its merits, and §7.4 should not be settled without knowing which
+those are. It also decides whether per-accelerator builds (§6.31) are one
+artifact or several under different terms.
+
+Open: MCF's licence, the compatibility matrix of every candidate engine, whether
+a vendored component may be swapped for a differently-licensed one without
+changing MCF's own terms, and how the obligations are surfaced to a user who
+redistributes.
+
+### 7.48 What rights a contribution carries
+
+§7.36 asks whether *model* licences constrain publishing measurements about a
+model. Nobody has asked the adjacent question: what rights the **contributor**
+grants when they send their own data (§XIV), and what they retain.
+
+Open: under what terms a contribution is offered, whether a contributor may
+withdraw one — §3.20 makes publication irreversible in practice, so a withdrawal
+right may be a promise MCF cannot keep and should not make — whether contributed
+data may be redistributed or relicensed by whatever aggregates it, and whether a
+contributor is identified, pseudonymous or anonymous, which §7.27 approaches from
+the privacy side and this approaches from the rights side.
+
+The honest constraint: this must be answered *before* anything is collected, not
+after. Data gathered under unstated terms cannot be retroactively given terms,
+and §3.20's irreversibility applies to the ambiguity as much as to the data.
+
+### 7.49 What protects the record from loss
+
+D6 notes in passing that a single file is a single point of corruption and calls
+that a §3.1 obligation. Nothing discharges it.
+
+The record *is* the science: months of measurements, every failure's context,
+every artifact's provenance, and under §3.4 none of it is reconstructible by
+re-running, because the conditions that produced it are gone. A lost record is
+not an inconvenience; it is the loss of every claim MCF has made.
+
+Open: whether the record is replicated, snapshotted or exportable on a schedule;
+what a user is told about protecting it; whether a corrupted database is
+repairable, partially recoverable, or a total loss; and whether the record can be
+rebuilt in degraded form from anything else MCF holds.
+
+Adjacent and cheap: model weights are verified at acquisition (§3.6) and never
+again. Re-verifying a checksum before a long measurement run would catch silent
+disk corruption before it produces a garbage result rather than after.
 
 ### Retired voids
 

@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**225 items: 46 decisions (38 open, 1 drafted, 2 narrowed, 5 resolved) and 179 build items.** Every item cites the clause that
+**230 items: 49 decisions (41 open, 1 drafted, 2 narrowed, 5 resolved) and 181 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -68,6 +68,9 @@ implemented, only gestured at, until the decision is made.
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
 | DEC-034 | The identity of a measured configuration | §7.34 | §IV, D6 | M0 | **resolved** — D17 principle, D18 sampling, D19 seed; placement declared-vs-realized, engine build is identity |
 | DEC-046 | Sampling and seeding | §7.34 | §IV, §7.6 | M0 | **resolved** — D18 sampling is identity; D19 the seed set is a condition |
+| DEC-047 | MCF's own licence, and the compatibility matrix of every engine and tool §XVI would vendor | §7.47 | **§XVI, §7.4** | M0 | open |
+| DEC-049 | What protects the record from loss: replication, snapshots, scheduled export, repairability of a corrupted database | §7.49 | **§II, D6** | M0 | open |
+| DEC-048 | What rights a contribution carries, and whether withdrawal is a promise MCF can keep | §7.48 | **§XIV** | M9 | open |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
@@ -129,6 +132,8 @@ first and importance second.
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | open |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | open |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | open |
+| B-300 | Record durability: snapshots or replication, a repair path for a corrupted database, and an honest statement of what is unrecoverable | §7.49, D6, §3.1 | A corrupted record is repaired, partially recovered, or declared lost — never silently truncated | blocked (DEC-049) |
+| B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
@@ -340,6 +345,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 16 — three critical gaps
+
+DEC-047 (MCF's licence and what vendoring inherits), DEC-049 (record durability)
+and DEC-048 (contribution rights) registered. The first two join M0's gates: an
+engine MCF cannot legally ship is not a candidate for §7.4, and a record with no
+durability story is months of unreconstructible science on one file.
 
 ### Version 15 — identity closed
 
