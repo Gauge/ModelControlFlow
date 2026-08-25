@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 19 |
+| **Version** | 20 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -3308,10 +3308,43 @@ ship, whatever its merits, and §7.4 should not be settled without knowing which
 those are. It also decides whether per-accelerator builds (§6.31) are one
 artifact or several under different terms.
 
-Open: MCF's licence, the compatibility matrix of every candidate engine, whether
-a vendored component may be swapped for a differently-licensed one without
-changing MCF's own terms, and how the obligations are surfaced to a user who
-redistributes.
+**Stated intent, recorded ahead of the choice.** MCF is to be as open as
+possible. Derivative work and spin-offs are welcome. There is a mild preference
+against others selling it, held loosely and by the author's own account unlikely
+to matter.
+
+**The tension in that, which decides the answer.** "As open as possible" and
+"nobody may sell it" are different goals, and every licence recognised as open
+source permits commercial use. A non-commercial licence is available but costs
+more than it appears to: it is incompatible with copyleft components, so it would
+*narrow* what §XVI may vendor rather than widen it; "commercial" is famously
+ill-defined in practice; and it would forbid the ordinary case of a company using
+MCF internally to choose a model, which is much of the audience D7 imagines.
+
+The concern behind "keep people from selling it" is usually narrower than the
+words — someone taking the work, closing it, and selling it without giving
+back — and copyleft answers that while remaining open and commercially usable.
+So the real choice is between two positions, both of which honour the stated
+intent:
+
+- **Permissive** (Apache-2.0). Maximum reach, an explicit patent grant, and
+  anyone may build anything on it including proprietary forks. This is "as open
+  as possible" read literally.
+- **Copyleft** (GPL-3.0, or AGPL-3.0). Spin-offs are welcome and must stay open.
+  Selling remains permitted, but the source travels with it, which extinguishes
+  the close-and-sell scenario in practice. AGPL additionally covers the hosted
+  case — relevant because §XV names a website — by requiring a service built on
+  MCF to publish its source.
+
+Either is compatible with vendoring the permissively-licensed components §XVI
+needs. Neither is a legal opinion; the choice deserves a real review before
+distribution, and the point of recording it here is that it must be *made* before
+§7.4 picks an engine.
+
+Still open: the choice itself, the compatibility matrix of every candidate
+engine, whether a vendored component may be swapped for a differently-licensed
+one without changing MCF's own terms, and how obligations are surfaced to a user
+who redistributes.
 
 ### 7.48 What rights a contribution carries
 
@@ -3330,6 +3363,24 @@ The honest constraint: this must be answered *before* anything is collected, not
 after. Data gathered under unstated terms cannot be retroactively given terms,
 and §3.20's irreversibility applies to the ambiguity as much as to the data.
 
+**Minimal candidate answer, stated so that the absence of one does not become the
+answer.** A contribution is offered under a public-domain dedication — CC0 or
+equivalent — stated plainly at the moment of sharing, with **no withdrawal
+right**, because §3.20 already establishes that publication cannot be undone and
+offering to undo it would be a promise MCF cannot keep.
+
+The reasoning: measurement rows from thousands of machines merge into one corpus,
+and an attribution requirement that must travel with each row makes the aggregate
+almost unusable. A public-domain dedication is the common choice for exactly this
+shape of crowd-sourced technical data, it matches §XIV's purpose, and it is
+simple enough to state honestly in one sentence on the share screen — which
+§3.20 requires anyway.
+
+What this does *not* settle: whether the contributor is identified,
+pseudonymous or anonymous (§7.27 approaches that from the privacy side), and
+whether the aggregate itself carries terms. Neither blocks stating the terms of
+the contribution.
+
 ### 7.49 What protects the record from loss
 
 D6 notes in passing that a single file is a single point of corruption and calls
@@ -3340,10 +3391,32 @@ every artifact's provenance, and under §3.4 none of it is reconstructible by
 re-running, because the conditions that produced it are gone. A lost record is
 not an inconvenience; it is the loss of every claim MCF has made.
 
-Open: whether the record is replicated, snapshotted or exportable on a schedule;
-what a user is told about protecting it; whether a corrupted database is
-repairable, partially recoverable, or a total loss; and whether the record can be
-rebuilt in degraded form from anything else MCF holds.
+**Recommended answer, stated here rather than resolved.** Proportionate to what
+most installations actually do — host a model, occasionally measure one — and
+deliberately not more:
+
+- **The database is a rebuildable index over an append-only journal.** Trials are
+  appended to a log as they complete; the queryable store is derived from it.
+  This is D16's principle applied to durability — keep the fine-grained thing,
+  derive the coarse one — and it converts corruption from fatal to recoverable,
+  because an append-only file survives a crash far better than a mutable index
+  and can be replayed. It costs a write path, not a subsystem.
+- **Crash-safety is configuration, not a feature.** Write-ahead logging and
+  synchronous commit settings supply most of what a local tool needs, and cost
+  nothing to enable.
+- **Export is one command and produces one portable file.** This is nearly free:
+  §XIV's contribution path and P2's repro bundle both need serialization already,
+  so one mechanism serves three purposes.
+- **No replication, no scheduled off-machine backup, nothing automatic that
+  leaves the machine.** §3.13 refuses the weight and A17 forbids the egress. What
+  a user does with an exported file is theirs.
+- **Say what is unrecoverable.** Where a journal cannot be replayed, MCF reports
+  the loss and its extent rather than opening quietly with a shorter history —
+  which is §3.1's prohibition applied to the record itself.
+
+Still open: whether the journal is bounded and compacted, what a partial replay
+produces, and whether the record can be rebuilt in degraded form from anything
+else MCF holds.
 
 Adjacent and cheap: model weights are verified at acquisition (§3.6) and never
 again. Re-verifying a checksum before a long measurement run would catch silent
