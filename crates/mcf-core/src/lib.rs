@@ -25,6 +25,7 @@ pub mod degradation;
 pub mod failure;
 pub mod hardware;
 pub mod measurement;
+pub mod origin;
 pub mod provenance;
 pub mod self_cost;
 pub mod time;
