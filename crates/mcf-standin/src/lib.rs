@@ -30,9 +30,10 @@
 //! | Module | Holds |
 //! |---|---|
 //! | [`gguf`] | The reader for the format §XII's reference model is published in |
+//! | [`dequantize`] | Turning a tensor's stored bytes into numbers to compute with |
 //!
-//! What is not here yet: dequantization per scheme, the transformer operations,
-//! and sampling. B-360 names them and they arrive in that order, because a
+//! What is not here yet: the transformer operations and sampling. B-360 names them and they arrive in that order, because a
 //! format nobody can read is a model nobody can run.
 
+pub mod dequantize;
 pub mod gguf;

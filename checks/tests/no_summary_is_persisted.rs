@@ -52,16 +52,33 @@ fn nothing_computes_a_mean() {
     );
 }
 
-/// No floating point reaches a shipped crate.
+/// No floating point reaches a shipped crate — with one exception, which is
+/// stated here and paid for below.
 ///
 /// The reason is A6's, and it is why there is no mean: `Quantity` is `Ord`
 /// because every summary MCF reports is an order statistic, and an `f64` field
 /// would be the first step back toward arithmetic — with a NaN one division
 /// away from a record.
+///
+/// **`mcf-standin` is exempt, because inference *is* floating-point
+/// arithmetic.** D31 has MCF write a second implementation of it; a
+/// dequantizer that could not hold an `f32` could not decode a weight. What
+/// the rule is actually protecting is the *record*, and that protection is
+/// structural rather than lexical: the record's format has no floating-point
+/// representation at all (`mcf_record::json::Value`), and `mcf-standin` is not
+/// a dependency of `mcf-record`. Both are asserted in
+/// `a_float_cannot_reach_the_record` below, so the exemption costs a check
+/// rather than a promise.
 #[test]
 fn no_shipped_type_holds_a_float() {
     let mut offenders = Vec::new();
     for path in shipped_sources() {
+        if path
+            .components()
+            .any(|component| component.as_os_str() == "mcf-standin")
+        {
+            continue;
+        }
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -81,6 +98,38 @@ fn no_shipped_type_holds_a_float() {
         offenders.is_empty(),
         "floating point has reached a shipped crate, which is how a NaN reaches a \
          record (A6, A1): {offenders:#?}"
+    );
+}
+
+/// The exemption above is paid for: a float has no way into the record.
+///
+/// Two facts, and either alone would be enough. The record's own format has no
+/// floating-point representation — a `Value` cannot hold one, so there is
+/// nothing to write even for a caller that wanted to. And `mcf-record` does not
+/// depend on `mcf-standin`, so the crate where floats live cannot reach the
+/// crate that persists anything.
+#[test]
+fn a_float_cannot_reach_the_record() {
+    let codec = std::fs::read_to_string(
+        mcf_checks::workspace::root().join("crates/mcf-record/src/json.rs"),
+    )
+    .expect("the record's codec is in the tree");
+    for float in ["F32(", "F64(", "Float("] {
+        assert!(
+            !codec.contains(float),
+            "the record's format has grown a floating-point variant ({float}), which is \
+             what `no_shipped_type_holds_a_float` was protecting (A6, A1)"
+        );
+    }
+
+    let record = mcf_checks::workspace::MEMBERS
+        .iter()
+        .find(|member| member.name == "mcf-record")
+        .expect("mcf-record is a member");
+    assert!(
+        !record.depends_on.contains(&"mcf-standin"),
+        "mcf-record depends on mcf-standin, so the crate where floats live can reach the \
+         crate that persists things"
     );
 }
 
