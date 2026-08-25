@@ -1,0 +1,4 @@
+# Build output. Everything here is derived from the committed tree by the
+# pinned toolchain, and B-001's reproducibility check exists so that it can be
+# thrown away without losing anything.
+/target

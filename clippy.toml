@@ -1,0 +1,8 @@
+# B-003 draws the line at non-test code: `unwrap`, `expect` and `panic` are the
+# honest, loud thing for a test to do when its precondition does not hold, and
+# denying them there would push tests toward silently returning early — which is
+# the failure A2 forbids, aimed at the suite.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
