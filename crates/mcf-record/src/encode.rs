@@ -25,6 +25,7 @@ use mcf_core::degradation::{Degradation, Degraded};
 use mcf_core::failure::Failure;
 use mcf_core::hardware::{Accelerator, Characterization, Machine};
 use mcf_core::measurement::{Conditions, Measurement, Quantity};
+use mcf_core::trial::{Series, Trial, Trials};
 
 use crate::json::Value;
 
@@ -149,6 +150,79 @@ pub fn measurement<Q: Quantity>(measured: &Measurement<Q>, as_integer: impl Fn(Q
             ]),
         ),
         ("conditions", conditions(measured.conditions())),
+    ])
+}
+
+/// One trial: the row D16 makes the record.
+///
+/// Everything a later question needs, and nothing derived. B56's violation is a
+/// stored mean; the shape that prevents it is that this is what gets stored and
+/// a summary is projected from a set of these when somebody asks.
+#[must_use]
+pub fn trial<Q: Quantity>(trial: &Trial<Q>, as_integer: impl Fn(Q) -> i64) -> Value {
+    Value::map([
+        ("value", Value::Integer(as_integer(trial.value()))),
+        ("unit", Value::text(Q::UNIT)),
+        ("arm", Value::text(trial.arm().as_str())),
+        ("position", Value::Integer(i64::from(trial.position().0))),
+        ("session", Value::text(trial.session().as_str())),
+    ])
+}
+
+/// A session's trials, and the conditions they were taken under.
+///
+/// The conditions are written once for the set rather than repeated on every
+/// row: they are conditions *of the session*, and repeating them would invite
+/// a reader to believe two rows could disagree about them.
+#[must_use]
+pub fn trials<Q: Quantity>(
+    trials: &Trials<Q>,
+    conditions: &Conditions,
+    as_integer: impl Fn(Q) -> i64 + Copy,
+) -> Value {
+    Value::map([
+        (
+            "trials",
+            Value::List(
+                trials
+                    .all()
+                    .iter()
+                    .map(|one| trial(one, as_integer))
+                    .collect(),
+            ),
+        ),
+        ("conditions", self::conditions(conditions)),
+    ])
+}
+
+/// Interior detail, with what was done to it (B-271).
+///
+/// The thinning factor is a sibling of the points rather than a wrapper around
+/// them, for the reason [`degraded`] gives about a degradation mark: a nested
+/// value can be lifted out by a query that did not know to look one level up,
+/// and a series read without its factor is a resolution claim nobody made.
+#[must_use]
+pub fn series<Q: Quantity>(series: &Series<Q>, as_integer: impl Fn(Q) -> i64) -> Value {
+    let (points, thinning) = series.points();
+    Value::map([
+        ("unit", Value::text(Q::UNIT)),
+        (
+            "thinning_factor",
+            Value::Integer(i64::from(thinning.factor())),
+        ),
+        (
+            "full_resolution",
+            Value::Bool(thinning.is_full_resolution()),
+        ),
+        (
+            "points",
+            Value::List(
+                points
+                    .iter()
+                    .map(|point| Value::Integer(as_integer(*point)))
+                    .collect(),
+            ),
+        ),
     ])
 }
 

@@ -31,11 +31,21 @@ pub enum EntryKind {
     Failure,
     /// What MCF's own operation cost, measured (§3.8).
     SelfCost,
+    /// The trials of one session (D16, B56).
+    ///
+    /// Trials rather than results: what is recorded is what was observed, and
+    /// every summary is projected from these when a question is asked.
+    Trials,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 3] = [Self::MachineProfile, Self::Failure, Self::SelfCost];
+    pub const ALL: [Self; 4] = [
+        Self::MachineProfile,
+        Self::Failure,
+        Self::SelfCost,
+        Self::Trials,
+    ];
 
     /// The kind's name, as it appears in the record.
     ///
@@ -47,6 +57,7 @@ impl EntryKind {
             Self::MachineProfile => "machine_profile",
             Self::Failure => "failure",
             Self::SelfCost => "self_cost",
+            Self::Trials => "trials",
         }
     }
 

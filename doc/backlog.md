@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 40 |
+| **Version** | 41 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (15 done, 3 in progress, 56 blocked on a decision, 120 open).** Every item cites
+build items (17 done, 3 in progress, 56 blocked on a decision, 118 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -137,8 +137,8 @@ first and importance second.
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | open |
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | open |
-| B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | open |
-| B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | open |
+| B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | **done** — `mcf_core::trial`: a `Trial` cannot be built without its arm, position and session; there is no mean anywhere in MCF to store, and a check keeps it that way; a pairing is reconstructed from a journal round trip in `mcf-record`'s own suite |
+| B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
 | B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
 | B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [P2](proposals.md#p2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
@@ -362,6 +362,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 41 — the trials are the record, and there is no mean to store
+
+B-270 and B-271 are done. The first has a condition — *a stored mean does not
+compile* — that turned out to have a stronger reading than the obvious one.
+
+The obvious reading is a rule about the write path: something that refuses to
+serialize a summary. The stronger one is that **MCF has no mean to write**.
+`Quantity` requires only `Ord`, `Measurement` reports order statistics,
+and nothing in the shipped crates averages anything — so a mean is not
+forbidden, it is unrepresentable. A check now keeps it that way, along with the
+absence of floating point that goes with it, because the failure mode is
+somebody adding one for a single call site and a NaN arriving a division later.
+
+The second condition — *paired analysis is possible from the record alone* — is
+demonstrated rather than argued: a session's trials are written to a journal,
+dropped from memory, replayed, and §3.27's question asked of what came out.
+
+B-271's design constraint is that a thinned series looks exactly like a full one
+— an ordered list of values — so nothing about the *data* can distinguish them.
+Only the type can, which is why `Series` has no constructor that omits the
+thinning and no accessor that returns the points without it. Factors compose, so
+a series thinned twice reports six rather than two.
 
 ### Version 40 — content is in a different place, not behind a flag
 
