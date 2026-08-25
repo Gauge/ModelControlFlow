@@ -15,6 +15,7 @@
 //! journal-and-index rebuild, and B-161 the type-level separation from the
 //! content store.
 
+pub mod content;
 pub mod encode;
 pub mod journal;
 pub mod json;
