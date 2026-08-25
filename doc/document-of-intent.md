@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 34 |
+| **Version** | 35 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -352,7 +352,8 @@ knows what it ran.
 
 The cost is real and is accepted: a larger artifact, a build that vendors more,
 and work MCF cannot delegate to a package manager. §6.31 records what this does
-to §7.4's engine question and to §VII's budget, and the short form is that
+to the engine question D32 settles and to §VII's budget, and the short form is
+that
 **§VII's budget describes MCF's behaviour, not its download size** — a static
 binary that idles at nothing and starts in milliseconds honours §VII whether it
 is 12 MiB or 400.
@@ -477,9 +478,11 @@ be felt in the concurrent-download and streaming paths. The model conversion and
 quantization ecosystem is Python, treated as supervised subprocess tools — which
 D1's daemon architecture wants anyway.
 
-**Conditional on §7.4.** This reasoning assumes MCF wraps inference engines
-rather than implementing kernels. If that changes, the substrate question
-reopens with it.
+**Conditional on §7.4, and the condition is met.** This reasoning assumed MCF
+wraps inference engines rather than implementing kernels. D32 settles that it
+does, on measured ground ([findings.md](findings.md) F8), so the substrate
+question stands rather than resting on an assumption. It would reopen only with
+that decision.
 
 **Validated, not assumed.** §3.13 requires optimizing what is measured rather
 than what is imagined, so this decision is confirmed by a small adversarial
@@ -1092,6 +1095,66 @@ only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
 
+### D32 — MCF delegates inference and owns the wrapper *(answers §7.4)*
+
+**MCF does not implement inference kernels. It drives engines that do, and its
+own performance mandate applies to what it adds.** §VII's "fastest possible"
+means: the lightest possible wrapper, adding the least possible latency between
+a request and a token, over the fastest engine *available here* — and knowing
+empirically which engine that is on this hardware, which is what §IV is for.
+
+**The reading §7.4 anticipated is now measured.** [findings.md] F8 multiplies
+one matrix by another four ways, each of them safe portable Rust MCF could
+maintain, and then through a tuned BLAS on the same machine. MCF's best
+single-threaded attempt is **twenty-five to fifty times** slower than one core
+of a *generic* specialist kernel; using all thirty-two threads it is still about
+ten times slower than that one core. The gap is SIMD microkernels per
+instruction set, operand packing and prefetch scheduling — none of it reachable
+without per-architecture `unsafe`, all of it moving with every new processor.
+
+F8 records something the reading did not anticipate and which sharpens it: the
+*careful* step — cache blocking — came out slower than the one-line loop
+reorder. From the bottom of that slope the sign of an optimization is not
+obvious, so owning kernels would mean owning a measurement programme for every
+kernel on every machine, for ever. That is the treadmill, priced.
+
+**What MCF owns instead, and is held to.** The wrapper is where §VII bites, and
+D24 already numbers it: cold start, added request-to-first-token latency, idle
+cost, footprint. F8 bounds the other side of that trade — a single 512³ multiply
+on a specialist's kernel is over a millisecond, and a real forward pass is
+thousands of those, so MCF's few hundred microseconds of cold start and few
+microseconds of record write are not where the time goes. A wrapper that is
+careless would be visible; MCF's is measured (B-011) and budgeted (D24).
+
+**What this decision is conditional on, and what it is not.**
+
+- **It is not a decision about *which* engine.** D23 settles the terms — MCF
+  vendors a stack it controls end to end and defers what it cannot vendor, with
+  the reason recorded — and D28 settles the licence that constrains the choice.
+  Which engine is admitted first is [vendored.md]'s matrix and B-320's work.
+- **It does not make MCF an engine's client at arm's length.** D1's daemon
+  supervises engines as child processes (A3), the engine's build is part of a
+  configuration's identity (D17), no absolute figure renders without naming it
+  (B64), and an engine that dies mid-token is a classified failure with the
+  partial output kept (A4). Delegating the arithmetic is not delegating the
+  responsibility.
+- **It does not contradict D31.** MCF writes a stand-in engine, and B65 forbids
+  it from ever reporting a speed. That is the same decision from the other side:
+  MCF writes inference for *validity and coverage*, never for speed, so there is
+  no first step on the slope this entry declines.
+- **What would reopen it.** Evidence that MCF's own wrapper, rather than the
+  kernels, is where a user's tokens go; or a platform on which no vendorable
+  engine exists at all, which D23 already answers with a deferral and D31 with
+  the stand-in.
+
+**What this closes.** D4's substrate reasoning was recorded as *conditional on
+§7.4* — Rust was chosen on the assumption that MCF wraps engines rather than
+implementing kernels. That condition is now met rather than assumed, and D4
+stands on measured ground.
+
+[findings.md]: findings.md
+[vendored.md]: vendored.md
+
 ### D31 — MCF writes a stand-in engine, and a stand-in cannot produce a timing *(accepts PR8)*
 
 **MCF ships a second implementation of inference: its own, deliberately slow,
@@ -1117,11 +1180,11 @@ enforced by type, in the way A11 and B37 keep a simulated duration from becoming
 a performance number.
 
 That constraint does a second job. It removes the reason this work would drift
-into §7.4's own-engine question: there is no point optimizing something that can
+into the own-engine question: there is no point optimizing something that can
 never report a speed, so the slope from *stand-in* to *our own engine* has no
-first step. §7.4's reading is untouched — MCF's performance mandate applies to
-its own overhead, not to the inference kernels — because a stand-in makes no
-performance claim at all.
+first step. D32 settles that question the other way and this entry is untouched
+by it — MCF's performance mandate applies to its own overhead, not to the
+inference kernels — because a stand-in makes no performance claim at all.
 
 **What it does not need is what makes an engine hard.** No SIMD, no fusion, no
 threading, no accelerator path, no memory-layout work. Its maintenance is
@@ -2977,9 +3040,9 @@ comparability — is unresolved and recorded as part of §7.23.
 
 ### 6.31 Self-contained vs. delegating inference, and vs. the weight budget
 
-**Tension.** §7.4's likely answer is that MCF wraps mature inference engines
-rather than implementing kernels, and D4 accepted Python conversion tooling as
-supervised subprocesses. §XVI forbids making the user fetch either. Meanwhile
+**Tension.** D32 settles that MCF wraps mature inference engines rather than
+implementing kernels, and D4 accepted Python conversion tooling as supervised
+subprocesses. §XVI forbids making the user fetch either. Meanwhile
 §VII asks MCF to be the lightest thing it can be, and shipping an engine — or
 several, per accelerator vendor — is not light.
 
@@ -3347,25 +3410,6 @@ and how a user expresses their own weighting. Without this, the optimization
 intent cannot be implemented, only gestured at. §VI raises its urgency: a tool
 that is frictionless by intent must ship a default opinion, and §6.5 requires
 that opinion be stated rather than emergent.
-
-### 7.4 Engine ownership: does MCF perform inference, or delegate it? — **blocking §VI and §VII**
-
-Arguably the most consequential unanswered question in this document. §VII's "fastest possible" reads as an argument for owning the
-inference path; §VI's frictionless breadth and §III's "any model" read as an
-argument for delegating to mature runtimes.
-
-The honest reconciliation is almost certainly that **MCF's performance mandate
-applies to MCF's own overhead, not to the inference kernels** — MCF cannot be
-faster at matrix multiplication than the projects that specialize in it, and
-attempting to be would sacrifice §III's coverage for a loss. Under that reading
-§VII means: *the lightest possible wrapper, adding the least possible latency
-between request and token, over the fastest available engine — and knowing
-empirically which engine that is on this hardware, which is precisely what §IV
-is for.*
-
-That reading is stated here as the likely answer, not as a resolution, because
-it decides the project's architecture and deserves to be decided deliberately
-rather than inherited from a paragraph in §7.
 
 ### 7.5 Retention and residency of the record
 
@@ -3814,16 +3858,15 @@ which is an odd omission for a project D7 commits to putting in other people's
 hands.
 
 The larger half is inherited rather than chosen. §XVI requires MCF ship
-everything it needs, and §7.4's likely answer has it driving inference engines it
-did not write. **Vendoring an engine means inheriting that engine's licence
+everything it needs, and D32 has it driving inference engines it did not write. **Vendoring an engine means inheriting that engine's licence
 obligations** — permissive for some, copyleft for others, and the difference
 propagates into what MCF itself may be. The same applies to tokenizers,
 quantization tools and anything else the self-contained artifact carries.
 
-This is structural because it can decide an architectural question: an engine
-whose terms are incompatible with MCF's intended licence is an engine MCF cannot
-ship, whatever its merits, and §7.4 should not be settled without knowing which
-those are. It also decides whether per-accelerator builds (§6.31) are one
+This is structural because it decides an architectural question: an engine whose
+terms are incompatible with MCF's intended licence is an engine MCF cannot ship,
+whatever its merits. D28 settled the licence and D32 settled the ownership
+question afterwards, in that order and for that reason. It also decides whether per-accelerator builds (§6.31) are one
 artifact or several under different terms.
 
 **Stated intent, recorded ahead of the choice.** MCF is to be as open as
@@ -3894,6 +3937,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.35 | Host platform scope | §I, A14, §XVI | **D29** — all platforms, Linux first; three states, per-platform artifacts |
 | §7.51 | Asserting a budget on a used machine | B24, B35, D27 | **D30** — attributability is a property of a reading, measured as scheduling delay |
 | §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
+| §7.4 | Engine ownership | §VI, §VII, §IV | **D32** — delegate the kernels, own the wrapper; measured in [findings.md](findings.md) F8 |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -3928,6 +3972,35 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 35 — the engine question is measured and answered
+
+D32 answers §7.4, which this document called the most consequential unanswered
+question in it. The answer is the one §7.4 named as likely — MCF delegates
+inference and owns the wrapper — and it is recorded now because it stopped being
+a reading and became a measurement.
+
+[findings.md](findings.md) F8 is that measurement. One matrix multiply, four
+ways in safe portable Rust, then through a tuned BLAS on the same machine: MCF's
+best single-threaded attempt is twenty-five to fifty times slower than one core
+of a *generic* specialist kernel, and all thirty-two of this machine's threads
+are still about ten times slower than that one core. §7.4 asked not to be
+settled on a paragraph, and it has not been.
+
+The prototype also found what the paragraph could not: the careful optimization
+step — cache blocking — came out *slower* than the one-line loop reorder. That is
+the treadmill seen from the bottom, and it prices the alternative more honestly
+than the headline ratio does.
+
+Three things this does not decide, stated in the entry so they are not inherited
+by accident: which engine is admitted first (D23's terms, D28's licence,
+[vendored.md](vendored.md)'s matrix, B-320's work); that delegating the
+arithmetic delegates any responsibility (it does not — supervision, identity and
+failure classification are unchanged); and anything about D31's stand-in, which
+is the same decision from the other side.
+
+D4's substrate entry recorded itself as *conditional on §7.4*. That condition is
+now met rather than assumed.
 
 ### Version 34 — MCF writes a second implementation
 

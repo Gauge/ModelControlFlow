@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -35,6 +35,7 @@ forward as one.
 | 5 | [F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)](#5--f5--the-cold-start-budget-is-a-measurement-of-the-filesystem-b-011-d30) |
 | 6 | [F6 — The first mutant to survive (B-186)](#6--f6--the-first-mutant-to-survive-b-186) |
 | 7 | [F7 — A major page fault is the signal F5 was missing (B-193)](#7--f7--a-major-page-fault-is-the-signal-f5-was-missing-b-193) |
+| 8 | [F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)](#8--f8--how-far-a-kernel-mcf-could-maintain-is-from-a-specialists-dec-004) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -610,7 +611,91 @@ quarter between runs on an idle machine, so the cold-start figure is still
 recorded rather than judged against its baseline. The ceiling judges it; the
 tolerance would fire on the tail.
 
+## 8 · F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)
+
+**What was run.** `prototypes/kernel-slope`: one 512×512 single-precision matrix
+multiply — the operation an inference engine spends nearly all of its time in —
+four ways, each of them something MCF could actually write and maintain in safe,
+portable Rust. Then the same multiply through a tuned BLAS present on the
+machine, single-threaded, for the other end of the slope.
+
+**Conditions.** The same machine as F1–F7, release profile, five trials per
+variant, operands generated from a fixed seed so two runs are comparable. Every
+variant's product is compared bit-for-bit against the definition before its time
+is kept: a kernel that is fast and wrong is not a data point (A19). The machine
+was **not** quiet — a one-minute load average of about 34, from an editor's
+indexers — and the single-threaded readings came back attributable at around
+0.1 % queuing while the threaded one did not, which is D30 doing its job.
+
+### 8.1 The readings
+
+Medians of three runs of the prototype:
+
+| Variant | Median | Against the definition |
+|---|---|---|
+| Naive — the definition, in the obvious loop order | 226–270 ms | ×1 |
+| Reordered — the same arithmetic, loops walking memory forwards | 53–86 ms | ×3–5 |
+| Blocked — tiled to keep a working set in cache, written carefully | 126–143 ms | ×1.6–1.9 |
+| Blocked and threaded — the same across 32 threads | 19–27 ms | ×9–14 |
+| **A specialist's kernel** — OpenBLAS, **one** thread | **1.5–2.5 ms** | **×100–170** |
+
+Two ratios matter and both are measured here rather than assumed:
+
+- The best MCF could do **single-threaded** is 53–86 ms against 1.5–2.5 ms.
+  **A specialist's single core is twenty-five to fifty times MCF's best.**
+- MCF using **all thirty-two threads** is 19–27 ms, still **about ten times
+  slower than one** of that specialist's cores.
+
+### 8.2 The second step of tuning made it worse
+
+The blocked variant — the careful one, the one that looks like optimization — is
+consistently **slower** than the one-line loop reorder. Cache blocking without
+operand packing and without a register-blocked microkernel adds loop overhead
+and address arithmetic for a locality benefit the reorder had already collected
+at this size.
+
+That is not a defect in the prototype; it is the finding. From the bottom of
+this slope, the *sign* of an optimization is not obvious, and getting it right
+means measuring each step on each machine — which is the treadmill §7.4 was
+weighing, seen from the first rung.
+
+### 8.3 What the remaining distance is made of
+
+The gap to the specialist is not algorithmic. It is hand-written SIMD
+microkernels per instruction set, operand packing into contiguous panels,
+prefetch scheduling, and a different code path per generation of processor.
+OpenBLAS reports itself here as `DYNAMIC_ARCH Haswell` — a *generic* kernel,
+not one tuned for this processor — and it is still fifty times MCF's best.
+
+None of that is reachable from where MCF stands. The workspace denies
+`unsafe_code` for the reason §3.16 gives, portable SIMD is not in the stable
+standard library, and every new processor and accelerator moves the target.
+Owning it would mean owning it for ever.
+
+### 8.4 What this settles
+
+§7.4 stated the likely answer — *MCF's performance mandate applies to MCF's own
+overhead, not to the inference kernels* — and refused to settle on a reading
+alone. This is the measurement that reading needed, and it points the same way
+by one to two orders of magnitude. D32 is the decision.
+
+It also bounds the cost of the *other* half of that architecture. MCF's own
+overhead, measured on this machine, is a cold start of a few hundred
+microseconds and a record write of a few microseconds (F3, D24). A single 512³
+multiply on a specialist's kernel is 1.5 ms — and a real model's forward pass is
+thousands of those. Whatever MCF's wrapper costs, it is not where the time goes,
+which is exactly why §VII's mandate belongs there and nowhere else.
+
 ## Changelog
+
+### Version 8 — the slope §7.4 was arguing about
+
+F8 added. §7.4 said MCF cannot be faster at matrix multiplication than the
+projects that specialize in it, and asked not to be settled on that reading
+alone. The prototype measures the slope: the best safe portable Rust it could
+maintain is twenty-five to fifty times slower than one core of a *generic*
+tuned BLAS on the same machine, and the careful tiling step made it slower than
+the one-line reorder — which is what a treadmill looks like from the bottom.
 
 ### Version 7 — the signal F5 was missing
 

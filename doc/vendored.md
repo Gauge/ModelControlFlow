@@ -53,8 +53,9 @@ no row here.
 *Nothing.* No component has been admitted, so there is nothing to ship and
 nothing to be compatible.
 
-The first admission will be an inference engine, and DEC-004 is the decision
-that names it. D31 already settles what MCF writes itself — a stand-in engine,
+The first admission will be an inference engine. D32 settles that there is one
+to admit — MCF delegates inference and owns the wrapper — and which one is this
+register's question rather than that decision's. D31 already settles what MCF writes itself — a stand-in engine,
 so that coverage is true and the vendored engine has something to be checked
 against — and B65 settles that a stand-in can never report a speed.
 

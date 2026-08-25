@@ -108,7 +108,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-022, DEC-004, DEC-039, DEC-051. ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27; ~~DEC-047's licence half~~ by D28; ~~DEC-035~~ by D29. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** DEC-022, DEC-039. ~~DEC-004~~ closed by D32, on F8's measurement; ~~DEC-051~~ by D30. ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27; ~~DEC-047's licence half~~ by D28; ~~DEC-035~~ by D29. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
@@ -191,7 +191,7 @@ knowing what a runtime is.
   §XVII lets MCF take exclusive control of hardware — and a stop path that is
   reliable is a stop path the laboratory can test
 
-**Gated on:** DEC-001, DEC-004, DEC-009, DEC-018, DEC-016.
+**Gated on:** DEC-001, DEC-009, DEC-018. ~~DEC-004~~ closed by D32; ~~DEC-016~~ by D24.
 
 **Exit criteria**
 - A cold machine reaches a first token in one command

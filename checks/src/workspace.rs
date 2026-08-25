@@ -81,6 +81,14 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-prototype-kernel-slope",
+        path: "prototypes/kernel-slope",
+        // The §7.4 evidence (DEC-004): how much of an inference kernel's speed
+        // is reachable from safe, portable Rust. Ships nothing, and nothing
+        // depends on it.
+        depends_on: &["mcf-core"],
+    },
+    Member {
         name: "mcf-checks",
         path: "checks",
         // Development dependencies only: the taxonomy agreement check reads

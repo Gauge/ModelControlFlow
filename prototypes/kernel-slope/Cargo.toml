@@ -1,0 +1,18 @@
+[package]
+name = "mcf-prototype-kernel-slope"
+description = "The §7.4 evidence: how much of an inference kernel's speed is reachable without leaving safe, portable Rust (DEC-004)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "mcf-prototype-kernel-slope"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../../crates/mcf-core" }

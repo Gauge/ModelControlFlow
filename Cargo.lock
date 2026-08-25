@@ -60,6 +60,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf-prototype-kernel-slope"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+]
+
+[[package]]
 name = "mcf-record"
 version = "0.1.0-m0"
 dependencies = [

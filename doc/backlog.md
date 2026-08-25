@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 63 |
+| **Version** | 64 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
-build items (35 done, 1 dropped, 3 in progress, 54 blocked on a decision, 105 open).** Every item cites
+**248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
+build items (35 done, 1 dropped, 3 in progress, 53 blocked on a decision, 106 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -44,7 +44,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-016 | The performance budget numbers | §7.16 | §VII | M0 | **resolved** — D24: sixteen figures, ceilings not targets; footprint provisional pending the prototype |
 | DEC-010 | The failure classification scheme | §7.10 | §3.1 | M0 | **resolved** — [taxonomy.md](taxonomy.md): three axes, sixteen domains, 111 codes |
 | DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | **resolved** — confirms. [findings.md](findings.md) F1: four death modes classified with the manager unaffected, five of five accelerator questions answered over the C ABI, every measurable D24 figure under its ceiling |
-| DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
+| DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | **resolved** — D32: delegate the kernels, own the wrapper. [findings.md](findings.md) F8 measured the slope: MCF's best safe portable Rust is 25–50× one core of a *generic* tuned BLAS on the same machine, and the careful tiling step came out slower than the one-line reorder |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | **resolved** — D26: the taxonomy, bound to what MCF's code claims rather than to the whole table; observed rather than caused; the clock is structural |
 | DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
@@ -133,7 +133,7 @@ first and importance second.
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
-| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29; the first token needs an engine (DEC-004) |
+| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29 and D32; the first token needs an engine admitted to [vendored.md](vendored.md) (B-320) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
@@ -176,7 +176,7 @@ first and importance second.
 |---|---|---|---|---|
 | B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | open |
 | B-031 | Idle discipline: no polling loops, no background timers, no always-on watchers; idle cost indistinguishable from zero | §3.13, §6.9 | Measured idle CPU and wakeups meet DEC-016's budget, asserted in CI | open |
-| B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | blocked (DEC-004) |
+| B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | open — unblocked by D32; needs an engine admitted (B-320) and the daemon (B-030) |
 | B-033 | Supervision contract: a runtime that dies mid-token is a classified, attributed failure that does not take the manager down | §3.1, §7.1 | The lab kills a runtime at every stage — pre-load, mid-load, mid-token, post-token — and the daemon stays coherent | blocked (DEC-001) |
 | B-034 | Serving API: models addressed by name, stable surface, first token without the user knowing about runtimes, formats or flags | §VI, §3.15 | A first token is obtained from a named model in one command, on a machine that has never served before | blocked (DEC-001) |
 | B-035 | Added-latency budget: the overhead MCF interposes between an inbound request and the engine's first token is measured and asserted | §VII, §3.13 | The interposed latency is measured under stated conditions and defended in CI | open |
@@ -366,6 +366,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 64 — the engine question is answered
+
+DEC-004 resolved by D32: MCF delegates inference and owns the wrapper. The
+intent document called it the most consequential unanswered question in it and
+asked not to be settled on a reading, so it was settled on a measurement —
+[findings.md](findings.md) F8, one matrix multiply, four ways MCF could
+maintain, against a tuned BLAS on the same machine.
+
+What it unblocks is the engine line: B-320's vendored stack, B-183's first token
+from a container, and the M2 items that were gestured at. What it does *not*
+decide is which engine, which is D23's terms, D28's licence and B-330's matrix.
 
 ### Version 63 — the signal F5 was missing
 
