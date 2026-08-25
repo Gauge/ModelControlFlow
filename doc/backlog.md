@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 71 |
+| **Version** | 72 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 6 in progress, 52 blocked on a decision, 103 open).** Every item cites
+build items (36 done, 1 dropped, 7 in progress, 52 blocked on a decision, 102 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -166,7 +166,7 @@ first and importance second.
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
-| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | open |
+| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
 | B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | open |
 
@@ -366,6 +366,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 72 — what will run here, before the bandwidth is spent
+
+B-213 in progress: PR3's arithmetic half. A repository publishing twenty
+quantizations can be classified without fetching any of them — fits, fits
+without room for your context, does not fit — and the middle verdict answers
+with the longest context that *would*, because that is a configuration somebody
+can actually take.
+
+Nothing here produces a number about speed. That is the estimate half (B-214),
+and A20 keeps it apart.
 
 ### Version 71 — a hub that behaves badly on purpose
 
