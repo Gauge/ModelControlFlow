@@ -28,6 +28,7 @@ pub mod measurement;
 pub mod provenance;
 pub mod self_cost;
 pub mod time;
+pub mod trial;
 
 pub use failure::{Failure, Result};
 pub use measurement::Measurement;
