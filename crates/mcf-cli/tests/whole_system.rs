@@ -130,6 +130,37 @@ fn the_binary_reports_what_it_is() {
     assert_eq!(text(&output).trim(), BuildIdentity::current().to_string());
 }
 
+/// The artifact states its own terms, across the process boundary (B-330).
+///
+/// A redistributor has a binary, not a repository. GPL-3.0 §4 asks whoever
+/// conveys a copy to hand on a copy of the License, so the whole text is
+/// compiled in — and this is the test that the person with the obligation can
+/// actually get at it.
+#[test]
+fn the_binary_states_its_licence_and_carries_the_text() {
+    let machine = Machine::new("licence");
+
+    let short = machine.run(&["licence"]);
+    assert!(short.status.success(), "{}", error_text(&short));
+    let stated = text(&short);
+    assert!(stated.contains("GPL-3.0-only"), "{stated}");
+    assert!(stated.contains("NO WARRANTY"), "{stated}");
+    assert!(stated.contains("section 6"), "{stated}");
+
+    let full = machine.run(&["licence", "--full"]);
+    assert!(full.status.success(), "{}", error_text(&full));
+    let whole = text(&full);
+    assert!(
+        whole.contains("GNU GENERAL PUBLIC LICENSE") && whole.contains("TERMS AND CONDITIONS"),
+        "the binary does not carry the licence text it is conveyed under"
+    );
+    assert!(whole.len() > stated.len() + 30_000, "{}", whole.len());
+
+    // Both spellings reach it: the SPDX identifier and this project's documents
+    // disagree, and a redistributor should not have to guess.
+    assert_eq!(text(&machine.run(&["license"])), stated);
+}
+
 /// A2 across the boundary: an unrecognized command is a named outcome on
 /// stderr with a failing status, never a silent success.
 #[test]

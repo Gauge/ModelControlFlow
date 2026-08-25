@@ -11,6 +11,7 @@
 //! the record.
 
 mod doctor;
+mod licence;
 
 use std::process::ExitCode;
 
@@ -25,6 +26,12 @@ use mcf_core::build_identity::BuildIdentity;
 enum Request<'a> {
     /// Report what this binary is and what built it.
     Version,
+    /// State the licence, and the obligations that come with conveying this
+    /// binary (B-330, D28).
+    Licence {
+        /// Whether to print the whole text, which is compiled in.
+        full: bool,
+    },
     /// Report the surface that exists.
     Usage,
     /// Write the record to one portable file.
@@ -97,6 +104,13 @@ fn main() -> ExitCode {
 fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
     match arguments {
         ["--version" | "-V"] => Request::Version,
+        // Both spellings, because the SPDX identifier and half the world spell
+        // it one way and this project's documents spell it the other. A
+        // redistributor looking for their obligations should not have to guess.
+        ["licence" | "license" | "--licence" | "--license"] => Request::Licence { full: false },
+        ["licence" | "license" | "--licence" | "--license", "--full"] => {
+            Request::Licence { full: true }
+        }
         [] | ["--help" | "-h"] => Request::Usage,
         ["export", "--to", to] => Request::Export { to },
         // A2: an `export` with no destination is a named outcome carrying what
@@ -119,7 +133,8 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             },
         },
         [
-            command @ ("--version" | "-V" | "--help" | "-h"),
+            command @ ("--version" | "-V" | "--help" | "-h" | "licence" | "license" | "--licence"
+            | "--license"),
             argument,
             ..,
         ] => Request::UnexpectedArgument { command, argument },
@@ -198,6 +213,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             text: identity.to_string(),
             served: true,
         },
+        Request::Licence { full } => Response {
+            text: licence::render(identity, *full),
+            served: true,
+        },
         Request::Usage => Response {
             text: format!(
                 "{identity}\n\
@@ -206,6 +225,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
                  \x20 mcf export --to <path>              the record, as one portable file\n\
+                 \x20 mcf licence [--full]                the terms, and what conveying this\n\
+                 \x20                                     binary obliges you to (GPL-3.0-only)\n\
                  \x20 mcf --version                       what this binary is\n\
                  \n\
                  This is M0. Nothing here acquires, serves or measures a model."
@@ -232,7 +253,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             served: false,
         },
         Request::UnexpectedArgument { command, argument } => Response {
-            text: format!("mcf: {command} takes no arguments, and was given: {argument}"),
+            // Not "takes no arguments": some of them take one, and telling an
+            // operator that `licence` takes none when it takes `--full` is a
+            // confident wrong answer of the kind P1 puts below saying less.
+            text: format!("mcf: {command} does not take: {argument}"),
             served: false,
         },
         Request::MissingArgument { command, needs } => Response {
@@ -288,6 +312,7 @@ mod tests {
         assert!(text.contains("mcf --version"), "{text}");
         assert!(text.contains("mcf doctor"), "{text}");
         assert!(text.contains("mcf export"), "{text}");
+        assert!(text.contains("mcf licence"), "{text}");
         for unbuilt in ["mcf pull", "mcf serve", "mcf bench", "mcf lab"] {
             assert!(
                 !text.contains(unbuilt),

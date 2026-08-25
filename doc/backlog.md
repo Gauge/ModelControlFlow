@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 64 |
+| **Version** | 65 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (35 done, 1 dropped, 3 in progress, 53 blocked on a decision, 106 open).** Every item cites
+build items (36 done, 1 dropped, 2 in progress, 53 blocked on a decision, 106 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -146,7 +146,7 @@ first and importance second.
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
-| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **in progress** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; [vendored.md](vendored.md) is the matrix and states what a finding is. Its vendored section is empty because nothing is admitted, and the check refuses a vendored component with no row |
+| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **done** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; [vendored.md](vendored.md) is the matrix and refuses a vendored component with no row. `mcf licence [--full]` is the second half: the whole text is compiled into the binary, because a redistributor has a binary rather than a repository and §4 obliges them to convey a copy. What it says about vendored components and what the register records are checked against each other |
 | B-361 | A timing-class result cannot be constructed from a stand-in engine handle, in the way a simulated duration cannot become a performance number | B65, D31, A11, B31 | The compiler refuses it; a check refuses a conversion added later | **done** — `mcf_core::engine`: `timing` is defined on `Run<Vendored>` alone, `Timing` has no constructor of its own, and no conversion exists between the two runs. Four source checks and a `const` assertion; verified by giving the stand-in a timing and watching them fail |
 | B-360 | The stand-in engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling — no SIMD, no fusion, no threading, no accelerator path | D31, §III, §3.2, B7 | A model no vendored engine will run reaches a first token on the stand-in, and every result taken on it is marked (A5) | open |
 | B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
@@ -366,6 +366,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 65 — the artifact states its own terms
+
+B-330 done. The repository held the licence and the register refused an
+unrecorded component; what was missing was the half a redistributor actually
+needs, since they have a binary rather than a repository. `mcf licence` states
+the terms, the warranty position and the source obligation, and `--full` prints
+the whole text, which is compiled in.
+
+It cost 37 KiB of a 40 MiB ceiling and tripped B-011's regression detector at
+5.7 %, which is the detector working: the growth was accepted in a commit
+message rather than by raising a threshold.
 
 ### Version 64 — the engine question is answered
 

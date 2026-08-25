@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -432,6 +432,14 @@ comparable — a different profile is a different artifact (A8) — and a run th
 fails leaves the baseline it failed against rather than adopting the worse
 number.
 
+**Growing a figure on purpose is a deliberate act, and looks like one.** Delete
+that figure's file in `.mcf-tiers/baselines/` and say in the commit what was
+bought. B-330's licence text is the first instance: carrying the whole GPL into
+the binary so a redistributor conveying it conveys a copy (§4) grew the core
+binary by 5.7 %, well past the 2 % tolerance and to 1.6 % of D24's ceiling. The
+tier refused it, which is what it is for; accepting it was a sentence in a commit
+message rather than a threshold quietly raised.
+
 **Not every figure is judged against its baseline, and the ones that are not say
 so.** A18 makes a regression detector a third thing whose thresholds are
 statistical judgments rather than assertions:
@@ -560,6 +568,14 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 15 — how a figure is grown on purpose
+
+§9 gains the sentence B-330 needed on its first day: the regression detector
+refused a 5.7 % growth in the binary that was bought deliberately, and the way
+to accept one is to delete the baseline and say what it bought. A threshold
+raised quietly would have been the other option, which is the one B20 exists to
+prevent.
 
 ### Version 14 — a reading is judged by two signals
 
