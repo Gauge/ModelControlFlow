@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 69 |
+| **Version** | 70 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 4 in progress, 53 blocked on a decision, 104 open).** Every item cites
+build items (36 done, 1 dropped, 5 in progress, 52 blocked on a decision, 104 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -156,7 +156,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-020 | Hub reference resolution: accept any Hugging Face reference without special-casing, and reach a defined, actionable outcome for every one | §III, §6.3 | No input produces a hang, an unclassified crash or corrupted local state — asserted by the lab's hostile-hub scenarios | open |
+| B-020 | Hub reference resolution: accept any Hugging Face reference without special-casing, and reach a defined, actionable outcome for every one | §III, §6.3 | No input produces a hang, an unclassified crash or corrupted local state — asserted by the lab's hostile-hub scenarios | **in progress** — `mcf_hub::reference`: every way a reference is written — typed, pasted, from a browser's blob or resolve URL — and a named refusal for every string that is not one, including the traversals and schemes §3.7 exists to stop. Total, offline and deterministic, so the laboratory exercises every branch without a hub. It is a fuzz target and has a scenario (A13). The hostile-hub *fixtures* the done-when names need B-028's simulated hub |
 | B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | open |
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | open |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | open |
@@ -164,7 +164,7 @@ first and importance second.
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
-| B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | blocked (DEC-021) |
+| B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | open — unblocked by D26, which settled what the laboratory simulates, that it observes rather than causes, and that the clock is structural |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | open |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
@@ -366,6 +366,22 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 70 — a reference is a thing MCF can read
+
+B-020 in progress. Every way a reference is written reaches a named outcome —
+typed, pasted, from a browser URL — and every string that is not one is refused
+by name, including the traversals and the schemes §3.7 exists to stop. It is
+total, offline and deterministic, which is what lets the laboratory exercise
+every branch without a hub.
+
+The fuzz tier found two things worth keeping while it was written: a file name
+that could be read out of a URL and not written back, and an owner containing a
+dot, which is what distinguishes an owner from a host. Both are refusals now.
+
+B-028's status was stale — DEC-021 closed with D26 and the register still said
+blocked. The fake hub is open work, and it is what B-020's done-when is waiting
+for.
 
 ### Version 69 — MCF runs on a machine with nothing on it
 

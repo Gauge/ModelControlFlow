@@ -16,3 +16,6 @@ mcf-record = { path = "../mcf-record" }
 # the model-file reader constructs two. A scenario that built those failures by
 # hand would be a scenario about a mock (D26).
 mcf-standin = { path = "../mcf-standin" }
+# The same reason: a reference MCF refuses is a category its code constructs,
+# and a scenario that built that failure by hand would be about a mock.
+mcf-hub = { path = "../mcf-hub" }
