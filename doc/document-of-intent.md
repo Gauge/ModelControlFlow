@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -35,8 +35,8 @@ better, each carrying a check.
 
 | § | Section | What it holds |
 |---|---|---|
-| §1 | [What This Project Is](#1-what-this-project-is) | The four verbs, and which of them is the point |
-| §2 | [The Founding Intents](#2-the-founding-intents) | I–XII, the originating statements |
+| §1 | [What This Project Is](#1-what-this-project-is) | The six verbs, and which of them are the point |
+| §2 | [The Founding Intents](#2-the-founding-intents) | I–XV, the originating statements |
 | §2.1 | [Settled Decisions](#21-settled-decisions) | Questions once open, now answered, with their reasoning |
 | §3 | [Principles](#3-principles) | The load-bearing beliefs |
 | §4 | [Standing Tensions](#4-standing-tensions-we-accept) | Permanent conditions, managed rather than solved |
@@ -53,7 +53,7 @@ better, each carrying a check.
 ModelControlFlow (MCF) exists to make the open weights ecosystem *usable by one
 person on one machine without that person becoming a full-time operator of it.*
 
-Four things follow from that sentence and they are the whole project:
+Six things follow from that sentence and they are the whole project:
 
 1. **Acquire** — obtain any model published on Hugging Face, with its
    provenance intact and its licensing legible.
@@ -61,16 +61,25 @@ Four things follow from that sentence and they are the whole project:
    the hardware in front of us, with as little ceremony and as little overhead
    as physically possible — configured to expose everything the model can
    actually do — or explain precisely why it cannot run.
-3. **Judge** — measure what it costs and what it is worth here, on this
+3. **Analyse** — put the model on the bench: a range of purpose-built
+   laboratories, each instrumented for the question it asks, each producing
+   evidence about a different quality of the thing being tested.
+4. **Judge** — measure what it costs and what it is worth here, on this
    hardware, for the work actually being done, and use those measurements to
    converge on the best available local configuration.
-4. **Show** — make all of the above legible through an interface light enough
+5. **Share** — carry results off this machine deliberately, with their
+   conditions attached, so that many machines' evidence can become something no
+   single machine could produce; and accept a configuration identified
+   elsewhere and reproduce it here exactly.
+6. **Show** — make all of the above legible through an interface light enough
    to run anywhere, on anything.
 
-The third is the point. Acquisition and serving are table stakes; plenty of
-tools do them. The reason MCF is worth building is the closed loop: *measure,
-compare, select, re-measure.* A version of MCF that downloads and runs models
-but cannot tell you which one you should be running has missed its purpose.
+The third and fourth are the point. Acquisition and serving are table stakes;
+plenty of tools do them. The reason MCF is worth building is the closed loop —
+*instrument, measure, compare, select, re-measure* — and the fact that the loop
+runs **here**, on the hardware the answer is actually for. A version of MCF that
+downloads and runs models but cannot tell you which one you should be running
+has missed its purpose.
 
 ### The animating frustration
 
@@ -254,6 +263,68 @@ summary: no code path may behave specially because an artifact is the reference
 model, the test suite may not depend on it, and nothing measured on it
 generalizes to models in general.
 
+### XIII. Analysis — "an analysis tool as well as a hosting platform"
+
+MCF is a bench, not only a host. It carries a range of **diagnostic
+laboratories**, each built for one question about a model, and each instrumented
+as deeply as *its own question* requires: a latency lab watches different things
+than a tool-calling lab, a context-degradation lab different things again, and
+none of them should be forced through one generic instrumentation profile that
+serves none of them well.
+
+The unit of work is therefore the **lab**: a named, versioned, reproducible
+experiment with its own apparatus, its own telemetry, its own outputs, and its
+own statement of what it does and does not establish. §IX's agentic suite is the
+first of them, not the whole of them.
+
+This is a substantial enlargement of §IV and it comes with a specific danger:
+"deep telemetry, custom per lab" is the phrase that grew into the ambient
+telemetry D5 refused, and "a wide range of labs" is the phrase that grows into
+the platform §5 refuses. §6.24 and §6.26 draw those lines. The short form is
+that **telemetry inside a lab is not ambient — it is the experiment** — and that
+labs are built in-tree, one at a time, each justifying itself by the validity it
+adds.
+
+### XIV. The shared record — "collected in a local SQLite database that can be shared"
+
+Diagnostic results are durable, queryable and portable: a local database that
+belongs to the user, and that the user can **choose to contribute** so that many
+machines' evidence aggregates into something no single machine can produce — a
+picture of how models behave across real hardware, under stated conditions.
+
+The aggregation happens elsewhere. MCF's obligation is to produce a contribution
+that is honest, conditioned and safe to publish: every row carries the conditions
+that produced it (§3.4), and no row carries anything the user did not intend to
+send (§3.10).
+
+This intent inverts §5's suspicion of foreign numbers and must be read
+precisely, which §6.28 does. MCF still decides **locally** and still refuses to
+let a number measured on someone else's machine choose a configuration on this
+one. What changes is that MCF now *contributes* to a corpus rather than
+pretending the corpus should not exist — and the thing it contributes is the
+thing most public leaderboards lack, which is the conditions.
+
+### XV. Reproduce by identifier — "paste an identifier, get exactly that"
+
+A user who has found, elsewhere, the model and configuration that suits them
+should be able to hand MCF a single identifier and receive **exactly that**: the
+same weights, the same quantization, the same context, the same runtime and
+sampling parameters — or a precise statement of why this machine cannot
+reproduce it.
+
+*Long-term context, deliberately out of scope:* the intended source of such
+identifiers is a website the author hosts, which aggregates contributed results
+(§XIV) and helps people choose. **That website is not part of this project.**
+MCF's side of the contract is the whole of MCF's obligation: emit an identifier
+for a configuration it holds, and reproduce a configuration from an identifier it
+is given.
+
+An identifier is an inbound instruction from outside the machine, which makes it
+§3.7's problem, and it names a configuration MCF has not measured, which makes it
+§3.18's problem. §6.29 resolves both, and the resolution is the same one this
+document reaches every time: **an imported configuration is a declaration until
+this machine verifies it.**
+
 ## 2.1 Settled Decisions
 
 Questions that §7 once held open and that are now answered. Their substance
@@ -359,6 +430,49 @@ other.
 laboratory reproduction buy the same good, and the lab buys it deterministically,
 cheaply, and before release rather than after. The cost is real and is recorded
 in §6.15 and §6.16.
+
+### D6 — The record is a SQLite database *(follows from §XIV)*
+
+The record — measurements, capability verdicts, failure records, provenance,
+lab results — lives in a single embedded SQLite database on the user's machine.
+
+**Why it follows.** §XIV requires the record be portable, and a single file is
+the most portable artifact there is. §II requires it be queryable, and the
+alternative to a query language is a query language written badly. §VII permits
+it: an embedded engine with no server, no daemon of its own and no idle cost.
+D4 makes it cheap, since the binding is a C-ABI library Rust drives without
+tax. §3.3's "structured and machine-readable first" is satisfied by
+construction rather than by discipline.
+
+**What the decision drags with it, recorded rather than discovered later:** a
+schema is a public interface the moment it is shared (§7.30), migrations become
+a correctness problem the moment measurements must survive them (§7.13), and a
+single file is a single point of corruption — which is a §3.1 obligation, not a
+footnote.
+
+**The content store is not this store.** §6.8 requires prompt and completion
+content live separately from the system record. That separation is what makes
+§XIV safe: the shareable database contains no user content *because content was
+never in it*, not because an export filter removed it. §6.27 turns on this.
+
+### D7 — MCF is meant to be used by people other than its author *(answers §7.15)*
+
+§XIV and §XV describe a user who downloads MCF, contributes results, and pastes
+an identifier they found elsewhere. That is not the author.
+
+**What this settles:** documentation, installation and interface stability are
+*goals* rather than incidental. A tool distributed to strangers cannot rely on
+its operator knowing what its author knew, and §3.15's "explained on demand" is
+owed to somebody who has never read this document.
+
+**What it costs:** breaking changes acquire a cost they did not have; §7.13's
+migration problem becomes other people's data; and §7.17's authentication
+question stops being hypothetical, because the machines MCF runs on are no
+longer all owned by someone who understands the risk.
+
+**What it does not license:** MCF does not become a product with a support
+surface, a plugin ecosystem or a configuration language. §5 stands. Being usable
+by others is a quality bar, not a mandate to generalize.
 
 ## 3. Principles
 
@@ -727,6 +841,60 @@ worth more to this project than famous ones.
 The corollary is a warning: resemblance is not the same as reality, and an
 agentic suite is still a proxy. §6.17 records what that proxy costs.
 
+### 3.20 Publication is irreversible, so it is deliberate
+
+Every other destructive act in this document is bounded: an evicted model can be
+re-fetched, a deleted record was a copy, a wrong configuration can be replaced.
+**Publication is the one act MCF cannot undo.** A row that leaves this machine is
+gone in the sense that matters — it may be copied, indexed, aggregated and
+retained by people who never asked and cannot be reached.
+
+The spirit:
+
+- **Contribution is opt-in, per share, and never a side effect.** No feature is
+  ever enabled in a way that starts sending. There is no telemetry that is on by
+  default and no "help us improve" default.
+- **The user sees exactly what leaves, before it leaves.** Not a description of
+  the categories; the rows.
+- **What can be inferred is part of what is sent.** A hardware profile, a set of
+  model choices and a timestamp identify a machine and often a person. Treating
+  a field as harmless because it is not a name is the reasoning that makes
+  de-identification fail.
+- **Irreversibility is stated at the moment of the decision**, not buried in a
+  document the user will read later, because §3.11's deliberation requirement
+  means nothing if the user does not know the act cannot be taken back.
+
+### 3.21 A configuration from elsewhere is a claim, not a result
+
+§3.18 established that a *capability* is measured rather than believed. §XV
+introduces the same problem one level up: a configuration arriving by identifier
+carries a claim — *this works, and works well* — that this machine has not
+tested.
+
+The spirit is identical, and so is the answer. An imported configuration is
+**declared** until this machine verifies it: MCF reproduces it exactly, says so
+plainly, and treats every number attached to it as somebody else's until it has
+taken its own. A configuration that cannot be reproduced here is a *finding*,
+recorded and surfaced — often the most useful thing the exchange can tell
+anyone, because it is evidence about how far a result travels between machines.
+
+### 3.22 Instrumentation is scoped to the question it serves
+
+A laboratory instruments as deeply as its question requires, and no more — and
+that instrumentation exists **inside the lab, for the duration of the
+experiment.** It does not leak into the serving path, does not run when no
+experiment is running, and does not become the daemon's ambient condition.
+
+Two consequences that keep §XIII from re-opening what D5 settled:
+
+- **Deep instrumentation is a property of an experiment, not of MCF.** The idle
+  daemon does nothing (§3.13) whether MCF carries three labs or thirty.
+- **Instrumentation is a measurement condition.** A result records the profile
+  it ran under, because a heavily instrumented timing and a lightly instrumented
+  one are different measurements (§3.4, §6.2) — and where the question is a
+  *timing*, the profile is reduced and the observer effect is characterized
+  rather than hoped away.
+
 ---
 
 ## 4. Standing Tensions We Accept
@@ -754,6 +922,13 @@ should be *managed* rather than solved. Naming them prevents relitigating them.
   breadth at the price of fidelity. §6.16 manages this; nothing abolishes it.
 - **Ease costs transparency.** Every step removed from the user's path is a step
   they no longer see. §3.15 manages this; it does not abolish it.
+- **Sharing costs privacy, and no amount of care abolishes it.** A record
+  detailed enough to be scientifically useful is detailed enough to identify the
+  machine that produced it. §3.20 and §6.27 manage this; nothing eliminates it,
+  and the only complete protection is not contributing.
+- **Breadth of analysis costs lightness.** Every laboratory is weight, and §XIII
+  asks for many. §6.26 makes each pay for itself in validity, which slows their
+  arrival deliberately.
 - **Lightness costs features.** This is the intended cost, not a regrettable
   one. A tool that keeps every feature proposed to it cannot also be the
   lightest thing it could be, and we would rather be light.
@@ -767,9 +942,10 @@ Stating what MCF is *not* protects the intents above from dilution.
 - **Not a training or fine-tuning platform.** MCF deploys and evaluates weights;
   it does not produce them. Quantization and conversion are in scope as
   deployment transformations, not as model development.
-- **Not a leaderboard.** MCF measures *this* machine. It does not publish
-  cross-machine rankings, and it should be actively suspicious of numbers that
-  did not originate locally.
+- **Not a leaderboard.** MCF measures *this* machine, and no number measured
+  on another one may choose a configuration on this one (§6.28). MCF
+  *contributes* conditioned results outward under §XIV and consumes none of the
+  aggregate as authority. It does not compute, host or display a ranking.
 - **Not a general orchestrator.** Single machine, single operator. Fleet
   management is a possible future, not a shaping constraint on today's design.
 - **Not a model-quality authority.** MCF reports what its suites measure under
@@ -786,15 +962,28 @@ Stating what MCF is *not* protects the intents above from dilution.
   out of scope by construction.
 - **Not a platform.** No plugin ecosystem, no extension API, no configurability
   for its own sake. Every generalization is weight (§3.13), and weight is spent
-  only where a stated intent demands it.
+  only where a stated intent demands it. §XIII's laboratories are built in-tree,
+  one at a time, each admitted for the validity it adds (§6.26) — a range of
+  labs is not an ecosystem of them.
 - **Not an agent framework.** MCF runs agentic tasks to *measure models*, not to
   help users build agents. The harness is an instrument (§6.18). Every feature
   that would make it a better agent platform and not a better measuring device
   is out of scope by construction.
-- **Not an observability platform.** MCF keeps the record §II requires and no
-  more. It does not accumulate dashboards, metric streams, trace backends, or
-  the apparatus of production monitoring — that weight is refused under §VII,
-  and §VIII supplies the confidence it would have bought.
+- **Not an observability platform.** MCF does not observe *itself* beyond the
+  record §II requires: no dashboards, no metric streams, no trace backends, none
+  of the apparatus of production monitoring (D5). Deep instrumentation of the
+  *model under test*, inside a lab, for the duration of an experiment, is a
+  different thing and is the product (§XIII, §3.22). The distinction is the
+  subject: MCF is not the specimen.
+- **Not the website.** §XV names an external site that aggregates contributed
+  results and helps people choose. MCF does not build it, host it, depend on it
+  being reachable, or degrade in usefulness without it. MCF's obligations are
+  two: emit an identifier for a configuration it holds, and reproduce a
+  configuration from an identifier it is given.
+- **Not a data broker.** MCF holds the user's record on the user's machine and
+  contributes only what the user sends, once, deliberately (§3.20). It does not
+  collect, does not aggregate other users' data locally, and has no interest in
+  the user beyond the measurement.
 - **Not a clone of anything.** Ollama, LM Studio, and their peers establish that
   a level of ease is possible; none of them establishes how MCF should be built.
   "Because that is how the other tools do it" is not an argument, and matching a
@@ -1390,6 +1579,194 @@ because every individual act of tuning toward the one model in front of you is
 locally sensible. It is the §3.12 failure mode — erosion by a hundred small
 reasonable decisions — pointed at a new target.
 
+### 6.24 Deep per-lab telemetry vs. the decision to refuse ambient telemetry
+
+**Tension.** D5 refuses continuous observation and makes "record at events, not
+on a timer" the rule. §XIII asks for deep telemetry, custom-built per lab. Read
+naively, the newer intent reverses the older decision, and reversing it silently
+is exactly how a project acquires the idle cost §VII exists to prevent.
+
+**Resolution — telemetry inside a laboratory is not ambient telemetry; it is the
+experiment.** The two are distinguished by *when they run* and *what they watch*,
+and both distinctions are absolute:
+
+- **When.** Lab instrumentation exists for the duration of an experiment the
+  user started. D5's rule — an idle daemon does approximately nothing — is
+  untouched, and carrying thirty labs must cost exactly as much at idle as
+  carrying none (§3.22).
+- **What.** Ambient telemetry watches *MCF*. Lab telemetry watches the *model
+  under test*. MCF is not the specimen, and the anti-goal in §5 now says so
+  explicitly.
+- **The serving path never carries it.** A lab may instrument an inference run
+  it owns; it may not instrument the endpoint a user's application is talking to.
+
+**Confidence: high.** This is a real distinction rather than a semantic escape:
+the cost D5 refused was permanent and unattributable, and the cost §XIII asks
+for is bounded, attributable to a run, and paid only by someone who asked for a
+measurement.
+
+### 6.25 Deep instrumentation vs. the validity of what it measures
+
+**Tension.** §6.2 already holds that instrumentation perturbs what it measures.
+§XIII makes that worse on purpose: a lab designed to watch a model closely is a
+lab that changes what the model's timings look like. Taken naively, the deepest
+labs produce the least trustworthy numbers.
+
+**Resolution — the instrumentation profile is part of the result, and
+timing-class results are taken under a reduced one.**
+
+- **Every result records the profile it ran under.** A heavily instrumented
+  timing and a lightly instrumented timing are different measurements and are
+  never compared (§3.4, A8).
+- **Timing-class measurements run reduced,** and the residual overhead is
+  characterized and reported. §IV's numbers are not permitted to come from a
+  deeply instrumented run.
+- **Behaviour-class measurements may instrument freely.** Whether a tool call
+  parsed, whether the loop terminated, whether the model recovered from an error
+  — none of these are perturbed by watching them, which is precisely why the
+  deepest labs should be the ones asking behavioural questions.
+- **A lab states which class it is.** A lab that cannot say whether its outputs
+  are timing-class or behaviour-class has not been designed yet.
+
+**Confidence: high on the split, medium on the boundary.** Some questions are
+both — time-to-first-tool-call is a timing about a behaviour — and those need
+the reduced profile and should say so.
+
+### 6.26 A range of laboratories vs. "not a platform"
+
+**Tension.** §XIII asks for many labs, each custom. §5 refuses a plugin
+ecosystem and §6.18 holds that an instrument grows for validity and never for
+capability. "A wide range of diagnostic tooling" is the exact phrase from which
+extension APIs grow.
+
+**Resolution — labs are in-tree, first-party, and admitted one at a time against
+a stated question.** There is no lab API, no third-party lab, no discovery
+mechanism and no configuration language for labs. Each lab is code in this
+repository, held to every rule that governs the rest of it (§3.17), and each is
+admitted by answering one question: *what claim can MCF make after this lab
+exists that it cannot make now?*
+
+A lab that makes MCF more capable of running experiments in general, rather than
+capable of making a specific new claim, is refused — and the refusal is
+recorded, so that the same proposal does not return as an oversight.
+
+**Confidence: high on the rule, medium on the pressure it will take.** This is
+the anti-goal most likely to erode, because each individual lab will look
+obviously worth having.
+
+### 6.27 Contribution vs. "the user's data and machine are theirs"
+
+**Tension.** §3.10 holds that anything leaving the machine does so because the
+user chose it, knowing what it contains, and that a tool managing local
+inference while leaking its contents has betrayed the reason it was installed.
+§XIV asks for data to leave.
+
+**Resolution — the split §6.8 already requires is what makes contribution safe,
+and the same implementation satisfies both.** The contributable database
+contains no prompt or completion content *because content was never written to
+it* (D6), not because an export filter removed it. A filter can be misconfigured;
+a store that never held the data cannot leak it.
+
+On top of that structural guarantee:
+
+- **Contribution is opt-in, per share, never default and never a side effect**
+  (§3.20).
+- **The user sees the rows that leave, not a description of them.**
+- **De-identification is treated as hard, because it is.** A hardware profile, a
+  timestamp and a set of model choices identify a machine. What is stripped,
+  coarsened or withheld is §7.27 and is unresolved.
+- **Publication is irreversible and is stated as such at the moment of the
+  decision** (§3.20).
+
+**Confidence: high on the structure, low on the sufficiency.** The structural
+guarantee is strong and cheap. Whether what remains is de-identified *enough* is
+a genuine open question and is recorded rather than assumed away.
+
+### 6.28 Crowd-sourced data vs. "not a leaderboard"
+
+**Tension.** §5's anti-leaderboard rule exists because cross-machine rankings are
+folklore: numbers taken on someone else's hardware, with someone else's
+quantization, against benchmarks that do not resemble your work. §XIV asks MCF
+to feed exactly such an aggregate, and §XV asks it to act on the result.
+
+**Resolution — MCF contributes outward and decides inward, and the two never
+cross.**
+
+- **No foreign number ever chooses a local configuration.** §IV's
+  recommendations are made from measurements taken here, on this machine, under
+  §3.4's conditions. An aggregate may tell a user what to *try*; only a local
+  measurement tells them what to *run*.
+- **What MCF contributes is what leaderboards lack: the conditions.** A row
+  without its hardware, driver, quantization, context, harness version and MCF
+  version is not contributable, because it is exactly the kind of number this
+  project exists to replace.
+- **MCF neither computes nor displays a ranking.** Aggregation happens off the
+  machine, in a system that is not part of this project.
+- **The suspicion stands, and is now precise.** MCF is not suspicious of foreign
+  *data*; it is suspicious of foreign *conclusions*. Conditioned observations
+  from many machines are evidence. A ranking derived from them is somebody
+  else's opinion.
+
+**Confidence: high.** This reading strengthens the original anti-goal rather
+than weakening it: the reason cross-machine rankings are folklore is that they
+travel without their conditions, and §XIV's entire contribution is to make the
+conditions travel.
+
+### 6.29 An identifier from outside vs. everything this document says about trust
+
+**Tension.** §XV asks MCF to accept an identifier from an external source and
+reproduce a configuration from it. That identifier is untrusted input (§3.7), it
+asserts capabilities MCF has not observed (§3.18), it carries provenance MCF did
+not witness (§3.6), and acting on it consumes bandwidth and disk and may execute
+repository code (§6.14). Four rules point at it at once.
+
+**Resolution — an identifier is a *request to reproduce*, and reproduction is
+followed by local verification before anything is believed.**
+
+- **Resolution is gated.** Importing an identifier downloads weights and may
+  execute repository code, so it passes the same gates any acquisition does
+  (§6.4, §6.14). Being pasted from a website earns it nothing.
+- **The configuration is declared, never verified, on arrival** (§3.21). Every
+  parameter it sets is attributed to the identifier, and every number that
+  travelled with it is somebody else's measurement until MCF takes its own.
+- **Exact reproduction is the obligation; identical results are not.** MCF
+  reproduces the weights, quantization, context, runtime and parameters, then
+  measures. If this machine produces different numbers, that is a *finding* —
+  evidence about how far results travel — not a failure of the import.
+- **Failure to reproduce is a first-class outcome** (§6.3): "this identifier
+  names a configuration needing 48 GiB and you have 24" is a complete, useful
+  answer.
+- **An identifier binds a configuration, not a promise.** It is a name for a
+  reproducible setup. Anything it claims about quality is a claim.
+
+**Confidence: high on the posture, medium on the mechanism.** What an identifier
+actually contains, and what makes one trustworthy enough to resolve, is §7.28.
+
+### 6.30 Publishing results vs. keeping the suite uncontaminated
+
+**Tension.** §3.19 and §7.3 hold that MCF's evaluations stay honest partly
+because its tasks are not famous. §XIV publishes results from those tasks, and a
+public corpus of task results is a map of the tasks. Contamination is not
+hypothetical here — it is the predictable consequence of success.
+
+**Resolution — contribute *outcomes*, never *artifacts*, and rotate what
+becomes public.**
+
+- **Task content is not contributable.** Scores, failure classifications,
+  conditions and distributions leave; prompts, tool definitions, environment
+  fixtures and model outputs do not.
+- **The procedurally generated portion of the suite carries the weight**
+  (§7.23): what is generated fresh per trial cannot be memorised from a
+  published result, and its contamination-detection role (comparing generated
+  against fixed instances) survives publication intact.
+- **Contamination exposure is a property of a task and is recorded.** A task
+  whose results have been published for long enough is retired or regenerated
+  rather than quietly kept.
+
+**Confidence: medium.** This is the newest and least tested of these
+resolutions, and the mechanism — how long is too long, what rotation costs in
+comparability — is unresolved and recorded as part of §7.23.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -1511,14 +1888,6 @@ Neither "reliable" nor "scientific" nor "optimal" has a stated threshold. What
 state would let us say MCF works? Without an answer, §3.5's test suites have no
 target to be complete against, and the project has no way to distinguish
 progress from motion.
-
-### 7.15 Success beyond the author
-
-The stated intents are written for one operator on one machine. Whether MCF is
-meant to be usable by others — and therefore whether documentation,
-installation, and interface stability are goals or incidental — is unstated. It
-changes what "highest standards" costs. Intent V's "any device" hints outward
-without committing.
 
 ### 7.16 The performance budget itself — **blocking §VII**
 
@@ -1663,6 +2032,75 @@ Riding on it: whether §IV may make any recommendation before the set exists
 real-hardware validation (§7.20) needs the same breadth or a different one —
 they are asking different questions of the same weights.
 
+### 7.27 What a contribution contains, and whether it can be de-identified
+
+§6.27 requires that the user see what leaves and that de-identification be
+treated as hard. It does not say what is actually sent. Someone must decide
+which fields are contributable, which are coarsened (an accelerator model rather
+than a serial number; a bucketed driver version rather than an exact one), and
+which are withheld entirely.
+
+The hard part is not the obvious identifiers; it is that the useful fields are
+the identifying ones. Hardware, driver, thermal behaviour, model selection and
+timing together fingerprint a machine, and a contribution stripped until it is
+anonymous may be stripped until it is useless. Where that line falls, and
+whether MCF should say plainly that contribution is not anonymous rather than
+implying a protection it cannot deliver, is unresolved.
+
+Riding on it: whether a contributor can be linked across contributions, and
+whether that is a feature (longitudinal data from one machine is more valuable)
+or a defect (a stable identity is an identity).
+
+### 7.28 What an identifier is
+
+§XV requires MCF to resolve an identifier into an exact configuration, and §6.29
+governs the trust posture without saying what the thing *is*. Open: whether it
+is content-addressed over the configuration it names, whether it is resolvable
+offline or requires a lookup, what it binds (weights, quantization, context,
+runtime, sampling parameters, harness version — all of them?), what happens when
+part of what it names no longer exists on the hub, and whether it carries
+provenance of its own or is merely a key into somebody else's table.
+
+Two properties are worth wanting and may conflict: an identifier short enough to
+paste, and one self-describing enough to resolve without trusting a server.
+
+### 7.29 Which laboratories exist, and what makes one worth building
+
+§XIII asks for a range of labs and §6.26 requires each to justify itself by the
+claim it enables. Neither says which labs, in what order, or what the first
+three are. The plausible list is long — latency and throughput, context
+degradation, tool-calling reliability, structured-output conformance,
+instruction adherence, refusal and safety behaviour, quantization damage,
+prompt-format sensitivity, long-run stability, memory behaviour under pressure —
+and each is real work held to §3.17's standard.
+
+Also unresolved: what a lab is obliged to state about its own validity, and
+whether a lab may be retired once its question is answered.
+
+### 7.30 Schema versioning across contributed databases
+
+D6 makes the record a SQLite database and §XIV makes it shareable, which turns
+its schema into a public interface. §7.13's comparability problem becomes
+somebody else's problem: a contribution written by MCF 0.4 must be readable —
+and honestly interpretable — by whatever reads it later, and a measurement whose
+method changed between versions is not comparable with one taken after (§3.4).
+
+Open: whether the schema is versioned independently of MCF, whether old
+contributions are migrated or merely marked, and what a reader is obliged to do
+with a contribution it cannot fully interpret. §3.1 forbids the silent option.
+
+### 7.31 What contribution costs the contributor
+
+§3.20 makes contribution opt-in and deliberate, which settles consent but not
+economics. Open: whether contributing costs the user anything they would notice
+(bandwidth, a moment's attention, a decision they must keep making), whether a
+one-time choice may stand for future contributions or each must be asked, and
+whether MCF may ever prompt for a contribution rather than waiting to be asked.
+
+The last of those is the dangerous one. A tool that asks often enough becomes a
+tool that is answered reflexively, and a reflexive yes is not the informed
+consent §3.20 requires.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -1673,6 +2111,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.3 | What quality is measured against | §IX | **D2** — agentic task success |
 | §7.12 | The user surface | §XI | **D3** — both surfaces, headless primary |
 | §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
+| §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -1707,6 +2146,64 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 7 — analysis, the shared record, and reproduction by identifier
+
+Three intents added, and the largest enlargement of scope since the founding
+four. §XIII makes MCF a bench rather than only a host: a range of purpose-built
+diagnostic laboratories, each instrumented as deeply as its own question
+requires. §XIV makes the record a portable artifact the user may choose to
+contribute, so that many machines' evidence aggregates into something no single
+machine can produce. §XV makes a configuration nameable, so that a user can hand
+MCF an identifier found elsewhere and receive exactly that configuration here.
+
+§1 grows from four verbs to six — *Analyse* and *Share* join Acquire, Serve,
+Judge and Show — and the point of the project moves from Judge alone to Analyse
+and Judge together.
+
+**These intents collide with more of this document than any addition so far, and
+three collisions were serious.**
+
+*Deep telemetry versus the decision to refuse it.* §XIII asks for exactly what
+D5 declined. §6.24 resolves it on two absolute distinctions: lab telemetry runs
+only during an experiment the user started, and it watches the model rather than
+MCF. The idle daemon still does nothing whether MCF carries three labs or
+thirty, and §5's observability anti-goal is amended to name the subject — MCF is
+not the specimen. §3.22 states the scoping rule, and §6.25 handles the validity
+cost: timing-class results run under a reduced profile, behaviour-class results
+may instrument freely, and every result records the profile it ran under.
+
+*Contribution versus privacy.* §6.27 finds that the content/system split §6.8
+already required is what makes contribution safe — the contributable database
+holds no user content because content was never written to it, which a
+misconfigured export filter cannot undo. §3.20 adds the principle the document
+lacked: publication is the one irreversible act, so it is opt-in, per share,
+never a side effect, and shows the user the rows rather than a description of
+them. What remains identifiable after that is §7.27, and it is recorded as
+genuinely unresolved rather than assumed away.
+
+*Crowd-sourcing versus "not a leaderboard".* §6.28 reads the anti-goal precisely
+rather than repealing it: MCF contributes outward and decides inward, no foreign
+number ever chooses a local configuration, and MCF neither computes nor displays
+a ranking. The suspicion is sharpened — MCF is not suspicious of foreign *data*,
+it is suspicious of foreign *conclusions* — and what MCF contributes is the
+thing public leaderboards lack, which is the conditions.
+
+Also: §6.26 keeps a range of labs from becoming an ecosystem of them (in-tree,
+one at a time, each justified by a claim it enables). §6.29 subjects an inbound
+identifier to every rule that governs untrusted input, resolving it as a
+*request to reproduce* followed by local verification, with §3.21 stating that
+an imported configuration is declared until this machine verifies it. §6.30
+handles the contamination that publishing results predictably causes.
+
+Adds D6 (the record is a SQLite database) and D7 (MCF is meant to be used by
+people other than its author, which answers §7.15 and makes documentation,
+installation and interface stability goals rather than incidents). Adds two
+standing tensions, four anti-goal amendments including two new ones — not the
+website, not a data broker — and voids §7.27–§7.31.
+
+The website that aggregates contributions is named as long-term context and is
+explicitly not part of this project.
 
 ### Version 6 — the reference model
 
