@@ -317,10 +317,10 @@ pub fn routes() -> Vec<Box<dyn Route>> {
     ]
 }
 
-/// Reads every accelerator on this machine, through every route.
-pub(super) fn read_all() -> Vec<Accelerator> {
+/// Reads every accelerator the given routes can see.
+pub(super) fn read_through(routes: &[Box<dyn Route>]) -> Vec<Accelerator> {
     let mut devices: Vec<Accelerator> = Vec::new();
-    for route in routes() {
+    for route in routes {
         for (index, reading) in route.probe().into_iter().enumerate() {
             match devices.get_mut(index) {
                 Some(device) => {

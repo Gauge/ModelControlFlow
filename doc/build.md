@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -119,6 +119,12 @@ Formatting, `clippy -D warnings` over every target, the test suite, and
 `cargo doc` with warnings denied. It passes `--offline` rather than merely
 expecting no network, so a check that starts reaching out fails here instead of
 on an aeroplane (B19).
+
+**It takes about five seconds.** Measured rather than asserted: D24 gives
+sixteen figures and none of them is a suite time, so there is no ceiling to
+compare against — B38 requires the gating tier be fast and says so
+qualitatively. The number is reported here because a gating tier that grew
+slowly would otherwise become one people skip without anybody noticing when.
 
 B38 tiers the suite, and this is only the fast hermetic tier. The heavy tiers —
 load, soak, mutation, the full fault matrix — do not exist yet (B-191, B-185,
@@ -290,6 +296,14 @@ before-and-after is not yet possible and the tier says so rather than implying
 otherwise.
 
 ## Changelog
+
+### Version 7 — the gating tier's time is reported
+
+§4 gains the measured figure. B-015's condition asked for the suite to run
+inside a budget DEC-016 was to set; DEC-016 closed with D24, and none of D24's
+sixteen figures is a suite time. Reporting the number is what can honestly be
+done — asserting it would need a figure nobody has stated, and inventing one to
+satisfy a clause is how a document acquires intent nobody chose (A23).
 
 ### Version 6 — the budget tier
 

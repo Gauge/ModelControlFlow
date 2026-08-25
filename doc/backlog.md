@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 42 |
+| **Version** | 43 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (18 done, 3 in progress, 56 blocked on a decision, 117 open).** Every item cites
+build items (20 done, 3 in progress, 56 blocked on a decision, 115 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -119,11 +119,11 @@ first and importance second.
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
-| B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
+| B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | **done** — `Machine::read_through(routes)` is the seam: passing none produces the profile of a machine with no accelerator *on a machine that has one*, which is how B19's condition is checked rather than assumed. `scripts/ci.sh` passes `--offline`. **The stated time budget does not exist**: D24 closed DEC-016 with sixteen figures and none of them is a suite time. The gating tier is measured and reported in [build.md](build.md) §4 instead |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | **done** — `checks/tests/documents_conform.rs`, twelve checks in the gating tier. The tense clause is checked only for the constructions the contract names outright; the rest stays a `review` obligation rather than a claim |
 | B-353 | The letter `P` names two things — the five precedence rules in [rules.md](rules.md) and the seven proposals in [proposals.md](proposals.md) — and C5 forbids renumbering either | C5, [README.md](../README.md) citation style | A `P` citation resolves unambiguously, by deprecating one namespace in favour of a named successor or by a stated convention the conformance check enforces | open |
-| B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
+| B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | **done** — `checks/tests/reference_model_neutrality.rs`: no shipped source and no test names the publisher or the family, documentation excepted; a third check fails if the documents stop naming it, so the first two cannot pass by the reference model quietly ceasing to exist |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **in progress** — `mcf_core::time`: `Timestamp` has no arithmetic and no interval method, intervals come from `Instant`, and the clock is a type parameter so `Duration<Simulated>` and `Duration<Monotonic>` never meet. The clock-jump scenario waits on B-009 (DEC-021) |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | open |
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
@@ -362,6 +362,31 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 43 — the seam, the neutrality check, and a budget that was never written
+
+B-018 and B-015 are done, and B-015 turned up a defect in its own condition.
+
+**The seam.** `Machine::read_through(routes)` is what B19 means by testing an
+expensive path *through* a seam: passing no routes produces the profile of a
+machine with no accelerator, on a machine that has one, so the claim *the suite
+runs on a laptop with no accelerator* is checked rather than assumed. It is a
+parameter and not an environment variable, because an ambient switch that turned
+off hardware detection would be undeclared state that changes a result (B2) —
+and somebody would eventually set it in production.
+
+**The defect.** B-015's condition says the suite must run *in under the time
+budget set by DEC-016*. DEC-016 is closed by D24, D24 gives sixteen figures, and
+none of them is a suite time. The clause has been unsatisfiable since the day
+D24 was written. It is corrected rather than quietly dropped: the gating tier's
+time is measured and reported in [build.md](build.md) §4, and asserting it would
+need a figure nobody has stated. Registering a new void for it would be
+inventing a requirement — B38 already requires the gating tier be fast and
+states that qualitatively.
+
+**The neutrality check** has three parts, and the third is the one that makes
+the first two mean anything: it fails if the *documents* stop naming the
+reference model. Without it, deleting §XII would turn both other checks green.
 
 ### Version 42 — a foreign number cannot decide a local question
 
