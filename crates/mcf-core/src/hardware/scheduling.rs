@@ -25,6 +25,18 @@
 //!
 //! The load average is still read and still recorded as a condition (§3.4) —
 //! it says something true about the machine — but it decides nothing.
+//!
+//! **The second signal, and the blind spot it closes.** A thread's scheduling
+//! answers *was this thread queuing*, and for a measurement whose work happens
+//! in a child process the answer is always no: the measuring thread is blocked
+//! in `wait`, not runnable. F5 records what that missed — a cold-start figure
+//! two and a half times its ceiling, judged clean, because the time was spent
+//! faulting the artifact's pages in from a slow filesystem. So a measurement is
+//! also judged by [`children_major_faults`]: a major fault is the kernel going
+//! to a device, a warm local artifact takes none, and a reading that took any
+//! is a reading of the device (B-193).
+//!
+//! [`children_major_faults`]: super::children_major_faults
 
 use core::fmt;
 
@@ -102,6 +114,19 @@ pub enum Attributability {
         /// What it would have had to be below.
         tolerated_ppm: u64,
     },
+    /// The measurement went to a device for bytes, so what it measured includes
+    /// the storage those bytes are on.
+    ///
+    /// A separate verdict from [`Attributability::Unattributable`] because it
+    /// is a different fact with a different remedy: the machine was not busy,
+    /// the artifact was not resident, and the number is about the filesystem
+    /// (F5, B-193). Neither is a pass.
+    Storage {
+        /// How many major page faults the measured work took.
+        major_faults: u64,
+        /// What fraction of the measurement was queuing, for completeness.
+        delay_ppm: u64,
+    },
     /// The platform does not account for it, so MCF cannot say either way (A7).
     Unknown,
 }
@@ -120,10 +145,19 @@ impl Attributability {
     #[must_use]
     pub const fn delay_ppm(&self) -> Option<u64> {
         match self {
-            Self::Attributable { delay_ppm } | Self::Unattributable { delay_ppm, .. } => {
-                Some(*delay_ppm)
-            }
+            Self::Attributable { delay_ppm }
+            | Self::Unattributable { delay_ppm, .. }
+            | Self::Storage { delay_ppm, .. } => Some(*delay_ppm),
             Self::Unknown => None,
+        }
+    }
+
+    /// How many major page faults the measured work took, where that is known.
+    #[must_use]
+    pub const fn major_faults(&self) -> Option<u64> {
+        match self {
+            Self::Storage { major_faults, .. } => Some(*major_faults),
+            Self::Attributable { .. } | Self::Unattributable { .. } | Self::Unknown => None,
         }
     }
 }
@@ -152,6 +186,16 @@ impl fmt::Display for Attributability {
                 tolerated_ppm / 10_000,
                 tolerated_ppm % 10_000
             ),
+            Self::Storage {
+                major_faults,
+                delay_ppm,
+            } => write!(
+                f,
+                "UNATTRIBUTABLE (the measured work took {major_faults} major page faults, so \
+                 this reading is of the storage; {}.{:04} % of it was queuing)",
+                delay_ppm / 10_000,
+                delay_ppm % 10_000
+            ),
             Self::Unknown => {
                 f.write_str("attributability unknown — this platform does not account for it")
             }
@@ -168,6 +212,7 @@ impl fmt::Display for Attributability {
 #[derive(Debug)]
 pub struct Watch {
     started: Attested<Scheduling>,
+    faults_at_start: Attested<u64>,
     at: Instant<Monotonic>,
 }
 
@@ -183,6 +228,7 @@ impl Watch {
     pub fn start() -> Self {
         Self {
             started: scheduling(),
+            faults_at_start: super::children_major_faults(),
             at: SystemClock.now(),
         }
     }
@@ -191,11 +237,17 @@ impl Watch {
     #[must_use]
     pub fn finish(self) -> Attributability {
         let elapsed = SystemClock.now().saturating_duration_since(self.at);
+        let faults = match (self.faults_at_start, super::children_major_faults()) {
+            (Attested::Known(before), Attested::Known(after)) => {
+                Attested::Known(after.saturating_sub(before))
+            }
+            _ => Attested::Unknown,
+        };
         let (Attested::Known(started), Attested::Known(finished)) = (self.started, scheduling())
         else {
             return Attributability::Unknown;
         };
-        Self::judge(started, finished, elapsed)
+        Self::judge(started, finished, elapsed, faults)
     }
 
     /// The judgement itself, separated so a scenario can supply the readings
@@ -205,6 +257,7 @@ impl Watch {
         started: Scheduling,
         finished: Scheduling,
         elapsed: Duration<Monotonic>,
+        major_faults: Attested<u64>,
     ) -> Attributability {
         let waited = finished.waiting.saturating_sub(started.waiting);
         let elapsed = elapsed.as_nanos();
@@ -218,6 +271,20 @@ impl Watch {
         // non-zero by the guard above.
         #[allow(clippy::integer_division)]
         let delay_ppm = waited.saturating_mul(1_000_000) / elapsed;
+
+        // Storage first. Both verdicts mean *not a pass*, and where both hold
+        // the device is the more specific and more actionable fact: a busy
+        // machine is somebody else's compile finishing, and an artifact that
+        // was not resident is a property of where it lives.
+        if let Attested::Known(major_faults) = major_faults
+            && major_faults > 0
+        {
+            return Attributability::Storage {
+                major_faults,
+                delay_ppm,
+            };
+        }
+
         if delay_ppm <= TOLERATED_DELAY_PPM {
             Attributability::Attributable { delay_ppm }
         } else {

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -34,6 +34,7 @@ forward as one.
 | 4 | [F4 — What the new tiers found on their first runs (B-191)](#4--f4--what-the-new-tiers-found-on-their-first-runs-b-191) |
 | 5 | [F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)](#5--f5--the-cold-start-budget-is-a-measurement-of-the-filesystem-b-011-d30) |
 | 6 | [F6 — The first mutant to survive (B-186)](#6--f6--the-first-mutant-to-survive-b-186) |
+| 7 | [F7 — A major page fault is the signal F5 was missing (B-193)](#7--f7--a-major-page-fault-is-the-signal-f5-was-missing-b-193) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -555,7 +556,69 @@ The loop the tier exists for ran in full here: a mutant survived, the claim it
 broke got a test, and the mutant joined the catalogue. A tier that reported 91 %
 and moved on would have left the same gap with a number attached to it.
 
+## 7 · F7 — A major page fault is the signal F5 was missing (B-193)
+
+**What was run.** Thirty spawns of one binary, twice: once with the file
+resident, once with its pages evicted from the cache before each spawn, counting
+the major page faults the kernel charged to this process's children.
+`scripts/check-fault-signal.sh` is the experiment, and it runs in the gating
+tier.
+
+**Conditions.** The same machine as F1–F6. The probe ran from
+`$XDG_CACHE_HOME`, which is btrfs; the repository's own filesystem is a FUSE
+mount that does not honour the eviction hint, which is why the script tries
+several directories and names the one that worked.
+
+### 7.1 The reading
+
+| | Major page faults over 30 spawns |
+|---|---|
+| Warm — the file resident | **0** |
+| Evicted before each spawn | **30** |
+
+One per spawn, exactly, and none at all when the file is where a measurement
+wants it. That is what makes the threshold **zero** rather than a judgement like
+`TOLERATED_DELAY_PPM`: a major fault is the kernel going to a device, and a
+measurement that took one waited on that device.
+
+### 7.2 Why the other signal could not see it
+
+D30's signal reads how long the *measuring thread* was runnable and not running.
+During a cold-start measurement that thread is blocked in `wait`: it is not
+runnable, so it accrues no delay, and the reading comes back clean however long
+the child spent faulting its pages in. F5 is that blind spot with a number on
+it — a figure two and a half times its ceiling, judged attributable.
+
+The two signals are not a refinement of one another. They answer different
+questions — *was this thread queuing for a processor* and *did this work go to a
+device* — and a measurement can fail either. Where both hold, MCF reports the
+device, because a busy machine is somebody else's compile finishing and an
+artifact that was not resident is a property of where it lives.
+
+### 7.3 What the pair now does
+
+A cold start on slow storage is **refused as unattributable** rather than
+reported as over its ceiling, which is what B-193 asked for. Beside it, the
+storage the artifact was read from joined the condition floor as its eleventh
+question, so the two runs 5.3 above compared — 152 ms and 0.37 ms on one machine
+within the hour — are now legibly different rather than mysteriously so, and the
+budget tier refuses to compare a reading with a baseline taken from different
+storage (A8).
+
+**What is still true and unfixed:** a p99 over a hundred trials moves by about a
+quarter between runs on an idle machine, so the cold-start figure is still
+recorded rather than judged against its baseline. The ceiling judges it; the
+tolerance would fire on the tail.
+
 ## Changelog
+
+### Version 7 — the signal F5 was missing
+
+F7 added with B-193. A major page fault charged to a child is what tells a
+cold-start measurement it went to a device, and the experiment that shows the
+signal moving — zero warm, thirty evicted, over the same thirty spawns — runs in
+the gating tier, because F3's lesson is that a signal nobody has watched fail is
+not known to work.
 
 ### Version 6 — the first mutant to survive
 

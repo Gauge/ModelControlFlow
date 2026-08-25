@@ -157,12 +157,12 @@ fn the_rendering_carries_the_conditions_the_count_and_the_spread() {
 }
 
 /// A7: an unread condition renders as `unknown` and stays that way. The floor
-/// asks eight questions whether or not anything can answer them yet.
+/// asks every one of its questions whether or not anything can answer them yet.
 #[test]
 fn an_unread_condition_stays_unknown() {
     let floor = Floor::nothing_known();
     assert_eq!(floor.known_count(), 0);
-    assert_eq!(floor.entries().len(), 10);
+    assert_eq!(floor.entries().len(), 11);
     for (question, value) in floor.entries() {
         assert!(!value.is_known(), "{question} claims to be known");
         assert_eq!(value.to_string(), "unknown");

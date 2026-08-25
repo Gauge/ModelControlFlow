@@ -108,6 +108,17 @@ cargo test --workspace --locked --offline
 step "the lint denials bite (B-003)"
 "$root/scripts/check-lints-bite.sh"
 
+step "the fault signal can fail (B-193)"
+# Exit 2 is *this machine cannot demonstrate it* — a tmpfs has no device to
+# fault from, and some filesystems ignore the eviction hint. That is reported
+# and does not fail the gate; exit 1 is the signal being wrong, and does.
+fault_signal=0
+"$root/scripts/check-fault-signal.sh" || fault_signal=$?
+if [ "$fault_signal" -eq 1 ]; then
+    printf 'ci: the fault signal does not distinguish a cold artifact from a warm one\n' >&2
+    exit 1
+fi
+
 step "documentation builds"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline >/dev/null
 

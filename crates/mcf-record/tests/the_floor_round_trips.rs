@@ -49,7 +49,7 @@ impl Drop for Scratch {
 fn a_captured_floor_survives_the_journal_unchanged() {
     let scratch = Scratch::new("live");
     let machine = Machine::read();
-    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full", None);
 
     {
         let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
@@ -85,7 +85,7 @@ fn a_captured_floor_survives_the_journal_unchanged() {
 fn a_floor_full_of_unknowns_survives_as_unknowns() {
     let scratch = Scratch::new("bare");
     let machine = Machine::read_through(&[]);
-    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full", None);
     assert!(!captured.floor().thermal_state.is_known());
 
     {
@@ -134,7 +134,7 @@ fn a_floor_missing_a_question_is_not_decoded() {
 #[test]
 fn a_condition_of_an_unexpected_shape_is_not_coerced() {
     let machine = Machine::read_through(&[]);
-    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full", None);
     let Value::Map(mut fields) = encode::conditions(&captured) else {
         panic!("conditions encode as an object");
     };
@@ -146,8 +146,8 @@ fn a_condition_of_an_unexpected_shape_is_not_coerced() {
 ///
 /// The fixture for the first defect the property tier found (B-191): every
 /// known condition was rendered through `Display`, so a context length of 4096
-/// was written as `"4096"` and read back as text. Nine of the ten questions
-/// never noticed, because nine of them are naturally strings. §3.3 asks the
+/// was written as `"4096"` and read back as text. Every other floor question
+/// missed it, because the rest are naturally strings. §3.3 asks the
 /// record be machine-readable first, and a number a reader has to re-parse from
 /// a string is not that; B-007's *round-trips losslessly* is the claim it
 /// falsified.

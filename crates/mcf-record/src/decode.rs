@@ -43,6 +43,7 @@ pub fn floor(value: &Value) -> Option<Floor> {
         mcf_configuration: condition(value, "mcf_configuration")?,
         realized_placement: condition(value, "realized_placement")?,
         instrumentation: condition(value, "instrumentation")?,
+        artifact_storage: condition(value, "artifact_storage")?,
     })
 }
 
