@@ -1,6 +1,6 @@
 # ModelControlFlow — Document of Intent
 
-**Status:** Living document. Revision 3.
+**Status:** Living document. Revision 4.
 **Nature:** This is a *spirit of the rules* document. It is not a requirements
 specification, not an architecture document, and not a backlog. Nothing here is
 directly implementable, and that is deliberate. Its job is to be the thing you
@@ -16,6 +16,16 @@ implementation. Section 6 (Conflicts) resolves tensions on principle alone.
 Where a resolution says *provisional*, it means exactly that: the first real
 implementation that touches the question gets to argue back, and this document
 should be amended rather than quietly violated.
+
+**Revision 4 note:** Two decisions. The implementation substrate is settled —
+**Rust** (§7.19, resolved). And the project's confidence strategy has been
+deliberately rebalanced: **away from ambient telemetry, toward exhaustive
+testing and simulated laboratory verification.** That second decision is larger
+than it sounds. It cuts §6.9, this document's sharpest and least confident
+conflict, by choosing a side; it forces §3.3 to be split into two ideas that
+Revision 2 had wrongly fused; and it adds Intent VIII, because a project that
+declines to watch itself in production must be able to reproduce itself in a
+lab. §6.15 and §6.16 record what that trade costs.
 
 **Revision 3 note:** Intent VI was corrected: Ollama was offered as an *example
 of a friction level*, not as an architectural or implementational model, and the
@@ -94,7 +104,9 @@ MCF should be the calm component in the system. It runs on hardware that
 throttles, against a network that drops, over a model hub that changes under it,
 launching runtimes that segfault. None of that is exceptional; all of it is
 Tuesday. MCF's job is to absorb that and remain a coherent, queryable, restartable
-system.
+system. As of Revision 4 this claim is established primarily by §VIII rather
+than by observation — every failure MCF says it survives is a failure the
+laboratory can produce on command.
 
 ### II. Science — "the highest scientific standards"
 
@@ -102,7 +114,8 @@ Every claim MCF makes about a model is a measurement, and every measurement
 carries the obligations of a measurement: a stated method, stated conditions,
 stated uncertainty, and the ability for someone else to repeat it. Full test
 suites are the floor, not the ceiling — they establish that the code does what we
-think, which is a prerequisite for believing what it reports.
+think, which is a prerequisite for believing what it reports. §VIII is the
+elaboration of that floor into the project's central discipline.
 
 ### III. Custody — "download and deploy any LLM from Hugging Face"
 
@@ -155,6 +168,19 @@ measured and defended, not incidental outcomes.
 
 ---
 
+### VIII. Verification — "full system unit tests and simulated lab tests"
+
+Confidence in MCF is established **before** deployment, in a laboratory, rather
+than inferred **during** deployment, from observation. Every environment MCF must
+survive is constructed deliberately and deterministically: absent hardware,
+hostile hubs, dying runtimes, exhausted disks, stalled networks, thermal
+ceilings. The suite exercises the whole daemon, not merely its parts.
+
+This intent is the counterweight to the deliberate de-prioritization of ambient
+telemetry in §3.3. A system that declines to watch itself in production must be
+able to *reproduce* itself on demand, and this is the trade being made
+knowingly: **rigor moves from the observatory to the laboratory.**
+
 ## 3. Principles
 
 These are the load-bearing beliefs. When a decision is genuinely close, decide
@@ -192,26 +218,43 @@ The mark is not optional. A degraded result that is not labelled as degraded is
 a corrupted result, and corrupted results are the one thing this project cannot
 tolerate, because everything else it produces is built on them.
 
-### 3.3 Observability is the product, not the plumbing
+### 3.3 The record is obligatory; ambient telemetry is not
 
-Logging and telemetry are not a debugging convenience bolted on afterward. They
-are the substrate that makes claims III and IV possible. A benchmark number
-without the conditions under which it was taken is not data. So:
+Revision 2 fused two ideas under the word "observability," and they are not the
+same thing. Separating them is what allows §VII to be honoured without damaging
+§II:
 
-- The system should be reconstructible from its own records. If we cannot answer
-  "what was this machine doing when this number was produced," the number is
-  weaker than it looks.
-- Instrumentation is written with the code it observes, in the same change, by
-  the same person. It is never a follow-up ticket.
+- **The record** is the durable evidence attached to things that happened: the
+  conditions of every measurement (§3.4), the classification and context of
+  every failure (§3.1), the provenance of every artifact (§3.6), and the
+  configuration in force when each occurred. The record is **not optional and
+  not reducible.** It is small, it is written at moments that matter rather than
+  continuously, and §II is built directly on top of it. A benchmark number
+  without its conditions is not data; a failure without its context is the
+  silent failure §3.1 forbids.
+- **Ambient telemetry** is continuous observation of a running system —
+  high-frequency sampling, always-on tracing, metric streams, the machinery of
+  operational monitoring. This is **deliberately de-prioritized.** It is the
+  largest source of permanent idle cost in a daemon (§3.13), its value is
+  largely diagnostic, and §VIII now supplies that diagnostic value more cheaply
+  and more rigorously.
+
+The spirit of what remains:
+
+- Record at **events**, not on a **timer.** Something happening is a reason to
+  write; time passing is not. A background sampler that runs whether or not
+  anything is occurring is the default suspect under §3.13.
 - Records are structured and machine-readable first, human-readable second.
   Prose logs are a rendering of the record, never the record itself.
-- Everything that varies is recorded: hardware state, thermal and power
-  conditions, driver and runtime versions, quantization, context length, batch
-  shape, MCF's own version and configuration.
+- Everything that varies *and could change a result* is recorded: hardware
+  state, thermal conditions, driver and runtime versions, quantization, context
+  length, batch shape, MCF's own version and configuration. This list does not
+  shrink under §VII — it is the §3.4 floor, and it is captured deliberately at
+  measurement time rather than harvested from a continuous stream.
+- Verbosity above that floor is a dial the user controls, defaulting low.
 
-Under §VII this principle is now expensive, and §6.9 governs how it is paid for.
-The resolution there reduces the *cost* of observation; it does not reduce the
-*obligation* to observe.
+What is given up here is the ability to answer arbitrary retrospective questions
+about a running system. That is a real loss, accepted knowingly in §6.15.
 
 ### 3.4 A measurement is a claim, and claims carry their conditions
 
@@ -252,8 +295,15 @@ The spirit:
   paths are tested through seams; the seams are part of the design, not an
   afterthought.
 - We test the instrument, then trust the instrument. Simulated hardware,
-  synthetic model artifacts, fake hubs, and replayed telemetry are all
-  legitimate and expected. A lab has calibration rigs; so do we.
+  synthetic model artifacts, fake hubs, and replayed conditions are all
+  legitimate and expected. A lab has calibration rigs; so do we. Under §VIII
+  this is no longer a supporting practice but the project's primary means of
+  knowing anything (§3.17).
+- **Coverage is whole-system, not merely unit-level.** A suite that proves every
+  function correct in isolation and never exercises the daemon end to end has
+  tested the parts and not the thing. The behaviours that matter here —
+  supervision, recovery, contention, degradation — exist only between
+  components.
 - A bug that escaped becomes a test before it becomes a fix.
 - **Performance is a tested property.** Under §VII, footprint, startup time, and
   added latency are asserted against budgets by the suite, not eyeballed. An
@@ -419,6 +469,42 @@ The corollary is a real constraint on engineering choice: a substrate that makes
 these principles *unenforceable* is a substrate that costs more than it appears
 to, however fast or familiar it is. See §7.19.
 
+### 3.17 The laboratory is how we know things
+
+MCF's confidence in itself comes from **reproducing conditions deliberately**,
+not from watching itself in production. Every environment MCF must cope with —
+hardware it does not have, a hub that misbehaves, a disk that fills, a runtime
+that dies mid-token, a thermal ceiling, a network that stalls at 90% — is
+something the test apparatus can *construct on demand*, deterministically, on a
+laptop, in seconds.
+
+This is what makes §I's "never fail" a claim rather than a hope. A failure path
+that has never been exercised is a guess about how the system behaves, and §3.5
+already says untested error handling is decorative. The laboratory is how every
+one of those paths gets exercised without waiting for the world to supply the
+conditions.
+
+The spirit:
+
+- **Every failure MCF claims to handle has a simulation that produces it.** The
+  failure taxonomy (§7.10) and the lab's fault catalogue should be the same
+  list, checked against each other. A category with no simulation is an untested
+  claim.
+- **Determinism is a feature of the lab, not of the world.** Simulated time,
+  simulated hardware, injected faults, and replayable scenarios exist so that a
+  failure found once can be reproduced exactly, forever.
+- **Diagnosis happens by reproduction.** When something goes wrong in real use,
+  the goal is not to have already logged enough to explain it — that is the
+  telemetry strategy §3.3 declines — but to reconstruct it in the lab from the
+  failure record and pin it with a permanent scenario. The bug becomes a lab
+  fixture before it becomes a fix.
+- **The lab is production code.** It is held to the same standards as everything
+  else, because everything else is believed on its authority. A sloppy simulator
+  produces confident wrong results exactly as §6.1 warns.
+- **The lab does not get to grade itself.** See §6.16 — simulated confidence is
+  worth only as much as its fidelity to real hardware, and that fidelity must
+  itself be measured.
+
 ---
 
 ## 4. Standing Tensions We Accept
@@ -435,7 +521,11 @@ should be *managed* rather than solved. Naming them prevents relitigating them.
   coverage with honestly narrow guarantees.
 - **Automation costs agency.** The more MCF decides, the less the user
   understands their own stack. We resolve toward explanation over autonomy.
-- **Observation costs performance.** See §6.9 — managed, never eliminated.
+- **Observation costs performance.** Resolved rather than merely managed in
+  Revision 4: see §6.9. The residual tension is now §6.15 — reduced observation
+  costs retrospective diagnosis.
+- **Simulated confidence is not real confidence.** §VIII buys determinism and
+  breadth at the price of fidelity. §6.16 manages this; nothing abolishes it.
 - **Ease costs transparency.** Every step removed from the user's path is a step
   they no longer see. §3.15 manages this; it does not abolish it.
 - **Lightness costs features.** This is the intended cost, not a regrettable
@@ -471,6 +561,10 @@ Stating what MCF is *not* protects the intents above from dilution.
 - **Not a platform.** No plugin ecosystem, no extension API, no configurability
   for its own sake. Every generalization is weight (§3.13), and weight is spent
   only where a stated intent demands it.
+- **Not an observability platform.** MCF keeps the record §II requires and no
+  more. It does not accumulate dashboards, metric streams, trace backends, or
+  the apparatus of production monitoring — that weight is refused under §VII,
+  and §VIII supplies the confidence it would have bought.
 - **Not a clone of anything.** Ollama, LM Studio, and their peers establish that
   a level of ease is possible; none of them establishes how MCF should be built.
   "Because that is how the other tools do it" is not an argument, and matching a
@@ -525,10 +619,13 @@ Note this does not weaken §3.3 — nothing about the *outcome* of a run goes
 unrecorded. What is reduced during measurement is high-frequency sampling, not
 record-keeping.
 
-**Confidence: high on the principle, low on the mechanism.** How to make the
+**Confidence: high on the principle, medium on the mechanism.** How to make the
 paths separable without two divergent code paths — the classic source of
-"it works in benchmark mode" bugs — is a genuine design problem, not a solved one.
-§VII makes this harder, not easier: see §6.9.
+"it works in benchmark mode" bugs — remains a real design problem. Revision 4
+shrinks it considerably: with ambient telemetry de-prioritized (§3.3), the gap
+between "operational" and "measurement" instrumentation is now small, because
+the operational path is already quiet. The two profiles are near enough to
+converge, which is the cleanest possible answer to this conflict.
 
 ### 6.3 "Any model on Hugging Face" vs. "never fail"
 
@@ -634,42 +731,42 @@ convention.
 **Confidence: high on the split, low on the defaults.** What is retained by
 default for user traffic, and for how long, is unresolved. See §7.
 
-### 6.9 "Fastest and lightest possible" vs. "deep full system logging and telemetry"
+### 6.9 ~~Lightness vs. deep telemetry~~ — **RESOLVED by decision in Revision 4**
 
-**Tension.** This is the sharpest conflict in the document and the one most
-likely to be resolved badly under deadline pressure. Intent I asks for pervasive
-instrumentation of everything. Intent VII says every cycle and byte MCF spends
-is waste taken from the model. Telemetry is, viewed through §VII, the largest
-single line item of self-inflicted weight in the design — and it is *always*
-running, which makes it the worst kind under §3.13's idle-cost rule.
+**The tension was.** Intent I asked for pervasive instrumentation of everything;
+Intent VII said every cycle MCF spends is taken from the model. Revision 2 tried
+to keep both, resolving that "the obligation to record is absolute, the cost is
+an engineering problem" — and rated its own feasibility **low**, noting that if
+deep telemetry at negligible overhead proved unreachable, the correct amendment
+was to narrow what MCF claims to observe, explicitly, in this document.
 
-**Resolution — the obligation to record is absolute; the cost of recording is an
-engineering problem, not a licence to record less.** §3.3 stands unmodified.
-What §VII changes is that instrumentation must now be *engineered* rather than
-merely *added*: cheap enough at the point of capture that it does not deform the
-hot path, with cost pushed to writing, aggregation, and query where it is off
-the critical path and can be paid lazily or not at all.
+**That amendment is now made, by decision rather than by discovery.** Ambient
+telemetry is de-prioritized. §VII wins on the continuous-observation axis, and
+§VIII replaces the confidence that telemetry would have provided.
 
-Three rules follow, in priority order:
+**What survives unchanged, and this is the important half:**
 
-1. **Never drop a record silently to save time.** That is the §3.1 sin
-   committed for performance reasons, and performance is not an excuse that
-   outranks honesty. If load-shedding is genuinely necessary, the gap is itself
-   recorded — §3.2's mark applies to telemetry about telemetry.
-2. **Reduce fidelity before reducing coverage.** Sampling rates, resolution, and
-   retention are legitimate dials. *Which events exist at all* is not. We would
-   rather know that something happened imprecisely than not know it happened.
-3. **Verbosity is a dial with an honest floor.** The user may turn detail down
-   for speed, and the floor beneath which they cannot go is whatever §3.4 needs
-   to keep published measurements reproducible. Below that floor, MCF stops
-   publishing numbers rather than publishing unconditioned ones.
+- **The record (§3.3) is untouched.** Measurement conditions, failure context,
+  and provenance are not telemetry and are not negotiable — §II and §IV rest on
+  them directly. Reducing telemetry must never be allowed to erode the record;
+  they are separate concepts precisely so that this decision cannot be
+  misapplied to that one.
+- **§3.1's prohibition on silent failure stands absolutely.** Every failure is
+  still caught, classified, and persisted with its context. Fewer logs never
+  means a quieter failure. If anything the failure record matters *more* now,
+  because it is the seed from which §3.17 reconstructs the problem in the lab.
+- **The §3.4 floor is a floor.** MCF stops publishing numbers before it publishes
+  unconditioned ones. Verbosity is a dial; that floor is not on the dial.
 
-**Confidence: high on the ordering, low on the feasibility.** "Deep full system
-telemetry with negligible overhead" is a hard engineering target, not a
-compromise position, and it may not be fully reachable. If it proves
-unreachable, the correct amendment is to *narrow what MCF claims to observe* —
-explicitly, here, in this document — never to keep the claim and quietly miss
-records.
+**What changes in practice.** Continuous sampling, always-on tracing, and metric
+streams are refused by default. Recording happens at events, not on a timer.
+Idle MCF should be doing approximately nothing (§3.13), which is the outcome
+§VII was asking for all along.
+
+**Confidence: high.** This is a coherent strategy rather than a compromise: the
+two things being traded — production observation and laboratory reproduction —
+buy the same good, and the lab buys it deterministically, cheaply, and before
+release rather than after. The cost is real and is recorded in §6.15.
 
 ### 6.10 "Fastest and lightest possible" vs. "highest scientific standards"
 
@@ -812,6 +909,77 @@ something real. Note it is also a place where MCF should be *better* than the
 tools cited as its ease benchmark, not merely equal to them: matching their
 friction while exceeding their honesty is the whole ambition of §VI.
 
+### 6.15 Reduced observation vs. "it should never fail"
+
+**Tension.** §I demands that MCF cope with everything and always be able to say
+what happened. The conventional way to honour that is deep production
+telemetry — and Revision 4 has just declined it. When something goes wrong on
+the user's machine in a way the laboratory did not anticipate, MCF will have
+less to look at than a heavily instrumented system would.
+
+**Resolution — diagnosis moves from *observation* to *reproduction*, and the
+failure record is the bridge between them.** The failure record (§3.1) is
+explicitly not what was reduced: classification, context, configuration, and
+the conditions in force are all still captured at the moment of failure. What
+MCF gives up is the *surrounding stream* — the ability to ask arbitrary
+retrospective questions about what the system was doing for the ten minutes
+beforehand.
+
+The strategy that replaces it: a failure record rich enough to **reconstruct the
+scenario in the lab**, where it can be reproduced deterministically, examined
+with unlimited instrumentation at zero production cost, and pinned with a
+permanent test (§3.17). Observation is expensive and always-on; reproduction is
+free and on demand.
+
+This imposes a genuine requirement rather than an aspiration: **the failure
+record's sufficiency is measured by whether the lab can rebuild the failure from
+it.** When it cannot, that is a defect in the record, and the fix is more context
+at the failure site — never a return to ambient streaming.
+
+**Confidence: high on the strategy, medium on the residual risk.** The honest
+cost is stated in §6.16: failures arising from conditions nobody thought to
+simulate are exactly the ones this strategy handles worst, and they are also the
+most interesting ones. This is the price of §VII, knowingly paid.
+
+### 6.16 Simulated confidence vs. reality
+
+**Tension.** §VIII rests MCF's credibility on a laboratory, and a laboratory is
+software someone wrote. **A simulator built from our own assumptions tests our
+assumptions, not the world.** Real GPUs fail in ways nobody models; real drivers
+have undocumented behaviour; real thermal throttling is messier than any curve
+we would write. A green suite against a simulated universe can produce total
+confidence and zero validity — which is precisely the §6.1 failure mode, arrived
+at from a new direction.
+
+Combined with §6.15, this is the sharpest residual risk in the project: MCF is
+choosing to know itself through a model of the world rather than through
+observation of the world, and it must not fool itself about the difference.
+
+**Resolution — the lab establishes correctness; only real hardware establishes
+belief, and the two are never conflated.**
+
+- **Simulated tests gate the code.** They are deterministic, exhaustive, fast,
+  and must be green. They prove MCF behaves correctly *given* the conditions
+  described.
+- **Real-hardware runs validate the lab.** Periodically, and on every substantive
+  change to a simulated component, the simulation's predictions are checked
+  against the real thing. A simulator whose fidelity is unmeasured is an
+  unqualified instrument, and §3.4 already forbids trusting one of those.
+  Divergence is a finding about the simulator, and it is recorded.
+- **No performance number ever comes from simulation.** §IV's measurements are
+  taken on real hardware, always. The lab tests *behaviour*, never *speed* —
+  simulated timings are fiction, and publishing one would violate §6.1 outright.
+- **Reality outranks the lab.** When they disagree, the world is right and the
+  simulator is defective. That direction is never reversed to preserve a green
+  suite.
+- **Fidelity is bounded and stated.** The lab should be explicit about what it
+  does *not* model, so that confidence is claimed only where it was earned.
+
+**Confidence: high on the ordering, low on the sufficiency.** How much real
+hardware validation is enough, and how often, is genuinely unresolved and
+recorded as §7.20. It is the question that determines whether §VIII is rigor or
+theatre.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -879,71 +1047,63 @@ That reading is stated here as the likely answer, not as a resolution, because
 it decides the project's architecture and deserves to be decided deliberately
 rather than inherited from a paragraph in §7.
 
-### 7.19 Implementation substrate — **blocking, and coupled to §7.4**
+### 7.19 ~~Implementation substrate~~ — **RESOLVED in Revision 4: Rust**
 
-*Recorded in Revision 3. Placed here because it cannot be separated from the
-question above it.*
+**The decision.** MCF is written in Rust.
 
-No stated intent names a language, runtime, or structural approach, and none
-should — that is a technical decision, not an intent. What belongs in this
-document is the **criteria the intents impose on that decision**, so that it is
-made against them rather than against familiarity or momentum.
+**Why it follows from the intents,** recorded here so the reasoning survives the
+decision:
 
-The intents constrain the choice as follows:
+- **§I and §3.16 decided it.** The dominant class of daemon failure is memory
+  and concurrency error, and Rust makes those largely impossible rather than
+  merely unlikely. More importantly, §3.1's prohibition on silent failure — this
+  document's central rule, and exactly the kind that erodes under human
+  discipline — becomes a property the compiler checks rather than one a reviewer
+  remembers. That is §3.16 applied to the largest available decision.
+- **§VII permits it.** No interpreter, no garbage collector, no runtime, a small
+  static binary, negligible idle footprint, fast cold start. It can plausibly
+  meet §7.16's budgets once those exist.
+- **§III, §IV and §7.4 favour it.** Hardware probing, accelerator interrogation,
+  and driving inference engines are constant C-ABI work, and Rust pays no tax at
+  that boundary. This is where garbage-collected alternatives lose specifically
+  for this project, whatever their other merits.
+- **A useful accident:** Hugging Face's own `safetensors` and `tokenizers` are
+  Rust libraries, so §III's acquisition layer builds on first-party code rather
+  than reimplementing it.
 
-- **§I and §3.16** — the dominant class of daemon failure is memory and
-  concurrency error. A substrate that makes those *impossible* rather than
-  *unlikely* is worth a great deal here, because §3.1's prohibition on silent
-  failure is exactly the kind of rule that erodes under human discipline and
-  holds under machine enforcement. Explicit, non-ignorable error handling is
-  worth more to this project than almost any other property.
-- **§VII** — no interpreter, no dominant runtime, no unavoidable idle work, a
-  small resident footprint with nothing loaded, and fast cold start. §7.16's
-  budgets, once they exist, are the real test; a substrate that cannot plausibly
-  meet them is disqualified regardless of other merits.
-- **§III, §IV and §7.4** — hardware probing, accelerator interrogation, and
-  driving inference engines all mean talking to C interfaces constantly.
-  Friction at that boundary is a recurring tax on the project's central work,
-  not an occasional inconvenience.
-- **§II and §3.5** — the test and simulation discipline the science requires
-  must be *pleasant enough to actually maintain*. A substrate that makes
-  fake hardware, synthetic artifacts, and replayed telemetry painful will
-  quietly erode §3.5, and §3.5 is what earns MCF the right to be believed.
-- **§3.13** — dependencies are weight, so ecosystem maturity matters in a
-  specific and slightly unusual way: what counts is having good *small* pieces
-  available, not a large framework that solves everything at a cost.
-- **§V and §6.11** — the interface is a thin client over a service, so this
-  decision governs the daemon. The surface has its own, much lighter, answer.
+**Why not C++,** since it was the initial instinct: C++ reaches the same
+performance and the same footprint — this was never a performance argument. It
+reaches the same *reliability* only through sustained discipline, and reliability
+is this project's first stated intent. The tiebreaker was §3.16, not speed.
 
-**The likely answer, stated as a candidate rather than a resolution.** The
-combination of §I's reliability mandate and §3.16's enforcement principle points
-away from C++ and toward a memory-safe systems language with no runtime — with
-Rust the obvious candidate, because it is the one where "every failure is
-explicitly handled" is a property the compiler checks rather than a rule the
-reviewer remembers. C++ can reach the same performance and the same footprint,
-but reaches the same *reliability* only through sustained discipline, and this
-project has declared reliability its first intent. A garbage-collected language
-is a weaker fit against §VII's idle-cost rule and against the C-interop tax
-above, though not an absurd one.
+**The costs, accepted.** Slower to write. Async Rust is genuinely complex and
+will be felt in the concurrent-download and streaming paths. The model
+conversion and quantization ecosystem is Python — resolved by treating those as
+supervised subprocess tools, which the daemon architecture (§7.1) wants anyway.
 
-That reasoning is recorded here, not resolved, because it is exactly the kind of
-decision this document exists to inform rather than to make. It also depends on
-§7.4: if MCF ever owned inference kernels, the calculus changes substantially.
+**Still conditional on §7.4.** This reasoning assumes MCF wraps inference engines
+rather than implementing kernels. If that ever changed, the substrate question
+reopens with it.
 
-**What would settle it:** §7.16's budget numbers, and a small adversarial
-prototype of the least pleasant part of the system — probing a GPU, supervising
-a child runtime that is deliberately made to die badly, and recording both under
-§3.1 — built more than once if necessary. Choosing this by argument alone would
-violate §3.13's own rule that we optimize what is measured rather than what is
-imagined.
+**Validation, not permission.** §3.13 requires we optimize what is measured
+rather than what is imagined, so this decision is confirmed rather than
+justified by a small adversarial prototype: probe a GPU, supervise a child
+runtime deliberately made to die badly, record both under §3.1, and measure the
+result against §7.16. Building it is early work, not a gate — but if it goes
+badly, this entry is amended rather than defended.
 
-### 7.5 Retention, scope, and residency of telemetry
+### 7.5 Retention and residency of the record — **narrowed in Revision 4**
 
-§6.8 splits system telemetry from content, but leaves open: how long is anything
-kept, how much disk may telemetry consume, what happens when that budget is
-exhausted (and how §3.1 and §6.9 forbid that from being a silent drop), whether
-anything may ever leave the machine, and whether the user can inspect and purge
-what MCF holds about them. §3.10 implies strong answers but does not supply them.
+Revision 4 removes most of this void by removing most of the data: with ambient
+telemetry de-prioritized (§6.9), there is no metric stream to size, age out, or
+budget. What remains is the record itself — measurement history, failure records,
+provenance — which is small, durable, and scientifically valuable, so the
+question inverts from *how aggressively do we discard* to *how long must we
+keep*, and §7.13's comparability problem now dominates it.
+
+Still open: whether anything may ever leave the machine, whether the user can
+inspect and purge what MCF holds about them, and what happens if the record's
+disk budget is exhausted (§3.1 and §6.9 forbid that being a silent drop).
 
 ### 7.6 Reproducibility guarantee level
 
@@ -1068,6 +1228,45 @@ destroyed without deliberation. All three bear on this and none of them decides
 it, and whatever is chosen becomes a measurement condition under §3.4 — a
 response time is a different number depending on whether the model was resident.
 
+### 7.20 How much reality validates the lab — **blocking §VIII**
+
+§6.16 requires that simulated confidence be checked against real hardware, but
+not how much, how often, or against what. What fraction of the suite must have a
+real-hardware counterpart? On which hardware, given that MCF is meant to run on
+machines we do not own (§7.8)? What divergence between simulation and reality is
+tolerable before the simulator is declared defective?
+
+Until this is answered, §VIII is an assertion rather than a discipline, and
+§6.16's low confidence rating stands. This is now the highest-leverage void
+attached to the newest intent, in the same way §7.16 is for §VII.
+
+### 7.21 What the laboratory is obliged to simulate
+
+§3.17 says every failure MCF claims to handle has a simulation that produces it,
+which makes the lab's fault catalogue and the failure taxonomy (§7.10) the same
+list — and neither exists yet. Someone must decide the scope: hardware absence
+and variety, accelerator failure modes, hub misbehaviour (malformed, gated,
+hostile, truncated, mutated-under-us), disk exhaustion, network stall and
+partial transfer, runtime death at every lifecycle stage, thermal throttling,
+memory pressure, contention, clock and time anomalies, upgrade and migration.
+
+Two second-order questions ride on it: whether simulated time is required (§3.17
+implies yes, and it is a structural decision, not a testing convenience), and
+what the lab explicitly declines to model, since §6.16 requires that boundary be
+stated so confidence is claimed only where earned.
+
+### 7.22 What "full system" testing means for a daemon
+
+§3.5 now requires whole-system coverage, but the end-to-end boundary is undrawn.
+Does a full-system test drive the real HTTP surface? Start a real inference
+engine, or a simulated one? Cross a process boundary into a supervised child?
+Exercise restart and recovery with persisted state?
+
+The answers determine whether the suite can honestly claim to test the
+behaviours that only exist between components — supervision, recovery,
+contention, degradation — which are precisely the ones §I is about, and which
+unit tests structurally cannot reach.
+
 ---
 
 ## 8. Amending This Document
@@ -1091,3 +1290,25 @@ response time is a different number depending on whether the model was resident.
   and it may answer voids already recorded. Adding one means re-reading §6 and
   §7 in its light. Revision 2 is the worked example — three sentences added six
   conflicts and closed two blocking voids.
+
+---
+
+## 9. Revision History
+
+Recorded so that the *reasoning* behind each change survives it, per §8.
+
+- **Revision 1** — Founding intents I–IV consolidated (reliability, science,
+  custody, optimization). Repository was empty; all conflict resolutions
+  arbitrated on coherence rather than by implementation.
+- **Revision 2** — Intents V–VII added (interface, hosting, lightness). Closed
+  §7.1 (MCF is a daemon) and partially §7.12. The performance mandate forced six
+  new conflict resolutions (§6.9–§6.14) and three principles (§3.13–§3.15).
+- **Revision 3** — Corrected the Ollama framing: cited as an example of a
+  *friction level*, never as an architectural model. Added §3.16 (prefer
+  substrates a machine can hold to the principles) and recorded §7.19.
+- **Revision 4** — Two decisions. **Rust** chosen as the substrate (§7.19
+  resolved, on §3.16 grounds rather than performance ones). **Confidence
+  strategy rebalanced** from ambient telemetry to testing and simulation: §6.9
+  resolved by choosing §VII's side, §3.3 split into *the record* (obligatory)
+  and *ambient telemetry* (de-prioritized), Intent VIII added, §3.17 added, and
+  the costs recorded honestly in §6.15 and §6.16.
