@@ -517,6 +517,20 @@ local exception.
 
 ## Changelog
 
+### Version 6 — four proposals land
+
+M1 gains pre-acquisition fitment, M5 gains the repro bundle, projection bands
+and the contention snapshot, M6 gains the workload slot format and the
+quiet-machine pre-flight — the last of which exists because D8's exclusivity is
+a claim rather than a condition until something checks the machine is quiet.
+
+### Version 5 — the bench measures plural quality
+
+M6 restated: laboratories gated by verified capability, reporting four outcomes
+rather than three, with no aggregate score and a workload slot built into the
+framework rather than retrofitted onto it. M2 gains the stop control, which
+§XVII made obligatory rather than optional.
+
 ### Version 4 — v8's work lands, and three structural decisions move to M0
 
 M0 gains the self-contained artifact, the privileged helper, the time model as
