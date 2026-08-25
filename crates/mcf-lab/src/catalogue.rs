@@ -18,6 +18,7 @@ use mcf_core::failure::Category;
 use super::scenario::Scenario;
 
 mod artifact;
+mod engine;
 mod environment;
 mod record;
 mod time;
@@ -27,6 +28,7 @@ pub const CATALOGUE: &[Scenario] = &[
     artifact::CORRUPTED,
     artifact::MISSING,
     artifact::UNREADABLE,
+    engine::NO_VENDORED_ENGINE,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     record::UNWRITABLE_PATH,

@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 51 |
+| **Version** | 53 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**244 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 194
-build items (25 done, 1 dropped, 4 in progress, 54 blocked on a decision, 110 open).** Every item cites
+**247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
+build items (26 done, 1 dropped, 4 in progress, 54 blocked on a decision, 112 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -146,6 +146,9 @@ first and importance second.
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **in progress** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; the matrix has no rows because nothing is vendored yet, and the check refuses a vendored component with no finding |
+| B-361 | A timing-class result cannot be constructed from a stand-in engine handle, in the way a simulated duration cannot become a performance number | B65, D31, A11, B31 | The compiler refuses it; a check refuses a conversion added later | **done** — `mcf_core::engine`: `timing` is defined on `Run<Vendored>` alone, `Timing` has no constructor of its own, and no conversion exists between the two runs. Four source checks and a `const` assertion; verified by giving the stand-in a timing and watching them fail |
+| B-360 | The stand-in engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling — no SIMD, no fusion, no threading, no accelerator path | D31, §III, §3.2, B7 | A model no vendored engine will run reaches a first token on the stand-in, and every result taken on it is marked (A5) | open |
+| B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
 ### M1 — Acquire
@@ -362,6 +365,43 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 53 — the prohibition lands before the thing it constrains
+
+B-361 is done. `Run<Vendored>` has a `timing` method and `Run<StandIn>` does
+not, so a speed from a naive kernel is not a rule somebody might break but a
+program that does not compile — and `Timing` has no constructor of its own, so
+the only way to one is through an engine that is allowed to report one.
+
+It lands before B-360 deliberately, for the reason B-220's restoration ledger
+was built before anything was permitted to change the environment: a prohibition
+added after the thing it prohibits is a prohibition somebody has already worked
+around.
+
+The fault-catalogue ratchet did its job twice while this landed. Constructing
+`engine.unavailable` required a scenario, which is A13 working as D26 intends;
+and the laboratory's own suite then refused that scenario for producing a
+failure with no context, which is B21 — a mark that says something was lost
+without saying what is a mark a reader cannot act on. The failure now names
+which implementation ran, at which build, and what it was permitted to report.
+
+### Version 52 — the stand-in engine is registered
+
+PR8 is accepted by D31 and registers three items. B-361 lands first — the
+prohibition, before the thing it constrains exists, for the same reason B-220's
+restoration ledger was built before anything was allowed to change the
+environment.
+
+The ordering of the argument is what admits the work at all. Coverage sounds
+like capability and B23 refuses weight admitted for capability; what justifies a
+second implementation is A19, since for inference the only available
+demonstration that software computes what it claims is another implementation
+that agrees. Coverage is what it also buys.
+
+B-360 is placed at M0 rather than M2 for the loaders it shares with provenance
+and PR3's fitment arithmetic, and its first token belongs with the engine work.
+B-362's tolerance question is D19's shape — identical inputs do not guarantee
+identical outputs — and is open in the item rather than assumed.
 
 ### Version 51 — the budget tier can assert again
 

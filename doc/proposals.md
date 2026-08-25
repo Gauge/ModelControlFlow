@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -39,6 +39,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR5 | [Contention diagnosis](#pr5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
 | PR6 | [The stop control](#pr6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 | PR7 | [Longitudinal regression detection](#pr7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
+| PR8 | [The stand-in engine](#pr8--the-stand-in-engine) | **Accepted** — B-360, B-361, B-362 | M0 · M2 |
 
 ---
 
@@ -747,7 +748,153 @@ this is a natural consequence of the design rather than an addition to it.
 
 ---
 
+## PR8 — The stand-in engine
+
+**One line.** A deliberately slow, obviously correct implementation MCF writes
+itself, so that a model no vendored engine will run still runs — and so that the
+vendored engine has something to be checked against.
+
+### The claim it enables
+
+Two, and the second is the one that justifies the first.
+
+**Coverage becomes true rather than aspirational.** §III commits MCF to *any*
+model and B7 is careful about what that means: a defined actionable outcome for
+every reference, not success for every one. Today the outcome for an
+architecture or a quantization the vendored engine does not implement is
+`engine.unavailable` — honest, and a dead end. With a stand-in it becomes *runs,
+slowly, marked*, which is §3.2's degrade-and-say-so applied one level down from
+where it was written. The same holds for hardware: on a machine whose
+accelerator has no vendorable backend (D23, intent v23), the stand-in runs on the
+processor. §3.2 already names that exact case.
+
+**A19 becomes satisfiable.** *Nobody should believe published numbers from
+software that cannot demonstrate it computes what it claims.* Against what,
+for inference? A second implementation, written to be read rather than to be
+fast, is the only answer available: where both run, agreement is evidence about
+both, and disagreement is a finding about one of them. That is not a nicety —
+it is the difference between MCF trusting its engine and MCF having checked it.
+
+### How it works
+
+A dense, single-threaded, unoptimized implementation in Rust:
+
+- the GGUF and safetensors readers MCF needs anyway for provenance (§3.6) and
+  for PR3's pre-acquisition fitment;
+- dequantization for the common quantization schemes — each is a short, heavily
+  documented piece of bit unpacking;
+- the ordinary transformer operations, written straightforwardly: RMSNorm, RoPE,
+  attention, the feed-forward block, matmul;
+- sampling, which is small.
+
+What it deliberately does **not** have is the entire source of difficulty: no
+SIMD, no fusion, no threading, no accelerator path, no memory-layout tricks.
+Those are what make an engine fast and what make one a permanent maintenance
+obligation as hardware changes. A stand-in has neither.
+
+**The constraint that makes this safe, and it is structural.** *A stand-in
+cannot produce a timing.* Not by policy — by type, in the way `Duration<Simulated>`
+cannot become a performance number (A11, B37). A throughput figure from a naive
+kernel is a measurement of the naive kernel; it says nothing about the model and
+nothing about the machine, and publishing one would be worse than publishing
+nothing. So the stand-in serves **behaviour-class** laboratories only (B31): did
+the tool call parse, did the loop terminate, did the structured output conform,
+did the model recover from an error. Those outcomes do not depend on how fast
+the arithmetic was.
+
+That constraint also removes the reason the project would drift. There is no
+point optimizing something that can never report a speed, so the slippery slope
+from *stand-in* to *our own engine* has no first step.
+
+**Comparability takes care of itself.** Intent v16 makes the engine build part of
+a configuration's identity (D17), so a stand-in result and a vendored-engine
+result are already two configurations rather than two readings of one. Nothing
+new is needed to keep them apart; A8 and D17 do it.
+
+**Three states, again.** An artifact runs on the vendored engine, runs on the
+stand-in and is marked, or does not run and MCF says why. That is the same shape
+D25 gives a device and D29 gives a platform, which is some evidence it is the
+right shape.
+
+### What it costs
+
+Real, and bounded in a way a fast engine is not. Perhaps two thousand lines for
+the operations, plus the loaders MCF needs regardless, plus a dequantization
+routine per scheme. The maintenance is proportional to *architectures*, not to
+hardware — a new accelerator costs nothing, which is precisely the treadmill an
+own engine would put MCF on.
+
+The honest cost is speed. A naive processor implementation may be two orders of
+magnitude slower than a tuned one, which makes a large model on the stand-in a
+matter of hours rather than seconds. B49 already anticipates this shape and
+makes it tolerable: a behaviour-class run's deadline is a **token budget rather
+than a wall clock**, because a task that failed for want of time is a
+measurement of the machine. A slow stand-in makes a run long; it does not make
+it wrong.
+
+### Collisions
+
+- **B23 — the instrument grows for validity, never for capability.** This is the
+  rule that could refuse the proposal, so it is worth answering directly. A
+  stand-in makes MCF *able to run more models*, which sounds like capability. But
+  what it actually buys is a second implementation to check the first against, and
+  a coverage claim that is true rather than nearly true — both of which are
+  validity. The timing prohibition is what keeps the two apart: with it, the
+  stand-in cannot make MCF's measurements faster, prettier or more numerous, only
+  more checkable.
+- **§7.4 and the own-engine question.** This is *not* that. §7.4's reading —
+  MCF's performance mandate applies to its own overhead, not to the inference
+  kernels — is untouched, because a stand-in makes no performance claim at all.
+- **A5, A8, D17.** Every stand-in result is degraded and marked, and is a
+  different configuration from a vendored-engine result rather than a comparable
+  one.
+- **B64 — everything MCF runs on, MCF ships.** Satisfied more completely than
+  before: the stand-in is MCF's own code, pinned by construction.
+- **§XVI.** It reduces the number of cases where a missing component becomes an
+  errand, which is what §XVI is for.
+
+### Open questions
+
+- **Which quantization schemes.** Every one MCF's reference model and its
+  neighbours use, and then by evidence. A scheme with no dequantization routine
+  is a stated absence, not a silent one.
+- **Does the stand-in ever verify the vendored engine automatically?** Where both
+  can run an artifact, comparing their logits on a fixed input is nearly free and
+  is exactly what A19 wants. It probably becomes a laboratory of its own.
+- **What tolerance counts as agreement.** Floating-point reduction order differs
+  between any two implementations, so this is a real question and it is D19's
+  shape: identical inputs do not guarantee identical outputs.
+
+### Recommendation
+
+**Accepted**, with the timing prohibition as a condition of acceptance rather
+than a note on it. Registered as B-360 (the stand-in), B-361 (the type-level
+prohibition) and B-362 (the cross-check laboratory). The prohibition lands
+first — before the thing it constrains exists, for the same reason B-220's
+restoration ledger was built before anything was allowed to change the
+environment.
+
+---
+
 ## Changelog
+
+### Version 7 — the stand-in engine
+
+PR8 added and accepted. It comes from a question the author asked while DEC-004
+was open: whether MCF could write its own stand-ins for the cases a vendored
+engine does not cover, so that every model at least runs.
+
+The argument that decides it is not the coverage one, which sounds like
+capability and would run into B23. It is that a second implementation is the
+only thing an inference engine can be *checked against*, and A19 forbids
+believing numbers from software that cannot demonstrate it computes what it
+claims. Coverage is what the second implementation also happens to buy.
+
+The condition of acceptance is a prohibition: a stand-in cannot produce a
+timing, by type rather than by policy. That keeps B23 satisfied — the stand-in
+cannot make MCF's measurements faster or more numerous, only more checkable —
+and removes the reason the work would drift into writing an engine, since there
+is no point optimizing something that can never report a speed.
 
 ### Version 6 — proposals become `PR`, so that `P` means one thing
 

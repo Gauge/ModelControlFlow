@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 33 |
+| **Version** | 34 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,59 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D31 — MCF writes a stand-in engine, and a stand-in cannot produce a timing *(accepts PR8)*
+
+**MCF ships a second implementation of inference: its own, deliberately slow,
+written to be read.** A model no vendored engine will run still runs on it,
+marked; and where both can run an artifact, each is something the other can be
+checked against.
+
+**The second half is the reason, and it is worth stating in that order.** §II's
+A19 forbids believing published numbers from software that cannot demonstrate it
+computes what it claims — and for inference, the only available demonstration is
+a second implementation that agrees. Coverage is what the second implementation
+also buys; it is not what justifies it. §III's *any model* is honoured further as
+a consequence rather than as the goal, which is the right way round, because
+B23 refuses weight admitted for capability and admits it for validity.
+
+**A stand-in cannot produce a timing, and this is a condition rather than a
+caveat.** A throughput figure from a naive kernel measures the naive kernel: it
+says nothing about the model and nothing about the machine, and publishing one
+would be worse than publishing nothing (P1). So a stand-in serves
+**behaviour-class** laboratories only (B31) — did the call parse, did the loop
+terminate, did the format hold, did the model recover — and the prohibition is
+enforced by type, in the way A11 and B37 keep a simulated duration from becoming
+a performance number.
+
+That constraint does a second job. It removes the reason this work would drift
+into §7.4's own-engine question: there is no point optimizing something that can
+never report a speed, so the slope from *stand-in* to *our own engine* has no
+first step. §7.4's reading is untouched — MCF's performance mandate applies to
+its own overhead, not to the inference kernels — because a stand-in makes no
+performance claim at all.
+
+**What it does not need is what makes an engine hard.** No SIMD, no fusion, no
+threading, no accelerator path, no memory-layout work. Its maintenance is
+proportional to *architectures* rather than to hardware, so a new accelerator
+costs it nothing — which is exactly the treadmill §7.4 was right to refuse.
+
+**Comparability needs no new machinery.** Intent v16 makes the engine build part
+of a configuration's identity (D17), so a stand-in result and a vendored-engine
+result are two configurations rather than two readings of one, and A8 keeps them
+apart without being asked.
+
+**An artifact is therefore in one of three states**, which is the shape D25 gives
+a device and D29 gives a platform: it runs on the vendored engine; it runs on the
+stand-in and every result is marked (A5); or it does not run, and MCF says which
+component was missing (`engine.unavailable`).
+
+**The cost, stated.** A naive implementation may be two orders of magnitude
+slower, so a large model on the stand-in is a matter of hours. B49 already makes
+that tolerable rather than fatal: a behaviour-class run's deadline is a token
+budget rather than a wall clock, because a task that failed for want of time is
+a measurement of the machine. A slow stand-in makes a run long; it does not make
+it wrong.
 
 ### D30 — Attributability is a property of a reading, not of the machine *(answers §7.51)*
 
@@ -3875,6 +3928,26 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 34 — MCF writes a second implementation
+
+D31 accepts PR8. MCF ships a stand-in engine of its own — deliberately slow,
+written to be read — so that a model no vendored engine will run still runs, and
+so that the vendored engine has something to be checked against.
+
+The order of those two reasons is the whole decision. Coverage sounds like
+capability and would have run into B23, which admits weight for validity and
+refuses it for capability. What actually justifies the work is A19: nobody
+should believe published numbers from software that cannot demonstrate it
+computes what it claims, and for inference the only available demonstration is a
+second implementation that agrees. Coverage is what that also buys.
+
+The condition of acceptance is a prohibition — **a stand-in cannot produce a
+timing** — enforced by type in the way A11 and B37 keep a simulated duration from
+becoming a performance number. A throughput figure from a naive kernel measures
+the naive kernel. The prohibition also removes the reason this drifts into
+§7.4's own-engine question: there is no point optimizing something that can
+never report a speed.
 
 ### Version 33 — attributability is about the reading, not the machine
 
