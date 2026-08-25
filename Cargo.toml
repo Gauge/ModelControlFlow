@@ -19,6 +19,7 @@ members = [
     "crates/mcf-bench",
     "crates/mcf-cli",
     "checks",
+    "prototypes/adversarial",
 ]
 
 [workspace.package]

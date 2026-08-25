@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 25 |
+| **Version** | 26 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -486,6 +486,17 @@ than what is imagined, so this decision is confirmed by a small adversarial
 prototype: probe an accelerator, supervise a child runtime deliberately made to
 die badly, record both under §3.1, and measure the result against §7.16. If that
 goes badly, this entry is amended rather than defended.
+
+**The prototype ran, and this entry stands.** F1 in [findings.md](findings.md)
+records it. Four ways a supervised runtime dies badly each reach a distinct
+taxonomy category with the manager unaffected and the child's partial output
+kept; the accelerator answers five of five questions over the C ABI against
+three of five from the files its driver publishes; and MCF's own artifact,
+resident memory and cold start sit under D24's ceilings with room. Two findings
+travel with the confirmation rather than against it: the fields §3.8 actually
+needs — live memory and thermal state — are reachable only over the C ABI, which
+DEC-008 has to decide knowing; and D24 does not say which statistic its figures
+name, which §7.50 now records.
 
 ### D5 — Confidence comes from the laboratory, not from ambient telemetry *(answers §6.9)*
 
@@ -3545,6 +3556,29 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
+### 7.50 Which statistic each budget figure names
+
+D24 gives sixteen figures and names a statistic for exactly one of them: added
+latency is "≤ 5 ms **at p99** — the tail, not the mean, because the tail is what
+a user feels". The other fifteen say nothing, and F1 in
+[findings.md](findings.md) shows that the omission is not academic. Twenty
+measurements of cold start on a quiet machine gave a median of 3.9 ms and a p95
+of 9.6 ms; the same twenty on a machine that was compiling gave a median of
+7.2 ms and a p95 of 165–257 ms. One run, a passing median and a failing tail.
+
+Open: which statistic each figure names, and whether it is the same one for all
+of them. A median answers *what usually happens*; a high percentile answers
+*what a user notices*; a maximum answers *what MCF may never do*. The
+prohibitions — zero timer wakeups, zero external requests — are already maxima
+and need nothing.
+
+Two constraints on whatever answers this. The statistic is part of what a
+regression test asserts, so B-011 cannot be finished without it (B20). And a
+tail figure and a contended machine are the same reading seen twice: B35 makes a
+timing taken under contention a measurement of the contention, so this decision
+and the question of whether the budget suite opens an exclusive window are one
+decision, not two.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3597,6 +3631,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 26 — the prototype ran, and D4 stands
+
+§7.19's validation happened. D4 committed this decision to an adversarial
+prototype — probe an accelerator, supervise a child made to die badly, record
+both, measure against §7.16 — and said the entry would be amended rather than
+defended if it went badly. It did not, and D4 gains a paragraph saying so and
+citing the evidence rather than restating it.
+
+Two findings travelled with the confirmation, and neither weakens it. The live
+accelerator state §3.8 depends on — device memory, temperature — is reachable
+only over the C ABI, not from the files a driver publishes, which is something
+DEC-008 has to decide knowing rather than discover afterwards. And D24 names a
+statistic for one of its sixteen figures and not for the other fifteen; on a
+contended machine a cold-start median passes while its p95 fails by a factor of
+two, from one run. §7.50 records that.
+
+[findings.md](findings.md) is new, and exists because neither this document nor
+the register was the right home for the evidence: the first states positions and
+the second states status, while a run's conditions and readings are a third kind
+of thing.
 
 ### Version 25 — the changelog catches up
 

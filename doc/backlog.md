@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 30 |
+| **Version** | 31 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
-build items (9 done, 1 in progress, 59 blocked on a decision, 126 open).** Every item cites
+**244 items: 50 decisions (38 open, 1 drafted, 2 narrowed, 9 resolved) and 194
+build items (10 done, 1 in progress, 59 blocked on a decision, 125 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -43,11 +43,12 @@ implemented, only gestured at, until the decision is made.
 |---|---|---|---|---|---|
 | DEC-016 | The performance budget numbers | §7.16 | §VII | M0 | **resolved** — D24: sixteen figures, ceilings not targets; footprint provisional pending the prototype |
 | DEC-010 | The failure classification scheme | §7.10 | §3.1 | M0 | **resolved** — [taxonomy.md](taxonomy.md): three axes, sixteen domains, 110 codes |
-| DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | open |
+| DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | **resolved** — confirms. [findings.md](findings.md) F1: four death modes classified with the manager unaffected, five of five accelerator questions answered over the C ABI, every measurable D24 figure under its ceiling |
 | DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | open |
 | DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | open |
+| DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | open — [findings.md](findings.md) F1 shows one run whose cold-start median passes and whose p95 fails by a factor of two |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
@@ -103,7 +104,7 @@ first and importance second.
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
 | B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | **done** — [build.md](build.md); toolchain pinned to 1.98.0, layering asserted by test, `scripts/check-reproducible-build.sh` compares two checkouts byte for byte |
-| B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | open |
+| B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | **done** — `prototypes/adversarial`; written up as [findings.md](findings.md) F1 and confirmed in D4. Superseded in place by B-013, B-033 and B-011, and dropped when those land |
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
@@ -360,6 +361,28 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 31 — the prototype ran, and it moved two decisions
+
+B-002 is done and DEC-019 is resolved: the prototype confirms D4 rather than
+amending it. [findings.md](findings.md) F1 holds the evidence and the
+conditions it was taken under, and D4 gains a paragraph citing it.
+
+It did not only confirm. Two things it found change what other decisions have to
+weigh, and both are registered rather than left in a report nobody re-reads.
+
+**DEC-008 now has a fact to decide against.** The accelerator's *identity* is in
+the files a driver publishes; its *live state* — device memory, temperature — is
+not, and is reachable only over the C ABI. §3.8 requires MCF know the difference
+between a slow model and a busy machine, and that difference is made of exactly
+the two fields the file route cannot supply. Deciding what "characterized" means
+without knowing that would have been deciding it blind.
+
+**DEC-050 is new.** D24 names a statistic for one of its sixteen figures and for
+none of the rest. On a quiet machine that costs nothing; on a machine that was
+compiling, twenty cold-start trials gave a passing median and a p95 over the
+ceiling by a factor of two. B-011 cannot assert a budget without knowing which
+statistic it asserts, so this gates that item rather than merely informing it.
 
 ### Version 30 — identity is exact, and the floor grows by one
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -44,7 +44,7 @@ thing to erode it.
 
 | M | Product | The user can now… | Primary intents | Closes |
 |---|---|---|---|---|
-| **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16, §7.10, §7.19✓, §7.21, §7.22, §7.8 |
+| **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16✓, §7.10✓, §7.19✓, §7.21, §7.22, §7.8, §7.50 |
 | **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11 |
 | **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9, §7.18 |
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
@@ -108,9 +108,9 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-021, DEC-022, DEC-008, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL). ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** DEC-021, DEC-022, DEC-008, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL), DEC-050 (which statistic a budget names). ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
-**Note on the remainder:** all six are questions a working prototype answers better than an argument does. D4 commits to that prototype and §7.19 says building it is early work rather than a gate. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
+**Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
 **Explicitly not in M0:** any model, any inference, any network fetch, any UI.
 
@@ -544,6 +544,17 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 11 — M0's prototype has run
+
+§7.19 is closed by the prototype D4 committed to, and the two gates it informed
+rather than closed are now named where M0 lists what it waits on. DEC-050 joins
+them: a budget figure with no statistic is a budget B-011 cannot assert.
+
+The note on the remainder is corrected. It said all six of M0's open decisions
+were questions a prototype answers better than an argument; one of them has now
+been answered that way, and what it produced was two better-informed decisions
+rather than two closed ones — which is what the note should have predicted.
 
 ### Version 10 — pairing lands in M5
 

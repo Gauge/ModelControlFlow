@@ -1,0 +1,18 @@
+[package]
+name = "mcf-prototype-adversarial"
+description = "The §7.19 adversarial prototype: probe an accelerator, supervise a child made to die badly, record both, measure the cost (B-002)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "mcf-prototype"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../../crates/mcf-core" }
