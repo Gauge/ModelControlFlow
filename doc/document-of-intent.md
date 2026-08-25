@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -549,34 +549,48 @@ longer all owned by someone who understands the risk.
 surface, a plugin ecosystem or a configuration language. §5 stands. Being usable
 by others is a quality bar, not a mandate to generalize.
 
-### D8 — Laboratories run exclusively, and may be greedy *(resolves most of §7.9)*
+### D8 — Exclusivity is bought by measurement class, never claimed by rank
 
-A diagnostic laboratory owns the machine for the duration of its run. No user
-traffic is served, no second laboratory runs beside it, and within its run the
-lab may take whatever resources accuracy requires — all of the accelerator,
-locked memory, pinned cores, raised priority.
+A laboratory takes the machine only when **the validity of its measurement
+requires it**, and for no longer. The requirement follows §6.25's class
+distinction, and the consequence is the opposite of what it first appears:
 
-**Why this is the rigorous answer rather than the convenient one.** §3.8 holds
-that contention corrupts a measurement and §3.4 requires one variable to differ.
-A lab sharing a machine with a served model is measuring the pair, not the
-model. Exclusivity removes the single largest confound available, and it removes
-it structurally rather than by correction: there is nothing to subtract because
-there was nothing else running.
+| Class | Needs a quiet machine? | Typical duration |
+|---|---|---|
+| **Timing** — throughput, latency, energy, memory scaling | **Yes.** A timing taken under contention measures the contention (§3.8) | tens of minutes |
+| **Behaviour** — tool calls, agentic tasks, extraction, retrieval, code | **No.** Whether a call parsed or a loop terminated is unperturbed by the user opening a browser | hours to days |
+
+**The labs that need the machine are the short ones.** Exclusivity is inversely
+correlated with duration, which means the practical cost of rigour here is a
+coffee break rather than a lost day. The twenty-hour evaluation run — the one
+that would make a machine unusable — is precisely the one that does not need
+exclusivity at all.
+
+**Exclusive windows.** A timing-class run opens a window: announced before it
+starts, bounded by a declared maximum, interruptible, and closed automatically.
+Inside it, MCF may be greedy — all of the accelerator, locked memory, pinned
+cores, raised priority — and §6.39's ladder is available with the user's
+agreement. Outside it, MCF holds nothing.
+
+**Yielding runs.** A behaviour-class run is a background citizen: low priority,
+yielding to the foreground, always behind user traffic on the serving path,
+pausing on request. Contention is *recorded as a condition* (§3.4) rather than
+prevented, because the outcome it measures does not depend on it. Two things
+this makes obligatory, and they are the honest caveats:
+
+- **Deadlines are token budgets, not wall clocks.** A task that fails because a
+  busy machine made it slow is a measurement of the machine, and §3.8 forbids
+  attributing that to the model.
+- **An environment failure is not a model failure.** An out-of-memory caused by
+  competition for host memory is classified as a condition of the run, never as
+  the model giving up — the failure taxonomy (§7.10) must distinguish them or
+  every yielding run is quietly contaminated.
 
 **What this settles in §7.9.** The question *may MCF refuse to benchmark while
-serving, or must it* is answered: **it must.** Arbitration between a lab and the
-serving path is not a scheduling problem to be solved; it is a state machine
-with one occupant.
-
-**What it costs, and where it is paid.** §VI promises a persistent, dependable
-endpoint, and a lab suspends it. That conflict is §6.33, and the resolution is
-that suspension is *explicit, announced, bounded and never silent* — the daemon
-stays up and answers, the endpoint reports why it is unavailable and for
-roughly how long, and no request is quietly dropped or slowed into a timeout.
-
-**What greed does not license.** A lab is greedy *while running* and costs
-nothing when it is not (§3.22, B30). Greed is a property of an experiment
-somebody started, never of MCF.
+serving, or must it* is answered by class rather than by policy: it **must**
+refuse for timing-class work, and **must not** for behaviour-class work. Only
+the exclusive window is a state machine with one occupant; the rest is
+scheduling, and scheduling is what a good guest does (§3.26).
 
 ### D9 — The time model
 
@@ -1208,6 +1222,35 @@ how much faster it would make the measurement.
 This is also why the stop control (§3.1, §6.33) is not a convenience: a system
 that alters its environment owes an unwind path, and a system that cannot unwind
 should not have altered anything.
+
+### 3.26 MCF is a guest on the user's machine
+
+§1 already says MCF is a support structure around the thing the user actually
+wants to run, and that a support structure consuming what it supports has
+failed. The same sentence applies one level out: **a tool that makes the machine
+unusable while it works has failed, however good its numbers are.** These
+machines are daily drivers, not benchmark rigs, and the person operating them
+has other things to do on them.
+
+The spirit:
+
+- **Hosting always yields to the user, and nothing yields to hosting.** A served
+  endpoint is a service somebody is using; no measurement, no laboratory and no
+  background work may make it slow or unavailable except inside a declared
+  exclusive window (D8).
+- **Take what the measurement requires, for as long as it requires, and not one
+  minute more.** Greed is licensed by validity, never by importance.
+- **Default to the polite mode and let the user escalate.** Low priority,
+  yielding, interruptible, pausable. The user may grant more; MCF never assumes
+  it.
+- **Announce before, not after.** A user should never discover that MCF took the
+  machine by noticing their machine is gone.
+- **Every interruption is survivable.** A paused run resumes or reports what it
+  had (A4), and stopping is always available and always restores (A27).
+
+The test this principle is meant to survive: *can the user keep working while
+MCF works?* Where the answer must be no, the window is short, announced and
+chosen by them.
 
 ---
 
@@ -2154,11 +2197,15 @@ truly require elevation differs by platform and is recorded as §7.39; a helper
 that turns out to need broad rights for a narrow job should be reconsidered
 rather than granted.
 
-### 6.33 Exclusive laboratories vs. a persistent, dependable endpoint
+### 6.33 Exclusive windows vs. a persistent, dependable endpoint
 
-**Tension.** D8 gives a laboratory the whole machine. §VI promises a persistent
-local service and §I promises MCF is the calm component. A user whose endpoint
-stops answering because a lab started has been failed by both.
+**Tension.** D8 gives a timing-class run exclusive use of the machine. §VI
+promises a persistent local service and §I promises MCF is the calm component. A
+user whose endpoint stops answering has been failed by both.
+
+Note the scope this has since narrowed to: only timing-class work suspends
+anything, and it is measured in tens of minutes. Behaviour-class runs — the long
+ones — yield instead, and never suspend the endpoint at all.
 
 **Resolution — suspension is a declared state, never an outage.**
 
@@ -2166,8 +2213,9 @@ stops answering because a lab started has been failed by both.
   during a lab receives an immediate, explicit refusal naming the lab, the
   reason, and the expected remaining time. It is never queued into a timeout,
   never silently slowed, and never dropped.
-- **Starting a lab while serving is a decision the operator makes**, with what
-  will be suspended stated before it begins.
+- **Opening an exclusive window while serving is a decision the operator
+  makes**, with what will be suspended stated before it begins, and the option
+  to schedule it for a time that suits them instead.
 - **Bounded by construction.** A lab declares a maximum duration and is stopped
   if it exceeds it, because an unbounded suspension is indistinguishable from an
   outage.
@@ -2354,6 +2402,38 @@ part of this feature rather than adjacent to it.
 wants step 3, given that step 1 lets them do it themselves with full knowledge,
 is unknown — and building 3 before 1 has proven insufficient would be spending
 weight on a guess.
+
+### 6.40 Long evaluations vs. a machine somebody is using
+
+**Tension.** §XIII's catalogue contains runs measured in hours and days. §3.26
+says MCF is a guest and §VI promises the endpoint stays up. On a dedicated rig
+these do not conflict; on the average machine MCF is actually installed on, an
+evaluation that owns the hardware for a day is a tool nobody runs twice.
+
+**Resolution — the long runs do not need the machine, so they do not take it.**
+
+- **Behaviour-class work yields** (D8): low priority, behind user traffic on the
+  serving path, pausable, resumable, with contention recorded rather than
+  prevented. Its validity does not depend on a quiet machine, so nothing is
+  bought by taking one.
+- **Timing-class work opens a short window** and is schedulable — overnight,
+  during a break, or when the machine has been idle for a stated period. Tens of
+  minutes, announced, bounded.
+- **Progress survives interruption** (B47). A day-long run is a sequence of
+  completed trials, each recorded as it finishes, so a user who needs their
+  machine back loses nothing but the trial in flight.
+- **The user can always look, and always stop** (A27, B-210).
+
+**Why this is not a compromise.** It follows from §6.25 rather than softening
+it: exclusivity was never a property of laboratories, only of timings, and the
+earlier reading generalized a real requirement past its evidence. The practical
+consequence is favourable — the runs that need quiet are short, and the runs
+that are long do not need quiet.
+
+**Confidence: high on the split, medium on the yielding mechanism.** Making a
+background run genuinely unobtrusive on a contended machine is real engineering,
+and a "low priority" that still stutters a game is a broken promise. §7.42
+records what has to be decided.
 
 ---
 
@@ -2826,6 +2906,22 @@ The last is the sharpest. Suspend-and-restore is straightforward on one family
 of operating systems and awkward or unavailable on others, so §6.39's ladder may
 have a different maximum height per platform — and §7.35's platform scope
 decides where.
+
+### 7.42 What yielding actually means
+
+D8 and §6.40 rest on a background run being genuinely unobtrusive, and neither
+says how. Process priority, accelerator scheduling priority, memory reservation,
+throttling on foreground activity, and pausing outright are different mechanisms
+with different guarantees, and accelerator work is the hard part: a submitted
+kernel does not yield mid-flight, so granularity is bounded by how small the
+work can be cut.
+
+Open: what "yielding" guarantees the user, how MCF detects that the user is
+active without ambient polling (D5), whether pausing is automatic or offered,
+and how any of it is expressed per platform (§7.35).
+
+A "low priority" that still stutters a game is a broken promise, and §3.26 makes
+this a correctness question rather than a comfort one.
 
 ### Retired voids
 

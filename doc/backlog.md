@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**197 items: 41 decisions (38 open, 1 drafted, 1 narrowed, 1 resolved) and 156 build items.** Every item cites the clause that
+**204 items: 42 decisions (39 open, 1 drafted, 1 narrowed, 1 resolved) and 162 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -74,6 +74,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-040 | What makes two machines alike — which attributes constitute similarity, whether it is one relation or several, and how a machine outside every class is treated | §7.40 | §XIV, D14 | M9 | open |
+| DEC-042 | What yielding guarantees, and how it is achieved per platform — process and accelerator priority, memory reservation, foreground detection without ambient polling, automatic versus offered pausing | §7.42 | **§3.26, D8** | M6 | open |
 | DEC-041 | The environment-control surface: which knobs, how scope is granted, what happens to a suspended process if MCF is killed, and how the ladder's maximum height differs by platform | §7.41 | §6.39 | M6 | open |
 | DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | **drafted** — [labs.md](labs.md) proposes 20 in 4 families, first three named; ordering and slot contents unratified |
 | DEC-028 | What an identifier is: content-addressed or looked up, what it binds, whether it resolves offline | §7.28 | **§XV** | M9 | open |
@@ -226,7 +227,13 @@ first and importance second.
 | B-107 | Contamination strategy: private, rotated or procedurally generated tasks, per DEC-023 | §7.3, §3.4 | The strategy is stated, implemented and re-checkable as the suite ages | blocked (DEC-023) |
 | B-108 | Zero cost when idle: the benchmark subsystem consumes nothing during ordinary serving | §6.18, §3.13 | Measured serving footprint is identical with the harness compiled in and no benchmark running | open |
 | B-109 | Harness minimality guard: each addition must make the measurement more valid, not the harness more capable | §6.18, §5 | Additions cite validity; capability-only additions are refused and the refusal is recorded | open |
-| B-181 | Lab exclusivity: starting a lab drains the serving path by an explicit decision; no second lab runs beside it | B35, D8, §6.33 | Two labs cannot run at once; serving is suspended before a lab begins | open |
+| B-181 | Exclusive window for timing-class work: announced, bounded by a declared maximum, schedulable, interruptible, closed automatically; drains the serving path by explicit decision | B35, D8, §6.33 | A timing result cannot be constructed from a run that overlapped serving or another lab | open |
+| B-230 | Behaviour-class labs cannot express a wall-clock deadline; deadlines are token budgets | B49, D8, §3.8 | A wall-clock timeout in a behaviour lab does not compile | open |
+| B-231 | A behaviour-class run under injected contention produces the same outcomes as one without, differing only in recorded conditions | B49, §6.40, §3.4 | The lab scenario asserts outcome equivalence and condition divergence | open |
+| B-232 | Serving latency under a concurrent behaviour-class run stays within its budget; hosting yields to the user and nothing yields to hosting | B50, §3.26, §VI | Asserted in CI against the interposed-latency budget | blocked (DEC-016) |
+| B-233 | Environment failures are a distinct taxonomy branch from model failures: an out-of-memory from competition is a condition of the run, never the model giving up | B49, §7.10, §3.1 | Every yielding run's failures classify to one branch or the other, never ambiguously | blocked (DEC-010) |
+| B-234 | Yielding mechanism: low priority, foreground-aware, pausable and resumable, per platform | B49, §3.26, §7.42 | A background run does not stutter an interactive application, measured rather than asserted | blocked (DEC-042) |
+| B-235 | Scheduling: an exclusive window may be deferred to a stated time or to a stated period of machine idleness | B35, §6.40, §3.26 | A user can say "overnight" or "after ten minutes idle" and the window opens then | open |
 | B-182 | Suspension is declared: a request during a lab receives an immediate refusal naming the lab and the expected remaining time, never a queue or a timeout; a lab is bounded and interruptible with its partial result preserved | B35, §6.33, §3.1 | Requests during a lab are refused within one round trip; interrupting preserves and marks the partial result | open |
 | B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | open |
 | B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
@@ -312,6 +319,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 8 — exclusivity narrowed to timings
+
+B-181 rewritten: the exclusive window belongs to timing-class work, not to
+laboratories generally. New items for behaviour-class yielding — token-budget
+deadlines as a compiler property, outcome-equivalence under injected contention,
+serving latency held under concurrent lab load, and the taxonomy branch that
+keeps an environment failure from being recorded as a model failure.
+
+DEC-042 registered for §7.42, and marked a hard gate: yielding that still
+stutters an interactive application is a broken promise, and §3.26 makes that a
+correctness question rather than a comfort one.
 
 ### Version 7 — tiers, budgets, and the environment ladder
 

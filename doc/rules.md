@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**83 rules in three tiers, each carrying a citation and a check.** Cite them by
+**85 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 48 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 50 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**66 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**68 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Forty-eight rules. Each holds under a stated condition, or permits something
+Fifty rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -779,19 +779,49 @@ row without its full conditions is not contributable at all.
 - **Violation looks like:** "most users run Q4_K_M" appearing anywhere near a
   recommendation.
 
-### B35 — A laboratory owns the machine while it runs
-A lab runs alone: no user traffic served, no second lab beside it. Within its
-run it may take whatever resources accuracy requires — the whole accelerator,
-locked pages, pinned cores, raised priority. The condition on that greed is that
-it belongs to an experiment somebody started: a lab costs nothing when it is not
-running (B30). Suspension of the serving path is declared, announced with an
-expected duration, bounded, and interruptible with the partial result preserved.
-- **Absorbs:** D8, §6.33, §3.8, §3.4, §7.9
-- **Check:** `CI` — starting a lab while serving requires an explicit decision
-  and drains the endpoint; a request during a lab receives an immediate refusal
-  naming the lab, never a queue or a timeout (B-181, B-182).
-- **Violation looks like:** a benchmark that runs beside a served model, which
-  measures the pair and reports it as the model.
+### B35 — Timing-class work opens an exclusive window; nothing else takes the machine
+A timing-class run — throughput, latency, energy, memory scaling — requires a
+quiet machine, because a timing taken under contention measures the contention.
+It opens a window that is announced before it starts, bounded by a declared
+maximum, schedulable, interruptible, and closed automatically. Inside it MCF may
+be greedy; outside it MCF holds nothing. No behaviour-class run and no serving
+request may proceed inside the window, and no window is opened without an
+explicit decision.
+- **Absorbs:** D8, §6.33, §6.25, §3.8, §7.9
+- **Check:** `CI` — a timing result cannot be constructed from a run that
+  overlapped serving or another lab; opening a window drains the endpoint by
+  explicit decision and refuses requests within one round trip (B-181, B-182).
+- **Violation looks like:** a throughput number taken beside a served model,
+  which measures the pair and reports it as the model.
+
+### B49 — Behaviour-class work yields, and records the contention it ran under
+A behaviour-class run — tool calls, agentic tasks, extraction, retrieval, code —
+does not take the machine, because its outcomes do not depend on having it. It
+runs at low priority, behind user traffic on the serving path, pausable and
+resumable, with contention recorded as a condition (§3.4) rather than prevented.
+Two consequences are obligatory, not optional: its deadlines are **token budgets
+rather than wall clocks**, since a task that failed because the machine was busy
+is a measurement of the machine; and an **environment failure is classified
+apart from a model failure**, so an out-of-memory caused by competition is a
+condition of the run rather than the model giving up.
+- **Absorbs:** D8, §6.40, §3.26, §3.8, §7.10
+- **Check:** `compiler` — a behaviour lab cannot express a wall-clock deadline
+  (B-230); `lab` — a run under injected contention produces the same outcomes as
+  one without, with different conditions (B-231).
+- **Violation looks like:** an agentic task marked failed because a game was
+  running, which attributes the machine's state to the model.
+
+### B50 — Hosting yields to the user, and nothing yields to hosting
+A served endpoint is a service somebody is using. No measurement, laboratory or
+background task may make it slow or unavailable, except inside B35's declared
+window. MCF defaults to the polite mode — low priority, yielding, interruptible,
+pausable — and the user escalates; MCF never assumes the escalation. Nothing is
+taken without being announced first.
+- **Absorbs:** §3.26, §VI, §I, §6.40
+- **Check:** `CI` — serving latency under a concurrent behaviour-class run stays
+  within its budget (B-232).
+- **Violation looks like:** a user discovering MCF took the machine by noticing
+  their machine is gone.
 
 ### B36 — MCF ships what it needs; a missing prerequisite is never the user's errand
 The user obtains MCF and runs it: no runtime, interpreter, toolchain, framework
@@ -1047,7 +1077,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 83 rules
+   is whether an existing rule already covers it. This file holds 85 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1086,7 +1116,9 @@ no rule is a defect in this file.
 | D14 Budgets and estimates | B46, B47 |
 | §XVI Self-contained | B36, B15 |
 | §XVII Full utilization | A26, B35 |
-| D8 Labs run exclusively | B35, B30 |
+| D8 Exclusivity by measurement class | B35, B49 |
+| §3.26 MCF is a guest | B50, B49 |
+| §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
 | D11 Energy is first-class | B39 |
@@ -1167,6 +1199,24 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 7 — exclusivity narrowed to timings
+
+B35 held that a laboratory owns the machine. It now holds that a *timing* does.
+The distinction was already in §6.25 and had been generalized past its evidence:
+a timing under contention measures the contention, while whether a tool call
+parsed is unperturbed by the user opening a browser. The practical consequence
+is favourable — the runs needing a quiet machine are the short ones.
+
+B49 governs everything else: yield, run behind user traffic, record the
+contention rather than prevent it. Its two caveats are what keep it honest and
+are written as obligations rather than advice — token-budget deadlines, because
+a task that failed on a busy machine is a measurement of the machine, and
+environment failures classified apart from model failures, because an
+out-of-memory from competition is not a model giving up.
+
+B50 states the ordering §3.26 requires: hosting yields to the user, and nothing
+yields to hosting.
 
 ### Version 6 — six rules for tiers, budgets and the environment
 

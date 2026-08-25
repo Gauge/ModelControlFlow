@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Catalogue — candidate laboratories, drafted not ratified |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living. Nothing here is committed; §7.29 remains open. |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11, governed by [rules.md](rules.md) |
 | **Answers** | §7.29 in draft · registered as DEC-029 in [backlog.md](backlog.md) |
 
 **A laboratory measures one property of a model under controlled conditions.**
@@ -13,15 +13,15 @@ It is an instrument, not a test: it has no pass condition, produces a
 distribution rather than a verdict, and never gates a build (§6.7, D10). It owns
 the machine while it runs and may be as greedy as accuracy requires (D8, B35).
 
-**Twenty candidates, four families.** The families differ in what gates them and
-in what they can claim:
+**Twenty candidates, four families.** The families differ in what gates them, in
+what they can claim, and in whether they need the machine to themselves:
 
 | Family | Gate | Class | What it establishes |
 |---|---|---|---|
-| **A · Physical** | None — every model | Timing | What the model costs on this hardware |
-| **B · Capability** | §X verified the capability | Behaviour | How well it does a thing it can do |
-| **C · Robustness** | Broad | Mixed | Whether the result holds up when conditions move |
-| **D · Comparative** | Two or more configurations | Mixed | What a change to the configuration did |
+| **A · Physical** | None — every model | Timing | What the model costs on this hardware. **Needs an exclusive window** (D8) — tens of minutes |
+| **B · Capability** | §X verified the capability | Behaviour | How well it does a thing it can do. **Yields** — runs behind the user, for hours or days |
+| **C · Robustness** | Broad | Mixed | Whether the result holds up when conditions move. Class per lab |
+| **D · Comparative** | Two or more configurations | Mixed | What a change to the configuration did. Class per lab |
 
 ## Tiers
 
@@ -330,6 +330,12 @@ how much to believe every other number in the system.
 ---
 
 ## Changelog
+
+### Version 3 — which families take the machine
+
+Family A needs an exclusive window and is measured in tens of minutes; Family B
+yields and is measured in hours or days. The runs that need a quiet machine are
+the short ones (D8).
 
 ### Version 2 — tiers added
 

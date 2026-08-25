@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v11 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -336,10 +336,14 @@ harness §XIII would have to be retrofitted onto.
 - Distributions, never scores (B-104); model failure taxonomy as the primary
   output (B-105) — *how* it failed beats the pass rate
 - A statistical test for "is this a real difference" (B-106)
-- Lab exclusivity and declared suspension (B-181, B-182): a lab owns the
-  machine, the endpoint is drained by an explicit decision, and a request
-  arriving during a run is refused within a round trip naming the lab and its
-  remaining time — D8's greed paid for by §6.33's honesty
+- The exclusive window for timing-class work (B-181, B-182, B-235): announced,
+  bounded, schedulable to overnight or to a stated period of idleness, and
+  draining the endpoint only for the tens of minutes a timing needs
+- Yielding for behaviour-class work (B-230, B-231, B-232, B-233, B-234): the
+  long runs stay out of the user's way — low priority, behind user traffic,
+  token-budget deadlines rather than wall clocks, and environment failures
+  classified apart from model failures so a contended run is not quietly
+  contaminated
 - The energy laboratory (B-189, B-187, B-188): joules per token with its
   measurement provenance, sampled only while a lab runs
 - The four-outcome lab result (B-200) and the prohibition on an aggregate score
@@ -373,7 +377,7 @@ harness §XIII would have to be retrofitted onto.
 - Zero cost during ordinary serving (B-108) and a minimality guard on the
   harness (B-109) — §6.18, because harnesses of this kind grow into frameworks
 
-**Gated on:** DEC-023, DEC-029, DEC-003, DEC-010.
+**Gated on:** DEC-023, DEC-029, DEC-042, DEC-003, DEC-010.
 
 **Exit criteria**
 - Two models are evaluated unattended and the output either distinguishes them
@@ -520,7 +524,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 83. A milestone that can only be
+Every milestone above is subject to all 85. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -528,6 +532,13 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 8 — the long runs stop taking the machine
+
+M6's exclusivity work splits: an announced, schedulable window for timing-class
+runs, and yielding for everything else. DEC-042 becomes a gate, because a
+background run that stutters an interactive application fails §3.26 rather than
+merely disappointing.
 
 ### Version 7 — tiers and budgets shape M6
 
