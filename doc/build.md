@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -33,6 +33,7 @@ with B-014.
 | 9 | [The tiers](#9--the-tiers) |
 | 10 | [Ages, and what a release refuses](#10--ages-and-what-a-release-refuses) |
 | 11 | [A machine with nothing on it](#11--a-machine-with-nothing-on-it) |
+| 12 | [A machine with something else on it](#12--a-machine-with-something-else-on-it) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -612,7 +613,51 @@ that genuinely lacks something.
 acquisition work (B-019, B-020). B-183's condition is not met until that exists,
 and the script says so on every run rather than implying otherwise.
 
+## 12 · A machine with something else on it
+
+This machine hosts several projects with heavy test workloads. Four suites
+started at once do not run four times slower; they measure each other, and the
+one that suffers most is the one whose figures are timings.
+
+**Every scheduled tier runs inside an exclusive window** where
+`~/.local/bin/heavy` is on the path:
+
+```
+$ heavy status                 # who has the machine, and who is waiting
+$ heavy log 20                 # the last twenty windows
+```
+
+`scripts/ci.sh` does this itself — there is nothing to remember — and runs the
+tiers plainly where no such tool exists, because a machine without it is a
+machine with one project on it and MCF does not require a tool it does not ship
+(B36's habit, aimed at a developer's machine rather than a user's).
+
+**The gating tier deliberately does not take the window.** It is seconds long,
+and a five-second check queued behind a five-minute mutation run is a check
+people stop running.
+
+**The budget tier is the one that needs it most**, and the reason is already in
+the rules rather than in convenience: B35 holds that a timing taken under
+contention measures the contention, and D30 makes MCF *refuse* such a reading
+rather than report it. Without the window that tier does not merely run slower —
+it declines to assert, and its age does not refresh (B38). The window is what
+makes its figures assertable at all, which is the same thing B-181 asks for
+inside MCF for timing-class laboratories: an exclusive window, announced and
+bounded.
+
+Each tier states a deadline in minutes. It is a bound on a hung run rather than
+an estimate: a window nobody gives back is the failure the tool exists to
+prevent.
+
 ## Changelog
+
+### Version 18 — the machine is shared
+
+Section 12 added. Several projects run heavy suites on this machine, so every
+scheduled tier now takes an exclusive window where one is available. The budget
+tier is the reason it matters rather than a nicety: D30 refuses a reading taken
+while something else had the processor, so without the window that tier declines
+to assert and its age does not refresh.
 
 ### Version 17 — a machine with nothing on it
 
