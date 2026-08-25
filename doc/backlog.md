@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 45 |
+| **Version** | 46 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (22 done, 1 dropped, 3 in progress, 56 blocked on a decision, 112 open).** Every item cites
+build items (23 done, 1 dropped, 3 in progress, 56 blocked on a decision, 111 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -42,7 +42,7 @@ implemented, only gestured at, until the decision is made.
 | ID | Question | Void | Blocks | M | Status |
 |---|---|---|---|---|---|
 | DEC-016 | The performance budget numbers | §7.16 | §VII | M0 | **resolved** — D24: sixteen figures, ceilings not targets; footprint provisional pending the prototype |
-| DEC-010 | The failure classification scheme | §7.10 | §3.1 | M0 | **resolved** — [taxonomy.md](taxonomy.md): three axes, sixteen domains, 110 codes |
+| DEC-010 | The failure classification scheme | §7.10 | §3.1 | M0 | **resolved** — [taxonomy.md](taxonomy.md): three axes, sixteen domains, 111 codes |
 | DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | **resolved** — confirms. [findings.md](findings.md) F1: four death modes classified with the manager unaffected, five of five accelerator questions answered over the C ABI, every measurable D24 figure under its ceiling |
 | DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | **resolved** — D26: the taxonomy, bound to what MCF's code claims rather than to the whole table; observed rather than caused; the clock is structural |
@@ -142,7 +142,7 @@ first and importance second.
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
 | B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
 | B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [PR2](proposals.md#pr2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
-| B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
+| B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | blocked (DEC-047) |
@@ -362,6 +362,36 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 46 — corruption is caught before the run, and the taxonomy grows by one
+
+B-301 is done, and it exercised the extension machinery the taxonomy describes
+rather than only using it.
+
+**A code was missing.** Re-verification has three outcomes, not two: the bytes
+verify, the bytes differ, or the file is there and cannot be read. The third had
+no code. `artifact.corrupt` says *present and fails verification*, which is a
+claim about the bytes; a permission error or a media error is a claim about the
+**machine**, and filing one under the other puts the wrong attribution on a
+failure — B24's difference between a slow model and a busy machine, one level
+down. `artifact.unreadable` was added with its laboratory scenario in the same
+change, which is what the extension policy requires (A13). 111 codes.
+
+**SHA-256 is written out**, and the argument is B15's and stated: it is a fixed,
+published algorithm with official test vectors, so the correctness a dependency
+would buy is exactly the correctness a test establishes — and it is established
+against the vectors in FIPS 180-4, including the million-character one that
+catches a drifting block loop where the short ones cannot. What is *not*
+claimed is a security boundary: this answers *are these the same bytes*, and
+where MCF later needs to resist a deliberate collision that will want a reviewed
+implementation. The distinction is recorded rather than assumed.
+
+`Checksum::of` takes a computed digest and cannot fail, which removed an
+unreachable arm from every call site. An unreachable arm is either a lie or a
+panic waiting to be written.
+
+The laboratory is at eight scenarios covering seven categories, and `mcf doctor`
+runs all of them on the operator's machine before it reports.
 
 ### Version 45 — `P` means one thing, and the ADR item is dropped
 

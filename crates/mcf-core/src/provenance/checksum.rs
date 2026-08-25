@@ -81,6 +81,20 @@ impl Checksum {
         Self::new(DigestAlgorithm::Sha256, hex)
     }
 
+    /// The checksum of a digest MCF computed.
+    ///
+    /// Infallible, unlike [`Checksum::new`], and that is the point: a digest
+    /// MCF computed is always well-formed, so a fallible conversion would put
+    /// an unreachable arm at every call site — and an unreachable arm is either
+    /// a lie or a panic waiting to be written (A2).
+    #[must_use]
+    pub fn of(digest: crate::digest::Digest) -> Self {
+        Self {
+            algorithm: DigestAlgorithm::Sha256,
+            hex: digest.hex(),
+        }
+    }
+
     /// Which algorithm produced it.
     #[must_use]
     pub const fn algorithm(&self) -> DigestAlgorithm {

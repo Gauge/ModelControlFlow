@@ -255,6 +255,6 @@ mod tests {
     fn the_committed_taxonomy_is_readable() {
         let taxonomy = Taxonomy::read().expect("doc/taxonomy.md is readable");
         assert_eq!(taxonomy.domains.len(), 16);
-        assert_eq!(taxonomy.codes.len(), 110);
+        assert_eq!(taxonomy.codes.len(), 111);
     }
 }
