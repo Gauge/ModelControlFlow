@@ -31,6 +31,7 @@ pub const CATALOGUE: &[Scenario] = &[
     artifact::UNREADABLE,
     artifact::FORMAT_UNSUPPORTED,
     artifact::FORMAT_MALFORMED,
+    artifact::PROVENANCE_INCOMPLETE,
     engine::NO_VENDORED_ENGINE,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,

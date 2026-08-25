@@ -48,6 +48,14 @@ pub(super) const FORMAT_MALFORMED: Scenario = Scenario {
     run: format_malformed,
 };
 
+/// The file is a model MCF could run and does not say enough about itself.
+pub(super) const PROVENANCE_INCOMPLETE: Scenario = Scenario {
+    id: "artifact/model-says-too-little",
+    produces: Category::ArtifactProvenanceIncomplete,
+    summary: "a model that does not state its own shape is refused, naming what was missing",
+    run: provenance_incomplete,
+};
+
 /// The artifact is there and will not be read.
 pub(super) const UNREADABLE: Scenario = Scenario {
     id: "artifact/unreadable",
@@ -100,6 +108,36 @@ fn format_malformed(world: &World) -> Outcome {
         Err(failure) => Outcome::Produced(failure),
         Ok(_) => Outcome::Unexpected("a truncated GGUF was read as complete".to_owned()),
     }
+}
+
+fn provenance_incomplete(world: &World) -> Outcome {
+    let path = world.path("model.gguf");
+    // A GGUF that declares the architecture and nothing else. Everything the
+    // forward pass needs — the widths, the head counts — has no defensible
+    // default, and A7 is why this is a refusal rather than a run.
+    let mut bytes = gguf_header(0, 1);
+    push_string(&mut bytes, "general.architecture");
+    bytes.extend_from_slice(&8_u32.to_le_bytes());
+    push_string(&mut bytes, "llama");
+    if let Err(error) = std::fs::write(&path, &bytes) {
+        return Outcome::Unexpected(format!("could not write the artifact: {error}"));
+    }
+    let file = match mcf_standin::gguf::read(&path) {
+        Ok(file) => file,
+        Err(failure) => {
+            return Outcome::Unexpected(format!("the file itself should read: {failure}"));
+        }
+    };
+    match mcf_standin::llama::load(&file, &bytes) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a model with no stated shape was loaded".to_owned()),
+    }
+}
+
+/// A length-prefixed string, as GGUF writes them.
+fn push_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(&u64::try_from(value.len()).unwrap_or(0).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
 }
 
 fn any_digest() -> Checksum {

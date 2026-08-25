@@ -420,3 +420,25 @@ fn a_file_shorter_than_its_own_directory_is_refused_by_read() {
 
     let _removed = std::fs::remove_dir_all(&scratch);
 }
+
+/// A file with no tensors needs no data region, and its alignment padding is
+/// not something a writer has to have emitted.
+///
+/// Found by the laboratory: the scenario for a model that declares an
+/// architecture and nothing else is a real file, and a stricter reading refused
+/// it for the wrong reason.
+#[test]
+fn a_file_with_no_tensors_reads_without_its_padding() {
+    let bytes = Writer::new().text("general.architecture", "llama").write();
+    let scratch = std::env::temp_dir().join(format!("mcf-gguf-empty-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let path = scratch.join("model.gguf");
+    std::fs::write(&path, &bytes).expect("writable");
+
+    let model = super::read(&path).expect("a file with no tensors is readable");
+    assert!(model.tensors.is_empty());
+    assert_eq!(model.data_bytes_required(), Some(0));
+
+    let _removed = std::fs::remove_dir_all(&scratch);
+}

@@ -324,7 +324,14 @@ pub fn read(path: &Path) -> Result<Model> {
     // fitment is exactly that — can read the directory of a file it does not
     // have all of, and a *file* that is short is a truncated download and is
     // refused here.
-    if let Some(required) = model.data_bytes_required() {
+    // `required > 0` matters: a file with no tensors needs no data region, and
+    // its alignment padding is not something the writer has to have emitted.
+    // The laboratory found this on the scenario for a model that declares an
+    // architecture and nothing else — a real file that a stricter reading
+    // refused for the wrong reason.
+    if let Some(required) = model.data_bytes_required()
+        && required > 0
+    {
         let held = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         let needed = model.data_offset.saturating_add(required);
         if needed > held {
