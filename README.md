@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -86,12 +86,14 @@ intent document requires that the reasoning outlive the change. Entries are
 newest first, so the current state is reached in one screen.
 
 **Identifiers are stable for life** (rule C5). Clause numbers (§3.4), rule IDs
-(A6, B12, P2), backlog IDs (B-019, DEC-016), void numbers (§7.16) and milestone
+(A6, B12, P2), proposal IDs (PR3), backlog IDs (B-019, DEC-016), void numbers
+(§7.16) and milestone
 IDs (M3) are never reused and never renumbered. A clause whose substance moves
 leaves an index entry behind pointing at where it went.
 
 **Citation style.** Cite the source clause — `§3.4`, `§6.17`, `§IX`, `D4` — not
-a paraphrase of it. Rules are cited by ID: `A6`, `B12`, `C5`, `P2`. Backlog
+a paraphrase of it. Rules are cited by ID: `A6`, `B12`, `C5`, `P2` — where `P`
+is always a precedence rule, and a proposal is `PR3`. Backlog
 items by ID: `B-019`, `DEC-016`. [rules.md](doc/rules.md) maps every clause to the
 rules that absorbed it, so a clause citation traverses to an enforceable rule in
 one hop and neither document has to restate the other.
@@ -145,6 +147,13 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 10 — `P` means one thing
+
+The format contract's citation style now says which namespace `P` belongs to. It
+named both the precedence rules and the proposals, which is an ambiguity a
+contract about citation could not afford; the proposals are now `PR<n>` and
+`P<n>` is deprecated there in favour of the named successor (B-353).
 
 ### Version 9 — the M0 product runs
 

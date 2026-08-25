@@ -147,7 +147,7 @@ deliberation.
   provenance (B-025) — §6.4
 - Deliberate eviction; disk exhaustion as a decision, not a surprise (B-026, B-027)
 - The fake hub: well-formed, malformed, gated, hostile, truncated, mutating (B-028)
-- Pre-acquisition fitment (B-213, [P3](proposals.md#p3--pre-acquisition-planning)):
+- Pre-acquisition fitment (B-213, [PR3](proposals.md#pr3--pre-acquisition-planning)):
   which of a repository's twenty quantizations fit here, computed from metadata
   before a byte is fetched
 - The reference model acquired and pinned (B-019) — `unsloth/Qwen3.8-27B-GGUF`
@@ -295,9 +295,9 @@ the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
 - Partial success as a real outcome with its data intact (B-087)
 - Contention marked unattributable rather than attributed (B-088) — §3.8, and
   the snapshot that names what it was competing with (B-216,
-  [P5](proposals.md#p5--contention-diagnosis))
+  [PR5](proposals.md#pr5--contention-diagnosis))
 - The repro bundle and its verifier (B-211, B-212,
-  [P2](proposals.md#p2--the-repro-bundle)) — the fourth obligation of §II, which
+  [PR2](proposals.md#pr2--the-repro-bundle)) — the fourth obligation of §II, which
   nothing else on this roadmap delivers
 - Projection bands from local history, scored against the measurements that
   replace them (B-214, B-215)

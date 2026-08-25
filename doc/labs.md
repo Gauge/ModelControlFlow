@@ -99,7 +99,7 @@ instrumentation with characterized overhead (B31).
   bytes, KV cache growth, and the exact boundary. The failure is the result
   (A9).
 - **Telemetry** Accelerator and host allocation, KV cache size, fragmentation.
-- **Feeds** P3's fitment arithmetic, which currently predicts this rather than
+- **Feeds** PR3's fitment arithmetic, which currently predicts this rather than
   knowing it.
 
 ### L4 — Concurrency and queueing

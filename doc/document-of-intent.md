@@ -936,7 +936,7 @@ survives a crash far better than a mutable index and can be replayed.
 - **Crash-safety is configuration, not a feature.** Write-ahead logging and
   synchronous commit supply what a local tool needs and cost nothing to enable.
 - **Export is one command producing one portable file.** Nearly free: §XIV's
-  contribution path and P2's repro bundle both need the serialization already, so
+  contribution path and PR2's repro bundle both need the serialization already, so
   one mechanism serves three purposes.
 - **No replication and nothing automatic that leaves the machine.** §3.13 refuses
   the weight and A17 forbids the egress. What a user does with an exported file
@@ -4011,7 +4011,7 @@ exclude an engine §7.4 would otherwise prefer.
 
 D20 answers §7.49: the database is a rebuildable index over an append-only
 journal, crash safety is configuration, export is one command sharing the
-serialization §XIV and P2 need, nothing automatic leaves the machine, and a
+serialization §XIV and PR2 need, nothing automatic leaves the machine, and a
 failed replay reports the extent of the loss rather than opening with a shorter
 history.
 
@@ -4192,7 +4192,7 @@ had asked the same of the hardware, which changes far more often. A driver updat
 makes yesterday's results describe an apparatus that no longer exists, and the
 failure is silent — a user reads the driver's effect as the model's.
 
-P7 registers longitudinal regression detection, the third thing §6.7 names in
+PR7 registers longitudinal regression detection, the third thing §6.7 names in
 passing and no milestone builds. The data for it is already kept: conditioned
 measurements over months, MCF's version, the driver, the thermal baseline. For a
 solo operator it may be the most valuable sentence MCF can produce, and it is
@@ -4370,7 +4370,7 @@ structured output, agentic — one timing-class lab with no gate, one cheap gate
 behaviour-class lab, one heavy multi-turn lab.
 
 P1 rescoped from automatic session capture to a workload slot, with the capture
-version recorded as refused rather than deleted. P6 accepted as B-210.
+version recorded as refused rather than deleted. PR6 accepted as B-210.
 
 ### Version 8 — self-containment, privilege, and what the laboratories are allowed to do
 

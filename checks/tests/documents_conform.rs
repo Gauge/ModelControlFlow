@@ -288,11 +288,22 @@ fn every_identifier_citation_resolves() {
         "only {} rules were found, so this check is reading rules.md wrong",
         identifiers.rules.len()
     );
+    assert!(
+        identifiers.proposals.len() >= 7,
+        "only {} proposals were found, so this check is reading proposals.md wrong",
+        identifiers.proposals.len()
+    );
 
     let mut dangling = Vec::new();
     for document in &documents {
         for (line, text) in document.prose() {
             for token in tokens(text) {
+                if let Some(proposal) = proposal_identifier(&token) {
+                    if !identifiers.proposals.contains(proposal) {
+                        dangling.push(format!("{}:{line} → {proposal}", document.relative_path));
+                    }
+                    continue;
+                }
                 let Some((letter, digits)) = split_identifier(&token) else {
                     continue;
                 };
@@ -394,7 +405,13 @@ fn tokens(text: &str) -> Vec<String> {
 }
 
 /// `A6` → `('A', "6")`, and nothing for a word or a version string.
+///
+/// `PR6` is handled by [`proposal_identifier`]: a two-letter prefix is not a
+/// rule identifier, and treating it as one would read `PR6` as rule `R6`.
 fn split_identifier(token: &str) -> Option<(char, &str)> {
+    if token.starts_with("PR") {
+        return None;
+    }
     let mut characters = token.chars();
     let letter = characters.next()?;
     if !letter.is_ascii_uppercase() {
@@ -405,6 +422,15 @@ fn split_identifier(token: &str) -> Option<(char, &str)> {
         return None;
     }
     Some((letter, digits))
+}
+
+/// `PR6` → `PR6`, and nothing else.
+fn proposal_identifier(token: &str) -> Option<&str> {
+    let digits = token.strip_prefix("PR")?;
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token)
 }
 
 /// Every `§…` citation in a line.
