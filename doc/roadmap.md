@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -108,7 +108,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-022, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL), DEC-050 (which statistic a budget names). ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** DEC-022, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL). ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
@@ -544,6 +544,15 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 13 — M0 is down to four gates
+
+DEC-050 closes with D27, so M0 waits on four decisions: the end-to-end boundary
+for a daemon, engine ownership, the host platforms, and which operations require
+elevation. Every one of the three closed since M0 began was closed on evidence
+or on what another document already implied, which is what §7's ordering
+predicts: the decisions that block the most are the ones a working prototype
+answers.
 
 ### Version 12 — two more M0 gates close
 

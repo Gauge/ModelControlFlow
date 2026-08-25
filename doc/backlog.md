@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 37 |
+| **Version** | 38 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**244 items: 50 decisions (36 open, 1 drafted, 2 narrowed, 11 resolved) and 194
+**244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
 build items (14 done, 2 in progress, 56 blocked on a decision, 122 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -48,7 +48,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | **resolved** — D26: the taxonomy, bound to what MCF's code claims rather than to the whole table; observed rather than caused; the clock is structural |
 | DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
-| DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | open — [findings.md](findings.md) F1 shows one run whose cold-start median passes and whose p95 fails by a factor of two |
+| DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | **resolved** — D27: three kinds of figure; p99 over ≥100 trials for events; an unattributable run is neither a pass nor a failure |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
@@ -361,6 +361,21 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 38 — the budget statistic closes, and B-011 unblocks
+
+DEC-050 is resolved by D27, three versions after F1 raised it. What made it
+answerable was that D24 had already named a statistic for one figure and given
+the reason — *the tail is what a user feels* — so the work was to notice that
+the reason generalizes and to say what it costs: an event-class figure needs at
+least a hundred trials, because a p99 of twenty is the maximum wearing a
+percentile's name.
+
+The half that changes B-011's shape is the other one. A budget is asserted only
+on a run the machine was quiet enough to attribute, so a busy machine makes a
+run unattributable rather than failing it — and an unattributable run is not a
+pass either, which is what keeps a real regression from hiding behind a
+permanently busy machine.
 
 ### Version 37 — the laboratory exists, and `doctor` runs it
 
