@@ -23,6 +23,7 @@ pub mod build_identity;
 pub mod configuration;
 pub mod degradation;
 pub mod failure;
+pub mod hardware;
 pub mod measurement;
 pub mod provenance;
 pub mod time;

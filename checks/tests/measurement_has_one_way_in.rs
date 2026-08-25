@@ -137,6 +137,28 @@ fn source_file(name: &str) -> String {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
 
+/// The condition floor has no `Default`.
+///
+/// `Attested<T>` gained one — its default is `Unknown`, which is A7 rather than
+/// an exception to it — and that made `#[derive(Default)]` viable on any struct
+/// of `Attested` fields. `Floor` must not take it: the floor is a struct
+/// literal precisely so that adding a condition breaks every construction site,
+/// and a `Default` would let a caller silently omit the new one (§3.16, B16).
+#[test]
+fn the_condition_floor_has_no_default() {
+    let source = code_only(&source_file("conditions.rs"));
+    for forbidden in ["Default for Floor", "Default)]", "Default,"] {
+        assert!(
+            !source.contains(forbidden),
+            "`{forbidden}` would let a condition be omitted silently (§3.3, §3.16)"
+        );
+    }
+    assert!(
+        source.contains("pub struct Floor {"),
+        "this check is reading the wrong file"
+    );
+}
+
 fn measurement_source() -> String {
     let path = mcf_checks::workspace::root().join("crates/mcf-core/src/measurement/mod.rs");
     std::fs::read_to_string(&path).unwrap_or_else(|error| {
