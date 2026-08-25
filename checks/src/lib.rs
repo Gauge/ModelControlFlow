@@ -15,6 +15,7 @@
 //! written in this repository and hold to one shape.
 
 pub mod document;
+pub mod fuzz;
 pub mod manifest;
 pub mod property;
 pub mod scratch;
