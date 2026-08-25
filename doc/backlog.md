@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 27 |
+| **Version** | 28 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
-build items (6 done, 1 in progress, 59 blocked on a decision, 128 open).** Every item cites
+build items (7 done, 1 in progress, 59 blocked on a decision, 128 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -119,7 +119,8 @@ first and importance second.
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
-| B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
+| B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | **done** — `checks/tests/documents_conform.rs`, twelve checks in the gating tier. The tense clause is checked only for the constructions the contract names outright; the rest stays a `review` obligation rather than a claim |
+| B-353 | The letter `P` names two things — the five precedence rules in [rules.md](rules.md) and the seven proposals in [proposals.md](proposals.md) — and C5 forbids renumbering either | C5, [README.md](../README.md) citation style | A `P` citation resolves unambiguously, by deprecating one namespace in favour of a named successor or by a stated convention the conformance check enforces | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **in progress** — `mcf_core::time`: `Timestamp` has no arithmetic and no interval method, intervals come from `Instant`, and the clock is a type parameter so `Duration<Simulated>` and `Duration<Monotonic>` never meet. The clock-jump scenario waits on B-009 (DEC-021) |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | open |
@@ -359,6 +360,34 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 28 — the documents are checked, and four of them were wrong
+
+B-041 is done, and what it found on its first run is the argument for it
+existing.
+
+**The intent document's changelog had stopped at version 8 while its front
+matter claimed version 24.** Sixteen versions of change had their reasoning
+recorded only in the commits that made them, which §8 does not permit: it
+requires the reasoning outlive the change, and a reader of the document is not
+a reader of a version-control history. The entries were reconstructed from
+those commits and the document is now at version 25.
+
+Three smaller defects: a citation to B-125 written without its hyphen, so that it read as a rule identifier that does not exist; this
+register's own front matter two versions behind its changelog, and its header
+counts three revisions stale — the last two corrected in version 22 before the
+check existed to find them.
+
+B-353 registers a defect the check surfaced rather than fixed. The letter `P`
+names two things — the five precedence rules and the seven proposals — and C5
+forbids renumbering either, so the check accepts a `P` citation that resolves in
+either namespace and the ambiguity is recorded rather than papered over.
+
+The tense clause of the contract is the one that resists a machine. It is
+checked only for the constructions the README names outright, and the remainder
+is left as a stated `review` obligation. B16 counts a review check as a cost;
+claiming a machine check that is really a keyword search would have been worse
+than counting it.
 
 ### Version 27 — degradation is contagious, not merely recorded
 

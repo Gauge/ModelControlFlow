@@ -14,6 +14,7 @@
 //! weight the gating suite does not need to carry — the manifests it reads are
 //! written in this repository and hold to one shape.
 
+pub mod document;
 pub mod manifest;
 pub mod taxonomy;
 pub mod workspace;
