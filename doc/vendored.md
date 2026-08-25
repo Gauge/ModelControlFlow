@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | **Type** | Register — what MCF ships, what it declined to ship, and why |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living |
 | **Authority** | Governed by [rules.md](rules.md); the licence is D28, the tiers are D23, the stand-in is D31 |
-| **Registers to** | B-320, B-321, B-330 in [backlog.md](backlog.md) |
+| **Registers to** | B-192, B-320, B-321, B-330 in [backlog.md](backlog.md) |
 
 **Nothing is vendored yet.** This file exists before the first component is
 admitted, because B-330's condition is that *no component ships without a
@@ -23,6 +23,7 @@ something.
 | 1 | [What a finding is](#1--what-a-finding-is) |
 | 2 | [Vendored](#2--vendored) |
 | 3 | [Deferred](#3--deferred) |
+| 3a | [What the artifact requires of a machine](#3a--what-the-artifact-requires-of-a-machine) |
 | 4 | [Candidates, not yet assessed](#4--candidates-not-yet-assessed) |
 | — | [Changelog](#changelog) |
 
@@ -74,6 +75,30 @@ diagnosis rather than success, and D31's stand-in means the outcome on hardware
 with no vendorable backend is *runs on the processor, marked* rather than *does
 not run*.
 
+## 3a · What the artifact requires of a machine
+
+The other side of vendoring: not what MCF ships, but what it expects to find.
+B36 refuses to make a missing prerequisite the user's errand, and B-192's
+condition is the checkable form — **the artifact has no dynamic dependency a
+stock machine lacks**.
+
+| The artifact needs | Why this is not a prerequisite |
+|---|---|
+| `libc.so.6` | The C library is what "a Linux machine" means; a binary that did not use it would still be running on it |
+| `libgcc_s.so.1` | The compiler's unwinding and arithmetic support, shipped with every toolchain's runtime and present on every distribution |
+| `ld-linux-*.so.*` | The dynamic loader itself, which is the thing that reads the list above |
+
+Nothing else. `crates/mcf-cli/tests/artifact.rs` reads the binary's own
+`DT_NEEDED` entries — the file's requirement, rather than what happens to
+resolve on the machine asking — and fails on anything outside that list, on
+`DT_RPATH` or `DT_RUNPATH`, and on an interpreter that is not the platform's
+own. It carries its own control: `/bin/sh` needs a terminal library that is not
+on the list, so the predicate is watched rejecting something.
+
+**A component admitted to §2 must keep this true.** A vendored engine that
+dynamically links a maths library the user has to obtain would satisfy §2's
+licence check and violate §XVI, and this is where that shows up.
+
 ## 4 · Candidates, not yet assessed
 
 Terms as each project declares them, **fetched but not yet verified against a
@@ -97,6 +122,14 @@ is a check of the tree that is actually vendored, at the revision that is
 actually pinned, and it is what turns a row in §4 into a row in §2.
 
 ## Changelog
+
+### Version 2 — the other side of the register
+
+Section 3a added with B-192. The register recorded what MCF ships and what it
+declined to ship, and said nothing about what the artifact expects to *find* —
+which is the same question from the machine's side, and the one B36 answers.
+Three libraries, each of them part of what a Linux machine is, and a check that
+fails on a fourth.
 
 ### Version 1 — the register exists before the first component does
 

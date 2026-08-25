@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -217,6 +217,18 @@ hundred lines, so it was bought with tests instead (A19).
 `crates/mcf-record/src/json.rs` is the result, and its refusals are the
 interesting part: a fraction is refused rather than rounded, a duplicate key
 rather than resolved, an unpaired surrogate rather than replaced.
+
+**What the artifact requires of a *machine* is a separate question, and it is
+checked too.** B36 refuses to make a missing prerequisite the user's errand, and
+B-192's condition is the checkable form of it: the binary's own `DT_NEEDED`
+entries must name nothing a stock machine lacks. `crates/mcf-cli/tests/
+artifact.rs` reads the ELF rather than asking `ldd` — the requirement is in the
+file, and `ldd` answers the different question of what resolves here — and fails
+on a stranger, on a baked-in library search path, or on an interpreter that is
+not the platform's own. The release artifact needs `libc.so.6` and
+`libgcc_s.so.1`; `doc/vendored.md` §3a is where that list lives with its
+reasoning, because the first vendored engine is the thing most likely to change
+it.
 
 That test is the gate B15 asks for. Weight is admitted only against a stated
 cost, so the first dependency admitted has to be added to that check to get in,
@@ -519,6 +531,13 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 12 — what the artifact requires of a machine
+
+§6 gains B-192's half of B36: the workspace has no build-time dependencies and
+the artifact has three run-time ones, each of them part of what a Linux machine
+is. Checked by reading the binary rather than by asking a tool, with a control
+that watches the predicate reject something.
 
 ### Version 11 — the mutation score has a floor
 
