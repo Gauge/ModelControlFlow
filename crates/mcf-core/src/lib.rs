@@ -26,6 +26,7 @@ pub mod failure;
 pub mod hardware;
 pub mod measurement;
 pub mod provenance;
+pub mod self_cost;
 pub mod time;
 
 pub use failure::{Failure, Result};

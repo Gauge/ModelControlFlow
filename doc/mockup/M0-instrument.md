@@ -4,7 +4,7 @@
 |---|---|
 | **Type** | Mockup — what finished looks like at this stage |
 | **Milestone** | [M0](../roadmap.md#m0--the-instrument) |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Illustrative. Every figure is invented and none may be cited as a measurement (C7, A20). |
 | **Source** | [document-of-intent.md](../document-of-intent.md) · rules: [rules.md](../rules.md) |
 
@@ -14,6 +14,12 @@ what MCF costs on it, and what MCF will and will not promise here.
 **Nothing about models yet.** No acquisition, no inference, no network, no
 interface. This milestone ships the instrument that every later number depends
 on, and the smallest honest product that exercises it end to end.
+
+**Parts of this are now built, and the rest is still a sketch.** §1–§3 describe
+a surface that exists (B-014, B-013, B-004); §4 and §5 describe a laboratory and
+a budget suite that do not (B-009, B-011). Where a built surface and this file
+disagree, the built one is what MCF does — and where the *intent document* and
+either of them disagree, the intent document wins (C7).
 
 ---
 
@@ -33,27 +39,39 @@ MACHINE
              status: recognized, characterized
   Accel #1   Intel UHD 770 (integrated)
              status: recognized, NOT characterized
-             → MCF will attempt to use it and will label every result taken on
-               it as uncharacterized. See rules.md R-014 (§3.2, §7.8).
+             → MCF will attempt to use it and will mark every result taken on
+               it as degraded, because it cannot read: memory, thermal.
+               Those readings are what §3.8 needs to tell a slow model from a
+               busy machine, so results taken here are not comparable with
+               characterized ones and are not contributable (D25, A5, A8).
   Thermal    CPU 41 °C · Accel #0 38 °C · both at idle steady state
   Power      profile "performance" · no throttling detected
 
-MCF'S OWN COST ON THIS MACHINE            measured        budget      verdict
-  Installed footprint                     11.4 MiB        ≤ 25 MiB    pass
-  Resident memory, idle, nothing loaded   7.9 MiB         ≤ 12 MiB    pass
-  Idle CPU over 60 s                      0.00 %          ≤ 0.10 %    pass
-  Timer wakeups over 60 s, idle           0               = 0         pass
-  Cold start to first command response    38 ms           ≤ 120 ms    pass
-  Added request→first-token latency       not measurable at M0 — no serving path
+MCF'S OWN COST ON THIS MACHINE           measured         ceiling     verdict
+  Core binary, no engines                 <n> B            ≤ 40 MiB    within
+  Resident memory, nothing loaded         <n> B            ≤ 20 MiB    within
+  Cold start, median over n=20            <n> ns           ≤ 100 ms    within
+  Cold start, p95 over n=20               <n> ns           ≤ 100 ms    within
 
-  Budgets are asserted by the suite, not eyeballed (§3.13, §3.5). Their values
-  are recorded in rules.md and were set by DEC-016.
+  Which statistic the cold-start ceiling names is §7.50, and it is open: on a
+  contended machine the median and the p95 disagree by more than an order of
+  magnitude, so both are shown rather than one being chosen quietly.
+
+  Not measurable here, and named rather than left out: idle CPU, timer wakeups
+  while idle, memory growth over 30 simulated days, added request-to-first-token
+  latency — all D24 figures about a daemon, and there is no daemon until M2.
+
+  The figures are D24's and are ceilings rather than targets. B-011 is what
+  asserts them in CI; until it exists `doctor` reports them and nothing fails a
+  build.
 
 WHAT MCF PROMISES HERE
   ✓ Every failure is classified, attributed and persisted with its context
   ✓ Every measurement carries its conditions, sample count and spread
   ✓ Every artifact carries its provenance, or records it as unknown
-  ✓ The laboratory can reproduce all 41 failure categories on this machine
+  ✗ No laboratory, so no failure MCF claims to handle has been demonstrated
+    here — the taxonomy's 110 categories are classified, not yet simulated
+    (A13, B-009)
   ✗ Nothing about model quality, speed or fitness — that is M5 onward
   ✗ No claim about Accel #1 beyond "will attempt"
 
@@ -165,7 +183,7 @@ rebuild the failure from it — and it names the scenario that does.
 ```
 $ mcf lab list
 
-41 scenarios · 41 taxonomy categories · 0 categories without a scenario
+110 scenarios · 110 taxonomy categories · 0 categories without a scenario
 
   accel.absent                        no accelerator present
   accel.driver.query_failed           driver present, module unloaded
@@ -181,7 +199,7 @@ $ mcf lab list
   disk.exhausted.during_write         no space left, record write in flight
   disk.readonly                       record volume remounted read-only
   record.corrupt.truncated_entry      last entry cut mid-write
-  … 27 more
+  … 96 more
 
 $ mcf lab run scenario/child-exit-midstream --repeat 100
 
@@ -193,7 +211,8 @@ scenario/child-exit-midstream
   wall clock: simulated; real elapsed 1.9 s
 ```
 
-`0 categories without a scenario` is the M0 exit criterion. §3.17 says a
+`0 categories without a scenario` is the M0 exit criterion, and the count is
+[taxonomy.md](../taxonomy.md)'s — 110 codes across sixteen domains. §3.17 says a
 taxonomy category with no simulation is an untested claim, so the check that
 produces that line fails CI when the two lists diverge (B-010).
 
@@ -237,7 +256,7 @@ increased complexity.
 | §3.8 the apparatus | MCF measures its own cost, because a heavy instrument corrupts its own readings |
 | §3.13 budgets | Six numbers, asserted in CI, failing the build on regression |
 | §3.16 substrate enforces | The measurement and provenance types make the violations unrepresentable |
-| §3.17 the laboratory | 41 scenarios, cross-checked against 41 taxonomy categories, deterministic over 100 runs |
+| §3.17 the laboratory | Scenarios cross-checked against the taxonomy's 110 categories, deterministic over 100 runs |
 | §6.15 reproduce, don't observe | The `Reproduce` field names the scenario that rebuilds the failure |
 | §7.19 validate the substrate | The GPU probe and the badly-dying child are exactly the adversarial prototype §7.19 asked for |
 
@@ -247,5 +266,6 @@ increased complexity.
 
 | Version | Change |
 |---|---|
+| 3 | Corrected against what was built. The accelerator warning cited a rule identifier that never existed and now states D25's reading; the budget table now holds D24's figures and §7.50's open question rather than invented ceilings; the taxonomy count is 110 rather than 41; and the laboratory promise is marked as one M0 has not yet earned. |
 | 2 | Standardized to the format contract in [README.md](../../README.md): front matter, present tense, changelog. |
 | 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

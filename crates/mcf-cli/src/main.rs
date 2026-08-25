@@ -5,11 +5,12 @@
 //! test, which A19 already forbids. Every command MCF grows appears here
 //! first, and the interface of §XI (M4) becomes a client of the same API.
 //!
-//! At M0 the workspace has one command, `--version`, because that is all the
-//! milestone has built. `mcf doctor` — the M0 product — arrives with B-014,
-//! once the machine profiler (B-013) and the record store (B-004) it reports
-//! from exist. The alternative, a `doctor` that prints a plausible-looking
-//! report from nothing, is the exact failure A20 and C7 are written against.
+//! At M0 the surface is `mcf doctor` and `mcf --version`. `doctor` is the
+//! milestone's product: it reports what this machine is, what MCF costs on it,
+//! and what MCF will and will not promise here, and writes the whole thing to
+//! the record.
+
+mod doctor;
 
 use std::process::ExitCode;
 
@@ -26,6 +27,18 @@ enum Request<'a> {
     Version,
     /// Report the surface that exists.
     Usage,
+    /// Report what this machine is and what MCF costs on it.
+    Doctor {
+        /// Whether to write the report to the record.
+        record: bool,
+        /// Whether to render the record's own JSON rather than the report.
+        ///
+        /// A22 makes the headless path complete, and "complete" includes being
+        /// consumable by something other than a person: the interface of §XI
+        /// is a client of the same surface (B22), and a surface a script cannot
+        /// read is one only a person can drive.
+        as_json: bool,
+    },
     /// A command MCF does not have. Carries what was asked for, so the outcome
     /// can say it back.
     Unrecognized(&'a str),
@@ -68,6 +81,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
     match arguments {
         ["--version" | "-V"] => Request::Version,
         [] | ["--help" | "-h"] => Request::Usage,
+        ["doctor", rest @ ..] => match doctor_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "doctor",
+                argument,
+            },
+        },
         [
             command @ ("--version" | "-V" | "--help" | "-h"),
             argument,
@@ -75,6 +95,22 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ] => Request::UnexpectedArgument { command, argument },
         [first, ..] => Request::Unrecognized(first),
     }
+}
+
+/// Reads `doctor`'s own arguments.
+///
+/// Total: an option it does not have is named back rather than ignored.
+fn doctor_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut record = true;
+    let mut as_json = false;
+    for argument in arguments {
+        match *argument {
+            "--no-record" => record = false,
+            "--json" => as_json = true,
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Doctor { record, as_json })
 }
 
 /// Answers a request. Pure, so the laboratory can exercise every branch
@@ -89,14 +125,27 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             text: format!(
                 "{identity}\n\
                  \n\
-                 usage: mcf --version\n\
+                 usage:\n\
+                 \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
+                 \x20                                     costs here, and what it promises\n\
+                 \x20 mcf --version                       what this binary is\n\
                  \n\
-                 This is the M0 workspace (B-001). It builds, records what \
-                 built it, and\nclaims nothing else. `mcf doctor` — the M0 \
-                 product — arrives with B-014."
+                 This is M0. Nothing here acquires, serves or measures a model."
             ),
             served: true,
         },
+        Request::Doctor { record, as_json } => {
+            let report = doctor::run(*record);
+            Response {
+                text: if *as_json {
+                    report.to_value().to_line()
+                } else {
+                    report.render()
+                },
+                // `doctor` reports; it does not fail because the machine did.
+                served: true,
+            }
+        }
         Request::Unrecognized(argument) => Response {
             text: format!(
                 "mcf: no such command: {argument}\n\
@@ -137,22 +186,55 @@ mod tests {
     /// not a silent fall-through to help text.
     #[test]
     fn an_unknown_command_is_named_and_carries_its_input() {
-        assert_eq!(parse(&["doctor"]), Request::Unrecognized("doctor"));
-        let Response { text, served } = respond(&parse(&["doctor"]), BuildIdentity::current());
+        assert_eq!(parse(&["measure"]), Request::Unrecognized("measure"));
+        let Response { text, served } = respond(&parse(&["measure"]), BuildIdentity::current());
         assert!(!served, "an absent command must not report success");
-        assert!(text.contains("doctor"), "{text:?} does not say what it saw");
+        assert!(
+            text.contains("measure"),
+            "{text:?} does not say what it saw"
+        );
     }
 
-    /// The M0 surface promises exactly one thing. A surface that claimed
-    /// `doctor` before B-014 built it would be the fabricated report C7 and
-    /// A20 are written against.
+    /// Usage advertises exactly what exists. A22 makes the headless surface
+    /// complete, so a command missing from usage is a capability only somebody
+    /// who read the source can reach — and one that appears there without
+    /// existing is the fabricated report C7 and A20 are written against.
     #[test]
-    fn usage_does_not_advertise_a_command_that_does_not_exist() {
+    fn usage_advertises_what_exists_and_nothing_else() {
         let Response { text, .. } = respond(&Request::Usage, BuildIdentity::current());
-        assert!(text.contains("mcf --version"));
-        assert!(
-            !text.contains("usage: mcf doctor"),
-            "usage advertises an unbuilt command"
+        assert!(text.contains("mcf --version"), "{text}");
+        assert!(text.contains("mcf doctor"), "{text}");
+        for unbuilt in ["mcf pull", "mcf serve", "mcf bench", "mcf lab"] {
+            assert!(
+                !text.contains(unbuilt),
+                "usage advertises {unbuilt}, which M0 has not built"
+            );
+        }
+    }
+
+    /// `doctor` reads its own options, and refuses anything else by name (A2).
+    #[test]
+    fn doctor_reads_its_own_options() {
+        assert_eq!(
+            parse(&["doctor"]),
+            Request::Doctor {
+                record: true,
+                as_json: false
+            }
+        );
+        assert_eq!(
+            parse(&["doctor", "--no-record", "--json"]),
+            Request::Doctor {
+                record: false,
+                as_json: true
+            }
+        );
+        assert_eq!(
+            parse(&["doctor", "--quiet"]),
+            Request::UnexpectedArgument {
+                command: "doctor",
+                argument: "--quiet"
+            }
         );
     }
 
