@@ -58,17 +58,39 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
     );
 
     // The second route to the same quantity: `statm` counts resident pages
-    // where `status` reports kibibytes. Two files, one counter — a generous
-    // tolerance, because the two reads are not simultaneous and this half is
-    // about the *magnitude* being right, not the last page.
-    if let Some(pages) = resident_pages() {
-        let by_pages = pages.saturating_mul(page);
-        let difference = by_pages.abs_diff(rss.0);
-        assert!(
-            difference < 4 * 1024 * 1024,
-            "the two routes disagree: {rss} by status, {by_pages} bytes by statm"
+    // where `status` reports kibibytes. Two files, one counter — and two reads,
+    // which is the difficulty: the suite runs on several threads and the
+    // process's resident set moves between them.
+    //
+    // So the reading is *bracketed* rather than tolerated, which is D30's
+    // shape applied to memory instead of to a timing: read `statm`, read
+    // `status`, read `statm` again, and compare only when the two `statm`
+    // readings agree — the set did not move across the middle read, so the two
+    // routes are describing the same instant. A few attempts, and where the
+    // process never holds still the check says so rather than inventing a
+    // tolerance that would let a wrong multiplier through (F4.3's lesson,
+    // learned by this test failing once in a parallel run).
+    for attempt in 0..8 {
+        let (Some(before), Attested::Known(bytes), Some(after)) =
+            (resident_pages(), resident_bytes(), resident_pages())
+        else {
+            println!("  the second route is not readable here, so it is not compared");
+            return;
+        };
+        if before != after {
+            continue;
+        }
+        assert_eq!(
+            before.saturating_mul(page),
+            bytes.0,
+            "the two routes disagree on attempt {attempt}: {before} pages by statm, \
+             {bytes} by status"
         );
+        return;
     }
+    println!(
+        "  the resident set never held still across two reads, so the routes are not compared"
+    );
 }
 
 /// The page size, from the system rather than assumed.

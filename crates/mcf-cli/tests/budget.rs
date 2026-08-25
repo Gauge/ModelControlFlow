@@ -25,6 +25,25 @@
 //! **The verdict brackets each measurement rather than the run** (D30). It is a
 //! question about a reading, not about the machine, so two figures taken
 //! seconds apart get two answers.
+//!
+//! **Every figure is compared with the last one recorded** (B20, B-011). A
+//! ceiling catches a figure that became bad; a baseline catches one that became
+//! worse, which is the earlier and more useful signal — and B20 is explicit
+//! that a performance change without a before-and-after under stated conditions
+//! is not a performance change but a guess. The previous readings live beside
+//! the tier ages in `.mcf-tiers/performance/`, machine-local, because a
+//! baseline from somebody else's machine is not a baseline (B-166's habit).
+//!
+//! **Not every figure is judged against its baseline, and the ones that are not
+//! say so.** A18 makes a regression detector a third thing, whose thresholds
+//! are statistical judgments rather than assertions. A file's size is
+//! deterministic and a fresh process's resident set is nearly so, so a
+//! tolerance on those means something. The event-class figures are dominated on
+//! some storage by conditions MCF does not yet record — [findings.md] F5, and
+//! B-193 is the fix — so their change is *reported* and not asserted, because a
+//! detector that cries wolf is one people switch off.
+//!
+//! [findings.md]: ../../../doc/findings.md
 
 // Every item in this file is test code; see the note in checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
@@ -112,6 +131,20 @@ fn the_core_binary_is_within_its_footprint() {
             Attested::Unknown => "unknown".to_owned(),
         },
     );
+    if let Attested::Known(Bytes(size)) = measured {
+        // Two per cent. The build is reproducible byte for byte (B-001), so a
+        // file's size does not move on its own: what this tolerates is the
+        // compiler making a different inlining decision about the same code,
+        // and what it catches is a dependency or a feature arriving unnoticed.
+        // Growing it deliberately means recording a new baseline deliberately.
+        against_baseline(
+            CORE_BINARY.name,
+            i64::try_from(size).unwrap_or(i64::MAX),
+            "B",
+            &conditions(&Machine::read_through(&[]), &Attributability::Unknown),
+            &Judgement::Tolerating(20),
+        );
+    }
 }
 
 /// D24's resident-memory figure. Measured from inside the process MCF actually
@@ -139,6 +172,17 @@ fn resident_memory_is_within_its_ceiling() {
         RESIDENT_IDLE.read_measurement(&measured, &attributable),
         &measured.maximum().to_string(),
     );
+    // Ten per cent. A fresh process's resident set is nearly deterministic —
+    // the two readings above differ by kilobytes — but it is decided by an
+    // allocator whose policy is not MCF's, so the tolerance is what separates
+    // "the allocator did something different" from "MCF now holds more".
+    against_baseline(
+        RESIDENT_IDLE.name,
+        i64::try_from(measured.maximum().0).unwrap_or(i64::MAX),
+        "B",
+        measured.conditions(),
+        &Judgement::Tolerating(100),
+    );
 }
 
 /// D24's cold-start figure. Event-class: a hundred trials, read at the 99th
@@ -165,6 +209,16 @@ fn cold_start_is_within_its_ceiling() {
             COLD_START.statistic(&measured),
             spread.median,
             measured.n()
+        ),
+    );
+    against_baseline(
+        COLD_START.name,
+        i64::try_from(COLD_START.statistic(&measured).as_nanos()).unwrap_or(i64::MAX),
+        "ns",
+        measured.conditions(),
+        &Judgement::NotJudged(
+            "an event-class figure whose reading is dominated by storage MCF does not \
+             record as a condition (findings.md F5, B-193)",
         ),
     );
 }
@@ -230,14 +284,173 @@ fn reported_resident(binary: &Path) -> Option<Bytes> {
     u64::try_from(bytes).ok().map(Bytes)
 }
 
+/// Where the previous readings live: beside the tier ages (B-185), one file per
+/// figure so that four tests running at once cannot tear each other's writes.
+fn baseline_directory() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join(".mcf-tiers")
+        .join("performance")
+}
+
+fn baseline_path(figure: &str) -> PathBuf {
+    let slug: String = figure
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    baseline_directory().join(format!("{slug}.json"))
+}
+
+/// One recorded reading: the number, what it is a number of, and what it was
+/// taken under.
+struct Reading {
+    value: i64,
+    unit: String,
+    profile: String,
+    conditions: String,
+}
+
+fn read_baseline(figure: &str) -> Option<Reading> {
+    let text = std::fs::read_to_string(baseline_path(figure)).ok()?;
+    let value = mcf_record::json::parse(text.trim()).ok()?;
+    Some(Reading {
+        value: value.get("value")?.as_integer()?,
+        unit: value.get("unit")?.as_text()?.to_owned(),
+        profile: value.get("profile")?.as_text()?.to_owned(),
+        conditions: value.get("conditions")?.as_text()?.to_owned(),
+    })
+}
+
+fn write_baseline(figure: &str, reading: &Reading) {
+    let directory = baseline_directory();
+    if std::fs::create_dir_all(&directory).is_err() {
+        println!("    the baseline could not be written, so the next run has nothing to compare");
+        return;
+    }
+    let line = mcf_record::json::Value::map([
+        ("figure", mcf_record::json::Value::text(figure)),
+        ("value", mcf_record::json::Value::Integer(reading.value)),
+        ("unit", mcf_record::json::Value::text(&reading.unit)),
+        ("profile", mcf_record::json::Value::text(&reading.profile)),
+        (
+            "conditions",
+            mcf_record::json::Value::text(&reading.conditions),
+        ),
+    ])
+    .to_line();
+    if std::fs::write(baseline_path(figure), line).is_err() {
+        println!("    the baseline could not be written, so the next run has nothing to compare");
+    }
+}
+
+/// Whether a figure's change from its baseline is something this tier will
+/// assert on.
+enum Judgement {
+    /// Judged, and this many parts per thousand of growth is tolerated.
+    Tolerating(i64),
+    /// Not judged, and this is why. Printed with the change so a reader sees
+    /// both the number and the reason nobody is acting on it.
+    NotJudged(&'static str),
+}
+
+/// Compares a figure with the last one recorded, and records this one.
+///
+/// The comparison is refused rather than made wrong when the two are not
+/// comparable (A8): a different profile is a different artifact, and a debug
+/// run has no business overwriting a release baseline.
+fn against_baseline(
+    figure: &str,
+    value: i64,
+    unit: &str,
+    conditions: &Conditions,
+    judgement: &Judgement,
+) {
+    let profile = BuildIdentity::current().profile.to_owned();
+    let current = Reading {
+        value,
+        unit: unit.to_owned(),
+        profile: profile.clone(),
+        conditions: conditions.to_string(),
+    };
+
+    match read_baseline(figure) {
+        None => println!("    no baseline yet; this run records one"),
+        Some(previous) if previous.profile != profile => {
+            println!(
+                "    the baseline was taken in the {} profile and this is {profile}; \
+                 not comparable (A8)",
+                previous.profile
+            );
+        }
+        Some(previous) if previous.unit != unit => {
+            println!(
+                "    the baseline is in {} and this is in {unit}; not comparable (A8)",
+                previous.unit
+            );
+        }
+        Some(previous) => {
+            let change = value - previous.value;
+            // Per thousand rather than per cent, and computed with
+            // `checked_div` because the workspace denies integer division: a
+            // silently truncated quotient is a wrong number wherever it
+            // appears, including in a test's report.
+            let per_thousand = change
+                .saturating_mul(1_000)
+                .checked_div(previous.value)
+                .unwrap_or(0);
+            println!(
+                "    before {} {}, after {value} {unit} ({}{}.{} %)",
+                previous.value,
+                previous.unit,
+                if change < 0 { "-" } else { "+" },
+                per_thousand.abs().checked_div(10).unwrap_or(0),
+                per_thousand.abs() % 10
+            );
+            match judgement {
+                Judgement::NotJudged(why) => println!("    not judged: {why}"),
+                Judgement::Tolerating(tolerance) => {
+                    let regressed = per_thousand > *tolerance;
+                    assert!(
+                        !(regressed && is_release()),
+                        "{}",
+                        format!(
+                            "{figure} regressed: {} {} → {value} {unit}, \
+                             which is {}.{} % against a tolerance of {}.{} % (B20, B-011)\n  \
+                             before, under: {}\n  after, under:  {}",
+                            previous.value,
+                            previous.unit,
+                            per_thousand.checked_div(10).unwrap_or(0),
+                            per_thousand % 10,
+                            tolerance.checked_div(10).unwrap_or(0),
+                            tolerance % 10,
+                            previous.conditions,
+                            current.conditions
+                        )
+                    );
+                    if regressed {
+                        println!(
+                            "    over the tolerance, and not asserted: this is a {profile} build"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Recorded after the comparison, so a run that fails leaves the baseline
+    // it failed against rather than quietly adopting the worse number.
+    write_baseline(figure, &current);
+}
+
 /// A regression is reported with a before and an after, or it is not reported.
 ///
 /// B20: *a performance change without a before-and-after under stated
 /// conditions is not a performance change; it is a guess that also increased
-/// complexity.* There is no baseline to compare against yet — that is B-185's
-/// tier ages and a stored history — so what this asserts is the shape: every
-/// figure this tier produces is a `Measurement` carrying its conditions, so a
-/// baseline can be compared against it when one exists.
+/// complexity.* The baseline above is the before; this asserts the other half,
+/// which is that every figure carries what a comparison needs — a `Measurement`
+/// with its conditions, so that two readings can be known to be comparable at
+/// all (A8) rather than merely subtractable.
 #[test]
 #[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
 fn every_figure_carries_what_a_comparison_would_need() {
