@@ -18,6 +18,7 @@ use mcf_core::failure::Category;
 use super::scenario::Scenario;
 
 mod artifact;
+mod environment;
 mod record;
 
 /// Every scenario the laboratory has.
@@ -25,6 +26,8 @@ pub const CATALOGUE: &[Scenario] = &[
     artifact::CORRUPTED,
     artifact::MISSING,
     artifact::UNREADABLE,
+    environment::KILLED_AFTER_CHANGING,
+    environment::LEDGER_UNWRITABLE,
     record::UNWRITABLE_PATH,
     record::UNKNOWN_FORMAT,
     record::TORN_LAST_LINE,

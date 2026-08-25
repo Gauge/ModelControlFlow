@@ -21,3 +21,4 @@ pub mod encode;
 pub mod journal;
 pub mod json;
 pub mod overhead;
+pub mod restore;

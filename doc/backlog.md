@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 47 |
+| **Version** | 48 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (24 done, 1 dropped, 3 in progress, 56 blocked on a decision, 110 open).** Every item cites
+build items (24 done, 1 dropped, 4 in progress, 56 blocked on a decision, 109 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -135,7 +135,7 @@ first and importance second.
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI | Asserted in CI on every platform in DEC-035's scope | blocked (DEC-035) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
-| B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | open |
+| B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | **done** — `mcf_core::origin`: `LocallyMeasured<T>` and `FromCorpus<T>` are unrelated types with no conversion either way; a corpus value cannot be built without the sample count B44 requires, and neither reads like the other on a surface |
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | **done** — `mcf_core::trial`: a `Trial` cannot be built without its arm, position and session; there is no mean anywhere in MCF to store, and a check keeps it that way; a pairing is reconstructed from a journal round trip in `mcf-record`'s own suite |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
@@ -362,6 +362,33 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 48 — the machine comes back, including after a kill
+
+B-220 is in progress: the mechanism is built and two of the four things its
+condition names do not exist yet to be interrupted.
+
+The design turns on one ordering. A `Drop` restores when a process unwinds and
+does nothing when a process is killed — and A27's test is explicitly about the
+worst moment, so the destructor is the convenience and not the guarantee. The
+ledger is written **before** the change and recovered on the next open. A crash
+between the two leaves an entry for a change that never happened, and restoring
+it is harmless; a crash the other way round would leave a changed machine nobody
+can put back, which is the failure A27 forbids.
+
+Three consequences follow and each is a test. Recovery **reports** what it did,
+because an operator whose machine was changed and changed back is owed the fact.
+Overlapping changes unwind newest first, so a file replaced twice comes back to
+what it was before the first replacement. And a change MCF could not first
+capture is refused *before* it is made — A27's *what it cannot restore it does
+not touch*, as a precondition rather than a rule.
+
+What is deliberately short is the list of things that can be changed. One
+variant today, because a replaced file is all MCF alters outside its own
+directory; governors, priorities, exclusive modes and suspensions join it with
+the environment ladder, and B48 requires each be approved per run, so each
+arrives with the approval that admits it. The list being short is the point:
+what is not in it, MCF cannot change.
 
 ### Version 47 — MCF measures what its own observing costs
 
