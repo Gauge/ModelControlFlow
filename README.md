@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -20,10 +20,17 @@ pick by leaderboard positions measured on someone else's hardware with someone
 else's quantization against benchmarks that do not resemble their work. MCF
 replaces folklore with measurement taken here.
 
-**Status: M0 in progress.** `mcf doctor` works: it reports what this machine
-is, what MCF costs on it against its stated ceilings, and what MCF will and will
-not promise here, and writes the whole thing to an append-only record. Nothing
-acquires, serves or measures a model yet.
+**Status: M0 in progress.** `mcf doctor` reports what this machine is, what MCF
+costs on it against its stated ceilings, and what MCF will and will not promise
+here, and writes the whole thing to an append-only record. `mcf licence` states
+the terms and carries the licence text a redistributor is obliged to convey;
+`mcf export` writes the record as one portable file. MCF has its own
+implementation of inference — deliberately slow, written to be read, and unable
+to report a speed (D31) — which runs a model end to end from a file it is given.
+
+**Nothing acquires or serves a model yet**, and no number about a model's speed
+or quality exists. Acquisition is M1 and needs a network stack MCF has not
+admitted; serving is M2 and needs a daemon.
 Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
 MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 [doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
@@ -41,7 +48,7 @@ $ cargo build --locked --release && ./target/release/mcf doctor
 | [rules.md](doc/rules.md) | Rules | 100 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [taxonomy.md](doc/taxonomy.md) | Reference | The failure classification: three axes, sixteen domains, 111 codes | You are handling an error, writing a lab scenario, or rendering a failure |
-| [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
+| [labs.md](doc/labs.md) | Catalogue | Twenty-six candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
 | [vendored.md](doc/vendored.md) | Register | What MCF ships, what it declined to ship, and the compatibility finding for each | You are about to admit a component, or want to know why MCF does not support something |
 | [findings.md](doc/findings.md) | Record | What a prototype or a run established, with the conditions it was established under | A decision cites a run, or you are about to reopen one |
 | [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
@@ -148,6 +155,16 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 12 — the status says what runs now
+
+MCF has a second command and an engine since version 11: `mcf licence` carries
+the terms a redistributor is obliged to convey, and D31's stand-in runs a model
+end to end from a file it is given. The status line said neither, and said
+"nothing measures a model yet" where the honest statement is narrower — nothing
+*acquires or serves* one, and no number about a model exists.
+
+The lab catalogue's count is corrected here too: twenty-six, not twenty-three.
 
 ### Version 11 — the vendoring register joins the map
 

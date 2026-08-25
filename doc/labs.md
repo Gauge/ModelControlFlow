@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Catalogue — candidate laboratories, drafted not ratified |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living. Nothing here is committed; §7.29 remains open. |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, governed by [rules.md](rules.md) |
 | **Answers** | §7.29 in draft · registered as DEC-029 in [backlog.md](backlog.md) |
@@ -13,7 +13,7 @@ It is an instrument, not a test: it has no pass condition, produces a
 distribution rather than a verdict, and never gates a build (§6.7, D10). It owns
 the machine while it runs and may be as greedy as accuracy requires (D8, B35).
 
-**Twenty-three candidates, four families.** The families differ in what gates them, in
+**Twenty-six candidates, four families.** The families differ in what gates them, in
 what they can claim, and in whether they need the machine to themselves:
 
 | Family | Gate | Class | What it establishes |
@@ -394,6 +394,14 @@ how much to believe every other number in the system.
 ---
 
 ## Changelog
+
+### Version 6 — the count catches up with the catalogue
+
+No lab added or removed. The header said twenty-three and the catalogue held
+twenty-six: L24 and L25 arrived in version 4 and L26 in version 5, and the
+count at the top was written when there were twenty and corrected once. A
+document that miscounts its own contents is the drift the format contract exists
+to prevent, and it is not something a citation check can see.
 
 ### Version 5 — the sampling sweep
 
