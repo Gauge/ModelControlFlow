@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 46 |
+| **Version** | 47 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (23 done, 1 dropped, 3 in progress, 56 blocked on a decision, 111 open).** Every item cites
+build items (24 done, 1 dropped, 3 in progress, 56 blocked on a decision, 110 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -116,7 +116,7 @@ first and importance second.
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **in progress** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`: the three figures measurable without a daemon, read by D27's statistics, asserted only in release and only on an attributable machine. The before-and-after needs a stored baseline and tier ages (B-185) |
-| B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
+| B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | **done** — at M0 MCF's observation *is* the record write, and `mcf_record::overhead` measures it beside the real record over D27's hundred trials. The instrumentation profile joins the condition floor as its tenth question, so `mcf doctor` and `mcf doctor --no-record` produce results a reader can tell apart |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | **done** — `Machine::read_through(routes)` is the seam: passing none produces the profile of a machine with no accelerator *on a machine that has one*, which is how B19's condition is checked rather than assumed. `scripts/ci.sh` passes `--offline`. **The stated time budget does not exist**: D24 closed DEC-016 with sixteen figures and none of them is a suite time. The gating tier is measured and reported in [build.md](build.md) §4 instead |
@@ -362,6 +362,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 47 — MCF measures what its own observing costs
+
+B-012 is done, and what made it tractable at M0 is noticing what MCF's
+observation currently *is*. There is no serving path to instrument and no
+laboratory telemetry to reduce; the whole of what MCF does in order to observe
+is append a line and wait for it to reach the medium. So that is the cost
+measured, over D27's hundred trials, against D24's two-millisecond ceiling —
+and beside the operator's real record rather than in a temporary directory,
+because a durability barrier on a fast local disk and one on a network
+filesystem are different costs and the second is the one that would surprise
+somebody.
+
+**The condition floor grows to ten.** B3 requires the instrumentation profile
+travel with a figure, and `mcf doctor` and `mcf doctor --no-record` are the two
+arms of that comparison — so a reader of two results can tell which was taken
+while MCF was writing. That is the second time the floor has grown, and both
+times the addition came from a rule that already required it rather than from a
+convenience.
+
+`mcf doctor` also now reads its timing at the percentile D27 names rather than
+showing a median and a p95 with §7.50 marked open, and states whether the
+machine was quiet enough for the reading to be about MCF at all.
 
 ### Version 46 — corruption is caught before the run, and the taxonomy grows by one
 

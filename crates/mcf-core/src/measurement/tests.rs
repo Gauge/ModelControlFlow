@@ -162,7 +162,7 @@ fn the_rendering_carries_the_conditions_the_count_and_the_spread() {
 fn an_unread_condition_stays_unknown() {
     let floor = Floor::nothing_known();
     assert_eq!(floor.known_count(), 0);
-    assert_eq!(floor.entries().len(), 9);
+    assert_eq!(floor.entries().len(), 10);
     for (question, value) in floor.entries() {
         assert!(!value.is_known(), "{question} claims to be known");
         assert_eq!(value.to_string(), "unknown");

@@ -62,9 +62,10 @@ impl fmt::Display for ConditionValue {
 
 /// The §3.3 floor: everything that varies and could change a result.
 ///
-/// Nine questions, each answered or explicitly unanswered. Eight are the
+/// Ten questions, each answered or explicitly unanswered. Eight are the
 /// intent document's own list, in its own order; the ninth is D17's realized
-/// placement. The set does not shrink.
+/// placement and the tenth is B3's instrumentation profile. The set does not
+/// shrink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Floor {
     /// What the machine is: its processors, its memory, its accelerators.
@@ -104,6 +105,15 @@ pub struct Floor {
     ///
     /// [`Placement`]: crate::configuration::Placement
     pub realized_placement: Attested<ConditionValue>,
+    /// How much MCF was observing while this was taken, and what that cost.
+    ///
+    /// The tenth question, from B3: *instrumentation during measurement is
+    /// reduced to a declared profile, and MCF's own overhead is measured and
+    /// travels as a condition — an uncharacterized instrument is not a
+    /// scientific one.* A figure taken while MCF was writing a record and one
+    /// taken while it was not are two different measurements, and this is where
+    /// the difference is visible (§3.8, B-012).
+    pub instrumentation: Attested<ConditionValue>,
 }
 
 impl Floor {
@@ -128,6 +138,7 @@ impl Floor {
             batch_shape: Attested::Unknown,
             mcf_configuration: Attested::Unknown,
             realized_placement: Attested::Unknown,
+            instrumentation: Attested::Unknown,
         }
     }
 
@@ -138,7 +149,7 @@ impl Floor {
     /// them being edited — A6's "any surface that drops its conditions is
     /// doing damage", made hard to do by accident.
     #[must_use]
-    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 9] {
+    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 10] {
         [
             ("hardware_state", &self.hardware_state),
             ("thermal_state", &self.thermal_state),
@@ -149,6 +160,7 @@ impl Floor {
             ("batch_shape", &self.batch_shape),
             ("mcf_configuration", &self.mcf_configuration),
             ("realized_placement", &self.realized_placement),
+            ("instrumentation", &self.instrumentation),
         ]
     }
 
