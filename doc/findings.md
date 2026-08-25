@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -30,6 +30,7 @@ forward as one.
 |---|---|
 | 1 | [F1 — The adversarial prototype (§7.19, DEC-019)](#1--f1--the-adversarial-prototype-719-dec-019) |
 | 2 | [F2 — The development machine cannot attribute a budget (DEC-051)](#2--f2--the-development-machine-cannot-attribute-a-budget-dec-051) |
+| 3 | [F3 — The load average answers the wrong question (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -209,7 +210,98 @@ success, nor the reverse. It reports the readings, states that it is not judging
 them and why, and does not refresh its own age (B38). The dishonest outcomes are
 the ones this design forecloses.
 
+## 3 · F3 — The load average answers the wrong question, and the obvious fix silently could not fail (DEC-051, D30)
+
+**What was run.** Two experiments, after F2 established that MCF could not
+assert an event-class budget on the machine it is written on.
+
+**Conditions.** The same machine as F1 and F2: 16 cores, 32 threads. The load
+this time was produced deliberately — thirty-two spinning shell loops, bounded
+to the duration of each measurement — because the operator's own workload had
+finished and a quiet baseline was available for the first time.
+
+### 3.1 The load average is on the wrong time scale
+
+A hundred `mcf --version` cold starts, quiet and under load, with the measuring
+process's own scheduling delay read across the whole measurement:
+
+| | quiet | under load |
+|---|---|---|
+| Cold start, median | 208 µs | 1 041 µs |
+| Cold start, **p99** | **360 µs** | **4 822 µs** |
+| Wall time for the whole measurement | 21.8 ms | 139.1 ms |
+| Own runqueue wait | 4 148 ns | 15 477 083 ns |
+| **Wait as a fraction of the measurement** | **0.019 %** | **11.1 %** |
+| **One-minute load average** | **0.29** | **0.29** |
+
+The p99 moves by a factor of thirteen. The load average does not move at all —
+not because it is imprecise, but because a **one-minute average cannot answer a
+question about a 140-millisecond measurement**. By the time it responds, the
+measurement is long over. The scheduling delay moves by a factor of 585 and does
+so inside the window it is describing.
+
+This is what D30 rests on, and it also corrects an assumption F1 and F2 were
+reasoning under. The cold-start figures those recorded — 6 to 8 ms median — were
+themselves contaminated: on a genuinely quiet machine the median is **208 µs**,
+about thirty times faster. Every one of MCF's budget figures had been measured on
+a machine that was never quiet, and none of them was wrong about passing, but all
+of them were wrong about the number.
+
+### 3.2 The obvious implementation could not fail
+
+The first implementation read `/proc/self/schedstat`. It reported
+**0.0000 % in both states** — quiet and under thirty-two spinners — which is
+exactly what F2's failure looked like from the other side, and it was found by
+the negative control rather than by review.
+
+The cause: a process's accounting is its **main thread's**. Every measurement MCF
+takes under a test harness runs on a worker thread, and the main thread is
+blocked waiting for it, so it never queues. Reading `/proc/thread-self/schedstat`
+instead:
+
+| Same 300 ms of work, on a worker thread | quiet | under load |
+|---|---|---|
+| `/proc/self/schedstat` — the process | 0.0000 % | **0.0000 %** |
+| `/proc/thread-self/schedstat` — the thread | 0.0207 % | **50.46 %** |
+
+**The finding is about method as much as about the reading.** A signal that
+cannot fail is not a signal, and this one silently could not. What caught it was
+running the budget tier under deliberate load and checking that the verdict
+*changed* — the negative control B-003's lint check had already established as
+necessary, applied to a measurement instead of to a lint. A check that has only
+ever been observed to pass has not been observed.
+
+### 3.3 What changed as a result
+
+Every budget figure is now asserted on this machine, quiet, and correctly
+refused under load:
+
+| Figure | quiet | under thirty-two spinners |
+|---|---|---|
+| Core binary | 617 360 B — within | within (unaffected by load) |
+| Resident memory | 7 696 384 B — within | within |
+| Cold start, p99 | 575 µs — **within** | 21.8 ms — **not attributable** |
+| Record write, p99 | 3 446 ns — within | — |
+
+DEC-051's deadlock is gone rather than traded off: B38 and D27 both still hold,
+and the tier refreshes its age whenever a reading was clean.
+
 ## Changelog
+
+### Version 3 — the signal that answers F2, and the one that could not fail
+
+F3 added. It closes what F2 opened and corrects the ground both F1 and F2 stood
+on: their cold-start figures were taken on a machine that was never quiet, and
+the honest number is thirty times smaller. Neither was wrong about passing; both
+were wrong about the number, which is exactly what §3.4's conditions exist to
+prevent and what a contaminated one hides.
+
+The second half is a finding about method rather than about MCF. The first
+implementation of the new signal read a process's accounting rather than a
+thread's, and therefore reported a perfectly clean measurement under any load —
+a signal that could not fail. It was caught by running the tier under deliberate
+load and checking the verdict *changed*, which is the negative control B-003
+established for a lint check, applied to a measurement.
 
 ### Version 2 — the budget tier reports that it cannot judge
 

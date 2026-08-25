@@ -9,7 +9,7 @@ use super::{
 };
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
-use crate::hardware::{Attributability, LoadAverage};
+use crate::hardware::Attributability;
 use crate::measurement::{Bytes, Conditions, Floor, Measurement};
 
 fn conditions() -> Conditions {
@@ -110,15 +110,13 @@ fn a_command_that_runs_yields_a_measurement_with_its_trials() {
 // ---------------------------------------------------------------------------
 
 fn quiet() -> Attributability {
-    Attributability::Attributable {
-        load: LoadAverage(120),
-    }
+    Attributability::Attributable { delay_ppm: 189 }
 }
 
 fn busy() -> Attributability {
     Attributability::Unattributable {
-        load: LoadAverage(30_000),
-        quiet_below: LoadAverage(8_000),
+        delay_ppm: 111_248,
+        tolerated_ppm: 10_000,
     }
 }
 

@@ -21,6 +21,10 @@
 //! neither a pass nor a failure — and B38's staleness discipline is what stops
 //! that becoming a hiding place: an unattributable run does not refresh the
 //! tier's age.
+//!
+//! **The verdict brackets each measurement rather than the run** (D30). It is a
+//! question about a reading, not about the machine, so two figures taken
+//! seconds apart get two answers.
 
 // Every item in this file is test code; see the note in checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
@@ -29,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
-use mcf_core::hardware::{Attributability, Machine, attributability};
+use mcf_core::hardware::{Attributability, Machine, Watch};
 use mcf_core::measurement::{Bytes, ConditionValue, Conditions, Floor, Measurement, Quantity};
 use mcf_core::self_cost::{
     self, Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, RESIDENT_IDLE, Verdict,
@@ -117,7 +121,7 @@ fn the_core_binary_is_within_its_footprint() {
 #[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
 fn resident_memory_is_within_its_ceiling() {
     let machine = Machine::read();
-    let attributable = attributability(machine.processor.cores);
+    let watch = Watch::start();
     let Some(resident) = reported_resident(&binary()) else {
         judge(&RESIDENT_IDLE, Verdict::NotMeasured, "unknown");
         return;
@@ -126,6 +130,7 @@ fn resident_memory_is_within_its_ceiling() {
     // (§3.4). Resident memory of a fresh process is near-deterministic, which
     // is why two suffice for a maximum where a percentile would need a hundred.
     let second = reported_resident(&binary()).unwrap_or(resident);
+    let attributable = watch.finish();
     let measured =
         Measurement::from_samples([resident, second], conditions(&machine, &attributable))
             .expect("two readings");
@@ -143,10 +148,11 @@ fn resident_memory_is_within_its_ceiling() {
 #[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
 fn cold_start_is_within_its_ceiling() {
     let machine = Machine::read();
-    let attributable = attributability(machine.processor.cores);
-    let conditions = conditions(&machine, &attributable);
-    let Some(measured) = self_cost::cold_start(&binary(), &["--version"], EVENT_TRIALS, conditions)
-    else {
+    let watch = Watch::start();
+    let conditions = conditions(&machine, &Attributability::Unknown);
+    let measured = self_cost::cold_start(&binary(), &["--version"], EVENT_TRIALS, conditions);
+    let attributable = watch.finish();
+    let Some(measured) = measured else {
         judge(&COLD_START, Verdict::NotMeasured, "did not run");
         return;
     };
@@ -171,7 +177,14 @@ fn cold_start_is_within_its_ceiling() {
 #[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
 fn the_tier_states_its_conditions() {
     let machine = Machine::read();
-    let attributable = attributability(machine.processor.cores);
+    let watch = Watch::start();
+    // A moment of ordinary work, so the verdict is about something.
+    let mut total = 0_u64;
+    for value in 0..200_000_u64 {
+        total = total.wrapping_add(value);
+    }
+    assert!(total > 0);
+    let attributable = watch.finish();
     println!("\nbudget tier conditions");
     println!("  {}", BuildIdentity::current());
     println!("  {attributable}");
@@ -229,8 +242,7 @@ fn reported_resident(binary: &Path) -> Option<Bytes> {
 #[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
 fn every_figure_carries_what_a_comparison_would_need() {
     let machine = Machine::read();
-    let attributable = attributability(machine.processor.cores);
-    let conditions = conditions(&machine, &attributable);
+    let conditions = conditions(&machine, &Attributability::Unknown);
     let measured: Measurement<Duration<Monotonic>> =
         self_cost::cold_start(&binary(), &["--version"], 2, conditions).expect("two trials ran");
     // The conditions travel with it, which is what a later comparison needs in

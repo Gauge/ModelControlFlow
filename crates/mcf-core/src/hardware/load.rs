@@ -1,16 +1,17 @@
 //! What else the machine is doing, and whether a reading can be attributed.
 //!
-//! B35: *a timing taken under contention measures the contention.* B24 makes
-//! **unattributable** a verdict rather than a gap — MCF knows the difference
-//! between "this model is slow" and "this machine was busy", and says so when
-//! it cannot tell. D27 applies both to MCF's own budgets: a figure is asserted
-//! only on a run the machine was quiet enough to attribute, and a busy machine
-//! makes a run unattributable rather than failing it.
+//! §3.8 makes what else the machine is doing part of what the machine *is* at a
+//! moment, so the load average is read with everything else and recorded as a
+//! condition (§3.4).
 //!
-//! **The threshold is declared, not measured.** There is no reading that tells
-//! MCF how quiet is quiet enough; that is a judgement, and the honest thing is
-//! to state it, record it with every result, and let a reader disagree. It is
-//! stated in [`QUIET_PER_CORE`] with its reasoning.
+//! **It decides nothing.** MCF tried to decide attributability with it and F3
+//! in `doc/findings.md` records why that failed: a one-minute average cannot
+//! answer a question about a 140-millisecond measurement, and it read 0.29 both
+//! on a quiet machine and while thirty-two processes were spinning. D30 moved
+//! the verdict to the scheduling delay, which is measured over the measurement
+//! itself. What remains here is a true statement about the machine, kept
+//! because a reader looking at an unattributable result wants to know what else
+//! was running.
 
 use core::fmt;
 
@@ -30,63 +31,6 @@ impl fmt::Display for LoadAverage {
     #[allow(clippy::integer_division)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{:03}", self.0 / 1000, self.0 % 1000)
-    }
-}
-
-/// How much of a core's capacity may be busy with something else before a
-/// timing stops being about MCF.
-///
-/// Half. The number is a judgement and is stated rather than hidden: below it,
-/// a measurement competes with at most one other runnable process per two
-/// cores and the effect on a millisecond-scale figure is small; above it, F1
-/// showed a cold-start tail move by a factor of twenty-five. It is recorded as
-/// a condition with every budget result, so a reader who thinks it wrong can
-/// see the reading it was applied to.
-pub const QUIET_PER_CORE: u64 = 500;
-
-/// Whether a reading can be attributed to what it was measuring.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Attributability {
-    /// The machine was quiet enough.
-    Attributable {
-        /// What the load was.
-        load: LoadAverage,
-    },
-    /// It was not, and this is what was competing.
-    ///
-    /// B24: a verdict, not a gap. A run marked this way is neither a pass nor a
-    /// failure — D27 makes an unattributable budget run count as neither, and
-    /// B38's staleness discipline is what stops that becoming a hiding place.
-    Unattributable {
-        /// What the load was.
-        load: LoadAverage,
-        /// What it would have had to be below.
-        quiet_below: LoadAverage,
-    },
-    /// MCF could not read the load at all, so it cannot say either way (A7).
-    Unknown,
-}
-
-impl fmt::Display for Attributability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Attributable { load } => write!(f, "attributable (load {load})"),
-            Self::Unattributable { load, quiet_below } => {
-                write!(f, "UNATTRIBUTABLE (load {load}, quiet below {quiet_below})")
-            }
-            Self::Unknown => f.write_str("attributability unknown — the load could not be read"),
-        }
-    }
-}
-
-impl Attributability {
-    /// Whether a figure measured under this may be asserted against a ceiling.
-    ///
-    /// Only [`Attributability::Attributable`]. Unknown is not permission: A7
-    /// forbids reading an absent value as a favourable one.
-    #[must_use]
-    pub const fn permits_assertion(&self) -> bool {
-        matches!(self, Self::Attributable { .. })
     }
 }
 
@@ -120,26 +64,4 @@ fn parse_thousandths(text: &str) -> Option<u64> {
         thousandths = thousandths.saturating_add(u64::from(digit).saturating_mul(place));
     }
     Some(whole.saturating_mul(1000).saturating_add(thousandths))
-}
-
-/// Whether a measurement taken now can be attributed.
-///
-/// `cores` is what the load is judged against: the same load means something
-/// different on four cores and on thirty-two. Where the core count is unknown
-/// the answer is [`Attributability::Unknown`] rather than a guess.
-#[must_use]
-pub fn attributability(cores: Attested<u32>) -> Attributability {
-    let (Attested::Known(load), Attested::Known(cores)) = (load_average(), cores) else {
-        return Attributability::Unknown;
-    };
-    // The measuring process is itself runnable, so one is subtracted before the
-    // machine is judged: a load of exactly 1.00 on an otherwise idle machine is
-    // this process and nothing else.
-    let competing = load.0.saturating_sub(1000);
-    let quiet_below = LoadAverage(u64::from(cores).saturating_mul(QUIET_PER_CORE));
-    if competing <= quiet_below.0 {
-        Attributability::Attributable { load }
-    } else {
-        Attributability::Unattributable { load, quiet_below }
-    }
 }

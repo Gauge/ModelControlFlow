@@ -28,10 +28,12 @@ mod load;
 mod nvml;
 mod processor;
 mod route_files;
+mod scheduling;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
-pub use load::{Attributability, LoadAverage, QUIET_PER_CORE, attributability, load_average};
+pub use load::{LoadAverage, load_average};
 pub use processor::{Memory, PowerProfile, Processor};
+pub use scheduling::{Attributability, Scheduling, TOLERATED_DELAY_PPM, Watch, scheduling};
 
 use core::fmt;
 
