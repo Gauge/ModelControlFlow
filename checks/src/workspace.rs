@@ -41,9 +41,23 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-standin",
+        path: "crates/mcf-standin",
+        // MCF's own implementation of inference (D31, B-360). It depends on
+        // `mcf-core` for the failure type and the engine handles, and on
+        // nothing else: it is an engine, not an adapter, and the crate boundary
+        // is what keeps a stand-in's output from reaching a surface except
+        // through the handle that carries its mark (A5, B65).
+        depends_on: &["mcf-core"],
+    },
+    Member {
         name: "mcf-lab",
         path: "crates/mcf-lab",
-        depends_on: &["mcf-core", "mcf-record"],
+        // `mcf-standin` because A13 requires a scenario for every category
+        // MCF's code constructs, and the model-file reader constructs two of
+        // them: a scenario that produced them by hand would be a scenario about
+        // a mock (D26).
+        depends_on: &["mcf-core", "mcf-record", "mcf-standin"],
     },
     Member {
         name: "mcf-hub",
@@ -94,9 +108,9 @@ pub const MEMBERS: &[Member] = &[
         // Development dependencies only: the taxonomy agreement check reads
         // `mcf_core::failure`, the fault catalogue check reads
         // `mcf_lab::CATALOGUE`, and the property, fuzz, load and soak tiers
-        // examine `mcf_record`'s codec and journal. Nothing this crate builds
-        // ships.
-        depends_on: &["mcf-core", "mcf-lab", "mcf-record"],
+        // examine `mcf_record`'s codec and journal and `mcf_standin`'s model
+        // reader. Nothing this crate builds ships.
+        depends_on: &["mcf-core", "mcf-lab", "mcf-record", "mcf-standin"],
     },
 ];
 

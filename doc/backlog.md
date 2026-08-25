@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 65 |
+| **Version** | 68 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 2 in progress, 53 blocked on a decision, 106 open).** Every item cites
+build items (36 done, 1 dropped, 3 in progress, 53 blocked on a decision, 105 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -148,7 +148,7 @@ first and importance second.
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **done** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; [vendored.md](vendored.md) is the matrix and refuses a vendored component with no row. `mcf licence [--full]` is the second half: the whole text is compiled into the binary, because a redistributor has a binary rather than a repository and §4 obliges them to convey a copy. What it says about vendored components and what the register records are checked against each other |
 | B-361 | A timing-class result cannot be constructed from a stand-in engine handle, in the way a simulated duration cannot become a performance number | B65, D31, A11, B31 | The compiler refuses it; a check refuses a conversion added later | **done** — `mcf_core::engine`: `timing` is defined on `Run<Vendored>` alone, `Timing` has no constructor of its own, and no conversion exists between the two runs. Four source checks and a `const` assertion; verified by giving the stand-in a timing and watching them fail |
-| B-360 | The stand-in engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling — no SIMD, no fusion, no threading, no accelerator path | D31, §III, §3.2, B7 | A model no vendored engine will run reaches a first token on the stand-in, and every result taken on it is marked (A5) | open |
+| B-360 | The stand-in engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling — no SIMD, no fusion, no threading, no accelerator path | D31, §III, §3.2, B7 | A model no vendored engine will run reaches a first token on the stand-in, and every result taken on it is marked (A5) | **in progress** — `mcf-standin`, its own crate because B65's prohibition is a boundary as well as a type. A model runs: the GGUF reader, dequantization for five schemes, the transformer operations each written as its definition, the llama forward pass over a key/value cache, seeded sampling, and a generation loop whose result is a `Degraded<Behaviour<…>>` that cannot be unwrapped without its mark (A5). It is the fifth target in the fuzz tier and the three failures it constructs have laboratory scenarios (A13). The tokenizer is here too — the unigram vocabulary a llama-family file carries, with byte fallback, and a refusal by name for the byte-pair kind it does not implement. Text goes in and text comes out: `crates/mcf-standin/tests/a_first_token.rs`. What remains before the done-when holds is a *real* artifact rather than one a test constructs, which M1 acquires (B-019, B-020), and the cross-check against a vendored engine that would establish agreement rather than wiring (B-362) |
 | B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
@@ -366,6 +366,45 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 68 — the stand-in reads text
+
+B-360 gains the tokenizer, so the engine takes a prompt rather than a list of
+identifiers: the unigram vocabulary a llama-family file carries, segmented by
+the dynamic program its scores imply, with byte fallback for text the
+vocabulary does not spell and a named refusal for the byte-pair kind this crate
+does not implement.
+
+Text in, tokens out, text back, and the result marked — on a model a test
+constructs. What is left is the part no test can construct: a real artifact,
+and the cross-check that would establish agreement rather than wiring.
+
+### Version 67 — the stand-in runs a model
+
+B-360 reaches a first token. The forward pass, the operations under it and the
+sampler above it are all here, and what comes out is typed as a stand-in result:
+a `Degraded<Behaviour<Generated>>` with no way out that drops the mark (A5).
+
+The done-when is not met and the two things missing are named: a tokenizer, so
+that a prompt rather than a list of identifiers reaches the model, and a real
+artifact rather than one a test constructed — which is M1's acquisition work.
+What the tests establish is the wiring, on models whose answers can be stated
+without running them; agreement with a vendored engine is B-362 and is the only
+thing that can establish the rest.
+
+### Version 66 — the stand-in engine begins with what it must read
+
+B-360 in progress. D31's second implementation starts where a model does: the
+file. The GGUF reader reads metadata, the tensor directory and the alignment,
+refuses by name what it does not read, and keeps a file whose one unknown
+tensor type does not make the rest unreadable (A4).
+
+It is untrusted input (§3.7), so it joined the fuzz tier the day it existed —
+and the first campaign found something worth having: a directory whose
+arithmetic overflowed was handed back rather than refused. The reader now
+checks the directory against itself, and `read` checks it against the file's
+length while `parse` does not, because a caller holding only the head of a
+download is B-213's case rather than a defect.
 
 ### Version 65 — the artifact states its own terms
 

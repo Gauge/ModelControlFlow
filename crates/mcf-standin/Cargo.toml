@@ -1,0 +1,14 @@
+[package]
+name = "mcf-standin"
+description = "MCF's own implementation of inference: deliberately slow, written to be read, and unable to report a speed (D31, B-360)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }

@@ -38,6 +38,7 @@ use mcf_core::time::{Timestamp, Zone};
 use mcf_record::export;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
+use mcf_standin::gguf;
 
 /// Announces the campaign, so that anything it finds can be reproduced.
 fn announce(target: &str) -> (u64, u32) {
@@ -302,6 +303,105 @@ fn zone_corpus() -> Vec<Vec<u8>> {
         }
     }
     corpus
+}
+
+/// A model file is the largest untrusted input MCF will ever read, and the one
+/// whose header is a set of lengths (B-360, §3.7).
+///
+/// A parser driven by lengths in the file is the classic way to turn a damaged
+/// download into an allocation the machine cannot satisfy, so what is asserted
+/// here is what a reader owes: no panic, a classified refusal, and — where it
+/// accepts — a directory whose arithmetic holds together.
+#[test]
+#[ignore = "the fuzz tier is scheduled: scripts/ci.sh --with-fuzz (B38)"]
+fn the_model_reader_survives_a_damaged_model_file() {
+    let (seed, cases) = announce("gguf::parse");
+    let reached = Reached::new("gguf::parse");
+    let corpus = model_corpus();
+    let verdict = check_from(seed, cases, |rng| {
+        let original = rng.pick(&corpus).ok_or("the corpus is not empty")?.clone();
+        let damaged = mutate(rng, &original);
+        let Ok(model) = gguf::parse(&damaged) else {
+            reached.refused();
+            return Ok(());
+        };
+        reached.accepted();
+
+        // What it accepted has to hold together. A tensor whose size is
+        // computable must not claim to start past the end of what the file
+        // could hold, and every element count must be computable at all —
+        // otherwise a later read of its bytes is a read of somebody else's.
+        for tensor in &model.tensors {
+            if let Some(bytes) = tensor.bytes()
+                && tensor.offset.checked_add(bytes).is_none()
+            {
+                return Err(format!(
+                    "accepted a tensor whose offset plus size overflows: {} at {} + {bytes}: {}",
+                    tensor.name,
+                    tensor.offset,
+                    render(&damaged)
+                ));
+            }
+        }
+        if model.alignment == 0 || !model.alignment.is_power_of_two() {
+            return Err(format!(
+                "accepted an alignment of {}: {}",
+                model.alignment,
+                render(&damaged)
+            ));
+        }
+        if model.data_offset % model.alignment != 0 {
+            return Err(format!(
+                "accepted a data offset of {} under an alignment of {}: {}",
+                model.data_offset,
+                model.alignment,
+                render(&damaged)
+            ));
+        }
+        Ok(())
+    });
+    reached.report();
+    assert_held(&verdict);
+}
+
+/// Well-formed model files to damage: one minimal, one with metadata, a
+/// vocabulary and tensors.
+///
+/// Written here rather than borrowed from the reader's own tests, for the
+/// reason the laboratory's scenarios are: a corpus built by the code under test
+/// is a corpus that shares its assumptions.
+fn model_corpus() -> Vec<Vec<u8>> {
+    let mut minimal = b"GGUF".to_vec();
+    minimal.extend_from_slice(&3_u32.to_le_bytes());
+    minimal.extend_from_slice(&0_u64.to_le_bytes());
+    minimal.extend_from_slice(&0_u64.to_le_bytes());
+
+    let mut whole = b"GGUF".to_vec();
+    whole.extend_from_slice(&3_u32.to_le_bytes());
+    whole.extend_from_slice(&1_u64.to_le_bytes());
+    whole.extend_from_slice(&2_u64.to_le_bytes());
+    // general.architecture = "llama"
+    push_string(&mut whole, "general.architecture");
+    whole.extend_from_slice(&8_u32.to_le_bytes());
+    push_string(&mut whole, "llama");
+    // llama.context_length = 4096
+    push_string(&mut whole, "llama.context_length");
+    whole.extend_from_slice(&5_u32.to_le_bytes());
+    whole.extend_from_slice(&4096_u32.to_le_bytes());
+    // one tensor: token_embd.weight, 8x3, f32, at 0
+    push_string(&mut whole, "token_embd.weight");
+    whole.extend_from_slice(&2_u32.to_le_bytes());
+    whole.extend_from_slice(&8_u64.to_le_bytes());
+    whole.extend_from_slice(&3_u64.to_le_bytes());
+    whole.extend_from_slice(&0_u32.to_le_bytes());
+    whole.extend_from_slice(&0_u64.to_le_bytes());
+
+    vec![minimal, whole]
+}
+
+fn push_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(&u64::try_from(value.len()).unwrap_or(0).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
 }
 
 /// A bundle arrived from somewhere else, and is the most untrusted input MCF
