@@ -1,6 +1,6 @@
 # ModelControlFlow — Document of Intent
 
-**Status:** Living document. Revision 2.
+**Status:** Living document. Revision 3.
 **Nature:** This is a *spirit of the rules* document. It is not a requirements
 specification, not an architecture document, and not a backlog. Nothing here is
 directly implementable, and that is deliberate. Its job is to be the thing you
@@ -16,6 +16,15 @@ implementation. Section 6 (Conflicts) resolves tensions on principle alone.
 Where a resolution says *provisional*, it means exactly that: the first real
 implementation that touches the question gets to argue back, and this document
 should be amended rather than quietly violated.
+
+**Revision 3 note:** Intent VI was corrected: Ollama was offered as an *example
+of a friction level*, not as an architectural or implementational model, and the
+document had begun to treat it as the latter. §VI now says so explicitly, §5
+gains an anti-goal against clone-thinking, and every comparison in the document
+was rewritten to name the property rather than the product. Revision 3 also adds
+§3.16 (prefer substrates a machine can hold to the principles) and §7.19 (the
+implementation-substrate question, recorded with the criteria the intents impose
+on it and a candidate answer, but deliberately not resolved here).
 
 **Revision 2 note:** Three intents were added — the interface, the serving
 model, and the performance mandate. Two of them answered questions this document
@@ -38,8 +47,8 @@ Four things follow from that sentence and they are the whole project:
 1. **Acquire** — obtain any model published on Hugging Face, with its
    provenance intact and its licensing legible.
 2. **Serve** — host that model as a persistent, dependable local endpoint, on
-   the hardware in front of us, with as little ceremony as Ollama and as little
-   overhead as physically possible — or explain precisely why it cannot run.
+   the hardware in front of us, with as little ceremony and as little overhead
+   as physically possible — or explain precisely why it cannot run.
 3. **Judge** — measure what it costs and what it is worth here, on this
    hardware, for the work actually being done, and use those measurements to
    converge on the best available local configuration.
@@ -117,14 +126,24 @@ itself and from whatever device the user happens to be holding. Minimalism here
 is not an aesthetic preference; it is the same discipline as §VII applied to the
 surface.
 
-### VI. Hosting — "make it easy to host the LLMs it downloads, along the lines of Ollama"
+### VI. Hosting — "make it easy to host the LLMs it downloads"
 
 The distance between *having* a model and *using* a model should be one command
-or one click. Ollama is the reference for the shape of that ease: a persistent
-local service, a stable API, models addressed by name rather than by path, and
-no requirement that the user understand runtimes, formats, or flags in order to
-get a first token. MCF takes that ergonomic standard as a floor and is expected
-to be more honest and more measurable underneath it.
+or one click: a persistent local service, a stable API, models addressed by name
+rather than by path, and no requirement that the user understand runtimes,
+formats, or flags in order to get a first token.
+
+**On Ollama.** Ollama was cited as an *example of the ergonomic standard*, and
+that is the entire extent of the reference. It names a level of friction — near
+zero — that MCF must match or beat. It is explicitly **not** a model for MCF's
+architecture, implementation, feature set, or engineering choices, and MCF has
+no obligation to resemble it in any respect other than being that easy. Where
+Ollama's design conflicts with §I, §II, or §VII, MCF diverges without
+hesitation; where MCF can be lighter or more rigorous by doing something
+entirely different, it should.
+
+Read any comparison in this document accordingly: it is a bar to clear, never a
+blueprint to follow.
 
 ### VII. Lightness — "the fastest, lightest tool it can possibly be"
 
@@ -377,6 +396,29 @@ Defaults are a service. Undisclosed defaults are a lie of omission, and §3.4
 makes them a scientific problem as well as an ethical one, because a
 configuration nobody recorded is a measurement condition nobody can reproduce.
 
+### 3.16 Prefer substrates that let a machine enforce the principles
+
+This document is only as strong as its weakest moment of human discipline. Every
+principle here that depends on a person remembering it — §3.1's prohibition on
+silent failures most of all — will eventually be violated by someone tired at
+the end of a long change.
+
+The spirit: **where a choice of language, structure, or tooling determines
+whether a principle is checked by a compiler or merely hoped for, choose the one
+that checks.** A design in which unhandled failure is a build error is
+categorically better than one in which it is a code review finding, and the
+difference compounds over the life of a system that intends never to fail.
+
+This generalizes past the obvious case. It argues for making illegal states
+unrepresentable rather than validating against them; for a measurement type that
+cannot exist without its conditions attached (§3.4); for provenance that travels
+with an artifact by construction rather than by convention (§3.6); and for
+budgets asserted by tests rather than watched by humans (§3.13).
+
+The corollary is a real constraint on engineering choice: a substrate that makes
+these principles *unenforceable* is a substrate that costs more than it appears
+to, however fast or familiar it is. See §7.19.
+
 ---
 
 ## 4. Standing Tensions We Accept
@@ -429,6 +471,10 @@ Stating what MCF is *not* protects the intents above from dilution.
 - **Not a platform.** No plugin ecosystem, no extension API, no configurability
   for its own sake. Every generalization is weight (§3.13), and weight is spent
   only where a stated intent demands it.
+- **Not a clone of anything.** Ollama, LM Studio, and their peers establish that
+  a level of ease is possible; none of them establishes how MCF should be built.
+  "Because that is how the other tools do it" is not an argument, and matching a
+  competitor's feature is never in itself a reason to carry its weight.
 
 ---
 
@@ -536,7 +582,7 @@ carries its objective and its alternatives.
 defensible default objective (something like "best quality that meets an
 interactive latency threshold within available memory") that serves most users
 well. Choosing it is deferred, not denied — but a default must always be
-*visible as* a default. §VI raises the priority of choosing it: Ollama-grade
+*visible as* a default. §VI raises the priority of choosing it: frictionless
 ease is impossible while the tool refuses to have an opinion out of the box.
 
 ### 6.6 "Build an optimal model" vs. "not a training platform"
@@ -702,9 +748,9 @@ Access to the interface is access to the control plane, and MCF should treat it
 with the seriousness that implies rather than the informality typical of
 localhost developer tools.
 
-Note this specifically constrains §VI: "as easy as Ollama" must not be read as
-"as open as a localhost service with no authentication," because MCF's surface
-is larger than an inference endpoint — it can acquire and execute code.
+Note this specifically constrains §VI: frictionless must not be read as "as open
+as a typical localhost developer service," because MCF's surface is larger than
+an inference endpoint — it can acquire and execute code.
 
 **Confidence: high on the default, low on the mechanism.** What authentication
 is proportionate for a single-user local tool — and how to add it without
@@ -735,9 +781,10 @@ mechanism this depends on.
 optimization ends and result-altering hidden state begins will need real cases
 to draw precisely.
 
-### 6.14 "As easy as Ollama" vs. "the hub is untrusted" and "no invented defaults"
+### 6.14 Frictionless ease vs. "the hub is untrusted" and "no invented defaults"
 
-**Tension.** Ollama's ease derives substantially from deciding for the user:
+**Tension.** Tools that achieve this level of ease do so substantially by
+deciding for the user:
 which quantization, which context length, which runtime, and an implicit trust
 decision about the artifact. §3.7 requires informed and explicit consent before
 running untrusted code; §6.5 forbids inventing an objective; §3.15 forbids
@@ -761,7 +808,9 @@ whenever they care.
 
 **Confidence: high.** This is the reading that lets §VI and §3.7 coexist without
 either being reduced to a slogan, and it locates the friction where it buys
-something real.
+something real. Note it is also a place where MCF should be *better* than the
+tools cited as its ease benchmark, not merely equal to them: matching their
+friction while exceeding their honesty is the whole ambition of §VI.
 
 ---
 
@@ -772,12 +821,15 @@ Each will be answered by someone; this section exists so that it is answered
 *deliberately, and recorded here*, rather than settled accidentally by whoever
 writes the code first.
 
-They are ordered roughly by how much downstream design they block.
+They are ordered roughly by how much downstream design they block. **Numbers
+reflect order of discovery; position reflects blocking priority** — a void keeps
+its number for life so it can be cited stably, but may be moved up the list as
+its urgency becomes clear.
 
 ### 7.1 ~~What "deployed" actually means~~ — **RESOLVED in Revision 2**
 
-Intent VI answers this: deployment means **persistent local hosting on the
-Ollama model** — a long-lived service, a stable API, models addressed by name.
+Intent VI answers this: deployment means **persistent local hosting** — a
+long-lived service, a stable API, models addressed by name.
 MCF is therefore a **daemon** with clients attached to it, not a command-line
 instrument that exits. This settles the shape of nearly every reliability
 question in §3.1: MCF is a process that must survive indefinitely, supervise
@@ -793,9 +845,9 @@ runtime dies, and how many models may be resident simultaneously (§7.9).
 §6.5 defers the definition of "optimal." Someone must eventually state how
 quality, latency, throughput, memory, power, and disk trade against one another,
 and how a user expresses their own weighting. Without this, the optimization
-intent cannot be implemented, only gestured at. §VI raises its urgency: an
-Ollama-easy tool must ship a default opinion, and §6.5 requires that opinion be
-stated rather than emergent.
+intent cannot be implemented, only gestured at. §VI raises its urgency: a tool
+that is frictionless by intent must ship a default opinion, and §6.5 requires
+that opinion be stated rather than emergent.
 
 ### 7.3 What "quality" is measured against — **blocking §IV**
 
@@ -811,8 +863,8 @@ IV rests entirely on it.
 
 Newly urgent, and arguably now the most consequential unanswered question in the
 document. §VII's "fastest possible" reads as an argument for owning the
-inference path; §VI's "like Ollama" and §III's "any model" read as an argument
-for delegating to mature runtimes.
+inference path; §VI's frictionless breadth and §III's "any model" read as an
+argument for delegating to mature runtimes.
 
 The honest reconciliation is almost certainly that **MCF's performance mandate
 applies to MCF's own overhead, not to the inference kernels** — MCF cannot be
@@ -826,6 +878,64 @@ is for.*
 That reading is stated here as the likely answer, not as a resolution, because
 it decides the project's architecture and deserves to be decided deliberately
 rather than inherited from a paragraph in §7.
+
+### 7.19 Implementation substrate — **blocking, and coupled to §7.4**
+
+*Recorded in Revision 3. Placed here because it cannot be separated from the
+question above it.*
+
+No stated intent names a language, runtime, or structural approach, and none
+should — that is a technical decision, not an intent. What belongs in this
+document is the **criteria the intents impose on that decision**, so that it is
+made against them rather than against familiarity or momentum.
+
+The intents constrain the choice as follows:
+
+- **§I and §3.16** — the dominant class of daemon failure is memory and
+  concurrency error. A substrate that makes those *impossible* rather than
+  *unlikely* is worth a great deal here, because §3.1's prohibition on silent
+  failure is exactly the kind of rule that erodes under human discipline and
+  holds under machine enforcement. Explicit, non-ignorable error handling is
+  worth more to this project than almost any other property.
+- **§VII** — no interpreter, no dominant runtime, no unavoidable idle work, a
+  small resident footprint with nothing loaded, and fast cold start. §7.16's
+  budgets, once they exist, are the real test; a substrate that cannot plausibly
+  meet them is disqualified regardless of other merits.
+- **§III, §IV and §7.4** — hardware probing, accelerator interrogation, and
+  driving inference engines all mean talking to C interfaces constantly.
+  Friction at that boundary is a recurring tax on the project's central work,
+  not an occasional inconvenience.
+- **§II and §3.5** — the test and simulation discipline the science requires
+  must be *pleasant enough to actually maintain*. A substrate that makes
+  fake hardware, synthetic artifacts, and replayed telemetry painful will
+  quietly erode §3.5, and §3.5 is what earns MCF the right to be believed.
+- **§3.13** — dependencies are weight, so ecosystem maturity matters in a
+  specific and slightly unusual way: what counts is having good *small* pieces
+  available, not a large framework that solves everything at a cost.
+- **§V and §6.11** — the interface is a thin client over a service, so this
+  decision governs the daemon. The surface has its own, much lighter, answer.
+
+**The likely answer, stated as a candidate rather than a resolution.** The
+combination of §I's reliability mandate and §3.16's enforcement principle points
+away from C++ and toward a memory-safe systems language with no runtime — with
+Rust the obvious candidate, because it is the one where "every failure is
+explicitly handled" is a property the compiler checks rather than a rule the
+reviewer remembers. C++ can reach the same performance and the same footprint,
+but reaches the same *reliability* only through sustained discipline, and this
+project has declared reliability its first intent. A garbage-collected language
+is a weaker fit against §VII's idle-cost rule and against the C-interop tax
+above, though not an absurd one.
+
+That reasoning is recorded here, not resolved, because it is exactly the kind of
+decision this document exists to inform rather than to make. It also depends on
+§7.4: if MCF ever owned inference kernels, the calculus changes substantially.
+
+**What would settle it:** §7.16's budget numbers, and a small adversarial
+prototype of the least pleasant part of the system — probing a GPU, supervising
+a child runtime that is deliberately made to die badly, and recording both under
+§3.1 — built more than once if necessary. Choosing this by argument alone would
+violate §3.13's own rule that we optimize what is measured rather than what is
+imagined.
 
 ### 7.5 Retention, scope, and residency of telemetry
 
