@@ -129,6 +129,13 @@ pub(crate) enum Recorded {
         path: std::path::PathBuf,
         /// The entry's identifier.
         id: String,
+        /// A clock anomaly noticed while writing it (D9, B37).
+        ///
+        /// The record is still written — A1 forbids losing the event — and
+        /// what an anomaly invalidates is anything that was being measured
+        /// across it, which the report says at full volume rather than in a
+        /// footnote.
+        anomaly: Option<Failure>,
     },
     /// Not written, and why. §3.2: MCF degrades and says so — a report that
     /// could not be recorded is still a report, and pretending otherwise would
@@ -324,7 +331,15 @@ fn write(body: &Value, at: Timestamp) -> Recorded {
     let entry = Entry::new(EntryKind::MachineProfile, at, 0, body.clone());
     let id = entry.id().to_string();
     match journal.append(&entry) {
-        Ok(()) => Recorded::Written { path, id },
+        // D9: a clock anomaly noticed while writing is an *event*, not a
+        // correction. The entry was written and the anomaly was written beside
+        // it, and the report says so rather than only that the record was
+        // written.
+        Ok(appended) => Recorded::Written {
+            path,
+            id,
+            anomaly: appended.anomaly,
+        },
         Err(failure) => Recorded::Refused(failure),
     }
 }
@@ -478,9 +493,24 @@ impl Report {
 
     fn record_line(&self) -> String {
         match &self.recorded {
-            Recorded::Written { path, id } => {
+            Recorded::Written {
+                path,
+                id,
+                anomaly: None,
+            } => {
                 format!("record: {} · wrote {id}", path.display())
             }
+            Recorded::Written {
+                path,
+                id,
+                anomaly: Some(anomaly),
+            } => format!(
+                "record: {} · wrote {id}\n\
+                 ⚠ THE CLOCK MOVED while this was written: {anomaly}\n\
+                 \x20 Anything measured across it is unsound (D9, §3.4). The record is \
+                 written\n\x20 and the anomaly is recorded beside it; neither is smoothed away.",
+                path.display()
+            ),
             Recorded::Declined => "record: not written — asked not to".to_owned(),
             Recorded::Refused(failure) => format!("record: NOT WRITTEN — {failure}"),
         }
