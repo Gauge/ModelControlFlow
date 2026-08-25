@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -30,6 +30,7 @@ with B-014.
 | 6 | [Dependencies](#6--dependencies) |
 | 7 | [Generated code](#7--generated-code) |
 | 8 | [The documents](#8--the-documents) |
+| 9 | [The scheduled tiers](#9--the-scheduled-tiers) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -252,7 +253,51 @@ README names outright are checked; the rest stays a stated `review` obligation.
 B16 counts a review check as a cost, and claiming a machine check that is really
 a keyword search would be worse than counting it.
 
+## 9 · The scheduled tiers
+
+B38 tiers the suite: the fast hermetic tier gates every change, and the heavy
+ones run on a schedule and before a release. Two exist.
+
+```
+$ scripts/ci.sh --with-reproducibility     # B-001
+$ scripts/ci.sh --with-budget              # B-011
+```
+
+**Reproducibility** is §5 above. **The budget tier** measures MCF's own cost
+against D24's ceilings and reads each figure the way D27 says: a prohibition at
+the maximum, a ceiling on *state* at the maximum, a ceiling on an *event* at the
+99th percentile over at least a hundred trials.
+
+Two things it refuses to do are worth knowing before reading its output.
+
+**It asserts only in release.** D24's ceilings are about the artifact MCF ships,
+and a debug binary is a different one — larger, slower, different code. The
+profile is a condition (§3.4), so a debug run reports every figure and asserts
+none. That is why the flag runs `cargo test --release`.
+
+**It asserts only on a quiet machine.** B35 holds that a timing taken under
+contention measures the contention, so the tier reads the machine's one-minute
+load, records it as a condition, and marks the run **unattributable** rather
+than failing it. A budget cannot be violated by somebody else's compile. The
+threshold — half a core's capacity free per core — is a judgement rather than a
+reading, and it is stated in `mcf_core::hardware::QUIET_PER_CORE` with its
+reasoning so that a reader can disagree with it.
+
+An unattributable run is not a pass either. Nothing yet enforces that, because
+tier ages are B-185 and a stored baseline is what a regression is measured
+against; until those exist the tier reports and does not gate. B20's
+before-and-after is not yet possible and the tier says so rather than implying
+otherwise.
+
 ## Changelog
+
+### Version 6 — the budget tier
+
+§9 added with B-011. The two scheduled tiers now both have flags on the same
+command, and the section states the two conditions under which the budget tier
+declines to assert anything — the wrong profile and a busy machine — because a
+tier that printed figures without saying when it was not judging them would read
+as judging them.
 
 ### Version 5 — the first dependency is refused, in writing
 

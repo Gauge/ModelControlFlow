@@ -25,6 +25,8 @@ impl Percentile {
     pub const MEDIAN: Self = Self(50);
     /// The 95th percentile — the upper edge.
     pub const P95: Self = Self(95);
+    /// The 99th percentile — what every event-class budget is read at (D27).
+    pub const P99: Self = Self(99);
 
     /// A percentile, if the rank is one.
     ///

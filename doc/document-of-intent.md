@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 29 |
+| **Version** | 30 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -3692,6 +3692,37 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
+### 7.51 How a budget is asserted on a machine somebody is using
+
+D27 settles which reading a budget figure is about and makes an unattributable
+run neither a pass nor a failure. F2 in [findings.md](findings.md) is what
+happens next: on the machine MCF is written on, the one-minute load sits in the
+forties all day from the operator's other work, so **every event-class figure is
+unattributable and none can ever be asserted**. The state-class figures are
+unaffected — a binary's size does not care what else is running — and this is
+therefore a gap in one half rather than a broken mechanism.
+
+There is no threshold that fixes it. The machine really is busy, a timing taken
+on it really does measure the contention (B35), and loosening the rule until the
+reading passed would be choosing the answer.
+
+A second, smaller question came out of the same run. Attributability currently
+gates any figure read from a measurement, event-class or state-class alike,
+because D27 stated the rule about the *run*. A fresh process's resident set is
+affected by memory pressure and not by CPU contention, so it is not obvious that
+a machine-wide load average should gate it — and a binary's size, read as a
+single value rather than a measurement, is not gated at all today. Whether the
+rule should distinguish is part of this void.
+
+Open: whether MCF's own budgets should open the exclusive window B35 already
+defines for measuring models (B-181, B-182, M6); whether a different signal —
+the measured process's own scheduling delay rather than the machine's load —
+answers *was this reading affected* better than a machine-wide average does; and
+what a scheduled tier reports on a CI runner that is never quiet, given that
+B38 refuses a release on a stale tier and D27 refuses to count an unattributable
+run as refreshing one. Those two rules are correct separately and together they
+can deadlock, which is the part that has to be decided rather than discovered.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3747,6 +3778,19 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 30 — a void the budget tier found by running
+
+§7.51 recorded. D27 said an unattributable run is neither a pass nor a failure,
+which is right; F2 then found a machine — the one this is written on — where
+every event-class run is unattributable all day, so the rule that protects the
+budget from somebody else's compile also prevents the budget from ever being
+asserted.
+
+It is recorded rather than patched. The mechanism is correct and the gap is
+real: B38 refuses a release on a stale tier, D27 refuses to count an
+unattributable run as refreshing one, and together those two correct rules can
+deadlock. That is the part that has to be decided rather than discovered.
 
 ### Version 29 — a budget says which reading it is about
 

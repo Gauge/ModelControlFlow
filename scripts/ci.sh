@@ -18,12 +18,17 @@
 # matrix — do not exist yet; B-191 builds them and B-185 publishes their ages.
 # They are named here so their absence is visible rather than assumed.
 #
-# Usage:  scripts/ci.sh [--with-reproducibility]
+# Usage:  scripts/ci.sh [--with-reproducibility] [--with-budget]
 #
-# The reproducibility check (B-001) rebuilds the workspace twice under the
-# release profile and takes minutes, so it is out of the gating tier by
-# default and run before a release and on demand. It is not optional; it is
-# scheduled.
+# Two of B38's scheduled tiers live behind those flags. Neither is optional;
+# both are scheduled rather than gating, because each takes minutes and a gate
+# people skip does not gate.
+#
+#   --with-reproducibility  (B-001) rebuilds the workspace twice under the
+#                           release profile and compares the bytes.
+#   --with-budget           (B-011) measures MCF's own cost against D24's
+#                           ceilings, in release, because those ceilings are
+#                           about the artifact MCF ships (§3.4, D27).
 
 set -o errexit -o nounset -o pipefail
 
@@ -31,12 +36,14 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
 with_reproducibility=false
+with_budget=false
 for argument in "$@"; do
     case "$argument" in
         --with-reproducibility) with_reproducibility=true ;;
+        --with-budget) with_budget=true ;;
         *)
             printf 'ci: no such option: %s\n' "$argument" >&2
-            printf 'usage: scripts/ci.sh [--with-reproducibility]\n' >&2
+            printf 'usage: scripts/ci.sh [--with-reproducibility] [--with-budget]\n' >&2
             exit 2
             ;;
     esac
@@ -64,13 +71,26 @@ step "the lint denials bite (B-003)"
 step "documentation builds"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline >/dev/null
 
+if [ "$with_budget" = true ]; then
+    step "performance budget (B-011, release profile)"
+    # Release, because D24's ceilings are about the shipped artifact and a debug
+    # binary is a different one. `--ignored` because the tier is scheduled.
+    cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
+fi
+
 if [ "$with_reproducibility" = true ]; then
     step "reproducible build (B-001)"
     "$root/scripts/check-reproducible-build.sh"
 else
     printf '\n=== not run in this tier\n'
     printf '  reproducible build (B-001)  — scripts/ci.sh --with-reproducibility\n'
-    printf '  load, soak, mutation, fault matrix (B38) — not built yet: B-191, B-185, B-186\n'
 fi
+
+if [ "$with_budget" = false ]; then
+    printf '  performance budget (B-011) — scripts/ci.sh --with-budget\n'
+fi
+
+printf '  load, soak, mutation, fault matrix (B38) — not built yet: B-191, B-185, B-186\n'
+
 
 printf '\nci: green\n'

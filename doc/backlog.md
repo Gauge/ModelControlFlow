@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 38 |
+| **Version** | 39 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (14 done, 2 in progress, 56 blocked on a decision, 122 open).** Every item cites
+build items (14 done, 3 in progress, 56 blocked on a decision, 121 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -49,6 +49,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
 | DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | **resolved** — D27: three kinds of figure; p99 over ≥100 trials for events; an unattributable run is neither a pass nor a failure |
+| DEC-051 | How an event-class budget is ever asserted on a machine somebody is using, and what a scheduled tier does on a CI runner that is never quiet | §7.51 | **B-011**, B38 | M0 | open — [findings.md](findings.md) F2: the development machine's load never drops below the threshold, so every event-class figure is correctly unattributable and none can be asserted |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
@@ -114,7 +115,7 @@ first and importance second.
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
-| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
+| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **in progress** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`: the three figures measurable without a daemon, read by D27's statistics, asserted only in release and only on an attributable machine. The before-and-after needs a stored baseline and tier ages (B-185) |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
@@ -361,6 +362,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 39 — the budget tier measures, and says when it is not judging
+
+B-011 is in progress rather than done, and the remainder is named rather than
+glossed: its condition is *a regression fails the build with a before/after
+under stated conditions*, and a regression needs a stored baseline to be
+measured against. That is B-185's tier ages and a history the record does not
+yet keep. What exists is everything up to that point — the figures, D27's
+statistics, and the conditions a comparison would need.
+
+Two refusals are the design. The tier **asserts only in release**, because
+D24's ceilings are about the artifact MCF ships and a debug binary is a
+different one. And it **asserts only on a quiet machine**: a run under
+contention is unattributable rather than failing, so a budget cannot be violated
+by somebody else's compile.
+
+Both are stated in the tier's own output. A tier that printed figures without
+saying when it was not judging them would read as judging them, which is A2's
+silent failure aimed at the suite.
+
+Four of D24's sixteen figures still cannot be measured at all: idle CPU, timer
+wakeups, memory growth over thirty simulated days and added latency are about a
+daemon, and there is none until M2.
 
 ### Version 38 — the budget statistic closes, and B-011 unblocks
 
