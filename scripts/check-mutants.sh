@@ -30,6 +30,13 @@
 # and excluded from the score, because the question is what the *tests* notice,
 # and a compiler error is the compiler noticing.
 #
+# **A mutant that hangs is killed, and is named as having hung.** This is not
+# hypothetical: the digest mutant below turns a buffer's remaining room from 63
+# into 62 bytes, and the loop that fills it then never terminates. Every suite
+# run is therefore bounded by MUTANT_TIMEOUT, because a scheduled tier that can
+# be stopped for ever by one entry in its own catalogue is a tier nobody will
+# run twice.
+#
 # Exit status: 0 when the run is meaningful (whatever the score), 2 when it is
 # not — the control was killed, the tree would not build, or cargo is absent.
 
@@ -46,6 +53,14 @@ fail_cannot_check() {
 
 command -v cargo >/dev/null 2>&1 || fail_cannot_check "cargo is not on PATH"
 command -v python3 >/dev/null 2>&1 || fail_cannot_check "python3 is not on PATH"
+command -v timeout >/dev/null 2>&1 || fail_cannot_check "timeout is not on PATH"
+
+# How long one mutant's suite run may take before it is judged to have hung.
+# The gating tiers take about five seconds; two minutes is forty times that,
+# which is the difference between a slow machine and a mutant that does not
+# terminate.
+readonly MUTANT_TIMEOUT=120
+readonly EXIT_TIMED_OUT=124
 
 # The catalogue: three parallel arrays, the way check-lints-bite.sh states its
 # lint table. Each `find` must occur exactly once in its file — the runner
@@ -175,13 +190,14 @@ judge() {
     (cd "$workdir" && cargo test --workspace --offline --no-run >/dev/null 2>&1) || compiled=$?
     local status=0
     if [ "$compiled" -eq 0 ]; then
-        (cd "$workdir" && cargo test --workspace --offline >/dev/null 2>&1) || status=$?
+        (cd "$workdir" && timeout "$MUTANT_TIMEOUT" cargo test --workspace --offline \
+            >/dev/null 2>&1) || status=$?
     fi
 
     mv "$backup" "$workdir/$file"
 
     if [ "$role" = "control" ]; then
-        if [ "$status" -eq 0 ]; then
+        if [ "$compiled" -eq 0 ] && [ "$status" -eq 0 ]; then
             printf '  control  an equivalent mutation is not killed\n'
         else
             printf '  CONTROL FAILED  an equivalent mutation was reported as killed\n'
@@ -193,6 +209,9 @@ judge() {
     if [ "$compiled" -ne 0 ]; then
         printf '  invalid  %s (does not compile; the compiler noticed, not the tests)\n' "$label"
         invalid+=("$label")
+    elif [ "$status" -eq "$EXIT_TIMED_OUT" ]; then
+        printf '  killed   %s (hung: the suite did not finish in %ds)\n' "$label" "$MUTANT_TIMEOUT"
+        killed+=("$label")
     elif [ "$status" -ne 0 ]; then
         printf '  killed   %s\n' "$label"
         killed+=("$label")

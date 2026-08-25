@@ -67,7 +67,7 @@ reach back and weaken a type in `mcf-core`.
 | `mcf-serve` | The daemon, engine adapters, the serving surface (§VI) | `mcf-core`, `mcf-record` |
 | `mcf-bench` | Measurement, and the laboratories that produce it (§II, §XIII) | `mcf-core`, `mcf-record`, `mcf-serve` |
 | `mcf-cli` | The headless surface; binary `mcf` (A22) | all of the above |
-| `mcf-checks` | Workspace-shape checks. Ships nothing, and nothing depends on it | — |
+| `mcf-checks` | The checks that are about the repository rather than a value — the crate split, the taxonomy agreement, the document contract, the tier register — and the machinery the tiers that are not `cargo test` need. Ships nothing, and nothing depends on it | — |
 
 The table is a rendering of `checks/src/workspace.rs`, which is the
 declaration the tests compare the repository against. Both directions are
