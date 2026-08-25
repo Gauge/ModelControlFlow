@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**76 rules in three tiers, each carrying a citation and a check.** Cite them by
+**83 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -17,8 +17,8 @@ the rule is corrected.
 | § | Section | Holds |
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
-| A | [Absolute](#a--absolute) | 26 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 42 rules that permit something provided a condition holds |
+| A | [Absolute](#a--absolute) | 27 rules that admit no exception |
+| B | [Conditional](#b--conditional) | 48 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**59 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**66 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -93,7 +93,7 @@ work that A6 requires is a misuse of the list, and P2 exists to say so.
 
 ## A — Absolute
 
-Twenty-six rules. Each admits no exception.
+Twenty-seven rules. Each admits no exception.
 
 ### A1 — Never lose information
 "Never fail" means MCF never becomes unable to tell you what happened. It is
@@ -360,11 +360,26 @@ take.
 - **Violation looks like:** running the daemon as root because one reading
   needed it, which converts every other rule in this file into a formality.
 
+### A27 — MCF changes nothing it cannot restore, and restores everything it changes
+What MCF owns it changes freely. What it can restore it may change with
+permission, records as a measurement condition, and reverses when the work ends
+— including after a crash. What it cannot restore it does not touch: installing,
+upgrading a driver, editing another program's data, terminating a process
+holding unsaved work, modifying weights. The test has one right answer: *if this
+run were interrupted at the worst possible moment, could the machine be returned
+to how it was found?*
+- **Absorbs:** §3.25, §XVII, §3.10, §3.11, §6.39
+- **Check:** `lab` — a scenario kills MCF mid-run at every stage and asserts the
+  environment is restored: governors, priorities, exclusive modes, suspended
+  processes (B-220).
+- **Violation looks like:** a benchmark that leaves the performance governor
+  pinned, which is a permanent change made to produce a temporary number.
+
 ---
 
 ## B — Conditional
 
-Forty-two rules. Each holds under a stated condition, or permits something
+Forty-eight rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -869,6 +884,80 @@ code, so B32's prohibition on a lab API is unaffected.
 - **Violation looks like:** a "share my results" button on a lab nobody else can
   reproduce.
 
+### B43 — The corpus narrows the search; local measurement decides
+Contributed data may order candidates, prune a search space, warn that a
+configuration has no working reports on hardware like this, and supply a first
+duration estimate where local history is absent. It may never be the source of a
+number MCF reports about this machine (B34). Every corpus-derived statement is
+labelled, carries its sample count, is visibly distinguishable from a local
+measurement, and is overridable. Arithmetic may refuse; the corpus may only
+advise.
+- **Absorbs:** §6.38, §6.28, §XIV, D14
+- **Check:** `compiler` — a corpus-sourced value and a locally-measured value are
+  distinct types, and only the second can back a recommendation (B-221).
+- **Violation looks like:** a sorted candidate list whose ordering nobody
+  explains, which is a foreign conclusion wearing a local interface.
+
+### B44 — Unreported is not unsupported
+A corpus-derived negative states what the corpus contains, never what reality
+permits. It carries its sample count, so a claim resting on two reports reads
+differently from one resting on four hundred, and a claim resting on nothing
+says so. No option is ever hidden on corpus grounds: it is ranked lower,
+annotated, and still reachable.
+- **Absorbs:** §3.24, §3.1, §3.4
+- **Check:** `CI` — every corpus statement renders its `n`; no filter removes a
+  candidate from a listing (B-222).
+- **Violation looks like:** "not supported on your hardware", which converts
+  nobody-tried-it into a fact.
+
+### B45 — Calibration precedes measurement
+A laboratory in the characterization or evaluation tier runs only against a
+calibrated configuration (D13). Calibration adjusts as well as detects, and each
+adjustment carries the provenance of the probe that forced it (B10). Running a
+long evaluation on an uncalibrated configuration is not merely wasteful — §X
+makes it a measurement of the misconfiguration.
+- **Absorbs:** D13, §X, §3.18, §3.8
+- **Check:** `compiler` — an evaluation run cannot be constructed from an
+  uncalibrated configuration handle (B-223).
+- **Violation looks like:** a twenty-hour agentic run against a model whose chat
+  template was never verified.
+
+### B46 — Durations are estimated from measured work, banded, and scored
+A laboratory declares its work in units it can count — trials, sweep points,
+tokens, documents — never in minutes. The machine supplies the rate from the
+characterization tier. The product is a band, marked an estimate (A20), absent
+where no local history exists unless a labelled corpus prior fills it (B43).
+Every estimate is scored against what happened, and persistent error is a
+finding about the laboratory or the approximator.
+- **Absorbs:** D14, §3.4, A20, §6.16
+- **Check:** `CI` — no lab declares a duration directly; estimate error is
+  tracked and reported (B-224, B-225).
+- **Violation looks like:** a progress bar that lies, which is the smallest
+  possible version of a confident wrong number.
+
+### B47 — A budget produces a proposal, and results are anytime
+Given a time budget MCF proposes what it will run **and states what it is
+leaving out and why**; it never silently truncates, because a selection that
+quietly drops work reads as coverage it never had. Every laboratory reports as
+it goes, so a run stopped early keeps what it produced, marked incomplete (A4).
+- **Absorbs:** D14, §3.1, A4, §VI
+- **Check:** `CI` — a budgeted selection renders its exclusions; interrupting a
+  lab preserves and marks the partial result (B-226, B-227).
+- **Violation looks like:** "ran 6 of 20 laboratories" with no list of the
+  fourteen.
+
+### B48 — Environment control climbs a ladder, and only as far as agreed
+Report what is competing, always and freely. Wait for quiet, with a stated
+timeout, as the default for a laboratory that needs it. Suspend and restore only
+with per-run approval of a named list. Never terminate a process and never touch
+what was not approved. Everything MCF changes about the environment is a
+measurement condition (§3.4) and is restored (A27).
+- **Absorbs:** §6.39, §3.25, §3.8, §3.11
+- **Check:** `lab` — a scenario asserts nothing outside the approved list is
+  touched and every suspension is resumed, including when MCF is killed (B-228).
+- **Violation looks like:** a "focus mode" that kills processes, which may
+  destroy unsaved work MCF cannot see.
+
 ---
 
 ## C — Low value
@@ -958,7 +1047,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 76 rules
+   is whether an existing rule already covers it. This file holds 83 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -991,7 +1080,10 @@ no rule is a defect in this file.
 | §XII The reference model | B28, B29, B19 |
 | §XIII Analysis laboratories | B30, B31, B32 |
 | §XIV The shared record | A24, A25, B34 |
-| §XV Reproduce by identifier | B33, A15, A16 |
+| §XV Reproduce by identifier | B33, A15, A16, D12 |
+| D12 Import is convenience | B33 |
+| D13 Four tiers | B45 |
+| D14 Budgets and estimates | B46, B47 |
 | §XVI Self-contained | B36, B15 |
 | §XVII Full utilization | A26, B35 |
 | D8 Labs run exclusively | B35, B30 |
@@ -1020,6 +1112,8 @@ no rule is a defect in this file.
 | §3.18 Capabilities are measured | A21, A7, B10 |
 | §3.19 The benchmark resembles the work | B13, A10, B42 |
 | §3.23 Measured only where capable | B40 |
+| §3.24 Absence is not absence of possibility | B44 |
+| §3.25 Reversibility bounds autonomy | A27, B48 |
 | §3.20 Publication is irreversible | A24, A16 |
 | §3.21 An imported configuration is a claim | B33 |
 | §3.22 Instrumentation is scoped | B30, B31 |
@@ -1062,6 +1156,8 @@ no rule is a defect in this file.
 | §6.35 Power vs the observer effect | B39, B30 |
 | §6.36 Plural quality vs an answer | B41, B6 |
 | §6.37 Customizable labs | B42, B32 |
+| §6.38 Corpus narrows, local decides | B43, B34 |
+| §6.39 The environment ladder | B48, A27 |
 | §7 Voids — the process | A23 |
 | §8 Amending | A23, C6, §"Amending this file" |
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
@@ -1071,6 +1167,23 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 6 — six rules for tiers, budgets and the environment
+
+A27 states the boundary the widest reading of "improve" needed: MCF changes
+nothing it cannot restore and restores everything it changes. Absolute, because
+the alternative is a tool that makes permanent changes to produce temporary
+numbers.
+
+B43 and B44 give the corpus a job without breaking B34: it narrows the search,
+local measurement decides, and a corpus negative says *unreported* rather than
+*unsupported* and never hides an option. B45 makes D13's tier ordering a type
+property, since an evaluation run against an uncalibrated configuration measures
+the misconfiguration. B46 and B47 encode D14 — work declared in countable units,
+rate supplied by the machine, estimates banded and scored, budgets producing
+proposals rather than silent truncations, results anytime. B48 is the
+environment ladder, whose bottom rung costs nothing and probably satisfies most
+of the need.
 
 ### Version 5 — three rules for plural quality
 

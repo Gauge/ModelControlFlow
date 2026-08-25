@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -642,6 +642,73 @@ Reading these interfaces is one of the concrete reasons §XVII exists, and
 polling them is instrumentation: it happens inside a laboratory, for the
 duration of a run, and never as an ambient sampler (B30, D5).
 
+### D12 — Import is convenience; the correction is a byproduct
+
+Handing MCF an identifier and getting that exact configuration running is the
+whole of §XV's obligation. Nothing about it is conditional on measuring
+anything: paste, resolve, host, done.
+
+Where diagnostics *do* run and change something, the change is recorded — the
+identifier imported, the configuration as declared, the configuration after
+correction, which probe forced each change, and both hardware profiles. Same
+starting point, different hardware, observed delta, and it costs nothing because
+the user was running diagnostics anyway.
+
+**This is a byproduct and is never allowed to become the point.** It may not
+gate an import, slow one, or make one conditional. A user who imports a
+configuration, hosts it and never measures anything has used §XV exactly as
+intended.
+
+### D13 — Four tiers, and the ordering is a correctness requirement
+
+Work on a model proceeds in tiers, cheapest first:
+
+| Tier | Establishes | Cost | Gate |
+|---|---|---|---|
+| **Smoke** | It loads and emits a token | seconds | none |
+| **Calibration** | The configuration is *right* — template, stop conditions, tool format, usable context, sane sampling | minutes | none |
+| **Characterization** | What it costs here — throughput, latency, memory, energy, thermal | tens of minutes | none |
+| **Evaluation** | What it is good at — the behaviour laboratories | hours to days | verified capability (§3.23) |
+
+**The ordering is forced, not chosen.** §X holds that a misconfigured model is a
+measurement error, so an evaluation run on an uncalibrated configuration spends
+a day measuring the misconfiguration rather than the model. Calibration is cheap
+and protects everything downstream, which makes running it first a correctness
+property rather than a courtesy.
+
+Two further consequences. Calibration does not merely *detect* (§3.18); it
+*adjusts*, and the adjusted configuration is what later tiers measure — with
+every adjustment carrying the provenance of the probe that forced it (B10).
+And characterization feeds D14: a machine's measured rate is what turns a
+laboratory's work estimate into a duration.
+
+### D14 — Runs are bought with time, and time is estimated from what we have measured
+
+Nobody runs everything. The full product of models, configurations,
+laboratories and trials is unbounded, so **selection is a first-class feature
+rather than an afterthought**, and the interaction is inverted: the user spends
+a budget rather than picking a list.
+
+- **A laboratory declares its work**, in units it can count — trials, sweep
+  points, tokens to generate, documents to process — not in minutes, which it
+  cannot know.
+- **The machine supplies the rate**, from the characterization tier (D13). Work
+  × rate is a duration, which is why the tiers run in that order.
+- **The estimate is a band and never a point** (§3.4), it is an *estimate*
+  (A20) and can never be mistaken for a measurement, and where no local history
+  exists MCF says so rather than guessing — a corpus prior may fill the gap,
+  labelled as such (§6.38).
+- **Every estimate is scored against what actually happened**, and the error is
+  tracked. A laboratory whose estimates are consistently wrong is a finding
+  about that laboratory, and an approximator whose error grows is a finding
+  about the approximator.
+- **A budget produces a proposal, not a silent truncation.** Given two hours MCF
+  states what it will run, what it is leaving out, and why — because a selection
+  that quietly drops work reads as coverage it never had (§3.1).
+- **Results are anytime.** A laboratory reports as it goes, so a run stopped
+  early keeps what it produced, marked incomplete (§3.1). This is what makes a
+  laboratory measured in days usable by somebody with an afternoon.
+
 ## 3. Principles
 
 These are the load-bearing beliefs. When a decision is genuinely close, decide
@@ -1091,6 +1158,56 @@ The spirit:
 - **A user's declared workflow decides which laboratories matter**, and MCF says
   when it has no evidence about the thing the user cares about — which is more
   useful than evidence about six things they do not.
+
+### 3.24 Absence of evidence is not evidence of absence
+
+Once MCF holds a corpus (§XIV), a new failure mode becomes available to it: the
+confident negative drawn from silence. *"No successful reports on hardware like
+yours"* is a statement about who has bothered, not about what is possible.
+Reporting follows popularity, novelty and enthusiasm — never coverage.
+
+The spirit:
+
+- **Unreported and unsupported are different words, and MCF uses the right one.**
+  A corpus-derived statement says what the corpus contains, never what reality
+  permits.
+- **A corpus statement carries its sample.** "Two reports, both failures" and
+  "four hundred reports, all failures" are different claims and read
+  differently. A statement resting on nothing says so.
+- **Nothing is hidden on corpus grounds.** An unreported option is ranked lower,
+  annotated, and still reachable. Quietly removing it is §3.1's silent omission
+  arriving through the recommender instead of an exception handler.
+- **The corpus's own bias is a stateable property.** Which hardware is
+  over-represented and where the evidence thins out are answerable questions,
+  and they belong beside the answers drawn from it.
+
+### 3.25 Reversibility is the boundary of autonomy
+
+MCF is permitted to improve things, and §XVII permits it to reach outside its
+own process to do so. The line that keeps that from becoming licence is not a
+list of allowed actions; it is a property of the action:
+
+- **What MCF owns, it changes freely.** Its own configuration, its own process,
+  the parameters of a model it is serving. No permission is needed to choose a
+  quantization.
+- **What MCF can restore, it may change with permission**, and it restores it —
+  always, including after a crash. A performance governor, a process's run
+  state, a scheduling priority, an exclusive device mode. Each such change is
+  recorded, is a measurement condition (§3.4), and is reversed when the work
+  that needed it ends.
+- **What MCF cannot restore, it does not change.** Installing, uninstalling,
+  upgrading a driver, editing another program's data, terminating a process
+  holding unsaved work, modifying weights. Irreversibility is the disqualifier,
+  and no argument about benefit overrides it.
+
+The practical test is a question with one right answer: *if this run were
+interrupted at the worst possible moment, could the machine be returned to how
+it was found?* Where the answer is no, the action is out of scope regardless of
+how much faster it would make the measurement.
+
+This is also why the stop control (§3.1, §6.33) is not a convenience: a system
+that alters its environment owes an unwind path, and a system that cannot unwind
+should not have altered anything.
 
 ---
 
@@ -1903,6 +2020,8 @@ cross.**
   *data*; it is suspicious of foreign *conclusions*. Conditioned observations
   from many machines are evidence. A ranking derived from them is somebody
   else's opinion.
+- **Refined by §6.38.** The corpus may narrow what MCF measures locally. It may
+  never supply a number MCF reports about this machine.
 
 **Confidence: high.** This reading strengthens the original anti-goal rather
 than weakening it: the reason cross-machine rankings are folklore is that they
@@ -2160,6 +2279,81 @@ first-class and *local*.**
 can be replaced before a laboratory is measuring something other than what it
 claims is a real boundary, and the honest answer is that a lab must state what
 its workload slot may contain and refuse what it cannot grade.
+
+### 6.38 A corpus that guides local decisions vs. "decide inward"
+
+**Tension.** §6.28 resolved that MCF contributes outward and decides inward, and
+B34 forbids a foreign number choosing a local configuration. But the reason to
+accumulate a corpus is that it eventually knows something no single machine
+does — which configurations work on which hardware. Refusing to consult it makes
+§XIV a donation with no return; consulting it naively makes MCF the leaderboard
+§5 refuses.
+
+**Resolution — the corpus narrows the search; local measurement decides.** The
+distinction is between a *prior* and a *claim*, and it is absolute:
+
+- **Permitted: shaping what MCF tries.** Ordering candidates, pruning a search
+  space, warning that a configuration has no working reports on hardware like
+  this, seeding a local sweep from one that worked elsewhere, and supplying a
+  first duration estimate where local history is absent (D14). None of these
+  assert anything about this machine; they decide where to spend measurement
+  effort, which is strategy rather than result.
+- **Forbidden, unchanged: reporting a foreign number as a local one.** No
+  measurement MCF publishes about this machine originates anywhere but this
+  machine (B34).
+- **Every corpus-derived statement is labelled, sampled and overridable**
+  (§3.24), and is visibly distinguishable from a local measurement.
+- **Guidance is never a gate.** Arithmetic may refuse — a model that does not fit
+  does not fit. The corpus may only advise, because it is evidence about other
+  machines and the user's machine is the one in the room.
+
+**Why this is coherent rather than a loophole.** §IV's obligation is to
+recommend from measurement taken here. Nothing in that obligation requires MCF
+to choose *what to measure* blindly, and choosing well is what makes a slow,
+honest instrument usable: six plausible configurations is an evening, twenty is
+a week.
+
+**Confidence: high on the distinction, medium on the surface.** Keeping a prior
+visibly separate from a result, on a small screen, over time, under pressure to
+simplify, is the practical difficulty — and the first place it will erode is a
+sorted list whose ordering nobody explains.
+
+### 6.39 "Improve anything that makes sense" vs. the user's machine
+
+**Tension.** §IV asks MCF to improve local model use and §XVII permits it to use
+the machine fully. Taken at its widest — clearing competing processes, retuning
+the system, doing whatever makes the number better — this collides with §3.10
+(the machine is the user's), §3.11 (nothing destroyed without deliberation) and
+§5 (not a general system tool). And the scientific case for it is real: §3.8
+says contention corrupts a measurement, and D8 already gives a laboratory
+exclusive use of MCF's own resources. Asking the rest of the machine to stand
+aside is the same argument continued.
+
+**Resolution — a ladder, and MCF climbs only as far as the user has agreed.**
+
+1. **Report.** Name what is competing, always, at no cost and no permission
+   (§3.8, B24). This alone answers most of the need: a user told that three
+   processes hold 40 % of the accelerator can act themselves.
+2. **Wait.** Defer a run until the machine is quiet, with a stated timeout. Zero
+   risk, and the default behaviour for a laboratory that requires quiet.
+3. **Ask, then suspend and restore.** With per-run approval of a named list, MCF
+   may *suspend* processes and restore them when the run ends — including after
+   a crash. Suspension is reversible; that is the entire reason it is permitted
+   where termination is not (§3.25).
+4. **Never terminate, and never touch what was not approved.** Killing a process
+   may destroy unsaved work, which is §3.11's prohibition without the
+   deliberation, and MCF is not positioned to know what it is discarding.
+
+Two conditions on the whole ladder. **Everything MCF changes about the
+environment is a measurement condition** (§3.4) — a number taken with the
+user's browser suspended is a different number, and a result that hides that is
+corrupt. And **everything is restored**, which makes the stop control (§6.33)
+part of this feature rather than adjacent to it.
+
+**Confidence: high on the ladder, low on the appetite.** Whether anyone actually
+wants step 3, given that step 1 lets them do it themselves with full knowledge,
+is unknown — and building 3 before 1 has proven insufficient would be spending
+weight on a guess.
 
 ---
 
@@ -2602,6 +2796,36 @@ Riding on it: whether a helper that turns out to need broad rights for a narrow
 job should be granted them or the capability abandoned. §6.32's answer is
 reconsider rather than grant, and that answer costs measurements MCF would
 otherwise take.
+
+### 7.40 What makes two machines alike
+
+§6.38 permits statements of the form *"no working reports on hardware like
+yours"*, and D14 leans on a corpus prior when local history is absent. Neither
+defines the class. Two machines with the same accelerator may differ in driver,
+host memory, thermal solution, power limit and host CPU, and each of those can
+decide whether a configuration works.
+
+Open: which attributes constitute similarity, whether similarity is one relation
+or several — a memory-fitment class and a throughput class are not the same
+grouping — how a machine outside every known class is treated, and whether
+similarity is computed locally from the corpus or asserted by whatever
+aggregates it.
+
+This bounds how useful the corpus can be. Too coarse and the guidance is wrong;
+too fine and every machine is its own class and there is no guidance at all.
+
+### 7.41 The environment-control surface
+
+§6.39 permits MCF to ask the machine to stand aside, and §3.25 bounds it to what
+can be restored. Neither says what the surface is: which system knobs are in
+scope, how a user grants a scope (per run, per session, a standing list), what
+happens to a suspended process if MCF is killed rather than stopped, and how any
+of it is expressed on platforms whose mechanisms differ entirely.
+
+The last is the sharpest. Suspend-and-restore is straightforward on one family
+of operating systems and awkward or unavailable on others, so §6.39's ladder may
+have a different maximum height per platform — and §7.35's platform scope
+decides where.
 
 ### Retired voids
 

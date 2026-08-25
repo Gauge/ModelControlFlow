@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -27,7 +27,7 @@ reasoning, so it is not re-proposed later as an oversight.
 | P1 | [Customizable workloads](#p1--customizable-workloads) | **Accepted** — B-204, B-205 | M6 |
 | P2 | [The repro bundle](#p2--the-repro-bundle) | **Accepted** — B-211, B-212 | M5 |
 | P3 | [Pre-acquisition planning](#p3--pre-acquisition-planning) | **Accepted** — B-213, B-214, B-215 | M1 · M5 |
-| P4 | [Your own second machine](#p4--your-own-second-machine) | **Proposed** — recommendation revised downward | M9 or never |
+| P4 | [Your own second machine](#p4--your-own-second-machine) | **Dropped** — subsumed by §6.38 | — |
 | P5 | [Contention diagnosis](#p5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
 | P6 | [The stop control](#p6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 
@@ -467,9 +467,26 @@ not to the user, and building a user-facing feature primarily to generate
 validation data for ourselves is the wrong reason to spend the user's weight
 (§3.13, B15).
 
-### Recommendation
+### Outcome — dropped
 
-**Revised: defer, and consider dropping.** It is a thin convenience layer over
+**Superseded by §6.38 and D12.** The corpus answers the question P4 was built
+for, and answers it better: many users contributing configurations and
+corrections across many hardware profiles builds a picture of what works where,
+without requiring anyone to own two machines. A pairwise comparison between two
+machines is a sample of two; the corpus is a sample of everyone, and §6.38's
+prior-versus-claim distinction is what makes consulting it legitimate.
+
+The DEC-020 argument survives the drop and moves with it: contributed
+corrections are also real-hardware data about how configurations behave off the
+machine that produced them, which is the validation datum P4 was going to supply
+by hand.
+
+Recorded rather than deleted (C6), so a later "let people compare machines"
+arrives as a decision with this reasoning attached.
+
+### Superseded recommendation
+
+**Was: defer, and consider dropping.** It is a thin convenience layer over
 machinery M9 builds anyway, so nothing is lost by waiting — and if it is never
 built, no intent goes unserved. The condition that would change this: if the
 project reaches DEC-020 and cannot answer *how much reality validates the lab*
@@ -637,6 +654,12 @@ control of hardware.
 ---
 
 ## Changelog
+
+### Version 4 — P4 dropped
+
+Superseded by §6.38: the corpus answers what P4 was for, without requiring
+anyone to own two machines. A pairwise comparison is a sample of two; the corpus
+is a sample of everyone.
 
 ### Version 3 — four accepted, one revised downward
 

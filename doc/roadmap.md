@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -100,6 +100,9 @@ as a static binary that runs offline with no models present.
 - Test tiers with published ages and a mutation floor (B-191, B-185, B-186) —
   D10's discipline, including the tier that measures whether the suite would
   notice a deliberate break
+- Environment restoration (B-220): a scenario kills MCF at every stage and
+  asserts governors, priorities, exclusive modes and suspensions are restored —
+  built before anything is permitted to change them
 - Reference-model neutrality: no code path special-cases the reference model,
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
@@ -342,6 +345,15 @@ harness §XIII would have to be retrofitted onto.
 - The four-outcome lab result (B-200) and the prohibition on an aggregate score
   (B-201) — §3.23 and D2: *not applicable* is not zero, and there is no overall
   quality column
+- The four tiers as structure (B-223, B-224): calibration precedes measurement
+  as a type property, and a lab declares its work in countable units rather than
+  in minutes — D13 and D14
+- Budgeted runs (B-226, B-227): a time budget yields a proposal naming its
+  exclusions, and every lab reports as it goes so an interrupted run keeps what
+  it produced
+- Duration estimates, banded and scored against actuals (B-225)
+- The environment ladder (B-228): report, wait, ask-suspend-restore, never
+  terminate — §6.39
 - The quiet-machine pre-flight (B-217): a lab refuses to begin on a contended
   machine, because D8's exclusivity is a claim rather than a condition until
   something checks
@@ -508,7 +520,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 76. A milestone that can only be
+Every milestone above is subject to all 83. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -516,6 +528,12 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 7 — tiers and budgets shape M6
+
+M6 gains the tier structure, budgeted runs with anytime results, scored duration
+estimates and the environment ladder. M0 gains the environment-restoration
+scenario, which is what makes §XVII's permissions safe to hold.
 
 ### Version 6 — four proposals land
 

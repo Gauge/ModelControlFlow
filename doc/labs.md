@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Catalogue — candidate laboratories, drafted not ratified |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living. Nothing here is committed; §7.29 remains open. |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v10, governed by [rules.md](rules.md) |
 | **Answers** | §7.29 in draft · registered as DEC-029 in [backlog.md](backlog.md) |
 
 **A laboratory measures one property of a model under controlled conditions.**
@@ -22,6 +22,24 @@ in what they can claim:
 | **B · Capability** | §X verified the capability | Behaviour | How well it does a thing it can do |
 | **C · Robustness** | Broad | Mixed | Whether the result holds up when conditions move |
 | **D · Comparative** | Two or more configurations | Mixed | What a change to the configuration did |
+
+## Tiers
+
+D13 orders work cheapest-first, and the ordering is a correctness requirement:
+§X calls a misconfigured model a measurement error, so evaluating an
+uncalibrated configuration measures the misconfiguration.
+
+| Tier | Labs | Cost |
+|---|---|---|
+| **Smoke** | none — a load and a token, before any lab | seconds |
+| **Calibration** | §X's probes: template, stop conditions, tool format, usable context. Adjusts as well as detects | minutes |
+| **Characterization** | Family A entire | tens of minutes |
+| **Evaluation** | Families B, C, D | hours to days |
+
+Characterization is not only a tier of results; it supplies the **rate** that
+turns a laboratory's declared work into a duration (D14, B46). Nobody runs
+everything, so a run is bought with a time budget and the proposal states what
+it excludes (B47).
 
 ## The three rules every entry obeys
 
@@ -312,6 +330,12 @@ how much to believe every other number in the system.
 ---
 
 ## Changelog
+
+### Version 2 — tiers added
+
+D13's four tiers mapped onto the families, and the note that characterization
+supplies the rate D14's duration estimates depend on — which is why the tier
+ordering is structural rather than a suggestion.
 
 ### Version 1 — twenty candidates drafted
 
