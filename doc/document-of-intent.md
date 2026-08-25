@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 21 |
+| **Version** | 22 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -998,6 +998,51 @@ and D22 may collide precisely where MCF wants to support an accelerator, and the
 resolution — treat a vendor runtime as a platform capability that is detected and
 reported absent (§3.2) rather than shipped — needs stating rather than assuming.
 Recorded in §7.47.
+
+### D23 — Three tiers of engine support: vendored, platform-provided, declined *(resolves the sharp half of §7.47)*
+
+Not everything MCF could drive is something MCF may ship. The question is not
+whether a component is free to *use* — most accelerator runtimes are — but
+whether its terms permit **redistribution inside a copyleft binary** (D22), and
+those are different questions that get conflated.
+
+**Tier 1 — Vendored.** Permissively licensed, shipped inside the artifact,
+version pinned by MCF. This is the preferred tier and the one §XVI is about. The
+engines and libraries MCF principally wants are MIT or Apache-2.0 and sit here
+without difficulty.
+
+**Tier 2 — Platform-provided.** Present on the user's machine already, by their
+own action or because it arrived with a driver. MCF detects it, uses it, and
+does not redistribute it — which sidesteps the licence-compatibility problem
+entirely, because nothing is being distributed. This is how a closed vendor
+runtime is supported without shipping it and without negotiating anything.
+
+**Tier 3 — Declined.** Anything requiring a negotiated licence, a payment, or
+redistribution terms MCF cannot meet is **not supported**, and that is a normal
+outcome rather than a failure (§3.13, B15). It is recorded as declined with the
+reason, and revisited if the project ever becomes mature enough that negotiating
+is worth someone's time.
+
+**The constraint that keeps §XVI intact: tier 1 is never empty.** There is always
+a vendored engine that works with no external dependency, so the common path
+requires nothing of the user. Tier 2 is an *accelerated path on top of* a working
+baseline, never the baseline itself. Where a tier-2 runtime is absent, MCF states
+what is unavailable and continues (§3.2) — it does not send the user on an
+errand, because the capability was never load-bearing.
+
+**The scientific cost of tier 2, which is real and is recorded rather than
+absorbed.** A runtime MCF did not ship is a runtime MCF did not pin. Its exact
+version becomes a *condition* of every measurement taken through it, and since
+engine identity already includes the build (§7.34), the surrounding runtime stack
+belongs there too: measurements taken against two different vendor runtime
+versions are not the same configuration. Tier 1 buys reproducibility that tier 2
+cannot, and that difference is stated rather than glossed.
+
+**On "support all models" (§III).** Declining a tier-3 engine does not weaken
+§6.3, which governs *attempt and diagnosis* rather than success. "This model runs
+only under an engine MCF cannot distribute, so it cannot run here" is a defined,
+actionable outcome and a complete discharge of §III — the same shape as "this
+needs 48 GiB and you have 24."
 
 ## 3. Principles
 
@@ -3431,16 +3476,11 @@ distribution, and the point of recording it here is that it must be *made* befor
 - **GPL-3.0 or AGPL-3.0.** D22 states the trade and leans GPL-3.0, since AGPL's
   network trigger reaches unusually far for a tool whose core feature is serving
   over a network, and what it would protect is narrower than it looks.
-- **Proprietary accelerator runtimes.** This is the sharp one. Permissive
-  components are fine to vendor under GPL-3.0, but vendor inference runtimes are
-  often closed, and §XVI's instruction to *ship* rather than *link against*
-  weakens the system-library argument that normally lets copyleft software use
-  them. The likely resolution is that a vendor runtime is a **platform
-  capability** — detected, and reported absent (§3.2) — rather than something MCF
-  ships, which keeps §XVI's no-errand rule intact because a driver-level
-  dependency is already carved out there. It needs deciding rather than
-  assuming, and it may exclude an engine that would otherwise be the best
-  choice under §7.4.
+- ~~**Proprietary accelerator runtimes.**~~ **Resolved by D23:** vendored,
+  platform-provided, or declined. A closed runtime is used where the user already
+  has it and never redistributed, which sidesteps compatibility rather than
+  arguing about it — and tier 1 is never empty, so the common path still requires
+  nothing of the user.
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 

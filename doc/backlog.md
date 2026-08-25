@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**233 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 184 build items.** Every item cites the clause that
+**234 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 185 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -68,7 +68,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
 | DEC-034 | The identity of a measured configuration | §7.34 | §IV, D6 | M0 | **resolved** — D17 principle, D18 sampling, D19 seed; placement declared-vs-realized, engine build is identity |
 | DEC-046 | Sampling and seeding | §7.34 | §IV, §7.6 | M0 | **resolved** — D18 sampling is identity; D19 the seed set is a condition |
-| DEC-047 | GPL-3.0 or AGPL-3.0; and whether a proprietary accelerator runtime may be shipped under copyleft or must be a detected platform capability | §7.47 | **§XVI, §7.4** | M0 | **narrowed** — D22: copyleft, GPL-3.0 family |
+| DEC-047 | GPL-3.0 or AGPL-3.0, and the compatibility matrix of every candidate engine | §7.47 | §XVI, §7.4 | M0 | **narrowed** — D22 copyleft; D23 settles the runtime question |
 | DEC-049 | What protects the record from loss | §7.49 | §II, D6 | M0 | **resolved** — D20: rebuildable index over an append-only journal |
 | DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
@@ -123,6 +123,7 @@ first and importance second.
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change | D10, §6.34, §3.5 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
+| B-320 | Engine tiering: a vendored engine reaches a first token with no vendor runtime present; a platform-provided runtime is detected, used, and its version recorded as part of engine identity; a declined engine yields a classified outcome naming the reason | B64, D23, §6.3 | The from-scratch conformance run passes on a machine with no vendor runtime installed | open |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI | Asserted in CI on every platform in DEC-035's scope | blocked (DEC-035) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
@@ -347,6 +348,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 18 — engine tiers
+
+B-320 registers D23's tiering. DEC-047 narrowed again: the proprietary-runtime
+question is settled, leaving the GPL/AGPL choice and the per-engine compatibility
+matrix.
 
 ### Version 17 — durability, terms and licence
 

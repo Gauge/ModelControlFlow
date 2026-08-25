@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v21, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v22, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**98 rules in three tiers, each carrying a citation and a check.** Cite them by
+**99 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 63 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 64 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**81 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**82 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Sixty-three rules. Each holds under a stated condition, or permits something
+Sixty-four rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1159,6 +1159,22 @@ be undone and an unkeepable promise is worse than an honest refusal.
 - **Violation looks like:** a "delete my contribution" button, which cannot do
   what its label says.
 
+### B64 — Ship it, use it if present, or decline it — and tier 1 is never empty
+An engine or runtime is **vendored** (permissive, shipped, pinned),
+**platform-provided** (present on the user's machine, detected and used, never
+redistributed), or **declined** (terms MCF cannot meet). A vendored engine always
+works with no external dependency, so a platform-provided one is an accelerated
+path on top of a working baseline and never the baseline itself. Where a
+platform-provided runtime is absent, MCF states what is unavailable and continues
+(§3.2) rather than instructing the user to obtain it (B36). A platform-provided
+runtime's version is part of engine identity, because MCF did not pin it.
+- **Absorbs:** D23, D22, §XVI, §6.3, §7.34
+- **Check:** `CI` — the from-scratch conformance run (B-183) reaches a first
+  token with no vendor runtime present; a declined engine yields a classified
+  outcome naming the reason (B-320).
+- **Violation looks like:** an accelerator path that only works if the user
+  installed something, presented as though MCF supports that hardware.
+
 ---
 
 ## C — Low value
@@ -1248,7 +1264,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 98 rules
+   is whether an existing rule already covers it. This file holds 99 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1300,6 +1316,7 @@ no rule is a defect in this file.
 | D20 Journal, derived index | B62 |
 | D21 Contributions are dedicated | B63 |
 | D22 MCF is copyleft | — licence, not a code rule |
+| D23 Three tiers of engine support | B64, B36 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1381,6 +1398,14 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 14 — engine tiers
+
+B64 encodes D23. Its load-bearing clause is that tier 1 is never empty: a
+vendored engine always works with nothing installed, so a platform-provided
+runtime is an accelerated path rather than a hidden prerequisite. An accelerator
+path that only works if the user installed something, presented as support, is
+B36's errand wearing a feature label.
 
 ### Version 13 — durability and contribution terms
 
