@@ -40,6 +40,11 @@ fn ci_source() -> String {
     std::fs::read_to_string(ci_script()).expect("scripts/ci.sh is readable")
 }
 
+fn ages_script() -> String {
+    std::fs::read_to_string(root().join("scripts").join("check-tier-ages.sh"))
+        .expect("scripts/check-tier-ages.sh is readable")
+}
+
 fn build_document() -> String {
     std::fs::read_to_string(root().join("doc").join("build.md")).expect("doc/build.md is readable")
 }
@@ -102,7 +107,7 @@ fn every_scheduled_flag_is_accepted_and_documented() {
 fn every_scheduled_tier_is_reported_when_it_does_not_run() {
     let script = ci_source();
     let (_, report) = script
-        .split_once("=== not run in this tier")
+        .split_once("=== not run in this invocation")
         .expect("scripts/ci.sh reports what it did not run");
     for tier in TIERS {
         let Some(flag) = tier.cadence.flag() else {
@@ -216,5 +221,73 @@ fn the_build_document_names_every_flag() {
                 tier.id
             );
         }
+    }
+}
+
+/// Every scheduled tier is stamped when it passes, or it has no age.
+///
+/// B38 asks for an age with every result set and B-185 makes a stale one refuse
+/// a release. Both rest on the stamp being written: a tier that runs and does
+/// not stamp reads for ever as *never run*, which is a false negative — the
+/// safe direction, but a mechanism whose false alarms are routine is a
+/// mechanism people learn to pass with a flag.
+#[test]
+fn every_scheduled_tier_is_stamped_when_it_passes() {
+    let script = ci_source();
+    for tier in TIERS {
+        if tier.gates() {
+            continue;
+        }
+        assert!(
+            script.contains(&format!("tier_stamp \"$root\" {}", tier.id)),
+            "scripts/ci.sh does not stamp the {} tier when it passes",
+            tier.id
+        );
+    }
+}
+
+/// The age check knows exactly the scheduled tiers the register declares.
+///
+/// Both directions. A tier in the register and not in the script has no age and
+/// cannot make a release stale; a tier in the script and not in the register is
+/// an age for something that does not exist, which would refuse releases for a
+/// tier nobody can run.
+#[test]
+fn the_age_check_knows_exactly_the_scheduled_tiers() {
+    let script = ages_script();
+    let listed = script
+        .split_once("declare -a scheduled=(")
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(names, _)| names.to_owned())
+        .expect("scripts/check-tier-ages.sh lists the scheduled tiers");
+    let mut listed: Vec<&str> = listed.split_whitespace().collect();
+
+    let mut scheduled: Vec<&str> = TIERS
+        .iter()
+        .filter(|tier| !tier.gates())
+        .map(|tier| tier.id)
+        .collect();
+
+    listed.sort_unstable();
+    scheduled.sort_unstable();
+    assert_eq!(listed, scheduled);
+}
+
+/// Each scheduled tier's flag is the one the age check tells a reader to run.
+///
+/// A refusal that names the wrong flag is worse than one that names none: it
+/// sends somebody to run a tier that will not clear the refusal.
+#[test]
+fn the_age_check_names_the_flag_that_clears_each_refusal() {
+    let script = ages_script();
+    for tier in TIERS.iter().filter(|tier| !tier.gates()) {
+        let Some(flag) = tier.cadence.flag() else {
+            continue;
+        };
+        assert!(
+            script.contains(&format!("--{flag}")),
+            "scripts/check-tier-ages.sh does not name --{flag} for the {} tier",
+            tier.id
+        );
     }
 }

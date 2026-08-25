@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -31,6 +31,7 @@ with B-014.
 | 7 | [Generated code](#7--generated-code) |
 | 8 | [The documents](#8--the-documents) |
 | 9 | [The tiers](#9--the-tiers) |
+| 10 | [Ages, and what a release refuses](#10--ages-and-what-a-release-refuses) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -295,6 +296,7 @@ document.
 $ scripts/ci.sh --with-fuzz --with-load --with-soak
 $ scripts/ci.sh --with-budget --with-mutation --with-reproducibility
 $ scripts/ci.sh --all
+$ scripts/check-tier-ages.sh [--release]     # ages, and the release refusal
 ```
 
 Reproducibility (§5) is a scheduled check rather than one of D10's tiers, and
@@ -456,7 +458,63 @@ A27 does not permit MCF's suite to make either.
 score is not evidence that the suite is complete. It is evidence about eleven
 specific claims, chosen because a rule rests on each.
 
+## 10 · Ages, and what a release refuses
+
+B38: *a heavy tier that has not run recently is reported as **stale**, never
+assumed green — an unstated staleness is A2's silent failure aimed at the
+suite.* A green `scripts/ci.sh` says nothing about whether the soak tier has
+ever run against this code, so B-185 gives every scheduled tier an age.
+
+```
+$ scripts/check-tier-ages.sh
+source e18ab72da0a3cff3da509e8bcd210cd24437901018b1ea7d491890836f2d926e
+
+  fuzz         2 hours ago, on this source
+  load         2 hours ago, on this source
+  soak         2 hours ago, on this source
+  performance  3 days ago, on OTHER source (a1c9f0e21b44)
+  mutation     2 hours ago, on this source — mutation score: 11 killed of 11 scored
+```
+
+Run with no arguments it reports; run `--release` it **refuses**, naming each
+tier, its age and the flag that clears it.
+
+**Stale means the source changed, not that a clock advanced.** A maximum age in
+days is the obvious design and it needs a number nobody has — D24 states sixteen
+figures and none of them is how old a soak result may be, and inventing one is
+how a project acquires intent nobody chose (A23). What *does* invalidate a
+result is that the code it was taken against is no longer the code in the tree,
+and that is decidable: every scheduled tier stamps a digest of the source when
+it passes, and a stamp whose digest is not the current one is stale. The
+wall-clock age is reported beside it because a reader wants to know when, and it
+is not the verdict.
+
+**What the digest covers is what can change a tier's outcome**: the manifests,
+the toolchain pin, `crates/`, `checks/` and `scripts/`. Documents are excluded —
+a rewritten paragraph cannot change what a soak run does, and treating it as if
+it could would make every tier stale after every documentation commit, which is
+how a staleness mechanism gets switched off.
+
+**The stamps are machine-local** (`.mcf-tiers/`, untracked). A fresh checkout
+has not run anything and says so rather than inheriting somebody else's result,
+which is the same reason a contributed measurement is not a local one (B-166,
+§XV). They live outside `target/` because a tier's result is about the source
+rather than the build directory: `cargo clean` throws away something derived and
+should not throw away the evidence that a four-minute tier ran.
+
+A stamp carries anything the tier wants to hand forward. The mutation tier puts
+its score there, which is what B-186's floor will compare against and what B20
+means by a before and an after.
+
 ## Changelog
+
+### Version 10 — the tiers have ages
+
+Section 10 added with B-185, and §9's commands gain the age check. The tiers existed
+and nothing said whether any of them had run against the code in the tree. What
+makes one stale is the part worth reading: the source it ran against, not a
+clock, because no clause states how old a soak result may be and the thing that
+actually invalidates one is decidable.
 
 ### Version 9 — all ten tiers exist
 
