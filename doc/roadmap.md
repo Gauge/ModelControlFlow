@@ -1,0 +1,416 @@
+# ModelControlFlow — Roadmap
+
+**Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
+Revision 5. Work register: [backlog.md](backlog.md). Stage mockups:
+[mockup/](mockup/).
+
+---
+
+## How this roadmap is built
+
+**Every milestone is a product, not a phase.** The MVP rule is applied per
+milestone rather than once to the project: each one ends with something a
+competent operator can install, run, and get value from on its own, and each one
+is a *vertical* slice — acquisition, record, failure handling, lab coverage,
+budget assertion and surface, all present at whatever depth that milestone
+requires. A milestone that delivers a layer rather than a capability has been
+mis-drawn, and horizontal layering is the specific failure mode this ordering
+exists to prevent.
+
+**Three properties are never deferred to a later milestone.** They are cheap to
+build in and ruinous to retrofit, and each one is a direct instruction of the
+Document of Intent:
+
+1. **The record** (§3.3) — conditions, failure context and provenance, from the
+   first commit. A milestone that produces numbers without them has produced
+   nothing that survives §3.4.
+2. **The laboratory** (§3.17) — every failure a milestone claims to handle has a
+   scenario that produces it, in that same milestone. §VIII is how anything here
+   gets believed.
+3. **The budget** (§3.13) — footprint, idle cost, cold start and added latency
+   are asserted in CI from M0 onward. §VII is a mood until numbers exist, and a
+   budget introduced late is a budget already blown.
+
+**Ordering rationale.** §1 of the Document of Intent says the third of the four
+verbs — *Judge* — is the point, and that acquisition and serving are table
+stakes. That does not make Judge first: it makes it the thing everything else is
+built to enable, and it cannot be honest before the instrument is trustworthy
+(M0), before there is anything to judge (M1–M2), or before the models under test
+are configured the way they were designed to run (M3), since §X calls a
+misconfigured model a measurement error. The ordering below is therefore
+**dependency-truthful and value-ordered within that constraint**: earliest is the
+work with the most downstream design blocked behind it, which is §7's own
+ordering principle.
+
+**Milestones are gated by decisions, not by dates.** Each names the §7 voids it
+must close first. Per §8, closing one means amending the Document of Intent in
+place, not settling it in code and hoping the document catches up. No dates
+appear here deliberately: §4 accepts that rigor costs time, and a schedule would
+be the first thing to erode it.
+
+---
+
+## Milestone map
+
+| M | Product | The user can now… | Primary intents | Closes |
+|---|---|---|---|---|
+| **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16, §7.10, §7.19✓, §7.21, §7.22, §7.8 |
+| **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11 |
+| **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9, §7.18 |
+| **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
+| **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
+| **M5** | **The measurement** — `mcf bench` | Obtain a defensible performance number taken *here*, with its conditions and its uncertainty | §II, §IV | §7.7, §7.6 |
+| **M6** | **The judgment** — `mcf eval` | Find out whether a model can actually do the work, as a distribution rather than a score | §IX, §3.19 | §7.23, §7.3 residuals |
+| **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2 |
+| **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14, §7.15 |
+
+Each milestone's finished state is drawn in `mockup/M<n>-*.md`. Those are
+sketches of intent, not committed designs — see [mockup/README.md](mockup/README.md).
+
+---
+
+## M0 — The instrument
+
+> **Mockup:** [mockup/M0-instrument.md](mockup/M0-instrument.md)
+
+**Why first.** MCF publishes numbers. Nothing it says is worth believing until
+the thing saying it can demonstrate it computes what it claims (§3.5), can
+classify its own failures (§3.1), and can prove it is not corrupting its own
+readings by being heavy (§3.8). This milestone builds the *instrument's
+instrument*: the record, the failure taxonomy, the laboratory, and the budgets —
+plus the smallest honest product that exercises all four.
+
+**The MVP.** `mcf doctor`. It profiles the machine, states MCF's own measured
+footprint against the budget, names the accelerators it recognizes and refuses to
+guess at the ones it does not, and writes the whole thing to the record. It ships
+as a static binary that runs offline with no models present.
+
+**Delivers**
+- Rust workspace, pinned toolchain, reproducible build (B-001)
+- Failure taxonomy, and a `Result` discipline the compiler enforces (DEC-010, B-003)
+- `Measurement<T>` and `Provenance` types that cannot exist without their
+  conditions and origins attached (B-005, B-006) — §3.16 applied at the smallest
+  scale, where it is cheapest
+- Append-only, event-driven record store; zero timer wakeups when idle (B-004)
+- Laboratory skeleton: simulated clock, injectable faults, replayable scenarios
+  (B-009), with a catalogue cross-checked against the taxonomy (B-010)
+- Performance budget numbers, asserted in CI (DEC-016, B-011)
+- Hardware profiler, degrading and labelling on unrecognized hardware (B-013)
+- The adversarial Rust prototype §7.19 asks for as validation (B-002)
+- `rules.md`, derived from the Document of Intent, every rule citing (B-016)
+
+**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004.
+
+**Explicitly not in M0:** any model, any inference, any network fetch, any UI.
+
+**Exit criteria**
+- The full suite runs green offline, on a laptop, with no accelerator (B-015)
+- Idle CPU, resident memory, cold start and footprint are asserted against real
+  numbers and fail the build on regression
+- Every failure taxonomy category has a lab scenario that produces it
+- A deliberately badly-dying child process is supervised, classified and recorded
+
+---
+
+## M1 — Custody
+
+> **Mockup:** [mockup/M1-custody.md](mockup/M1-custody.md)
+
+**Why second.** §III is the entry point of everything downstream, and §3.7 makes
+it the project's largest untrusted surface. Building acquisition before serving
+means the hostile-input work is done once, early, against a simulated hub, rather
+than retrofitted onto a daemon that is already exposed.
+
+**The MVP.** `mcf pull <ref>`, `mcf list`, `mcf rm`. Models enter, live on, and
+leave this machine, each carrying repository, revision, checksum, licence,
+retrieval time and every transformation since. Nothing is deleted without
+deliberation.
+
+**Delivers**
+- Reference resolution reaching a defined, actionable outcome for *every* input
+  (B-020) — §6.3's "no unhandled outcomes, not no unsuccessful outcomes"
+- Resumable, integrity-checked transfer, including mutation-under-us (B-021)
+- Validation of every fetched byte against hostile fixtures (B-022)
+- Licence legibility and gated-repository handling (B-023, B-024)
+- Repository-code execution: possible, never implicit, contained, recorded in
+  provenance (B-025) — §6.4
+- Deliberate eviction; disk exhaustion as a decision, not a surprise (B-026, B-027)
+- The fake hub: well-formed, malformed, gated, hostile, truncated, mutating (B-028)
+
+**Gated on:** DEC-011, DEC-009 (partial — the disk arbitration half).
+
+**Exit criteria**
+- Every hostile-hub fixture ends in a classified outcome with no state damage
+- A transfer interrupted at 90% resumes and verifies
+- Deliberately hostile repository code runs and leaves MCF's records provably intact
+- No artifact exists without provenance; unknown fields read `Unknown`
+
+---
+
+## M2 — The host
+
+> **Mockup:** [mockup/M2-host.md](mockup/M2-host.md)
+
+**Why third.** §7.1 settled that MCF is a daemon, which makes the idle-cost rule
+(§3.13) and the supervision contract (§3.1) central rather than incidental. §VI's
+ergonomic bar — one command to a first token — is the first moment MCF is useful
+to somebody who is not building it.
+
+**The MVP.** `mcf serve` and `mcf run <model>`. A long-lived local service,
+models addressed by name, a stable API, and a first token without the user
+knowing what a runtime is.
+
+**Delivers**
+- The daemon: restartable, state-recovering, surviving indefinitely (B-030)
+- Idle discipline: no polling, no timers, no watchers (B-031)
+- Engine adapters as supervised subprocesses, with the engine as a recorded
+  condition (B-032) — the concrete form of §7.4's answer
+- Supervision contract for a runtime dying at any lifecycle stage (B-033)
+- Serving API and name addressing (B-034); added-latency budget asserted (B-035)
+- Local-only by default; exposure is deliberate and revocable (B-036) — §6.12
+- Visible, attributed, overridable defaults, with `mcf explain` (B-038) — §3.15
+- Authorization gated by category, not frequency (B-039) — §6.14
+
+**Gated on:** DEC-001, DEC-004, DEC-009, DEC-018, DEC-016.
+
+**Exit criteria**
+- A cold machine reaches a first token in one command
+- The lab kills the daemon and its children at every lifecycle stage; the system
+  returns coherent and queryable each time
+- Idle cost meets budget with a model resident
+- Nothing is reachable from another host in the default configuration
+
+---
+
+## M3 — Right by construction
+
+> **Mockup:** [mockup/M3-capabilities.md](mockup/M3-capabilities.md)
+
+**Why here, before any benchmarking.** §X states it directly: a misconfigured
+model is a measurement error (§3.8). Benchmarking before this milestone would
+produce numbers that measure MCF's ignorance of a chat template rather than the
+model. Every measurement taken before M3 is provisional by construction.
+
+**The MVP.** `mcf probe <model>` and an extended `mcf explain`. MCF establishes
+what a model can actually do by *asking it to do the thing* (§3.18), configures
+accordingly, and reports where the artifact's claims and its behaviour diverge.
+
+**Delivers**
+- The declared / verified / unknown model, never confused (B-050)
+- Probe framework, where a probe's output is a `Measurement` and not a boolean
+  (B-051) — §3.18's "capability probes are experiments"
+- Probes: chat template, tool calling, structured output, usable context length,
+  stop conditions (B-052–B-056); further modalities scoped by DEC-024 (B-057)
+- Divergence reporting as a first-class finding (B-058)
+- Configuration carrying the provenance of the probe that set it (B-059)
+- Honest handling of *inconclusive* (B-060)
+
+**Gated on:** DEC-024, DEC-025.
+
+**Exit criteria**
+- A model whose defaults were previously wrong measurably improves, and the
+  improvement is attributable to a named probe
+- No probe result is ever coerced into a working default
+- Every auto-set parameter answers "why this value"
+
+---
+
+## M4 — The window
+
+> **Mockup:** [mockup/M4-window.md](mockup/M4-window.md) · [mockup/M4-window.html](mockup/M4-window.html)
+
+**Why here.** §XI makes headless primary and the interface a client of the same
+API (§6.21), so the window is cheap only once the API it is a window onto exists.
+Placed after M3, it costs almost nothing and renders four milestones of state;
+placed earlier it would have grown logic of its own, which §3.14 forbids.
+
+**The MVP.** A thin page served by the daemon: catalogue with provenance,
+serving state, capability findings, and the failure record — visible from the
+machine, and from a handheld device once the user deliberately exposes it.
+
+**Delivers**
+- No framework, no bundled runtime, no build step (B-070) — §6.11's answer to
+  universality: demand almost nothing of the client
+- Zero idle cost with a tab open (B-071)
+- Parity enforcement: no action exists only here (B-072) — checkable, because
+  §VIII can only test what is reachable headlessly
+- Conditions travel to the surface; a bare number cannot be rendered (B-073)
+- Failure legibility per taxonomy category (B-074)
+- The deliberate, informed, revocable exposure flow (B-075)
+
+**Gated on:** DEC-016 (client budget), DEC-017, DEC-012.
+
+**Exit criteria**
+- The whole of M0–M3 is operable from the window with nothing installed on the client
+- Transferred weight and cold render meet the client budget on the oldest committed client
+- The parity check passes; exposure cannot be enabled as a side effect
+
+---
+
+## M5 — The measurement
+
+> **Mockup:** [mockup/M5-measurement.md](mockup/M5-measurement.md)
+
+**Why here.** This is where MCF starts making scientific claims, and every
+prerequisite for making them honestly now exists: the record (M0), real artifacts
+(M1), a serving path to measure (M2), and correct configuration (M3).
+
+**The MVP.** `mcf bench`. A performance number taken on this hardware, with a
+stated method, a sample count, a spread, and the conditions in force — including
+the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
+
+**Delivers**
+- Benchmarks structurally separate from the test suite, with no pass condition
+  and no gating role (B-080) — §6.7
+- A non-adaptive measurement path; warm versus cold is a recorded condition
+  (B-081) — §6.13's sharpest edge
+- No performance number may originate in simulation (B-082) — §6.16
+- Repeated trials, mandatory spread, refusal of n=1 (B-083)
+- Warm-up and thermal steady state per acceptance criteria (B-084)
+- Isolation checking, so a confounded comparison is refused (B-085)
+- Null and negative results stored and surfaced as results (B-086)
+- Partial success as a real outcome with its data intact (B-087)
+- Contention marked unattributable rather than attributed (B-088) — §3.8
+
+**Gated on:** DEC-007, DEC-006, DEC-009.
+
+**Exit criteria**
+- Two configurations of one model are compared here with a stated method and a
+  stated conclusion, including the option of declining to distinguish them
+- A deliberately confounded comparison is refused by the tooling
+- No result is publishable with n=1 or without conditions
+
+---
+
+## M6 — The judgment
+
+> **Mockup:** [mockup/M6-judgment.md](mockup/M6-judgment.md)
+
+**Why here.** §IX is what makes §IV's recommendations mean anything to somebody
+choosing a model to actually use, and §7.3 called the question it answers the
+hardest in the project. It is also the most expensive thing MCF does (§4), needs
+the M0 laboratory as its environment (§6.17), and needs M3's configuration to be
+measuring the model rather than the setup.
+
+**The MVP.** `mcf eval`. Multi-turn, tool-calling, instruction-bound tasks with
+checkable outcomes, run unattended in a sandbox, reported as a distribution with
+its failure modes classified.
+
+**Delivers**
+- The harness built *on* the M0 laboratory, not beside it (B-100) — §6.17's most
+  useful finding: the agentic environment and the test lab are one apparatus
+- Sandbox by construction: benchmark tools cannot reach anything real because
+  those capabilities are absent from the environment (B-101) — §6.20, where the
+  rigor requirement and the safety requirement have the same implementation
+- Tasks graded by verification, never by another model (B-102) — §3.19
+- Everything except the model held still and recorded (B-103)
+- Distributions, never scores (B-104); model failure taxonomy as the primary
+  output (B-105) — *how* it failed beats the pass rate
+- A statistical test for "is this a real difference" (B-106)
+- A stated contamination strategy that survives the suite ageing (B-107)
+- Zero cost during ordinary serving (B-108) and a minimality guard on the
+  harness (B-109) — §6.18, because harnesses of this kind grow into frameworks
+
+**Gated on:** DEC-023, DEC-003, DEC-010.
+
+**Exit criteria**
+- Two models are evaluated unattended and the output either distinguishes them
+  or declines to, with the statistics shown
+- A deliberately hostile model under test cannot touch anything real
+- Every failed trial is classified
+
+---
+
+## M7 — The loop
+
+> **Mockup:** [mockup/M7-loop.md](mockup/M7-loop.md)
+
+**Why last of the capability milestones.** §1 says the closed loop is the reason
+MCF is worth building — and it is the *composition* of everything before it. It
+cannot precede its inputs.
+
+**The MVP.** `mcf recommend`. A declared objective in, a configuration out, with
+its reasoning, its measurements, its runners-up, and its re-measured confirmation
+that the prediction held.
+
+**Delivers**
+- Objective expression, with a visible default rather than an invented one
+  (B-120) — §6.5
+- Pareto frontier across quality, latency, throughput, memory, power and disk
+  (B-121) — §3.9's "map the frontier faithfully"
+- Interrogable recommendations with runners-up (B-122): not an oracle
+- Refusal to manufacture a distinction (B-123)
+- Construction, not just selection: compose and validate the configuration
+  (B-124) — §6.6's reading of "build"
+- Structural separation of selection and validation suites (B-125) — §3.4's
+  prohibition on training on the test, applied to MCF's own tuning instinct
+
+**Gated on:** DEC-002, B-106.
+
+**Exit criteria**
+- A recommendation is produced, applied, re-measured, and the prediction checked
+  against the outcome
+- Every recommendation answers "why not the other one" with data
+- An unstated objective produces a *visible* default, never a hidden one
+
+---
+
+## M8 — Endurance
+
+> **Mockup:** [mockup/M8-endurance.md](mockup/M8-endurance.md)
+
+**Why a milestone and not a background activity.** §6.16 rates its own confidence
+low and §7.20 is the question that decides "whether §VIII is rigor or theatre."
+Answering it needs the whole system to exist first. Everything here is the
+project grading its own instruments, which is not something that fits inside a
+feature milestone without being quietly deprioritized.
+
+**The MVP.** A published fidelity report: what the laboratory models, what it
+declines to model, how far its predictions diverge from real hardware, and how
+much of MCF's confidence is therefore earned.
+
+**Delivers**
+- Real-hardware validation of the lab, with divergence recorded as a finding
+  about the simulator (B-140) — §6.16's "reality outranks the lab"
+- A stated fidelity boundary (B-141)
+- Failure-record sufficiency measured by whether the lab can rebuild the failure
+  from the record alone (B-142) — §6.15's genuine requirement, not aspiration
+- Bug-to-fixture discipline (B-143)
+- State migration and historical comparability across MCF versions (B-144)
+- Record retention, inspection and purge, including budget exhaustion (B-145)
+- Structural separation of fixture data and user traffic (B-146) — §6.8
+- Offline operation, loudly labelled (B-147)
+- A long-run endurance scenario: days of faults, restarts, thermal excursions
+  and upgrades (B-148)
+- §7.14 answered with evidence (B-149)
+
+**Gated on:** DEC-020, DEC-013, DEC-005, DEC-014, DEC-015, DEC-011, DEC-021.
+
+**Exit criteria**
+- The fidelity gap between simulation and real hardware is quantified and published
+- A sample of real failures is reconstructed in the lab from records alone
+- MCF survives the endurance scenario with no unclassified outcome
+
+---
+
+## Standing rules across every milestone
+
+Drawn directly from the Document of Intent, restated here because a roadmap is
+where they are most likely to be traded away under pressure.
+
+1. **No silent failure, ever** (§3.1). A swallowed exception is worse than a
+   crash, because a crash is honest.
+2. **Degraded results carry their mark** (§3.2). An unlabelled degraded result is
+   a corrupted result.
+3. **Honesty outranks continuity** (§6.1). It is always correct to report that a
+   run failed or a number is untrustworthy; it is never correct to substitute,
+   smooth, retry-until-pretty or omit.
+4. **Science outranks speed where they meet** (§6.10). MCF may be fast in how it
+   validates, records and repeats — never fast by doing less of it.
+5. **A feature's overhead is part of its cost, and refusing a feature is a normal
+   outcome** (§3.13).
+6. **Tests are green and deterministic; benchmarks have no pass condition**
+   (§6.7). Conflating them destroys both.
+7. **A bug becomes a lab fixture before it becomes a fix** (§3.5, §3.17).
+8. **Work cites intent** (§8). Work that cannot cite is a finding: record a void
+   in §7 rather than inventing intent silently.
