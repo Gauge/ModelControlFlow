@@ -841,7 +841,7 @@ reference model is a fixture rather than a case in the code, and one model
 builds an instrument without ever supporting a generality claim. Integrating an
 entire new intent cost two rules, which is the right order of magnitude.
 
-Restated to the format contract in [README.md](README.md): front matter,
+Restated to the format contract in [README.md](../README.md): front matter,
 contents, present tense, changelog last. The check counts move out of the lead
 and into their own section, where they are a metric rather than a preamble.
 

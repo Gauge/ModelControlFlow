@@ -247,5 +247,5 @@ increased complexity.
 
 | Version | Change |
 |---|---|
-| 2 | Standardized to the format contract in [README.md](../README.md): front matter, present tense, changelog. |
+| 2 | Standardized to the format contract in [README.md](../../README.md): front matter, present tense, changelog. |
 | 1 | Created alongside the roadmap, to make "done" at this stage a picture somebody can disagree with before it is code. |

@@ -55,7 +55,7 @@ thing to erode it.
 | **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14, §7.15 |
 
 Each milestone's finished state is drawn in `mockup/M<n>-*.md`: sketches of
-intent, not committed designs ([README.md](README.md#mockups)).
+intent, not committed designs ([README.md](../README.md#mockups)).
 
 ---
 
@@ -418,7 +418,7 @@ local exception.
 
 ### Version 2 — standardized
 
-Restated to the format contract in [README.md](README.md): front matter,
+Restated to the format contract in [README.md](../README.md): front matter,
 present tense, changelog last. The three-properties block collapses into one
 paragraph citing A6, A13 and B20 rather than restating them — the roadmap is not
 where rules live. M7 gains DEC-026 as a gate, and M0, M1, M5 and M7 gain the

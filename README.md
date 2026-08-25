@@ -1,24 +1,37 @@
-# Documentation
+# ModelControlFlow
 
 | | |
 |---|---|
-| **Type** | Index and format contract |
-| **Version** | 1 |
+| **Type** | Repository README — what this is, and the format every document holds to |
+| **Version** | 2 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
-Start with [document-of-intent.md](document-of-intent.md) if you want to know
-what MCF is for, and [rules.md](rules.md) if you are about to write something.
+**MCF makes the open weights ecosystem usable by one person on one machine
+without that person becoming a full-time operator of it.** It acquires models
+with their provenance intact, serves them as a dependable local endpoint,
+measures what they cost and what they are worth *on this hardware for the work
+actually being done*, and makes the result legible from anything with a browser.
+
+The measuring is the point. Choosing a local model today is folklore — people
+pick by leaderboard positions measured on someone else's hardware with someone
+else's quantization against benchmarks that do not resemble their work. MCF
+replaces folklore with measurement taken here.
+
+**Status: no implementation.** The repository holds intent, rules, a plan and a
+register. Start with [doc/document-of-intent.md](doc/document-of-intent.md) to
+know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
+[doc/roadmap.md](doc/roadmap.md) to see what gets built first.
 
 ## The documents
 
 | Document | Type | Holds | Read it when |
 |---|---|---|---|
-| [document-of-intent.md](document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
-| [rules.md](rules.md) | Rules | 60 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
-| [roadmap.md](roadmap.md) | Plan | Nine milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
-| [backlog.md](backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
-| [mockup/](mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
+| [document-of-intent.md](doc/document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
+| [rules.md](doc/rules.md) | Rules | 60 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
+| [roadmap.md](doc/roadmap.md) | Plan | Nine milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
+| [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
+| [mockup/](doc/mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
 
 **The chain of authority is one-directional.** The intent document is the source.
 Rules derive from it and carry its clauses forward with checks attached. The
@@ -62,7 +75,7 @@ leaves an index entry behind pointing at where it went.
 
 **Citation style.** Cite the source clause — `§3.4`, `§6.17`, `§IX`, `D4` — not
 a paraphrase of it. Rules are cited by ID: `A6`, `B12`, `C5`, `P2`. Backlog
-items by ID: `B-019`, `DEC-016`. [rules.md](rules.md) maps every clause to the
+items by ID: `B-019`, `DEC-016`. [rules.md](doc/rules.md) maps every clause to the
 rules that absorbed it, so a clause citation traverses to an enforceable rule in
 one hop and neither document has to restate the other.
 
@@ -103,17 +116,24 @@ written `<like-this>`; a surface that must show something it does not know shows
 
 | Milestone | Mockup |
 |---|---|
-| M0 — The instrument | [M0-instrument.md](mockup/M0-instrument.md) |
-| M1 — Custody | [M1-custody.md](mockup/M1-custody.md) |
-| M2 — The host | [M2-host.md](mockup/M2-host.md) |
-| M3 — Right by construction | [M3-capabilities.md](mockup/M3-capabilities.md) |
-| M4 — The window | [M4-window.md](mockup/M4-window.md) · [M4-window.html](mockup/M4-window.html) |
-| M5 — The measurement | [M5-measurement.md](mockup/M5-measurement.md) |
-| M6 — The judgment | [M6-judgment.md](mockup/M6-judgment.md) |
-| M7 — The loop | [M7-loop.md](mockup/M7-loop.md) |
-| M8 — Endurance | [M8-endurance.md](mockup/M8-endurance.md) |
+| M0 — The instrument | [M0-instrument.md](doc/mockup/M0-instrument.md) |
+| M1 — Custody | [M1-custody.md](doc/mockup/M1-custody.md) |
+| M2 — The host | [M2-host.md](doc/mockup/M2-host.md) |
+| M3 — Right by construction | [M3-capabilities.md](doc/mockup/M3-capabilities.md) |
+| M4 — The window | [M4-window.md](doc/mockup/M4-window.md) · [M4-window.html](doc/mockup/M4-window.html) |
+| M5 — The measurement | [M5-measurement.md](doc/mockup/M5-measurement.md) |
+| M6 — The judgment | [M6-judgment.md](doc/mockup/M6-judgment.md) |
+| M7 — The loop | [M7-loop.md](doc/mockup/M7-loop.md) |
+| M8 — Endurance | [M8-endurance.md](doc/mockup/M8-endurance.md) |
 
 ## Changelog
+
+### Version 2 — one README for the repository
+
+Moved from `doc/README.md` to the root. A repository needs exactly one front
+door, and a reader arriving at the project should not have to open a directory
+to find out what the project is. Gains a lead stating what MCF does and that no
+implementation exists yet; keeps the document map and the format contract.
 
 ### Version 1 — the documentation is standardized
 
