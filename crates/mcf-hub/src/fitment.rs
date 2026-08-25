@@ -1,0 +1,259 @@
+//! Whether a model will run here, computed before a byte is fetched (B-213,
+//! [PR3]).
+//!
+//! §6.3 makes *this will not run here, because it needs 131 GiB and you have
+//! 24* a complete success of §III. PR3's observation is that the information
+//! needed to say so arrives **before** the download, and is currently used only
+//! to justify a refusal rather than to inform a choice — while a repository
+//! publishing twenty quantizations makes choosing blind cost tens of gigabytes
+//! a guess.
+//!
+//! **This is the arithmetic half, and it is exact.** Weights, plus the
+//! key/value cache at the requested context, plus what a runtime holds beyond
+//! the weights, against what the machine has. The *other* half — projecting
+//! throughput from local history — is an estimate, is B-214's, and A20 keeps
+//! the two apart: nothing here produces a number about speed.
+//!
+//! **Every input is untrusted** (§3.7). The sizes come from the hub's listing
+//! and the shape from a model file's header, both of which a hostile source
+//! chooses. So every arithmetic step is checked: a shape that multiplies out
+//! past what can be counted, or a total that overflows, is a refusal to plan
+//! rather than a plan built on a wrapped number.
+//!
+//! **What it does not do is decide.** A verdict here is *fits*, *fits without
+//! room for your context*, or *does not fit*, with the numbers that produced
+//! it. Which of several that fit a user should take is §IV's question and needs
+//! measurements this machine has not taken yet (B34, B29).
+//!
+//! [PR3]: ../../../doc/proposals.md#pr3--pre-acquisition-planning
+
+use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
+use mcf_core::measurement::Bytes;
+
+const WHERE: Subsystem = Subsystem::new("mcf-hub::fitment");
+
+/// What a runtime holds beyond the weights and the cache.
+///
+/// Activations, the graph, the allocator's slack. A single conservative figure
+/// rather than a model of an engine MCF has not admitted yet (D23, B-320): a
+/// wrong model would produce confident bad guidance, and PR3's own caveat is
+/// that the projection must be conservative. When an engine is vendored and
+/// measured, this becomes a measurement and stops being a constant.
+pub const RUNTIME_OVERHEAD: Bytes = Bytes(512 * 1024 * 1024);
+/// The share of memory a plan leaves for everything else on the machine.
+///
+/// Stated as a fraction in per-cent so the arithmetic stays integral (A6's
+/// habit: `Quantity` is `Ord` because no measurement here needs a float).
+/// Ninety per cent, because a machine with nothing left is a machine that
+/// swaps, and a plan that fills memory exactly is a plan that was wrong.
+pub const USABLE_PER_CENT: u64 = 90;
+
+/// The shape a key/value cache is computed from.
+///
+/// Every field comes from the model file's own metadata. There are no defaults:
+/// a shape MCF guessed at would produce a plan about a different model (A7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shape {
+    /// How many transformer blocks.
+    pub blocks: u64,
+    /// How many key/value heads — the grouped count, not the query count, and
+    /// getting that wrong overstates the cache by the grouping factor.
+    pub key_value_heads: u64,
+    /// The width of one head.
+    pub head_dimension: u64,
+    /// How many bytes one cached element occupies.
+    ///
+    /// Two for the half-precision caches every engine uses by default. It is a
+    /// parameter because a cache can be quantized, and a plan that assumed
+    /// otherwise would refuse models that fit.
+    pub bytes_per_element: u64,
+}
+
+impl Shape {
+    /// How many bytes one token of context costs, keys and values together.
+    ///
+    /// `None` when the arithmetic overflows, which is a shape from a hostile or
+    /// broken file rather than a model (§3.7).
+    #[must_use]
+    pub fn bytes_per_token(&self) -> Option<u64> {
+        // Two: one key and one value per block, per head.
+        2_u64
+            .checked_mul(self.blocks)?
+            .checked_mul(self.key_value_heads)?
+            .checked_mul(self.head_dimension)?
+            .checked_mul(self.bytes_per_element)
+    }
+}
+
+/// One variant of a model, and what holding it would cost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Requirement {
+    /// What the variant is called — the file, usually, since that is how a
+    /// quantization is named.
+    pub name: String,
+    /// The weights, as the hub's listing states them.
+    ///
+    /// The hub's *claim* (A21): B-021 checks it against what arrives, and a
+    /// disagreement is a finding rather than an error here.
+    pub weights: Bytes,
+    /// The shape its cache is computed from.
+    pub shape: Shape,
+}
+
+impl Requirement {
+    /// What this variant needs at a stated context length.
+    ///
+    /// # Errors
+    ///
+    /// `artifact.format.malformed` when the arithmetic overflows — a shape or a
+    /// size that cannot be added up is one MCF will not plan against.
+    pub fn at_context(&self, context: u64) -> Result<Bytes> {
+        let per_token = self.shape.bytes_per_token().ok_or_else(|| {
+            overflowed(
+                "the shape multiplies out past what can be counted",
+                &self.name,
+            )
+        })?;
+        let cache = per_token.checked_mul(context).ok_or_else(|| {
+            overflowed(
+                "the cache at that context is larger than can be counted",
+                &self.name,
+            )
+        })?;
+        self.weights
+            .0
+            .checked_add(cache)
+            .and_then(|total| total.checked_add(RUNTIME_OVERHEAD.0))
+            .map(Bytes)
+            .ok_or_else(|| overflowed("the total is larger than can be counted", &self.name))
+    }
+}
+
+/// What a plan says about one variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// It fits at the context asked for, with this much left over.
+    Fits {
+        /// What the variant needs.
+        needs: Bytes,
+        /// What would remain of the usable memory.
+        headroom: Bytes,
+    },
+    /// The weights fit and the context does not, and this is the longest
+    /// context that would.
+    ///
+    /// A distinct answer rather than a refusal, because it is the one an
+    /// operator can act on: the same download at a shorter context is a
+    /// different, workable configuration.
+    FitsWithoutContextHeadroom {
+        /// What it needs at the context asked for.
+        needs: Bytes,
+        /// The longest context that fits.
+        longest_context: u64,
+    },
+    /// It does not fit at any context, and this is by how much.
+    DoesNotFit {
+        /// What the weights alone need, with the runtime's overhead.
+        needs: Bytes,
+        /// How much more memory the machine would have to have.
+        short_by: Bytes,
+    },
+}
+
+impl Verdict {
+    /// Whether this variant can be run here at all.
+    #[must_use]
+    pub const fn is_runnable(&self) -> bool {
+        !matches!(self, Self::DoesNotFit { .. })
+    }
+}
+
+/// Judges one variant against what a machine has.
+///
+/// `available` is what the machine reports free, and the plan uses
+/// [`USABLE_PER_CENT`] of it: a plan that fills memory exactly is a plan that
+/// was wrong.
+///
+/// # Errors
+///
+/// As [`Requirement::at_context`].
+pub fn assess(requirement: &Requirement, context: u64, available: Bytes) -> Result<Verdict> {
+    let usable = available
+        .0
+        .checked_mul(USABLE_PER_CENT)
+        .and_then(|scaled| scaled.checked_div(100))
+        .unwrap_or(0);
+
+    let needs = requirement.at_context(context)?;
+    if needs.0 <= usable {
+        return Ok(Verdict::Fits {
+            needs,
+            headroom: Bytes(usable.saturating_sub(needs.0)),
+        });
+    }
+
+    // The weights and the runtime's overhead alone: what a context of zero
+    // would cost. If even that does not fit, no context does.
+    let floor = requirement.at_context(0)?;
+    if floor.0 > usable {
+        return Ok(Verdict::DoesNotFit {
+            needs: floor,
+            short_by: Bytes(floor.0.saturating_sub(usable)),
+        });
+    }
+
+    let per_token = requirement.shape.bytes_per_token().ok_or_else(|| {
+        overflowed(
+            "the shape multiplies out past what can be counted",
+            &requirement.name,
+        )
+    })?;
+    let longest = usable
+        .saturating_sub(floor.0)
+        .checked_div(per_token.max(1))
+        .unwrap_or(0);
+    Ok(Verdict::FitsWithoutContextHeadroom {
+        needs,
+        longest_context: longest,
+    })
+}
+
+/// Judges every variant a repository publishes, in the order given.
+///
+/// This is PR3's sentence — *seven fit here with headroom, four fit without room
+/// for your context, nine do not fit* — and it is produced without fetching any
+/// of them.
+///
+/// # Errors
+///
+/// As [`assess`]: one variant whose arithmetic does not add up refuses the
+/// whole plan rather than being dropped from it, because a plan missing a row
+/// nobody mentioned is worse than no plan (A1).
+pub fn plan(
+    requirements: &[Requirement],
+    context: u64,
+    available: Bytes,
+) -> Result<Vec<(String, Verdict)>> {
+    let mut out = Vec::with_capacity(requirements.len());
+    for requirement in requirements {
+        out.push((
+            requirement.name.clone(),
+            assess(requirement, context, available)?,
+        ));
+    }
+    Ok(out)
+}
+
+fn overflowed(detail: &str, name: &str) -> Failure {
+    Failure::new(
+        Category::ArtifactFormatMalformed,
+        Attribution::Artifact,
+        Disposition::Refused,
+        WHERE,
+        detail,
+    )
+    .with_context("variant", name.to_owned())
+}
+
+#[cfg(test)]
+mod tests;
