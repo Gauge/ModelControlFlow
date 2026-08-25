@@ -192,6 +192,12 @@ judge() {
     if [ "$compiled" -eq 0 ]; then
         (cd "$workdir" && timeout "$MUTANT_TIMEOUT" cargo test --workspace --offline \
             >/dev/null 2>&1) || status=$?
+        # `timeout` signals cargo, and cargo's test binaries are not its
+        # children to signal. A mutant that hangs therefore leaves a test
+        # process spinning a core for as long as the machine is up, which is a
+        # change to the machine MCF did not put back (A27). They are reaped by
+        # path, so nothing outside this run's copy is touched.
+        pkill -KILL -f "$workdir/target" >/dev/null 2>&1 || true
     fi
 
     mv "$backup" "$workdir/$file"

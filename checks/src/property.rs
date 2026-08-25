@@ -19,6 +19,13 @@
 //! (`checks/tests/fuzz.rs`), which is scheduled rather than gating and says
 //! outright which seed base it explored from.
 //!
+//! **What it does not bound is time.** A property that does not terminate —
+//! because the code under test does not — hangs the harness, and no in-process
+//! mechanism short of another thread can stop it. That is deliberate rather
+//! than overlooked: whatever *runs* the suite bounds it, which is why
+//! `scripts/check-mutants.sh` bounds each of its suite runs and reaps what it
+//! left. The first mutant to hang was caught here, in the digest property.
+//!
 //! **A falsified property is reported, not thrown.** [`check`] returns a
 //! [`Verdict`], the same shape `mcf_lab::run` uses for the same reason: the
 //! harness reporting *its own* result as an error would be the manager dying
