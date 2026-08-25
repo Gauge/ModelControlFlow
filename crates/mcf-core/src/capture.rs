@@ -12,7 +12,7 @@
 //! somebody calls when they take a reading, and there is nothing here that
 //! runs on its own.
 //!
-//! **What is read and what stays unknown.** Four of the nine come from the
+//! **What is read and what stays unknown.** Four of the ten come from the
 //! machine profile and are as good as the profiler is (B-013, D25). One is
 //! MCF's own configuration, which MCF always knows. The remaining
 //! four — quantization, context length, batch shape, realized placement —
@@ -39,6 +39,7 @@ pub fn floor(
     machine: &Machine,
     configuration: Option<&Configuration>,
     mcf_configuration: &str,
+    instrumentation: &str,
 ) -> Floor {
     Floor {
         hardware_state: known(describe_hardware(machine)),
@@ -60,6 +61,7 @@ pub fn floor(
         // The realized layout is what the machine did with the declared intent
         // (intent v16), and nothing has realized one yet.
         realized_placement: Attested::Unknown,
+        instrumentation: Attested::Known(ConditionValue::text(instrumentation)),
     }
 }
 
@@ -69,10 +71,11 @@ pub fn conditions(
     machine: &Machine,
     configuration: Option<&Configuration>,
     mcf_configuration: &str,
+    instrumentation: &str,
 ) -> Conditions {
     Conditions::new(
         BuildIdentity::current(),
-        floor(machine, configuration, mcf_configuration),
+        floor(machine, configuration, mcf_configuration, instrumentation),
     )
 }
 

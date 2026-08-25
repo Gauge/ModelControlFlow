@@ -42,6 +42,7 @@ pub fn floor(value: &Value) -> Option<Floor> {
         batch_shape: condition(value, "batch_shape")?,
         mcf_configuration: condition(value, "mcf_configuration")?,
         realized_placement: condition(value, "realized_placement")?,
+        instrumentation: condition(value, "instrumentation")?,
     })
 }
 

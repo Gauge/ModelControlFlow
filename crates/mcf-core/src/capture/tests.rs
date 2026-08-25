@@ -13,7 +13,7 @@ use crate::hardware::Machine;
 #[test]
 fn what_the_machine_reports_is_captured_and_the_rest_is_not_invented() {
     let machine = Machine::read();
-    let captured = floor(&machine, None, "the tests");
+    let captured = floor(&machine, None, "the tests", "full");
 
     // Always knowable: MCF's own configuration, and the processor.
     assert!(captured.mcf_configuration.is_known());
@@ -41,7 +41,7 @@ fn what_the_machine_reports_is_captured_and_the_rest_is_not_invented() {
 #[test]
 fn the_characterization_verdict_is_part_of_the_conditions() {
     let machine = Machine::read();
-    let captured = floor(&machine, None, "the tests");
+    let captured = floor(&machine, None, "the tests", "full");
     let Attested::Known(described) = &captured.hardware_state else {
         return;
     };
@@ -63,8 +63,8 @@ fn the_characterization_verdict_is_part_of_the_conditions() {
 #[test]
 fn a_machine_with_no_accelerator_captures_a_complete_honest_floor() {
     let machine = Machine::read_through(&[]);
-    let captured = floor(&machine, None, "the tests");
-    assert_eq!(captured.entries().len(), 9);
+    let captured = floor(&machine, None, "the tests", "full");
+    assert_eq!(captured.entries().len(), 10);
     // No accelerator means no thermal reading and no driver version, and both
     // say so rather than reporting zero.
     assert!(!captured.thermal_state.is_known());
@@ -77,7 +77,7 @@ fn a_machine_with_no_accelerator_captures_a_complete_honest_floor() {
 /// §3.12).
 #[test]
 fn the_conditions_carry_the_instrument() {
-    let captured = conditions(&Machine::read(), None, "the tests");
+    let captured = conditions(&Machine::read(), None, "the tests", "full");
     assert_eq!(
         captured.mcf(),
         crate::build_identity::BuildIdentity::current()

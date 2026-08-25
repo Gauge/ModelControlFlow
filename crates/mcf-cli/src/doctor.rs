@@ -20,9 +20,11 @@ use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::capture;
 use mcf_core::failure::Failure;
-use mcf_core::hardware::{Characterization, Machine};
+use mcf_core::hardware::{self, Attributability, Characterization, Machine};
 use mcf_core::measurement::{Bytes, Conditions, Measurement};
-use mcf_core::self_cost::{self, Budget, COLD_START, CORE_BINARY, RESIDENT_IDLE, Verdict};
+use mcf_core::self_cost::{
+    self, Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, RECORD_WRITE, RESIDENT_IDLE, Verdict,
+};
 use mcf_core::time::{Duration, Monotonic, Timestamp};
 use mcf_record::encode;
 use mcf_record::journal::{Entry, EntryKind, Journal, default_path};
@@ -90,11 +92,23 @@ pub(crate) struct Report {
     pub(crate) recorded: Recorded,
     /// What the laboratory demonstrated here.
     pub(crate) laboratory: Laboratory,
+    /// Whether the machine was quiet enough for a timing to be about MCF.
+    ///
+    /// D27: a figure taken on a busy machine is *unattributable* rather than
+    /// passing or failing, because B35 holds that a timing under contention
+    /// measures the contention.
+    pub(crate) attributability: Attributability,
 }
 
 /// What MCF costs on this machine, against D24.
 #[derive(Debug)]
 pub(crate) struct Cost {
+    /// What one recorded event costs — MCF's own observation (B-012, §3.8).
+    ///
+    /// `None` when it could not be measured, which is a state and not a zero:
+    /// a machine with nowhere to write a record has an unmeasured observation
+    /// cost, not a free one (A7).
+    pub(crate) record_write: Option<Measurement<Duration<Monotonic>>>,
     /// The binary's size on disk.
     pub(crate) artifact: Attested<Bytes>,
     /// This process's resident set.
@@ -134,7 +148,8 @@ pub(crate) fn run(record: bool) -> Report {
     let mcf = BuildIdentity::current();
     let at = Timestamp::now();
     let machine = Machine::read();
-    let cost = measure_cost(&machine);
+    let attributability = hardware::attributability(machine.processor.cores);
+    let cost = measure_cost(&machine, record);
     let laboratory = Laboratory::run();
     let body = body(&machine, &cost, &laboratory);
     let recorded = if record {
@@ -149,16 +164,25 @@ pub(crate) fn run(record: bool) -> Report {
         cost,
         recorded,
         laboratory,
+        attributability,
     }
 }
 
-fn measure_cost(machine: &Machine) -> Cost {
+fn measure_cost(machine: &Machine, recording: bool) -> Cost {
     // The conditions these figures were taken under, captured from the live
     // machine rather than assembled here (B-007). What the machine does not
     // report stays unknown; what nothing runs a model to supply — quantization,
     // context length, batch shape, realized placement — stays unknown too, and
     // says so (A7).
-    let conditions = capture::conditions(machine, None, "mcf doctor, no configuration");
+    // B3: the instrumentation profile is part of what a figure was taken
+    // under. `--no-record` is the reduced arm and the default is the full one,
+    // and the delta between them is what B-012 asks MCF to report about itself.
+    let profile = if recording {
+        "full — the record is being written"
+    } else {
+        "reduced — nothing is being recorded"
+    };
+    let conditions = capture::conditions(machine, None, "mcf doctor, no configuration", profile);
 
     let binary = std::env::current_exe().ok();
     let artifact = binary
@@ -169,14 +193,32 @@ fn measure_cost(machine: &Machine) -> Cost {
     // and writes a record, which is not what D24's figure is about — and, as
     // F1 records, an instrument that measures itself measuring itself does not
     // terminate.
-    let cold_start = binary
-        .as_deref()
-        .and_then(|path| self_cost::cold_start(path, &["--version"], 20, conditions.clone()));
+    // D27 reads an event-class figure at the 99th percentile over at least a
+    // hundred trials, because a p99 of twenty is the maximum wearing a
+    // percentile's name.
+    let cold_start = binary.as_deref().and_then(|path| {
+        self_cost::cold_start(path, &["--version"], EVENT_TRIALS, conditions.clone())
+    });
+
+    // What MCF's own observation costs, measured beside the real record so it
+    // sees the same filesystem. Not measured when nothing is being recorded:
+    // the reduced arm's observation cost is zero by construction, and
+    // measuring it would be measuring the probe.
+    let record_write = if recording {
+        mcf_record::journal::default_path().and_then(|path| {
+            mcf_record::overhead::record_write_cost(&path, conditions.clone())
+                .ok()
+                .flatten()
+        })
+    } else {
+        None
+    };
 
     Cost {
         artifact,
         resident: self_cost::resident_bytes(),
         cold_start,
+        record_write,
         conditions,
     }
 }
@@ -204,6 +246,15 @@ fn body(machine: &Machine, cost: &Cost, laboratory: &Laboratory) -> Value {
                             Value::Integer(i64::try_from(size).unwrap_or(i64::MAX))
                         }
                         Attested::Unknown => Value::Null,
+                    },
+                ),
+                (
+                    "record_write",
+                    match &cost.record_write {
+                        Some(measured) => encode::measurement(measured, |d| {
+                            i64::try_from(d.as_nanos()).unwrap_or(i64::MAX)
+                        }),
+                        None => Value::Null,
                     },
                 ),
                 (
@@ -326,36 +377,49 @@ impl core::fmt::Display for Report {
         }
 
         writeln!(f, "\nWHAT MCF COSTS HERE")?;
+        writeln!(f, "  {}", self.attributability)?;
         write!(f, "{}", Self::cost_line(&CORE_BINARY, self.cost.artifact))?;
         write!(f, "{}", Self::cost_line(&RESIDENT_IDLE, self.cost.resident))?;
         match &self.cost.cold_start {
             Some(measured) => {
-                let spread = measured.spread();
-                // Which statistic D24's ceiling names is §7.50 and is open, so
-                // both are shown and which is being read against the ceiling is
-                // stated rather than chosen quietly.
+                // D27: the ceiling is about the 99th percentile, and the
+                // median is shown beside it because the gap between them is
+                // what a busy machine looks like.
                 writeln!(
                     f,
-                    "  {:<38} median {} over n={} — {}",
+                    "  {:<38} p99 {} over n={} — {}",
                     COLD_START.name,
-                    spread.median,
+                    COLD_START.statistic(measured),
                     measured.n(),
-                    COLD_START.read(Attested::Known(spread.median)),
+                    COLD_START.read_measurement(measured, &self.attributability),
                 )?;
                 writeln!(
                     f,
-                    "  {:<38} p95    {} — {}",
+                    "  {:<38} median {} · ceiling {}",
                     "",
-                    spread.p95,
-                    COLD_START.read(Attested::Known(spread.p95)),
-                )?;
-                writeln!(
-                    f,
-                    "  {:<38} ceiling {} · which statistic it names is §7.50, open",
-                    "", COLD_START.ceiling,
+                    measured.spread().median,
+                    COLD_START.ceiling,
                 )?;
             }
             None => writeln!(f, "  {:<38} {}", COLD_START.name, Verdict::NotMeasured)?,
+        }
+        match &self.cost.record_write {
+            Some(measured) => {
+                writeln!(
+                    f,
+                    "  {:<38} p99 {} over n={} — {}",
+                    RECORD_WRITE.name,
+                    RECORD_WRITE.statistic(measured),
+                    measured.n(),
+                    RECORD_WRITE.read_measurement(measured, &self.attributability),
+                )?;
+                writeln!(
+                    f,
+                    "  {:<38} this is what MCF's own observation costs (§3.8, B3)",
+                    "",
+                )?;
+            }
+            None => writeln!(f, "  {:<38} {}", RECORD_WRITE.name, Verdict::NotMeasured)?,
         }
         writeln!(
             f,
@@ -633,17 +697,40 @@ mod tests {
         }
     }
 
-    /// §7.50 is open, so the report shows both statistics and says which
-    /// ceiling is which rather than choosing one quietly.
+    /// D27: an event-class figure is read at the 99th percentile, with the
+    /// median beside it — the gap between the two is what a busy machine looks
+    /// like, and hiding it would hide the reason the reading may not be usable.
     #[test]
-    fn the_open_question_about_the_statistic_is_on_the_surface() {
+    fn an_event_class_figure_is_reported_at_the_percentile_d27_names() {
         let report = run(false);
         if report.cost.cold_start.is_some() {
             let rendered = report.render();
+            assert!(rendered.contains("p99"), "{rendered}");
             assert!(rendered.contains("median"), "{rendered}");
-            assert!(rendered.contains("p95"), "{rendered}");
-            assert!(rendered.contains("§7.50"), "{rendered}");
         }
+    }
+
+    /// B35 and D27: a figure taken on a busy machine is unattributable rather
+    /// than passing or failing, and the report says which the machine was.
+    #[test]
+    fn the_report_says_whether_the_machine_was_quiet() {
+        let rendered = run(false).render();
+        assert!(
+            rendered.contains("attributable") || rendered.contains("UNATTRIBUTABLE"),
+            "{rendered}"
+        );
+    }
+
+    /// §3.8 and B-012: what MCF's own observation costs is measured and
+    /// reported, and where it could not be measured that is a state rather
+    /// than a zero (A7).
+    #[test]
+    fn the_cost_of_observation_is_reported_or_stated_absent() {
+        let report = run(false);
+        // With nothing being recorded there is no observation to cost, and the
+        // report says so rather than showing a zero.
+        assert!(report.cost.record_write.is_none());
+        assert!(report.render().contains("record write, per event"));
     }
 
     /// The record's own form of the report is valid, self-describing JSON —

@@ -48,7 +48,7 @@ impl Drop for Scratch {
 fn a_captured_floor_survives_the_journal_unchanged() {
     let scratch = Scratch::new("live");
     let machine = Machine::read();
-    let captured = capture::conditions(&machine, None, "the round-trip test");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
 
     {
         let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
@@ -84,7 +84,7 @@ fn a_captured_floor_survives_the_journal_unchanged() {
 fn a_floor_full_of_unknowns_survives_as_unknowns() {
     let scratch = Scratch::new("bare");
     let machine = Machine::read_through(&[]);
-    let captured = capture::conditions(&machine, None, "the round-trip test");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
     assert!(!captured.floor().thermal_state.is_known());
 
     {
@@ -133,7 +133,7 @@ fn a_floor_missing_a_question_is_not_decoded() {
 #[test]
 fn a_condition_of_an_unexpected_shape_is_not_coerced() {
     let machine = Machine::read_through(&[]);
-    let captured = capture::conditions(&machine, None, "the round-trip test");
+    let captured = capture::conditions(&machine, None, "the round-trip test", "full");
     let Value::Map(mut fields) = encode::conditions(&captured) else {
         panic!("conditions encode as an object");
     };
