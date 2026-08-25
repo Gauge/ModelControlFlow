@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -36,7 +36,7 @@ better, each carrying a check.
 | § | Section | What it holds |
 |---|---|---|
 | §1 | [What This Project Is](#1-what-this-project-is) | The six verbs, and which of them are the point |
-| §2 | [The Founding Intents](#2-the-founding-intents) | I–XV, the originating statements |
+| §2 | [The Founding Intents](#2-the-founding-intents) | I–XVII, the originating statements |
 | §2.1 | [Settled Decisions](#21-settled-decisions) | Questions once open, now answered, with their reasoning |
 | §3 | [Principles](#3-principles) | The load-bearing beliefs |
 | §4 | [Standing Tensions](#4-standing-tensions-we-accept) | Permanent conditions, managed rather than solved |
@@ -325,6 +325,52 @@ An identifier is an inbound instruction from outside the machine, which makes it
 document reaches every time: **an imported configuration is a declaration until
 this machine verifies it.**
 
+### XVI. Self-contained — "no prerequisite downloads"
+
+A user obtains MCF and runs it. Nothing else. No runtime to install first, no
+interpreter, no toolchain, no framework, no separately-fetched inference engine,
+no "first install these three things." Whatever MCF needs in order to do what it
+claims, MCF ships.
+
+This is an ergonomic intent with a scientific consequence, which is why it
+belongs here rather than in a packaging document: **a dependency the user
+installs is a dependency MCF did not pin.** Their compiler, their Python, their
+CUDA toolkit, their libc — each is an unrecorded variable in every measurement
+MCF takes on that machine (§3.12, §3.4). Shipping the dependency is how MCF
+knows what it ran.
+
+The cost is real and is accepted: a larger artifact, a build that vendors more,
+and work MCF cannot delegate to a package manager. §6.31 records what this does
+to §7.4's engine question and to §VII's budget, and the short form is that
+**§VII's budget describes MCF's behaviour, not its download size** — a static
+binary that idles at nothing and starts in milliseconds honours §VII whether it
+is 12 MiB or 400.
+
+Where a capability genuinely cannot be shipped — a vendor driver, a kernel
+feature, hardware that is not present — MCF does not send the user on an errand
+as a substitute for handling it. It states what is missing, what is therefore
+unavailable, and continues without it (§3.2).
+
+### XVII. Full utilization — "use everything this machine has, including admin rights if needed"
+
+MCF is permitted to use the machine to its limit when the work calls for it:
+exclusive access to an accelerator, locked pages, pinned cores, raised
+priorities, direct thermal and power interfaces, performance governors — and
+the elevated privileges some of those require.
+
+This intent exists because of §3.8. A measurement taken by a process that cannot
+see the machine's thermal state, cannot stop another process from stealing the
+accelerator, and cannot read the power draw is a measurement with unknown
+conditions. **The privilege is not for convenience; it is for the validity of
+the reading**, and it is the difference between "this model is slow" and "this
+machine was throttling."
+
+The danger is obvious and is not waved away. A privileged daemon that fetches
+code from the internet, executes model-supplied code, and may be reachable over
+a network is the most dangerous object this document has described. §6.32 draws
+the boundary, and it is severe: **privilege is per-operation, never ambient, and
+never anywhere near untrusted code.**
+
 ## 2.1 Settled Decisions
 
 Questions that §7 once held open and that are now answered. Their substance
@@ -473,6 +519,99 @@ longer all owned by someone who understands the risk.
 **What it does not license:** MCF does not become a product with a support
 surface, a plugin ecosystem or a configuration language. §5 stands. Being usable
 by others is a quality bar, not a mandate to generalize.
+
+### D8 — Laboratories run exclusively, and may be greedy *(resolves most of §7.9)*
+
+A diagnostic laboratory owns the machine for the duration of its run. No user
+traffic is served, no second laboratory runs beside it, and within its run the
+lab may take whatever resources accuracy requires — all of the accelerator,
+locked memory, pinned cores, raised priority.
+
+**Why this is the rigorous answer rather than the convenient one.** §3.8 holds
+that contention corrupts a measurement and §3.4 requires one variable to differ.
+A lab sharing a machine with a served model is measuring the pair, not the
+model. Exclusivity removes the single largest confound available, and it removes
+it structurally rather than by correction: there is nothing to subtract because
+there was nothing else running.
+
+**What this settles in §7.9.** The question *may MCF refuse to benchmark while
+serving, or must it* is answered: **it must.** Arbitration between a lab and the
+serving path is not a scheduling problem to be solved; it is a state machine
+with one occupant.
+
+**What it costs, and where it is paid.** §VI promises a persistent, dependable
+endpoint, and a lab suspends it. That conflict is §6.33, and the resolution is
+that suspension is *explicit, announced, bounded and never silent* — the daemon
+stays up and answers, the endpoint reports why it is unavailable and for
+roughly how long, and no request is quietly dropped or slowed into a timeout.
+
+**What greed does not license.** A lab is greedy *while running* and costs
+nothing when it is not (§3.22, B30). Greed is a property of an experiment
+somebody started, never of MCF.
+
+### D9 — The time model
+
+Time is one of the conditions every measurement carries, so it is standardized
+rather than left to whichever call was convenient:
+
+- **Durations come from a monotonic clock,** always. A duration is never
+  computed by subtracting wall-clock readings, because wall-clock steps, drifts
+  and is adjusted underneath a running process.
+- **Records are timestamped in UTC,** stored with the local offset alongside
+  rather than baked in, so a record is both comparable across machines and
+  legible about where it was taken.
+- **The laboratory uses a simulated clock** (§3.17), and a result knows which
+  clock produced it. A duration from simulated time is never a performance
+  number (A11).
+- **Clock anomalies are events, not corrections.** A backward step or a large
+  forward jump during a measurement invalidates that measurement loudly rather
+  than being smoothed away (§6.1).
+- **Contributed timestamps are coarsened** to whatever §7.27 decides, because
+  precise timing is an identifier.
+
+### D10 — The application is tested; the model is put in a laboratory
+
+Two disciplines that share the word "test" and are never conflated (§6.7), each
+with its own standard:
+
+**MCF's own code is tested exhaustively, in tiers.** Unit and property tests for
+logic; functional tests for behaviour at the API surface; whole-system tests
+across the process boundary with real persistence and restart; fault-injection
+tests from the laboratory's catalogue (§3.17); load and soak tests for a daemon
+that must run for months; performance tests asserting §3.13's budgets; fuzz
+tests wherever untrusted bytes enter (§3.7); and **mutation testing as the test
+of the tests** — a suite that does not fail when the code is deliberately broken
+is a suite that proves nothing, and §3.5's credibility argument rests on knowing
+the difference.
+
+**Models are not tested; they are measured** in laboratories built for one
+question each (§XIII). A lab has no pass condition, produces a distribution
+rather than a verdict, and never gates a build (§6.7).
+
+The tiering is a consequence of §3.5's rule that the suite runs on a laptop,
+offline, in seconds: the fast hermetic tier gates every change, and the heavy
+tiers — load, soak, mutation, full fault matrix — run on a schedule and before a
+release. Neither tier is optional, and a heavy tier that has not run recently is
+reported as such rather than assumed green.
+
+### D11 — Energy and thermal state are first-class measurements
+
+Power draw, energy per token, and thermal state are recorded and reported
+alongside latency and throughput, not treated as exotic extras. For local
+inference they are frequently the deciding quantity: a configuration that is 8 %
+faster and 40 % hungrier is a different choice on a laptop than on a
+workstation, and §3.9's frontier already lists power as an axis it never
+explained how to populate.
+
+**Measurement fidelity varies by platform and is stated rather than assumed.**
+Where an accelerator or CPU exposes a real interface, MCF reads it. Where it
+exposes an estimate, MCF records it as an estimate (A20). Where nothing is
+available, energy is `unknown` and stays unknown (A7) — never modelled from
+utilization and presented as though it were measured.
+
+Reading these interfaces is one of the concrete reasons §XVII exists, and
+polling them is instrumentation: it happens inside a laboratory, for the
+duration of a run, and never as an ambient sampler (B30, D5).
 
 ## 3. Principles
 
@@ -1767,6 +1906,149 @@ becomes public.**
 resolutions, and the mechanism — how long is too long, what rotation costs in
 comparability — is unresolved and recorded as part of §7.23.
 
+### 6.31 Self-contained vs. delegating inference, and vs. the weight budget
+
+**Tension.** §7.4's likely answer is that MCF wraps mature inference engines
+rather than implementing kernels, and D4 accepted Python conversion tooling as
+supervised subprocesses. §XVI forbids making the user fetch either. Meanwhile
+§VII asks MCF to be the lightest thing it can be, and shipping an engine — or
+several, per accelerator vendor — is not light.
+
+**Resolution — MCF ships what it needs, and §VII's budget governs *behaviour*,
+not *download size*.**
+
+- **The budget is about what MCF costs while running:** idle CPU, resident
+  memory, cold start, interposed latency. A static binary that idles at nothing
+  and starts in milliseconds honours §VII at 12 MiB or at 400 MiB. §7.16 must
+  therefore budget installed footprint *separately* and generously, and say so,
+  rather than letting one number pretend to govern both.
+- **Delegation survives; the errand does not.** MCF may drive an engine it did
+  not write. It may not require the user to obtain that engine.
+- **Anything on the common path is vendored or reimplemented.** Where a
+  transformation genuinely requires an external toolchain, the honest options
+  are to vendor it, to reimplement the narrow part MCF needs, or to refuse the
+  feature — never to emit an instruction to go install something.
+- **Absent platform capabilities are not errands.** A missing vendor driver or
+  absent hardware is stated, the dependent capability is marked unavailable, and
+  MCF continues (§3.2).
+
+**Confidence: high on the principle, medium on the cost.** How large the
+artifact becomes when several accelerator backends ship together is unknown, and
+if it becomes absurd the honest amendment is per-accelerator builds — still
+self-contained, still no errand — rather than quietly asking the user to
+install something.
+
+### 6.32 Elevated privilege vs. untrusted code, network exposure, and the user's machine
+
+**Tension.** §XVII asks for admin rights where they buy measurement validity.
+§3.7 says the hub is hostile, §6.4 permits executing model repository code,
+§6.12 permits network exposure, and §3.10 says the machine is the user's. A
+privileged daemon that fetches code from the internet, runs model-supplied code,
+and listens on a network is the most dangerous object this document describes.
+
+**Resolution — privilege is per-operation, minimal, auditable, and structurally
+unreachable from anything untrusted.**
+
+- **The daemon does not run privileged.** Elevation belongs to a small, separate,
+  auditable helper that performs a named operation and exits. MCF's long-lived
+  process holds no ambient privilege, so a compromise of the control plane is
+  not a compromise of the machine.
+- **Nothing untrusted ever runs privileged.** Model repository code (§6.4) and
+  models under test (§6.20) execute in the sandbox, unprivileged, always. There
+  is no configuration that relaxes this, because there is no legitimate reason
+  to want it.
+- **The privileged surface is an enumerable list**, not a capability. Reading
+  power and thermal counters, setting a performance governor, requesting
+  exclusive accelerator access, locking pages, pinning cores — each is a named
+  operation with a bounded effect, and the list is short enough to audit and
+  short enough to publish.
+- **Elevation is a gated category** (A16): asked, stated, recorded, and never a
+  side effect. What it buys is stated in the same breath: *this reading is
+  unavailable without it, and here is what MCF will report instead.*
+- **MCF works without privilege, and says what it lost.** Degraded is a
+  first-class state (§3.2). An unprivileged MCF is a less precise instrument,
+  not a broken one, and every measurement it takes is marked accordingly.
+- **Privilege and network exposure are never simultaneously implicit.** Exposing
+  the control plane (§6.12) while privileged operations are available is the
+  worst combination available, and it requires its own deliberate act.
+
+**Confidence: high on the structure, medium on the mechanism.** Which operations
+truly require elevation differs by platform and is recorded as §7.39; a helper
+that turns out to need broad rights for a narrow job should be reconsidered
+rather than granted.
+
+### 6.33 Exclusive laboratories vs. a persistent, dependable endpoint
+
+**Tension.** D8 gives a laboratory the whole machine. §VI promises a persistent
+local service and §I promises MCF is the calm component. A user whose endpoint
+stops answering because a lab started has been failed by both.
+
+**Resolution — suspension is a declared state, never an outage.**
+
+- **The daemon stays up and keeps answering** — about itself. A request arriving
+  during a lab receives an immediate, explicit refusal naming the lab, the
+  reason, and the expected remaining time. It is never queued into a timeout,
+  never silently slowed, and never dropped.
+- **Starting a lab while serving is a decision the operator makes**, with what
+  will be suspended stated before it begins.
+- **Bounded by construction.** A lab declares a maximum duration and is stopped
+  if it exceeds it, because an unbounded suspension is indistinguishable from an
+  outage.
+- **Interruption is allowed and honest.** The operator may stop a lab to reclaim
+  the machine; the partial result is preserved and marked incomplete (§3.1),
+  never discarded and never reported as complete.
+
+**Confidence: high.** The alternative — labs sharing with serving — buys
+availability by destroying the validity the lab exists to produce, which is
+§6.1's trade in a new costume.
+
+### 6.34 Exhaustive application testing vs. a suite that runs in seconds
+
+**Tension.** §3.5 requires the suite run on a laptop, offline, fast enough to
+run constantly. D10 asks for load, soak, mutation and full fault-matrix testing,
+none of which is fast. Mutation testing in particular is quadratic-feeling work:
+it re-runs a suite once per mutant.
+
+**Resolution — tier the suites, gate on the fast one, schedule the heavy ones,
+and report the age of every tier.**
+
+- **The gating tier stays hermetic and fast** and is what §3.5 was describing.
+- **Heavy tiers run on a schedule and before every release**, and their results
+  carry a timestamp. A tier that has not run recently is reported as stale, not
+  assumed green — an unstated staleness is the silent failure §3.1 forbids,
+  aimed at the suite instead of the system.
+- **Mutation score is a tracked quantity with a floor**, treated like any other
+  budgeted property (§3.13): it may not regress silently.
+- **Load and soak run against the simulated laboratory**, not against real
+  weights, so they remain cheap enough to run often and deterministic enough to
+  believe (§3.17).
+
+**Confidence: high.**
+
+### 6.35 Measuring power vs. the observer effect and platform variance
+
+**Tension.** D11 wants energy recorded. Reading power counters means polling,
+polling is the ambient sampling D5 refused, and on some platforms the "reading"
+is a vendor's model rather than a measurement.
+
+**Resolution — power is sampled inside a laboratory only, at a declared rate
+recorded as a condition, and its provenance is stated.**
+
+- **Only during a run**, never as a background sampler (B30, D5). Idle MCF reads
+  no counters.
+- **The sampling rate is a measurement condition** (§3.4), because a 10 Hz
+  sample and a 1 Hz sample produce different energy integrals.
+- **Measured, estimated, or unknown** (A20, A7). A vendor's modelled figure is
+  recorded as an estimate and never presented as a reading, and a platform with
+  no interface yields `unknown` rather than a number derived from utilization.
+- **The cost of sampling is characterized** like any other instrumentation
+  overhead (§6.2), and energy figures taken under a heavy profile are not
+  compared with those taken under a light one (A8).
+
+**Confidence: high on the rule, low on cross-platform comparability.** Whether
+an NVIDIA board-level reading and an Apple package-level reading can ever be
+compared is genuinely unclear, and the honest default is that they cannot.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -1845,18 +2127,18 @@ hardware MCF does not recognize? §3.2 says degrade and label — but the bounda
 between "supported and characterized" and "will attempt, uncharacterized" is
 undrawn, and Intent IV's meaning changes completely depending on where it falls.
 
-### 7.9 Resource arbitration and concurrency — **sharpened by §VI**
+### 7.9 Resource arbitration and concurrency — **largely resolved by D8**
 
 Models are enormous relative to available memory and disk. Who decides what is
 resident? What happens when a benchmark and a served model both want the GPU, or
 when a download would exhaust the disk mid-flight? §3.11 forbids surprising
 destruction but does not say who arbitrates.
 
-Persistent hosting makes this immediate rather than eventual: a daemon serving
-one model while benchmarking another is the *normal* case, not an edge case, and
-§3.8 says the contention will corrupt the measurement unless MCF governs it.
-Whether MCF may refuse to benchmark while serving — or must — is unstated. This
-is where the ugliest reliability bugs will live.
+D8 answers the sharpest half: a laboratory owns the machine, so MCF **must**
+refuse to serve while measuring, and arbitration between them is a state machine
+rather than a scheduler. What remains is everything outside a lab — a download
+that would exhaust the disk mid-flight, several clients of a served model, two
+models resident at once — and §7.37's question of who writes to the record.
 
 ### 7.10 Failure taxonomy
 
@@ -2101,6 +2383,110 @@ The last of those is the dangerous one. A tool that asks often enough becomes a
 tool that is answered reflexively, and a reflexive yes is not the informed
 consent §3.20 requires.
 
+### 7.32 Distribution, and the update policy — **blocking D7**
+
+D7 makes MCF other people's software and §XVI makes it self-contained; neither
+says how it reaches them or how it changes underneath them. A candidate
+direction exists — a website counterpart with a server component shipped as a
+container image, alongside the self-contained local binary — but it is a
+direction, not a decision, and the local tool must not come to depend on it
+(§5, "not the website").
+
+The update half is the dangerous half. §3.12 forbids silent auto-upgrade, and
+§7.13 makes a version change a potential invalidation of measurement history.
+Never updating strands users on versions whose results cannot be compared with
+anyone else's; updating silently violates the reproducibility rule outright. The
+shape of the answer is probably *offered, explained, never automatic, and
+explicit about what it invalidates* — but that is reasoning, not a decision.
+
+Also open: whether the container image and the local binary are the same
+artifact in different clothing or two products with two test surfaces, since the
+second answer doubles §VIII's obligations.
+
+### 7.33 Whether the record keeps raw samples or summaries — **structural**
+
+Nothing states whether a measurement stores its individual trials or only their
+summary. The choice is unrecoverable in one direction: summaries cannot be
+re-analysed, and DEC-023 concedes that the right statistic for agentic runs is
+not yet known. Every measurement taken before this is answered is taken at the
+mercy of the answer.
+
+The candidate answer is *keep the raw samples* — they are small relative to
+weights, §II is built on re-analysis, and §3.4's uncertainty requirement is
+weaker than it sounds if the underlying distribution is discarded. Recorded here
+rather than assumed, because it decides the schema (D6) and therefore must be
+settled before the first row is written.
+
+### 7.34 The identity of a measured configuration — **structural**
+
+The whole project compares things, and nothing defines what makes two runs
+comparable *as a key*. Weights revision, quantization, context length, runtime
+build, sampling parameters, hardware, MCF version, instrumentation profile — the
+subset that constitutes identity determines what can be grouped, what
+invalidates history, and what §XV's identifier serializes.
+
+§7.28 asks what an identifier looks like on the outside; this asks what it names
+on the inside, and it is needed at the first write rather than at §XV.
+
+### 7.35 Host platform scope, and the containment mechanism — **structural**
+
+§7.8 bounds accelerators and §6.11 bounds client devices. Nothing bounds the
+machines MCF itself runs on, and that omission hides a large architectural
+decision: A14 requires a sandbox *by construction*, and OS namespaces, a
+hypervisor, and a portable abstraction over both are three different daemons.
+§XVII's privileged helper multiplies it, since elevation mechanisms are
+per-platform.
+
+Until this is drawn, "runs on this machine" is as unfalsifiable as §VII was
+before §7.16.
+
+### 7.36 Whether model licences constrain publishing measurements
+
+§III makes licences legible for *use*. §XIV publishes results *about* an
+artifact, and some model licences carry terms about benchmarking, comparison or
+naming. Whether a contribution is a licensed act, and whether MCF must therefore
+carry a per-artifact publication flag alongside its per-artifact use flag, is
+unresearched. It constrains what a contribution can ever contain, so it is asked
+before M9 is built rather than after.
+
+### 7.37 Who writes to the record, and how concurrency is arbitrated
+
+D6 chose an embedded single-file database before §7.9 and §7.12 decided who
+writes to it. A serving path, a laboratory, a supervisor recording failures and
+several attached clients are potential writers, and the failure modes of an
+embedded store under concurrent writers are sharp and specific.
+
+D8 removes much of the contention by making laboratories exclusive, which leaves
+the ordinary case: a serving daemon and its clients. Whether writes funnel
+through one owner, and what happens to a record write that loses, is unstated —
+and §3.1 forbids the silent answer.
+
+### 7.38 What happens when a pinned artifact decays
+
+MCF pins revisions, which is right. Nothing says what happens when the pin goes
+bad underneath it: a revision withdrawn, a repository gated after acquisition, a
+licence changed, a tag repointed, a file replaced. The hub is mutable (§3.7) and
+the record depends on it (§3.6).
+
+Open: whether MCF ever checks, when, what it does on discovery, and whether a
+withdrawn upstream invalidates measurements taken from the local copy — it
+should not, since the local weights are unchanged, but the provenance chain now
+points at something that no longer exists and that must be recorded rather than
+quietly tolerated.
+
+### 7.39 Which operations actually require elevation, on which platforms
+
+§6.32 requires the privileged surface be an enumerable, auditable, short list.
+The list does not exist. Reading power and thermal counters, setting a
+performance governor, requesting exclusive accelerator access, locking pages,
+pinning cores and raising scheduling priority each require different rights on
+different platforms, and some require none at all.
+
+Riding on it: whether a helper that turns out to need broad rights for a narrow
+job should be granted them or the capability abandoned. §6.32's answer is
+reconsider rather than grant, and that answer costs measurements MCF would
+otherwise take.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -2146,6 +2532,56 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 8 — self-containment, privilege, and what the laboratories are allowed to do
+
+Two intents and four decisions, most of them answering questions §XIII opened
+and left underspecified.
+
+§XVI makes MCF self-contained: the user obtains one thing and runs it. This is
+an ergonomic statement with a scientific consequence, which is why it is an
+intent rather than a packaging note — *a dependency the user installs is a
+dependency MCF did not pin*, and it becomes an unrecorded variable in every
+measurement taken on that machine. §6.31 resolves what it does to §7.4's
+delegation and to §VII's budget: MCF may drive an engine it did not write but
+may not send the user to fetch it, and §VII's budget governs behaviour rather
+than download size — a static binary that idles at nothing honours §VII at 12
+MiB or 400.
+
+§XVII permits full use of the machine, including elevated privilege where it
+buys measurement validity, because a process that cannot read thermal state or
+stop another process from stealing the accelerator takes measurements with
+unknown conditions. §6.32 draws the boundary severely, because a privileged
+daemon that fetches and executes remote code and may listen on a network is the
+most dangerous object this document has described: the daemon holds no ambient
+privilege, elevation belongs to a small auditable helper performing named
+operations, nothing untrusted ever runs privileged, and MCF works without
+privilege and says what it lost.
+
+D8 settles what laboratories may do, and answers most of §7.9: a lab owns the
+machine, no user traffic is served beside it, no second lab runs, and within its
+run it may be as greedy as accuracy requires. Exclusivity removes the largest
+confound available and removes it structurally — there is nothing to subtract
+because there was nothing else running. §6.33 pays the cost §VI is owed:
+suspension is a declared state, announced, bounded and interruptible, never an
+outage.
+
+D9 standardizes time — monotonic for durations, UTC for records, simulated in
+the lab, anomalies invalidate loudly. D10 separates the two disciplines that
+share the word "test": MCF's code is tested exhaustively and in tiers, including
+mutation testing as the test of the tests, while models are *measured* in
+laboratories that have no pass condition; §6.34 keeps the heavy tiers from
+destroying the fast one. D11 makes energy and thermal state first-class, with
+§6.35 confining power sampling to laboratory runs and forbidding a modelled
+figure from being presented as a reading.
+
+Eight voids added (§7.32–§7.39), five of them found by auditing what the earlier
+versions had never asked: whether the record keeps raw samples or only
+summaries, what constitutes the identity of a measured configuration, which host
+platforms MCF runs on and how it contains untrusted code there, whether model
+licences constrain publishing measurements, who writes to the record, and what
+happens when a pinned artifact decays upstream. The first three are marked
+structural because deciding them late destroys data or forces a rewrite.
 
 ### Version 7 — analysis, the shared record, and reproduction by identifier
 
