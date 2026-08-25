@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 43 |
+| **Version** | 44 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (20 done, 3 in progress, 56 blocked on a decision, 115 open).** Every item cites
+build items (21 done, 3 in progress, 56 blocked on a decision, 114 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -111,7 +111,7 @@ first and importance second.
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
 | B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | **done** — `mcf_core::measurement::Estimate`: unrelated types, no `From` in either direction, a band rather than a point (B46), and a basis that carries its sample count when it is the corpus (B44) |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
-| B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | open |
+| B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | **done** — `mcf_core::capture` fills five of the nine from the live machine and leaves the four that describe a running model unknown; `mcf_record::decode` reads them back, and the round trip is asserted on this machine and on a no-accelerator one produced through the seam |
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
@@ -362,6 +362,30 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 44 — the conditions are captured, and the unknowns survive as unknowns
+
+B-007 is done. The half worth recording is what "losslessly" turned out to
+require.
+
+A floor whose unknowns came back from the record as the *word* `unknown` would
+compare equal to a floor that had read something — and every comparison
+downstream would be quietly wrong. That is A7's substitution arriving through
+the back door of a decoder, and it is why the round trip is a test of its own
+rather than a property assumed of the encoder. It is asserted twice: once on
+this machine, and once on a machine with no accelerator, produced through
+B-015's seam rather than waited for.
+
+Two refusals in the decoder follow §7.30: a floor missing a question this
+version asks is not decoded at all, because it was written by a version that
+asks different ones; and a condition written in a shape this version does not
+use is not coerced into text, because a decoder that coerced would make a record
+say something nobody wrote.
+
+Four of the nine conditions stay unknown and will until M2: quantization,
+context length, batch shape and realized placement describe a model being run,
+and nothing runs one. `mcf doctor` says so on every line rather than omitting
+them.
 
 ### Version 43 — the seam, the neutrality check, and a budget that was never written
 
