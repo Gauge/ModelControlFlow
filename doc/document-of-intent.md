@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 26 |
+| **Version** | 27 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,61 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D25 — A device is characterized when MCF can read its live state *(answers §7.8)*
+
+§7.8 asks where the boundary falls between *supported and characterized* and
+*will attempt, uncharacterized*, and observes that §IV's meaning changes
+completely depending on where it falls. **The boundary is a capability of the
+observer, not a property of the vendor.**
+
+**Why it cannot be a list of vendors.** §3.8 requires MCF know the difference
+between "this model is slow" and "this machine was busy", and that difference is
+made of readings: available device memory, thermal and throttle state, and what
+else is competing. A vendor allowlist would say which devices MCF *approves of*
+and answer nothing about whether it can tell those two apart on any of them. It
+would also be a special case in code, which B28 refuses on principle and which
+tends to make one artifact work and quietly break the next.
+
+**The three states, and what each licenses.** A device is in exactly one of
+them, for each run:
+
+- **Characterized.** MCF can read, at measurement time: the device's identity,
+  its driver and runtime versions, its total and available memory, and its
+  thermal or throttle state. Results taken on it carry those among their
+  conditions (§3.4), are comparable with other characterized results under A8,
+  and are contributable (B54).
+- **Attempted, uncharacterized.** The device is present and MCF can run on it,
+  and at least one of those readings is unavailable. MCF uses it and marks every
+  result [`Degraded`] with the reading it could not take (A5). Such results are
+  not comparable with characterized ones and are not contributable, because
+  B54 requires the full condition set and §3.4 has a hole in it.
+- **Absent.** There is no accelerator. Results are processor-derived and marked
+  as such (§3.2). This is a result, not a failure (A9).
+
+**The state is per run, not per install.** §3.8 makes hardware a time-varying
+condition rather than a static fact read once, and the consequence is
+uncomfortable and correct: a device that was characterized this morning and
+whose driver query fails this afternoon is *uncharacterized for this run*.
+Anything else would let a stale reading stand in for a live one, which is A7's
+plausible substitute wearing a cache.
+
+**What this rests on.** The three states derive from §3.8, §3.4, A5, A7 and A9.
+The empirical half comes from F1 in [findings.md](findings.md), and it is what
+makes the definition non-trivial: on the machine tested, the files a driver
+publishes give the device's *identity* and none of its *live state*, which is
+reachable only over the C ABI. A profiler built on published files alone would
+therefore report every device as uncharacterized under this definition — which
+is the honest outcome, and is why the definition is worth having rather than
+being satisfied by whatever MCF happens to implement first.
+
+**What follows, and is not deferred.** Support for a vendor means one thing:
+a probe route exists that declares which of the four readings it can supply.
+Routes are enumerable, each states its own coverage, and a device is
+characterized when some available route covers all four. Adding a vendor is
+adding a route, never a branch in a measurement path.
+
+[`Degraded`]: §3.2
 
 ### D24 — The performance budget *(answers §7.16)*
 
@@ -3046,13 +3101,6 @@ sample count, maximum variance, required warm-up, thermal steady-state
 requirements, what invalidates a run retroactively? Until this exists, §3.4 is
 aspiration rather than a rule anything can be checked against.
 
-### 7.8 Hardware scope
-
-Which accelerators, vendors, and runtimes are in scope, and what happens on
-hardware MCF does not recognize? §3.2 says degrade and label — but the boundary
-between "supported and characterized" and "will attempt, uncharacterized" is
-undrawn, and Intent IV's meaning changes completely depending on where it falls.
-
 ### 7.9 Resource arbitration and concurrency — **largely resolved by D8**
 
 Models are enormous relative to available memory and disk. Who decides what is
@@ -3597,6 +3645,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.16 | The performance budget | §VII, §3.13 | **D24** — the numbers, asserted in CI |
 | §7.10 | Failure taxonomy | §3.1, §3.17 | [taxonomy.md](taxonomy.md) — three axes, sixteen domains |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
+| §7.8 | Hardware scope | §3.8, §3.4 | **D25** — characterized means MCF can read the device's live state |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -3631,6 +3680,28 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 27 — hardware scope is a capability, not a list
+
+D25 answers §7.8, which had been open since the first version and which §7.8
+itself said changes what §IV means. The boundary between *characterized* and
+*will attempt, uncharacterized* is a property of the observer: a device is
+characterized when MCF can read its identity, its driver and runtime versions,
+its available memory and its thermal state — the readings §3.8 needs in order to
+tell a slow model from a busy machine.
+
+A vendor list was the obvious alternative and answers the wrong question. It
+would say which devices MCF approves of and nothing about whether MCF can tell
+those two apart on any of them, and it would put a special case in a measurement
+path, which B28 refuses on principle.
+
+Two consequences are uncomfortable and follow directly. The state is **per run**,
+because §3.8 makes hardware time-varying: a device whose driver query fails this
+afternoon is uncharacterized this afternoon, whatever it was this morning.
+And a profiler built only on the files a driver publishes reports every device as
+uncharacterized, because F1 established that live state is reachable only over
+the C ABI — which is the honest outcome and the reason the definition is worth
+stating rather than being satisfied by whatever gets implemented first.
 
 ### Version 26 — the prototype ran, and D4 stands
 
