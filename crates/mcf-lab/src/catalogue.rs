@@ -41,6 +41,7 @@ pub const CATALOGUE: &[Scenario] = &[
     hub::DECEPTIVE_METADATA,
     hub::NO_LICENCE,
     hub::TRUNCATED_TRANSFER,
+    hub::CANNOT_RESUME,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,

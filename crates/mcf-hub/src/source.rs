@@ -43,6 +43,34 @@ pub struct Entry {
     /// checks it, and the difference between the two is a finding rather than
     /// an error (A21's shape — declared and verified are different states).
     pub size: u64,
+    /// The digest the hub declares, where it declares one.
+    ///
+    /// Also a claim. A hub that states a digest lets MCF verify what arrived
+    /// against what was promised; a hub that states none leaves the artifact
+    /// *unverified*, which is a state to record rather than a reason to trust
+    /// it (A7, A21). It is never a substitute for the digest MCF computes,
+    /// which is of what actually landed on this disk.
+    pub digest: Option<String>,
+}
+
+impl Entry {
+    /// An entry with no declared digest, which is the common case on a hub that
+    /// publishes plain files.
+    #[must_use]
+    pub fn new(path: impl Into<String>, size: u64) -> Self {
+        Self {
+            path: path.into(),
+            size,
+            digest: None,
+        }
+    }
+
+    /// The same, with the digest the hub declares.
+    #[must_use]
+    pub fn declaring(mut self, digest: impl Into<String>) -> Self {
+        self.digest = Some(digest.into());
+        self
+    }
 }
 
 /// What a repository publishes, and what MCF is allowed to do with it.
@@ -129,6 +157,35 @@ pub trait Source {
     /// whole one, which is B-021's condition and the thing the laboratory's hub
     /// exists to attempt.
     fn fetch(&self, reference: &Reference, entry: &Entry, into: &Path) -> Result<Fetched>;
+
+    /// The same, continuing from a byte offset, appending to what is there.
+    ///
+    /// This is what makes a transfer resumable, and not every source can do it:
+    /// a hub without range requests is a real thing, and the honest answer is
+    /// to say so rather than to silently start again and report progress that
+    /// did not happen. The default is exactly that answer.
+    ///
+    /// # Errors
+    ///
+    /// `hub.unreachable` by default — meaning *this source does not resume*,
+    /// which a caller turns into a restart it records rather than into a
+    /// failure of the acquisition.
+    fn fetch_from(
+        &self,
+        _reference: &Reference,
+        _entry: &Entry,
+        _from: u64,
+        _into: &Path,
+    ) -> Result<Fetched> {
+        Err(mcf_core::failure::Failure::new(
+            mcf_core::failure::Category::HubUnreachable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-hub::source"),
+            "this source cannot continue a transfer from an offset",
+        )
+        .with_context("source", self.describe()))
+    }
 }
 
 /// What a completed fetch produced.

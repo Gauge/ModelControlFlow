@@ -201,3 +201,86 @@ fn an_undeclared_licence_is_absent_rather_than_guessed() {
         .expect("lists");
     assert_eq!(listing.declared_licence, None);
 }
+
+/// Continuing a transfer appends where it left off, which is what makes a
+/// resumption a resumption rather than a second copy of the beginning.
+#[test]
+fn a_continued_transfer_appends_from_the_offset() {
+    let world = World::for_scenario("hub-resumes");
+    let hub = FakeHub::new().with(
+        "owner/model",
+        Repository::holding("model.gguf", b"0123456789")
+            .behaving(Behaviour::StopsEvery { bytes: 4 }),
+    );
+    let reference = parse("owner/model").expect("a reference");
+    let listing = hub.list(&reference).expect("lists");
+    let entry = listing.entry("model.gguf").expect("listed").clone();
+    let into = world.path("model.gguf.partial");
+
+    let first = hub.fetch(&reference, &entry, &into).expect("serves");
+    assert_eq!(first.bytes, 4);
+    assert_eq!(std::fs::read(&into).expect("there"), b"0123");
+
+    let second = hub
+        .fetch_from(&reference, &entry, 4, &into)
+        .expect("continues");
+    assert_eq!(second.bytes, 4);
+    assert_eq!(
+        std::fs::read(&into).expect("there"),
+        b"01234567",
+        "it repeated the beginning instead of continuing"
+    );
+}
+
+/// A hub without ranges says so rather than starting again and reporting
+/// progress that did not happen.
+#[test]
+fn a_hub_without_ranges_says_so() {
+    let world = World::for_scenario("hub-no-ranges");
+    let hub = FakeHub::new().with(
+        "owner/model",
+        Repository::holding("model.gguf", b"0123456789").behaving(Behaviour::NeverResumes),
+    );
+    let reference = parse("owner/model").expect("a reference");
+    let entry = hub
+        .list(&reference)
+        .expect("lists")
+        .entry("model.gguf")
+        .expect("listed")
+        .clone();
+    let failure = hub
+        .fetch_from(&reference, &entry, 4, &world.path("model.gguf.partial"))
+        .expect_err("no ranges");
+    assert_eq!(failure.category(), Category::HubUnreachable);
+}
+
+/// A listing carries the digest the hub declares, and a hub that declares none
+/// says nothing rather than something plausible.
+#[test]
+fn a_listing_carries_the_digest_a_hub_declares() {
+    let declaring =
+        FakeHub::new().with("owner/model", Repository::holding("model.gguf", b"weights"));
+    let reference = parse("owner/model").expect("a reference");
+    let entry = declaring
+        .list(&reference)
+        .expect("lists")
+        .entry("model.gguf")
+        .expect("listed")
+        .clone();
+    assert_eq!(
+        entry.digest.as_deref(),
+        Some(mcf_core::digest::sha256(b"weights").hex().as_str())
+    );
+
+    let quiet = FakeHub::new().with(
+        "owner/model",
+        Repository::holding("model.gguf", b"weights").without_digests(),
+    );
+    let entry = quiet
+        .list(&reference)
+        .expect("lists")
+        .entry("model.gguf")
+        .expect("listed")
+        .clone();
+    assert_eq!(entry.digest, None);
+}

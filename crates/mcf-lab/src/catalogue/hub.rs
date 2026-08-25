@@ -42,6 +42,14 @@ pub(super) const TRUNCATED_TRANSFER: Scenario = Scenario {
     run: truncated_transfer,
 };
 
+/// The source cannot continue a transfer from where it stopped.
+pub(super) const CANNOT_RESUME: Scenario = Scenario {
+    id: "hub/cannot-resume",
+    produces: Category::HubUnreachable,
+    summary: "a hub without ranges says so, and a fetch starts again rather than pretending",
+    run: cannot_resume,
+};
+
 /// A reference that is not one.
 pub(super) const REFERENCE_IS_NOT_ONE: Scenario = Scenario {
     id: "hub/reference-is-not-one",
@@ -162,6 +170,27 @@ fn deceptive_metadata(world: &World) -> Outcome {
     match compared.divergence() {
         Some(failure) => Outcome::Produced(failure),
         None => Outcome::Unexpected(format!("the mislabelling was not noticed: {compared:?}")),
+    }
+}
+
+fn cannot_resume(world: &World) -> Outcome {
+    let hub = FakeHub::new().with(
+        "owner/model",
+        Repository::holding("model.gguf", b"0123456789").behaving(Behaviour::NeverResumes),
+    );
+    let Ok(reference) = mcf_hub::reference::parse("owner/model") else {
+        return Outcome::Unexpected("owner/model is a reference".to_owned());
+    };
+    let listing = match hub.list(&reference) {
+        Ok(listing) => listing,
+        Err(failure) => return Outcome::Unexpected(format!("the listing failed: {failure}")),
+    };
+    let Some(entry) = listing.entry("model.gguf") else {
+        return Outcome::Unexpected("the repository lists no weights".to_owned());
+    };
+    match hub.fetch_from(&reference, entry, 4, &world.path("model.gguf.partial")) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a hub with no ranges continued a transfer".to_owned()),
     }
 }
 

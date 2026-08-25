@@ -9,10 +9,7 @@ fn listing(licence: Option<&str>, size: u64) -> Listing {
     Listing {
         reference: parse("owner/model").expect("a reference"),
         revision: Some("main".to_owned()),
-        entries: vec![Entry {
-            path: "model.gguf".to_owned(),
-            size,
-        }],
+        entries: vec![Entry::new("model.gguf", size)],
         declared_licence: licence.map(str::to_owned),
     }
 }
@@ -111,10 +108,7 @@ fn terms_are_read_or_their_absence_is_reported() {
 /// Fewer bytes than promised is a truncation — partial, and B-021's to resume.
 #[test]
 fn fewer_bytes_than_promised_is_a_truncation() {
-    let entry = Entry {
-        path: "model.gguf".to_owned(),
-        size: 1000,
-    };
+    let entry = Entry::new("model.gguf", 1000);
     let failure = arrived_as_promised(&entry, 400).expect_err("short");
     assert_eq!(failure.category(), Category::ArtifactIncomplete);
     let context: Vec<String> = failure
@@ -137,10 +131,7 @@ fn fewer_bytes_than_promised_is_a_truncation() {
 /// different response.
 #[test]
 fn more_bytes_than_promised_is_a_lie_rather_than_a_windfall() {
-    let entry = Entry {
-        path: "model.gguf".to_owned(),
-        size: 1000,
-    };
+    let entry = Entry::new("model.gguf", 1000);
     let failure = arrived_as_promised(&entry, 1001).expect_err("over");
     assert_eq!(failure.category(), Category::HubMetadataDeceptive);
     assert!(arrived_as_promised(&entry, 1000).is_ok(), "exactly is fine");
@@ -151,9 +142,6 @@ fn more_bytes_than_promised_is_a_lie_rather_than_a_windfall() {
 /// defence is refusing to keep reading.
 #[test]
 fn the_ceiling_is_what_the_listing_promised() {
-    let entry = Entry {
-        path: "model.gguf".to_owned(),
-        size: 4_294_967_296,
-    };
+    let entry = Entry::new("model.gguf", 4_294_967_296);
     assert_eq!(ceiling_for(&entry), 4_294_967_296);
 }
