@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 23 |
+| **Version** | 24 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**241 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 192
-build items (3 done, 59 blocked on a decision, 130 open).** Every item cites
+**242 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 193
+build items (4 done, 59 blocked on a decision, 130 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -106,7 +106,8 @@ first and importance second.
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | open |
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
-| B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | open |
+| B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
+| B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | open |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | open |
 | B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | open |
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | open |
@@ -357,6 +358,28 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 24 — the measurement type closes, and A20 gains an item
+
+B-005 is done. Two design consequences are worth recording because neither was
+obvious from the item's text.
+
+**Uncertainty became a property of the signature.** §3.4 calls a single-shot
+timing an anecdote, so the constructor takes two samples as positional
+arguments and any others after them. Nothing refuses `n < 2` at runtime because
+nothing can express it — which also means the type needs no failure category
+for a case that cannot arise.
+
+**Ordering, not arithmetic.** Every summary MCF reports from a measurement is
+an order statistic, so `Quantity` requires `Ord` rather than `PartialOrd`. The
+consequence is that no floating-point sample type exists and therefore **no NaN
+can enter a measurement** — a NaN being a number that has lost the information
+about what went wrong, which is what A1 forbids.
+
+B-350 is registered. A20 is an absolute rule whose check is `compiler` —
+estimates and measurements are different types with no conversion — and it had
+no build item. It is cheapest to satisfy while the measurement type is new and
+nothing produces estimates yet.
 
 ### Version 23 — the failure type closes
 
