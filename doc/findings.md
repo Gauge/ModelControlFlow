@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -32,6 +32,7 @@ forward as one.
 | 2 | [F2 — The development machine cannot attribute a budget (DEC-051)](#2--f2--the-development-machine-cannot-attribute-a-budget-dec-051) |
 | 3 | [F3 — The load average answers the wrong question (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
 | 4 | [F4 — What the new tiers found on their first runs (B-191)](#4--f4--what-the-new-tiers-found-on-their-first-runs-b-191) |
+| 5 | [F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)](#5--f5--the-cold-start-budget-is-a-measurement-of-the-filesystem-b-011-d30) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -425,7 +426,81 @@ believed, and what a hung run leaves behind is reaped — a spinning test proces
 outliving the tier is a change to the machine A27 does not permit MCF's own
 suite to make either.
 
+## 5 · F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)
+
+**What was run.** `scripts/ci.sh --all`, the first invocation that runs every
+tier B-191 declares. The budget tier failed: cold start, p99 of 100 trials,
+**252 ms** against D24's ceiling of 100 ms, and the reading was judged
+*attributable* rather than refused.
+
+**Conditions.** The same machine as F1–F4. The one condition that turned out to
+matter is one nothing was recording: **the repository lives on
+`/home/gauge/Content`, which is a `fuseblk` mount**, and the artifact under test
+is executed from there. `/tmp` is tmpfs.
+
+### 5.1 The same binary, two filesystems
+
+A hundred spawns of `mcf --version`, release profile, from each location, timed
+outside MCF to keep the instrument out of its own finding:
+
+| The binary is read from | median | p99 | minimum |
+|---|---|---|---|
+| `fuseblk` — where the repository is | 0.362 ms | **416.081 ms** | 0.252 ms |
+| `tmpfs` — a copy of the same bytes | 0.222 ms | **0.390 ms** | 0.212 ms |
+
+The medians differ by a factor of 1.6. The **p99s differ by a factor of 1 067**.
+The same file, the same machine, the same instant: what differs is the
+filesystem the kernel faults the pages in from, and a FUSE filesystem
+occasionally takes hundreds of milliseconds to serve one.
+
+D27's choice of the 99th percentile is doing exactly what it was chosen to do —
+*the tail is what a user feels* — and what it caught here is real. It is simply
+not about MCF.
+
+### 5.2 Two things this says, and neither is that the budget is wrong
+
+**The storage an artifact is executed from is a measurement condition, and MCF
+does not record it.** §3.4's floor asks ten questions and none of them is *where
+did this come from*. Two runs of one binary, with identical stated conditions,
+differ by three orders of magnitude in the statistic D24 is written in. A reader
+handed both numbers could not tell which was which, which is precisely what A6
+exists to prevent.
+
+**D30's attributability signal cannot see this, by construction.** It reads the
+*measuring thread's* time on the runqueue: the question "was this reading
+affected by contention for the processor" (F3). During a cold-start measurement
+the measuring thread is blocked in `wait4` and is not runnable at all, while the
+child faults its pages in from a slow filesystem. The delay signal stays near
+zero and the reading is judged clean, which it is — of the thing the signal
+measures.
+
+So MCF has a signal for one kind of contamination and no signal for another, and
+the tier's only event-class figure happens to be dominated by the second. That
+is a gap in the instrument rather than in the number: B-193 registers both
+halves, and until it is built the cold-start figure means *what a cold start
+costs on this storage*, which is worth knowing and is not what D24 asked for.
+
+### 5.3 What this does not change
+
+The tier is behaving as designed in the part it can see: the state-class figures
+assert, the reading was reported with its statistic and its sample count, and
+the failure was loud. B-011 stays in progress, and it now has a stated reason
+beyond the missing baseline.
+
+Nor does it change what B-191 established. `scripts/ci.sh --all` ran all ten
+tiers; nine of them were green and the tenth failed on a real reading, which is
+the outcome a tier exists to produce.
+
 ## Changelog
+
+### Version 5 — a budget that measures the filesystem
+
+F5 added. The first `--all` run failed its cold-start budget by a factor of
+two and a half, and the cause is a `fuseblk` mount whose p99 page-fault
+service time is a thousand times its median. Two things follow and both are
+registered as B-193: the storage an artifact is executed from is a condition
+nothing records, and D30's signal watches the measuring thread, which for a
+cold start is the one thing not doing the work.
 
 ### Version 4 — what the new tiers found
 
