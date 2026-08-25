@@ -62,8 +62,9 @@ impl fmt::Display for ConditionValue {
 
 /// The §3.3 floor: everything that varies and could change a result.
 ///
-/// Eight questions, each answered or explicitly unanswered. The set is the
-/// intent document's own list, in its own order, and it does not shrink.
+/// Nine questions, each answered or explicitly unanswered. Eight are the
+/// intent document's own list, in its own order; the ninth is D17's realized
+/// placement. The set does not shrink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Floor {
     /// What the machine is: its processors, its memory, its accelerators.
@@ -89,6 +90,20 @@ pub struct Floor {
     /// MCF's *version* is not here: it is [`Conditions::mcf`], which cannot be
     /// unknown because the running binary knows what it is.
     pub mcf_configuration: Attested<ConditionValue>,
+    /// The layout that actually resulted — which devices held which layers.
+    ///
+    /// The ninth question, and the one that does not come from §3.3's list.
+    /// Intent v16 splits placement in two: the *declared* intent belongs to the
+    /// configuration's identity ([`Placement`]) and the *realized* layout is a
+    /// condition, because it names hardware and B57 keeps hardware out of
+    /// identity. Divergence between the two is a finding — it is how a
+    /// configuration visibly fails to transfer.
+    ///
+    /// §3.3 says the floor never shrinks. It does not say it never grows, and
+    /// "everything that varies and could change a result" plainly reaches this.
+    ///
+    /// [`Placement`]: crate::configuration::Placement
+    pub realized_placement: Attested<ConditionValue>,
 }
 
 impl Floor {
@@ -112,6 +127,7 @@ impl Floor {
             context_length: Attested::Unknown,
             batch_shape: Attested::Unknown,
             mcf_configuration: Attested::Unknown,
+            realized_placement: Attested::Unknown,
         }
     }
 
@@ -122,7 +138,7 @@ impl Floor {
     /// them being edited — A6's "any surface that drops its conditions is
     /// doing damage", made hard to do by accident.
     #[must_use]
-    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 8] {
+    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 9] {
         [
             ("hardware_state", &self.hardware_state),
             ("thermal_state", &self.thermal_state),
@@ -132,6 +148,7 @@ impl Floor {
             ("context_length", &self.context_length),
             ("batch_shape", &self.batch_shape),
             ("mcf_configuration", &self.mcf_configuration),
+            ("realized_placement", &self.realized_placement),
         ]
     }
 
