@@ -286,12 +286,18 @@ fn reported_resident(binary: &Path) -> Option<Bytes> {
 
 /// Where the previous readings live: beside the tier ages (B-185), one file per
 /// figure so that four tests running at once cannot tear each other's writes.
+///
+/// `baselines/` rather than `performance/`, because `.mcf-tiers/performance` is
+/// the performance tier's *stamp* — a file — and a directory of the same name
+/// made `scripts/ci.sh --all` fail at the moment it went to record the tier's
+/// age. Two things sharing a namespace is a collision waiting for the first run
+/// that uses both, and the first run that used both was the one that found it.
 fn baseline_directory() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join(".mcf-tiers")
-        .join("performance")
+        .join("baselines")
 }
 
 fn baseline_path(figure: &str) -> PathBuf {
