@@ -38,7 +38,7 @@ $ cargo build --locked --release && ./target/release/mcf doctor
 | Document | Type | Holds | Read it when |
 |---|---|---|---|
 | [document-of-intent.md](doc/document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
-| [rules.md](doc/rules.md) | Rules | 99 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
+| [rules.md](doc/rules.md) | Rules | 100 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [taxonomy.md](doc/taxonomy.md) | Reference | The failure classification: three axes, sixteen domains, 111 codes | You are handling an error, writing a lab scenario, or rendering a failure |
 | [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |

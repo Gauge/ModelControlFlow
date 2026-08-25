@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 56 |
+| **Version** | 58 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
-build items (29 done, 1 dropped, 4 in progress, 54 blocked on a decision, 109 open).** Every item cites
+**248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
+build items (30 done, 1 dropped, 4 in progress, 54 blocked on a decision, 109 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -115,7 +115,7 @@ first and importance second.
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
-| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **in progress** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`. Every figure measurable without a daemon is now *asserted* rather than merely reported (D30), and refused under deliberate load: [findings.md](findings.md) F3 §3.3. The before-and-after still needs a stored baseline and tier ages (B-185) |
+| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | **in progress** — `crates/mcf-cli/tests/budget.rs` behind `scripts/ci.sh --with-budget`. Every figure measurable without a daemon is now *asserted* rather than merely reported (D30), and refused under deliberate load: [findings.md](findings.md) F3 §3.3. Two things are still owed: the before-and-after needs a stored baseline and tier ages (B-185), and the one event-class figure is dominated by a condition nothing records (B-193, F5) |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | **done** — at M0 MCF's observation *is* the record write, and `mcf_record::overhead` measures it beside the real record over D27's hundred trials. The instrumentation profile joins the condition floor as its tenth question, so `mcf doctor` and `mcf doctor --no-record` produce results a reader can tell apart |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
@@ -126,9 +126,10 @@ first and importance second.
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | **done** — `checks/tests/reference_model_neutrality.rs`: no shipped source and no test names the publisher or the family, documentation excepted; a third check fails if the documents stop naming it, so the first two cannot pass by the reference model quietly ceasing to exist |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **done** — `mcf_core::time` keeps the two apart by type; `mcf_record::journal::anomaly` notices a moved calendar by holding *both* clocks across an append, and two scenarios produce a backward step and a forward jump with a disposition of `invalidated`. The entry is still written: what an anomaly invalidates is what was measured across it, not the event |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | **done** — `mcf_core::time::zone` reads the zone file in safe Rust, resolves the offset in force *at the moment* rather than now, and is unknown beyond what the file records rather than extrapolating. Checked against what the system itself reports |
-| B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
+| B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | **done** — all ten exist, declared in `checks/src/tiers.rs` and compared against `scripts/ci.sh`, the tree and [build.md](build.md) in both directions. Five gate, in five seconds; five are scheduled behind flags. The whole-system tier covers the one of §7.22's four questions M0 has anything to answer and names the other three, so DEC-022 governs its extension rather than its existence |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
+| B-193 | The storage an artifact is read from is a measurement condition; and a measurement whose cost is in another process is judged by that process's scheduling, not the measurer's | §3.4, D27, D30, B35 | The condition floor carries where the artifact was executed from, and a cold start on a slow filesystem is refused as unattributable rather than reported as over its ceiling | open — [findings.md](findings.md) F5 has the evidence: one binary, two filesystems, p99s a factor of 1 067 apart with identical stated conditions; and the same tier over its ceiling and two orders of magnitude within it on one machine within the hour |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
@@ -365,6 +366,31 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 58 — the budget that measures the filesystem
+
+B-193 added, from [findings.md](findings.md) F5. The first run of every tier at
+once failed the cold-start budget, and the cause is a mount whose p99
+page-fault service time is a thousand times its median: the same binary read
+from tmpfs is within its ceiling by two orders of magnitude. Two halves are
+registered together because either alone would leave the figure meaningless —
+the storage an artifact is executed from is a condition nothing records, and
+D30's attributability signal watches the measuring thread, which during a cold
+start is the one thing not doing the work.
+
+### Version 57 — the suite has all ten tiers
+
+B-191 done. D10's ten disciplines all exist and all run: five gate every change
+and five are scheduled behind flags on the same command. What is not done is
+named where it belongs — tier ages are B-185, the mutation floor is B-186, and
+the end-to-end boundary is DEC-022, which the whole-system tier cites rather
+than pre-empts.
+
+Three of the new tiers found something on their first run, and each is recorded
+with the work rather than in a commit message alone: a condition that did not
+round-trip through the record ([build.md](build.md) §9, fixed), a replay whose
+footprint is proportional to the journal, and the reason the soak tier can only
+be read on one thread.
 
 ### Version 56 — the offset is read, at the moment it applies to
 

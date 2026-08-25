@@ -16,6 +16,7 @@ use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::capture;
 use mcf_core::hardware::Machine;
+use mcf_core::measurement::Conditions;
 use mcf_core::time::Timestamp;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
@@ -139,4 +140,41 @@ fn a_condition_of_an_unexpected_shape_is_not_coerced() {
     };
     fields.insert("thermal_state".to_owned(), Value::Bool(true));
     assert!(decode::floor(&Value::Map(fields)).is_none());
+}
+
+/// An integral condition stays integral, in the record and on the way back.
+///
+/// The fixture for the first defect the property tier found (B-191): every
+/// known condition was rendered through `Display`, so a context length of 4096
+/// was written as `"4096"` and read back as text. Nine of the ten questions
+/// never noticed, because nine of them are naturally strings. §3.3 asks the
+/// record be machine-readable first, and a number a reader has to re-parse from
+/// a string is not that; B-007's *round-trips losslessly* is the claim it
+/// falsified.
+#[test]
+fn an_integral_condition_is_recorded_as_a_number() {
+    use mcf_core::measurement::{ConditionValue, Floor};
+
+    let floor = Floor {
+        context_length: Attested::Known(ConditionValue::integer(4096)),
+        quantization: Attested::Known(ConditionValue::text("Q4_K_M")),
+        ..Floor::nothing_known()
+    };
+    let conditions = Conditions::new(BuildIdentity::current(), floor);
+    let encoded = encode::conditions(&conditions);
+
+    assert_eq!(
+        encoded.get("context_length"),
+        Some(&Value::Integer(4096)),
+        "an integral condition is written as a number, not as its rendering"
+    );
+    assert_eq!(
+        encoded.get("quantization"),
+        Some(&Value::text("Q4_K_M")),
+        "a textual condition is unchanged by the fix that made numbers numbers"
+    );
+
+    let rebuilt = decode::conditions(&encoded, BuildIdentity::current())
+        .expect("the conditions are readable");
+    assert_eq!(&rebuilt, &conditions);
 }

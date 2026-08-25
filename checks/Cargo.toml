@@ -14,7 +14,11 @@ workspace = true
 
 # A13 makes the taxonomy and the code one list. Reading it needs the types, so
 # the checks take mcf-core as a development dependency only — nothing this
-# crate builds is shipped, and no MCF crate depends on it.
+# crate builds is shipped, and no MCF crate depends on it. `mcf-lab` is the
+# fault catalogue, and `mcf-record` is what the property, fuzz, load and soak
+# tiers examine: the codec and the journal are where generated and untrusted
+# bytes meet MCF (B-191, D10).
 [dev-dependencies]
 mcf-core = { path = "../crates/mcf-core" }
 mcf-lab = { path = "../crates/mcf-lab" }
+mcf-record = { path = "../crates/mcf-record" }

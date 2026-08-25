@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -25,12 +25,12 @@ with B-014.
 | 1 | [The toolchain](#1--the-toolchain) |
 | 2 | [The crate split](#2--the-crate-split) |
 | 3 | [Building](#3--building) |
-| 4 | [The gating tier](#4--the-gating-tier) |
+| 4 | [The gating tiers](#4--the-gating-tiers) |
 | 5 | [Reproducibility](#5--reproducibility) |
 | 6 | [Dependencies](#6--dependencies) |
 | 7 | [Generated code](#7--generated-code) |
 | 8 | [The documents](#8--the-documents) |
-| 9 | [The scheduled tiers](#9--the-scheduled-tiers) |
+| 9 | [The tiers](#9--the-tiers) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -67,7 +67,7 @@ reach back and weaken a type in `mcf-core`.
 | `mcf-serve` | The daemon, engine adapters, the serving surface (§VI) | `mcf-core`, `mcf-record` |
 | `mcf-bench` | Measurement, and the laboratories that produce it (§II, §XIII) | `mcf-core`, `mcf-record`, `mcf-serve` |
 | `mcf-cli` | The headless surface; binary `mcf` (A22) | all of the above |
-| `mcf-checks` | Workspace-shape checks. Ships nothing, and nothing depends on it | — |
+| `mcf-checks` | The checks that are about the repository rather than a value — the crate split, the taxonomy agreement, the document contract, the tier register — and the machinery the tiers that are not `cargo test` need. Ships nothing, and nothing depends on it | — |
 
 The table is a rendering of `checks/src/workspace.rs`, which is the
 declaration the tests compare the repository against. Both directions are
@@ -109,27 +109,35 @@ Cargo forces the test profile to unwind whatever the dev profile says, so the
 suite and the shipped artifact genuinely differ in that one respect. It is why
 B-011's budget suite measures the release binary rather than the test one.
 
-## 4 · The gating tier
+## 4 · The gating tiers
 
 ```
 $ scripts/ci.sh
 ```
 
-Formatting, `clippy -D warnings` over every target, the test suite, and
-`cargo doc` with warnings denied. It passes `--offline` rather than merely
-expecting no network, so a check that starts reaching out fails here instead of
-on an aeroplane (B19).
+Formatting, `clippy -D warnings` over every target, the suite, and `cargo doc`
+with warnings denied. It passes `--offline` rather than merely expecting no
+network, so a check that starts reaching out fails here instead of on an
+aeroplane (B19).
 
-**It takes about five seconds.** Measured rather than asserted: D24 gives
-sixteen figures and none of them is a suite time, so there is no ceiling to
-compare against — B38 requires the gating tier be fast and says so
-qualitatively. The number is reported here because a gating tier that grew
-slowly would otherwise become one people skip without anybody noticing when.
+**Five of B38's ten tiers run here**, and they are one `cargo test` because
+separating them would make it possible to run some of them and believe the
+suite had run: `unit`, `property`, `functional`, `whole-system` and
+`fault-injection`. §9 has the table and what each one covers.
 
-B38 tiers the suite, and this is only the fast hermetic tier. The heavy tiers —
-load, soak, mutation, the full fault matrix — do not exist yet (B-191, B-185,
-B-186), and `ci.sh` prints their absence rather than passing silently: "did not
-run" read as "passed" is A2's silent failure aimed at the suite.
+**It takes about seven seconds, and the command says so.** Measured rather than
+asserted: D24 gives sixteen figures and none of them is a suite time, so there
+is no ceiling to compare against — B38 requires the gating tier be fast and says
+so qualitatively. The elapsed time is printed at the end of every run, because a
+gating tier that grew slowly would otherwise become one people skip without
+anybody noticing when.
+
+**What did not run is named.** Every invocation ends with the tiers it did not
+run and the flag that runs each, because "did not run" read as "passed" is A2's
+silent failure aimed at the suite. Tier *ages* — the stronger form, where a tier
+that has not run recently is reported stale — are B-185, and the mutation floor
+is B-186; the last line of every run says so rather than implying the list is
+complete.
 
 **Lints are the machine-checked form of rules that would otherwise rest on
 review** (B16). The workspace denies `unsafe_code`, `missing_docs`, all of
@@ -259,20 +267,114 @@ README names outright are checked; the rest stays a stated `review` obligation.
 B16 counts a review check as a cost, and claiming a machine check that is really
 a keyword search would be worse than counting it.
 
-## 9 · The scheduled tiers
+## 9 · The tiers
 
-B38 tiers the suite: the fast hermetic tier gates every change, and the heavy
-ones run on a schedule and before a release. Two exist.
+D10 names ten disciplines that share the word "test", and §6.34 resolves the
+tension between them: **tier the suites, gate on the fast one, schedule the
+heavy ones**. All ten exist (B-191). The table is a rendering of
+`checks/src/tiers.rs`, and `checks/tests/tiers_conform.rs` fails the build when
+the two disagree — a tier whose command is not in `scripts/ci.sh`, a flag the
+script does not accept, a file the register names and the tree does not have, a
+gating tier that `#[ignore]`s its own tests, or a tier missing from this
+document.
+
+| Tier | Covers | Runs |
+|---|---|---|
+| `unit` | Logic, in the crate that owns it | gating |
+| `property` | Invariants MCF claims universally, over generated inputs | gating |
+| `functional` | Behaviour at the API surface, and the rules the workspace enforces about itself | gating |
+| `whole-system` | The binary as a process, against a real record, including restart and a kill | gating |
+| `fault-injection` | Every failure MCF claims to handle, reproduced from the laboratory's catalogue | gating |
+| `fuzz` | The parsers that read bytes MCF did not write | `--with-fuzz` |
+| `load` | MCF's claims under many callers at once, against the simulated laboratory | `--with-load` |
+| `soak` | Drift over a long run: descriptors, directories, memory | `--with-soak` |
+| `performance` | D24's budgets, on the release artifact, read as D27 says | `--with-budget` |
+| `mutation` | The test of the tests | `--with-mutation` |
 
 ```
-$ scripts/ci.sh --with-reproducibility     # B-001
-$ scripts/ci.sh --with-budget              # B-011
+$ scripts/ci.sh --with-fuzz --with-load --with-soak
+$ scripts/ci.sh --with-budget --with-mutation --with-reproducibility
+$ scripts/ci.sh --all
 ```
 
-**Reproducibility** is §5 above. **The budget tier** measures MCF's own cost
-against D24's ceilings and reads each figure the way D27 says: a prohibition at
-the maximum, a ceiling on *state* at the maximum, a ceiling on an *event* at the
-99th percentile over at least a hundred trials.
+Reproducibility (§5) is a scheduled check rather than one of D10's tiers, and
+keeps its own flag.
+
+### The property tier
+
+Invariants with a quantifier in them: *the reported spread is five values that
+were actually observed* (A6), *a journal torn anywhere reports the byte it
+stopped at and how much it did not read* (B62), *what MCF did not know comes
+back unknown* (A7). Generation is deterministic — a fixed seed set, stated in
+`mcf_checks::property::BASE_SEED` — because §3.12 makes reproducibility a
+precedence rule and a suite that draws fresh inputs every run gates each change
+against a different question. Exploration is the fuzz tier's job.
+
+It found a defect on its first run, which is recorded in the commit that added
+it: every known condition was rendered through `Display`, so a context length of
+4096 was written to the record as `"4096"` and read back as text.
+
+### The whole-system tier
+
+The binary cargo just built, run as a process against a scratch machine: two
+runs appending to one journal, an export read back by the reader another machine
+would use, and twelve kills landing wherever they land. Where the end-to-end
+boundary falls is **DEC-022 and it is open** — §7.22 asks about a real HTTP
+surface, a started engine and a supervised child, and none of those exists at
+M0. The tier covers the fourth question, recovery with persisted state, and says
+which three it is not answering.
+
+### The fuzz tier
+
+Four parsers read bytes MCF did not write: the record's codec, the journal
+replay, the zone file the platform publishes, and a bundle that arrived from
+somewhere else. The tier damages known-good inputs rather than generating random
+ones — a uniform generator reaches the first error path and stays there — and
+asserts only that a parser does not panic, refuses by name, and describes what
+it accepted correctly.
+
+Each target counts what it reached and fails if it never once accepted a damaged
+input, because a campaign that only exercised the refusal path reports the same
+green as one that examined the parser. Measured over the default 200 000 cases:
+`json::parse` accepts 11 484, `Zone::parse` 20 637, `replay` 2 916 of its 5 000,
+and the bundle reader 181 of its 5 000 — the last low by construction, since a
+bundle states a digest over its own contents. About four seconds.
+
+### The load and soak tiers
+
+§6.34 settles what they run against: **the simulated laboratory, not real
+weights**, so they stay cheap enough to run often and deterministic enough to
+believe.
+
+Load asks whether the laboratory's determinism (B27) and the journal's
+completeness (B62) are properties of the code or of there having been one
+caller: sixty-four workers, 38 400 scenario runs, 128 000 appends, 64 bundles,
+about a second of wall time and fourteen of CPU. Nothing in it times anything —
+A18 keeps a throughput assertion out of a test suite. One journal per worker,
+because who writes to *one* journal is DEC-037 and it is open (B-332).
+
+Soak looks for drift rather than a wrong answer. A hundred thousand appends grow
+the writer by nothing; ten thousand open-append-close cycles leak no
+descriptors; twenty thousand scenario runs leave no directories; thirty
+simulated days cost nothing, because the lab's clock is supplied rather than
+waited on. It runs on **one thread**, and that was found rather than assumed:
+resident memory is a property of the process, so a second test allocating in
+parallel reads as growth — B35's lesson about contention, arriving at memory
+instead of at a timing.
+
+It also produces a number worth keeping: a replay holds about a kilobyte per
+entry, because `Replay` returns every entry it read. That is D20's design and it
+is what D6's derived index exists to stop growing (B-042, B-300). Reported and
+not asserted — asserting on it would be asserting that MCF never keeps a record
+long enough to matter. This tier is **not B-148**, the M8 endurance scenario:
+days of simulated operation with a daemon, state migration, and a machine that
+changes underneath.
+
+### The performance tier
+
+Measures MCF's own cost against D24's ceilings and reads each figure the way D27
+says: a prohibition at the maximum, a ceiling on *state* at the maximum, a
+ceiling on an *event* at the 99th percentile over at least a hundred trials.
 
 Two things it refuses to do are worth knowing before reading its output.
 
@@ -304,7 +406,66 @@ against; until those exist the tier asserts each figure and does not compare it
 with a previous one. B20's before-and-after is not yet possible and the tier says
 so rather than implying otherwise.
 
+**On a tree kept on a slow filesystem this tier currently fails, and the reason
+is understood.** [findings.md](findings.md) F5: the cold-start figure is
+dominated by how long the kernel takes to fault the binary's pages in, and on a
+FUSE mount that tail is a thousand times the median. The storage an artifact is
+executed from is a measurement condition MCF does not yet record, and the
+attributability signal watches the measuring thread, which during a cold start
+is the one thread not doing the work. Both halves are B-193. Until then, a
+`--with-budget` run from such a tree reports a number about the filesystem, and
+`--all` is red for that reason rather than a regression.
+
+### The mutation tier
+
+D10 calls mutation testing *the test of the tests*: a suite that does not fail
+when the code is deliberately broken is a suite that proves nothing.
+`scripts/check-mutants.sh` applies a declared catalogue of mutations to a copy of
+the working tree — the same shape `check-lints-bite.sh` uses — and requires the
+suite to notice each one.
+
+The catalogue is written by hand rather than generated. A generator produces
+thousands of mutants, most of them equivalent or unreachable, and each one here
+costs a suite run; every entry breaks something a rule depends on, so a
+**survivor names a rule nothing is checking**.
+
+It reports a score and does not enforce a floor. B-186 is the floor, and a
+floor needs a previous result to compare against — B20's before-and-after, which
+is B-300's work. Failing on the first survivor would make the tier unrunnable
+before there was anything to compare with.
+
+Three things keep the score honest. **An equivalent mutant is the control**: a
+change with no semantic effect must *not* be killed, or the runner cannot tell a
+killed mutant from a broken copy and its other results mean nothing. **A mutant
+that does not compile is not a result**: it is excluded and named, because the
+question is what the *tests* notice and a compiler error is the compiler
+noticing. **Every mutated file is compared against a pristine copy at the end**,
+because a restore that silently failed would make every judgment after it a
+judgment about the wrong code — which is what happened, and what
+[findings.md](findings.md) F4.5 records. A control at the start of a run and a
+verification at the end answer different questions.
+
+A mutant may also hang: the digest entry takes the room left in a 64-byte buffer
+from 64 to 63, so the loop that fills it eventually takes nothing per pass. Each
+suite run is bounded at two minutes, a timeout is confirmed by a second run
+before it is believed, and anything still executing out of the run's own copy is
+killed — a spinning test process outliving the tier is a change to the machine
+A27 does not permit MCF's suite to make either.
+
+**Eleven mutants, eleven killed, one of them by hanging; four minutes.** The
+score is not evidence that the suite is complete. It is evidence about eleven
+specific claims, chosen because a rule rests on each.
+
 ## Changelog
+
+### Version 9 — all ten tiers exist
+
+§4 and §9 rewritten with B-191. The suite had five of D10's ten disciplines and
+`ci.sh` printed the absence of the others; it now has all ten, and the table in
+§9 is a rendering of `checks/src/tiers.rs` that a test compares this document
+against in both directions. What the new tiers found is recorded with them: a
+condition that did not round-trip, a replay whose footprint is proportional to
+the journal, and the reason the soak tier runs on one thread.
 
 ### Version 8 — the budget tier judges the reading, not the machine
 
