@@ -36,15 +36,24 @@ pub enum EntryKind {
     /// Trials rather than results: what is recorded is what was observed, and
     /// every summary is projected from these when a question is asked.
     Trials,
+    /// An artifact left this machine, and who said it could (B-027, §3.11).
+    ///
+    /// A kind of its own rather than a failure or a note, because it is the one
+    /// event whose record has to outlive the thing it is about: after a removal
+    /// the artifact is gone and this line is all there is. §3.11 forbids
+    /// reclaiming space without a decision, and a decision nobody wrote down is
+    /// indistinguishable from an automatic one.
+    ArtifactRemoved,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
         Self::Trials,
+        Self::ArtifactRemoved,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -58,6 +67,7 @@ impl EntryKind {
             Self::Failure => "failure",
             Self::SelfCost => "self_cost",
             Self::Trials => "trials",
+            Self::ArtifactRemoved => "artifact_removed",
         }
     }
 

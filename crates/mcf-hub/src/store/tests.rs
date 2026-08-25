@@ -1,0 +1,337 @@
+//! What it takes to remove an artifact, and what it takes to get one back.
+
+use std::path::{Path, PathBuf};
+
+use super::{Authorization, preview, purge, remove, restore};
+use mcf_core::failure::Category;
+use mcf_core::time::Timestamp;
+use mcf_record::journal::Journal;
+
+/// A directory of this test's own, removed when it is done.
+struct Scratch {
+    path: PathBuf,
+}
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "mcf-store-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _fresh = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a scratch directory");
+        Self { path }
+    }
+
+    fn at(&self, name: &str) -> PathBuf {
+        self.path.join(name)
+    }
+
+    /// A file with something in it, and the something is the name so that a
+    /// misplaced file is legible when a test fails.
+    fn holding(&self, name: &str, bytes: usize) -> PathBuf {
+        let path = self.at(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("the parent exists");
+        }
+        std::fs::write(&path, vec![b'w'; bytes]).expect("the file is written");
+        path
+    }
+
+    fn journal(&self) -> Journal {
+        Journal::open(&self.at("journal.jsonl")).expect("a journal opens")
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _removed = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn now() -> Timestamp {
+    Timestamp::now()
+}
+
+/// The preview describes and does not act. Every byte is still where it was.
+#[test]
+fn a_preview_touches_nothing() {
+    let scratch = Scratch::new("preview");
+    let model = scratch.holding("model.gguf", 128);
+    let plan = preview(std::slice::from_ref(&model), &scratch.at("shelf")).expect("a plan");
+
+    assert!(model.exists(), "the preview removed something");
+    assert_eq!(plan.bytes(), Some(128));
+    assert_eq!(plan.doomed().len(), 1);
+    let described = plan.describe();
+    assert!(described.contains("model.gguf"), "{described}");
+    assert!(described.contains("128 bytes"), "{described}");
+}
+
+/// A path that is not there is a thing to explain, not a row to drop: a plan
+/// that quietly shortened itself would be read as *this is everything*.
+#[test]
+fn a_plan_will_not_describe_what_is_not_there() {
+    let scratch = Scratch::new("absent");
+    let failure = preview(&[scratch.at("never-existed.gguf")], &scratch.at("shelf"))
+        .expect_err("nothing to look at");
+    assert_eq!(failure.category(), Category::ArtifactMissing);
+    assert!(
+        failure
+            .context()
+            .iter()
+            .any(|entry| entry.value.contains("never-existed.gguf")),
+        "the refusal does not say which path"
+    );
+}
+
+/// A removal is authorized *for a reason*, because *the disk was full* and *I
+/// replaced it with a better quantization* are different decisions and a record
+/// with neither cannot tell them apart.
+#[test]
+fn an_authorization_without_a_reason_is_not_one() {
+    let scratch = Scratch::new("reason");
+    let model = scratch.holding("model.gguf", 8);
+    let plan = preview(std::slice::from_ref(&model), &scratch.at("shelf")).expect("a plan");
+
+    let failure = Authorization::given(&plan, "   ").expect_err("no reason given");
+    assert_eq!(failure.category(), Category::ConfigInvalid);
+    Authorization::given(&plan, "replaced by the Q6 quantization").expect("a reason");
+}
+
+/// An authorization is for the removal somebody looked at. A file that changed
+/// under the preview is a different removal, and it is refused rather than
+/// performed on something nobody saw.
+#[test]
+fn an_authorization_does_not_carry_to_a_removal_nobody_previewed() {
+    let scratch = Scratch::new("stale");
+    let model = scratch.holding("model.gguf", 8);
+    let shelf = scratch.at("shelf");
+    let plan = preview(std::slice::from_ref(&model), &shelf).expect("a plan");
+    let authorization = Authorization::given(&plan, "making room").expect("authorized");
+
+    std::fs::write(&model, vec![b'w'; 4096]).expect("the model grows");
+    let now_a_different_removal =
+        preview(std::slice::from_ref(&model), &shelf).expect("a second plan");
+    assert_ne!(
+        plan.identity(),
+        now_a_different_removal.identity(),
+        "a changed artifact produced the same plan identity"
+    );
+
+    let mut journal = scratch.journal();
+    let failure = remove(
+        &now_a_different_removal,
+        &authorization,
+        &mut journal,
+        now(),
+    )
+    .expect_err("the authorization is stale");
+    assert_eq!(failure.category(), Category::ConfigInvalid);
+    assert!(model.exists(), "a refused removal removed something");
+}
+
+/// The ordinary path: the record is written, the artifact moves to the shelf,
+/// and nothing is deleted.
+#[test]
+fn a_removal_records_first_and_deletes_nothing() {
+    let scratch = Scratch::new("removal");
+    let model = scratch.holding("model.gguf", 64);
+    let shelf = scratch.at("shelf");
+    let plan = preview(std::slice::from_ref(&model), &shelf).expect("a plan");
+    let authorization =
+        Authorization::given(&plan, "superseded by a larger quantization").expect("authorized");
+
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+
+    assert!(removed.complete(), "{:?}", removed.refused);
+    assert_eq!(removed.bytes, 64);
+    assert!(!model.exists(), "the artifact is still in its old place");
+    let shelved = removed.shelved.first().expect("one shelved file");
+    assert!(
+        shelved.exists(),
+        "the artifact was deleted rather than moved"
+    );
+    assert!(
+        shelved.starts_with(&shelf),
+        "it went somewhere else entirely"
+    );
+
+    let written = std::fs::read_to_string(journal.path()).expect("the journal is readable");
+    assert!(written.contains("artifact_removed"), "{written}");
+    assert!(
+        written.contains("superseded by a larger quantization"),
+        "{written}"
+    );
+    assert!(written.contains("model.gguf"), "{written}");
+}
+
+/// The record is what outlives the artifact, so it says how big it was and
+/// where it went.
+#[test]
+fn the_record_says_what_left_and_on_whose_word() {
+    let scratch = Scratch::new("record");
+    let model = scratch.holding("model.gguf", 4096);
+    let shelf = scratch.at("shelf");
+    let plan = preview(std::slice::from_ref(&model), &shelf).expect("a plan");
+    let authorization = Authorization::given(&plan, "the disk was short").expect("authorized");
+
+    let mut journal = scratch.journal();
+    remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+
+    let written = std::fs::read_to_string(journal.path()).expect("the journal is readable");
+    assert!(written.contains("4096"), "the size is not in the record");
+    assert!(written.contains(plan.identity()), "the plan is not named");
+    assert!(
+        written.contains(&shelf.display().to_string()),
+        "the shelf is not named, so nobody can find what was removed"
+    );
+}
+
+/// The shelf is the point: an operator who removed the wrong model gets it
+/// back.
+#[test]
+fn what_was_shelved_can_be_put_back() {
+    let scratch = Scratch::new("restore");
+    let model = scratch.holding("model.gguf", 32);
+    let plan = preview(std::slice::from_ref(&model), &scratch.at("shelf")).expect("a plan");
+    assert!(
+        plan.reversible(),
+        "a shelf beside the artifact should be reversible"
+    );
+    let authorization = Authorization::given(&plan, "a mistake in progress").expect("authorized");
+
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+    let back = restore(&removed, &plan).expect("it comes back");
+
+    assert_eq!(back, vec![model.clone()]);
+    assert!(model.exists());
+    assert_eq!(
+        std::fs::read(&model).expect("readable").len(),
+        32,
+        "it came back as something else"
+    );
+}
+
+/// Deleting is a fourth act with an authorization of its own, and it is the
+/// only thing in MCF that destroys an artifact.
+#[test]
+fn purging_is_a_separate_decision() {
+    let scratch = Scratch::new("purge");
+    let model = scratch.holding("model.gguf", 100);
+    let plan = preview(std::slice::from_ref(&model), &scratch.at("shelf")).expect("a plan");
+    let authorization = Authorization::given(&plan, "done with it").expect("authorized");
+
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+    let shelved = removed.shelved.first().cloned().expect("one shelved file");
+    assert!(shelved.exists(), "the removal deleted it by itself");
+
+    let freed = purge(&removed, &authorization, &plan).expect("the purge runs");
+    assert_eq!(freed, 100);
+    assert!(!shelved.exists());
+}
+
+/// And a purge authorized for some other removal is not authorization for this
+/// one.
+#[test]
+fn a_purge_checks_which_removal_it_was_told_about() {
+    let scratch = Scratch::new("purge-mismatch");
+    let one = scratch.holding("one.gguf", 10);
+    let two = scratch.holding("two.gguf", 20);
+    let shelf = scratch.at("shelf");
+    let plan = preview(std::slice::from_ref(&one), &shelf).expect("a plan");
+    let other = preview(std::slice::from_ref(&two), &shelf).expect("another plan");
+    let for_the_other = Authorization::given(&other, "the other one").expect("authorized");
+
+    let mine = Authorization::given(&plan, "this one").expect("authorized");
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &mine, &mut journal, now()).expect("the removal runs");
+
+    let failure = purge(&removed, &for_the_other, &plan).expect_err("the wrong authorization");
+    assert_eq!(failure.category(), Category::ConfigInvalid);
+    assert!(
+        removed.shelved.first().is_some_and(|path| path.exists()),
+        "a refused purge deleted something"
+    );
+}
+
+/// Two repositories both publishing `model.gguf` must not land on top of each
+/// other: a removal that destroyed the artifact it was preserving would be the
+/// worst possible way to fail.
+#[test]
+fn two_artifacts_of_the_same_name_do_not_collide_on_the_shelf() {
+    let scratch = Scratch::new("collide");
+    let first = scratch.holding("a/model.gguf", 10);
+    let second = scratch.holding("b/model.gguf", 20);
+    let shelf = scratch.at("shelf");
+    let plan = preview(&[first, second], &shelf).expect("a plan");
+    let authorization = Authorization::given(&plan, "clearing both").expect("authorized");
+
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+
+    assert_eq!(removed.shelved.len(), 2);
+    assert_ne!(
+        removed.shelved.first(),
+        removed.shelved.get(1),
+        "both artifacts were shelved under one name"
+    );
+    for (path, size) in removed.shelved.iter().zip([10_usize, 20]) {
+        assert_eq!(
+            std::fs::read(path).expect("shelved and readable").len(),
+            size
+        );
+    }
+    assert_eq!(removed.bytes, 30);
+}
+
+/// Reversibility is read from the machine rather than assumed. Where the shelf
+/// is on another filesystem a rename is not a rename, and the plan says so — so
+/// the assertion here is that MCF agrees with the kernel, whichever answer this
+/// machine gives.
+#[test]
+fn reversibility_is_what_the_filesystem_says_it_is() {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let scratch = Scratch::new("devices");
+    let model = scratch.holding("model.gguf", 16);
+    let elsewhere = Path::new("/dev/shm");
+    if !elsewhere.exists() {
+        // Nothing to compare against on this machine; the same-filesystem case
+        // is asserted by `what_was_shelved_can_be_put_back`.
+        return;
+    }
+    let shelf = elsewhere.join(format!("mcf-store-shelf-{}", std::process::id()));
+
+    let artifact_device = std::fs::metadata(&model).expect("readable").dev();
+    let shelf_device = std::fs::metadata(elsewhere).expect("readable").dev();
+    let plan = preview(std::slice::from_ref(&model), &shelf).expect("a plan");
+
+    assert_eq!(
+        plan.reversible(),
+        artifact_device == shelf_device,
+        "MCF and the kernel disagree about whether this removal could be undone"
+    );
+    let described = plan.describe();
+    if plan.reversible() {
+        assert!(described.contains("recoverable from"), "{described}");
+    } else {
+        assert!(described.contains("NOT recoverable"), "{described}");
+    }
+    let _cleared = std::fs::remove_dir_all(&shelf);
+}
+
+/// An empty plan removes nothing and says so rather than reporting a
+/// reversibility it has no files to have.
+#[test]
+fn a_plan_with_nothing_in_it_is_not_reversible_or_otherwise() {
+    let scratch = Scratch::new("empty");
+    let plan = preview(&[], &scratch.at("shelf")).expect("an empty plan");
+    assert_eq!(plan.bytes(), Some(0));
+    assert!(!plan.reversible(), "there is nothing to reverse");
+    assert!(plan.doomed().is_empty());
+}
