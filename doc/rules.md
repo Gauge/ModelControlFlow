@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**60 rules in three tiers, each carrying a citation and a check.** Cite them by
+**67 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -17,8 +17,8 @@ the rule is corrected.
 | § | Section | Holds |
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
-| A | [Absolute](#a--absolute) | 23 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 29 rules that permit something provided a condition holds |
+| A | [Absolute](#a--absolute) | 25 rules that admit no exception |
+| B | [Conditional](#b--conditional) | 34 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -46,7 +46,7 @@ defined:
   candidates for deletion if this file grows unwieldy.
 
 The low-value tier is deliberately small — eight rules. That is itself a
-finding. A document of intent whose statements are 87 % load-bearing is doing
+finding. A document of intent whose statements are 88 % load-bearing is doing
 its job; if this tier ever grows large, the correct response is to delete from
 it rather than to organize it.
 
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**44 rules carry at least one machine check, 14 rest on review alone, and 2 are
+**50 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -93,7 +93,7 @@ work that A6 requires is a misuse of the list, and P2 exists to say so.
 
 ## A — Absolute
 
-Twenty-three rules. Each admits no exception.
+Twenty-five rules. Each admits no exception.
 
 ### A1 — Never lose information
 "Never fail" means MCF never becomes unable to tell you what happened. It is
@@ -243,15 +243,16 @@ own integrity never depends on that code behaving.
 - **Violation looks like:** a `trust_remote_code` default of true, anywhere,
   under any convenience argument.
 
-### A16 — Four categories are always gated
+### A16 — Five categories are always gated
 These are asked every time, no matter how much friction it adds: executing
 untrusted code, consuming large irrecoverable resources, exposing the system to
-a network, destroying existing artifacts. The line is drawn at *category*, never
-at *frequency*. Everything else flows (B1).
-- **Absorbs:** §6.14, §3.11, §6.12
-- **Check:** `CI` — the four categories are enumerable in code and each has a
+a network, destroying existing artifacts, and **publishing anything off this
+machine**. The line is drawn at *category*, never at *frequency*. Everything
+else flows (B1).
+- **Absorbs:** §6.14, §3.11, §6.12, §3.20
+- **Check:** `CI` — the five categories are enumerable in code and each has a
   test asserting the gate (B-039).
-- **Violation looks like:** a `--yes` flag that covers all four.
+- **Violation looks like:** a `--yes` flag that covers all five.
 
 ### A17 — Nothing leaves the machine unchosen
 Anything that leaves does so because the user chose it, knowing what it
@@ -324,11 +325,33 @@ acquires intent nobody chose.
   item in the backlog carries a citation.
 - **Violation looks like:** a rule that seemed obviously right to somebody once.
 
+### A24 — Publication is irreversible, therefore deliberate and itemized
+Nothing leaves this machine except by an explicit act, taken per share, that
+shows the user **the rows that leave** rather than a description of them, and
+that states plainly that the act cannot be undone. There is no default-on
+contribution, no "help us improve", and no publication that is a side effect of
+enabling something else.
+- **Absorbs:** §3.20, §XIV, §3.10, §6.27
+- **Check:** `CI` — no egress path exists that is not user-initiated per share;
+  the confirmation renders the payload (B-160).
+- **Violation looks like:** a settings checkbox that starts sending, or a
+  summary shown in place of the data.
+
+### A25 — A contributable record contains no user content, by construction
+Prompt and completion content lives in a different store from the system record
+and is never written to the contributable one. The guarantee is structural: a
+filter can be misconfigured, a store that never held the data cannot leak it.
+- **Absorbs:** §6.27, §6.8, D6
+- **Check:** `compiler` — the content store and the record store are distinct
+  types with no path between them (B-146, B-161).
+- **Violation looks like:** one database with an `is_user_content` column and an
+  export query that excludes it.
+
 ---
 
 ## B — Conditional
 
-Twenty-nine rules. Each holds under a stated condition, or permits something
+Thirty-four rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -370,9 +393,13 @@ telemetry — continuous sampling, always-on tracing, metric streams — is refu
 by default. **The condition is a decision, not a discovery:** this holds until
 §6.9 is amended, and reducing telemetry may never be allowed to erode the record
 itself, which is not on the dial.
-- **Absorbs:** §3.3, §6.9, §3.13, §5
+The refusal is about *ambient* observation of MCF. Instrumentation inside a
+laboratory, for the duration of an experiment the user started, is not ambient
+and is governed by B30 instead.
+- **Absorbs:** §3.3, §6.9, §3.13, §5, D5
 - **Check:** `CI` — an idle daemon performs zero timer wakeups and writes zero
-  records over the observation window (B-004, B-031).
+  records over the observation window, and the figure does not change with the
+  number of labs compiled in (B-004, B-031).
 - **Violation looks like:** a background sampler that runs whether or not
   anything is occurring.
 
@@ -597,14 +624,16 @@ contended trials are excluded from a claim rather than averaged into one.
 
 ### B25 — Scope refusals
 A feature is refused, without further argument, when it exists only to make MCF:
-a training or fine-tuning platform; a cross-machine leaderboard; a fleet
+a training or fine-tuning platform; a ranking of models across machines; a fleet
 orchestrator; a model-quality authority; a wrapper that makes the runtime
 unreachable; opinionated about which model you should want; a chat product; a
-platform with a plugin ecosystem or extension API; an agent framework; an
-observability platform; or a clone of another tool. "Because that is how the
-other tools do it" is not an argument, and matching a competitor's feature is
-never in itself a reason to carry its weight.
-- **Absorbs:** §5 (all eleven anti-goals)
+platform with a plugin ecosystem or extension API — laboratories included (B32);
+an agent framework; an observability platform *for MCF itself*, as distinct from
+instrumentation of the model under test (B30); the aggregating website of §XV;
+or a broker of anyone's data. "Because that is how the other tools do it" is not
+an argument, and matching a competitor's feature is never in itself a reason to
+carry its weight.
+- **Absorbs:** §5 (all thirteen anti-goals)
 - **Check:** `review` — a refusal cites this rule and the specific anti-goal.
 - **Violation looks like:** a feature whose only justification is a comparison
   table.
@@ -659,6 +688,68 @@ looks better is training on the test, however reasonable each adjustment seemed.
   the breadth required before a generality claim is `blocked (DEC-026)`.
 - **Violation looks like:** "measured on the reference model" quietly becoming
   "measured", which is how one artifact turns into a claim about the world.
+
+### B30 — Lab instrumentation is scoped to its experiment and recorded as a condition
+A laboratory instruments as deeply as its question requires, provided the
+instrumentation exists only while the experiment runs, watches the model under
+test rather than MCF, never touches the serving path a user's application is
+talking to, and appears in the result's conditions. Deep telemetry inside a lab
+is not the ambient telemetry B4 refuses; it is the experiment.
+- **Absorbs:** §XIII, §3.22, §6.24, §6.2
+- **Check:** `CI` — idle cost is identical with three labs and thirty (B-162);
+  every lab result carries its instrumentation profile (B-163).
+- **Violation looks like:** a lab that keeps a sampler running after its run
+  finishes, which is how a bench becomes a monitoring system.
+
+### B31 — Timing-class measurements run under a reduced profile
+A lab states whether its outputs are timing-class or behaviour-class. Timing
+results are taken under reduced instrumentation with the residual overhead
+characterized; behaviour results — did the call parse, did the loop terminate,
+did the model recover — may instrument freely, because watching them does not
+perturb them. A measurement that is both is timing-class.
+- **Absorbs:** §6.25, §6.2, §3.4
+- **Check:** `compiler` — a timing result cannot be constructed from a
+  deep-profile run (B-164).
+- **Violation looks like:** a throughput figure from the lab that watches every
+  token, compared against one from the lab that does not.
+
+### B32 — Laboratories are in-tree and admitted one at a time
+There is no lab API, no third-party lab, no discovery mechanism and no
+configuration language for labs. Each is code in this repository, held to every
+rule that governs the rest of it, and each is admitted by answering one
+question: *what claim can MCF make once this lab exists that it cannot make
+now?* A lab that makes MCF better at running experiments in general, rather than
+able to make a specific new claim, is refused and the refusal is recorded.
+- **Absorbs:** §6.26, §5, §6.18, §3.13
+- **Check:** `review` — the admitting question is answered in the lab's own
+  documentation, and refusals are recorded (B-165).
+- **Violation looks like:** a lab base class with extension points.
+
+### B33 — An imported configuration is declared until this machine verifies it
+A configuration arriving by identifier is reproduced exactly — weights,
+quantization, context, runtime, sampling parameters — and every parameter it
+sets is attributed to that identifier. Numbers that travelled with it are
+somebody else's measurement until MCF takes its own. Resolution passes the same
+gates any acquisition passes (A15, A16). Failure to reproduce here is a
+first-class outcome, and different numbers here are a *finding* about how far
+results travel, not a failure of the import.
+- **Absorbs:** §XV, §3.21, §6.29, §3.18, §3.7
+- **Check:** `CI` — an imported configuration reads as `declared` until a local
+  probe or benchmark verifies it (B-166).
+- **Violation looks like:** an imported benchmark figure displayed as though MCF
+  measured it.
+
+### B34 — Foreign numbers never decide a local configuration
+MCF contributes outward and decides inward. §IV's recommendations come from
+measurements taken on this machine under §3.4's conditions. An aggregate from
+elsewhere may tell a user what to *try*; only a local measurement tells them
+what to *run*. MCF neither computes nor displays a ranking, and a contributed
+row without its full conditions is not contributable at all.
+- **Absorbs:** §6.28, §XIV, §5, §3.4
+- **Check:** `CI` — the recommender's inputs are locally-originated
+  measurements, enforced at the type level (B-167).
+- **Violation looks like:** "most users run Q4_K_M" appearing anywhere near a
+  recommendation.
 
 ---
 
@@ -749,8 +840,8 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 60 rules
-   refined from about 120 scattered statements, and it is worth less the moment
+   is whether an existing rule already covers it. This file holds 67 rules
+   refined from about 140 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
 4. **Tier changes are decisions, not edits.** Promoting a rule to absolute means
@@ -780,6 +871,11 @@ no rule is a defect in this file.
 | §X Capability discovery | A21, B10, B11 |
 | §XI Both surfaces | A22, B22 |
 | §XII The reference model | B28, B29, B19 |
+| §XIII Analysis laboratories | B30, B31, B32 |
+| §XIV The shared record | A24, A25, B34 |
+| §XV Reproduce by identifier | B33, A15, A16 |
+| D6 The record is SQLite | A25, B9 |
+| D7 MCF is for other people | B15, A23 |
 | §3.1 Failure is first-class | A2, A3, A4, A1 |
 | §3.2 Degrade, don't die | A5 |
 | §3.3 The record | A6, B4, C1, C2 |
@@ -799,6 +895,9 @@ no rule is a defect in this file.
 | §3.17 The laboratory | B27, A13, B18, B19, B21 |
 | §3.18 Capabilities are measured | A21, A7, B10 |
 | §3.19 The benchmark resembles the work | B13, A10 |
+| §3.20 Publication is irreversible | A24, A16 |
+| §3.21 An imported configuration is a claim | B33 |
+| §3.22 Instrumentation is scoped | B30, B31 |
 | §4 Standing tensions | B26, A20, B15 |
 | §5 Anti-goals (11) | B25, B4, B23 |
 | §6.1 Honesty wins | P1, A1 |
@@ -824,6 +923,13 @@ no rule is a defect in this file.
 | §6.21 Parity, headless primary | A22 |
 | §6.22 Reference model is a fixture | B28, B19 |
 | §6.23 One model does not generalize | B29, A10 |
+| §6.24 Lab telemetry is not ambient | B30, B4 |
+| §6.25 Instrumentation vs validity | B31, A8 |
+| §6.26 A range of labs is not a platform | B32, B15 |
+| §6.27 Contribution vs privacy | A25, A24, B9 |
+| §6.28 Contribute outward, decide inward | B34, A6 |
+| §6.29 An identifier is a request to reproduce | B33, A15 |
+| §6.30 Publishing vs contamination | B13, A10 |
 | §7 Voids — the process | A23 |
 | §8 Amending | A23, C6, §"Amending this file" |
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
@@ -833,6 +939,27 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 3 — seven rules for the analysis and exchange intents
+
+A16 gains a fifth gated category: publication. The four it had were all
+recoverable — a re-fetch, a copy, a replacement — and §3.20 identifies
+publication as the one act MCF cannot undo, which makes it the category most
+deserving of a gate rather than the one that was missing by oversight.
+
+Seven rules added for §XIII–§XV. A24 and A25 govern contribution: nothing leaves
+except by an itemized per-share act, and the contributable record holds no user
+content by construction rather than by filter. B30 and B31 govern lab
+instrumentation, drawing the line B4 needed once §XIII asked for deep telemetry:
+scoped to the experiment, watching the model rather than MCF, and reduced
+whenever the question is a timing. B32 keeps a range of labs from becoming an
+ecosystem of them. B33 and B34 govern the exchange: an imported configuration is
+declared until verified here, and no foreign number decides a local
+configuration.
+
+B4 and B25 amended rather than replaced — B4 to name what its refusal is *about*
+(ambient observation of MCF, not instrumentation inside a lab), B25 to carry the
+two new anti-goals and the carve-outs the old ones acquired.
 
 ### Version 2 — standardized, and two rules for the reference model
 

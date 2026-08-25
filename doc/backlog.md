@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**130 items: 26 decisions, 104 build items.** Every item cites the clause that
+**151 items: 31 decisions (30 open, 1 resolved) and 120 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -65,7 +65,12 @@ implemented, only gestured at, until the decision is made.
 | DEC-013 | Whether measurements survive MCF's own upgrades | §7.13 | §3.4 | M8 | open |
 | DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
 | DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
-| DEC-015 | Whether MCF is meant to be usable by anyone but its author | §7.15 | §V | M8 | open |
+| DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | open |
+| DEC-028 | What an identifier is: content-addressed or looked up, what it binds, whether it resolves offline | §7.28 | **§XV** | M9 | open |
+| DEC-027 | What a contribution contains, and whether a machine can be de-identified without being made useless | §7.27 | **§XIV** | M9 | open |
+| DEC-030 | Schema versioning across contributed databases, and what a reader does with one it cannot fully interpret | §7.30 | §XIV | M9 | open |
+| DEC-031 | What contribution costs the contributor, and whether MCF may ever prompt for one | §7.31 | §XIV | M9 | open |
+| DEC-015 | Whether MCF is meant to be usable by anyone but its author | §7.15 | §V | M8 | **resolved** — D7: yes. Documentation, installation and interface stability become goals |
 
 ---
 
@@ -96,6 +101,8 @@ first and importance second.
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
+| B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
+| B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
 
 ### M1 — Acquire
@@ -192,6 +199,11 @@ first and importance second.
 | B-107 | Contamination strategy: private, rotated or procedurally generated tasks, per DEC-023 | §7.3, §3.4 | The strategy is stated, implemented and re-checkable as the suite ages | blocked (DEC-023) |
 | B-108 | Zero cost when idle: the benchmark subsystem consumes nothing during ordinary serving | §6.18, §3.13 | Measured serving footprint is identical with the harness compiled in and no benchmark running | open |
 | B-109 | Harness minimality guard: each addition must make the measurement more valid, not the harness more capable | §6.18, §5 | Additions cite validity; capability-only additions are refused and the refusal is recorded | open |
+| B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour) and states what it does and does not establish | §XIII, §3.17, §6.26 | A lab that cannot state its class or its validity boundary fails to register | blocked (DEC-029) |
+| B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
+| B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
+| B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
+| B-165 | Lab admission: each lab answers what claim it enables, and refusals are recorded rather than forgotten | B32, §6.26 | Every registered lab documents its admitting answer; the refusal list is maintained | open |
 | B-110 | `mcf eval`: the M6 product — whether a model can do the work, measured here, as a distribution | §IX | Two models are evaluated on the suite unattended, and the output distinguishes them or honestly declines to | open |
 
 ### M7 — Recommend
@@ -206,6 +218,7 @@ first and importance second.
 | B-125 | Anti-overfitting guard: MCF must not tune toward whatever it measures | §3.4 | The selection suite and the validation suite are structurally separate | blocked (DEC-023) |
 | B-127 | The recommender refuses a field of one: a frontier with a single point is not a frontier, and a single-model recommendation is a claim MCF has no basis for | §6.23, §3.9 | A single-candidate field produces a refusal with its reasoning, never a ranking | open |
 | B-128 | Expand the reference set to the breadth DEC-026 requires before any §IV recommendation is published | §7.26, §6.23 | No generality claim is made until the set exists; results before that say so on every surface | blocked (DEC-026) |
+| B-167 | Recommender inputs are locally-originated measurements, enforced at the type level; no foreign number reaches a recommendation | B34, §6.28, §5 | A contributed or imported measurement cannot be an input to a recommendation | open |
 | B-126 | `mcf recommend`: the M7 product — the closed loop, measure→compare→select→re-measure | §1, §IV | A recommendation is produced, applied, re-measured, and the prediction is checked against the outcome | open |
 
 ### M8 — Endurance
@@ -222,6 +235,19 @@ first and importance second.
 | B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | blocked (DEC-011) |
 | B-148 | Long-run endurance scenario: days of simulated operation with faults, restarts, thermal excursions and upgrades | §I, §3.17 | MCF remains coherent, queryable and restartable throughout, with no unclassified outcome | open |
 | B-149 | Answer §7.14 with evidence: the state that lets us say MCF works | §7.14 | The definition is written, and the suite is measured against it | blocked (DEC-014) |
+
+### M9 — The exchange
+
+| ID | Title | Cites | Done when | Status |
+|---|---|---|---|---|
+| B-160 | Share flow: per-share, opt-in, renders the rows that leave rather than a description of them, and states that publication cannot be undone | A24, §3.20, §6.27 | No egress path exists that is not user-initiated per share; the confirmation shows the payload | open |
+| B-168 | De-identification: fields coarsened, withheld or sent per DEC-027, with MCF stating plainly what a contribution does and does not protect | §7.27, §6.27, §3.10 | A contribution's identifying content is enumerated and the honest claim about anonymity is displayed at the moment of sharing | blocked (DEC-027) |
+| B-169 | Identifier: emit one for a configuration MCF holds, and resolve one it is given | §XV, §7.28 | Round-trip on this machine: emit, wipe, resolve, and reproduce the identical configuration | blocked (DEC-028) |
+| B-166 | An imported configuration reads as `declared` until a local probe or benchmark verifies it; numbers that travelled with it are attributed elsewhere | B33, §3.21, §6.29 | No imported figure renders as though MCF measured it; verification promotes it and records the divergence | open |
+| B-172 | Failure to reproduce an identifier is a first-class outcome, and divergence between imported and local numbers is a recorded finding about how far results travel | §6.29, §6.3, §3.4 | "This identifier needs 48 GiB and you have 24" is a complete answer; a numeric divergence is stored as evidence, not an error | open |
+| B-170 | Contribution schema versioning: a contribution declares the schema and MCF version that wrote it, and a reader that cannot fully interpret one says so | §7.30, §3.1, §3.4 | An older contribution is read, marked, or refused — never silently misinterpreted | blocked (DEC-030) |
+| B-171 | Contribution carries outcomes, never artifacts: scores, classifications, conditions and distributions leave; tasks, tools, fixtures and model outputs do not | §6.30, §3.19 | An audit of a contribution finds no task content; contamination exposure is recorded per task | open |
+| B-173 | `mcf share` / `mcf import`: the M9 product — evidence leaves deliberately, and a configuration found elsewhere reproduces here or explains why not | §XIV, §XV | A contribution is produced, inspected and sent; an identifier from that contribution reproduces the configuration on a second machine | open |
 
 ---
 
@@ -240,6 +266,22 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 3 — the analysis and exchange work is registered
+
+Five decisions added for §XIII–§XV: what a contribution contains and whether a
+machine can be de-identified without being made useless (DEC-027), what an
+identifier actually is (DEC-028), which laboratories exist and in what order
+(DEC-029), schema versioning across contributed databases (DEC-030), and what
+contribution costs the contributor (DEC-031). DEC-015 is resolved by D7.
+
+Build items added for the SQLite record and its structural separation from
+content (M0), the lab framework and its instrumentation rules (M6), local-only
+recommender inputs (M7), and a new M9 group for the exchange itself.
+
+The three DEC entries marked as hard gates — DEC-027, DEC-028, DEC-029 — are the
+ones where proceeding on an assumption would be unsafe rather than merely
+premature: two of them decide what leaves a user's machine.
 
 ### Version 2 — standardized, and the decisions stop being restated
 

@@ -3,15 +3,17 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
 **MCF makes the open weights ecosystem usable by one person on one machine
 without that person becoming a full-time operator of it.** It acquires models
 with their provenance intact, serves them as a dependable local endpoint,
-measures what they cost and what they are worth *on this hardware for the work
-actually being done*, and makes the result legible from anything with a browser.
+puts them on a bench of purpose-built diagnostic laboratories, measures what
+they cost and what they are worth *on this hardware for the work actually being
+done*, and makes the result legible from anything with a browser. Evidence
+leaves the machine only when the operator sends it, row by row.
 
 The measuring is the point. Choosing a local model today is folklore — people
 pick by leaderboard positions measured on someone else's hardware with someone
@@ -28,8 +30,8 @@ know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
 | Document | Type | Holds | Read it when |
 |---|---|---|---|
 | [document-of-intent.md](doc/document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
-| [rules.md](doc/rules.md) | Rules | 60 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
-| [roadmap.md](doc/roadmap.md) | Plan | Nine milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
+| [rules.md](doc/rules.md) | Rules | 67 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
+| [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
 | [mockup/](doc/mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
 
@@ -125,8 +127,14 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M6 — The judgment | [M6-judgment.md](doc/mockup/M6-judgment.md) |
 | M7 — The loop | [M7-loop.md](doc/mockup/M7-loop.md) |
 | M8 — Endurance | [M8-endurance.md](doc/mockup/M8-endurance.md) |
+| M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 3 — the exchange joins the map
+
+M9 and its mockup added, and the rule and milestone counts corrected, following
+version 7 of the intent document.
 
 ### Version 2 — one README for the repository
 

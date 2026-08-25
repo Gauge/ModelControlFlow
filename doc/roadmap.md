@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Type** | Plan — nine milestones, each a vertical MVP slice |
-| **Version** | 2 |
+| **Type** | Plan — ten milestones, each a vertical MVP slice |
+| **Version** | 3 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v6 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -50,9 +50,10 @@ thing to erode it.
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
 | **M5** | **The measurement** — `mcf bench` | Obtain a defensible performance number taken *here*, with its conditions and its uncertainty | §II, §IV | §7.7, §7.6 |
-| **M6** | **The judgment** — `mcf eval` | Find out whether a model can actually do the work, as a distribution rather than a score | §IX, §3.19 | §7.23, §7.3 residuals |
+| **M6** | **The bench** — `mcf eval`, `mcf lab` | Find out whether a model can actually do the work, across purpose-built laboratories, as distributions rather than scores | §IX, §XIII, §3.19 | §7.23, §7.29, §7.3 residuals |
 | **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2, §7.26 |
-| **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14, §7.15 |
+| **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14 |
+| **M9** | **The exchange** — `mcf share`, `mcf import` | Contribute evidence deliberately, and reproduce a configuration found elsewhere — or learn precisely why this machine cannot | §XIV, §XV | §7.27, §7.28, §7.30, §7.31 |
 
 Each milestone's finished state is drawn in `mockup/M<n>-*.md`: sketches of
 intent, not committed designs ([README.md](../README.md#mockups)).
@@ -281,7 +282,7 @@ the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
 
 ---
 
-## M6 — The judgment
+## M6 — The bench
 
 > **Mockup:** [mockup/M6-judgment.md](mockup/M6-judgment.md)
 
@@ -291,9 +292,11 @@ hardest in the project. It is also the most expensive thing MCF does (§4), need
 the M0 laboratory as its environment (§6.17), and needs M3's configuration to be
 measuring the model rather than the setup.
 
-**The MVP.** `mcf eval`. Multi-turn, tool-calling, instruction-bound tasks with
-checkable outcomes, run unattended in a sandbox, reported as a distribution with
-its failure modes classified.
+**The MVP.** `mcf eval` and `mcf lab`. Multi-turn, tool-calling,
+instruction-bound tasks with checkable outcomes, run unattended in a sandbox and
+reported as a distribution with its failure modes classified — delivered as the
+*first laboratory* on a framework that admits more, rather than as a one-off
+harness §XIII would have to be retrofitted onto.
 
 **Delivers**
 - The harness built *on* the M0 laboratory, not beside it (B-100) — §6.17's most
@@ -306,11 +309,20 @@ its failure modes classified.
 - Distributions, never scores (B-104); model failure taxonomy as the primary
   output (B-105) — *how* it failed beats the pass rate
 - A statistical test for "is this a real difference" (B-106)
+- The lab framework (B-111): a lab is named, versioned, reproducible, declares
+  whether it is timing-class or behaviour-class, and states what it does and
+  does not establish — §XIII's unit of work
+- Instrumentation scoped to the experiment (B-162, B-163): idle cost identical
+  with three labs and thirty, and every result carrying its profile — the line
+  §6.24 draws so that §XIII does not reopen what D5 settled
+- Timing-class results refused from deep-instrumentation runs (B-164) — §6.25
+- Lab admission (B-165): each lab answers what claim it enables, and refusals
+  are recorded so the same proposal does not return as an oversight (§6.26)
 - A stated contamination strategy that survives the suite ageing (B-107)
 - Zero cost during ordinary serving (B-108) and a minimality guard on the
   harness (B-109) — §6.18, because harnesses of this kind grow into frameworks
 
-**Gated on:** DEC-023, DEC-003, DEC-010.
+**Gated on:** DEC-023, DEC-029, DEC-003, DEC-010.
 
 **Exit criteria**
 - Two models are evaluated unattended and the output either distinguishes them
@@ -395,6 +407,56 @@ much of MCF's confidence is therefore earned.
 
 ---
 
+## M9 — The exchange
+
+> **Mockup:** [mockup/M9-exchange.md](mockup/M9-exchange.md)
+
+**Why last.** Everything here is about carrying evidence between machines, and
+evidence has to exist and be trustworthy before it is worth carrying. M9 is also
+where MCF's two most irreversible acts live — publishing data, and acting on a
+stranger's configuration — so it is deliberately built on top of a system whose
+record, gates and verification are already proven rather than beside one.
+
+**The MVP.** `mcf share` and `mcf import <identifier>`. A contribution the user
+inspects row by row before it leaves, and an identifier that reproduces a
+configuration here exactly — or states precisely why this machine cannot.
+
+**Delivers**
+- The share flow (B-160): per-share, opt-in, showing the rows that leave rather
+  than a description of them, and stating that publication cannot be undone —
+  A16's fifth gated category, and §3.20's whole point
+- Contribution carries outcomes, never artifacts (B-171): scores,
+  classifications, conditions and distributions leave; tasks, tools, fixtures and
+  model outputs do not, because a public corpus of results is a map of the tasks
+  (§6.30)
+- De-identification per DEC-027 (B-168), including the honest statement of what
+  a contribution does *not* protect — §7.27 records that the useful fields are
+  the identifying ones
+- Identifier emit and resolve (B-169): round-trip on one machine, reproduce on
+  another
+- Imported configurations read as `declared` until verified here (B-166) — §3.21
+- Reproduction failure and numeric divergence as first-class findings (B-172):
+  "this needs 48 GiB and you have 24" is a complete answer, and different numbers
+  here are evidence about how far results travel (§6.29)
+- Contribution schema versioning (B-170): a reader that cannot fully interpret a
+  contribution says so rather than misinterpreting it silently (§3.1)
+
+**Gated on:** DEC-027, DEC-028, DEC-030, DEC-031.
+
+**Explicitly not in M9:** the aggregating website, in any form. MCF emits and
+resolves identifiers and produces contributions; it does not host, rank,
+display or depend on the thing that consumes them (§5).
+
+**Exit criteria**
+- A contribution is produced, inspected row by row, and sent by an explicit act
+- An identifier emitted on one machine reproduces the configuration on another,
+  and any divergence in measured numbers is recorded as a finding
+- No contributed or imported number can reach a recommendation (B-167, B34)
+- An audit of a contribution finds no prompt or completion content, and the
+  guarantee is structural rather than filtered (A25)
+
+---
+
 ## Standing rules across every milestone
 
 The rules live in one place: **[rules.md](rules.md)**. They are not restated
@@ -407,7 +469,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 60. A milestone that can only be
+Every milestone above is subject to all 67. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -415,6 +477,20 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 3 — the bench, and the exchange
+
+M6 becomes *the bench*: the agentic suite ships as the first laboratory on a
+framework that admits more, rather than as a one-off harness §XIII would have to
+be retrofitted onto. Retrofitting it would have been the expensive order, since
+the instrumentation-scoping rules that keep labs from reopening D5 are
+structural rather than additive.
+
+M9 is new and deliberately last. Everything in it carries evidence between
+machines, and evidence must exist and be trustworthy before it is worth
+carrying; it also holds MCF's two most irreversible acts — publishing data, and
+acting on a stranger's configuration — which are safest on top of a system whose
+gates and verification are already proven.
 
 ### Version 2 — standardized
 
