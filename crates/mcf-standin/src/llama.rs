@@ -573,4 +573,4 @@ fn malformed(detail: &str, found: &str) -> Failure {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

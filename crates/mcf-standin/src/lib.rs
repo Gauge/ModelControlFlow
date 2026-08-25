@@ -33,12 +33,18 @@
 //! | [`dequantize`] | Turning a tensor's stored bytes into numbers to compute with |
 //! | [`ops`] | The ordinary operations of a transformer, each one the definition |
 //! | [`llama`] | One family of model, assembled from those operations and run a token at a time |
+//! | [`sample`] | Choosing the next token, from a stated seed and stated settings |
+//! | [`session`] | The generation loop, and the mark every result from it carries (A5) |
 //!
-//! What is not here yet: the forward pass that assembles the operations into a
-//! model, and sampling. B-360 names them and they arrive in that order, because a
+//! What is not here yet: the tokenizer, which turns a prompt into the token
+//! identifiers everything above takes as given (B-360 names it among the
+//! readers, and it arrives with the acquisition path that produces a real
+//! vocabulary). B-360 names them and they arrive in that order, because a
 //! format nobody can read is a model nobody can run.
 
 pub mod dequantize;
 pub mod gguf;
 pub mod llama;
 pub mod ops;
+pub mod sample;
+pub mod session;

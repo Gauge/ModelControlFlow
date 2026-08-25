@@ -210,7 +210,7 @@ fn transparent_block(
 /// A one-hot embedding table: token `i` is the vector with a one at position
 /// `i`. With a transparent block and a tied output projection, the logits are
 /// then the normalized embedding, whose largest element is the token itself.
-fn one_hot_model(vocabulary: usize, embedding: usize) -> Vec<u8> {
+pub(crate) fn one_hot_model(vocabulary: usize, embedding: usize) -> Vec<u8> {
     let mut table = vec![0.0_f32; vocabulary * embedding];
     for token in 0..vocabulary {
         if let Some(slot) = table.get_mut(token * embedding + (token % embedding)) {
