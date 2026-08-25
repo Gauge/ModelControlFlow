@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v15, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**93 rules in three tiers, each carrying a citation and a check.** Cite them by
+**95 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 58 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 60 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**76 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**78 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Fifty-eight rules. Each holds under a stated condition, or permits something
+Sixty rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1094,6 +1094,32 @@ that leaves residue has contaminated the next one.
 - **Violation looks like:** a warm cache left behind, which silently makes the
   next lab's first trial different from its rest.
 
+### B59 — A swept value is selected on one split and reported from another
+Any parameter chosen by sweeping — sampling, quantization, context, runtime
+flags — is hyperparameter optimization, and picking the best of several arms
+inflates the apparent gain whether or not a real difference exists. The value is
+selected on one workload split and its improvement measured on another. What MCF
+publishes is the validated number, never the winning one, and a winner that does
+not survive validation is reported as **no improvement found** (A9).
+- **Absorbs:** D18, A10, §3.4, §6.5
+- **Check:** `CI` — a reported improvement traces to a split that was not used
+  for selection (B-280).
+- **Violation looks like:** "temperature 0.55 was best of eight" published as a
+  gain, which is the garden of forking paths with a decimal point.
+
+### B60 — A model's recommended settings are a declaration, not a fact
+Calibration adopts what the artifact recommends rather than imposing a house
+style, and marks it *declared, unverified* (A21) until a sweep has tested it.
+Divergence between the recommendation and what measures best here is a finding
+and is surfaced. Sampling belongs to the configuration's identity (D17), and a
+laboratory may pin its own only as declared method, with its results kept apart
+from those of labs that inherit.
+- **Absorbs:** D18, §3.18, D13, D17
+- **Check:** `CI` — recommended values render as declared until a sweep promotes
+  them; a lab that pins declares it (B-281).
+- **Violation looks like:** a global default temperature applied to every model,
+  which measures each of them under settings some were never designed for.
+
 ---
 
 ## C — Low value
@@ -1183,7 +1209,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 93 rules
+   is whether an existing rule already covers it. This file holds 95 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1230,6 +1256,7 @@ no rule is a defect in this file.
 | §3.28 Gather precisely, recommend generally | B55, B41 |
 | D16 Raw trials are kept | B56 |
 | D17 Identity is the configuration | B57 |
+| D18 Sampling is identity, verified | B59, B60 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1311,6 +1338,19 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 11 — sweeps, and the recommendation as declaration
+
+B59 is a statistics rule and the one most likely to be violated by someone
+acting in good faith: selecting the best of several arms inflates the apparent
+gain, so selection and reporting use different splits and the published number
+is the validated one. "Best of eight" reported as a gain is the garden of
+forking paths with a decimal point.
+
+B60 makes a model's recommended settings a declaration rather than a fact —
+§3.18 applied one level out from capabilities — and keeps MCF from imposing a
+global default that would measure every model under settings some were never
+designed for.
 
 ### Version 10 — trials, identity, teardown
 

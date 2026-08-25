@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -823,6 +823,46 @@ splitting down never is.
 *The residual question is which parameters are identity and which are
 conditions at the edges — placement, engine build, sampling — and it stays open
 in §7.34.*
+
+### D18 — Sampling is identity; the recommendation is a declaration to be verified *(answers §7.46)*
+
+**Sampling parameters are part of a configuration's identity.** Temperature,
+top-p, top-k, penalties and maximum tokens are what the hosting system needs in
+order to run a model (D17), they change behaviour profoundly, §6.6 lists them
+among the things MCF tunes, and §XV cannot reproduce behaviour without them. Two
+configurations differing only in temperature are two configurations, and
+grouping-as-a-view collapses them whenever a question does not care.
+
+**The model's own recommendation is the default, and it is a *declaration*.**
+Calibration (D13) adopts what the artifact recommends rather than imposing a
+house style, because a global constant would measure every model under settings
+some were never designed for. The value is marked *declared, unverified* (A21)
+until MCF has tested it — which is §3.18 applied one level out: **recommendations
+are measured, not believed.**
+
+**Sweeps verify the recommendation, and divergence is a finding.** A sampling
+laboratory sweeps around the declared values and reports whether they are in
+fact the best available here. That the publisher's recommendation is *not*
+optimal on this hardware, or not optimal for this workload, is exactly the kind
+of thing this project exists to discover — the same shape as the declared-versus-
+verified context divergence, arriving through a different parameter.
+
+**"Better" is per workflow, never global** (D2, §3.23). The temperature that
+maximizes tool-call reliability need not be the one that maximizes extraction
+accuracy, and MCF reports a sweep per laboratory rather than crowning one value.
+
+**A lab may still pin its own sampling** as declared method, where its question
+requires it — a determinism laboratory cannot run at the user's temperature and
+mean anything — provided it says so and its results are not compared with those
+of a lab that inherits.
+
+**The hazard, and it is not optional to handle.** A sweep is hyperparameter
+optimization, and picking the best of eight arms inflates the apparent gain
+whether or not any real difference exists — the garden of forking paths. So a
+swept value is **selected on one split and its improvement reported from
+another** (A10, B125). The number MCF publishes is the validated one, never the
+winning one, and a sweep whose winner does not survive validation reports *no
+improvement found*, which is a §3.4 null result and a useful one.
 
 ## 3. Principles
 
@@ -3051,14 +3091,11 @@ results across builds can be collapsed at query time when the question warrants
 and stay separate when it does not. The reverse — discovering that a corpus
 silently mixed two engines — is unrecoverable.
 
-**Sampling parameters — open.** Temperature, top-p, top-k, penalties, maximum
-tokens and seed. The tension is that they change *behaviour* profoundly and
-*throughput* not at all, so they look like identity to one laboratory and noise
-to another. Against fixing them globally: §6.6 lists sampling among the things
-MCF tunes, §6.17 holds that temperature zero is a different experiment rather
-than a fix, and D17's own definition puts them in the identity since a model
-cannot run without them. In favour: a fixed constant makes every result
-trivially comparable. See §7.46.
+**Sampling parameters — settled by D18: identity.** The model's own
+recommendation is the default and is marked *declared* until a sweep verifies
+it. Whether the *seed* is identity or a condition remains open beneath it: §6.17
+argues condition, since irreducible stochasticity is reported rather than
+engineered away, while §7.6's reproducibility tolerance may argue otherwise.
 
 ### 7.35 Host platform scope, and the containment mechanism — **structural**
 
@@ -3229,52 +3266,6 @@ The failure mode is silent and slow: a user compares a result from before a
 driver update with one from after and reads the driver's effect as the model's.
 §3.1 forbids exactly that kind of quiet corruption.
 
-### 7.46 Sampling parameters: configuration, constant, or the lab's to pin
-
-Split out of §7.34 because it is a bigger question than the other two edges and
-deserves its own answer.
-
-**What is in scope:** temperature, top-p, top-k, min-p, repetition and presence
-penalties, maximum tokens, and seed where the engine supports one. Deliberately
-*not* in scope: chat template and stop conditions, which are not preferences at
-all — they are correctness, established by calibration (D13) and verified by
-probe (§3.18). Getting those wrong makes a capable model look mediocre; getting
-temperature "wrong" produces a different, still-valid experiment.
-
-**Three positions, and they are not equally supported by what is already
-decided.**
-
-*A fixed global constant* makes every result trivially comparable and every
-contribution aggregable. It also measures models under settings some were not
-designed for, which is §X's misconfiguration-is-a-measurement-error problem
-arriving through the front door, and it contradicts D13's calibration tier,
-which exists to adjust a configuration to what the model needs rather than force
-it into a house style.
-
-*Part of the configuration's identity* follows from D17's own definition — a
-model cannot run without them, so they are part of what the hosting system needs
-— and from §6.6, which lists sampling among the things MCF tunes when it
-composes a configuration, and from §XV, since an imported identifier that did
-not reproduce sampling would not reproduce behaviour. Its cost is
-fragmentation, which grouping-as-a-view (D17) is designed to absorb.
-
-*Pinned by the laboratory* is a third position that is compatible with the
-second rather than opposed to it: a lab may declare that it overrides the
-configuration's sampling with its own, as part of its method, provided it says
-so and its results are not compared with those of a lab that inherits. Some
-questions genuinely need it — a determinism lab (L19) cannot be run at the
-user's temperature and mean anything.
-
-**What is settled regardless of the answer:** within any single comparison,
-sampling is held still like every other variable (A8, B53), unless sampling
-*is* the variable being swept — which is itself a legitimate laboratory, and one
-the catalogue does not yet contain.
-
-**Also open beneath it:** whether the seed is identity or a condition. §6.17
-holds that irreducible stochasticity is reported rather than engineered away,
-which argues for condition; §7.6's reproducibility tolerance may argue the
-other way.
-
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3286,6 +3277,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.12 | The user surface | §XI | **D3** — both surfaces, headless primary |
 | §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
 | §7.33 | Raw samples or summaries | §6.17, §3.27 | **D16** — raw trials, always |
+| §7.46 | Sampling: constant, identity, or lab-pinned | §3.18, D13 | **D18** — identity; recommendation verified by sweep |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.

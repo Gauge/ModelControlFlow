@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Catalogue — candidate laboratories, drafted not ratified |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living. Nothing here is committed; §7.29 remains open. |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, governed by [rules.md](rules.md) |
 | **Answers** | §7.29 in draft · registered as DEC-029 in [backlog.md](backlog.md) |
 
 **A laboratory measures one property of a model under controlled conditions.**
@@ -13,7 +13,7 @@ It is an instrument, not a test: it has no pass condition, produces a
 distribution rather than a verdict, and never gates a build (§6.7, D10). It owns
 the machine while it runs and may be as greedy as accuracy requires (D8, B35).
 
-**Twenty-two candidates, four families.** The families differ in what gates them, in
+**Twenty-three candidates, four families.** The families differ in what gates them, in
 what they can claim, and in whether they need the machine to themselves:
 
 | Family | Gate | Class | What it establishes |
@@ -348,6 +348,33 @@ labs §IV depends on most directly.
   quantity: "a behaviour run in the background costs the foreground this much,
   and costs itself this much."
 
+### L26 — Sampling sweep
+
+- **Question** Is the publisher's recommended sampling actually the best
+  available here, for this workload?
+- **Family** D · Comparative. **Class** Behaviour, so it yields (D8) — which
+  matters, because this is the most expensive lab in the catalogue.
+- **Gate** None; every model has sampling parameters.
+- **Method** Coordinate sweep around the declared recommendation rather than a
+  full grid — one dimension at a time, temperature first, then the truncation
+  parameters, then penalties. Each arm is paired and interleaved against the
+  recommendation (B53) so drift cancels. The declared value is always one of the
+  arms, so the output is a *comparison against the recommendation* rather than a
+  free-floating ranking.
+- **Discipline that makes it honest** Selection and reporting use different
+  splits (A10, D18). Picking the best of eight arms inflates the apparent gain
+  even when nothing differs, so the winner is re-measured on held-out workload
+  before any improvement is published. A winner that does not survive validation
+  is reported as **no improvement found** — a §3.4 null result, and a common one.
+- **Slot** Your workload, and the ranges swept.
+- **Output** Per workflow, never global: the temperature that maximizes
+  tool-call reliability need not be the one that maximizes extraction accuracy
+  (D2).
+- **Cost warning** Arms × trials × workflows grows fast, and D14's budget
+  discipline applies with more force here than anywhere else. A sweep that
+  cannot be afforded honestly is better skipped than run at an `n` too small to
+  distinguish its arms.
+
 ---
 
 ## What to build first
@@ -367,6 +394,14 @@ how much to believe every other number in the system.
 ---
 
 ## Changelog
+
+### Version 5 — the sampling sweep
+
+L26 added, following D18: the model's recommended sampling is a declaration, and
+this is the lab that verifies it. Its defining constraint is statistical rather
+than technical — selecting the best of several arms inflates the apparent gain,
+so selection and reporting use different splits and a winner that does not
+survive validation is reported as no improvement found.
 
 ### Version 4 — the resource labs
 
