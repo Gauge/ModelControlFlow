@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 33 |
+| **Version** | 34 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (37 open, 1 drafted, 2 narrowed, 10 resolved) and 194
-build items (11 done, 1 in progress, 58 blocked on a decision, 124 open).** Every item cites
+build items (11 done, 2 in progress, 58 blocked on a decision, 123 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -106,7 +106,7 @@ first and importance second.
 | B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | **done** — [build.md](build.md); toolchain pinned to 1.98.0, layering asserted by test, `scripts/check-reproducible-build.sh` compares two checkouts byte for byte |
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | **done** — `prototypes/adversarial`; written up as [findings.md](findings.md) F1 and confirmed in D4. Superseded in place by B-013, B-033 and B-011, and dropped when those land |
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
-| B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
+| B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | **in progress** — `mcf_record::journal`: append-only, one JSON line per entry, `sync_data` per append, schema-versioned from the first write, and a replay that reports the line, offset and bytes of anything it could not read. The stated condition needs a daemon and is B-031's assertion at M2 |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
 | B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | **done** — `mcf_core::measurement::Estimate`: unrelated types, no `From` in either direction, a band rather than a point (B46), and a basis that carries its sample count when it is the corpus (B44) |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
@@ -361,6 +361,33 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 34 — the journal is the record
+
+B-004 is in progress rather than done, and the reason is a defect in its own
+condition rather than in the work. *A running idle daemon writes zero records
+and performs zero timer wakeups over 60 s* cannot be asserted at M0: there is
+no daemon until M2, and B-031 states the same assertion where the daemon exists.
+What the item is actually about — an append-only, structured-first store written
+at events and never on a timer — is built.
+
+The property is structural rather than measured. There is no flush thread, no
+batching timer and no background writer in the module, so nothing in it *can* be
+scheduled; an idle MCF writes nothing because there is no code that would.
+
+Two design notes worth keeping. **One line per entry**, so a crash mid-append
+leaves a torn *line* — a failure mode replay can find, bound and report — rather
+than a file whose record boundaries are unrecoverable. And **the format is
+versioned from the first write**, because §7.30 makes a schema a public
+interface the moment it is shared, and a journal from a version this build
+cannot read is refused rather than appended to: appending would make the file
+unreadable to both.
+
+The line format is written rather than depended on, and [build.md](build.md) §6
+records the reasoning. The data model is closed, the format is one §7.30 makes
+MCF's to keep stable for ever, and correctness is a testable property of about
+three hundred lines — so it is bought with tests (A19) rather than with a
+dependency.
 
 ### Version 33 — the profiler reads the machine, and says what it could not
 
