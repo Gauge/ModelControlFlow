@@ -11,11 +11,15 @@
 //!
 //! At M0 it carries [`build_identity`], which every record MCF writes names
 //! among its conditions (§3.4); [`failure`], which is A2 expressed as a
-//! signature; and [`measurement`], which is A6 expressed as one.
+//! signature; [`measurement`], which is A6 expressed as one; [`time`], which
+//! is B37 expressed as two types that do not meet; and [`attested`], which is
+//! A7 expressed as a variant.
 
+pub mod attested;
 pub mod build_identity;
 pub mod failure;
 pub mod measurement;
+pub mod time;
 
 pub use failure::{Failure, Result};
 pub use measurement::Measurement;

@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 24 |
+| **Version** | 25 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**242 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 193
-build items (4 done, 59 blocked on a decision, 130 open).** Every item cites
+**243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
+build items (4 done, 1 in progress, 59 blocked on a decision, 130 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -121,7 +121,8 @@ first and importance second.
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
-| B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | open |
+| B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **in progress** — `mcf_core::time`: `Timestamp` has no arithmetic and no interval method, intervals come from `Instant`, and the clock is a type parameter so `Duration<Simulated>` and `Duration<Monotonic>` never meet. The clock-jump scenario waits on B-009 (DEC-021) |
+| B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | open |
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
@@ -358,6 +359,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 25 — the time model, and the half of it that waits
+
+B-184 is in progress rather than done, and the distinction is the point. Its
+first condition holds: `Timestamp` has no arithmetic and no interval method, so
+subtracting two wall-clock readings has no spelling, and the clock is a type
+parameter — `Duration<Simulated>` and `Duration<Monotonic>` are different types
+that cannot be compared, so A11 is a compiler check rather than a review
+comment. Its second condition, that a clock-jump scenario invalidates rather
+than corrupts, needs the laboratory to produce the jump; that is B-009, blocked
+on DEC-021. Marking the item done would have claimed a demonstration nobody has
+run.
+
+B-352 is registered. `Timestamp::now` records the local offset as `unknown`,
+because reading it needs a platform call the standard library does not offer
+and B15 admits weight only against a stated cost. Writing `+00:00` instead
+would have been wrong for most of the world, which is exactly the plausible
+substitute A7 forbids — so the gap is registered rather than filled.
 
 ### Version 24 — the measurement type closes, and A20 gains an item
 

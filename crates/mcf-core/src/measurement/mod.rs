@@ -37,7 +37,8 @@ mod conditions;
 mod quantity;
 mod spread;
 
-pub use conditions::{Attested, ConditionValue, Conditions, Floor};
+pub use crate::attested::Attested;
+pub use conditions::{ConditionValue, Conditions, Floor};
 pub use quantity::{Bytes, Count, PartsPerMillion, Quantity};
 pub use spread::{Percentile, Spread};
 

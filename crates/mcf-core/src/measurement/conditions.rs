@@ -15,6 +15,8 @@
 //! unknown with a plausible value, so a condition MCF could not read is
 //! `Unknown` and stays that way; nothing here can be quietly defaulted.
 //!
+//! [`Attested`]: crate::attested::Attested
+//!
 //! **The values are deliberately shallow.** A condition is a
 //! [`ConditionValue`] — text or an integer — rather than a rich type, because
 //! the subsystems that produce them do not exist yet: the hardware profiler is
@@ -24,47 +26,8 @@
 
 use core::fmt;
 
+use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
-
-/// A value MCF read, or the fact that it did not.
-///
-/// A7 as a type: absence is a variant, so a caller has to handle it and cannot
-/// receive a plausible substitute. There is no third state — that is A21's
-/// *declared / verified / unknown*, which is about capabilities (B-050) and is
-/// a different question from whether a condition was readable.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Attested<T> {
-    /// MCF read it.
-    Known(T),
-    /// MCF did not, and says so.
-    Unknown,
-}
-
-impl<T> Attested<T> {
-    /// The value, if it is known.
-    pub const fn known(&self) -> Option<&T> {
-        match self {
-            Self::Known(value) => Some(value),
-            Self::Unknown => None,
-        }
-    }
-
-    /// Whether MCF read it.
-    pub const fn is_known(&self) -> bool {
-        matches!(self, Self::Known(_))
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Attested<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Known(value) => value.fmt(f),
-            // C8: a surface that must show something it does not know shows
-            // `unknown`.
-            Self::Unknown => f.write_str("unknown"),
-        }
-    }
-}
 
 /// One condition's value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
