@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 44 |
+| **Version** | 45 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (21 done, 3 in progress, 56 blocked on a decision, 114 open).** Every item cites
+build items (22 done, 1 dropped, 3 in progress, 56 blocked on a decision, 112 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -122,7 +122,7 @@ first and importance second.
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | **done** — `Machine::read_through(routes)` is the seam: passing none produces the profile of a machine with no accelerator *on a machine that has one*, which is how B19's condition is checked rather than assumed. `scripts/ci.sh` passes `--offline`. **The stated time budget does not exist**: D24 closed DEC-016 with sixteen figures and none of them is a suite time. The gating tier is measured and reported in [build.md](build.md) §4 instead |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | **done** — `checks/tests/documents_conform.rs`, twelve checks in the gating tier. The tense clause is checked only for the constructions the contract names outright; the rest stays a `review` obligation rather than a claim |
-| B-353 | The letter `P` names two things — the five precedence rules in [rules.md](rules.md) and the seven proposals in [proposals.md](proposals.md) — and C5 forbids renumbering either | C5, [README.md](../README.md) citation style | A `P` citation resolves unambiguously, by deprecating one namespace in favour of a named successor or by a stated convention the conformance check enforces | open |
+| B-353 | The letter `P` names two things — the five precedence rules in [rules.md](rules.md) and the seven proposals in [proposals.md](proposals.md) — and C5 forbids renumbering either | C5, [README.md](../README.md) citation style | A `P` citation resolves unambiguously, by deprecating one namespace in favour of a named successor or by a stated convention the conformance check enforces | **done** — the proposals are `PR<n>`, `P<n>` there is deprecated in favour of the named successor digit for digit, and the conformance check now resolves `P` against the precedence rules alone |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | **done** — `checks/tests/reference_model_neutrality.rs`: no shipped source and no test names the publisher or the family, documentation excepted; a third check fails if the documents stop naming it, so the first two cannot pass by the reference model quietly ceasing to exist |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **in progress** — `mcf_core::time`: `Timestamp` has no arithmetic and no interval method, intervals come from `Instant`, and the clock is a type parameter so `Duration<Simulated>` and `Duration<Monotonic>` never meet. The clock-jump scenario waits on B-009 (DEC-021) |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | open |
@@ -141,12 +141,12 @@ first and importance second.
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
 | B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
-| B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [P2](proposals.md#p2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
+| B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [PR2](proposals.md#pr2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | blocked (DEC-047) |
-| B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
+| B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
 ### M1 — Acquire
 
@@ -162,7 +162,7 @@ first and importance second.
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | blocked (DEC-021) |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
-| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [P3](proposals.md#p3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | open |
+| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | open |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
 | B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | open |
 
@@ -180,7 +180,7 @@ first and importance second.
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | open |
-| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [P6](proposals.md#p6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | open |
+| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | open |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
 
@@ -236,11 +236,11 @@ first and importance second.
 | B-291 | Seed-set validation: periodically compare the fixed set's distribution against a larger random set; divergence replaces the set and records a break in comparability | D19, §6.16, §7.13 | The standard set is shown to be representative rather than assumed | open |
 | B-281 | Recommended sampling renders as *declared* until a sweep promotes it; a lab that pins its own sampling declares it and its results stay apart | B60, D18, A21 | No global default sampling exists; divergence between recommended and best-measured is surfaced | open |
 | B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
-| B-211 | Repro bundle: one file carrying a claim, its method, its full §3.4 conditions, its raw samples, the artifact's provenance chain, the §XV identifier, and a verification manifest | [P2](proposals.md#p2--the-repro-bundle), §II, A6 | A bundle is emitted for any published measurement and contains everything needed to re-run it | open |
-| B-212 | `mcf verify <bundle>`: reproduce the configuration, re-run the method, report agreement or divergence with conditions compared side by side | [P2](proposals.md#p2--the-repro-bundle), §II, A8 | A bundle from another machine either agrees, or names which conditions differ and refuses to attribute the gap | open |
-| B-214 | Expectation bands from local history: project throughput for unmeasured configurations from what this machine has measured, as a labelled estimate that can never sit beside a measurement unlabelled | [P3](proposals.md#p3--pre-acquisition-planning), A20, B34 | Projections are band-shaped, marked as estimates, derived from local history only, and absent where there is no history | open |
-| B-215 | Every projection is scored against the measurement that eventually replaces it, and the score is reported | [P3](proposals.md#p3--pre-acquisition-planning), §6.16, §3.4 | Prediction error is tracked over time; a projection model whose error grows is a finding about the model | open |
-| B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [P5](proposals.md#p5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | open |
+| B-211 | Repro bundle: one file carrying a claim, its method, its full §3.4 conditions, its raw samples, the artifact's provenance chain, the §XV identifier, and a verification manifest | [PR2](proposals.md#pr2--the-repro-bundle), §II, A6 | A bundle is emitted for any published measurement and contains everything needed to re-run it | open |
+| B-212 | `mcf verify <bundle>`: reproduce the configuration, re-run the method, report agreement or divergence with conditions compared side by side | [PR2](proposals.md#pr2--the-repro-bundle), §II, A8 | A bundle from another machine either agrees, or names which conditions differ and refuses to attribute the gap | open |
+| B-214 | Expectation bands from local history: project throughput for unmeasured configurations from what this machine has measured, as a labelled estimate that can never sit beside a measurement unlabelled | [PR3](proposals.md#pr3--pre-acquisition-planning), A20, B34 | Projections are band-shaped, marked as estimates, derived from local history only, and absent where there is no history | open |
+| B-215 | Every projection is scored against the measurement that eventually replaces it, and the score is reported | [PR3](proposals.md#pr3--pre-acquisition-planning), §6.16, §3.4 | Prediction error is tracked over time; a projection model whose error grows is a finding about the model | open |
+| B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [PR5](proposals.md#pr5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | open |
 | B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | open |
 
 ### M6 — Judge
@@ -284,9 +284,9 @@ first and importance second.
 | B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | open |
 | B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | open |
 | B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
-| B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [P1](proposals.md#p1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
-| B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [P1](proposals.md#p1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
-| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [P5](proposals.md#p5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | open |
+| B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [PR1](proposals.md#pr1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
+| B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
+| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | open |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
@@ -323,7 +323,7 @@ first and importance second.
 | B-146 | Content-versus-system separation enforced structurally: suite fixture data and user traffic are different categories with different retention, not the same store with a flag | §6.8 | The separation is structural and cannot be defeated by configuration | open |
 | B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | blocked (DEC-011) |
 | B-148 | Long-run endurance scenario: days of simulated operation with faults, restarts, thermal excursions and upgrades | §I, §3.17 | MCF remains coherent, queryable and restartable throughout, with no unclassified outcome | open |
-| B-260 | Longitudinal regression detection: compare like with like, detect against historical spread rather than a threshold, correlate with the diff of everything that changed, report as a labelled hypothesis and never as a cause | [P7](proposals.md#p7--longitudinal-regression-detection), §6.7, A18 | A drop exceeding historical spread is surfaced with what changed alongside it; improvements are reported the same way | blocked (DEC-045, DEC-007) |
+| B-260 | Longitudinal regression detection: compare like with like, detect against historical spread rather than a threshold, correlate with the diff of everything that changed, report as a labelled hypothesis and never as a cause | [PR7](proposals.md#pr7--longitudinal-regression-detection), §6.7, A18 | A drop exceeding historical spread is surfaced with what changed alongside it; improvements are reported the same way | blocked (DEC-045, DEC-007) |
 | B-261 | Machine-change detection: a profile diff against the last known state, with affected history marked rather than silently carried forward | §7.45, DEC-045, §3.4 | A driver update marks prior results non-comparable rather than leaving them to be misread | blocked (DEC-045) |
 | B-334 | Distribution and update: how MCF reaches a user and changes under them, with no silent upgrade and an explicit statement of what an upgrade invalidates | DEC-032, §7.32, §3.12 | An upgrade is offered, explained and never automatic; what it invalidates is stated before it is applied | blocked (DEC-032) |
 | B-149 | Answer §7.14 with evidence: the state that lets us say MCF works | §7.14 | The definition is written, and the suite is measured against it | blocked (DEC-014) |
@@ -362,6 +362,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 45 — `P` means one thing, and the ADR item is dropped
+
+B-353 is done. The letter `P` named both the precedence rules and the
+proposals, and both appeared bare in prose — the same identifier meant *science
+outranks speed* in one document and *the repro bundle* in another. A reader
+could not tell, and neither could the conformance check, which had been
+resolving `P` against both sets and calling that a pass.
+
+C5 forbids renumbering and permits deprecating in favour of a named successor,
+so the proposals become `PR<n>`, digit for digit, with the mapping stated where
+they live. Every citation elsewhere is updated, including those inside changelog
+entries: a changelog states what changed rather than the words used at the time.
+
+**B-017 is dropped**, and the reasoning is kept per C6 so it is not re-proposed
+as an oversight. It asked for an ADR format and index so that §7's resolutions
+and their reasoning survive the code — and that already exists under another
+name. §2.1 holds each resolution, the intent document's changelog holds the
+reasoning that produced it, and §7's retired-void index points back. An ADR set
+would be a second home for statements that have one, and a statement in two
+places eventually says two different things. The item's own condition — *a
+resolved void points at an ADR and the ADR points back at §7* — is met today by
+documents that exist, with the retired-void table doing exactly that job.
 
 ### Version 44 — the conditions are captured, and the unknowns survive as unknowns
 
@@ -904,7 +927,7 @@ summaries, hardware-free identity, per-lab interior detail, and lab teardown.
 ### Version 11 — three gaps registered
 
 DEC-044 (how a workflow is declared, blocking §6.36) and DEC-045 (what happens
-when the machine changes underneath) registered. B-260 and B-261 for P7's
+when the machine changes underneath) registered. B-260 and B-261 for PR7's
 regression detection and the machine-change detection it depends on.
 
 ### Version 10 — pairing and generalization
@@ -951,7 +974,7 @@ and §6.39's ladder safe to hold at all.
 
 ### Version 6 — four proposals accepted
 
-P1, P2, P3 and P5 accepted from [proposals.md](proposals.md) and registered:
+PR1, PR2, PR3 and PR5 accepted from [proposals.md](proposals.md) and registered:
 the workload slot format and its authoring documentation (M6), the repro bundle
 and its verifier (M5, both blocked on DEC-033 since a bundle of summaries cannot
 be re-analysed), pre-acquisition fitment (M1) with projection bands and their
@@ -960,7 +983,7 @@ it enables (M6).
 
 B-217 is the item worth noting: D8 made laboratories exclusive, which means a
 lab must *begin* on a quiet machine or exclusivity is a claim rather than a
-condition. That turns P5 from a diagnostic convenience into a precondition for
+condition. That turns PR5 from a diagnostic convenience into a precondition for
 every lab in [labs.md](labs.md).
 
 P4 remains proposed and its recommendation is revised downward — see the

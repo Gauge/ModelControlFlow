@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -20,21 +20,29 @@ is a decision and refusing it is a recorded one (C6).
 when its recommendation is taken, and a refused proposal stays here with the
 reasoning, so it is not re-proposed later as an oversight.
 
+**Proposals are `PR<n>`, and used to be `P<n>`.** The letter `P` names the five
+precedence rules in [rules.md](rules.md), and one letter cannot name two things
+a reader has to tell apart — the same bare identifier meant *science outranks
+speed* in one document and *the repro bundle* in another. C5 forbids reusing or
+renumbering an identifier and permits deprecating one in favour of a **named
+successor**, so `P<n>` here is deprecated in favour of `PR<n>`, digit for digit.
+A citation made before this change still resolves. Registered as B-353.
+
 ## Contents
 
 | # | Proposal | Recommendation | Would land |
 |---|---|---|---|
-| P1 | [Customizable workloads](#p1--customizable-workloads) | **Accepted** — B-204, B-205 | M6 |
-| P2 | [The repro bundle](#p2--the-repro-bundle) | **Accepted** — B-211, B-212 | M5 |
-| P3 | [Pre-acquisition planning](#p3--pre-acquisition-planning) | **Accepted** — B-213, B-214, B-215 | M1 · M5 |
-| P4 | [Your own second machine](#p4--your-own-second-machine) | **Dropped** — subsumed by §6.38 | — |
-| P5 | [Contention diagnosis](#p5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
-| P6 | [The stop control](#p6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
-| P7 | [Longitudinal regression detection](#p7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
+| PR1 | [Customizable workloads](#pr1--customizable-workloads) | **Accepted** — B-204, B-205 | M6 |
+| PR2 | [The repro bundle](#pr2--the-repro-bundle) | **Accepted** — B-211, B-212 | M5 |
+| PR3 | [Pre-acquisition planning](#pr3--pre-acquisition-planning) | **Accepted** — B-213, B-214, B-215 | M1 · M5 |
+| PR4 | [Your own second machine](#pr4--your-own-second-machine) | **Dropped** — subsumed by §6.38 | — |
+| PR5 | [Contention diagnosis](#pr5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
+| PR6 | [The stop control](#pr6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
+| PR7 | [Longitudinal regression detection](#pr7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
 
 ---
 
-## P1 — Customizable workloads
+## PR1 — Customizable workloads
 
 **One line.** A laboratory ships a default workload and accepts yours, so that
 *"does this model do the thing I need"* becomes a measurement rather than a
@@ -138,7 +146,7 @@ re-proposed as an oversight (C6):
 
 A narrower descendant may deserve reconsideration later: showing a captured
 session *as a drafting aid* while the user authors a workload item, with no
-automatic conversion. That is P1 plus a convenience, not a different feature,
+automatic conversion. That is PR1 plus a convenience, not a different feature,
 and it should not be built until slots exist and someone finds authoring them
 tedious.
 
@@ -150,7 +158,7 @@ tedious.
 - How few workload items make a reportable result? DEC-023's statistics, with a
   much smaller `n`, and the honest answer may be "twelve items is not a suite
   and MCF should say so".
-- May a workload move between the user's own machines (P4) without becoming a
+- May a workload move between the user's own machines (PR4) without becoming a
   contribution? Probably yes, and it needs saying explicitly.
 
 ### Recommendation
@@ -163,7 +171,7 @@ turning a designed instrument into a recording of uncontrolled work.
 
 ---
 
-## P2 — The repro bundle
+## PR2 — The repro bundle
 
 **One line.** One file that contains everything needed to reproduce one claim,
 so that "prove it" has an answer that is not a conversation.
@@ -197,7 +205,7 @@ thing a user can hand to a colleague, attach to a bug report, or keep for
 themselves that says *here is the claim, and here is everything required to
 check it.*
 
-With P2, MCF can say: *this bundle reproduces this number, or tells you exactly
+With PR2, MCF can say: *this bundle reproduces this number, or tells you exactly
 why your machine cannot.* That closes the gap between §II's promise and what MCF
 actually ships, and it does so for one claim at a time rather than by publishing
 a database.
@@ -225,19 +233,19 @@ report, driven by a file instead of an identifier.
 
 Small. Every component already exists or is already required: the record holds
 the conditions, §XV holds the identifier, D6 holds the samples, §XIV's export
-path holds the serialization. P2 is mostly *assembly*, and its cost is dominated
+path holds the serialization. PR2 is mostly *assembly*, and its cost is dominated
 by deciding the format (which §7.30 must decide for contributions anyway).
 
 ### Collisions
 
 - **§7.33 is a hard dependency.** A bundle containing only summaries cannot be
-  re-analysed, which defeats half its purpose. If DEC-033 chooses summaries, P2
+  re-analysed, which defeats half its purpose. If DEC-033 chooses summaries, PR2
   degrades to a provenance receipt.
 - **A24 and §3.20.** A bundle is a publication the moment it is sent to someone,
   so producing one is not gated but *sending* one is the user's act, and the
   bundle must show what it contains before it leaves — same surface as `mcf
   share --preview`.
-- **A25.** A bundle from a private-suite measurement (P1) would contain user
+- **A25.** A bundle from a private-suite measurement (PR1) would contain user
   content. It must not: the bundle carries the *outcome and method*, and where
   the method is a private task it says so and is not portable. That is a real
   limitation and should be stated rather than engineered around.
@@ -260,7 +268,7 @@ failures.
 
 ---
 
-## P3 — Pre-acquisition planning
+## PR3 — Pre-acquisition planning
 
 **One line.** Before downloading anything, answer *what of this will run here,
 and what should I expect* — across every quantization the repository offers.
@@ -287,7 +295,7 @@ history of what similar configurations actually did on this machine.
 ### The claim it enables
 
 The M1 mockup already refuses honestly *after* resolving a reference: "needs
-131 GiB, you have 24." P3 turns that refusal into a decision aid and moves it
+131 GiB, you have 24." PR3 turns that refusal into a decision aid and moves it
 before the bandwidth is spent.
 
 MCF can then say: *this repository publishes twenty quantizations; seven fit
@@ -304,7 +312,7 @@ choosing among them blind means downloading tens of gigabytes to find out.
 
 **1. Fitment, which is arithmetic and exact.** Weights bytes + KV cache at the
 requested context + runtime overhead versus available accelerator and host
-memory. MCF already computes this at M1; P3 computes it for every variant in the
+memory. MCF already computes this at M1; PR3 computes it for every variant in the
 repository without fetching any of them, from file sizes and metadata alone.
 
 **2. Expectation, which is inference from local history and must be labelled as
@@ -315,7 +323,7 @@ marked, never comparable with a measurement, never promotable — and where MCF
 has no local history it says so and offers fitment alone.
 
 **3. A recommendation only if §IV can honestly make one.** Before any local
-measurement exists, P3 states fitment and stops. B34 forbids a foreign number
+measurement exists, PR3 states fitment and stops. B34 forbids a foreign number
 choosing a local configuration, and B29 forbids generalizing from one model.
 
 ### What it costs
@@ -330,7 +338,7 @@ discipline §6.16 applies to the laboratory, applied to a prediction.
 - **A20.** The projection is an estimate. If it ever appears beside a
   measurement without its label, this feature has done net harm.
 - **B34, §5.** The temptation is to project from contributed data instead of
-  local history, which would smuggle foreign numbers into a local decision. P3
+  local history, which would smuggle foreign numbers into a local decision. PR3
   uses this machine's history only.
 - **§3.7.** Metadata used for fitment comes from the hub and is untrusted; a
   declared file size that is wrong produces a wrong plan, so the plan is
@@ -341,7 +349,7 @@ discipline §6.16 applies to the laboratory, applied to a prediction.
 - How far can a size→throughput relationship be extrapolated on one machine
   before it becomes fiction? Probably not across architecture families, and
   possibly not across quantization schemes.
-- Should P3's prediction be scored against the eventual measurement and
+- Should PR3's prediction be scored against the eventual measurement and
   reported? Yes, almost certainly — a prediction nobody grades is a guess, and
   grading it is nearly free.
 
@@ -353,7 +361,7 @@ there is local history to project from, and should not be built earlier.
 
 ---
 
-## P4 — Your own second machine
+## PR4 — Your own second machine
 
 **One line.** Compare this machine with another machine you own, using the same
 suites and your own record — the only cross-machine comparison that does not
@@ -401,7 +409,7 @@ available.
 ### How it works
 
 MCF already has the mechanism — §XIV's contribution format and §XV's identifier
-— and P4 is mostly a matter of *scope*, not new machinery. A record is exported
+— and PR4 is mostly a matter of *scope*, not new machinery. A record is exported
 to a file, imported on the other machine, and the comparison runs locally
 against both.
 
@@ -409,7 +417,7 @@ The critical constraint, and the reason this is narrow: **a personal transfer is
 not a contribution.** It goes machine-to-machine at the user's direction, not to
 a public corpus. It therefore does not need §7.27's de-identification (the user
 already knows their own hardware), does not enter the crowd-sourced path, and
-may include the private suites P1 produces — which a contribution never could.
+may include the private suites PR1 produces — which a contribution never could.
 
 Comparison enforces isolation (A8) exactly as it does locally: two machines
 differing in accelerator, driver, thermal environment and host memory differ in
@@ -424,7 +432,7 @@ serialization and §XV's identifiers. It grows expensive the moment it becomes
 
 ### Collisions
 
-- **§5, and this is the one to watch.** P4 is legitimate because trust and
+- **§5, and this is the one to watch.** PR4 is legitimate because trust and
   conditions are not in question. If it ever grows a "compare with a friend's
   machine" affordance, the leaderboard objection returns in full and §6.28's
   contribute-outward-decide-inward rule is what stops it.
@@ -456,7 +464,7 @@ minority of a minority.
 
 **Most of its value is obtainable by looking.** Running the same command on two
 machines and reading both outputs answers "which is faster" without any feature
-at all. What P4 adds is *rigour* — merging the records, enforcing A8's isolation
+at all. What PR4 adds is *rigour* — merging the records, enforcing A8's isolation
 check, naming which of the four differing conditions might explain the gap, and
 keeping the result in the record rather than in the operator's head. That is
 worth something, but it is a smaller something than "you can now compare
@@ -470,7 +478,7 @@ validation data for ourselves is the wrong reason to spend the user's weight
 
 ### Outcome — dropped
 
-**Superseded by §6.38 and D12.** The corpus answers the question P4 was built
+**Superseded by §6.38 and D12.** The corpus answers the question PR4 was built
 for, and answers it better: many users contributing configurations and
 corrections across many hardware profiles builds a picture of what works where,
 without requiring anyone to own two machines. A pairwise comparison between two
@@ -479,7 +487,7 @@ prior-versus-claim distinction is what makes consulting it legitimate.
 
 The DEC-020 argument survives the drop and moves with it: contributed
 corrections are also real-hardware data about how configurations behave off the
-machine that produced them, which is the validation datum P4 was going to supply
+machine that produced them, which is the validation datum PR4 was going to supply
 by hand.
 
 Recorded rather than deleted (C6), so a later "let people compare machines"
@@ -491,7 +499,7 @@ arrives as a decision with this reasoning attached.
 machinery M9 builds anyway, so nothing is lost by waiting — and if it is never
 built, no intent goes unserved. The condition that would change this: if the
 project reaches DEC-020 and cannot answer *how much reality validates the lab*
-without it, P4 stops being a convenience and becomes the cheapest instrument
+without it, PR4 stops being a convenience and becomes the cheapest instrument
 available for the hardest open question attached to §VIII.
 
 Recorded rather than deleted (C6), so that a later "we should let people compare
@@ -500,7 +508,7 @@ new idea.
 
 ---
 
-## P5 — Contention diagnosis
+## PR5 — Contention diagnosis
 
 **One line.** A one-shot answer to *what is competing for this machine right
 now*, so that B24's "unattributable" verdict comes with a name attached.
@@ -527,7 +535,7 @@ something is this proposal.
 ### The claim it enables
 
 B24 already requires MCF to say "I cannot tell whether the model is slow or the
-machine is busy." P5 upgrades that from a refusal to a diagnosis: *your
+machine is busy." PR5 upgrades that from a refusal to a diagnosis: *your
 accelerator is 71 % occupied by another process; your memory is 94 % committed;
 your accelerator has been thermally throttled for the last four minutes.*
 
@@ -545,7 +553,7 @@ activity. The result attaches to the invalidation record so the finding survives
 (§3.1), rather than being a transient thing on a screen.
 
 **It is emphatically not a monitor.** B4 refuses ambient sampling and D5 settled
-that argument; P5 samples when something happened or somebody asked. If it ever
+that argument; PR5 samples when something happened or somebody asked. If it ever
 acquires a background loop, it has become the observability platform §5 refuses.
 
 ### What it costs
@@ -572,18 +580,18 @@ work §XVII already justifies.
   Feeds DEC-039.
 - Does MCF ever *act* on this — refusing to start a lab because the machine is
   busy? D8 makes a lab exclusive, so probably yes: it should refuse to begin
-  rather than produce an invalid result, which makes P5 a precondition for D8's
+  rather than produce an invalid result, which makes PR5 a precondition for D8's
   quiet-machine check rather than a diagnostic afterthought.
 
 ### Recommendation
 
 **Accept, small, at M5**, where invalidation-by-contention first occurs. The
 last open question above may promote it: if D8's pre-flight needs to verify the
-machine is quiet, P5 is not optional at all.
+machine is quiet, PR5 is not optional at all.
 
 ---
 
-## P6 — The stop control
+## PR6 — The stop control
 
 **One line.** One command, one button: stop everything, unload every model,
 release the accelerator, and say what was stopped.
@@ -654,7 +662,7 @@ control of hardware.
 
 ---
 
-## P7 — Longitudinal regression detection
+## PR7 — Longitudinal regression detection
 
 **One line.** MCF tells you when something on *your* machine got worse, and what
 changed at the same time.
@@ -741,7 +749,25 @@ this is a natural consequence of the design rather than an addition to it.
 
 ## Changelog
 
-### Version 5 — P7 added
+### Version 6 — proposals become `PR`, so that `P` means one thing
+
+The letter `P` named both the precedence rules and the proposals, and both
+appeared bare in prose: `P2` meant *science outranks speed* in one document and
+*the repro bundle* in another. A reader could not tell which was meant, and
+neither could a check.
+
+C5 forbids renumbering and permits deprecating in favour of a named successor,
+so the proposals take `PR<n>` and `P<n>` here is deprecated with the mapping
+stated. The precedence rules keep `P`: they live in [rules.md](rules.md)
+alongside `A`, `B` and `C` and are part of that namespace, and the proposals
+were the ones borrowing it.
+
+Every citation elsewhere is updated, including those in changelog entries. A
+changelog states what changed rather than the words used at the time, and
+leaving a deprecated identifier in one would leave a reader with exactly the
+ambiguity this change removes.
+
+### Version 5 — PR7 added
 
 Longitudinal regression detection: the "third thing" §6.7 names in passing and
 no milestone builds, despite the data for it already being kept. It is the one
@@ -749,30 +775,30 @@ statement no corpus or leaderboard can make — what changed on *your* machine �
 and it costs almost nothing, being a query over stored results rather than a new
 measurement.
 
-### Version 4 — P4 dropped
+### Version 4 — PR4 dropped
 
-Superseded by §6.38: the corpus answers what P4 was for, without requiring
+Superseded by §6.38: the corpus answers what PR4 was for, without requiring
 anyone to own two machines. A pairwise comparison is a sample of two; the corpus
 is a sample of everyone.
 
 ### Version 3 — four accepted, one revised downward
 
-P1, P2, P3 and P5 accepted and registered in [backlog.md](backlog.md). P5's
+PR1, PR2, PR3 and PR5 accepted and registered in [backlog.md](backlog.md). PR5's
 placement changed on the way: D8 made laboratories exclusive, which means a lab
 must begin on a quiet machine or exclusivity is a claim rather than a condition,
 so the contention snapshot became a precondition for every lab rather than a
 diagnostic convenience.
 
-P4's recommendation is revised downward to *defer, and consider dropping*. It
+PR4's recommendation is revised downward to *defer, and consider dropping*. It
 requires two machines, most of its value is obtainable by reading two outputs
 side by side, and its most interesting benefit — a real-hardware datum for
 DEC-020 — serves the project rather than the user, which is the wrong reason to
 spend the user's weight. The reasoning is kept rather than the proposal deleted,
 so that a later "let people compare machines" arrives as a decision.
 
-### Version 2 — P1 rescoped, P6 accepted
+### Version 2 — PR1 rescoped, PR6 accepted
 
-P1 is rewritten from the ground up. The original proposed automatic session
+PR1 is rewritten from the ground up. The original proposed automatic session
 capture and replay, which inverted the instrument: §XIII's laboratories examine
 one property under controlled conditions, and captured real work varies
 everything at once. Rescoped to a **workload slot** — a lab ships a default and
@@ -780,7 +806,7 @@ accepts yours as data — it delivers the whole of the original ambition at a
 fraction of the cost and with no content pipeline. The capture version is
 recorded as refused, with its reasoning, rather than deleted.
 
-P6 accepted and registered as B-210.
+PR6 accepted and registered as B-210.
 
 ### Version 1 — six features argued in full
 
@@ -790,7 +816,7 @@ claim it enables; a backlog row cannot hold either argument, so proposals were
 previously either accepted silently or lost.
 
 The six here came from an audit of what the intent document implies but nobody
-owns. Two are notable: P1 converts the project's central hedge — that the suite
-is a proxy for the work — into a measurement of the actual work, and P6 is
+owns. Two are notable: PR1 converts the project's central hedge — that the suite
+is a proxy for the work — into a measurement of the actual work, and PR6 is
 obligatory rather than optional now that §XVII permits MCF to take exclusive
 control of hardware.

@@ -188,11 +188,11 @@ pub struct Identifiers {
     pub resolutions: BTreeSet<String>,
     /// Laboratory identifiers from `labs.md`: `L1`.
     pub laboratories: BTreeSet<String>,
-    /// Proposal identifiers from `proposals.md`: `P6`.
+    /// Proposal identifiers from `proposals.md`: `PR6`.
     ///
-    /// These share the letter `P` with the precedence rules, which is an
-    /// identifier collision the project has (B-353). C5 forbids renumbering
-    /// either, so a `P` citation is checked against both sets.
+    /// They used to be `P<n>`, which collided with the precedence rules. C5
+    /// permits deprecating an identifier in favour of a named successor, and
+    /// B-353 did that: `P` now names one thing.
     pub proposals: BTreeSet<String>,
     /// Milestone identifiers from the roadmap: `M0`.
     pub milestones: BTreeSet<String>,
@@ -278,11 +278,11 @@ fn heading_identifier(line: &str) -> Option<String> {
     Some(candidate.to_owned())
 }
 
-/// `## P2 — The repro bundle` → `P2`
+/// `## PR2 — The repro bundle` → `PR2`
 fn section_identifier(line: &str) -> Option<String> {
     let rest = line.strip_prefix("## ")?;
     let (candidate, _) = rest.split_once(' ')?;
-    let digits = candidate.strip_prefix('P')?;
+    let digits = candidate.strip_prefix("PR")?;
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
