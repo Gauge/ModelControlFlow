@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -32,13 +32,14 @@ know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
 | [document-of-intent.md](doc/document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
 | [rules.md](doc/rules.md) | Rules | 67 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
+| [proposals.md](doc/proposals.md) | Proposals | Six features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
 | [mockup/](doc/mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
 
 **The chain of authority is one-directional.** The intent document is the source.
 Rules derive from it and carry its clauses forward with checks attached. The
 roadmap sequences the work the rules imply, and the backlog registers it.
-Mockups illustrate the result. A lower document never overrides a higher one: a
+Proposals argue for work not yet accepted; mockups illustrate the result. A lower document never overrides a higher one: a
 disagreement means the lower document is wrong, or that an amendment to the
 higher one is owed (§8).
 
@@ -130,6 +131,12 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 4 — proposals join the map
+
+`doc/proposals.md` added. A feature needs somewhere to be argued before it is
+committed to: B15 admits weight only against a stated cost, and a backlog row
+cannot hold that argument.
 
 ### Version 3 — the exchange joins the map
 
