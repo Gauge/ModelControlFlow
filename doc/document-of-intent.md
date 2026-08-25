@@ -1,78 +1,50 @@
-# ModelControlFlow — Document of Intent
+# Document of Intent
 
-**Status:** Living document. Revision 6.
-**Nature:** This is a *spirit of the rules* document. It is not a requirements
-specification, not an architecture document, and not a backlog. Nothing here is
-directly implementable, and that is deliberate. Its job is to be the thing you
-consult when a rule is ambiguous, when two rules conflict, or when no rule
-exists yet — and to be the source from which real rules are written.
+| | |
+|---|---|
+| **Type** | Intent — the spirit of the rules |
+| **Version** | 6 |
+| **Status** | Living |
+| **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
+| **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
 
-**How to use it:** When writing a specification, a test plan, a lint rule, or a
-code review comment, cite the principle it serves. If you cannot find one, that
-is a finding — record it in §7 (Voids) rather than inventing intent silently.
+**What this document is.** The thing to consult when a rule is ambiguous, when
+two rules conflict, or when no rule exists yet — and the source from which real
+rules are written. It is not a requirements specification, not an architecture
+document, and not a backlog. Nothing here is directly implementable, and that is
+deliberate.
 
-**Derived documents.** This document is the source; three others are downstream
-of it and are corrected when it changes, never the reverse: [rules.md](rules.md)
-(the enforceable rules, in one place, each citing a clause here and carrying a
-check), [roadmap.md](roadmap.md) (milestones), and [backlog.md](backlog.md) (the
-work register, which tracks §7's voids rather than relocating them).
+**How to use it.** When writing a specification, a test plan, a lint rule or a
+review comment, cite the clause it serves. If no clause fits, that is a finding:
+record a void in §7 rather than inventing intent silently. Enforceable rules
+derived from these clauses live in [rules.md](rules.md), one per clause or
+better, each carrying a check.
 
-**Provenance note:** At the time of this revision the repository contains no
-implementation. Section 6 (Conflicts) resolves tensions on principle alone.
-Where a resolution says *provisional*, it means exactly that: the first real
-implementation that touches the question gets to argue back, and this document
-should be amended rather than quietly violated.
+**Standing conditions on everything below.**
 
-**Revision 6 note:** One intent added (XII), and it is the first that names a
-*specific artifact* rather than a property of the system. Choosing a reference
-model for initial work is a smaller decision than any of I–XI, and it collides
-with more of this document than its size suggests: with §3.5's rule that tests
-require no large model, with §3.4's warning about tuning toward whatever is
-measured, and with §III's "any model" — all resolved in §6.22 and §6.23 by
-holding the line that **the reference model is a fixture, never a special
-case.** It also narrows §7.8 and §7.16 by making the development hardware
-concrete, and it opens §7.26: one model is enough to build an instrument and
-never enough to generalize from.
+- The repository holds no implementation. §6 resolves tensions on principle
+  alone, and every resolution is falsifiable by implementation experience: the
+  first real code that touches a question may argue back, and this document is
+  amended rather than quietly violated (§8).
+- Clause numbers are stable for life. A clause keeps its number so it can be
+  cited stably, even when its position or status changes.
+- History lives in §9 and nowhere else. Every clause here states the present
+  position; how it came to be held is a changelog entry.
 
-**Revision 5 note:** Three intents added (IX, X, XI). The first is the most
-consequential addition since the founding four: **agentic workflow benchmarking**
-substantially answers §7.3 — "what is quality measured against" — which this
-document has called the single hardest unanswered question in the project since
-Revision 1. It answers it well, because agentic task success is verifiable
-without a ground-truth corpus and resembles the work the models will actually
-do. It also brings expense, stochasticity, and a sandbox requirement, recorded
-in §6.17–§6.20. Intent X (capability discovery and auto-configuration) collides
-directly with §3.6's prohibition on inferring metadata, resolved in §6.19 by
-turning detection into measurement. Intent XI ratifies what §3.14 and §6.11
-already held and closes the rest of §7.12.
+## Contents
 
-**Revision 4 note:** Two decisions. The implementation substrate is settled —
-**Rust** (§7.19, resolved). And the project's confidence strategy has been
-deliberately rebalanced: **away from ambient telemetry, toward exhaustive
-testing and simulated laboratory verification.** That second decision is larger
-than it sounds. It cuts §6.9, this document's sharpest and least confident
-conflict, by choosing a side; it forces §3.3 to be split into two ideas that
-Revision 2 had wrongly fused; and it adds Intent VIII, because a project that
-declines to watch itself in production must be able to reproduce itself in a
-lab. §6.15 and §6.16 record what that trade costs.
-
-**Revision 3 note:** Intent VI was corrected: Ollama was offered as an *example
-of a friction level*, not as an architectural or implementational model, and the
-document had begun to treat it as the latter. §VI now says so explicitly, §5
-gains an anti-goal against clone-thinking, and every comparison in the document
-was rewritten to name the property rather than the product. Revision 3 also adds
-§3.16 (prefer substrates a machine can hold to the principles) and §7.19 (the
-implementation-substrate question, recorded with the criteria the intents impose
-on it and a candidate answer, but deliberately not resolved here).
-
-**Revision 2 note:** Three intents were added — the interface, the serving
-model, and the performance mandate. Two of them answered questions this document
-had recorded as blocking voids (what "deploy" means; how a human touches the
-system). The third — *be the fastest, lightest tool possible* — is the most
-disruptive statement made about this project so far. It does not merely add a
-goal; it applies downward pressure to every other intent, because rigor,
-observability, and universality all have weight. §6.9 through §6.14 exist to
-keep that pressure from silently eroding the rest of the document.
+| § | Section | What it holds |
+|---|---|---|
+| §1 | [What This Project Is](#1-what-this-project-is) | The four verbs, and which of them is the point |
+| §2 | [The Founding Intents](#2-the-founding-intents) | I–XII, the originating statements |
+| §2.1 | [Settled Decisions](#21-settled-decisions) | Questions once open, now answered, with their reasoning |
+| §3 | [Principles](#3-principles) | The load-bearing beliefs |
+| §4 | [Standing Tensions](#4-standing-tensions-we-accept) | Permanent conditions, managed rather than solved |
+| §5 | [Anti-Goals](#5-anti-goals) | What MCF is not |
+| §6 | [Conflicts Between Stated Intents](#6-conflicts-between-stated-intents) | Where intents disagree, and how each is resolved |
+| §7 | [Voids](#7-voids--where-intent-is-missing-or-underdetermined) | Questions the intents do not answer |
+| §8 | [Amending This Document](#8-amending-this-document) | How intent changes |
+| §9 | [Changelog](#9-changelog) | What changed, when, and why |
 
 ---
 
@@ -134,9 +106,8 @@ MCF should be the calm component in the system. It runs on hardware that
 throttles, against a network that drops, over a model hub that changes under it,
 launching runtimes that segfault. None of that is exceptional; all of it is
 Tuesday. MCF's job is to absorb that and remain a coherent, queryable, restartable
-system. As of Revision 4 this claim is established primarily by §VIII rather
-than by observation — every failure MCF says it survives is a failure the
-laboratory can produce on command.
+system. This claim is established by §VIII rather than by observation: every
+failure MCF says it survives is a failure the laboratory can produce on command.
 
 ### II. Science — "the highest scientific standards"
 
@@ -283,6 +254,112 @@ summary: no code path may behave specially because an artifact is the reference
 model, the test suite may not depend on it, and nothing measured on it
 generalizes to models in general.
 
+## 2.1 Settled Decisions
+
+Questions that §7 once held open and that are now answered. Their substance
+lives here rather than in §7, per §8: a void that stays recorded after it is
+answered makes the open list dishonest. The void numbers remain citable and are
+indexed at the end of §7.
+
+### D1 — MCF is a daemon *(answers §7.1)*
+
+Deployment means persistent local hosting: a long-lived service, a stable API,
+models addressed by name. MCF is therefore a process with clients attached, not
+a command-line instrument that exits.
+
+This settles the shape of nearly every reliability question in §3.1 — MCF
+survives indefinitely, supervises child runtimes, and recovers across restarts —
+and it makes §3.13's idle-cost rule central rather than incidental, because a
+daemon's dominant state is idle.
+
+*Still open beneath it:* which API surface is offered, the supervision contract
+when a served runtime dies, and how many models may be resident at once (§7.9).
+
+### D2 — Quality is agentic task success *(answers §7.3)*
+
+Quality is measured on multi-turn, tool-using, instruction-bound tasks with
+checkable outcomes, run in a controlled environment (§IX, §3.19).
+
+This is a strong answer rather than a convenient one. It sidesteps three traps:
+contamination, because a verifiable task needs no ground-truth corpus and is
+hard to memorise; unrepresentativeness, because the benchmark now resembles the
+work; and judge dependency, because outcomes are checked rather than graded by
+another model. It also gives §IV's recommendations a meaning a user recognises —
+*this model completes the kind of task you are going to give it, this often.*
+
+*Still open beneath it:* non-agentic quality (prose, summarization, translation,
+tone) has no checkable outcome and is not covered; the suite's contents are
+§7.23; and contamination is reduced rather than eliminated.
+
+### D3 — Both surfaces are first-class; headless is primary *(answers §7.12)*
+
+Every capability is reachable with no display attached. The interface is a
+client of the same API a script uses, and introduces no action that exists only
+there (§XI, §6.21).
+
+Three intents converge on this, which is about as settled as this document gets:
+§XI requires parity, §VII prefers not paying for two implementations, and §VIII
+can only test what is reachable headlessly.
+
+### D4 — The substrate is Rust *(answers §7.19)*
+
+**Why it follows from the intents,** recorded so the reasoning survives the
+decision:
+
+- **§I and §3.16 decide it.** The dominant class of daemon failure is memory and
+  concurrency error, and Rust makes those largely impossible rather than merely
+  unlikely. More importantly, §3.1's prohibition on silent failure — this
+  document's central rule, and exactly the kind that erodes under human
+  discipline — becomes a property the compiler checks rather than one a reviewer
+  remembers. That is §3.16 applied to the largest available decision.
+- **§VII permits it.** No interpreter, no garbage collector, no runtime, a small
+  static binary, negligible idle footprint, fast cold start.
+- **§III, §IV and §7.4 favour it.** Hardware probing, accelerator interrogation
+  and driving inference engines are constant C-ABI work, and Rust pays no tax at
+  that boundary. This is where garbage-collected alternatives lose specifically
+  for this project, whatever their other merits.
+- **A useful accident:** Hugging Face's own `safetensors` and `tokenizers` are
+  Rust libraries, so §III's acquisition layer builds on first-party code.
+
+**Why not C++.** C++ reaches the same performance and the same footprint; this
+was never a performance argument. It reaches the same *reliability* only through
+sustained discipline, and reliability is this project's first stated intent. The
+tiebreaker is §3.16, not speed.
+
+**Costs, accepted.** Slower to write. Async Rust is genuinely complex and will
+be felt in the concurrent-download and streaming paths. The model conversion and
+quantization ecosystem is Python, treated as supervised subprocess tools — which
+D1's daemon architecture wants anyway.
+
+**Conditional on §7.4.** This reasoning assumes MCF wraps inference engines
+rather than implementing kernels. If that changes, the substrate question
+reopens with it.
+
+**Validated, not assumed.** §3.13 requires optimizing what is measured rather
+than what is imagined, so this decision is confirmed by a small adversarial
+prototype: probe an accelerator, supervise a child runtime deliberately made to
+die badly, record both under §3.1, and measure the result against §7.16. If that
+goes badly, this entry is amended rather than defended.
+
+### D5 — Confidence comes from the laboratory, not from ambient telemetry *(answers §6.9)*
+
+MCF establishes confidence **before** deployment, in a laboratory, rather than
+inferring it **during** deployment, from observation (§VIII, §3.17). Continuous
+sampling, always-on tracing and metric streams are refused by default; recording
+happens at events, not on a timer.
+
+**What is untouched by this, and it is the important half:** the record (§3.3)
+is not telemetry and is not negotiable. Measurement conditions, failure context
+and provenance stay whole, §3.1's prohibition on silent failure stands
+absolutely, and the §3.4 floor is a floor rather than a setting. The two ideas
+are separated precisely so that a decision about one cannot be misapplied to the
+other.
+
+**Why this is coherent rather than a compromise:** production observation and
+laboratory reproduction buy the same good, and the lab buys it deterministically,
+cheaply, and before release rather than after. The cost is real and is recorded
+in §6.15 and §6.16.
+
 ## 3. Principles
 
 These are the load-bearing beliefs. When a decision is genuinely close, decide
@@ -322,9 +399,8 @@ tolerate, because everything else it produces is built on them.
 
 ### 3.3 The record is obligatory; ambient telemetry is not
 
-Revision 2 fused two ideas under the word "observability," and they are not the
-same thing. Separating them is what allows §VII to be honoured without damaging
-§II:
+Two ideas hide under the word "observability" and they are not the same thing.
+Keeping them separate is what allows §VII to be honoured without damaging §II:
 
 - **The record** is the durable evidence attached to things that happened: the
   conditions of every measurement (§3.4), the classification and context of
@@ -338,8 +414,8 @@ same thing. Separating them is what allows §VII to be honoured without damaging
   high-frequency sampling, always-on tracing, metric streams, the machinery of
   operational monitoring. This is **deliberately de-prioritized.** It is the
   largest source of permanent idle cost in a daemon (§3.13), its value is
-  largely diagnostic, and §VIII now supplies that diagnostic value more cheaply
-  and more rigorously.
+  largely diagnostic, and §VIII supplies that diagnostic value more cheaply and
+  more rigorously.
 
 The spirit of what remains:
 
@@ -398,9 +474,9 @@ The spirit:
   afterthought.
 - We test the instrument, then trust the instrument. Simulated hardware,
   synthetic model artifacts, fake hubs, and replayed conditions are all
-  legitimate and expected. A lab has calibration rigs; so do we. Under §VIII
-  this is no longer a supporting practice but the project's primary means of
-  knowing anything (§3.17).
+  legitimate and expected. A lab has calibration rigs; so do we. Under §VIII this
+  is the project's primary means of knowing anything, not a supporting practice
+  (§3.17).
 - **Coverage is whole-system, not merely unit-level.** A suite that proves every
   function correct in isolation and never exercises the daemon end to end has
   tested the parts and not the thing. The behaviours that matter here —
@@ -488,8 +564,8 @@ Where a convenience would make a result harder to reproduce — an unpinned
 version, an implicit default, an unrecorded environment variable, a silent
 auto-upgrade — reproducibility wins. This is the principle most likely to be
 eroded by a hundred small reasonable decisions, so it is stated explicitly to be
-defended explicitly. Under §VII, *performance* now supplies a second stream of
-such reasonable decisions — caching, adaptive behaviour, skipped validation —
+defended explicitly. Under §VII, *performance* supplies a second stream of such
+reasonable decisions — caching, adaptive behaviour, skipped validation —
 and §6.13 governs them.
 
 ### 3.13 Lightness is a budget, and budgets are defended continuously
@@ -667,9 +743,9 @@ should be *managed* rather than solved. Naming them prevents relitigating them.
   coverage with honestly narrow guarantees.
 - **Automation costs agency.** The more MCF decides, the less the user
   understands their own stack. We resolve toward explanation over autonomy.
-- **Observation costs performance.** Resolved rather than merely managed in
-  Revision 4: see §6.9. The residual tension is now §6.15 — reduced observation
-  costs retrospective diagnosis.
+- **Observation costs performance.** Resolved rather than merely managed — see
+  §6.9 and D5. The residual tension is §6.15: reduced observation costs
+  retrospective diagnosis.
 - **Good evaluation is expensive evaluation.** Agentic benchmarks are long,
   multi-turn, and must be repeated to mean anything. There is no cheap version
   that is also honest; §6.17 manages the cost, and §4's rigor-costs-time rule
@@ -773,13 +849,13 @@ Note this does not weaken §3.3 — nothing about the *outcome* of a run goes
 unrecorded. What is reduced during measurement is high-frequency sampling, not
 record-keeping.
 
-**Confidence: high on the principle, medium on the mechanism.** How to make the
-paths separable without two divergent code paths — the classic source of
-"it works in benchmark mode" bugs — remains a real design problem. Revision 4
-shrinks it considerably: with ambient telemetry de-prioritized (§3.3), the gap
-between "operational" and "measurement" instrumentation is now small, because
-the operational path is already quiet. The two profiles are near enough to
-converge, which is the cleanest possible answer to this conflict.
+**Confidence: high on the principle, medium on the mechanism.** Making the paths
+separable without two divergent code paths — the classic source of "it works in
+benchmark mode" bugs — is a real design problem. D5 shrinks it considerably:
+with ambient telemetry refused by default, the gap between operational and
+measurement instrumentation is small, because the operational path is already
+quiet. The two profiles are near enough to converge, which is the cleanest
+available answer to this conflict.
 
 ### 6.3 "Any model on Hugging Face" vs. "never fail"
 
@@ -885,42 +961,19 @@ convention.
 **Confidence: high on the split, low on the defaults.** What is retained by
 default for user traffic, and for how long, is unresolved. See §7.
 
-### 6.9 ~~Lightness vs. deep telemetry~~ — **RESOLVED by decision in Revision 4**
+### 6.9 Lightness vs. deep telemetry
 
-**The tension was.** Intent I asked for pervasive instrumentation of everything;
-Intent VII said every cycle MCF spends is taken from the model. Revision 2 tried
-to keep both, resolving that "the obligation to record is absolute, the cost is
-an engineering problem" — and rated its own feasibility **low**, noting that if
-deep telemetry at negligible overhead proved unreachable, the correct amendment
-was to narrow what MCF claims to observe, explicitly, in this document.
+**Tension.** §I asks for pervasive instrumentation of everything; §VII holds
+that every cycle MCF spends is taken from the model.
 
-**That amendment is now made, by decision rather than by discovery.** Ambient
-telemetry is de-prioritized. §VII wins on the continuous-observation axis, and
-§VIII replaces the confidence that telemetry would have provided.
+**Resolution — §VII wins on the continuous-observation axis, and §VIII supplies
+the confidence telemetry would have bought.** Stated in full as **D5** in §2.1,
+including what the decision explicitly does not touch: the record, the
+prohibition on silent failure, and the §3.4 floor.
 
-**What survives unchanged, and this is the important half:**
-
-- **The record (§3.3) is untouched.** Measurement conditions, failure context,
-  and provenance are not telemetry and are not negotiable — §II and §IV rest on
-  them directly. Reducing telemetry must never be allowed to erode the record;
-  they are separate concepts precisely so that this decision cannot be
-  misapplied to that one.
-- **§3.1's prohibition on silent failure stands absolutely.** Every failure is
-  still caught, classified, and persisted with its context. Fewer logs never
-  means a quieter failure. If anything the failure record matters *more* now,
-  because it is the seed from which §3.17 reconstructs the problem in the lab.
-- **The §3.4 floor is a floor.** MCF stops publishing numbers before it publishes
-  unconditioned ones. Verbosity is a dial; that floor is not on the dial.
-
-**What changes in practice.** Continuous sampling, always-on tracing, and metric
-streams are refused by default. Recording happens at events, not on a timer.
-Idle MCF should be doing approximately nothing (§3.13), which is the outcome
-§VII was asking for all along.
-
-**Confidence: high.** This is a coherent strategy rather than a compromise: the
-two things being traded — production observation and laboratory reproduction —
-buy the same good, and the lab buys it deterministically, cheaply, and before
-release rather than after. The cost is real and is recorded in §6.15.
+**Confidence: high.** The two things traded — production observation and
+laboratory reproduction — buy the same good, and the lab buys it
+deterministically and before release. The costs are §6.15 and §6.16.
 
 ### 6.10 "Fastest and lightest possible" vs. "highest scientific standards"
 
@@ -1067,9 +1120,9 @@ friction while exceeding their honesty is the whole ambition of §VI.
 
 **Tension.** §I demands that MCF cope with everything and always be able to say
 what happened. The conventional way to honour that is deep production
-telemetry — and Revision 4 has just declined it. When something goes wrong on
-the user's machine in a way the laboratory did not anticipate, MCF will have
-less to look at than a heavily instrumented system would.
+telemetry, and D5 declines it. When something goes wrong on the user's machine
+in a way the laboratory did not anticipate, MCF has less to look at than a
+heavily instrumented system would.
 
 **Resolution — diagnosis moves from *observation* to *reproduction*, and the
 failure record is the bridge between them.** The failure record (§3.1) is
@@ -1224,7 +1277,7 @@ of when probes run and how their cost is bounded.
 
 **Tension.** §IX requires that a model under test emit tool calls which are then
 *executed*. The model is an artifact of unknown quality fetched from an untrusted
-source (§3.7), and it is now producing instructions that MCF acts on. Whether the
+source (§3.7), and it produces instructions that MCF acts on. Whether the
 model is malicious or merely bad barely matters — an incompetent agent deleting
 files is the same outcome as a hostile one.
 
@@ -1351,20 +1404,6 @@ reflect order of discovery; position reflects blocking priority** — a void kee
 its number for life so it can be cited stably, but may be moved up the list as
 its urgency becomes clear.
 
-### 7.1 ~~What "deployed" actually means~~ — **RESOLVED in Revision 2**
-
-Intent VI answers this: deployment means **persistent local hosting** — a
-long-lived service, a stable API, models addressed by name.
-MCF is therefore a **daemon** with clients attached to it, not a command-line
-instrument that exits. This settles the shape of nearly every reliability
-question in §3.1: MCF is a process that must survive indefinitely, supervise
-child runtimes, and recover across restarts. It also makes §3.13's idle-cost
-rule central rather than incidental, since a daemon's dominant state is idle.
-
-*Now-open sub-questions:* what API surface is offered (OpenAI-compatible,
-Ollama-compatible, both, native), what the supervision contract is when a served
-runtime dies, and how many models may be resident simultaneously (§7.9).
-
 ### 7.2 The objective function — **blocking §IV**
 
 §6.5 defers the definition of "optimal." Someone must eventually state how
@@ -1374,37 +1413,9 @@ intent cannot be implemented, only gestured at. §VI raises its urgency: a tool
 that is frictionless by intent must ship a default opinion, and §6.5 requires
 that opinion be stated rather than emergent.
 
-### 7.3 ~~What "quality" is measured against~~ — **LARGELY RESOLVED in Revision 5**
-
-Open since Revision 1, and described there as the single hardest unanswered
-question in the project. Intent IX answers it: **quality is agentic task
-success**, measured on multi-turn, tool-using, instruction-bound tasks with
-checkable outcomes, run in a controlled environment.
-
-This is a strong answer, not a convenient one. It sidesteps the three traps
-Revision 1 identified: contamination (a verifiable task needs no ground-truth
-corpus and is hard to memorise), unrepresentativeness (§3.19 — the benchmark now
-resembles the work), and judge dependency (outcomes are checked, not graded by
-another model). It also gives §IV's recommendations a meaning a user recognises:
-*this model completes the kind of task you are going to give it, this often.*
-
-*Still open, and narrower than what it replaces:*
-
-- **Non-agentic quality is not covered.** Prose, summarization, translation,
-  explanation, and tone have no checkable outcome and are not measured by this
-  answer. Whether MCF measures them at all, declines to, or admits a
-  model-as-judge for them with its biases declared, is undecided — and §5's
-  "not a model-quality authority" makes declining a legitimate option.
-- **The suite's contents** are unspecified — see §7.23.
-- **Contamination is reduced, not eliminated.** Widely published agentic
-  benchmarks will be trained on eventually. Whether MCF's tasks must be private,
-  rotated, or procedurally generated to stay honest is unanswered, and it is a
-  §3.4 obligation rather than a nicety.
-
 ### 7.4 Engine ownership: does MCF perform inference, or delegate it? — **blocking §VI and §VII**
 
-Newly urgent, and arguably now the most consequential unanswered question in the
-document. §VII's "fastest possible" reads as an argument for owning the
+Arguably the most consequential unanswered question in this document. §VII's "fastest possible" reads as an argument for owning the
 inference path; §VI's frictionless breadth and §III's "any model" read as an
 argument for delegating to mature runtimes.
 
@@ -1421,59 +1432,14 @@ That reading is stated here as the likely answer, not as a resolution, because
 it decides the project's architecture and deserves to be decided deliberately
 rather than inherited from a paragraph in §7.
 
-### 7.19 ~~Implementation substrate~~ — **RESOLVED in Revision 4: Rust**
+### 7.5 Retention and residency of the record
 
-**The decision.** MCF is written in Rust.
-
-**Why it follows from the intents,** recorded here so the reasoning survives the
-decision:
-
-- **§I and §3.16 decided it.** The dominant class of daemon failure is memory
-  and concurrency error, and Rust makes those largely impossible rather than
-  merely unlikely. More importantly, §3.1's prohibition on silent failure — this
-  document's central rule, and exactly the kind that erodes under human
-  discipline — becomes a property the compiler checks rather than one a reviewer
-  remembers. That is §3.16 applied to the largest available decision.
-- **§VII permits it.** No interpreter, no garbage collector, no runtime, a small
-  static binary, negligible idle footprint, fast cold start. It can plausibly
-  meet §7.16's budgets once those exist.
-- **§III, §IV and §7.4 favour it.** Hardware probing, accelerator interrogation,
-  and driving inference engines are constant C-ABI work, and Rust pays no tax at
-  that boundary. This is where garbage-collected alternatives lose specifically
-  for this project, whatever their other merits.
-- **A useful accident:** Hugging Face's own `safetensors` and `tokenizers` are
-  Rust libraries, so §III's acquisition layer builds on first-party code rather
-  than reimplementing it.
-
-**Why not C++,** since it was the initial instinct: C++ reaches the same
-performance and the same footprint — this was never a performance argument. It
-reaches the same *reliability* only through sustained discipline, and reliability
-is this project's first stated intent. The tiebreaker was §3.16, not speed.
-
-**The costs, accepted.** Slower to write. Async Rust is genuinely complex and
-will be felt in the concurrent-download and streaming paths. The model
-conversion and quantization ecosystem is Python — resolved by treating those as
-supervised subprocess tools, which the daemon architecture (§7.1) wants anyway.
-
-**Still conditional on §7.4.** This reasoning assumes MCF wraps inference engines
-rather than implementing kernels. If that ever changed, the substrate question
-reopens with it.
-
-**Validation, not permission.** §3.13 requires we optimize what is measured
-rather than what is imagined, so this decision is confirmed rather than
-justified by a small adversarial prototype: probe a GPU, supervise a child
-runtime deliberately made to die badly, record both under §3.1, and measure the
-result against §7.16. Building it is early work, not a gate — but if it goes
-badly, this entry is amended rather than defended.
-
-### 7.5 Retention and residency of the record — **narrowed in Revision 4**
-
-Revision 4 removes most of this void by removing most of the data: with ambient
-telemetry de-prioritized (§6.9), there is no metric stream to size, age out, or
-budget. What remains is the record itself — measurement history, failure records,
-provenance — which is small, durable, and scientifically valuable, so the
-question inverts from *how aggressively do we discard* to *how long must we
-keep*, and §7.13's comparability problem now dominates it.
+D5 removes most of this void by removing most of the data: with ambient
+telemetry refused, there is no metric stream to size, age out or budget. What
+remains is the record itself — measurement history, failure records, provenance —
+which is small, durable and scientifically valuable, so the question is *how
+long must we keep* rather than *how aggressively do we discard*, and §7.13's
+comparability problem dominates it.
 
 Still open: whether anything may ever leave the machine, whether the user can
 inspect and purge what MCF holds about them, and what happens if the record's
@@ -1529,24 +1495,6 @@ MCF works with no network at all? §3.2 suggests "most of it, loudly labelled,"
 but this has never been stated as an intent and deserves to be. Intent V adds a
 wrinkle: an interface reachable from other devices assumes a local network even
 when there is no internet, and those two conditions should not be conflated.
-
-### 7.12 ~~The user surface~~ — **RESOLVED in Revision 5**
-
-Intent V gave the interface its character (minimal, lightweight,
-device-agnostic); §3.14 and §6.11 gave it its strategy (a thin client over a
-service complete without it); §7.1 confirmed the daemon beneath. Intent XI closes
-the remainder: **both surfaces are first-class in capability, the headless path
-is primary by construction, and the interface may not be the only way to do
-anything** (§6.21).
-
-That also settles the sub-question Revision 2 left open about whether MCF's own
-interface consumes the same API a script would. It does — §6.21 requires parity,
-§VII prefers not paying for two, and §VIII can only test what is reachable
-headlessly. Three intents converging on one answer is about as settled as this
-document gets.
-
-*Residual detail, no longer blocking:* what happens when several clients attach
-at once, which is a concurrency question (§7.9) rather than a surface question.
 
 ### 7.13 State, versioning, and migration
 
@@ -1617,8 +1565,8 @@ machines we do not own (§7.8)? What divergence between simulation and reality i
 tolerable before the simulator is declared defective?
 
 Until this is answered, §VIII is an assertion rather than a discipline, and
-§6.16's low confidence rating stands. This is now the highest-leverage void
-attached to the newest intent, in the same way §7.16 is for §VII.
+§6.16's low confidence rating stands. It is the highest-leverage void attached
+to §VIII, in the same way §7.16 is for §VII.
 
 ### 7.21 What the laboratory is obliged to simulate
 
@@ -1637,7 +1585,7 @@ stated so confidence is claimed only where earned.
 
 ### 7.22 What "full system" testing means for a daemon
 
-§3.5 now requires whole-system coverage, but the end-to-end boundary is undrawn.
+§3.5 requires whole-system coverage, but the end-to-end boundary is undrawn.
 Does a full-system test drive the real HTTP surface? Start a real inference
 engine, or a simulated one? Cross a process boundary into a supervised child?
 Exercise restart and recovery with persisted state?
@@ -1664,7 +1612,7 @@ Riding on it, and equally unresolved:
 - **What a task's tools are, and how difficulty is calibrated** — a suite every
   model passes and a suite every model fails are equally uninformative.
 - **How the suite stays uncontaminated** as it ages, per §7.3.
-- **What an agentic run costs**, since §4 now concedes that good evaluation is
+- **What an agentic run costs**, since §4 concedes that good evaluation is
   expensive, and §7.9's arbitration question becomes acute when a benchmark
   occupies the machine for hours.
 
@@ -1715,6 +1663,19 @@ Riding on it: whether §IV may make any recommendation before the set exists
 real-hardware validation (§7.20) needs the same breadth or a different one —
 they are asking different questions of the same weights.
 
+### Retired voids
+
+Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
+
+| Void | Question | Answered by | Substance lives in |
+|---|---|---|---|
+| §7.1 | What "deployed" means | §VI | **D1** — MCF is a daemon |
+| §7.3 | What quality is measured against | §IX | **D2** — agentic task success |
+| §7.12 | The user surface | §XI | **D3** — both surfaces, headless primary |
+| §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
+
+§7 shrinks over time. If it does not, we are building on undeclared assumptions.
+
 ---
 
 ## 8. Amending This Document
@@ -1736,44 +1697,85 @@ they are asking different questions of the same weights.
 - **New intents are integrated, not appended.** A statement of intent added
   later is not additive by default: it may contradict resolutions already made,
   and it may answer voids already recorded. Adding one means re-reading §6 and
-  §7 in its light. Revision 2 is the worked example — three sentences added six
+  §7 in its light. §V–§VII are the worked example: three sentences added six
   conflicts and closed two blocking voids.
 
 ---
 
-## 9. Revision History
+## 9. Changelog
 
-Recorded so that the *reasoning* behind each change survives it, per §8.
+The only historical record in this document. Every clause above states the
+present position; this section states how it came to be held, because §8
+requires that the *reasoning* behind each change survive it.
 
-- **Revision 1** — Founding intents I–IV consolidated (reliability, science,
-  custody, optimization). Repository was empty; all conflict resolutions
-  arbitrated on coherence rather than by implementation.
-- **Revision 2** — Intents V–VII added (interface, hosting, lightness). Closed
-  §7.1 (MCF is a daemon) and partially §7.12. The performance mandate forced six
-  new conflict resolutions (§6.9–§6.14) and three principles (§3.13–§3.15).
-- **Revision 3** — Corrected the Ollama framing: cited as an example of a
-  *friction level*, never as an architectural model. Added §3.16 (prefer
-  substrates a machine can hold to the principles) and recorded §7.19.
-- **Revision 5** — Intents IX–XI added. §IX (agentic benchmarking) largely
-  resolved §7.3, open since Revision 1 as the project's hardest question, and
-  brought §6.17–§6.20 with it — most usefully the finding that the agentic
-  environment and the §VIII laboratory are the same apparatus, and that this
-  makes the rigor requirement and the sandbox requirement one implementation.
-  §X (capability discovery) collided with §3.6 and was resolved by §3.18:
-  detection is measurement, not inference. §XI closed §7.12 by adding parity
-  between the surfaces.
-- **Revision 6** — Intent XII added: `unsloth/Qwen3.8-27B-GGUF` as the reference
-  model for initial work. The first intent naming a specific artifact, and it
-  collided with more of the document than its size suggested — §3.5's hermetic
-  suite, §3.4's anti-overfitting rule, and §III's no-special-casing commitment.
-  Resolved in §6.22 (the reference model is a fixture for the instrument, never
-  a dependency of the suite or a case in the code) and §6.23 (one model builds
-  an instrument and never supports a generality claim). Opened §7.26, and
-  narrowed §7.8 and §7.16 by making the development hardware concrete: whatever
-  runs a 27B model is now the first characterized machine.
-- **Revision 4** — Two decisions. **Rust** chosen as the substrate (§7.19
-  resolved, on §3.16 grounds rather than performance ones). **Confidence
-  strategy rebalanced** from ambient telemetry to testing and simulation: §6.9
-  resolved by choosing §VII's side, §3.3 split into *the record* (obligatory)
-  and *ambient telemetry* (de-prioritized), Intent VIII added, §3.17 added, and
-  the costs recorded honestly in §6.15 and §6.16.
+### Version 6 — the reference model
+
+Intent XII added: `unsloth/Qwen3.8-27B-GGUF` as the reference model for initial
+work. The first intent naming a specific artifact rather than a property of the
+system, and it collides with more of this document than its size suggests —
+§3.5's hermetic suite, §3.4's anti-overfitting rule, and §III's no-special-casing
+commitment. Resolved in §6.22 (the reference model is a fixture for the
+instrument, never a dependency of the suite or a case in the code) and §6.23
+(one model builds an instrument and never supports a generality claim). Opens
+§7.26. Narrows §7.8 and §7.16, since whatever runs a 27B model is now the first
+characterized machine.
+
+*Also in this version, and structural rather than substantive:* the document is
+restated in the present tense with all history collected here; the four resolved
+voids are migrated out of §7 into §2.1 as D1–D4, which §8 has required since
+version 1 and which had not been done; and §6.9's resolution moves to D5.
+
+### Version 5 — agentic evaluation, capability discovery, surface parity
+
+Intents IX–XI added. §IX is the most consequential addition since the founding
+four: agentic workflow benchmarking substantially answers §7.3 — what quality is
+measured against — which this document called its single hardest unanswered
+question from version 1 onward. It answers it well, because agentic task success
+is verifiable without a ground-truth corpus and resembles the work the models
+will actually do. It also brings expense, stochasticity and a sandbox
+requirement (§6.17–§6.20), most usefully the finding that the agentic
+environment and the §VIII laboratory are the same apparatus — which makes the
+rigor requirement and the safety requirement one implementation.
+
+§X (capability discovery) collides directly with §3.6's prohibition on inferring
+metadata, resolved in §6.19 by turning detection into measurement. §XI ratifies
+what §3.14 and §6.11 already held and closes the rest of §7.12.
+
+### Version 4 — Rust, and confidence by laboratory
+
+Two decisions. The implementation substrate is settled: **Rust** (§7.19
+resolved, on §3.16 grounds rather than performance ones).
+
+And the project's confidence strategy is deliberately rebalanced: **away from
+ambient telemetry, toward exhaustive testing and simulated laboratory
+verification.** That second decision is larger than it sounds. It cuts §6.9,
+this document's sharpest and least confident conflict, by choosing a side; it
+forces §3.3 to be split into two ideas that version 2 had wrongly fused; and it
+adds Intent VIII, because a project that declines to watch itself in production
+must be able to reproduce itself in a lab. §6.15 and §6.16 record what that
+trade costs.
+
+### Version 3 — the Ollama framing corrected
+
+Intent VI cited Ollama as an *example of a friction level*, not as an
+architectural or implementational model, and the document had begun to treat it
+as the latter. §VI now says so explicitly, §5 gains an anti-goal against
+clone-thinking, and every comparison in the document names the property rather
+than the product. Adds §3.16 (prefer substrates a machine can hold to the
+principles) and records §7.19.
+
+### Version 2 — interface, hosting, lightness
+
+Intents V–VII added. Two of them answer questions recorded as blocking voids:
+what "deploy" means (§7.1), and how a human touches the system (§7.12). The
+third — *be the fastest, lightest tool possible* — is the most disruptive
+statement made about this project. It does not merely add a goal; it applies
+downward pressure to every other intent, because rigor, observability and
+universality all have weight. §6.9–§6.14 and §3.13–§3.15 exist to keep that
+pressure from silently eroding the rest of the document.
+
+### Version 1 — the founding four
+
+Intents I–IV consolidated: reliability, science, custody, optimization. The
+repository was empty; all conflict resolutions were arbitrated on coherence
+rather than by implementation, and they remain so.
