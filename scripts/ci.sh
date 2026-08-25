@@ -45,6 +45,16 @@
 #
 # None of them is optional; all of them are scheduled rather than gating,
 # because each takes minutes and a gate people skip does not gate.
+#
+# THE MACHINE IS SHARED. Where `heavy` is on PATH, every scheduled tier runs
+# inside an exclusive window: this machine hosts several projects with heavy
+# test workloads, and four suites running at once do not run four times slower —
+# they measure each other. B35 says a timing taken under contention measures the
+# contention, and D30 makes MCF *refuse* such a reading rather than report it,
+# so the budget tier is not merely slower without the window, it declines to
+# assert. The gating tier does not take the window: it is seconds long, and a
+# five-second check queued behind a five-minute mutation run is a check people
+# stop running. `~/.local/bin/HEAVY.md` states the rest.
 
 set -o errexit -o nounset -o pipefail
 
@@ -96,6 +106,23 @@ command -v cargo >/dev/null 2>&1 || {
 
 step() { printf '\n=== %s\n' "$1"; }
 
+# Runs a scheduled tier inside an exclusive window where one is available, and
+# plainly without one where it is not — a machine with no `heavy` on it is a
+# machine with one project on it, and MCF is not going to require a tool it does
+# not ship (B36's habit, applied to a developer's machine rather than a user's).
+#
+# `--minutes` is per tier and generous: it is a deadline that ends a hung run,
+# not an estimate of how long the tier takes.
+exclusively() {
+    local what="$1" minutes="$2"
+    shift 2
+    if command -v heavy >/dev/null 2>&1; then
+        heavy run --for "mcf: $what" --minutes "$minutes" -- "$@"
+    else
+        "$@"
+    fi
+}
+
 started=$SECONDS
 
 step "formatting"
@@ -132,13 +159,15 @@ gating_seconds=$((SECONDS - started))
 
 if [ "$with_fuzz" = true ]; then
     step "fuzz (B-191)"
-    cargo test --locked --offline -p mcf-checks --test fuzz -- --ignored --nocapture
+    exclusively "fuzz tier" 10 \
+        cargo test --locked --offline -p mcf-checks --test fuzz -- --ignored --nocapture
     tier_stamp "$root" fuzz
 fi
 
 if [ "$with_load" = true ]; then
     step "load (B-191)"
-    cargo test --locked --offline -p mcf-checks --test load -- --ignored --nocapture
+    exclusively "load tier" 10 \
+        cargo test --locked --offline -p mcf-checks --test load -- --ignored --nocapture
     tier_stamp "$root" load
 fi
 
@@ -146,7 +175,8 @@ if [ "$with_soak" = true ]; then
     # One thread: resident memory and open descriptors are properties of the
     # process, so a second test allocating in parallel reads as growth.
     step "soak (B-191)"
-    cargo test --locked --offline -p mcf-checks --test soak -- --ignored --nocapture --test-threads=1
+    exclusively "soak tier" 15 \
+        cargo test --locked --offline -p mcf-checks --test soak -- --ignored --nocapture --test-threads=1
     tier_stamp "$root" soak
 fi
 
@@ -154,7 +184,10 @@ if [ "$with_budget" = true ]; then
     step "performance budget (B-011, release profile)"
     # Release, because D24's ceilings are about the shipped artifact and a debug
     # binary is a different one. `--ignored` because the tier is scheduled.
-    cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
+    # This one needs the window most: every figure it asserts is a timing, and
+    # D30 refuses a reading taken while something else had the processor.
+    exclusively "performance budget" 20 \
+        cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
     tier_stamp "$root" performance
 fi
 
@@ -163,19 +196,19 @@ if [ "$with_mutation" = true ]; then
     # The script itself refuses a score below the floor or below the last one
     # recorded (B-186); the score travels into the stamp so that the next run
     # has a previous one to compare against, which is B20's before and after.
-    mutation_output=$("$root/scripts/check-mutants.sh" | tee /dev/stderr)
+    mutation_output=$(exclusively "mutation tier" 45 "$root/scripts/check-mutants.sh" | tee /dev/stderr)
     tier_stamp "$root" mutation \
         "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
 fi
 
 if [ "$with_from_scratch" = true ]; then
     step "from-scratch conformance (B-183)"
-    "$root/scripts/check-from-scratch.sh"
+    exclusively "from-scratch conformance" 15 "$root/scripts/check-from-scratch.sh"
 fi
 
 if [ "$with_reproducibility" = true ]; then
     step "reproducible build (B-001)"
-    "$root/scripts/check-reproducible-build.sh"
+    exclusively "reproducible build" 30 "$root/scripts/check-reproducible-build.sh"
 fi
 
 # Every scheduled tier's age, and what did not run in this invocation. B38: a
