@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 41 |
+| **Version** | 42 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (17 done, 3 in progress, 56 blocked on a decision, 118 open).** Every item cites
+build items (18 done, 3 in progress, 56 blocked on a decision, 117 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -136,7 +136,7 @@ first and importance second.
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | open |
-| B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | open |
+| B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | **done** — `mcf_core::origin`: `LocallyMeasured<T>` and `FromCorpus<T>` are unrelated types with no conversion either way; a corpus value cannot be built without the sample count B44 requires, and neither reads like the other on a surface |
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | **done** — `mcf_core::trial`: a `Trial` cannot be built without its arm, position and session; there is no mean anywhere in MCF to store, and a check keeps it that way; a pairing is reconstructed from a journal round trip in `mcf-record`'s own suite |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
@@ -362,6 +362,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 42 — a foreign number cannot decide a local question
+
+B-221 is done. B34 states the direction — *MCF contributes outward and decides
+inward* — and B43's violation is a sorted candidate list whose ordering nobody
+explains, which is a foreign conclusion wearing a local interface.
+
+The shape that prevents it is two unrelated types rather than one type with a
+flag. A flag is a filter and a filter can be misconfigured; a function that
+takes `LocallyMeasured<T>` cannot be handed a `FromCorpus<T>` however tired the
+author is.
+
+There is no conversion in either direction, and the reason is A20's: a corpus
+value does not *become* local by being confirmed, it is **replaced** by the
+local measurement. Replacement needs no mechanism, so the absence of one is the
+enforcement.
+
+The corpus type cannot be constructed without its sample count, because B44
+requires every corpus statement to render one — and the rendering says so, since
+a label that lives only in the type is a label nobody sees.
 
 ### Version 41 — the trials are the record, and there is no mean to store
 
