@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -32,6 +32,7 @@ with B-014.
 | 8 | [The documents](#8--the-documents) |
 | 9 | [The tiers](#9--the-tiers) |
 | 10 | [Ages, and what a release refuses](#10--ages-and-what-a-release-refuses) |
+| 11 | [A machine with nothing on it](#11--a-machine-with-nothing-on-it) |
 | — | [Changelog](#changelog) |
 
 ## 1 · The toolchain
@@ -94,6 +95,18 @@ $ cargo build --locked                  # debug
 $ cargo build --locked --release        # the artifact D24's budgets govern
 $ ./target/release/mcf --version
 MCF 0.1.0-m0  (revision unknown, rustc 1.98.0 (88d9e12ae 2026-08-18), target x86_64-unknown-linux-gnu, profile release)
+```
+
+**There is a second artifact, and D29 makes that normal rather than exceptional.**
+`x86_64-unknown-linux-musl` links statically: no interpreter, no libc to
+resolve, nothing to find on the machine it lands on. The target triple is
+already a §3.4 condition, so it is a different artifact rather than a different
+build of the same one, and B-183's from-scratch check — section 11 — is what it
+exists for.
+
+```
+$ rustup target add x86_64-unknown-linux-musl
+$ cargo build --locked --release --target x86_64-unknown-linux-musl -p mcf-cli
 ```
 
 `revision unknown` is correct, not a defect. The source revision reaches the
@@ -575,7 +588,37 @@ A stamp carries anything the tier wants to hand forward. The mutation tier puts
 its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
+## 11 · A machine with nothing on it
+
+```
+$ scripts/ci.sh --with-from-scratch     # or scripts/check-from-scratch.sh
+```
+
+§6 checks what the artifact *requires* by reading its dependency list. This
+checks the same claim the only way that settles it: it builds an image `FROM
+scratch` — the statically linked binary and **nothing else**, no libc, no shell,
+no package manager, no `/etc`, no `/tmp` — and runs MCF in it.
+
+All of it runs. `--version`, `licence`, and the whole of `doctor`: the hardware
+profile, the self-cost measurement over a hundred process spawns, and the
+laboratory reproducing every failure MCF claims to handle. What the container
+lacks, MCF reports rather than assumes — the accelerator comes back *attempted,
+uncharacterized (missing memory, thermal)* because the vendor library is not
+there to load, which is D25 and A5 behaving exactly as written on a machine
+that genuinely lacks something.
+
+**It does not reach a first token**, which needs a model artifact and is M1's
+acquisition work (B-019, B-020). B-183's condition is not met until that exists,
+and the script says so on every run rather than implying otherwise.
+
 ## Changelog
+
+### Version 17 — a machine with nothing on it
+
+Section 11 added with B-183's checkable half, and §3 gains the statically
+linked artifact it runs. The dependency list said MCF needs nothing unusual;
+this runs it in a container that has nothing at all, which is the difference
+between a claim about a file and a claim about what happens.
 
 ### Version 16 — the stand-in engine has a crate
 

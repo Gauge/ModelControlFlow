@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 68 |
+| **Version** | 69 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 3 in progress, 53 blocked on a decision, 105 open).** Every item cites
+build items (36 done, 1 dropped, 4 in progress, 53 blocked on a decision, 104 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -133,7 +133,7 @@ first and importance second.
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
-| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29 and D32; the first token needs an engine admitted to [vendored.md](vendored.md) (B-320) |
+| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | **in progress** — `scripts/check-from-scratch.sh` behind `scripts/ci.sh --with-from-scratch`: a statically linked `x86_64-unknown-linux-musl` artifact in an image holding it and nothing else — no libc, no shell, no package manager, no `/etc`, no `/tmp` — running `--version`, `licence` and the whole of `doctor`, laboratory included. What it lacks it reports: the accelerator comes back *attempted, uncharacterized* because the vendor library is not there (D25, A5). The first token needs a model artifact (B-019), and the other platforms D29 names need a machine to run on |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
@@ -366,6 +366,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 69 — MCF runs on a machine with nothing on it
+
+B-183 in progress. The artifact's dependency list said MCF needs nothing
+unusual; this runs it in a container that has nothing at all, which is the
+difference between a claim about a file and a claim about what happens. All of
+`doctor` runs there — the profile, the hundred-spawn cold-start measurement, the
+laboratory — and what the container lacks is reported rather than assumed.
+
+The first token is what remains, and it needs a model. That is M1's work, and
+the script says so on every run.
 
 ### Version 68 — the stand-in reads text
 

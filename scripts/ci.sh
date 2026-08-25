@@ -37,6 +37,8 @@
 #                           about the artifact MCF ships (§3.4, D27).
 #   --with-mutation         (B-191, B-186) breaks the code deliberately and
 #                           reports what the suite failed to notice.
+#   --with-from-scratch     (B-183) runs the statically linked artifact in a
+#                           container that holds it and nothing else.
 #   --with-reproducibility  (B-001) rebuilds the workspace twice under the
 #                           release profile and compares the bytes.
 #   --all                   all of the above. Minutes, not seconds.
@@ -58,6 +60,7 @@ with_fuzz=false
 with_load=false
 with_soak=false
 with_mutation=false
+with_from_scratch=false
 for argument in "$@"; do
     case "$argument" in
         --with-reproducibility) with_reproducibility=true ;;
@@ -66,6 +69,7 @@ for argument in "$@"; do
         --with-load) with_load=true ;;
         --with-soak) with_soak=true ;;
         --with-mutation) with_mutation=true ;;
+        --with-from-scratch) with_from_scratch=true ;;
         --all)
             with_reproducibility=true
             with_budget=true
@@ -73,11 +77,13 @@ for argument in "$@"; do
             with_load=true
             with_soak=true
             with_mutation=true
+            with_from_scratch=true
             ;;
         *)
             printf 'ci: no such option: %s\n' "$argument" >&2
             printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
-            printf '[--with-budget] [--with-mutation] [--with-reproducibility] | --all\n' >&2
+            printf '[--with-budget] [--with-mutation]\n' >&2
+            printf '                     [--with-from-scratch] [--with-reproducibility] | --all\n' >&2
             exit 2
             ;;
     esac
@@ -162,6 +168,11 @@ if [ "$with_mutation" = true ]; then
         "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
 fi
 
+if [ "$with_from_scratch" = true ]; then
+    step "from-scratch conformance (B-183)"
+    "$root/scripts/check-from-scratch.sh"
+fi
+
 if [ "$with_reproducibility" = true ]; then
     step "reproducible build (B-001)"
     "$root/scripts/check-reproducible-build.sh"
@@ -190,6 +201,7 @@ report_absent "$with_load" "load (B-191)                 — scripts/ci.sh --wit
 report_absent "$with_soak" "soak (B-191)                 — scripts/ci.sh --with-soak"
 report_absent "$with_budget" "performance budget (B-011)   — scripts/ci.sh --with-budget"
 report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh --with-mutation"
+report_absent "$with_from_scratch" "from-scratch conformance     — scripts/ci.sh --with-from-scratch"
 report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"
 if [ "$not_run" = false ]; then
     printf '  nothing: every tier ran in this invocation\n'
