@@ -444,6 +444,156 @@ fn nothing_is_written_outside_the_directory_the_environment_names() {
     );
 }
 
+/// A model file on this machine, with a provenance beside it if asked for.
+fn a_model(machine: &Machine, name: &str, bytes: usize, with_provenance: bool) -> PathBuf {
+    let path = machine.0.join("mcf").join("models").join(name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("the model directory is creatable");
+    }
+    std::fs::write(&path, vec![b'w'; bytes]).expect("a model file is writable");
+    if with_provenance {
+        // The library the binary uses, so a change to the sidecar's shape
+        // reaches both sides at once.
+        mcf_hub::store::record_provenance(
+            &path,
+            &mcf_core::provenance::Provenance::acquired(
+                mcf_core::provenance::Origin::hub(
+                    mcf_core::provenance::Repository::new("owner/model"),
+                    Some(mcf_core::provenance::Revision::new("abc123")),
+                ),
+                Timestamp::now(),
+            ),
+        )
+        .expect("the provenance is writable");
+    }
+    path
+}
+
+/// `list` on a machine that has acquired nothing says so, rather than failing
+/// or inventing a directory.
+#[test]
+fn listing_an_empty_machine_says_it_is_empty() {
+    let machine = Machine::new("list-empty");
+    let output = machine.run(&["list"]);
+    assert!(output.status.success(), "{}", error_text(&output));
+    let text = text(&output);
+    assert!(text.contains("no models"), "{text}");
+}
+
+/// And on a machine holding models it names each one, with where it came from
+/// — or with the fact that nothing says (A7).
+#[test]
+fn listing_names_every_model_and_what_is_known_about_it() {
+    let machine = Machine::new("list-models");
+    a_model(&machine, "accounted.gguf", 32, true);
+    a_model(&machine, "by-hand.gguf", 16, false);
+
+    let output = machine.run(&["list"]);
+    assert!(output.status.success(), "{}", error_text(&output));
+    let text = text(&output);
+    assert!(text.contains("accounted.gguf"), "{text}");
+    assert!(text.contains("owner/model"), "{text}");
+    assert!(text.contains("by-hand.gguf"), "{text}");
+    assert!(
+        text.contains("origin unknown"),
+        "a model nothing accounts for was listed as though it were accounted for: {text}"
+    );
+    assert!(
+        !text.contains("mcf-provenance"),
+        "the listing shows MCF's own bookkeeping as though it were a model: {text}"
+    );
+}
+
+/// `rm` without a reason previews and removes nothing. This is the whole of
+/// §3.11 at the surface: an operator who typed the wrong name finds out by
+/// reading rather than by losing a model.
+#[test]
+fn removing_without_a_reason_previews_and_removes_nothing() {
+    let machine = Machine::new("rm-preview");
+    let model = a_model(&machine, "model.gguf", 64, true);
+
+    let output = machine.run(&["rm", "model.gguf"]);
+    assert!(output.status.success(), "{}", error_text(&output));
+    let text = text(&output);
+    assert!(text.contains("model.gguf"), "{text}");
+    assert!(text.contains("--because"), "{text}");
+    assert!(text.contains("nothing was removed"), "{text}");
+    assert!(model.exists(), "the preview removed the model");
+}
+
+/// With a reason it moves the model to a shelf, records the removal, and
+/// deletes nothing.
+#[test]
+fn removing_with_a_reason_shelves_the_model_and_records_it() {
+    let machine = Machine::new("rm-authorized");
+    let model = a_model(&machine, "model.gguf", 64, true);
+
+    let output = machine.run(&["rm", "model.gguf", "--because", "superseded"]);
+    assert!(output.status.success(), "{}", error_text(&output));
+    let text = text(&output);
+    assert!(text.contains("superseded"), "{text}");
+    assert!(!model.exists(), "the model is still where it was");
+    assert!(
+        machine.0.join("mcf").join("removed").exists(),
+        "nothing was shelved: {text}"
+    );
+
+    // The record goes first, and it is still there afterwards.
+    let written = std::fs::read_to_string(machine.journal()).expect("the record was written");
+    assert!(written.contains("artifact_removed"), "{written}");
+    assert!(written.contains("superseded"), "{written}");
+    assert!(written.contains("model.gguf"), "{written}");
+
+    // And the model is still on the disk, on the shelf, sidecar and all.
+    let mut shelved = Vec::new();
+    walk(&machine.0.join("mcf").join("removed"), &mut shelved);
+    assert_eq!(shelved.len(), 2, "{shelved:?}");
+}
+
+/// `--purge` is the only thing that destroys a model, and it takes the same
+/// authorization a removal does.
+#[test]
+fn purging_needs_the_same_authorization_and_says_what_it_did() {
+    let machine = Machine::new("rm-purge");
+    a_model(&machine, "model.gguf", 64, true);
+
+    let previewed = machine.run(&["rm", "model.gguf", "--purge"]);
+    assert!(previewed.status.success(), "{}", error_text(&previewed));
+    assert!(
+        text(&previewed).contains("nothing was removed"),
+        "a purge without a reason removed something: {}",
+        text(&previewed)
+    );
+
+    let output = machine.run(&["rm", "model.gguf", "--purge", "--because", "done with it"]);
+    assert!(output.status.success(), "{}", error_text(&output));
+    let text = text(&output);
+    assert!(text.contains("purged"), "{text}");
+    assert!(text.contains("cannot be brought back"), "{text}");
+
+    let mut left = Vec::new();
+    walk(&machine.0.join("mcf").join("removed"), &mut left);
+    assert!(left.is_empty(), "a purge left something behind: {left:?}");
+}
+
+/// A name that is not there is an outcome that says so, and the store is
+/// untouched.
+#[test]
+fn removing_something_that_is_not_there_says_so() {
+    let machine = Machine::new("rm-absent");
+    let model = a_model(&machine, "model.gguf", 8, false);
+
+    let output = machine.run(&["rm", "not-a-model.gguf", "--because", "cleaning up"]);
+    assert!(
+        !output.status.success(),
+        "a removal of nothing reported success"
+    );
+    let text = error_text(&output);
+    assert!(text.contains("not-a-model.gguf"), "{text}");
+    assert!(text.contains("nothing was removed"), "{text}");
+    assert!(model.exists(), "the model that was there is gone");
+}
+
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;

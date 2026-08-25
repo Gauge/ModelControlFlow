@@ -25,6 +25,10 @@ use mcf_core::degradation::{Degradation, Degraded};
 use mcf_core::failure::Failure;
 use mcf_core::hardware::{Accelerator, Characterization, Machine};
 use mcf_core::measurement::{ConditionValue, Conditions, Measurement, Quantity};
+use mcf_core::provenance::{
+    Checksum, Licence, Origin, Provenance, ToolIdentity, Transformation, TransformationKind,
+};
+use mcf_core::time::Timestamp;
 use mcf_core::trial::{Series, Trial, Trials};
 
 use crate::json::Value;
@@ -89,6 +93,171 @@ pub fn degraded<T>(value: &Degraded<T>, encode: impl FnOnce(&T) -> Value) -> Val
         ("degraded", Value::Bool(true)),
         ("degradation", degradation(value.degradation())),
         ("value", encode(value.value())),
+    ])
+}
+
+/// Where an artifact came from, and everything that happened to it since
+/// (§3.6, B-006).
+///
+/// The chain is written whole rather than summarized. §XII's hard case is a
+/// requantization of somebody else's weights, and a record that kept only the
+/// nearest repository would be a record that cannot answer *what were these
+/// originally* — which is the question the chain exists for (A1).
+#[must_use]
+pub fn provenance(provenance: &Provenance) -> Value {
+    Value::map([
+        ("origin", origin(provenance.origin())),
+        ("retrieved_at", timestamp(provenance.retrieved_at())),
+        ("integrity", attested(provenance.integrity(), checksum)),
+        ("licence", attested(provenance.licence(), licence)),
+        (
+            "transformations",
+            Value::List(
+                provenance
+                    .transformations()
+                    .iter()
+                    .map(transformation)
+                    .collect(),
+            ),
+        ),
+        (
+            "derived_from",
+            match provenance.source() {
+                Some(source) => self::provenance(source),
+                None => Value::Null,
+            },
+        ),
+    ])
+}
+
+/// Where bytes came from.
+///
+/// The variant is named in the record rather than inferred from which fields
+/// are present: *a local file* and *nobody can say* are different answers, and
+/// a reader that had to deduce which one it was holding would deduce wrongly
+/// the first time a field went missing for another reason (A7, A9).
+#[must_use]
+pub fn origin(origin: &Origin) -> Value {
+    match origin {
+        Origin::Hub {
+            repository,
+            revision,
+        } => Value::map([
+            ("kind", Value::text("hub")),
+            ("repository", Value::text(repository.as_str())),
+            (
+                "revision",
+                attested(revision, |revision| Value::text(revision.as_str())),
+            ),
+        ]),
+        Origin::LocalFile { path } => Value::map([
+            ("kind", Value::text("local_file")),
+            ("path", Value::text(path.display().to_string())),
+        ]),
+        // `Origin` is non-exhaustive; anything added later is recorded as what
+        // MCF can say about it rather than silently as `unattributed`, which
+        // would be a claim.
+        Origin::Unattributed => Value::map([("kind", Value::text("unattributed"))]),
+        other => Value::map([
+            ("kind", Value::text("unrecorded")),
+            ("rendered", Value::text(other.to_string())),
+        ]),
+    }
+}
+
+/// A digest of an artifact's bytes, and what computed it.
+#[must_use]
+pub fn checksum(checksum: &Checksum) -> Value {
+    Value::map([
+        ("algorithm", Value::text(checksum.algorithm().as_str())),
+        ("hex", Value::text(checksum.hex())),
+    ])
+}
+
+/// What an artifact's terms are, in the three states B-023 keeps apart.
+#[must_use]
+pub fn licence(licence: &Licence) -> Value {
+    match licence {
+        Licence::Spdx(identifier) => Value::map([
+            ("state", Value::text("identified")),
+            ("identifier", Value::text(identifier.clone())),
+        ]),
+        // Terms are present and MCF could not name them. Distinct from the
+        // absent case, which is `null` because the whole field is `Unknown`.
+        Licence::Stated => Value::map([("state", Value::text("stated_and_unmatched"))]),
+        other => Value::map([
+            ("state", Value::text("unrecorded")),
+            ("rendered", Value::text(other.to_string())),
+        ]),
+    }
+}
+
+/// One thing that was done to an artifact.
+#[must_use]
+pub fn transformation(transformation: &Transformation) -> Value {
+    Value::map([
+        ("kind", transformation_kind(transformation.kind())),
+        (
+            "detail",
+            attested(transformation.detail(), |detail| {
+                Value::text(detail.clone())
+            }),
+        ),
+        (
+            "performed_by",
+            attested(transformation.performed_by(), tool_identity),
+        ),
+        (
+            "performed_at",
+            attested(transformation.performed_at(), |at| timestamp(*at)),
+        ),
+    ])
+}
+
+fn transformation_kind(kind: &TransformationKind) -> Value {
+    match kind {
+        TransformationKind::Quantization => Value::text("quantization"),
+        TransformationKind::Requantization => Value::text("requantization"),
+        TransformationKind::FormatConversion => Value::text("format_conversion"),
+        // The operator's own words, kept as they were given: a kind MCF has no
+        // name for is recorded as what it was called (A7).
+        TransformationKind::Other(name) => Value::text(name.clone()),
+        other => Value::text(other.to_string()),
+    }
+}
+
+fn tool_identity(tool: &ToolIdentity) -> Value {
+    Value::map([
+        ("name", Value::text(tool.name())),
+        (
+            "version",
+            attested(tool.version(), |version| Value::text(version.clone())),
+        ),
+    ])
+}
+
+/// A moment, as nanoseconds and as something a person can read.
+///
+/// Both, because they answer different questions and neither is derivable in
+/// this record's absence: the integer is what a reader compares and the
+/// rendering is what a person checks against their own memory of the day. The
+/// integer is text when it does not fit in one — a `Timestamp` holds more range
+/// than JSON's integers do, and A1 puts the whole value above the tidier type.
+#[must_use]
+pub fn timestamp(at: Timestamp) -> Value {
+    let nanos = match i64::try_from(at.utc_nanos()) {
+        Ok(nanos) => Value::Integer(nanos),
+        Err(_) => Value::text(at.utc_nanos().to_string()),
+    };
+    Value::map([
+        ("utc_nanos", nanos),
+        (
+            "offset_seconds_east",
+            attested(&at.offset(), |offset| {
+                Value::Integer(i64::from(offset.seconds_east()))
+            }),
+        ),
+        ("rendered", Value::text(at.to_string())),
     ])
 }
 

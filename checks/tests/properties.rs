@@ -23,7 +23,11 @@ use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::digest::{Sha256, sha256};
 use mcf_core::measurement::{ConditionValue, Conditions, Count, Floor, Measurement, Percentile};
-use mcf_core::time::Timestamp;
+use mcf_core::provenance::{
+    Checksum, Licence, Origin, Provenance, Repository, Revision, ToolIdentity, Transformation,
+    TransformationKind,
+};
+use mcf_core::time::{Timestamp, UtcOffset};
 use mcf_core::trial::{Series, Thinning};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
@@ -269,6 +273,120 @@ fn a_condition_floor_survives_the_record_including_its_unknowns() {
         Ok(())
     });
     assert_held(&verdict);
+}
+
+/// A provenance of any shape survives the record (§3.6, B-029).
+///
+/// The unit tests write the chain §XII names as the hard case. This writes
+/// chains nobody would think of: eleven links deep, unknowns in every optional
+/// field, transformation kinds with no name, revisions present and absent. An
+/// artifact's provenance travels with it only as far as the decoder can carry
+/// it, and *as far as* is the quantifier this tier is for.
+#[test]
+fn a_provenance_of_any_shape_survives_the_record() {
+    let verdict = check(GATING_CASES, |rng| {
+        let depth = rng.index(4);
+        let original = a_provenance(rng, depth);
+        let written = encode::provenance(&original);
+        // Through the bytes, because that is what goes to the disk: an encoder
+        // and a decoder that agree in memory and disagree about JSON are two
+        // halves of nothing.
+        let line = written.to_line();
+        let parsed =
+            json::parse(&line).map_err(|error| format!("MCF wrote unreadable JSON: {error}"))?;
+        let read_back = decode::provenance(&parsed).map_err(|failure| failure.to_string())?;
+        if read_back != original {
+            return Err(format!("wrote {original:?}, read back {read_back:?}"));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// A provenance with an arbitrary chain under it.
+fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
+    let origin = match rng.below(3) {
+        0 => Origin::hub(
+            Repository::new(format!("owner/{}", rng.text(8))),
+            if rng.boolean() {
+                Some(Revision::new(rng.text(12)))
+            } else {
+                None
+            },
+        ),
+        1 => Origin::LocalFile {
+            path: std::path::PathBuf::from(format!("/models/{}", rng.text(8))),
+        },
+        _ => Origin::Unattributed,
+    };
+    let mut provenance = Provenance::acquired(
+        origin,
+        Timestamp::from_utc_nanos(
+            i128::from(rng.integer_between(-1_000_000_000_000, 1_000_000_000_000)),
+            match rng.below(3) {
+                0 => Attested::Unknown,
+                _ => Attested::Known(
+                    UtcOffset::from_seconds_east(
+                        i32::try_from(rng.integer_between(-50_400, 50_400)).unwrap_or(0),
+                    )
+                    .unwrap_or_else(|| UtcOffset::from_seconds_east(0).expect("zero is an offset")),
+                ),
+            },
+        ),
+    );
+    if rng.boolean() {
+        let hex: String = (0..64)
+            .map(|_| char::from(b"0123456789abcdef"[rng.index(16)]))
+            .collect();
+        if let Some(checksum) = Checksum::sha256(&hex) {
+            provenance = provenance.with_integrity(checksum);
+        }
+    }
+    match rng.below(3) {
+        0 => {}
+        1 => provenance = provenance.with_licence(Licence::Stated),
+        _ => provenance = provenance.with_licence(Licence::spdx(rng.text(10))),
+    }
+    for _ in 0..rng.index(3) {
+        let kind = match rng.below(4) {
+            0 => TransformationKind::Quantization,
+            1 => TransformationKind::Requantization,
+            2 => TransformationKind::FormatConversion,
+            _ => TransformationKind::Other(rng.text(12)),
+        };
+        provenance = provenance.transformed(Transformation::new(
+            kind,
+            if rng.boolean() {
+                Attested::Known(rng.text(20))
+            } else {
+                Attested::Unknown
+            },
+            if rng.boolean() {
+                Attested::Known(ToolIdentity::new(
+                    rng.text(8),
+                    if rng.boolean() {
+                        Some(rng.text(6))
+                    } else {
+                        None
+                    },
+                ))
+            } else {
+                Attested::Unknown
+            },
+            if rng.boolean() {
+                Attested::Known(Timestamp::from_utc_nanos(
+                    i128::from(rng.integer_between(0, 1_000_000_000)),
+                    Attested::Unknown,
+                ))
+            } else {
+                Attested::Unknown
+            },
+        ));
+    }
+    if depth > 0 {
+        provenance = provenance.derived_from(a_provenance(rng, depth - 1));
+    }
+    provenance
 }
 
 /// The journal is the record (D20, B62), so what a journal holds is what was

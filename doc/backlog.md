@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 77 |
+| **Version** | 78 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (37 done, 1 dropped, 11 in progress, 52 blocked on a decision, 97 open).** Every item cites
+build items (37 done, 1 dropped, 12 in progress, 52 blocked on a decision, 96 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -168,7 +168,7 @@ first and importance second.
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
-| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | open |
+| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — two of the three. Provenance is writable and readable (`mcf_record::encode`/`decode`, chain included, unknowns round-tripping as unknowns, a missing field refused rather than filled in) and lives in a sidecar beside the artifact rather than in an index that would drift. `mcf list` reads the disk and keeps three states apart: provenance read, none there, one there that cannot be read. `mcf rm` without a reason previews and removes nothing; with one it authorizes that plan, records it, and shelves the artifact and its provenance together; `--purge` is the only thing that destroys either. Seven whole-system tests drive it as a process. What remains is `pull`, which is the transport (B-021) |
 
 ### M2 — Serve
 
@@ -366,6 +366,40 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 78 — models live on this machine, and leave it
+
+B-029 in progress: `list` and `rm`, which are two thirds of M1's product. What
+was in the way was not the commands but the fact that nothing could write a
+provenance down. A provenance that exists only in memory travels with an
+artifact until the process ends, which is not what §3.6 means.
+
+So `mcf_record` gained the other direction. Unknown goes out as `null` and
+comes back as unknown; a record missing a field is refused *naming the field*
+rather than filled in; an unreadable link refuses the whole chain, because a
+chain with an invented link is worse than no chain. The property tier holds the
+round trip over generated chains eleven links deep rather than over the one
+example §XII names.
+
+On the disk it is a sidecar beside the artifact and not an index. An index is a
+second copy, and second copies drift: a model moved by hand, a directory
+restored from a backup, a machine that lost its journal. In each of those the
+sidecar is still there and still true.
+
+`list` keeps three states apart, which is the whole reason it is not a `find`
+command: provenance read, nothing there, and something there that cannot be
+read. The third is the one that matters, and a listing that showed it as the
+second would be telling an operator their model is unaccounted for when in fact
+MCF is the one that cannot read.
+
+`rm` is B-027 at the surface. Without a reason it previews and removes nothing;
+with one it authorizes that exact plan, writes the record, and moves the
+artifact and its provenance together — a sidecar left behind would record
+something that is no longer there. Nothing is deleted without `--purge`.
+
+There is still no `pull`: fetching needs a network stack, and the vendoring
+decision that requires has not been made. The usage text says so rather than
+leaving an operator to wonder.
 
 ### Version 77 — an artifact is not a cache entry
 

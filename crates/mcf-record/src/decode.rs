@@ -11,15 +11,30 @@
 //! equal to a floor that had read something, which is exactly A7's substitution
 //! arriving through the back door of a decoder.
 //!
-//! **A line this version cannot understand is not decoded into a guess.** Every
-//! function here returns `None` on a shape it does not recognize, and the caller
-//! decides whether that is `record.schema.unknown` or a corrupt line — which is
+//! **A line this version cannot understand is not decoded into a guess.** The
+//! floor's decoder returns `None` on a shape it does not recognize, and the
+//! caller decides whether that is `record.schema.unknown` or a corrupt line —
 //! the same discipline `EntryKind::parse` follows, for §7.30's reason.
+//!
+//! **Two shapes of answer, for two different questions.** That yes-or-no is
+//! right for a journal line, where only the caller knows what it was doing when
+//! it found one it could not read. It is wrong for a provenance: there is an
+//! artifact on the disk and somebody is asking where it came from (B-029), and
+//! *no* is not an answer they can act on. So [`provenance`] refuses with a
+//! classified failure that names the field, and refuses the whole chain when a
+//! link in it is unreadable — a chain with an invented link is worse than no
+//! chain (A1, §XII).
 //!
 //! [`encode`]: crate::encode
 
 use mcf_core::attested::Attested;
+use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
+use mcf_core::provenance::{
+    Checksum, DigestAlgorithm, Licence, Origin, Provenance, Repository, Revision, ToolIdentity,
+    Transformation, TransformationKind,
+};
+use mcf_core::time::{Timestamp, UtcOffset};
 
 use crate::json::Value;
 
@@ -74,3 +89,271 @@ fn condition(value: &Value, question: &str) -> Option<Attested<ConditionValue>> 
         Value::Bool(_) | Value::List(_) | Value::Map(_) => None,
     }
 }
+
+const WHERE: Subsystem = Subsystem::new("mcf-record::decode");
+
+/// Something the record had to say and did not.
+fn missing(what: &str) -> Failure {
+    Failure::new(
+        Category::ArtifactProvenanceIncomplete,
+        Attribution::Mcf,
+        Disposition::Refused,
+        WHERE,
+        "a provenance record does not state something it must",
+    )
+    .with_context("wanted", what.to_owned())
+}
+
+/// Something the record said that cannot be read.
+fn unreadable(what: &str, found: &Value) -> Failure {
+    Failure::new(
+        Category::ArtifactProvenanceIncomplete,
+        Attribution::Mcf,
+        Disposition::Refused,
+        WHERE,
+        "a provenance record states something MCF cannot read",
+    )
+    .with_context("field", what.to_owned())
+    .with_context("found", found.to_line())
+}
+
+/// Where an artifact came from, and everything that happened to it since.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` naming the field, for anything absent or
+/// unreadable. The chain is read whole: a source whose own provenance is
+/// unreadable refuses the derivative too, because a chain with an invented link
+/// is worse than no chain (A1, §XII).
+pub fn provenance(value: &Value) -> Result<Provenance> {
+    let mut read = Provenance::acquired(
+        origin(value.get("origin").ok_or_else(|| missing("origin"))?)?,
+        timestamp(
+            value
+                .get("retrieved_at")
+                .ok_or_else(|| missing("retrieved_at"))?,
+        )?,
+    );
+
+    if let Some(found) = known(value.get("integrity")) {
+        read = read.with_integrity(checksum(found)?);
+    }
+    if let Some(found) = known(value.get("licence")) {
+        read = read.with_licence(licence(found)?);
+    }
+    if let Some(list) = value.get("transformations") {
+        let entries = list
+            .as_list()
+            .ok_or_else(|| unreadable("transformations", list))?;
+        for entry in entries {
+            read = read.transformed(transformation(entry)?);
+        }
+    }
+    if let Some(found) = known(value.get("derived_from")) {
+        read = read.derived_from(self::provenance(found)?);
+    }
+    Ok(read)
+}
+
+/// A field that is present and is not `null`.
+///
+/// `null` is *unknown* in a record (A7), and a field that is absent altogether
+/// is the same absence written by an older writer — both are read as unknown
+/// rather than as a reason to refuse, because a provenance that says *MCF did
+/// not read the licence* is a complete provenance.
+fn known(value: Option<&Value>) -> Option<&Value> {
+    match value {
+        Some(Value::Null) | None => None,
+        Some(found) => Some(found),
+    }
+}
+
+/// Where bytes came from.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the kind is absent, unreadable, or one
+/// this build does not know — the last of which is a record from a later MCF,
+/// and inventing an origin for it would be worse than saying so (§7.30).
+pub fn origin(value: &Value) -> Result<Origin> {
+    let kind = value
+        .get("kind")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("origin.kind"))?;
+    match kind {
+        "hub" => {
+            let repository = value
+                .get("repository")
+                .and_then(Value::as_text)
+                .ok_or_else(|| missing("origin.repository"))?;
+            let revision = known(value.get("revision"))
+                .map(|found| {
+                    found
+                        .as_text()
+                        .map(Revision::new)
+                        .ok_or_else(|| unreadable("origin.revision", found))
+                })
+                .transpose()?;
+            Ok(Origin::hub(Repository::new(repository), revision))
+        }
+        "local_file" => {
+            let path = value
+                .get("path")
+                .and_then(Value::as_text)
+                .ok_or_else(|| missing("origin.path"))?;
+            Ok(Origin::LocalFile {
+                path: std::path::PathBuf::from(path),
+            })
+        }
+        "unattributed" => Ok(Origin::Unattributed),
+        _ => Err(unreadable("origin.kind", value)),
+    }
+}
+
+/// A digest of an artifact's bytes.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the algorithm is one this build does
+/// not compute, or the digest is not one: a checksum MCF cannot check is not a
+/// checksum, and recording it as though it were would make an unverifiable
+/// artifact look verified (A21).
+pub fn checksum(value: &Value) -> Result<Checksum> {
+    let algorithm = value
+        .get("algorithm")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("integrity.algorithm"))?;
+    let hex = value
+        .get("hex")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("integrity.hex"))?;
+    match algorithm {
+        "sha256" => Checksum::new(DigestAlgorithm::Sha256, hex)
+            .ok_or_else(|| unreadable("integrity.hex", value)),
+        _ => Err(unreadable("integrity.algorithm", value)),
+    }
+}
+
+/// What an artifact's terms are.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` for a state this build does not know.
+pub fn licence(value: &Value) -> Result<Licence> {
+    let state = value
+        .get("state")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("licence.state"))?;
+    match state {
+        "identified" => value
+            .get("identifier")
+            .and_then(Value::as_text)
+            .map(Licence::spdx)
+            .ok_or_else(|| missing("licence.identifier")),
+        "stated_and_unmatched" => Ok(Licence::Stated),
+        _ => Err(unreadable("licence.state", value)),
+    }
+}
+
+/// One thing that was done to an artifact.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the kind is absent or unreadable.
+pub fn transformation(value: &Value) -> Result<Transformation> {
+    let kind = value
+        .get("kind")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("transformation.kind"))?;
+    let kind = match kind {
+        "quantization" => TransformationKind::Quantization,
+        "requantization" => TransformationKind::Requantization,
+        "format_conversion" => TransformationKind::FormatConversion,
+        // Anything else is what whoever did it called it, which is exactly how
+        // it was written.
+        other => TransformationKind::Other(other.to_owned()),
+    };
+
+    let detail = match known(value.get("detail")) {
+        Some(found) => Attested::Known(
+            found
+                .as_text()
+                .ok_or_else(|| unreadable("transformation.detail", found))?
+                .to_owned(),
+        ),
+        None => Attested::Unknown,
+    };
+    let performed_by = match known(value.get("performed_by")) {
+        Some(found) => Attested::Known(tool_identity(found)?),
+        None => Attested::Unknown,
+    };
+    let performed_at = match known(value.get("performed_at")) {
+        Some(found) => Attested::Known(timestamp(found)?),
+        None => Attested::Unknown,
+    };
+    Ok(Transformation::new(
+        kind,
+        detail,
+        performed_by,
+        performed_at,
+    ))
+}
+
+/// What performed a transformation.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the tool has no name.
+pub fn tool_identity(value: &Value) -> Result<ToolIdentity> {
+    let name = value
+        .get("name")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("performed_by.name"))?;
+    let version = match known(value.get("version")) {
+        Some(found) => Some(
+            found
+                .as_text()
+                .ok_or_else(|| unreadable("performed_by.version", found))?
+                .to_owned(),
+        ),
+        None => None,
+    };
+    Ok(ToolIdentity::new(name, version))
+}
+
+/// A moment.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the nanoseconds are absent or are not
+/// a number. The rendering is not read back: it is for a person, and a reader
+/// that trusted it over the integer would be trusting a formatting decision.
+pub fn timestamp(value: &Value) -> Result<Timestamp> {
+    let found = value
+        .get("utc_nanos")
+        .ok_or_else(|| missing("timestamp.utc_nanos"))?;
+    let nanos: i128 = match found {
+        Value::Integer(nanos) => i128::from(*nanos),
+        // Written as text where the value does not fit an integer, which is how
+        // the whole range survives a format that has less of one (A1).
+        Value::Text(written) => written
+            .parse()
+            .map_err(|_| unreadable("timestamp.utc_nanos", found))?,
+        _ => return Err(unreadable("timestamp.utc_nanos", found)),
+    };
+    let offset = match known(value.get("offset_seconds_east")) {
+        Some(found) => {
+            let seconds = found
+                .as_integer()
+                .and_then(|seconds| i32::try_from(seconds).ok())
+                .and_then(UtcOffset::from_seconds_east)
+                .ok_or_else(|| unreadable("timestamp.offset_seconds_east", found))?;
+            Attested::Known(seconds)
+        }
+        None => Attested::Unknown,
+    };
+    Ok(Timestamp::from_utc_nanos(nanos, offset))
+}
+
+#[cfg(test)]
+mod tests;

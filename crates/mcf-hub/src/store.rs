@@ -23,6 +23,15 @@
 //! filesystem is free, so the reversible case costs nothing and the operator
 //! who moved the wrong model has an afternoon to notice.
 //!
+//! **What is on the disk is what MCF knows.** An artifact's provenance lives
+//! beside it in a sidecar rather than in an index, because an index is a second
+//! copy that drifts: a model moved by hand, a directory restored from a backup,
+//! a machine that lost its journal — in each case the sidecar is still there and
+//! still true, and §3.6's *provenance travels with the artifact* is a statement
+//! about the artifact rather than about MCF's bookkeeping. [`held`] reads what
+//! is there, and an artifact whose provenance is missing or unreadable is
+//! listed as exactly that (A7).
+//!
 //! **The record is written before the artifact moves.** A1: after a removal the
 //! artifact is gone and the record is all there is, so a record written
 //! afterwards is one that a crash can lose along with the thing it describes.
@@ -33,11 +42,180 @@ use std::path::{Path, PathBuf};
 
 use mcf_core::digest::Sha256;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
+use mcf_core::provenance::Provenance;
 use mcf_core::time::Timestamp;
 use mcf_record::journal::{Entry, EntryKind, Journal};
 use mcf_record::json::Value;
 
 const WHERE: Subsystem = Subsystem::new("mcf-hub::store");
+
+/// What MCF is holding: an artifact, and whatever can be said about where it
+/// came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    /// Where the artifact is.
+    pub path: PathBuf,
+    /// How many bytes it is.
+    pub bytes: u64,
+    /// Where it came from, if the sidecar beside it can be read.
+    ///
+    /// The failure is kept rather than flattened to `None`: *there is no
+    /// provenance here* and *there is one and MCF cannot read it* are different
+    /// states, and an operator can act on the second (A7, A2).
+    pub provenance: std::result::Result<Provenance, Option<Failure>>,
+}
+
+impl Held {
+    /// What a surface says about it, in one line.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let origin = match &self.provenance {
+            Ok(provenance) => provenance.origin().to_string(),
+            Err(None) => "origin unknown — nothing beside it says where it came from".to_owned(),
+            Err(Some(failure)) => format!("origin unreadable — {failure}"),
+        };
+        format!("{} ({} bytes) — {origin}", self.path.display(), self.bytes)
+    }
+}
+
+/// Where an artifact's provenance is written.
+///
+/// Beside it, under its own name plus a suffix, so that moving the artifact and
+/// forgetting the sidecar is visible rather than silent: what is left is an
+/// artifact with no provenance, which [`held`] reports as exactly that.
+#[must_use]
+pub fn provenance_path(artifact: &Path) -> PathBuf {
+    let mut name = artifact.file_name().unwrap_or_default().to_os_string();
+    name.push(PROVENANCE_SUFFIX);
+    artifact.with_file_name(name)
+}
+
+/// The suffix a provenance sidecar carries.
+const PROVENANCE_SUFFIX: &str = ".mcf-provenance.json";
+
+/// Writes an artifact's provenance beside it.
+///
+/// # Errors
+///
+/// `resource.disk.readonly` when the sidecar cannot be written. Failing to
+/// record provenance is not a partial success to be shrugged at: an artifact
+/// whose origin was never written down is one §3.6 says MCF should not be
+/// holding, and the caller is told so it can decide (A2).
+pub fn record_provenance(artifact: &Path, provenance: &Provenance) -> Result<PathBuf> {
+    let path = provenance_path(artifact);
+    let line = mcf_record::encode::provenance(provenance).to_line();
+    std::fs::write(&path, line + "\n").map_err(|error| {
+        Failure::new(
+            Category::ResourceDiskReadonly,
+            Attribution::Machine,
+            Disposition::Refused,
+            WHERE,
+            "an artifact's provenance could not be written beside it",
+        )
+        .with_context("path", path.display().to_string())
+        .with_context("reason", error.to_string())
+    })?;
+    Ok(path)
+}
+
+/// Reads an artifact's provenance from beside it.
+///
+/// # Errors
+///
+/// `artifact.provenance.incomplete` when the sidecar is there and cannot be
+/// read — malformed JSON, a field absent, a link in the chain unreadable.
+/// `artifact.missing` when there is no sidecar at all, which is a state rather
+/// than a defect: a model an operator put there by hand has no provenance and
+/// saying so is the honest answer (A7).
+pub fn provenance_of(artifact: &Path) -> Result<Provenance> {
+    let path = provenance_path(artifact);
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Failure::new(
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Category::ArtifactMissing
+            } else {
+                Category::ArtifactUnreadable
+            },
+            Attribution::Machine,
+            Disposition::Refused,
+            WHERE,
+            "nothing beside this artifact says where it came from",
+        )
+        .with_context("path", path.display().to_string())
+        .with_context("reason", error.to_string())
+    })?;
+    let value = mcf_record::json::parse(&text).map_err(|error| {
+        Failure::new(
+            Category::ArtifactProvenanceIncomplete,
+            Attribution::Mcf,
+            Disposition::Refused,
+            WHERE,
+            "an artifact's provenance is not readable",
+        )
+        .with_context("path", path.display().to_string())
+        .with_context("reason", error.to_string())
+    })?;
+    mcf_record::decode::provenance(&value)
+        .map_err(|failure| failure.with_context("path", path.display().to_string()))
+}
+
+/// Everything MCF is holding under a directory, and what is known about each.
+///
+/// Reads the disk rather than an index. Directories are walked in the order the
+/// filesystem gives them and the result is sorted by path, so two runs on one
+/// machine list the same things in the same order (§3.17).
+///
+/// # Errors
+///
+/// `artifact.unreadable` when the directory itself cannot be read. An artifact
+/// inside it that cannot be measured is *listed* with what went wrong rather
+/// than dropped: a list that silently shortened itself is the one thing a list
+/// must not do (A1, A4).
+pub fn held(root: &Path) -> Result<Vec<Held>> {
+    let mut found = Vec::new();
+    walk(root, &mut found)?;
+    found.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(found)
+}
+
+fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
+    let entries = std::fs::read_dir(directory).map_err(|error| {
+        Failure::new(
+            Category::ArtifactUnreadable,
+            Attribution::Machine,
+            Disposition::Refused,
+            WHERE,
+            "a directory MCF holds artifacts in cannot be read",
+        )
+        .with_context("path", directory.display().to_string())
+        .with_context("reason", error.to_string())
+    })?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk(&path, into)?;
+            continue;
+        }
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(PROVENANCE_SUFFIX))
+        {
+            continue;
+        }
+        let bytes = std::fs::metadata(&path).map(|metadata| metadata.len());
+        into.push(Held {
+            bytes: bytes.unwrap_or(0),
+            provenance: match provenance_of(&path) {
+                Ok(provenance) => Ok(provenance),
+                Err(failure) if failure.category() == Category::ArtifactMissing => Err(None),
+                Err(failure) => Err(Some(failure)),
+            },
+            path,
+        });
+    }
+    Ok(())
+}
 
 /// One file a plan would remove.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,8 +316,24 @@ impl Plan {
 /// the missing file is a thing to explain rather than to skip (A1, A7).
 /// `artifact.unreadable` when a path cannot be measured, for the same reason.
 pub fn preview(paths: &[PathBuf], shelf: &Path) -> Result<Plan> {
-    let mut doomed = Vec::new();
+    let mut doomed: Vec<Doomed> = Vec::new();
+    let mut wanted: Vec<PathBuf> = Vec::new();
     for path in paths {
+        if !wanted.contains(path) {
+            wanted.push(path.clone());
+        }
+        // An artifact's provenance goes where the artifact goes. Leaving the
+        // sidecar behind would strand a record of something that is no longer
+        // there and shelve an artifact that can no longer say where it came
+        // from — and §3.6 makes the two one thing. It is named in the plan
+        // rather than moved quietly, because a preview that hid a file is not a
+        // preview.
+        let sidecar = provenance_path(path);
+        if sidecar.exists() && !wanted.contains(&sidecar) {
+            wanted.push(sidecar);
+        }
+    }
+    for path in &wanted {
         let metadata = std::fs::metadata(path).map_err(|error| {
             Failure::new(
                 if error.kind() == std::io::ErrorKind::NotFound {
@@ -161,7 +355,7 @@ pub fn preview(paths: &[PathBuf], shelf: &Path) -> Result<Plan> {
         });
     }
 
-    let reversible = same_filesystem(paths, shelf);
+    let reversible = same_filesystem(&wanted, shelf);
     let identity = identify(&doomed);
     Ok(Plan {
         doomed,
