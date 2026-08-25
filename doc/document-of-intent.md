@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -863,6 +863,56 @@ swept value is **selected on one split and its improvement reported from
 another** (A10, B125). The number MCF publishes is the validated one, never the
 winning one, and a sweep whose winner does not survive validation reports *no
 improvement found*, which is a §3.4 null result and a useful one.
+
+### D19 — The seed set is a declared condition, not part of identity *(closes §7.34)*
+
+**A seed is not good or bad.** It selects one trajectory through the sampling
+distribution, and the mapping from seed to outcome is chaotic and
+task-specific — a seed that happens to serve one prompt well has no tendency to
+serve the next one well. There is no systematically underperforming seed, only
+seed-by-task interactions, which look like bad luck and are.
+
+**One fixed seed is therefore worse than it appears.** Thirty trials at a fixed
+seed with identical inputs produce thirty identical outputs: `n=1` wearing the
+costume of `n=30`, which destroys §3.4's uncertainty requirement at the exact
+point it matters. Fixing a single seed does not reduce variance; it conceals it.
+
+**What MCF uses instead: a declared seed *set*.** A published list — trial *i*
+uses seed *i* from the set — identical on every machine. That satisfies both
+things at once, which is why it is preferred to either alternative:
+
+- **Reproducible across systems**, because everyone draws the same seeds.
+- **Genuinely varied within a run**, because the seeds differ trial to trial, so
+  the spread §3.4 requires is real rather than manufactured.
+- **Not exposed to an unlucky draw**, because the result rests on the whole set
+  rather than on one trajectory.
+
+The set's size is the trial count and is therefore the same decision as §7.23's
+statistics, not a separate one.
+
+**The seed set is a condition, not identity** (D17, D18). Sampling parameters
+are identity because they change the *distribution*; a seed only draws from it.
+That also honours §6.17: stochasticity is reported rather than engineered away.
+Comparisons require matching seed sets the way they require matching hardware —
+recorded, checked, and refused when they differ (A8).
+
+**The honest caveat: identical seeds do not guarantee identical output.**
+Floating-point reduction order, kernel scheduling and batch composition make
+inference non-deterministic on accelerators even at a fixed seed. So a seed set
+buys comparable *inputs*, not identical *outputs*, and how much determinism a
+machine actually delivers is itself a measurement — L19 exists for it, and its
+answer feeds §7.6's reproducibility tolerance.
+
+**The set is validated, not assumed.** Periodically, a larger random set is run
+and its distribution compared with the fixed set's. Divergence means the
+standard set is unrepresentative and is replaced, with the replacement recorded
+as a break in comparability (§7.13). This is §6.16's discipline — the instrument
+does not get to grade itself — applied to the seed set.
+
+**Timing laboratories ignore seeds and pin generation length instead.** A seed
+changes which tokens are produced and therefore possibly how many, and a timing
+that varies because one run stopped earlier is measuring the stop, not the
+speed.
 
 ## 3. Principles
 
@@ -3070,33 +3120,6 @@ weaker than it sounds if the underlying distribution is discarded. Recorded here
 rather than assumed, because it decides the schema (D6) and therefore must be
 settled before the first row is written.
 
-### 7.34 The edges of configuration identity — **narrowed by D17**
-
-D17 settles the principle: identity is the runnable configuration, hardware is a
-condition, grouping is a view. Three parameters sit awkwardly at the boundary
-and none is obviously one or the other.
-
-**Placement — settled.** A configuration carries a *declared* placement intent;
-the *realized* placement is a condition recorded alongside it. A layer-offload
-split only means something given a particular memory size, so treating it as
-identity would make every configuration unportable and break §XV. Divergence
-between declared and realized is a finding (§6.29), and often an informative one
-— it is the mechanism by which a configuration visibly fails to transfer.
-
-**Engine build — settled: identity, not a condition.** Any engine change is
-tracked as a change of configuration, because an engine that changes silently
-colours every measurement taken after it. The fragmentation cost is real and is
-paid deliberately: D17's grouping-is-a-view rule recovers what is needed, since
-results across builds can be collapsed at query time when the question warrants
-and stay separate when it does not. The reverse — discovering that a corpus
-silently mixed two engines — is unrecoverable.
-
-**Sampling parameters — settled by D18: identity.** The model's own
-recommendation is the default and is marked *declared* until a sweep verifies
-it. Whether the *seed* is identity or a condition remains open beneath it: §6.17
-argues condition, since irreducible stochasticity is reported rather than
-engineered away, while §7.6's reproducibility tolerance may argue otherwise.
-
 ### 7.35 Host platform scope, and the containment mechanism — **structural**
 
 §7.8 bounds accelerators and §6.11 bounds client devices. Nothing bounds the
@@ -3278,6 +3301,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
 | §7.33 | Raw samples or summaries | §6.17, §3.27 | **D16** — raw trials, always |
 | §7.46 | Sampling: constant, identity, or lab-pinned | §3.18, D13 | **D18** — identity; recommendation verified by sweep |
+| §7.34 | The identity of a measured configuration | §XIV, §XV | **D17**, **D18**, **D19** — the runnable configuration; hardware and seed are conditions |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.

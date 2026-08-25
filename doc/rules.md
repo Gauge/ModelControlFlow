@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v18, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**95 rules in three tiers, each carrying a citation and a check.** Cite them by
+**96 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 60 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 61 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**78 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**79 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Sixty rules. Each holds under a stated condition, or permits something
+Sixty-one rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1120,6 +1120,20 @@ from those of labs that inherit.
 - **Violation looks like:** a global default temperature applied to every model,
   which measures each of them under settings some were never designed for.
 
+### B61 — Trials draw from a declared seed set; one fixed seed is forbidden
+Trial *i* uses seed *i* from a published set, identical on every machine. A
+single seed repeated across trials produces identical outputs and reports `n=1`
+as `n=30`, concealing variance rather than reducing it. The seed set is a
+condition (D19), not part of identity, and comparisons require matching sets the
+way they require matching hardware (A8). Timing laboratories ignore seeds and
+pin generation length instead, since a timing that varies because one run
+stopped earlier is measuring the stop.
+- **Absorbs:** D19, §3.4, §6.17, §7.23
+- **Check:** `compiler` — a trial cannot be constructed without its seed, and a
+  run cannot declare the same seed for every trial (B-290).
+- **Violation looks like:** thirty identical completions reported with a spread
+  of zero, which reads as remarkable consistency and is an artefact.
+
 ---
 
 ## C — Low value
@@ -1209,7 +1223,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 95 rules
+   is whether an existing rule already covers it. This file holds 96 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1257,6 +1271,7 @@ no rule is a defect in this file.
 | D16 Raw trials are kept | B56 |
 | D17 Identity is the configuration | B57 |
 | D18 Sampling is identity, verified | B59, B60 |
+| D19 The seed set is a condition | B61 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1338,6 +1353,14 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 12 — the seed set
+
+B61 forbids the intuitive mistake: one fixed seed repeated across trials gives
+identical outputs and reports `n=1` as `n=30`. Thirty identical completions with
+a spread of zero read as remarkable consistency and are an artefact. Trials draw
+from a declared set instead — reproducible across machines, genuinely varied
+within a run.
 
 ### Version 11 — sweeps, and the recommendation as declaration
 

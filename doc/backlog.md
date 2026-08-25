@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**223 items: 46 decisions (40 open, 1 drafted, 3 narrowed, 2 resolved) and 177 build items.** Every item cites the clause that
+**225 items: 46 decisions (38 open, 1 drafted, 2 narrowed, 5 resolved) and 179 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -66,8 +66,8 @@ implemented, only gestured at, until the decision is made.
 | DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
 | DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
-| DEC-034 | The edges of identity | §7.34 | §IV, D6 | M0 | **narrowed** — D17 settles the principle; placement and engine build settled; sampling split to DEC-046 |
-| DEC-046 | Whether the *seed* is identity or a condition — §6.17 argues condition, §7.6 may argue otherwise | §7.34 | §IV, §7.6 | M0 | **narrowed** — D18 settles sampling: identity, recommendation verified by sweep |
+| DEC-034 | The identity of a measured configuration | §7.34 | §IV, D6 | M0 | **resolved** — D17 principle, D18 sampling, D19 seed; placement declared-vs-realized, engine build is identity |
+| DEC-046 | Sampling and seeding | §7.34 | §IV, §7.6 | M0 | **resolved** — D18 sampling is identity; D19 the seed set is a condition |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
@@ -215,6 +215,8 @@ first and importance second.
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
 | B-089 | Environment pinning to the tolerance DEC-006 sets | §3.12, §7.6 | Every result carries enough environment to be reproduced to the stated tolerance | blocked (DEC-006) |
 | B-280 | A reported improvement traces to a workload split that was not used to select it; a winner failing validation reports *no improvement found* | B59, D18, A10 | Sweep results cannot be published from the selection split | open |
+| B-290 | A trial cannot be constructed without its seed, and a run cannot declare one seed for every trial; the seed set is published and recorded as a condition | B61, D19, §3.4 | Identical-output runs are unrepresentable; comparisons refuse mismatched seed sets | open |
+| B-291 | Seed-set validation: periodically compare the fixed set's distribution against a larger random set; divergence replaces the set and records a break in comparability | D19, §6.16, §7.13 | The standard set is shown to be representative rather than assumed | open |
 | B-281 | Recommended sampling renders as *declared* until a sweep promotes it; a lab that pins its own sampling declares it and its results stay apart | B60, D18, A21 | No global default sampling exists; divergence between recommended and best-measured is surfaced | open |
 | B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
 | B-211 | Repro bundle: one file carrying a claim, its method, its full §3.4 conditions, its raw samples, the artifact's provenance chain, the §XV identifier, and a verification manifest | [P2](proposals.md#p2--the-repro-bundle), §II, A6 | A bundle is emitted for any published measurement and contains everything needed to re-run it | blocked (DEC-033) |
@@ -338,6 +340,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 15 — identity closed
+
+DEC-034 and DEC-046 both resolved. Two of the three structural M0 gates are
+answered; only DEC-016, the performance budget, remains.
 
 ### Version 14 — sampling settled
 
