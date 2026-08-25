@@ -12,6 +12,7 @@
 
 mod doctor;
 mod licence;
+mod models;
 
 use std::process::ExitCode;
 
@@ -50,6 +51,17 @@ enum Request<'a> {
         /// is a client of the same surface (B22), and a surface a script cannot
         /// read is one only a person can drive.
         as_json: bool,
+    },
+    /// What this machine is holding.
+    List,
+    /// Stop holding something.
+    Remove {
+        /// What to remove, as the operator named it.
+        names: Vec<&'a str>,
+        /// Why — which is the authorization. Without it this previews.
+        because: Option<&'a str>,
+        /// Whether to delete what the removal shelves.
+        purge: bool,
     },
     /// A command MCF does not have. Carries what was asked for, so the outcome
     /// can say it back.
@@ -125,6 +137,18 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 needs: "--to <path>",
             },
         },
+        ["list"] => Request::List,
+        ["list", argument, ..] => Request::UnexpectedArgument {
+            command: "list",
+            argument,
+        },
+        ["rm", rest @ ..] => match remove_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "rm",
+                argument,
+            },
+        },
         ["doctor", rest @ ..] => match doctor_options(rest) {
             Ok(request) => request,
             Err(argument) => Request::UnexpectedArgument {
@@ -189,6 +213,45 @@ fn export(to: &std::path::Path) -> Response {
     }
 }
 
+/// Reads `rm`'s own arguments.
+///
+/// Total: an option it does not have is named back rather than ignored, and a
+/// `--because` with nothing after it is a missing argument rather than a
+/// removal with an empty reason.
+fn remove_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut names = Vec::new();
+    let mut because = None;
+    let mut purge = false;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--because" => match rest.next() {
+                Some(reason) => because = Some(*reason),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "rm",
+                        needs: "--because <why>",
+                    });
+                }
+            },
+            "--purge" => purge = true,
+            other if other.starts_with("--") => return Err(other),
+            other => names.push(other),
+        }
+    }
+    if names.is_empty() {
+        return Ok(Request::MissingArgument {
+            command: "rm",
+            needs: "<model file>",
+        });
+    }
+    Ok(Request::Remove {
+        names,
+        because,
+        purge,
+    })
+}
+
 /// Reads `doctor`'s own arguments.
 ///
 /// Total: an option it does not have is named back rather than ignored.
@@ -224,12 +287,17 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  usage:\n\
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
+                 \x20 mcf list                            what this machine is holding\n\
+                 \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
+                 \x20            [--purge]                this previews and removes nothing\n\
                  \x20 mcf export --to <path>              the record, as one portable file\n\
                  \x20 mcf licence [--full]                the terms, and what conveying this\n\
                  \x20                                     binary obliges you to (GPL-3.0-only)\n\
                  \x20 mcf --version                       what this binary is\n\
                  \n\
-                 This is M0. Nothing here acquires, serves or measures a model."
+                 Nothing here fetches yet: acquisition needs a network stack, and the\n\
+                 vendoring decision that requires has not been made (B-021, DEC-011).\n\
+                 Nothing here serves or measures a model."
             ),
             served: true,
         },
@@ -245,6 +313,12 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 served: true,
             }
         }
+        Request::List => models::list(),
+        Request::Remove {
+            names,
+            because,
+            purge,
+        } => models::remove(names, *because, *purge),
         Request::Unrecognized(argument) => Response {
             text: format!(
                 "mcf: no such command: {argument}\n\
@@ -313,6 +387,8 @@ mod tests {
         assert!(text.contains("mcf doctor"), "{text}");
         assert!(text.contains("mcf export"), "{text}");
         assert!(text.contains("mcf licence"), "{text}");
+        assert!(text.contains("mcf list"), "{text}");
+        assert!(text.contains("mcf rm"), "{text}");
         for unbuilt in ["mcf pull", "mcf serve", "mcf bench", "mcf lab"] {
             assert!(
                 !text.contains(unbuilt),
