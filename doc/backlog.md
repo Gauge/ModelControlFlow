@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 60 |
+| **Version** | 61 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
-build items (32 done, 1 dropped, 4 in progress, 54 blocked on a decision, 107 open).** Every item cites
+build items (33 done, 1 dropped, 4 in progress, 54 blocked on a decision, 106 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -132,7 +132,7 @@ first and importance second.
 | B-193 | The storage an artifact is read from is a measurement condition; and a measurement whose cost is in another process is judged by that process's scheduling, not the measurer's | §3.4, D27, D30, B35 | The condition floor carries where the artifact was executed from, and a cold start on a slow filesystem is refused as unattributable rather than reported as over its ceiling | open — [findings.md](findings.md) F5 has the evidence: one binary, two filesystems, p99s a factor of 1 067 apart with identical stated conditions; and the same tier over its ceiling and two orders of magnitude within it on one machine within the hour |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
-| B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
+| B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29; the first token needs an engine (DEC-004) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
@@ -366,6 +366,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 61 — what the artifact requires of a machine
+
+B-192 done against its stated condition. The artifact's dynamic dependencies
+are read out of the file itself and refused if they name anything a stock
+machine lacks; three libraries qualify and each is part of what a Linux machine
+is. The vendored engine is B-320 and the from-scratch container is B-183, and
+the check holds the line for both: a component that dragged in a prerequisite
+would fail here rather than at a user's first run.
 
 ### Version 60 — the mutation score has a floor
 
