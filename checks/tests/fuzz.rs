@@ -35,7 +35,7 @@ use mcf_checks::scratch::Scratch;
 use mcf_core::attested::Attested;
 use mcf_core::digest::Sha256;
 use mcf_core::time::{Timestamp, Zone};
-use mcf_hub::reference;
+use mcf_hub::{http, reference};
 use mcf_record::export;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
@@ -375,6 +375,97 @@ fn the_reference_parser_reaches_an_outcome_for_every_string() {
                 "{written:?} read as {parsed}, rendered as {rendered}, which will not read: {failure}"
             )),
         }
+    });
+    reached.report();
+    assert_held(&verdict);
+}
+
+/// A response is the first thing a hostile source can say to MCF, and it is
+/// read before anything about it is known (B-322, §3.7).
+///
+/// The reference parser is fed strings a person typed; this is fed bytes a
+/// network sent, which is a different threat: the header block has no length
+/// prefix, the status line has no delimiter of its own, and every number in it
+/// is a decimal somebody else chose. What is asserted is what a client owes —
+/// no panic, a classified outcome for every input, and no claim read out of a
+/// response that the response did not make.
+#[test]
+#[ignore = "the fuzz tier is scheduled: scripts/ci.sh --with-fuzz (B38)"]
+fn the_response_reader_survives_anything_a_source_sends() {
+    let (seed, cases) = announce("http::Response::read");
+    let reached = Reached::new("http::Response::read");
+    let corpus: Vec<Vec<u8>> = [
+        "HTTP/1.1 200 OK\r\nContent-Length: 8941\r\n\r\n{}",
+        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-15/396705472\r\n\r\n0123",
+        "HTTP/1.1 302 Found\r\nLocation: https://us.aws.cdn.hf.co/xet-bridge-us/abc\r\n\r\n",
+        "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer\r\n\r\n",
+    ]
+    .iter()
+    .map(|written| written.as_bytes().to_vec())
+    .collect();
+
+    let from = http::Url::parse("https://huggingface.co/owner/model/resolve/main/model.gguf")
+        .expect("a URL");
+
+    let verdict = check_from(seed, cases, |rng| {
+        let original = rng.pick(&corpus).ok_or("the corpus is not empty")?.clone();
+        let damaged = mutate(rng, &original);
+        let Ok((response, consumed)) = http::Response::read(&damaged) else {
+            reached.refused();
+            return Ok(());
+        };
+        reached.accepted();
+
+        // Whatever was accepted, the head ends inside what arrived: a caller
+        // uses this to find the body, and a count past the end would have it
+        // read somebody else's memory or panic.
+        if consumed > damaged.len() {
+            return Err(format!(
+                "read {consumed} bytes of head out of {} that arrived",
+                damaged.len()
+            ));
+        }
+        // A status MCF accepted is one the protocol has.
+        if !(100..600).contains(&response.status()) {
+            return Err(format!("accepted the status {}", response.status()));
+        }
+        // Every number read back is one the source wrote, or a refusal. What
+        // must not happen is a number nobody sent.
+        if let Ok(Some(length)) = response.content_length() {
+            // Against the bytes themselves rather than their rendering: the
+            // rendering truncates for a report, and a property that read it
+            // would fail on inputs the mutation grew past that limit — a defect
+            // in the check reported as a defect in the code.
+            let written = length.to_string();
+            if !damaged
+                .windows(written.len())
+                .any(|window| window == written.as_bytes())
+            {
+                return Err(format!("read a content-length of {length} nobody sent"));
+            }
+        }
+        if let Ok(Some(range)) = response.content_range()
+            && let Some(total) = range.total
+            && range.last >= total
+        {
+            return Err(format!(
+                "accepted a range ending at {} of a file {total} long",
+                range.last
+            ));
+        }
+        // And a redirect never carries the credential off this origin, whatever
+        // the source put in its location. This is the property B-322 exists
+        // for, examined over what a source can actually say rather than over
+        // the four locations a unit test writes.
+        // A refusal and *no redirect* are both fine here: what is being
+        // examined is the one case where something leaves this machine.
+        if let Ok(Some((to, carried))) = http::redirect(&response, &from)
+            && carried
+            && !from.same_origin(&to)
+        {
+            return Err(format!("would have carried the credential to {to}"));
+        }
+        Ok(())
     });
     reached.report();
     assert_held(&verdict);

@@ -90,6 +90,56 @@ pub(super) const RATE_LIMITED: Scenario = Scenario {
     run: rate_limited,
 };
 
+/// The answer is not an answer.
+pub(super) const ANSWER_IS_NOT_A_RESPONSE: Scenario = Scenario {
+    id: "hub/answer-is-not-a-response",
+    produces: Category::HubMetadataMalformed,
+    summary: "a source that answers with something that is not HTTP is refused, saying what it saw",
+    run: answer_is_not_a_response,
+};
+
+/// The answer stops before it has finished arriving.
+pub(super) const ANSWER_CUT_SHORT: Scenario = Scenario {
+    id: "hub/answer-cut-short",
+    produces: Category::TransferInterrupted,
+    summary: "an answer that ends mid-header is an interruption rather than a malformed source",
+    run: answer_cut_short,
+};
+
+/// What a hostile or broken source puts where a response goes.
+///
+/// The observation is the bytes, not the cause: a proxy's error page, a captive
+/// portal's login form and a server that has lost its mind all arrive the same
+/// way, and what MCF has to get right is that none of them is read as a model
+/// (D26, §3.7).
+fn answer_is_not_a_response(_world: &World) -> Outcome {
+    // A complete head — it ends where a head ends — that is not a response. A
+    // page rather than a protocol, which is what a captive portal and a
+    // misconfigured proxy both put on the wire.
+    let captive_portal = b"<html><head><title>Sign in to continue</title></head>\r\n\r\n<body>";
+    match mcf_hub::http::Response::read(captive_portal) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok((response, _)) => Outcome::Unexpected(format!(
+            "a web page was read as a response with status {}",
+            response.status()
+        )),
+    }
+}
+
+/// A connection that closed while the headers were still arriving.
+///
+/// Distinct from the scenario above on purpose: *incomplete* and *wrong* lead a
+/// caller to different places — one reads more and tries again, the other stops
+/// — and a client that confused them would either hang on a broken source or
+/// give up on a slow one.
+fn answer_cut_short(_world: &World) -> Outcome {
+    let cut = b"HTTP/1.1 200 OK\r\nContent-Length: 3967";
+    match mcf_hub::http::Response::read(cut) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("half a header block was read as a whole one".to_owned()),
+    }
+}
+
 /// Asks the simulated hub for a repository that behaves in a stated way.
 ///
 /// The scenario supplies the *observation* — a hub that answers this way — and

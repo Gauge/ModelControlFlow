@@ -17,6 +17,7 @@
 pub mod credentials;
 pub mod fetch;
 pub mod fitment;
+pub mod http;
 pub mod inspect;
 pub mod licence;
 pub mod reference;

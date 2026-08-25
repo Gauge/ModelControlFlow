@@ -44,6 +44,8 @@ pub const CATALOGUE: &[Scenario] = &[
     hub::NO_LICENCE,
     hub::TRUNCATED_TRANSFER,
     hub::CANNOT_RESUME,
+    hub::ANSWER_IS_NOT_A_RESPONSE,
+    hub::ANSWER_CUT_SHORT,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — what MCF ships, what it declined to ship, and why |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
 | **Authority** | Governed by [rules.md](rules.md); the licence is D28, the tiers are D23, the stand-in is D31 |
 | **Registers to** | B-192, B-320, B-321, B-330 in [backlog.md](backlog.md) |
@@ -70,6 +70,7 @@ somebody can disagree with rather than a gap nobody noticed.
 | **Metal** (Apple) | The same shape: a platform framework MCF may use where it is present and may not redistribute | As above. D29 makes it a per-platform capability, present or stated absent |
 | **Intel MKL** | Proprietary terms | An open BLAS is the alternative, and a stand-in needs none |
 | **Any engine requiring a negotiated licence or payment** | D23's third tier. A normal outcome under §3.13 rather than a failure | Evidence that the performance gap changes which model a user should run, which is what B-321 asks this register be revisited on |
+| **The machine's own TLS** (OpenSSL, via `native-tls`) | Not a licence question — a §3a one. Measured: the binary demands `libssl.so.3` and `libcrypto.so.3`, which are not on §3a's list, differ between distributions, and would make a missing prerequisite the user's errand (B36). It is the cheapest thing here to vendor and the one MCF may not ship, which is why [findings.md](findings.md) F9 keeps it as the control | Nothing MCF controls. A distribution's `libssl` is its own, and pinning it is what vendoring a TLS stack instead does |
 
 **Deferring an accelerator path does not weaken §III.** B7 governs attempt and
 diagnosis rather than success, and D31's stand-in means the outcome on hardware
@@ -115,6 +116,10 @@ verified column to be filled first.
 | **candle** | Tensor library in Rust; dual-licensed | MIT and Apache-2.0 | `LICENSE-MIT` at `huggingface/candle` | Yes, if the declaration holds |
 | **tokenizers** | Hugging Face's tokenizer library, first-party to the ecosystem D4 notes | Apache-2.0 | `LICENSE` at `huggingface/tokenizers` | Yes, if the declaration holds |
 | **OpenBLAS** | Dense linear algebra | BSD-3-Clause | `LICENSE` at `OpenMathLib/OpenBLAS`, digest `190b5a9c8d9723fe…` | Yes, if the declaration holds |
+| **rustls** | A TLS 1.3 implementation in Rust — the thing MCF cannot write and cannot do without (B-322) | Apache-2.0 OR ISC OR MIT | Declared in the crate's own manifest, read from a tree built outside this repository ([findings.md](findings.md) F9) | Yes, if the declaration holds |
+| **ring** | The cryptography `rustls` calls: C and assembly, so admitting it puts a C compiler in MCF's *build* — a cost F9 states rather than leaves to be discovered | Apache-2.0 AND ISC | As above | Yes, if the declaration holds |
+| **webpki-roots** | The certificate authorities a TLS session is checked against. Data rather than code, and it expires: a root set is a thing that must be re-pinned, not vendored once | CDLA-Permissive-2.0 | As above | Yes, if the declaration holds |
+| **The rest of that tree** | `rustls-pki-types`, `rustls-webpki`, `getrandom`, `libc`, `once_cell`, `subtle`, `untrusted`, `zeroize`, `cfg-if`, `shlex`, `cc` — sixteen crates in total for a TLS client on Linux, 15 MiB, most of them a few hundred lines | MIT OR Apache-2.0, with two ISC and one BSD-3-Clause | As above | Yes, if the declarations hold |
 
 **"If the declaration holds" is doing real work in that column.** A project's
 `LICENSE` file is its statement about itself; what MCF ships is a *tree*, and a
@@ -123,6 +128,27 @@ is a check of the tree that is actually vendored, at the revision that is
 actually pinned, and it is what turns a row in §4 into a row in §2.
 
 ## Changelog
+
+### Version 3 — the first candidate that is not an engine
+
+The register was written expecting its first admission to be an inference
+engine. It is going to be a TLS stack instead, because §III's *models enter
+this machine* stops at a socket MCF cannot open, and [findings.md](findings.md)
+F9 measured what crossing that boundary costs: sixteen crates and 15 MiB on
+Linux, of which the part nobody at MCF could write is the cryptography.
+
+Three things are recorded here rather than in the finding, because they are
+this register's business. `ring` is C and assembly, so admitting it puts a C
+compiler in the build — the artifact stays inside §3a, which is the measured
+half, but §3.12's reproducibility claim would rest on a toolchain nothing pins.
+`webpki-roots` is data with an expiry date rather than code, so it is a row
+that has to be re-pinned rather than vendored once. And the machine's own TLS
+joins §3 as deferred: it costs nothing to vendor and makes the binary demand
+`libssl` of a user, which is the one thing §3a forbids.
+
+Every row is still *declared*. Nothing is admitted until the tree that is
+actually vendored is verified at the revision that is actually pinned, which is
+B-322's work and not this version's.
 
 ### Version 2 — the other side of the register
 
