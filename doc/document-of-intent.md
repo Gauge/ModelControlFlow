@@ -147,7 +147,7 @@ or one click: a persistent local service, a stable API, models addressed by name
 rather than by path, and no requirement that the user understand runtimes,
 formats, or flags in order to get a first token.
 
-**On Ollama.** Ollama was cited as an *example of the ergonomic standard*, and
+**On Ollama.** Ollama is cited as an *example of the ergonomic standard*, and
 that is the entire extent of the reference. It names a level of friction — near
 zero — that MCF must match or beat. It is explicitly **not** a model for MCF's
 architecture, implementation, feature set, or engineering choices, and MCF has
@@ -322,7 +322,7 @@ decision:
   Rust libraries, so §III's acquisition layer builds on first-party code.
 
 **Why not C++.** C++ reaches the same performance and the same footprint; this
-was never a performance argument. It reaches the same *reliability* only through
+is not a performance argument. It reaches the same *reliability* only through
 sustained discipline, and reliability is this project's first stated intent. The
 tiebreaker is §3.16, not speed.
 

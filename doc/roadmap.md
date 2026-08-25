@@ -204,7 +204,7 @@ accordingly, and reports where the artifact's claims and its behaviour diverge.
 **Gated on:** DEC-024, DEC-025.
 
 **Exit criteria**
-- A model whose defaults were previously wrong measurably improves, and the
+- A model that the defaults configure wrongly measurably improves, and the
   improvement is attributable to a named probe
 - No probe result is ever coerced into a working default
 - Every auto-set parameter answers "why this value"
