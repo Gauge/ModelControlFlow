@@ -23,6 +23,7 @@ mod environment;
 mod exchange;
 mod hub;
 mod record;
+mod store;
 mod time;
 
 /// Every scenario the laboratory has.
@@ -52,6 +53,8 @@ pub const CATALOGUE: &[Scenario] = &[
     record::TORN_LAST_LINE,
     record::CORRUPT_LINE,
     record::HEADERLESS,
+    store::AUTHORIZATION_IS_STALE,
+    store::SHELF_WILL_NOT_EMPTY,
     time::BACKWARD_STEP,
     time::FORWARD_JUMP,
 ];

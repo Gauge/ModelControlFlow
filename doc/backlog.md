@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 76 |
+| **Version** | 77 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 11 in progress, 52 blocked on a decision, 98 open).** Every item cites
+build items (37 done, 1 dropped, 11 in progress, 52 blocked on a decision, 97 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -163,7 +163,7 @@ first and importance second.
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **in progress** — `mcf_hub::credentials`: a secret that redacts itself (`Debug` shows a digest fingerprint, there is no `Display`, and the only way to the bytes is `reveal`), an origin that is part of the conditions, and an `Identity` a source answers with — anonymous, offered, or an account the hub confirmed. The three refusals are written once, so every source says the same thing and each names the repository, what MCF was to the hub, and the one thing to do next. *Held deliberately* is structural rather than documented: nothing reads the environment, `sightings` is handed a way to look, and `checks/tests/a_credential_is_never_picked_up.rs` holds the line across the whole workspace. What remains: the surface an operator supplies one through, which is B-029, and the real client that offers it, which is B-021's transport |
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
-| B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
+| B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
@@ -366,6 +366,39 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 77 — an artifact is not a cache entry
+
+B-027 done. The failure it is against is a helpful one: a disk fills, and a
+tool that wants to keep working deletes the oldest thing it can find. MCF will
+not, because an artifact is what a measurement was made against and
+re-acquiring it is not always possible — a pinned repository can be withdrawn,
+gated or relicensed between one week and the next (DEC-038). A tool that
+deletes to reclaim space has decided that disk is worth more than evidence.
+
+So there is no path from *space is short* to *bytes are gone*. Removal is four
+separate acts and each is a type: a preview that touches nothing, an
+authorization somebody gives for a stated reason about a list of files at
+particular sizes, a removal that writes the record and then *moves* the
+artifact to a shelf, and a purge — the only function in MCF that destroys an
+artifact, and it takes the authorization to do it.
+
+The record goes first. After a removal the artifact is gone and the record is
+all there is, so a record written afterwards is one a crash can lose along with
+the thing it describes (A1). `artifact_removed` is a new kind in the journal
+for exactly that reason: it is the one event whose record has to outlive its
+subject.
+
+Reversibility is measured rather than promised. A rename inside one filesystem
+is free, so the shelf costs nothing where it works; where the shelf is on
+another filesystem the plan says NOT recoverable in as many words, and the
+operator authorizes that fact. Unknown reads as irreversible, because being
+wrongly told a removal can be undone is how somebody loses a model.
+
+What keeps this true next year is not the prose. `nothing_deletes_an_artifact`
+reads every shipped source in the workspace and requires each deleting call to
+be declared with what it destroys and why that is not an artifact. Adding a
+deletion means writing that line, which is the point.
 
 ### Version 76 — a credential nobody handed over
 
