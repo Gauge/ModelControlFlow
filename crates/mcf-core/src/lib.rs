@@ -20,6 +20,7 @@
 
 pub mod attested;
 pub mod build_identity;
+pub mod capture;
 pub mod configuration;
 pub mod degradation;
 pub mod failure;

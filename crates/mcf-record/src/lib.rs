@@ -16,6 +16,7 @@
 //! content store.
 
 pub mod content;
+pub mod decode;
 pub mod encode;
 pub mod journal;
 pub mod json;

@@ -18,9 +18,10 @@
 
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
+use mcf_core::capture;
 use mcf_core::failure::Failure;
 use mcf_core::hardware::{Characterization, Machine};
-use mcf_core::measurement::{Bytes, ConditionValue, Conditions, Floor, Measurement};
+use mcf_core::measurement::{Bytes, Conditions, Measurement};
 use mcf_core::self_cost::{self, Budget, COLD_START, CORE_BINARY, RESIDENT_IDLE, Verdict};
 use mcf_core::time::{Duration, Monotonic, Timestamp};
 use mcf_record::encode;
@@ -152,19 +153,12 @@ pub(crate) fn run(record: bool) -> Report {
 }
 
 fn measure_cost(machine: &Machine) -> Cost {
-    // The conditions these figures were taken under. Sparse and honest: what
-    // MCF knows here is what compiled it and what the machine reported, and
-    // everything else is unknown rather than filled in (A7).
-    let conditions = Conditions::new(
-        BuildIdentity::current(),
-        Floor {
-            hardware_state: Attested::Known(ConditionValue::text(
-                machine.processor.model.to_string(),
-            )),
-            mcf_configuration: Attested::Known(ConditionValue::text("mcf doctor, defaults")),
-            ..Floor::nothing_known()
-        },
-    );
+    // The conditions these figures were taken under, captured from the live
+    // machine rather than assembled here (B-007). What the machine does not
+    // report stays unknown; what nothing runs a model to supply — quantization,
+    // context length, batch shape, realized placement — stays unknown too, and
+    // says so (A7).
+    let conditions = capture::conditions(machine, None, "mcf doctor, no configuration");
 
     let binary = std::env::current_exe().ok();
     let artifact = binary
