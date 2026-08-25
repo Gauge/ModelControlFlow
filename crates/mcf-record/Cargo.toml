@@ -1,0 +1,13 @@
+[package]
+name = "mcf-record"
+description = "The durable record: the append-only journal and the derived, rebuildable index."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }

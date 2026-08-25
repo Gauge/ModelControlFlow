@@ -1,0 +1,12 @@
+[package]
+name = "mcf-core"
+description = "Types every other MCF crate is built from: failure, measurement, provenance, time, build identity."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

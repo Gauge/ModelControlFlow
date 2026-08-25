@@ -1,0 +1,14 @@
+[package]
+name = "mcf-lab"
+description = "The laboratory: simulated clock, injected faults, replayable scenarios."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }
+mcf-record = { path = "../mcf-record" }

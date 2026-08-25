@@ -1,0 +1,15 @@
+[package]
+name = "mcf-bench"
+description = "Measurement and the laboratories that produce it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }
+mcf-record = { path = "../mcf-record" }
+mcf-serve = { path = "../mcf-serve" }

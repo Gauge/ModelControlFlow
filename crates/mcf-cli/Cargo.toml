@@ -1,0 +1,22 @@
+[package]
+name = "mcf-cli"
+description = "The headless surface: every MCF action, available with no display attached (A22)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mcf"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }
+mcf-record = { path = "../mcf-record" }
+mcf-lab = { path = "../mcf-lab" }
+mcf-hub = { path = "../mcf-hub" }
+mcf-serve = { path = "../mcf-serve" }
+mcf-bench = { path = "../mcf-bench" }

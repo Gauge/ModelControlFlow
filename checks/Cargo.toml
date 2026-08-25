@@ -1,0 +1,13 @@
+[package]
+name = "mcf-checks"
+description = "Workspace-shape checks: the crate split, the dependency direction, and the toolchain pin (B-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]

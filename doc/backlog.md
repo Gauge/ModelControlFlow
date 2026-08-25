@@ -3,12 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 4 |
+| **Version** | 22 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**241 items: 49 decisions (36 open, 1 drafted, 3 narrowed, 9 resolved) and 192 build items.** Every item cites the clause that
-justifies it; an item that cannot cite is a finding, not a task, and the
+**241 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 192
+build items (2 done, 59 blocked on a decision, 131 open).** Every item cites
+the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
 ## How to read an item
@@ -101,7 +102,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | open |
+| B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | **done** — [build.md](build.md); toolchain pinned to 1.98.0, layering asserted by test, `scripts/check-reproducible-build.sh` compares two checkouts byte for byte |
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | open |
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | open |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
@@ -116,7 +117,7 @@ first and importance second.
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | blocked (DEC-008) |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
-| B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
+| B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | open |
@@ -356,6 +357,20 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 22 — the first build item closes, and the counts are recounted
+
+B-001 is done: the workspace exists, the toolchain is pinned to an exact
+version, and the reproducibility claim is checked by comparing two checkouts
+byte for byte rather than asserted. [build.md](build.md) holds what the build
+asserts about itself, so this register keeps only the status.
+
+Two stale figures corrected, both of the kind that make a register unusable for
+deciding what is left. The front matter had said version 4 while the changelog
+had reached 21, and the header's decision counts were three versions behind the
+table beneath them — they are now counted from the rows. B-016's status still
+reported the 58 rules of the version that closed it, against 99 in
+[rules.md](rules.md) v16.
 
 ### Version 21 — milestone coverage audited
 
