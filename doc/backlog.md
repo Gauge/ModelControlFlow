@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 59 |
+| **Version** | 60 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 198
-build items (31 done, 1 dropped, 4 in progress, 54 blocked on a decision, 108 open).** Every item cites
+build items (32 done, 1 dropped, 4 in progress, 54 blocked on a decision, 107 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -128,7 +128,7 @@ first and importance second.
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | **done** — `mcf_core::time::zone` reads the zone file in safe Rust, resolves the offset in force *at the moment* rather than now, and is unknown beyond what the file records rather than extrapolating. Checked against what the system itself reports |
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | **done** — all ten exist, declared in `checks/src/tiers.rs` and compared against `scripts/ci.sh`, the tree and [build.md](build.md) in both directions. Five gate, in five seconds; five are scheduled behind flags. The whole-system tier covers the one of §7.22's four questions M0 has anything to answer and names the other three, so DEC-022 governs its extension rather than its existence |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | **done** — `scripts/check-tier-ages.sh [--release]`, and every `scripts/ci.sh` run reports the ages. Stale is *the source changed*, not *a clock advanced*: no clause states how old a soak result may be (A23), and what actually invalidates one is decidable — each tier stamps a digest of the manifests, the toolchain pin, the crates, the checks and the scripts. The stamps are machine-local, so a fresh checkout says it has run nothing rather than inheriting a result |
-| B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
+| B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | **done** — `MUTATION_FLOOR_PERCENT` in `scripts/lib-tiers.sh`, at 100 %: a claim about the twelve mutants in the catalogue, each of which breaks something a rule rests on, rather than about every conceivable mutation. A score below the floor *or* below the last run's stamp (B-185) exits non-zero, and both refusals were checked against a copy of the tree with a deliberate survivor in it. The twelfth mutant is there because it survived: nothing checked that a resident reading is in bytes, and now something does |
 | B-193 | The storage an artifact is read from is a measurement condition; and a measurement whose cost is in another process is judged by that process's scheduling, not the measurer's | §3.4, D27, D30, B35 | The condition floor carries where the artifact was executed from, and a cold start on a slow filesystem is refused as unattributable rather than reported as over its ceiling | open — [findings.md](findings.md) F5 has the evidence: one binary, two filesystems, p99s a factor of 1 067 apart with identical stated conditions; and the same tier over its ceiling and two orders of magnitude within it on one machine within the hour |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
@@ -366,6 +366,19 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 60 — the mutation score has a floor
+
+B-186 done, which closes the last of B38's three. The floor is 100 % of a
+hand-written catalogue rather than a percentage of everything a generator could
+produce, and a run scoring below the floor or below the previous stamp exits
+non-zero.
+
+The catalogue grew by one while this was built, and the way it grew is the
+argument for the tier: a mutant that multiplied kibibytes by 1000 instead of
+1024 survived the whole suite, so a figure `mcf doctor` prints and B-011 asserts
+rested on nobody having looked. The gap now has a test and the mutant is in the
+catalogue.
 
 ### Version 59 — the tiers have ages
 

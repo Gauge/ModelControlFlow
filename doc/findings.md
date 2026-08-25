@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -33,6 +33,7 @@ forward as one.
 | 3 | [F3 — The load average answers the wrong question (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
 | 4 | [F4 — What the new tiers found on their first runs (B-191)](#4--f4--what-the-new-tiers-found-on-their-first-runs-b-191) |
 | 5 | [F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)](#5--f5--the-cold-start-budget-is-a-measurement-of-the-filesystem-b-011-d30) |
+| 6 | [F6 — The first mutant to survive (B-186)](#6--f6--the-first-mutant-to-survive-b-186) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -514,7 +515,54 @@ Nor does it change what B-191 established. `scripts/ci.sh --all` ran all ten
 tiers; nine of them were green and the tenth failed on a real reading, which is
 the outcome a tier exists to produce.
 
+## 6 · F6 — The first mutant to survive (B-186)
+
+**What was run.** `scripts/check-mutants.sh` against a copy of the tree carrying
+a twelfth mutant, added to check that B-186's floor actually refuses. The mutant
+was chosen because it looked likely to survive: `resident_bytes` multiplies the
+kernel's kibibytes by 1024, and the mutant multiplies by 1000.
+
+**Conditions.** The same machine as F1–F5, debug profile, the whole workspace
+suite as the judge.
+
+**It survived.** Eleven of twelve killed, 91 %, and the two refusals fired
+exactly as intended — below the floor, and below the previous run's score.
+
+### 6.1 What the survivor was hiding
+
+Nothing checked that MCF's resident-memory reading is in bytes. The existing
+test asserted a plausibility band — greater than zero, less than 64 GiB — which
+a figure 2.4 % wrong passes without difficulty.
+
+That figure is not decorative. `mcf doctor` prints it, and B-011 asserts it
+against D24's 20 MiB ceiling. A19 requires that anything reported be tested
+against an independently known value, and this one was tested against itself.
+
+The fix is two independent facts about the same quantity: the kernel reports
+`VmRSS` in kibibytes, so the value in bytes is a whole number of pages; and
+`/proc/self/statm` counts the same pages in a different file. A mutant
+multiplying by 1000 lands off the page boundary and dies.
+
+### 6.2 What it says about the number 100 %
+
+The floor is a hundred per cent of a hand-written catalogue, which is a much
+weaker claim than a hundred per cent of everything a generator could produce —
+and it is the claim worth making. Each entry breaks something a rule in
+rules.md rests on, so the score answers *are these twelve claims checked*
+rather than *what fraction of arbitrary edits does the suite notice*.
+
+The loop the tier exists for ran in full here: a mutant survived, the claim it
+broke got a test, and the mutant joined the catalogue. A tier that reported 91 %
+and moved on would have left the same gap with a number attached to it.
+
 ## Changelog
+
+### Version 6 — the first mutant to survive
+
+F6 added with B-186. The experiment that checked whether the floor refuses
+found a real gap while it was at it: nothing tested that MCF's resident-memory
+reading is in bytes, and it is a figure `mcf doctor` prints and B-011 asserts
+against a ceiling. The mutant is now in the catalogue and the claim has a test.
 
 ### Version 5 — a budget that measures the filesystem
 

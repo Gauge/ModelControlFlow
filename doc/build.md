@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -431,10 +431,14 @@ thousands of mutants, most of them equivalent or unreachable, and each one here
 costs a suite run; every entry breaks something a rule depends on, so a
 **survivor names a rule nothing is checking**.
 
-It reports a score and does not enforce a floor. B-186 is the floor, and a
-floor needs a previous result to compare against — B20's before-and-after, which
-is B-300's work. Failing on the first survivor would make the tier unrunnable
-before there was anything to compare with.
+**It refuses a score below the floor, and a score below the last one** (B-186,
+B20). The floor is `MUTATION_FLOOR_PERCENT` in `scripts/lib-tiers.sh` and it is
+**100 %** — a smaller number than it sounds, because it is a claim about the
+twelve mutants in the catalogue rather than about every conceivable mutation of
+MCF. Each of them breaks something a rule rests on, so a survivor is a gap
+rather than a percentage to trade off. The previous score comes from the tier's
+own stamp (B-185), which is where a run leaves what the next one compares
+against, and a lower score is refused even when it clears the floor.
 
 Three things keep the score honest. **An equivalent mutant is the control**: a
 change with no semantic effect must *not* be killed, or the runner cannot tell a
@@ -454,9 +458,17 @@ before it is believed, and anything still executing out of the run's own copy is
 killed — a spinning test process outliving the tier is a change to the machine
 A27 does not permit MCF's suite to make either.
 
-**Eleven mutants, eleven killed, one of them by hanging; four minutes.** The
-score is not evidence that the suite is complete. It is evidence about eleven
-specific claims, chosen because a rule rests on each.
+**Twelve mutants, twelve killed, one of them by hanging; about four minutes.**
+The score is not evidence that the suite is complete. It is evidence about
+twelve specific claims, chosen because a rule rests on each.
+
+The twelfth is there because it survived. `resident_bytes` converts the kernel's
+kibibytes to bytes, and a mutant that multiplied by 1000 instead of 1024 lived
+through the whole suite — a figure `mcf doctor` prints and B-011 asserts against
+D24's ceiling, resting on nobody having looked (A19). The test that kills it
+checks the reading lands on a page boundary and agrees with the second file that
+counts the same pages. That loop — a survivor names a gap, the gap gets a test,
+the mutant joins the catalogue — is what the floor is for.
 
 ## 10 · Ages, and what a release refuses
 
@@ -507,6 +519,14 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 11 — the mutation score has a floor
+
+§9's mutation section rewritten with B-186. The tier reported a score and now
+refuses one below the floor or below the last run's, which needed B-185's stamp
+to have somewhere to keep the previous number. The catalogue gained a twelfth
+mutant, and how it got there is the part worth reading: it survived, so the
+claim it broke got a test.
 
 ### Version 10 — the tiers have ages
 
