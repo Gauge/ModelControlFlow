@@ -179,3 +179,45 @@ fn silence_is_not_disagreement() {
             .is_empty()
     );
 }
+
+// ---------------------------------------------------------------------------
+// B-015 — the seam, and what it lets the suite check on the wrong machine.
+// ---------------------------------------------------------------------------
+
+/// B19: *the suite runs on a laptop, offline, with no accelerator.* On a
+/// machine that has one, that is otherwise unverifiable — so the seam is used
+/// to produce the no-accelerator machine and the profile is checked for
+/// honesty rather than for silence.
+#[test]
+fn a_machine_with_no_route_reports_no_accelerator_and_stays_complete() {
+    let machine = Machine::read_through(&[]);
+    assert!(machine.accelerators.is_empty());
+    assert!(machine.every_accelerator_is_characterized());
+
+    let rendered = machine.to_string();
+    assert!(
+        rendered.contains("accelerators: none present"),
+        "{rendered}"
+    );
+    // Everything else is still reported: a machine with no accelerator is a
+    // machine MCF describes fully, not a degraded case it says less about.
+    assert!(rendered.contains("processor:"), "{rendered}");
+    assert!(rendered.contains("memory:"), "{rendered}");
+    assert!(rendered.contains("load, one minute:"), "{rendered}");
+}
+
+/// The seam takes routes rather than reading ambient state, so a test can ask
+/// a question about a different machine without changing this one. B2: nothing
+/// that could change a result is undeclared.
+#[test]
+fn the_seam_is_a_parameter_and_changes_nothing_ambient() {
+    let without = Machine::read_through(&[]);
+    let with = Machine::read();
+    assert!(without.accelerators.is_empty());
+    // Reading through no routes did not disturb the real reading.
+    assert_eq!(
+        with.accelerators.len(),
+        Machine::read().accelerators.len(),
+        "asking about a different machine changed this one"
+    );
+}

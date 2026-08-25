@@ -73,10 +73,28 @@ impl Machine {
     /// honest profile in which almost everything is `unknown`.
     #[must_use]
     pub fn read() -> Self {
+        Self::read_through(&accelerator::routes())
+    }
+
+    /// Reads the machine, asking only the routes given.
+    ///
+    /// The seam B19 requires, and the injection point D26 names. Expensive and
+    /// machine-specific paths are tested *through* seams rather than skipped,
+    /// and a seam is a parameter rather than ambient state: passing no routes
+    /// produces the profile of a machine with no accelerator on a machine that
+    /// has one, which is how B19's *the suite runs on a laptop with no
+    /// accelerator* is checked on a machine with one.
+    ///
+    /// It is a parameter and not an environment variable on purpose. An
+    /// ambient switch that turned off hardware detection would be undeclared
+    /// state that changes a result (B2), and somebody would eventually set it
+    /// in production and get quietly degraded readings.
+    #[must_use]
+    pub fn read_through(routes: &[Box<dyn Route>]) -> Self {
         Self {
             processor: processor::read_processor(),
             memory: processor::read_memory(),
-            accelerators: accelerator::read_all(),
+            accelerators: accelerator::read_through(routes),
             power_profile: processor::read_power_profile(),
             load: load::load_average(),
         }
