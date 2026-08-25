@@ -13,12 +13,14 @@
 //! among its conditions (§3.4); [`failure`], which is A2 expressed as a
 //! signature; [`measurement`], which is A6 expressed as one; [`time`], which
 //! is B37 expressed as two types that do not meet; and [`attested`], which is
-//! A7 expressed as a variant.
+//! A7 expressed as a variant; and [`provenance`], which is §3.6 expressed as a
+//! field nothing can omit.
 
 pub mod attested;
 pub mod build_identity;
 pub mod failure;
 pub mod measurement;
+pub mod provenance;
 pub mod time;
 
 pub use failure::{Failure, Result};
