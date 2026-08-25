@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -38,7 +38,14 @@ MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 
 ```
 $ cargo build --locked --release && ./target/release/mcf doctor
+$ scripts/ci.sh                     # what gates a change: seconds, offline
 ```
+
+If your machine runs other projects' test suites as well, [build.md](doc/build.md)
+section 12 covers it: the scheduled tiers take an exclusive window where one is
+available, and the tier that measures timings needs it — a reading taken while
+something else had the processor is one MCF refuses rather than reports (B35,
+D30).
 
 ## The documents
 
@@ -155,6 +162,13 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 13 — the gating command, and a shared machine
+
+The front page gave the command that builds MCF and not the one that decides
+whether a change may land, which is the one somebody arriving to work on it
+needs first. Both are here now, with a pointer to what to do when the machine is
+not MCF's alone.
 
 ### Version 12 — the status says what runs now
 
