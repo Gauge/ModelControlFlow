@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 54 |
+| **Version** | 55 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
-build items (27 done, 1 dropped, 4 in progress, 54 blocked on a decision, 111 open).** Every item cites
+build items (28 done, 1 dropped, 4 in progress, 54 blocked on a decision, 110 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -130,7 +130,7 @@ first and importance second.
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
-| B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | open |
+| B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | open — unblocked by D29; the first token needs an engine (DEC-004) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
@@ -145,7 +145,7 @@ first and importance second.
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
-| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **in progress** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; the matrix has no rows because nothing is vendored yet, and the check refuses a vendored component with no finding |
+| B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **in progress** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; [vendored.md](vendored.md) is the matrix and states what a finding is. Its vendored section is empty because nothing is admitted, and the check refuses a vendored component with no row |
 | B-361 | A timing-class result cannot be constructed from a stand-in engine handle, in the way a simulated duration cannot become a performance number | B65, D31, A11, B31 | The compiler refuses it; a check refuses a conversion added later | **done** — `mcf_core::engine`: `timing` is defined on `Run<Vendored>` alone, `Timing` has no constructor of its own, and no conversion exists between the two runs. Four source checks and a `const` assertion; verified by giving the stand-in a timing and watching them fail |
 | B-360 | The stand-in engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling — no SIMD, no fusion, no threading, no accelerator path | D31, §III, §3.2, B7 | A model no vendored engine will run reaches a first token on the stand-in, and every result taken on it is marked (A5) | open |
 | B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
@@ -365,6 +365,31 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 55 — the vendoring register, before there is anything to vendor
+
+B-321 is done, and reaches further than the item asked. It wanted the *deferred*
+list; B-330 wants a compatibility finding per vendored component. Those are the
+same register seen from two sides, and writing one alone would have produced two
+documents that eventually disagreed about what MCF ships.
+
+Three things it states that were not written down anywhere.
+
+**What a finding is**, with A21's distinction running through it: what a
+component *declares*, what MCF *verified* and how, the verdict against
+GPL-3.0-only, and the tier. A component whose licence MCF has not verified is
+not admitted — which is stricter than it sounds and is the point.
+
+**Why the candidates are still declared.** Their terms were fetched rather than
+recalled, with digests recorded, and they remain declared: a project's `LICENSE`
+is its statement about itself, and what MCF would ship is a *tree*, which can
+contain files under other terms than the one at its root. Verification is a check
+of the tree actually vendored at the revision actually pinned.
+
+**That deferring an accelerator path does not weaken §III.** B7 governs attempt
+and diagnosis rather than success, and D31's stand-in makes the outcome on
+hardware with no vendorable backend *runs on the processor, marked* rather than
+*does not run*.
 
 ### Version 54 — one portable file, and a citation the rename missed
 

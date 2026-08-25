@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -42,6 +42,7 @@ $ cargo build --locked --release && ./target/release/mcf doctor
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [taxonomy.md](doc/taxonomy.md) | Reference | The failure classification: three axes, sixteen domains, 111 codes | You are handling an error, writing a lab scenario, or rendering a failure |
 | [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
+| [vendored.md](doc/vendored.md) | Register | What MCF ships, what it declined to ship, and the compatibility finding for each | You are about to admit a component, or want to know why MCF does not support something |
 | [findings.md](doc/findings.md) | Record | What a prototype or a run established, with the conditions it was established under | A decision cites a run, or you are about to reopen one |
 | [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
@@ -147,6 +148,13 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 11 — the vendoring register joins the map
+
+`doc/vendored.md` added. D28 makes every vendored component's terms MCF's
+problem and D23 makes a deferral a decision to record rather than a gap; both
+are the same register seen from two sides, and it exists before the first
+component is admitted so that it gates rather than describes.
 
 ### Version 10 — `P` means one thing
 
