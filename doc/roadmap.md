@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -50,7 +50,7 @@ thing to erode it.
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
 | **M5** | **The measurement** — `mcf bench` | Obtain a defensible performance number taken *here*, with its conditions and its uncertainty | §II, §IV | §7.7, §7.6 |
-| **M6** | **The bench** — `mcf eval`, `mcf lab` | Find out whether a model can actually do the work, across purpose-built laboratories, as distributions rather than scores | §IX, §XIII, §3.19 | §7.23, §7.29, §7.3 residuals |
+| **M6** | **The bench** — `mcf lab` | Find out what a model is good at, across purpose-built laboratories gated by verified capability, as distributions rather than scores — and against your workload, not only the shipped one | §IX, §XIII, §3.19, §3.23 | §7.23, §7.29, §7.3 residuals |
 | **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2, §7.26 |
 | **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14 |
 | **M9** | **The exchange** — `mcf share`, `mcf import` | Contribute evidence deliberately, and reproduce a configuration found elsewhere — or learn precisely why this machine cannot | §XIV, §XV | §7.27, §7.28, §7.30, §7.31 |
@@ -178,6 +178,9 @@ knowing what a runtime is.
 - Local-only by default; exposure is deliberate and revocable (B-036) — §6.12
 - Visible, attributed, overridable defaults, with `mcf explain` (B-038) — §3.15
 - Authorization gated by category, not frequency (B-039) — §6.14
+- `mcf stop` (B-210): the stop control, obligatory rather than optional once
+  §XVII lets MCF take exclusive control of hardware — and a stop path that is
+  reliable is a stop path the laboratory can test
 
 **Gated on:** DEC-001, DEC-004, DEC-009, DEC-018, DEC-016.
 
@@ -326,6 +329,12 @@ harness §XIII would have to be retrofitted onto.
   remaining time — D8's greed paid for by §6.33's honesty
 - The energy laboratory (B-189, B-187, B-188): joules per token with its
   measurement provenance, sampled only while a lab runs
+- The four-outcome lab result (B-200) and the prohibition on an aggregate score
+  (B-201) — §3.23 and D2: *not applicable* is not zero, and there is no overall
+  quality column
+- The workload slot (B-204, [P1](proposals.md#p1--customizable-workloads)):
+  every lab ships a default and accepts yours, built into the framework rather
+  than retrofitted, since the retrofit is a rewrite of every lab
 - The lab framework (B-111): a lab is named, versioned, reproducible, declares
   whether it is timing-class or behaviour-class, and states what it does and
   does not establish — §XIII's unit of work
@@ -486,7 +495,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 73. A milestone that can only be
+Every milestone above is subject to all 76. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.

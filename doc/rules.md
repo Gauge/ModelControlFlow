@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**73 rules in three tiers, each carrying a citation and a check.** Cite them by
+**76 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 26 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 39 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 42 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**56 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**59 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -364,7 +364,7 @@ take.
 
 ## B — Conditional
 
-Thirty-nine rules. Each holds under a stated condition, or permits something
+Forty-two rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -829,6 +829,46 @@ figures taken under different sampling profiles are not comparable (A8).
 - **Violation looks like:** watts inferred from GPU utilization, presented in
   the same column as watts that were measured.
 
+### B40 — A laboratory runs only where the capability is verified; not applicable is not zero
+A lab runs against a model only where the capability it depends on has been
+verified present (§X), and reports **not applicable** where it is verified
+absent. Four outcomes exist and are never collapsed: *measured*, *not
+applicable*, *unknown*, *failed*. A model with no tool-calling that scores 4 %
+on an agentic suite has not been measured badly — it has not been measured.
+- **Absorbs:** §3.23, §X, D2, §3.4
+- **Check:** `compiler` — a lab result is a sum type whose *not applicable* and
+  *unknown* variants carry no score and cannot be averaged (B-200).
+- **Violation looks like:** a coverage table where absent capabilities render as
+  low numbers, which turns the wrong instrument into a verdict.
+
+### B41 — MCF publishes a profile, never a score, and ranks only against a declared workflow
+There is no weighted average across laboratories, no overall rating and no
+general ranking. Within a *declared* workflow (§6.5) MCF answers plainly, with
+reasoning and runners-up; across workflows it refuses, because "which model is
+better" has no referent once quality is plural. Coverage travels with every
+answer: which laboratories informed it, and which the candidates were
+inapplicable to.
+- **Absorbs:** D2, §6.36, §3.9, §5
+- **Check:** `compiler` — no type combines results from two laboratories into a
+  scalar (B-201); `CI` — every recommendation renders its coverage (B-202).
+- **Violation looks like:** an "overall quality" column, which is the
+  leaderboard §5 refuses wearing local clothes.
+
+### B42 — A customized workload yields local results: not comparable, not contributed
+A laboratory ships a default workload and accepts a replacement. Results from
+the default are comparable and contributable; results from a replacement are
+marked non-comparable at the point of *production*, not at the point of export,
+and never enter a contribution — they are the user's content (A25) and are
+uninterpretable to anyone who cannot see the workload. The customization surface
+is a workload slot — data, schemas, labels, constraints, documents, tasks — never
+code, so B32's prohibition on a lab API is unaffected.
+- **Absorbs:** §6.37, §XIII, §3.19, A25, B32
+- **Check:** `compiler` — a custom-workload result cannot be constructed into a
+  contribution (B-203); `CI` — a lab declares what its slot accepts and refuses
+  what it cannot grade (B-204).
+- **Violation looks like:** a "share my results" button on a lab nobody else can
+  reproduce.
+
 ---
 
 ## C — Low value
@@ -918,7 +958,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 73 rules
+   is whether an existing rule already covers it. This file holds 76 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -945,7 +985,7 @@ no rule is a defect in this file.
 | §VI Hosting | B1, A16, B22 |
 | §VII Lightness | B20, B15, B4, P5, "Not adopted" |
 | §VIII Verification | B27, A13, A12, B17 |
-| §IX Agentic evaluation | B12, B13, A14 |
+| §IX Workflow evaluation | B12, B13, A14, B40 |
 | §X Capability discovery | A21, B10, B11 |
 | §XI Both surfaces | A22, B22 |
 | §XII The reference model | B28, B29, B19 |
@@ -978,7 +1018,8 @@ no rule is a defect in this file.
 | §3.16 Machine-enforced principles | B16, and the `Check` field on every rule |
 | §3.17 The laboratory | B27, A13, B18, B19, B21 |
 | §3.18 Capabilities are measured | A21, A7, B10 |
-| §3.19 The benchmark resembles the work | B13, A10 |
+| §3.19 The benchmark resembles the work | B13, A10, B42 |
+| §3.23 Measured only where capable | B40 |
 | §3.20 Publication is irreversible | A24, A16 |
 | §3.21 An imported configuration is a claim | B33 |
 | §3.22 Instrumentation is scoped | B30, B31 |
@@ -1019,6 +1060,8 @@ no rule is a defect in this file.
 | §6.33 Exclusive labs vs the endpoint | B35 |
 | §6.34 Heavy tiers vs a fast suite | B38, B19 |
 | §6.35 Power vs the observer effect | B39, B30 |
+| §6.36 Plural quality vs an answer | B41, B6 |
+| §6.37 Customizable labs | B42, B32 |
 | §7 Voids — the process | A23 |
 | §8 Amending | A23, C6, §"Amending this file" |
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
@@ -1028,6 +1071,23 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 5 — three rules for plural quality
+
+B40 encodes §3.23's joining rule between capability discovery and the
+laboratories: four outcomes, never three, with *not applicable* and *unknown*
+carrying no score and refusing to be averaged. Written as a type rather than a
+convention because the failure it prevents — an absent capability rendering as a
+low number — looks like data and reads like a verdict.
+
+B41 forbids the aggregate. There is no overall quality column, because "which
+model is better" has no referent once quality is plural; MCF ranks within a
+declared workflow and refuses to rank across them, with coverage travelling
+alongside every answer.
+
+B42 admits customized workloads and confines them: results marked
+non-comparable at the point of production rather than at export, never
+contributed, and a slot that accepts data rather than code so B32 stands.
 
 ### Version 4 — six rules for privilege, exclusivity, self-containment, time, tiers and energy
 

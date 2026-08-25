@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -191,17 +191,28 @@ telemetry in §3.3. A system that declines to watch itself in production must be
 able to *reproduce* itself on demand, and this is the trade being made
 knowingly: **rigor moves from the observatory to the laboratory.**
 
-### IX. Agentic evaluation — "benchmark models on agentic workflows"
+### IX. Workflow evaluation — "benchmark models on the work they will actually do"
 
 The quality that matters is not the quality measured by academic suites. It is
-whether a model can **do the work**: follow instructions across multiple turns,
-call tools correctly, produce parseable structured output, recover from its own
-errors, stay coherent over a long context, and know when to stop.
+whether a model can **do the work**: follow instructions, produce parseable
+structured output, retrieve from a long context, call tools correctly, recover
+from its own errors, and know when to stop.
 
 MCF measures models on tasks of that shape, in a controlled environment, with
-outcomes that can be checked. This is what makes §IV's recommendations mean
-something to someone choosing a model to actually use, rather than someone
-comparing leaderboard positions.
+outcomes that can be checked.
+
+**There is no single such shape, and this intent does not name one.** Agentic
+workflow — multi-turn, tool-calling, self-correcting — is the shape that matters
+most to this project's author and is therefore the first laboratory built. It is
+not the definition of quality, because a model that cannot call a tool is not
+thereby a bad model; it is a model that is *not applicable* to that measurement
+(§3.23). A model that extracts fields flawlessly and has never seen a tool
+schema is excellent at the work somebody actually needs done.
+
+Quality is therefore **plural**: a set of measured, separately-reported
+qualities, each produced by a laboratory built for one of them (§XIII), each run
+only where the model is capable of it (§X), and each mattering only to the
+extent the user's work resembles it (§3.19). MCF never reduces them to a score.
 
 ### X. Capability discovery — "identify and automatically configure full model capabilities"
 
@@ -392,21 +403,39 @@ daemon's dominant state is idle.
 *Still open beneath it:* which API surface is offered, the supervision contract
 when a served runtime dies, and how many models may be resident at once (§7.9).
 
-### D2 — Quality is agentic task success *(answers §7.3)*
+### D2 — Quality is plural, measured per workflow, and never reduced to a score *(answers §7.3)*
 
-Quality is measured on multi-turn, tool-using, instruction-bound tasks with
-checkable outcomes, run in a controlled environment (§IX, §3.19).
+Quality is not one quantity. It is a set of separately-measured, separately-
+reported qualities, each established by a laboratory built for one workflow
+class (§XIII), each graded by a checkable outcome (§3.19), each run only where
+the model is capable of it (§3.23), and each mattering in proportion to how much
+the user's work resembles it.
 
-This is a strong answer rather than a convenient one. It sidesteps three traps:
-contamination, because a verifiable task needs no ground-truth corpus and is
-hard to memorise; unrepresentativeness, because the benchmark now resembles the
-work; and judge dependency, because outcomes are checked rather than graded by
-another model. It also gives §IV's recommendations a meaning a user recognises —
-*this model completes the kind of task you are going to give it, this often.*
+**Why plural rather than singular.** An earlier reading made agentic task success
+*the* definition of quality. That reading fails on contact with the ecosystem:
+many models have no tool-calling capability at all, and scoring them near zero
+on an agentic suite says nothing about them except that the suite was the wrong
+instrument. Measuring a model on a workflow it was never built for produces a
+number that is precise, reproducible and meaningless — the §6.1 failure mode
+reached by a new route.
 
-*Still open beneath it:* non-agentic quality (prose, summarization, translation,
-tone) has no checkable outcome and is not covered; the suite's contents are
-§7.23; and contamination is reduced rather than eliminated.
+**What survives from the earlier answer, unchanged.** Checkable outcomes remain
+the grading mechanism everywhere, which is what sidesteps the three traps §7.3
+identified: contamination, because a verifiable task needs no ground-truth
+corpus and is hard to memorise; unrepresentativeness, because a workflow lab
+resembles the work by construction; and judge dependency, because outcomes are
+checked rather than graded by another model (B13).
+
+**What follows and is binding.** MCF publishes a *profile*, never a score. There
+is no weighted average across laboratories, no overall rating and no ranking —
+§3.9 already forbids collapsing a multi-objective frontier into one number, and
+this is the same prohibition applied to quality. Which qualities matter is the
+user's declared objective (§6.5), not MCF's opinion.
+
+*Still open beneath it:* which laboratories exist and in what order (§7.29);
+what each suite contains (§7.23); whether qualities with no checkable outcome —
+prose, tone, taste — are measured at all, declined, or admitted with a declared
+judge (§7.3 residual); and contamination remains reduced rather than eliminated.
 
 ### D3 — Both surfaces are first-class; headless is primary *(answers §7.12)*
 
@@ -1033,6 +1062,35 @@ Two consequences that keep §XIII from re-opening what D5 settled:
   one are different measurements (§3.4, §6.2) — and where the question is a
   *timing*, the profile is reduced and the observer effect is characterized
   rather than hoped away.
+
+### 3.23 A model is measured only where it is capable; not applicable is not zero
+
+§X establishes what a model can do. §XIII builds laboratories that measure how
+well it does those things. The rule that joins them: **a laboratory runs against
+a model only where the capability it depends on has been verified present, and
+reports *not applicable* everywhere else.**
+
+A model with no tool-calling capability scoring 4 % on an agentic suite has not
+been measured badly; it has not been measured at all. Publishing that 4 %
+alongside another model's 71 % is a comparison between a measurement and an
+artefact of the wrong instrument — precise, reproducible, and meaningless.
+
+The spirit:
+
+- **Four outcomes, never three.** *Measured*, *not applicable* (the capability
+  is verified absent), *unknown* (§X could not establish it), and *failed* (the
+  capability is present and the model did badly). Collapsing the middle two into
+  the last is the error this principle exists to prevent.
+- **Not applicable is information.** "This model cannot do this" is a §3.4 null
+  result and is reported as one, because a user choosing a model for extraction
+  is well served by knowing it has no vision and does not need one.
+- **No profile is complete, and completeness is not the goal.** A model measured
+  in four laboratories and inapplicable to six has a four-laboratory profile.
+  MCF states the coverage rather than implying the absent measurements were
+  losses.
+- **A user's declared workflow decides which laboratories matter**, and MCF says
+  when it has no evidence about the thing the user cares about — which is more
+  useful than evidence about six things they do not.
 
 ---
 
@@ -2049,6 +2107,60 @@ recorded as a condition, and its provenance is stated.**
 an NVIDIA board-level reading and an Apple package-level reading can ever be
 compared is genuinely unclear, and the honest default is that they cannot.
 
+### 6.36 Plural quality vs. a user who wants an answer
+
+**Tension.** D2 refuses to produce a score, and §VI asks MCF to be frictionless.
+A user facing eleven laboratories and a coverage table has been handed a
+research project, not an answer, and §3.15's "fewer decisions, not hidden ones"
+cuts against making them assemble the verdict themselves.
+
+**Resolution — MCF ranks against a *declared workflow*, never in general.**
+
+- **The user says what they do**, or accepts a visible default (§6.5). That
+  declaration selects the laboratories that matter and the weights among them.
+- **Within a declared workflow, MCF answers plainly**: this configuration, this
+  reasoning, these runners-up (§3.9). The friction §VI refuses is being forced
+  to interpret raw laboratory output, and this removes it.
+- **Across workflows, MCF refuses.** There is no general ranking, because the
+  question "which model is better" has no referent once quality is plural.
+- **Coverage travels with the answer.** A recommendation states which
+  laboratories informed it and which the candidates were inapplicable to, since
+  a confident answer resting on two of eleven measurements is a different claim
+  from one resting on nine.
+
+**Confidence: high.** This is §6.5 applied one level up: MCF refuses to invent an
+objective, and "which qualities matter to you" is part of the objective.
+
+### 6.37 Customizable laboratories vs. comparability and contribution
+
+**Tension.** §XIII invites users to customize generalized laboratories against
+their own use cases. §3.4 requires that a comparison hold everything but one
+variable still, and §XIV wants results contributed to a shared corpus. A result
+produced by a workload only one user has is comparable with nothing anyone else
+holds.
+
+**Resolution — customization is a first-class feature whose results are
+first-class and *local*.**
+
+- **A laboratory ships a default workload and accepts a replacement.** Results
+  from the default are comparable and contributable; results from a replacement
+  are neither, and are marked so at the point of production rather than at the
+  point of export.
+- **Locally, a custom result is the *most* valuable kind.** It answers "does this
+  work for what I actually do", which no shared corpus can. §3.19's whole
+  argument favours it.
+- **A custom workload is never contributed**, because it is the user's content
+  (A25) and because a score against an unseen workload is uninterpretable to
+  anyone else — it would degrade the corpus rather than enrich it.
+- **The customization surface is a workload slot, not a programming interface.**
+  A user supplies data, schemas, labels, constraints, documents, tasks. They do
+  not supply code, and B32's prohibition on a lab API is unaffected.
+
+**Confidence: high on the split, medium on the surface.** How much a workload
+can be replaced before a laboratory is measuring something other than what it
+claims is a real boundary, and the honest answer is that a lab must state what
+its workload slot may contain and refuse what it cannot grade.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -2346,7 +2458,7 @@ provenance of its own or is merely a key into somebody else's table.
 Two properties are worth wanting and may conflict: an identifier short enough to
 paste, and one self-describing enough to resolve without trusting a server.
 
-### 7.29 Which laboratories exist, and what makes one worth building
+### 7.29 Which laboratories exist, and what makes one worth building — **drafted in [labs.md](labs.md)**
 
 §XIII asks for a range of labs and §6.26 requires each to justify itself by the
 claim it enables. Neither says which labs, in what order, or what the first
@@ -2356,8 +2468,12 @@ instruction adherence, refusal and safety behaviour, quantization damage,
 prompt-format sensitivity, long-run stability, memory behaviour under pressure —
 and each is real work held to §3.17's standard.
 
-Also unresolved: what a lab is obliged to state about its own validity, and
-whether a lab may be retired once its question is answered.
+[labs.md](labs.md) drafts a catalogue — twenty candidate laboratories in four
+families, with the first three named — which converts this void from *unasked*
+to *unratified*. What remains: which are built and in what order, what each is
+obliged to state about its own validity, whether a lab may be retired once its
+question is answered, and how large a workload slot may be before a customized
+lab measures something other than what it claims (§6.37).
 
 ### 7.30 Schema versioning across contributed databases
 

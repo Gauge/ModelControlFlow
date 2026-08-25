@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
 
 **Why this document exists.** B15 admits weight only against a stated cost, B32
@@ -24,121 +24,141 @@ reasoning, so it is not re-proposed later as an oversight.
 
 | # | Proposal | Recommendation | Would land |
 |---|---|---|---|
-| P1 | [Bring your own work](#p1--bring-your-own-work) | Accept — highest value in this document | M6 |
+| P1 | [Customizable workloads](#p1--customizable-workloads) | Accept, rescoped — build the slot into the lab framework | M6 |
 | P2 | [The repro bundle](#p2--the-repro-bundle) | Accept — cheap, and §II is built on it | M5 |
 | P3 | [Pre-acquisition planning](#p3--pre-acquisition-planning) | Accept | M1 |
 | P4 | [Your own second machine](#p4--your-own-second-machine) | Accept, narrow scope | M9 |
 | P5 | [Contention diagnosis](#p5--contention-diagnosis) | Accept, small | M5 |
-| P6 | [The stop control](#p6--the-stop-control) | Accept — smallest item here, and the most missed | M2 |
+| P6 | [The stop control](#p6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 
 ---
 
-## P1 — Bring your own work
+## P1 — Customizable workloads
 
-**One line.** The user points MCF at transcripts of what they actually do, MCF
-turns them into a private, verifiable laboratory, and every subsequent
-measurement is about *their* work rather than a proxy for it.
+**One line.** A laboratory ships a default workload and accepts yours, so that
+*"does this model do the thing I need"* becomes a measurement rather than a
+guess.
 
-### The claim it enables
+### Where this comes from
 
-Today MCF can say: *this model completes tasks from suite `core` 71 % of the
-time.* §3.19 concedes what that is worth — "resemblance is not the same as
-reality, and an agentic suite is still a proxy" — and §6.28 says the same thing
-about aggregate data from other machines.
+MCF's purpose is to say which model to run (§IV), which requires measuring
+quality — the question §7.3 called the hardest in the project. §IX answered it
+with *checkable tasks*, and D2 has since made the answer plural: quality is a
+set of separately-measured properties, one per laboratory, each run only where
+the model is capable of it (§3.23).
 
-With P1, MCF can say: *this model completes tasks drawn from your own work 64 %
-of the time, and this other one 71 %.* That is not an incremental improvement in
-validity. It is the difference between a proxy and the thing itself, and it
-resolves the residual §7.3 complaint that the suite resembles the work only to
-the extent the suite does.
+That leaves one question unanswered: **where does a laboratory's workload come
+from?** §7.23 lists four sources — published benchmarks (comparable, but
+contaminated over time), authored for MCF (controlled, but unvalidated as
+representative), procedurally generated (fresh, but of uncertain realism), and
+derived from the user's own use case (*"maximally valid, ungradable without
+effort"*). The fourth is the one nobody owns, and this proposal is that fourth
+option, scoped to what it is actually worth.
 
-It also does something no aggregate can: **it is uncontaminated by
-construction.** §7.3 and §6.30 both worry that published tasks are eventually
-trained on. A task derived from a user's own transcripts, never published, is
-outside that failure mode permanently — and §7.23 already lists user-derived
-tasks as the "maximally valid, ungradable without effort" option nobody owns.
+§3.19 states the reason plainly and then states its own limit: the benchmark
+should resemble the work, and *"resemblance is not the same as reality."* A
+classification lab shipping MCF's example labels measures classification in
+general. The same lab holding your labels measures the thing you will actually
+do with the model.
+
+### What it is, and what it deliberately is not
+
+**It is a workload slot** (B42, §6.37). A laboratory declares what its slot
+accepts — documents, schemas, labels, constraints, task definitions — and the
+user supplies data. [labs.md](labs.md) names the slot for every candidate lab;
+the most valuable are L12's labels, L10's documents, L7's schemas, L13's test
+suites and L8's tool schemas.
+
+**It is not a programming interface.** No user code, no plugin, no lab API.
+B32's prohibition is unaffected, and the boundary is the difference between
+*configuring an instrument* and *building one*.
+
+**It is not session capture.** An earlier version of this proposal had MCF
+record real sessions from the serving path and convert them into tasks
+automatically. That version is refused, below.
 
 ### How it works
 
-The hard part is not capture; it is **grading**. §3.19 requires checkable
-outcomes and B13 forbids grading by another model. A raw transcript has no
-checkable outcome. So the design turns on converting transcripts into tasks that
-*do*, and being honest about the ones it cannot convert.
+**1. A lab declares its slot** in machine-readable form: what a workload item
+contains, how many are needed for a result to be reportable, and — the critical
+part — **how an item is graded**. A lab that cannot grade what you supply
+refuses it at load rather than producing an ungradable run (B42).
 
-**1. Capture.** MCF already sits in the serving path. A session may be marked
-for capture — explicitly, per session, never by default (§3.10) — recording the
-request, the tool calls, the tool results, and the final state. This lands in the
-content store, which is separate from the record and never contributable (A25).
+**2. The user supplies a workload file.** For L12, a list of examples and their
+correct labels. For L7, schemas and example inputs. For L13, specifications and
+the tests that check them. This is data authoring, and it is the honest cost of
+this feature: fifteen minutes of your effort buys a measurement about your work.
 
-**2. Classify by gradability.** Each captured session sorts into one of three:
+**3. The lab runs identically to its default configuration.** Same conditions,
+same instrumentation profile, same sandbox, same distribution reporting. Only
+the workload differs, which is exactly the isolation §3.4 wants.
 
-| Class | Definition | Gradable |
-|---|---|---|
-| **Outcome-checkable** | The session ended in a verifiable state change: a file written, a value computed, a command that exited zero, a structured output that parses against a schema | Yes, automatically |
-| **Assertion-gradable** | No state change, but the user can state a checkable property: "the answer contains this identifier", "the output is valid JSON with these keys", "it called `search` before `summarize`" | Yes, once the user writes the assertion |
-| **Ungradable** | Prose, tone, judgment, taste | No — and MCF says so rather than admitting a model judge |
-
-The third class is the honest one. §7.3 leaves open whether MCF measures
-non-agentic quality at all, and P1 does not answer it: those sessions are stored,
-counted, and reported as *"41 % of your captured work is not gradable by this
-method"*, which is itself a finding a user should know.
-
-**3. Replay as a lab.** A gradable session becomes a task in a private lab: the
-tool implementations are replaced with sandboxed recordings of what the real
-tools returned (A14 — the model under test never touches anything real), the
-starting state is reconstructed, and the assertion becomes the grade. Everything
-except the model is held still (B12).
-
-**4. Report as a distribution** (B12), with the same failure taxonomy §6.17
-requires, and with a loud statement of the corpus's size and shape — twelve tasks
-from one afternoon is not a suite, and MCF should say so rather than producing a
-confident percentage from it.
+**4. The result is marked non-comparable and local, at the point of production**
+(B42). It is not contributable — it is your content (A25), and a score against a
+workload nobody else can see is uninterpretable to them. Locally it is the most
+valuable number MCF can produce.
 
 ### What it costs
 
-- **The largest single feature in this document.** Capture, classification, an
-  assertion authoring surface, deterministic tool replay, and corpus statistics.
-- **It touches the serving path**, which §3.13 guards jealously. Capture must be
-  off by default and cost nothing when off, or B4 is violated.
-- **It puts the user's most sensitive content into MCF's custody** — §3.10's
-  central worry, made concrete. The content store's separation (A25) stops it
-  leaving, but MCF is now holding it, which raises DEC-005's retention question
-  from theoretical to urgent.
-- **Assertion authoring is user work**, and a feature that requires the user to
-  write assertions will be used by a fraction of the people who install it.
+Modest, and mostly in the framework rather than per lab. A slot declaration
+format, a loader with validation, a grading contract each lab implements
+anyway for its default workload, and the marking that keeps custom results out
+of contributions. If the lab framework (B-111) is built with a slot from the
+start, per-lab cost is close to zero; retrofitting it later is a rewrite of
+every lab.
 
 ### Collisions
 
-- **§3.10 and A25.** Captured content is user content: separate store, separate
-  retention, never contributable, never in an export. The measurements *derived*
-  from it (success rates, failure classes) are contributable; the tasks are not.
-  §6.30's outcomes-not-artifacts rule already draws exactly this line.
-- **B13, no model judges.** The assertion-gradable class exists precisely so
-  that "the user knows what right looks like" is captured as a *check* rather
-  than delegated to another model.
-- **§5, not a chat product.** Capture is an instrument for producing tasks, not
-  a conversation feature. If it grows session management, editing or sharing of
-  transcripts, it has crossed the line.
-- **A10, never train on the test.** A user's private suite is used for selection.
-  Nothing here tunes MCF's defaults toward it, and the selection/validation split
-  must extend to a private corpus.
+- **§3.4, isolation.** A custom workload is one variable changed, which is
+  clean. Comparing *your* result against *someone else's default-workload*
+  result is not, and B42's production-time marking is what prevents it.
+- **A25, §3.10.** Workload files are user content: stored in the content store,
+  never contributed, never in an export.
+- **B32, not a platform.** Data in, not code. If the slot ever acquires
+  expressions, conditionals or callbacks, it has become the lab API §5 refuses.
+- **A10, never train on the test.** A private workload is used for selection.
+  MCF's own defaults must never be tuned toward it.
+
+### What is refused, and why it is recorded
+
+**Automatic session capture.** The earlier version had MCF record flagged
+sessions in the serving path, classify them by gradability, and replay them with
+recorded tool responses. It is refused on three grounds, kept here so it is not
+re-proposed as an oversight (C6):
+
+1. **It inverts the instrument.** §XIII's laboratories are designed instruments
+   that examine one property under controlled conditions. Real captured work
+   varies instruction style, context, difficulty and tool availability at once —
+   the least isolated measurement obtainable, and the opposite of a microscope.
+2. **It puts the user's most sensitive content in MCF's custody** to produce a
+   result a fifteen-minute workload file produces without it.
+3. **The cost is disproportionate.** Capture, classification, and deterministic
+   tool replay is a large subsystem; the slot is a file format.
+
+A narrower descendant may deserve reconsideration later: showing a captured
+session *as a drafting aid* while the user authors a workload item, with no
+automatic conversion. That is P1 plus a convenience, not a different feature,
+and it should not be built until slots exist and someone finds authoring them
+tedious.
 
 ### Open questions
 
-- How many tasks constitute a usable private suite, and what does MCF say when
-  the corpus is too small? DEC-023's statistics apply, with a smaller `n`.
-- Do private tasks rot as the user's work changes? A corpus captured in March
-  measuring a model in September may be measuring the wrong thing.
-- Can a private suite be *exported* to another of the user's own machines
-  (P4) without becoming a contribution? Probably yes, and it needs saying.
+- How large may a slot be before a lab measures something other than what it
+  claims? §6.37 says the lab must state what its slot accepts; where exactly
+  that boundary sits is unresolved.
+- How few workload items make a reportable result? DEC-023's statistics, with a
+  much smaller `n`, and the honest answer may be "twelve items is not a suite
+  and MCF should say so".
+- May a workload move between the user's own machines (P4) without becoming a
+  contribution? Probably yes, and it needs saying explicitly.
 
 ### Recommendation
 
-**Accept, and place at M6** as a second laboratory once the framework (B-111)
-exists. It is the highest-value feature in this document because it converts the
-project's central hedge — *the suite is a proxy* — into a statement about the
-user's actual work, and it is the one feature no aggregate, website or
-leaderboard can ever provide.
+**Accept, at M6, and build the slot into the lab framework rather than after
+it.** The retrofit is the expensive order. Scoped this way it is a modest
+feature that delivers the whole of the original ambition — measurement of the
+work you actually do — without capture, without a content pipeline, and without
+turning a designed instrument into a recording of uncontrolled work.
 
 ---
 
@@ -146,6 +166,26 @@ leaderboard can ever provide.
 
 **One line.** One file that contains everything needed to reproduce one claim,
 so that "prove it" has an answer that is not a conversation.
+
+### Where this comes from
+
+§II is the intent that makes MCF worth trusting: *"every measurement carries the
+obligations of a measurement — a stated method, stated conditions, stated
+uncertainty, and the ability for someone else to repeat it."*
+
+Three of those four are already built. The record holds the conditions (§3.3),
+`Measurement<T>` cannot exist without its spread (A6), and every lab declares
+its method (B30). **The fourth is not built by anything on the roadmap.** There
+is no artifact MCF produces that another person can take and use to repeat a
+result. "Someone else can repeat it" is currently a property of the design
+rather than a thing you can hand over.
+
+That gap is easy to miss because §XIV looks like it fills it. It does not: a
+contribution is *many rows, stripped and aggregated, for a corpus*. A bundle is
+*one claim, complete, for a person* — including the things a contribution
+deliberately removes, like the full hardware identity and the raw samples. They
+are opposite artifacts serving opposite purposes, and the same intent asks for
+both.
 
 ### The claim it enables
 
@@ -224,6 +264,25 @@ failures.
 **One line.** Before downloading anything, answer *what of this will run here,
 and what should I expect* — across every quantization the repository offers.
 
+### Where this comes from
+
+§III commits MCF to *any* model on the hub, and §6.3 reads "any" as governing
+attempt and diagnosis rather than success: every reference reaches a defined,
+actionable outcome. The M1 mockup honours that — it says "needs 131 GiB, you
+have 24" and refuses cleanly.
+
+But it says so **after resolving the reference**, and for a large repository
+that means MCF already knows the file sizes while the user is still deciding
+whether to spend the bandwidth. The information needed to answer *"will this run
+here"* arrives before the download and is currently used only to justify a
+refusal, never to inform a choice.
+
+§XII sharpened this into a practical problem. The reference model publishes
+roughly twenty quantizations from 1-bit to BF16. Choosing among them by
+downloading candidates is tens of gigabytes per guess, and nothing in MCF
+currently helps — despite MCF holding both the arithmetic and, after M5, a
+history of what similar configurations actually did on this machine.
+
 ### The claim it enables
 
 The M1 mockup already refuses honestly *after* resolving a reference: "needs
@@ -298,6 +357,26 @@ there is local history to project from, and should not be built earlier.
 **One line.** Compare this machine with another machine you own, using the same
 suites and your own record — the only cross-machine comparison that does not
 violate §5.
+
+### Where this comes from
+
+§5 refuses cross-machine rankings, and §6.28 sharpened the reason: MCF is not
+suspicious of foreign *data*, it is suspicious of foreign *conclusions*. Numbers
+from a stranger's machine travel without their conditions and were taken by
+someone whose method you cannot inspect.
+
+Neither objection survives when both machines are yours. Same operator, same MCF
+version, same suites, conditions recorded on both, nothing to trust. The general
+prohibition exists for reasons that are absent in this specific case, which is
+what makes it worth carving out rather than an exception being smuggled in.
+
+There is a second origin, and it may matter more. §6.16 rests MCF's credibility
+on a laboratory and then admits the risk: *"a simulator built from our own
+assumptions tests our assumptions, not the world."* DEC-020 asks how much real
+hardware is needed to validate it and has no answer. A user with two machines,
+running the same scenarios under one operator, is the cheapest real-hardware
+validation datum the project can obtain — and it arrives as a side effect of a
+feature they wanted anyway.
 
 ### The claim it enables
 
@@ -377,6 +456,25 @@ controls, it becomes the thing §5 refuses.
 
 **One line.** A one-shot answer to *what is competing for this machine right
 now*, so that B24's "unattributable" verdict comes with a name attached.
+
+### Where this comes from
+
+§3.8 makes the machine part of the experimental apparatus and states the
+obligation directly: *"MCF knows the difference between 'this model is slow' and
+'this machine was busy'. When it cannot tell the difference, it says so rather
+than attributing the result."* B24 encodes that as a verdict — *unattributable*
+— and the M5 mockup shows it in action: a run invalidated because an unrelated
+process held the accelerator for four minutes.
+
+The refusal is correct and incomplete. Having been told a measurement is
+unattributable, the operator's next question is always *by what?* — and MCF is
+the only thing positioned to answer, because it was watching the machine at the
+moment it happened and nothing else was.
+
+D8 raised the stakes. A laboratory now owns the machine and may be greedy, which
+means a lab must *begin* on a quiet machine or its exclusivity guarantee is
+fiction. Something has to establish quiet before a run starts, and that
+something is this proposal.
 
 ### The claim it enables
 
@@ -501,13 +599,26 @@ mid-work is exercising the same machinery (B18).
 
 ### Recommendation
 
-**Accept at M2**, with the daemon. It is the smallest item here, the most
-frequently missed in tools of this kind, and it becomes obligatory rather than
-optional the moment §XVII lets MCF take exclusive control of hardware.
+**Accepted, at M2**, with the daemon, and registered as B-210. It is the
+smallest item here, the most frequently missed in tools of this kind, and it
+becomes obligatory rather than optional the moment §XVII lets MCF take exclusive
+control of hardware.
 
 ---
 
 ## Changelog
+
+### Version 2 — P1 rescoped, P6 accepted
+
+P1 is rewritten from the ground up. The original proposed automatic session
+capture and replay, which inverted the instrument: §XIII's laboratories examine
+one property under controlled conditions, and captured real work varies
+everything at once. Rescoped to a **workload slot** — a lab ships a default and
+accepts yours as data — it delivers the whole of the original ambition at a
+fraction of the cost and with no content pipeline. The capture version is
+recorded as refused, with its reasoning, rather than deleted.
+
+P6 accepted and registered as B-210.
 
 ### Version 1 — six features argued in full
 

@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**172 items: 39 decisions (37 open, 1 narrowed, 1 resolved) and 133 build items.** Every item cites the clause that
+**180 items: 39 decisions (36 open, 1 drafted, 1 narrowed, 1 resolved) and 141 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -73,7 +73,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
-| DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | open |
+| DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | **drafted** — [labs.md](labs.md) proposes 20 in 4 families, first three named; ordering and slot contents unratified |
 | DEC-028 | What an identifier is: content-addressed or looked up, what it binds, whether it resolves offline | §7.28 | **§XV** | M9 | open |
 | DEC-027 | What a contribution contains, and whether a machine can be de-identified without being made useless | §7.27 | **§XIV** | M9 | open |
 | DEC-030 | Schema versioning across contributed databases, and what a reader does with one it cannot fully interpret | §7.30 | §XIV | M9 | open |
@@ -151,6 +151,7 @@ first and importance second.
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | open |
+| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [P6](proposals.md#p6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | open |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
 
 ### M3 — Configure by measurement
@@ -220,7 +221,11 @@ first and importance second.
 | B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | open |
 | B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
 | B-189 | Energy laboratory: energy per token, sustained power draw and thermal behaviour under load, with fidelity stated per platform | D11, §3.9, §XIII | The lab reports joules per token with its measurement provenance, or states that this platform cannot supply it | blocked (DEC-029) |
-| B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour) and states what it does and does not establish | §XIII, §3.17, §6.26 | A lab that cannot state its class or its validity boundary fails to register | blocked (DEC-029) |
+| B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour), declares its capability gate and its workload slot, and states what it does and does not establish | §XIII, §3.17, §6.26, B40, B42 | A lab that cannot state its class, gate, slot or validity boundary fails to register | blocked (DEC-029) |
+| B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | open |
+| B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | open |
+| B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
+| B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [P1](proposals.md#p1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
@@ -237,6 +242,7 @@ first and importance second.
 | B-123 | Refusal to manufacture a distinction: "the differences here are within noise, pick either" is a supported output | §3.9 | The recommender returns it when the statistics warrant | blocked (B-106) |
 | B-124 | Construct the configuration, not merely name it: compose base model, quantization, format, context size, runtime and sampling parameters, then validate the result | §6.6, §IV | A recommended configuration is materialized and re-measured to confirm it performs as predicted | open |
 | B-125 | Anti-overfitting guard: MCF must not tune toward whatever it measures | §3.4 | The selection suite and the validation suite are structurally separate | blocked (DEC-023) |
+| B-202 | Every recommendation renders its coverage: which laboratories informed it, which the candidates were inapplicable to | B41, §6.36, §3.23 | A recommendation resting on two of eleven laboratories says so | open |
 | B-127 | The recommender refuses a field of one: a frontier with a single point is not a frontier, and a single-model recommendation is a claim MCF has no basis for | §6.23, §3.9 | A single-candidate field produces a refusal with its reasoning, never a ranking | open |
 | B-128 | Expand the reference set to the breadth DEC-026 requires before any §IV recommendation is published | §7.26, §6.23 | No generality claim is made until the set exists; results before that say so on every surface | blocked (DEC-026) |
 | B-167 | Recommender inputs are locally-originated measurements, enforced at the type level; no foreign number reaches a recommendation | B34, §6.28, §5 | A contributed or imported measurement cannot be an input to a recommendation | open |
@@ -287,6 +293,16 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 5 — plural quality, the lab catalogue, and the stop control
+
+DEC-029 moves from open to drafted: [labs.md](labs.md) proposes twenty
+laboratories in four families. Build items added for the four-outcome lab
+result, the prohibition on an aggregate score, coverage rendering, and the
+workload slot — all consequences of quality becoming plural in intent v9.
+
+B-210 registers the stop control, the first proposal accepted from
+[proposals.md](proposals.md).
 
 ### Version 4 — the structural decisions surface, and v8's work is registered
 
