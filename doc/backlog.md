@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**230 items: 49 decisions (41 open, 1 drafted, 2 narrowed, 5 resolved) and 181 build items.** Every item cites the clause that
+**233 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 184 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -68,9 +68,9 @@ implemented, only gestured at, until the decision is made.
 | DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
 | DEC-034 | The identity of a measured configuration | §7.34 | §IV, D6 | M0 | **resolved** — D17 principle, D18 sampling, D19 seed; placement declared-vs-realized, engine build is identity |
 | DEC-046 | Sampling and seeding | §7.34 | §IV, §7.6 | M0 | **resolved** — D18 sampling is identity; D19 the seed set is a condition |
-| DEC-047 | MCF's own licence, and the compatibility matrix of every engine and tool §XVI would vendor | §7.47 | **§XVI, §7.4** | M0 | open |
-| DEC-049 | What protects the record from loss: replication, snapshots, scheduled export, repairability of a corrupted database | §7.49 | **§II, D6** | M0 | open |
-| DEC-048 | What rights a contribution carries, and whether withdrawal is a promise MCF can keep | §7.48 | **§XIV** | M9 | open |
+| DEC-047 | GPL-3.0 or AGPL-3.0; and whether a proprietary accelerator runtime may be shipped under copyleft or must be a detected platform capability | §7.47 | **§XVI, §7.4** | M0 | **narrowed** — D22: copyleft, GPL-3.0 family |
+| DEC-049 | What protects the record from loss | §7.49 | §II, D6 | M0 | **resolved** — D20: rebuildable index over an append-only journal |
+| DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
@@ -132,7 +132,8 @@ first and importance second.
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | open |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | open |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | open |
-| B-300 | Record durability: snapshots or replication, a repair path for a corrupted database, and an honest statement of what is unrecoverable | §7.49, D6, §3.1 | A corrupted record is repaired, partially recovered, or declared lost — never silently truncated | blocked (DEC-049) |
+| B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
+| B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [P2](proposals.md#p2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
@@ -318,6 +319,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
+| B-310 | The share confirmation renders the contribution terms; no code path offers a retraction | B63, D21, §3.20 | Terms appear before anything is sent; no retraction affordance exists | open |
 | B-160 | Share flow: per-share, opt-in, renders the rows that leave rather than a description of them, and states that publication cannot be undone | A24, §3.20, §6.27 | No egress path exists that is not user-initiated per share; the confirmation shows the payload | open |
 | B-168 | De-identification: fields coarsened, withheld or sent per DEC-027, with MCF stating plainly what a contribution does and does not protect | §7.27, §6.27, §3.10 | A contribution's identifying content is enumerated and the honest claim about anonymity is displayed at the moment of sharing | blocked (DEC-027) |
 | B-169 | Identifier: emit one for a configuration MCF holds, and resolve one it is given | §XV, §7.28 | Round-trip on this machine: emit, wipe, resolve, and reproduce the identical configuration | blocked (DEC-028) |
@@ -345,6 +347,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 17 — durability, terms and licence
+
+DEC-049 and DEC-048 resolved by D20 and D21; DEC-047 narrowed by D22 to two
+sub-questions, one of which is sharp: whether a proprietary accelerator runtime
+may be shipped under copyleft or must be treated as a detected platform
+capability. That one can exclude an engine §7.4 would otherwise prefer.
 
 ### Version 16 — three critical gaps
 

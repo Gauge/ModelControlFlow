@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v18, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v21, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**96 rules in three tiers, each carrying a citation and a check.** Cite them by
+**98 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 61 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 63 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**79 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**81 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Sixty-one rules. Each holds under a stated condition, or permits something
+Sixty-three rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1134,6 +1134,31 @@ stopped earlier is measuring the stop.
 - **Violation looks like:** thirty identical completions reported with a spread
   of zero, which reads as remarkable consistency and is an artefact.
 
+### B62 — The journal is the record; the database is derived
+Trials are appended to a journal as they complete, and the queryable store is
+built from it and may be discarded and rebuilt. Crash-safe write settings are
+enabled rather than assumed. Where a replay cannot complete, MCF reports what
+was lost and how much rather than opening with a shorter history — the silent
+option A2 forbids, aimed at the record itself. Nothing leaves the machine
+automatically; export is an explicit act producing one portable file.
+- **Absorbs:** D20, D16, §3.1, A17
+- **Check:** `lab` — a scenario corrupts the database at every lifecycle stage
+  and asserts the record rebuilds from the journal, or reports the exact extent
+  of what it could not (B-300).
+- **Violation looks like:** a database that opens successfully with three months
+  missing.
+
+### B63 — Contribution terms are stated before collection, and withdrawal is not offered
+The terms under which a contribution is offered appear on the same screen that
+shows the rows leaving (A24), in one sentence, before anything is sent. No
+withdrawal right is offered, because §3.20 establishes that publication cannot
+be undone and an unkeepable promise is worse than an honest refusal.
+- **Absorbs:** D21, §3.20, A24, §XIV
+- **Check:** `CI` — the share confirmation renders the terms; no code path
+  offers a retraction (B-310).
+- **Violation looks like:** a "delete my contribution" button, which cannot do
+  what its label says.
+
 ---
 
 ## C — Low value
@@ -1223,7 +1248,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 96 rules
+   is whether an existing rule already covers it. This file holds 98 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1272,6 +1297,9 @@ no rule is a defect in this file.
 | D17 Identity is the configuration | B57 |
 | D18 Sampling is identity, verified | B59, B60 |
 | D19 The seed set is a condition | B61 |
+| D20 Journal, derived index | B62 |
+| D21 Contributions are dedicated | B63 |
+| D22 MCF is copyleft | — licence, not a code rule |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1353,6 +1381,17 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 13 — durability and contribution terms
+
+B62 makes the journal the record and the database a derived index that may be
+discarded — and requires that a failed replay report its extent, since a
+database opening successfully with three months missing is A2's silent failure
+aimed at the record itself.
+
+B63 puts the contribution terms on the same screen as the rows and forbids
+offering a retraction, because a "delete my contribution" button cannot do what
+its label says.
 
 ### Version 12 — the seed set
 

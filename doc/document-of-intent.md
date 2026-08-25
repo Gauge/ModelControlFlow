@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 20 |
+| **Version** | 21 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -913,6 +913,91 @@ does not get to grade itself — applied to the seed set.
 changes which tokens are produced and therefore possibly how many, and a timing
 that varies because one run stopped earlier is measuring the stop, not the
 speed.
+
+### D20 — The record is a rebuildable index over an append-only journal *(answers §7.49)*
+
+Trials are appended to a journal as they complete; the queryable database is
+**derived** from it and can be discarded and rebuilt. This is D16's principle
+applied to durability — keep the fine-grained thing, derive the coarse one — and
+it converts corruption from fatal to recoverable, because an append-only file
+survives a crash far better than a mutable index and can be replayed.
+
+- **Crash-safety is configuration, not a feature.** Write-ahead logging and
+  synchronous commit supply what a local tool needs and cost nothing to enable.
+- **Export is one command producing one portable file.** Nearly free: §XIV's
+  contribution path and P2's repro bundle both need the serialization already, so
+  one mechanism serves three purposes.
+- **No replication and nothing automatic that leaves the machine.** §3.13 refuses
+  the weight and A17 forbids the egress. What a user does with an exported file
+  is theirs.
+- **Loss is reported with its extent.** Where a replay cannot complete, MCF says
+  what was lost and how much, rather than opening quietly with a shorter history
+  — §3.1's prohibition applied to the record itself.
+
+The scale this is proportionate to: most installations host a model and
+occasionally measure one. A tool that shipped replication for that would be
+spending the user's weight on a scenario they do not have.
+
+### D21 — Contributions are dedicated, stated up front, and cannot be withdrawn *(answers §7.48)*
+
+A contribution is offered under a **public-domain dedication**, stated plainly at
+the moment of sharing, with **no withdrawal right**.
+
+**Why no withdrawal.** §3.20 already establishes that publication cannot be
+undone: once rows leave, they may be copied, indexed and retained by people who
+cannot be reached. Offering to withdraw would be a promise MCF cannot keep, and
+an unkeepable promise is worse than an honest refusal.
+
+**Why dedication rather than attribution.** Rows from thousands of machines merge
+into one corpus, and an attribution requirement that must travel with every row
+makes the aggregate nearly unusable. Dedication is the ordinary choice for this
+shape of crowd-sourced technical data.
+
+**The one hard requirement: the terms are stated before anything is collected.**
+Data gathered under unstated terms cannot be given terms retroactively, and A24
+already requires the share screen show what leaves — the terms belong on the
+same screen, in one sentence.
+
+*Still open beneath it:* whether a contributor is identified, pseudonymous or
+anonymous (§7.27, from the privacy side), and what terms the aggregate itself
+carries.
+
+### D22 — MCF is copyleft *(narrows §7.47)*
+
+MCF is distributed under the GPL-3.0 family. Spin-offs and derivative work are
+welcome and must stay open; selling remains permitted, but the source travels
+with the binary, which extinguishes the close-it-and-sell-it case the author was
+guarding against without adopting a non-commercial licence that would have
+narrowed what §XVI may vendor.
+
+**The remaining choice is GPL-3.0 versus AGPL-3.0**, and it is genuinely
+consequential for this project specifically:
+
+- **AGPL's trigger is network interaction, and MCF's core feature is serving over
+  a network.** §6.12 makes LAN exposure a supported capability, so AGPL's
+  network clause reaches further here than it would for a desktop application.
+- **What AGPL would protect is narrower than it appears.** §5 already declares
+  the aggregating website out of scope, so a competing hosted service would be
+  its own code consuming contributions rather than a fork of MCF — which AGPL
+  would not reach.
+- **AGPL carries an adoption cost.** Some organizations refuse AGPL software by
+  policy, and those organizations are much of the audience D7 imagines.
+
+On balance GPL-3.0 fits MCF's actual shape — a locally-installed tool — and AGPL
+is the right answer only if hosted forks later prove to be a real threat rather
+than a hypothetical one.
+
+**An open consequence that the licence creates, recorded because it was not
+obvious.** Copyleft interacts awkwardly with proprietary accelerator runtimes.
+Vendoring permissively-licensed components is unproblematic — the engines,
+tokenizers and format libraries MCF wants are MIT or Apache-2.0, and both are
+compatible with GPL-3.0. But vendor inference runtimes are frequently closed, and
+§XVI's instruction to *ship* rather than *link against* what MCF needs weakens
+the usual system-library argument that lets copyleft software use them. So §XVI
+and D22 may collide precisely where MCF wants to support an accelerator, and the
+resolution — treat a vendor runtime as a platform capability that is detected and
+reported absent (§3.2) rather than shipped — needs stating rather than assuming.
+Recorded in §7.47.
 
 ## 3. Principles
 
@@ -3341,86 +3426,23 @@ needs. Neither is a legal opinion; the choice deserves a real review before
 distribution, and the point of recording it here is that it must be *made* before
 §7.4 picks an engine.
 
-Still open: the choice itself, the compatibility matrix of every candidate
-engine, whether a vendored component may be swapped for a differently-licensed
-one without changing MCF's own terms, and how obligations are surfaced to a user
-who redistributes.
+**Narrowed by D22: copyleft, GPL-3.0 family.** What remains open:
 
-### 7.48 What rights a contribution carries
-
-§7.36 asks whether *model* licences constrain publishing measurements about a
-model. Nobody has asked the adjacent question: what rights the **contributor**
-grants when they send their own data (§XIV), and what they retain.
-
-Open: under what terms a contribution is offered, whether a contributor may
-withdraw one — §3.20 makes publication irreversible in practice, so a withdrawal
-right may be a promise MCF cannot keep and should not make — whether contributed
-data may be redistributed or relicensed by whatever aggregates it, and whether a
-contributor is identified, pseudonymous or anonymous, which §7.27 approaches from
-the privacy side and this approaches from the rights side.
-
-The honest constraint: this must be answered *before* anything is collected, not
-after. Data gathered under unstated terms cannot be retroactively given terms,
-and §3.20's irreversibility applies to the ambiguity as much as to the data.
-
-**Minimal candidate answer, stated so that the absence of one does not become the
-answer.** A contribution is offered under a public-domain dedication — CC0 or
-equivalent — stated plainly at the moment of sharing, with **no withdrawal
-right**, because §3.20 already establishes that publication cannot be undone and
-offering to undo it would be a promise MCF cannot keep.
-
-The reasoning: measurement rows from thousands of machines merge into one corpus,
-and an attribution requirement that must travel with each row makes the aggregate
-almost unusable. A public-domain dedication is the common choice for exactly this
-shape of crowd-sourced technical data, it matches §XIV's purpose, and it is
-simple enough to state honestly in one sentence on the share screen — which
-§3.20 requires anyway.
-
-What this does *not* settle: whether the contributor is identified,
-pseudonymous or anonymous (§7.27 approaches that from the privacy side), and
-whether the aggregate itself carries terms. Neither blocks stating the terms of
-the contribution.
-
-### 7.49 What protects the record from loss
-
-D6 notes in passing that a single file is a single point of corruption and calls
-that a §3.1 obligation. Nothing discharges it.
-
-The record *is* the science: months of measurements, every failure's context,
-every artifact's provenance, and under §3.4 none of it is reconstructible by
-re-running, because the conditions that produced it are gone. A lost record is
-not an inconvenience; it is the loss of every claim MCF has made.
-
-**Recommended answer, stated here rather than resolved.** Proportionate to what
-most installations actually do — host a model, occasionally measure one — and
-deliberately not more:
-
-- **The database is a rebuildable index over an append-only journal.** Trials are
-  appended to a log as they complete; the queryable store is derived from it.
-  This is D16's principle applied to durability — keep the fine-grained thing,
-  derive the coarse one — and it converts corruption from fatal to recoverable,
-  because an append-only file survives a crash far better than a mutable index
-  and can be replayed. It costs a write path, not a subsystem.
-- **Crash-safety is configuration, not a feature.** Write-ahead logging and
-  synchronous commit settings supply most of what a local tool needs, and cost
-  nothing to enable.
-- **Export is one command and produces one portable file.** This is nearly free:
-  §XIV's contribution path and P2's repro bundle both need serialization already,
-  so one mechanism serves three purposes.
-- **No replication, no scheduled off-machine backup, nothing automatic that
-  leaves the machine.** §3.13 refuses the weight and A17 forbids the egress. What
-  a user does with an exported file is theirs.
-- **Say what is unrecoverable.** Where a journal cannot be replayed, MCF reports
-  the loss and its extent rather than opening quietly with a shorter history —
-  which is §3.1's prohibition applied to the record itself.
-
-Still open: whether the journal is bounded and compacted, what a partial replay
-produces, and whether the record can be rebuilt in degraded form from anything
-else MCF holds.
-
-Adjacent and cheap: model weights are verified at acquisition (§3.6) and never
-again. Re-verifying a checksum before a long measurement run would catch silent
-disk corruption before it produces a garbage result rather than after.
+- **GPL-3.0 or AGPL-3.0.** D22 states the trade and leans GPL-3.0, since AGPL's
+  network trigger reaches unusually far for a tool whose core feature is serving
+  over a network, and what it would protect is narrower than it looks.
+- **Proprietary accelerator runtimes.** This is the sharp one. Permissive
+  components are fine to vendor under GPL-3.0, but vendor inference runtimes are
+  often closed, and §XVI's instruction to *ship* rather than *link against*
+  weakens the system-library argument that normally lets copyleft software use
+  them. The likely resolution is that a vendor runtime is a **platform
+  capability** — detected, and reported absent (§3.2) — rather than something MCF
+  ships, which keeps §XVI's no-errand rule intact because a driver-level
+  dependency is already carved out there. It needs deciding rather than
+  assuming, and it may exclude an engine that would otherwise be the best
+  choice under §7.4.
+- The compatibility matrix of every candidate engine, and how obligations are
+  surfaced to a user who redistributes.
 
 ### Retired voids
 
@@ -3435,6 +3457,8 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.33 | Raw samples or summaries | §6.17, §3.27 | **D16** — raw trials, always |
 | §7.46 | Sampling: constant, identity, or lab-pinned | §3.18, D13 | **D18** — identity; recommendation verified by sweep |
 | §7.34 | The identity of a measured configuration | §XIV, §XV | **D17**, **D18**, **D19** — the runnable configuration; hardware and seed are conditions |
+| §7.48 | What rights a contribution carries | §3.20, §XIV | **D21** — dedicated, stated up front, no withdrawal |
+| §7.49 | What protects the record from loss | §3.1, D6 | **D20** — a rebuildable index over an append-only journal |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
