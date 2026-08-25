@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the classification scheme every failure is filed under |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living. Drafted, awaiting ratification. |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, governed by [rules.md](rules.md) |
 | **Answers** | §7.10 · registered as DEC-010 in [backlog.md](backlog.md) |
@@ -76,6 +76,7 @@ category with no scenario is an untested claim, and the cross-check fails CI
 |---|---|
 | `artifact.missing` | Referenced and not present |
 | `artifact.corrupt` | Present and fails verification (§7.49's re-check) |
+| `artifact.unreadable` | Present and cannot be read at all |
 | `artifact.format.unsupported` | A format MCF does not read |
 | `artifact.format.malformed` | A format MCF reads, malformed |
 | `artifact.incomplete` | Some shards present, others absent |
@@ -239,6 +240,18 @@ adding the category is the fix.
   §3.17 wants the rare paths exercised, and the laboratory is where that happens.
 
 ## Changelog
+
+### Version 3 — `artifact.unreadable` added
+
+The re-verification path (B-301) needed a code for *the file is there and the
+read failed*, and there was not one. `artifact.corrupt` says *present and fails
+verification*, which is a claim about the bytes; a permission error or a media
+error is a claim about the machine, and filing one under the other would put
+the wrong attribution on it — B24's difference between "this model is slow" and
+"this machine was busy", one level down.
+
+Added with its laboratory scenario in the same change, as the extension policy
+requires (A13). 111 codes.
 
 ### Version 2 — the classification becomes types
 

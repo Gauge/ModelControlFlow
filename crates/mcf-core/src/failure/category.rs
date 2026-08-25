@@ -148,7 +148,7 @@ impl fmt::Display for Domain {
     }
 }
 
-/// What failed: the taxonomy's 110 leaf codes.
+/// What failed: the taxonomy's 111 leaf codes.
 ///
 /// `#[non_exhaustive]` because the taxonomy's extension policy makes adding a
 /// leaf cheap, and a caller outside this crate that matches exhaustively today
@@ -197,6 +197,8 @@ pub enum Category {
     ArtifactMissing,
     /// Present and fails verification (§7.49's re-check)
     ArtifactCorrupt,
+    /// Present and cannot be read at all
+    ArtifactUnreadable,
     /// A format MCF does not read
     ArtifactFormatUnsupported,
     /// A format MCF reads, malformed
@@ -381,7 +383,7 @@ pub enum Category {
 
 impl Category {
     /// Every category, in the taxonomy's own order.
-    pub const ALL: [Self; 110] = [
+    pub const ALL: [Self; 111] = [
         Self::HubUnreachable,
         Self::HubRateLimited,
         Self::HubAuthRequired,
@@ -402,6 +404,7 @@ impl Category {
         Self::TransferTls,
         Self::ArtifactMissing,
         Self::ArtifactCorrupt,
+        Self::ArtifactUnreadable,
         Self::ArtifactFormatUnsupported,
         Self::ArtifactFormatMalformed,
         Self::ArtifactIncomplete,
@@ -519,6 +522,7 @@ impl Category {
             Self::TransferTls => "transfer.tls",
             Self::ArtifactMissing => "artifact.missing",
             Self::ArtifactCorrupt => "artifact.corrupt",
+            Self::ArtifactUnreadable => "artifact.unreadable",
             Self::ArtifactFormatUnsupported => "artifact.format.unsupported",
             Self::ArtifactFormatMalformed => "artifact.format.malformed",
             Self::ArtifactIncomplete => "artifact.incomplete",
@@ -636,6 +640,7 @@ impl Category {
             Self::TransferTls => "Certificate or handshake failure",
             Self::ArtifactMissing => "Referenced and not present",
             Self::ArtifactCorrupt => "Present and fails verification (§7.49's re-check)",
+            Self::ArtifactUnreadable => "Present and cannot be read at all",
             Self::ArtifactFormatUnsupported => "A format MCF does not read",
             Self::ArtifactFormatMalformed => "A format MCF reads, malformed",
             Self::ArtifactIncomplete => "Some shards present, others absent",
@@ -759,6 +764,7 @@ impl Category {
             Self::TransferTls => Domain::Transfer,
             Self::ArtifactMissing => Domain::Artifact,
             Self::ArtifactCorrupt => Domain::Artifact,
+            Self::ArtifactUnreadable => Domain::Artifact,
             Self::ArtifactFormatUnsupported => Domain::Artifact,
             Self::ArtifactFormatMalformed => Domain::Artifact,
             Self::ArtifactIncomplete => Domain::Artifact,
