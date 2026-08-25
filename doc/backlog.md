@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**180 items: 39 decisions (36 open, 1 drafted, 1 narrowed, 1 resolved) and 141 build items.** Every item cites the clause that
+**186 items: 39 decisions (36 open, 1 drafted, 1 narrowed, 1 resolved) and 147 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -135,6 +135,7 @@ first and importance second.
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | blocked (DEC-021) |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
+| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [P3](proposals.md#p3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | open |
 | B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | open |
 
 ### M2 — Serve
@@ -200,6 +201,11 @@ first and importance second.
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
 | B-089 | Environment pinning to the tolerance DEC-006 sets | §3.12, §7.6 | Every result carries enough environment to be reproduced to the stated tolerance | blocked (DEC-006) |
 | B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
+| B-211 | Repro bundle: one file carrying a claim, its method, its full §3.4 conditions, its raw samples, the artifact's provenance chain, the §XV identifier, and a verification manifest | [P2](proposals.md#p2--the-repro-bundle), §II, A6 | A bundle is emitted for any published measurement and contains everything needed to re-run it | blocked (DEC-033) |
+| B-212 | `mcf verify <bundle>`: reproduce the configuration, re-run the method, report agreement or divergence with conditions compared side by side | [P2](proposals.md#p2--the-repro-bundle), §II, A8 | A bundle from another machine either agrees, or names which conditions differ and refuses to attribute the gap | blocked (DEC-033) |
+| B-214 | Expectation bands from local history: project throughput for unmeasured configurations from what this machine has measured, as a labelled estimate that can never sit beside a measurement unlabelled | [P3](proposals.md#p3--pre-acquisition-planning), A20, B34 | Projections are band-shaped, marked as estimates, derived from local history only, and absent where there is no history | open |
+| B-215 | Every projection is scored against the measurement that eventually replaces it, and the score is reported | [P3](proposals.md#p3--pre-acquisition-planning), §6.16, §3.4 | Prediction error is tracked over time; a projection model whose error grows is a finding about the model | open |
+| B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [P5](proposals.md#p5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | open |
 | B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | open |
 
 ### M6 — Judge
@@ -226,6 +232,8 @@ first and importance second.
 | B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | open |
 | B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
 | B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [P1](proposals.md#p1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
+| B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [P1](proposals.md#p1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
+| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [P5](proposals.md#p5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | open |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
@@ -293,6 +301,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 6 — four proposals accepted
+
+P1, P2, P3 and P5 accepted from [proposals.md](proposals.md) and registered:
+the workload slot format and its authoring documentation (M6), the repro bundle
+and its verifier (M5, both blocked on DEC-033 since a bundle of summaries cannot
+be re-analysed), pre-acquisition fitment (M1) with projection bands and their
+scoring (M5), and the contention snapshot (M5) with the quiet-machine pre-flight
+it enables (M6).
+
+B-217 is the item worth noting: D8 made laboratories exclusive, which means a
+lab must *begin* on a quiet machine or exclusivity is a claim rather than a
+condition. That turns P5 from a diagnostic convenience into a precondition for
+every lab in [labs.md](labs.md).
+
+P4 remains proposed and its recommendation is revised downward — see the
+proposal.
 
 ### Version 5 — plural quality, the lab catalogue, and the stop control
 

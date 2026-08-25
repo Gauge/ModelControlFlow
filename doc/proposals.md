@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 2 |
+| **Version** | 3 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -24,11 +24,11 @@ reasoning, so it is not re-proposed later as an oversight.
 
 | # | Proposal | Recommendation | Would land |
 |---|---|---|---|
-| P1 | [Customizable workloads](#p1--customizable-workloads) | Accept, rescoped — build the slot into the lab framework | M6 |
-| P2 | [The repro bundle](#p2--the-repro-bundle) | Accept — cheap, and §II is built on it | M5 |
-| P3 | [Pre-acquisition planning](#p3--pre-acquisition-planning) | Accept | M1 |
-| P4 | [Your own second machine](#p4--your-own-second-machine) | Accept, narrow scope | M9 |
-| P5 | [Contention diagnosis](#p5--contention-diagnosis) | Accept, small | M5 |
+| P1 | [Customizable workloads](#p1--customizable-workloads) | **Accepted** — B-204, B-205 | M6 |
+| P2 | [The repro bundle](#p2--the-repro-bundle) | **Accepted** — B-211, B-212 | M5 |
+| P3 | [Pre-acquisition planning](#p3--pre-acquisition-planning) | **Accepted** — B-213, B-214, B-215 | M1 · M5 |
+| P4 | [Your own second machine](#p4--your-own-second-machine) | **Proposed** — recommendation revised downward | M9 or never |
+| P5 | [Contention diagnosis](#p5--contention-diagnosis) | **Accepted** — B-216, B-217 | M5 · M6 |
 | P6 | [The stop control](#p6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 
 ---
@@ -444,11 +444,41 @@ serialization and §XV's identifiers. It grows expensive the moment it becomes
 - Does this need a decision about whether the two records merge or stay
   separate? Probably separate, with comparison as a read-time operation.
 
+### The honest case against
+
+This is the weakest proposal in this document, and the earlier recommendation
+over-sold it. Three problems, stated plainly:
+
+**It requires two machines.** Every other proposal here helps every user. This
+one helps users who own and maintain MCF on more than one machine, which is a
+minority of a minority.
+
+**Most of its value is obtainable by looking.** Running the same command on two
+machines and reading both outputs answers "which is faster" without any feature
+at all. What P4 adds is *rigour* — merging the records, enforcing A8's isolation
+check, naming which of the four differing conditions might explain the gap, and
+keeping the result in the record rather than in the operator's head. That is
+worth something, but it is a smaller something than "you can now compare
+machines", which is what the earlier framing implied.
+
+**Its most interesting benefit is a side effect.** The real-hardware validation
+datum for DEC-020 is genuinely valuable — but it is valuable *to the project*,
+not to the user, and building a user-facing feature primarily to generate
+validation data for ourselves is the wrong reason to spend the user's weight
+(§3.13, B15).
+
 ### Recommendation
 
-**Accept, narrowly, at M9**, alongside the exchange machinery it reuses. Guard
-the scope in writing: the moment it generalizes past machines a single operator
-controls, it becomes the thing §5 refuses.
+**Revised: defer, and consider dropping.** It is a thin convenience layer over
+machinery M9 builds anyway, so nothing is lost by waiting — and if it is never
+built, no intent goes unserved. The condition that would change this: if the
+project reaches DEC-020 and cannot answer *how much reality validates the lab*
+without it, P4 stops being a convenience and becomes the cheapest instrument
+available for the hardest open question attached to §VIII.
+
+Recorded rather than deleted (C6), so that a later "we should let people compare
+machines" arrives as a decision with this reasoning attached rather than as a
+new idea.
 
 ---
 
@@ -607,6 +637,21 @@ control of hardware.
 ---
 
 ## Changelog
+
+### Version 3 — four accepted, one revised downward
+
+P1, P2, P3 and P5 accepted and registered in [backlog.md](backlog.md). P5's
+placement changed on the way: D8 made laboratories exclusive, which means a lab
+must begin on a quiet machine or exclusivity is a claim rather than a condition,
+so the contention snapshot became a precondition for every lab rather than a
+diagnostic convenience.
+
+P4's recommendation is revised downward to *defer, and consider dropping*. It
+requires two machines, most of its value is obtainable by reading two outputs
+side by side, and its most interesting benefit — a real-hardware datum for
+DEC-020 — serves the project rather than the user, which is the wrong reason to
+spend the user's weight. The reasoning is kept rather than the proposal deleted,
+so that a later "let people compare machines" arrives as a decision.
 
 ### Version 2 — P1 rescoped, P6 accepted
 

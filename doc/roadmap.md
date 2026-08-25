@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v9 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -141,6 +141,9 @@ deliberation.
   provenance (B-025) — §6.4
 - Deliberate eviction; disk exhaustion as a decision, not a surprise (B-026, B-027)
 - The fake hub: well-formed, malformed, gated, hostile, truncated, mutating (B-028)
+- Pre-acquisition fitment (B-213, [P3](proposals.md#p3--pre-acquisition-planning)):
+  which of a repository's twenty quantizations fit here, computed from metadata
+  before a byte is fetched
 - The reference model acquired and pinned (B-019) — `unsloth/Qwen3.8-27B-GGUF`
   is a third-party requantization, so §XII's first real artifact is also §3.6's
   hard provenance case rather than its easy one
@@ -281,7 +284,14 @@ the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
 - Isolation checking, so a confounded comparison is refused (B-085)
 - Null and negative results stored and surfaced as results (B-086)
 - Partial success as a real outcome with its data intact (B-087)
-- Contention marked unattributable rather than attributed (B-088) — §3.8
+- Contention marked unattributable rather than attributed (B-088) — §3.8, and
+  the snapshot that names what it was competing with (B-216,
+  [P5](proposals.md#p5--contention-diagnosis))
+- The repro bundle and its verifier (B-211, B-212,
+  [P2](proposals.md#p2--the-repro-bundle)) — the fourth obligation of §II, which
+  nothing else on this roadmap delivers
+- Projection bands from local history, scored against the measurements that
+  replace them (B-214, B-215)
 - The quantization frontier on the reference model (B-091): one model, one
   machine, the full GGUF range — a single variable across many points, which is
   the cleanest §3.4 comparison available before a second model exists
@@ -332,7 +342,10 @@ harness §XIII would have to be retrofitted onto.
 - The four-outcome lab result (B-200) and the prohibition on an aggregate score
   (B-201) — §3.23 and D2: *not applicable* is not zero, and there is no overall
   quality column
-- The workload slot (B-204, [P1](proposals.md#p1--customizable-workloads)):
+- The quiet-machine pre-flight (B-217): a lab refuses to begin on a contended
+  machine, because D8's exclusivity is a claim rather than a condition until
+  something checks
+- The workload slot (B-204, B-205, [P1](proposals.md#p1--customizable-workloads)):
   every lab ships a default and accepts yours, built into the framework rather
   than retrofitted, since the retrofit is a rewrite of every lab
 - The lab framework (B-111): a lab is named, versioned, reproducible, declares
