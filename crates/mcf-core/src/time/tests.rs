@@ -6,8 +6,8 @@
 //! returns.
 
 use super::{
-    Clock, Duration, Instant, SimulatedClock, SystemClock, Timestamp, UtcOffset,
-    clock::{Monotonic, Simulated},
+    Clock, Duration, Instant, Monotonic, Simulated, SimulatedClock, SystemClock, Timestamp,
+    UtcOffset,
 };
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;

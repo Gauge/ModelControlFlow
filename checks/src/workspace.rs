@@ -73,6 +73,14 @@ pub const MEMBERS: &[Member] = &[
         ],
     },
     Member {
+        name: "mcf-prototype-adversarial",
+        path: "prototypes/adversarial",
+        // The §7.19 prototype (B-002). Ships nothing, and nothing depends on
+        // it; it exists to produce evidence for DEC-019, DEC-008 and DEC-004,
+        // and is superseded by B-013, B-033 and B-011.
+        depends_on: &["mcf-core"],
+    },
+    Member {
         name: "mcf-checks",
         path: "checks",
         // A development dependency, and the only one: the taxonomy agreement

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -41,6 +41,7 @@ MCF 0.1.0-m0  (revision unknown, rustc 1.98.0 (88d9e12ae 2026-08-18), target x86
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
 | [taxonomy.md](doc/taxonomy.md) | Reference | The failure classification: three axes, sixteen domains, 110 codes | You are handling an error, writing a lab scenario, or rendering a failure |
 | [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
+| [findings.md](doc/findings.md) | Record | What a prototype or a run established, with the conditions it was established under | A decision cites a run, or you are about to reopen one |
 | [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
 | [build.md](doc/build.md) | Reference | The workspace, the toolchain pin, the crate layering, and the checks that gate a change | You are about to build, add a crate, or admit a dependency |
@@ -143,6 +144,13 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 8 — evidence gets a document
+
+`doc/findings.md` added. B-002's condition is that a void be *confirmed in
+writing*, and neither the intent document nor the register was the right place
+for the evidence behind one: the first states positions, the second states
+status, and a run's conditions and readings are a third kind of thing.
 
 ### Version 7 — there is code
 

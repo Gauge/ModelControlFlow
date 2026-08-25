@@ -31,7 +31,7 @@ mod duration;
 mod instant;
 mod timestamp;
 
-pub use clock::{Clock, ClockKind, SimulatedClock, SystemClock};
+pub use clock::{Clock, ClockKind, Monotonic, Simulated, SimulatedClock, SystemClock};
 pub use duration::Duration;
 pub use instant::Instant;
 pub use timestamp::{Timestamp, UtcOffset};
