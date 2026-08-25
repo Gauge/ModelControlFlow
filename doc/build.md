@@ -65,7 +65,7 @@ reach back and weaken a type in `mcf-core`.
 | `mcf-core` | The types every rule is enforced through — failure (B-003), `Measurement` (B-005), `Provenance` (B-006), the time model (B-184), configuration identity (B-272), degradation (B-008), build identity — and the machine profiler those types describe (B-013) | — |
 | `mcf-record` | The journal, and the index derived from it (D20, D6) | `mcf-core` |
 | `mcf-standin` | MCF's own implementation of inference: the model file, the operations, the forward pass, the tokenizer (D31, B-360) | `mcf-core` |
-| `mcf-hub` | Resolving, fetching and pinning artifacts (§III) | `mcf-core`, `mcf-record` |
+| `mcf-hub` | Resolving, fetching and pinning artifacts, and the interface a source of them answers (§III) | `mcf-core`, `mcf-record` |
 | `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-hub`, `mcf-record`, `mcf-standin` |
 | `mcf-serve` | The daemon, engine adapters, the serving surface (§VI) | `mcf-core`, `mcf-record` |
 | `mcf-bench` | Measurement, and the laboratories that produce it (§II, §XIII) | `mcf-core`, `mcf-record`, `mcf-serve` |

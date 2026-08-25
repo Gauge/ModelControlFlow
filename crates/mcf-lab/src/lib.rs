@@ -36,6 +36,7 @@
 //! and reality disagree, reality is right.
 
 mod catalogue;
+pub mod hub;
 mod scenario;
 mod world;
 
