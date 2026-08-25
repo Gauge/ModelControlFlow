@@ -8,11 +8,12 @@
 # declared catalogue of mutations to a copy of the working tree and requires the
 # suite to notice each one.
 #
-# **It reports a score and does not enforce a floor.** B-186 is the floor and
-# it is a separate item: a mutant that survives is a stated gap in the suite,
-# printed by name, and the number is what B-186 will assert against. Failing
-# here on the first survivor would make the tier unrunnable before there is
-# anything to compare it with (B20's before-and-after).
+# **It refuses a score below the floor, and a score below the last one.** B-186:
+# the mutation score is budgeted like any other property (B20) and may not
+# regress silently. The floor is `MUTATION_FLOOR_PERCENT` in
+# `scripts/lib-tiers.sh`, with the reasoning; the previous score comes from the
+# tier's own stamp (B-185), which is where a run leaves what the next one
+# compares against.
 #
 # **The catalogue is written by hand, not generated.** A generator produces
 # thousands of mutants and most of them are noise — equivalent mutants, dead
@@ -39,14 +40,20 @@
 # is believed, since a machine busy with something else can miss a deadline
 # without the mutant having anything to do with it.
 #
-# Exit status: 0 when the run is meaningful (whatever the score), 2 when it is
-# not — the control was killed, the tree would not build, or cargo is absent.
+# Exit status: 0 when the score is at or above the floor and no lower than the
+# last recorded one, 1 when it is below either, 2 when the run means nothing —
+# the control was killed, a restore did not take, the tree would not build, or a
+# tool is missing.
 
 set -o errexit -o nounset -o pipefail
 
 readonly EXIT_CANNOT_CHECK=2
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-tiers.sh
+. "$root/scripts/lib-tiers.sh"
+
+readonly EXIT_BELOW_FLOOR=1
 
 fail_cannot_check() {
     printf 'cannot check: %s\n' "$1" >&2
@@ -85,6 +92,7 @@ declare -a files=(
     "crates/mcf-record/src/export.rs"
     "crates/mcf-core/src/trial/series.rs"
     "crates/mcf-core/src/failure/mod.rs"
+    "crates/mcf-core/src/self_cost.rs"
 )
 declare -a finds=(
     # A6: the reported spread is a value that was observed, at the right rank.
@@ -113,6 +121,10 @@ declare -a finds=(
     ".step_by(further.factor() as usize)"
     # A2: a failure carries the disposition it was classified with.
     "        self.disposition"
+    # A19: a reported quantity is checked against an independently known value.
+    # This entry survived when it was first tried, which is how the test that
+    # kills it came to exist.
+    "Bytes(kib.saturating_mul(1024))"
 )
 declare -a replaces=(
     ".get(rank)"
@@ -126,6 +138,7 @@ declare -a replaces=(
     "if entries.len() != stated.entries {"
     ".step_by(1)"
     "        Disposition::Degraded"
+    "Bytes(kib.saturating_mul(1000))"
 )
 
 # The control: a mutation with no semantic effect at all — addition, the other
@@ -316,5 +329,43 @@ if [ "${#survived[@]}" -gt 0 ]; then
     for entry in "${survived[@]}"; do
         printf '  %s\n' "$entry"
     done
-    printf '\nThe floor is B-186. This tier reports; it does not yet refuse.\n'
+fi
+
+# The floor, and the previous score (B-186, B20).
+if [ "$scored" -eq 0 ]; then
+    fail_cannot_check "no mutant was scored, so there is no score to judge"
+fi
+percent=$(( ${#killed[@]} * 100 / scored ))
+printf 'that is %d %%, against a floor of %d %% (B-186)\n' "$percent" "$MUTATION_FLOOR_PERCENT"
+
+previous=$(tier_stamp_field "$root" mutation detail)
+previous_percent=""
+if [ -n "$previous" ]; then
+    # The stamp holds this script's own summary line, so the two numbers come
+    # back out the way they went in.
+    previous_killed=$(printf '%s' "$previous" | awk '{ print $3 }')
+    previous_scored=$(printf '%s' "$previous" | awk '{ print $6 }')
+    if [ -n "$previous_killed" ] && [ -n "$previous_scored" ] && [ "$previous_scored" -gt 0 ]; then
+        previous_percent=$(( previous_killed * 100 / previous_scored ))
+        printf 'the last recorded run scored %d %% (%s)\n' "$previous_percent" "$previous"
+    fi
+fi
+
+refused=false
+if [ "$percent" -lt "$MUTATION_FLOOR_PERCENT" ]; then
+    printf '\nrefused: %d %% is below the floor of %d %% (B-186, B20).\n' \
+        "$percent" "$MUTATION_FLOOR_PERCENT" >&2
+    printf 'Each survivor above is a claim a rule rests on and no test checks.\n' >&2
+    refused=true
+fi
+if [ -n "$previous_percent" ] && [ "$percent" -lt "$previous_percent" ]; then
+    printf '\nrefused: %d %% is below the %d %% the last run scored (B20: no silent\n' \
+        "$percent" "$previous_percent" >&2
+    printf 'regression). A score may only be lowered deliberately, by lowering the\n' >&2
+    printf 'floor in scripts/lib-tiers.sh with the reasoning in the commit.\n' >&2
+    refused=true
+fi
+
+if [ "$refused" = true ]; then
+    exit "$EXIT_BELOW_FLOOR"
 fi

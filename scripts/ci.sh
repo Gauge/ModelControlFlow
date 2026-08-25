@@ -143,9 +143,9 @@ fi
 
 if [ "$with_mutation" = true ]; then
     step "mutation (B-191; the floor is B-186)"
-    # The score travels into the stamp, so that a later run can say what the
-    # previous one scored — which is what B-186's floor will be compared
-    # against and what B20 means by a before and an after.
+    # The script itself refuses a score below the floor or below the last one
+    # recorded (B-186); the score travels into the stamp so that the next run
+    # has a previous one to compare against, which is B20's before and after.
     mutation_output=$("$root/scripts/check-mutants.sh" | tee /dev/stderr)
     tier_stamp "$root" mutation \
         "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
@@ -183,6 +183,5 @@ report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/
 if [ "$not_run" = false ]; then
     printf '  nothing: every tier ran in this invocation\n'
 fi
-printf '  a mutation floor is not built yet: B-186\n'
 
 printf '\nci: green — the gating tiers took %ds\n' "$gating_seconds"

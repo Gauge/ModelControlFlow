@@ -23,6 +23,20 @@
 # tier stale after every documentation commit, which is how a staleness
 # mechanism gets switched off.
 
+# The mutation score this suite may not fall below (B-186, B20).
+#
+# **A hundred per cent, and the number is smaller than it sounds.** It is not a
+# claim that every conceivable mutation of MCF dies; it is a claim about the
+# eleven in `scripts/check-mutants.sh`, each of which breaks something a rule in
+# rules.md depends on. A survivor there names a rule nothing is checking, which
+# is not a percentage to be traded off — it is a gap, and B20 budgets a property
+# by refusing the trade rather than by pricing it.
+#
+# The floor is a floor and not the whole of the check: the tier also refuses a
+# score *lower than the last one recorded*, which is what B20 means by no silent
+# regression and what a floor alone cannot see once the catalogue grows.
+readonly MUTATION_FLOOR_PERCENT=100
+
 # Where the stamps live. Outside `target/`, because a tier's result is about the
 # source rather than about the build directory: `cargo clean` throws away
 # something derived, and it should not throw away the evidence that a four-

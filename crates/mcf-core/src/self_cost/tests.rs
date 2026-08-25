@@ -30,6 +30,65 @@ fn the_resident_reading_is_of_a_running_process() {
     }
 }
 
+/// The reading is in *bytes*, and the conversion is checked against something
+/// that is independently true rather than against itself (A19).
+///
+/// The kernel reports `VmRSS` in kibibytes, so the value MCF publishes is a
+/// whole number of pages — and a wrong multiplier does not divide by the page
+/// size. This exists because the mutation tier found that nothing checked it:
+/// a mutant that multiplied by 1000 instead of 1024 survived the whole suite,
+/// which meant a figure `mcf doctor` prints and B-011 asserts against D24's
+/// ceiling rested on nobody having looked (B-186's point about what a floor is
+/// for).
+#[test]
+fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
+    let Attested::Known(rss) = resident_bytes() else {
+        println!("  resident memory is not readable here, so this is not checked");
+        return;
+    };
+    let Some(page) = page_size() else {
+        println!("  the page size is not readable here, so this is not checked");
+        return;
+    };
+
+    assert_eq!(
+        rss.0 % page,
+        0,
+        "{rss} is not a whole number of {page}-byte pages, so the reading is not in bytes"
+    );
+
+    // The second route to the same quantity: `statm` counts resident pages
+    // where `status` reports kibibytes. Two files, one counter — a generous
+    // tolerance, because the two reads are not simultaneous and this half is
+    // about the *magnitude* being right, not the last page.
+    if let Some(pages) = resident_pages() {
+        let by_pages = pages.saturating_mul(page);
+        let difference = by_pages.abs_diff(rss.0);
+        assert!(
+            difference < 4 * 1024 * 1024,
+            "the two routes disagree: {rss} by status, {by_pages} bytes by statm"
+        );
+    }
+}
+
+/// The page size, from the system rather than assumed.
+fn page_size() -> Option<u64> {
+    let output = std::process::Command::new("getconf")
+        .arg("PAGESIZE")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
+/// Resident pages, by the other file that counts them.
+fn resident_pages() -> Option<u64> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    statm.split_whitespace().nth(1)?.parse().ok()
+}
+
 /// A7: an artifact that is not there is unknown, not zero. Zero would read as a
 /// binary of no size and pass every budget.
 #[test]
