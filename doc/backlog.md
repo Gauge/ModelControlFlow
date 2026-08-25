@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 32 |
+| **Version** | 33 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (37 open, 1 drafted, 2 narrowed, 10 resolved) and 194
-build items (10 done, 1 in progress, 59 blocked on a decision, 125 open).** Every item cites
+build items (11 done, 1 in progress, 58 blocked on a decision, 124 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -116,7 +116,7 @@ first and importance second.
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a taxonomy category has no producing scenario | blocked (DEC-021) |
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
-| B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | open — unblocked by D25 |
+| B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
@@ -361,6 +361,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 33 — the profiler reads the machine, and says what it could not
+
+B-013 is done. Its condition — *unknown vendors produce an `Unattributed`
+profile rather than an inference* — turned out to be the easy half; the harder
+one is D25's, and the design that satisfies both is routes rather than branches.
+
+A route declares which of D25's four readings it can supply and returns what it
+found. Two are compiled in, and neither knows about the other. Readings merge
+**without overwriting**: a route that ran second cannot replace a reading the
+first took, because that would resolve a disagreement by preferring whichever
+ran last, and A8 makes a disagreement a finding rather than a tie to break.
+Where two routes both claim a field and differ, the difference is reported
+alongside the device.
+
+The characterization verdict is computed on every read and names *which*
+readings are missing rather than only that something is. "Something is unknown"
+is the report A2 calls worse than a crash, scaled down to a field.
 
 ### Version 32 — hardware scope closes, and B-013 unblocks
 

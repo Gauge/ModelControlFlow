@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -59,7 +59,7 @@ reach back and weaken a type in `mcf-core`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `mcf-core` | The types every rule is enforced through: failure (B-003), `Measurement` (B-005), `Provenance` (B-006), the time model (B-184), build identity | — |
+| `mcf-core` | The types every rule is enforced through — failure (B-003), `Measurement` (B-005), `Provenance` (B-006), the time model (B-184), configuration identity (B-272), degradation (B-008), build identity — and the machine profiler those types describe (B-013) | — |
 | `mcf-record` | The journal, and the index derived from it (D20, D6) | `mcf-core` |
 | `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-record` |
 | `mcf-hub` | Resolving, fetching and pinning artifacts (§III) | `mcf-core`, `mcf-record` |
@@ -133,6 +133,16 @@ and migrated later. `clippy.toml` exempts tests, where an assertion that fails
 loudly is the honest outcome, and `crates/mcf-core/build.rs` carries the one
 documented opt-out: a build script has no MCF failure type available to it and
 no record to write to.
+
+**One module opts out of `unsafe_code`, and it is the one D4 predicted.**
+`crates/mcf-core/src/hardware/nvml.rs` loads the vendor's management library at
+runtime and calls it over the C ABI, because F1 established that a device's live
+state — available memory, temperature — is reachable no other way, and D25 makes
+those readings the difference between a characterized device and an
+uncharacterized one. The workspace denies `unsafe_code` as a `deny` rather than
+a `forbid` precisely so that this opt-in is possible with its reason written at
+the site. Every pointer is null-checked, every status code is checked before its
+out-parameter is read, and the library is closed on every path out.
 
 **A lint table is itself a claim, so it is checked.**
 `scripts/check-lints-bite.sh` writes each forbidden construct into a copy of
@@ -230,6 +240,14 @@ B16 counts a review check as a cost, and claiming a machine check that is really
 a keyword search would be worse than counting it.
 
 ## Changelog
+
+### Version 4 — one module opts out of `unsafe_code`
+
+Recorded in §4 when B-013 landed. The workspace's `deny` on `unsafe_code` was
+written as a `deny` rather than a `forbid` in anticipation of exactly one kind
+of work, and this is the first of it: reading an accelerator's live state over
+the C ABI. A reader who finds `#![allow(unsafe_code)]` in a tree that denies it
+should be able to find out why without reading the diff that added it.
 
 ### Version 3 — the documents are checked too
 

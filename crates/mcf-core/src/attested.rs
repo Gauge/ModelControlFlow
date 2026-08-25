@@ -50,6 +50,23 @@ impl<T> Attested<T> {
     }
 }
 
+impl<T> Default for Attested<T> {
+    /// [`Attested::Unknown`].
+    ///
+    /// This is A7 rather than an exception to it. A7 forbids filling an unknown
+    /// with a *plausible value*; the default here **is** the absence, so a
+    /// struct built with `..Default::default()` starts out claiming nothing and
+    /// every field it does not set stays unclaimed.
+    ///
+    /// It does not make a type built from these fields defaultable by
+    /// accident: `Floor` deliberately has no `Default`, so that adding a
+    /// condition to the §3.3 floor breaks every construction site, and a check
+    /// asserts it stays that way.
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
 impl<T: fmt::Display> fmt::Display for Attested<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
