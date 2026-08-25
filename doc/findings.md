@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -36,6 +36,7 @@ forward as one.
 | 6 | [F6 — The first mutant to survive (B-186)](#6--f6--the-first-mutant-to-survive-b-186) |
 | 7 | [F7 — A major page fault is the signal F5 was missing (B-193)](#7--f7--a-major-page-fault-is-the-signal-f5-was-missing-b-193) |
 | 8 | [F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)](#8--f8--how-far-a-kernel-mcf-could-maintain-is-from-a-specialists-dec-004) |
+| 9 | [F9 — What a network costs, and what the hub actually does (B-021)](#9--f9--what-a-network-costs-and-what-the-hub-actually-does-b-021) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -686,7 +687,112 @@ multiply on a specialist's kernel is 1.5 ms — and a real model's forward pass 
 thousands of those. Whatever MCF's wrapper costs, it is not where the time goes,
 which is exactly why §VII's mandate belongs there and nowhere else.
 
+## 9 · F9 — What a network costs, and what the hub actually does (B-021)
+
+**What was run.** `prototypes/transport-cost/measure.sh`, on 2026-08-25: ask
+the real hub for sixteen bytes of a real model over HTTP/1.1 and keep the
+headers, then build the smallest program that could do the same thing in three
+shapes and measure what each drags in and what it demands of a machine.
+
+**Conditions.** The machine of F1. Rust 1.98.0, release profile, `cargo vendor`
+against crates.io as it stood on the day. Everything was built outside this
+repository: measuring a candidate is not admitting one. The machine was not
+quiet — two other projects held the exclusive window — which does not matter
+here, because nothing timed is reported.
+
+**Why it was run.** Four items sat behind the same sentence: *what remains is
+the transport*. B-021 has a fetcher with no socket, B-213 has arithmetic with
+no metadata to do it on, B-024 has credentials nothing offers, B-029 has two of
+three commands. MCF's tree has no third-party code at all, the hub speaks
+HTTPS, and no decision had crossed that boundary. An argument about it would
+have been an argument about numbers nobody had.
+
+### 9.1 The hub is simpler than feared, and says more than expected
+
+Every line below is a requirement on whatever MCF writes, and every one of them
+was a guess beforehand.
+
+| What was asked | What came back | What it settles |
+|---|---|---|
+| `--http1.1` | `HTTP/1.1 206` | **No HTTP/2 is needed.** The whole h2 stack — framing, HPACK, flow control — is off the list |
+| A model file by its repository path | `302` to a signed URL on another host (`us.aws.cdn.hf.co`) | Redirects cross hosts, so a client must follow them **and must not carry the credential across** |
+| `Range: bytes=0-15` | `206 Partial Content`, `content-range: bytes 0-15/396705472` | Resumption works, and B-021's `fetch_from` has a real counterpart |
+| The same request, headers kept | `x-linked-size: 396705472`, `x-linked-etag: "ac2d977…d524a"` | The **declared size and SHA-256 arrive before the bytes do** — `Entry::declaring` is what the hub already offers |
+| The same | `x-repo-commit: 50968a44…` | The revision to pin at acquisition (B-019) is in the response to the download itself |
+| Nothing (no credential) | `x-hf-warning: unauthenticated`, `ratelimit-policy: "fixed window";"resolvers";q=3000;w=300` | Throttling is *published*, so `Behaviour::RateLimited`'s hint is real rather than invented |
+
+### 9.2 The cost is cryptography, not protocol
+
+Three shapes, each the smallest program that does the job:
+
+| Shape | Crates | Vendored tree | Not Windows | Rust source | Artifact demands |
+|---|---|---|---|---|---|
+| A client and its TLS (`ureq`) | 42 | 91 MiB | 19 MiB | 31 MiB | `libc`, `libgcc_s`, the loader |
+| TLS only (`rustls` + `ring` + roots) | 27 | 87 MiB | 15 MiB | 28 MiB | the same |
+| The machine's own TLS (`native-tls`) | 5 | under 1 MiB | — | — | **`libssl.so.3`, `libcrypto.so.3`** and the three |
+
+Three things fall out of that table.
+
+**Most of a vendored tree is Windows import libraries a Linux build never
+compiles.** 72 of the 91 MiB are `windows-sys` and its target crates. Reporting
+the headline number would have overstated the cost fivefold, which is how a
+real objection gets dismissed for the wrong reason. The honest figure for the
+TLS-only shape is **sixteen crates and 15 MiB**: `cc`, `cfg-if`,
+`find-msvc-tools`, `getrandom`, `libc`, `once_cell`, `ring`, `rustls`,
+`rustls-pki-types`, `rustls-webpki`, `shlex`, `subtle`, `untrusted`, `wasi`,
+`webpki-roots`, `zeroize`. Six of those are a few hundred lines each.
+
+**The HTTP client is the cheap half.** Fifteen crates and 4 MiB separate *TLS
+only* from *a client and its TLS*. So the question is not whether to write an
+HTTP client — that saves little and is easy to test — it is whether to vendor
+cryptography at all, and there is no third option: 9.1 says the hub answers
+nothing that is not TLS.
+
+**The cheapest thing to vendor is the one thing MCF may not ship.** The
+system-TLS shape needs almost nothing and produces a binary that demands
+`libssl.so.3` and `libcrypto.so.3` — two libraries [vendored.md](vendored.md)
+§3a does not list, whose versions differ between distributions, and which B36
+would make the user's errand. It is in the table as the control: the shape that
+fails, failing where a check can see it rather than on somebody's machine.
+
+### 9.3 What the byte counts do not show
+
+`ring` is C and assembly, so vendoring it puts **a C compiler in MCF's build**
+— visible in the tree as the `cc` crate. The artifact does not gain a
+dependency (row one of the table is the evidence), but the *build* gains a
+prerequisite, and §3.12's reproducibility claim would then rest on a second
+toolchain nothing pins. That is a cost to state rather than to discover, and
+it is the strongest argument any pure-Rust provider has.
+
+Against that: **MCF cannot write this.** The rest of the tree is code MCF could
+in principle maintain; a TLS 1.3 implementation is not, and A19 forbids
+claiming what is not tested. The alternative to vendoring cryptography is
+having no network, and having no network is the end of §III.
+
+**Verdict: the transport is TLS-shaped.** The evidence says vendor the
+cryptography and own the protocol — the same shape D32 settled for inference,
+for the same reason: delegate what specialists maintain, own the wrapper that
+has to be correct. What MCF writes is the HTTP/1.1 client, because 9.1 shows it
+is small, and because the two behaviours that matter — a redirect that must not
+carry a credential, and a resumption that must verify — are precisely the ones
+the laboratory has to be able to simulate.
+
+Admitting a component is [vendored.md](vendored.md)'s business and B-322 is
+where it happens. This finding is the stated reason B15 requires.
+
 ## Changelog
+
+### Version 9 — the transport, measured before it was argued
+
+F9 added. Four backlog items were stopped at the same sentence — *what remains
+is the transport* — and the question behind it had never been measured. It is
+now: the hub speaks HTTP/1.1, publishes the size and the SHA-256 before the
+bytes, serves ranges, and names the revision in the download's own headers.
+What MCF lacks is not a protocol, it is TLS, and the honest cost of that is
+sixteen crates and 15 MiB rather than the 91 MiB a vendored tree reports —
+because most of a vendored tree is Windows import libraries a Linux build never
+compiles. The shape that would cost nothing to vendor is the one that demands
+`libssl` of the user's machine, and it is in the finding as the control.
 
 ### Version 8 — the slope §7.4 was arguing about
 

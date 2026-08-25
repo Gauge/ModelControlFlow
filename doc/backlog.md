@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 78 |
+| **Version** | 80 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (37 done, 1 dropped, 12 in progress, 52 blocked on a decision, 96 open).** Every item cites
+**249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
+build items (37 done, 1 dropped, 13 in progress, 52 blocked on a decision, 96 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -157,7 +157,7 @@ first and importance second.
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
 | B-020 | Hub reference resolution: accept any Hugging Face reference without special-casing, and reach a defined, actionable outcome for every one | §III, §6.3 | No input produces a hang, an unclassified crash or corrupted local state — asserted by the lab's hostile-hub scenarios | **in progress** — `mcf_hub::reference`: every way a reference is written — typed, pasted, from a browser's blob or resolve URL — and a named refusal for every string that is not one, including the traversals and schemes §3.7 exists to stop. Total, offline and deterministic, so the laboratory exercises every branch without a hub. It is a fuzz target and has a scenario (A13). The hostile-hub *fixtures* the done-when names need B-028's simulated hub |
-| B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | **in progress** — `mcf_hub::fetch`: bytes accumulate in a `.partial` file and the artifact's own name is given only to something verified, so a crash at any moment leaves a state MCF can see, resume and name rather than a half-model where a whole one should be. A transfer interrupted at ninety per cent continues from there; a source that cannot resume is restarted and *said*; a file that changed under the transfer is `artifact.corrupt` and the mixture is deleted rather than kept for a later attempt to resume into. A hub declaring no digest leaves the artifact *held* rather than verified (A21). What remains is the transport: HTTPS needs a network stack no decision has admitted |
+| B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | **in progress** — `mcf_hub::fetch`: bytes accumulate in a `.partial` file and the artifact's own name is given only to something verified, so a crash at any moment leaves a state MCF can see, resume and name rather than a half-model where a whole one should be. A transfer interrupted at ninety per cent continues from there; a source that cannot resume is restarted and *said*; a file that changed under the transfer is `artifact.corrupt` and the mixture is deleted rather than kept for a later attempt to resume into. A hub declaring no digest leaves the artifact *held* rather than verified (A21). What remains is the transport, and [findings.md](findings.md) F9 has now measured what that costs: the hub speaks HTTP/1.1, serves ranges and publishes the digest before the bytes, so what MCF lacks is TLS rather than a protocol. B-322 is the admission |
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **in progress** — `mcf_hub::credentials`: a secret that redacts itself (`Debug` shows a digest fingerprint, there is no `Display`, and the only way to the bytes is `reveal`), an origin that is part of the conditions, and an `Identity` a source answers with — anonymous, offered, or an account the hub confirmed. The three refusals are written once, so every source says the same thing and each names the repository, what MCF was to the hub, and the one thing to do next. *Held deliberately* is structural rather than documented: nothing reads the environment, `sightings` is handed a way to look, and `checks/tests/a_credential_is_never_picked_up.rs` holds the line across the whole workspace. What remains: the surface an operator supplies one through, which is B-029, and the real client that offers it, which is B-021's transport |
@@ -165,6 +165,7 @@ first and importance second.
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
+| B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **in progress** — the half MCF writes is written. `mcf_hub::http` turns a request into bytes and bytes into an answer and touches no socket, which is what makes the behaviours that matter testable without a network: a redirect answers *where to go and whether the credential goes with it*, and it does not go to another origin — the hub's own redirect is to a signed CDN URL, and a client that forwarded the token would hand it to a host the network named. Every claim a response makes is checked before it is believed, every input reaches a classified outcome, and the header block has a stated ceiling rather than *whatever arrives*. It is a fuzz target, and the tier immediately found a source contradicting itself in two numbers a fetcher acts on. What remains is the socket: F9's stated reason, [vendored.md](vendored.md)'s row, and the vendored tree |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
@@ -366,6 +367,62 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 80 — the half of the transport that needs no socket
+
+B-322 in progress. The client is written and it opens nothing: it turns a
+request into bytes and bytes into an answer, which is precisely what makes the
+two behaviours worth being careful about testable without a network.
+
+The first is the one that would have been a defect nobody noticed. The hub
+redirects a download to a signed URL on a CDN, so a client that forwarded the
+`Authorization` header would hand an operator's token to whatever host the
+answer named — and the answer comes from the network, which §3.7 says is
+untrusted. So a redirect here does not return a destination; it returns *where
+to go and whether the credential goes with it*, and the second half is a
+decision at a call site rather than an oversight in a library. A host that
+merely ends with the hub's name is a different host, and there is a test with
+`evil-huggingface.co` in it saying so.
+
+The second is that nothing a source claims is believed before it is read: a
+length that is not a number, a range that starts somewhere other than where the
+transfer resumed, a header block that never ends. Each is a refusal naming what
+was seen, bounded so that a source cannot write a megabyte into MCF's own
+record.
+
+It went into the fuzz tier immediately and the tier immediately earned its
+place: it found `Content-Range: bytes 0-15/2` accepted — a source contradicting
+itself in the two numbers a fetcher acts on, the total it plans against and the
+span it appends. Refused now, with the case written into the unit tier beside
+the ones a person thought of.
+
+### Version 79 — the transport, measured before it was argued
+
+B-322 added, and it is the item four others were waiting on. B-021, B-213,
+B-024 and B-029 all end with the same sentence — *what remains is the
+transport* — and behind that sentence was an argument nobody had numbers for.
+[findings.md](findings.md) F9 has them now.
+
+The hub turns out to be simpler than feared and to say more than expected: it
+answers HTTP/1.1, redirects to a signed URL on another host, serves ranges, and
+publishes the file's size, its SHA-256 and the repository revision in the
+headers of the download itself. So the parts B-021 and B-019 need are already
+there for the asking.
+
+What MCF lacks is not a protocol but TLS, and the cost of that is sixteen
+crates and 15 MiB — not the 91 MiB a vendored tree reports, because most of a
+vendored tree is Windows import libraries a Linux build never compiles. The
+alternative that costs almost nothing to vendor is the one that makes the
+binary demand `libssl` of the user's machine, and F9 keeps it as the control:
+the shape that fails, failing where a check can see it.
+
+So the item is written the way D32 wrote the engine question. Delegate what
+specialists maintain — nobody at MCF is going to write a TLS 1.3
+implementation, and A19 forbids claiming what is not tested. Own the wrapper
+that has to be correct: the client is small, and the two behaviours that matter
+— a redirect that must not carry a credential across hosts, and a resumption
+that must verify — are exactly the ones the laboratory has to be able to
+simulate.
 
 ### Version 78 — models live on this machine, and leave it
 
