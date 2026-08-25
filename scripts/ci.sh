@@ -1,34 +1,48 @@
 #!/usr/bin/env bash
 #
-# The gating tier: the one command that fails the build (B38, B19).
+# The tiered suite: the one command that fails the build, and the flags that
+# run the heavy tiers (B38, B19, B-191).
 #
-# B38 tiers the suite, and this is the fast hermetic tier that gates every
-# change. Three properties are obligations rather than preferences:
+# B38 tiers the suite. The fast hermetic tier gates every change; the heavy
+# tiers run on a schedule and before a release. Three properties of the gating
+# tier are obligations rather than preferences:
 #
 #   * **Hermetic.** No network, no accelerator, no model file. `--offline` is
 #     passed rather than merely expected, so a check that starts reaching out
 #     fails here instead of on somebody's aeroplane (B19).
 #   * **Fast.** It is run on every change, and a gating tier people skip is a
-#     gating tier that does not gate.
+#     gating tier that does not gate. Its elapsed time is printed at the end:
+#     no D24 figure is a suite time, so there is nothing to assert against, and
+#     a tier that grew slowly would otherwise become one people skip without
+#     anybody noticing when.
 #   * **Complete about what it covers.** A check that could not run reports as
 #     such and fails, because "did not run" read as "passed" is the silent
 #     failure A2 forbids, aimed at the suite (B38).
 #
-# The heavy tiers B38 also requires — load, soak, mutation, the full fault
-# matrix — do not exist yet; B-191 builds them and B-185 publishes their ages.
-# They are named here so their absence is visible rather than assumed.
+# The tiers are declared in `checks/src/tiers.rs`, and
+# `checks/tests/tiers_conform.rs` fails the build when this script and that
+# declaration disagree — when a tier's command is missing here, when a flag is
+# not accepted, or when a tier that did not run is not reported as such.
 #
-# Usage:  scripts/ci.sh [--with-reproducibility] [--with-budget]
+# Usage:  scripts/ci.sh [--with-<tier>]...  |  scripts/ci.sh --all
 #
-# Two of B38's scheduled tiers live behind those flags. Neither is optional;
-# both are scheduled rather than gating, because each takes minutes and a gate
-# people skip does not gate.
-#
-#   --with-reproducibility  (B-001) rebuilds the workspace twice under the
-#                           release profile and compares the bytes.
+#   --with-fuzz             (B-191) mutates known-good input into the four
+#                           parsers that read bytes MCF did not write.
+#   --with-load             (B-191) MCF's claims under many callers at once.
+#   --with-soak             (B-191) drift over a long run: descriptors,
+#                           directories, memory. One thread: the readings are
+#                           properties of the process.
 #   --with-budget           (B-011) measures MCF's own cost against D24's
 #                           ceilings, in release, because those ceilings are
 #                           about the artifact MCF ships (§3.4, D27).
+#   --with-mutation         (B-191, B-186) breaks the code deliberately and
+#                           reports what the suite failed to notice.
+#   --with-reproducibility  (B-001) rebuilds the workspace twice under the
+#                           release profile and compares the bytes.
+#   --all                   all of the above. Minutes, not seconds.
+#
+# None of them is optional; all of them are scheduled rather than gating,
+# because each takes minutes and a gate people skip does not gate.
 
 set -o errexit -o nounset -o pipefail
 
@@ -37,13 +51,30 @@ cd "$root"
 
 with_reproducibility=false
 with_budget=false
+with_fuzz=false
+with_load=false
+with_soak=false
+with_mutation=false
 for argument in "$@"; do
     case "$argument" in
         --with-reproducibility) with_reproducibility=true ;;
         --with-budget) with_budget=true ;;
+        --with-fuzz) with_fuzz=true ;;
+        --with-load) with_load=true ;;
+        --with-soak) with_soak=true ;;
+        --with-mutation) with_mutation=true ;;
+        --all)
+            with_reproducibility=true
+            with_budget=true
+            with_fuzz=true
+            with_load=true
+            with_soak=true
+            with_mutation=true
+            ;;
         *)
             printf 'ci: no such option: %s\n' "$argument" >&2
-            printf 'usage: scripts/ci.sh [--with-reproducibility] [--with-budget]\n' >&2
+            printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
+            printf '[--with-budget] [--with-mutation] [--with-reproducibility] | --all\n' >&2
             exit 2
             ;;
     esac
@@ -56,13 +87,19 @@ command -v cargo >/dev/null 2>&1 || {
 
 step() { printf '\n=== %s\n' "$1"; }
 
+started=$SECONDS
+
 step "formatting"
 cargo fmt --all -- --check
 
 step "lints (deny warnings)"
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 
-step "unit and integration tests"
+# The five gating tiers are one command: unit, property, functional,
+# whole-system and fault-injection all live in the workspace's own test
+# targets, and separating them here would only make it possible to run some of
+# them and believe the suite had run.
+step "the gating tiers: unit, property, functional, whole-system, fault-injection"
 cargo test --workspace --locked --offline
 
 step "the lint denials bite (B-003)"
@@ -71,6 +108,25 @@ step "the lint denials bite (B-003)"
 step "documentation builds"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline >/dev/null
 
+gating_seconds=$((SECONDS - started))
+
+if [ "$with_fuzz" = true ]; then
+    step "fuzz (B-191)"
+    cargo test --locked --offline -p mcf-checks --test fuzz -- --ignored --nocapture
+fi
+
+if [ "$with_load" = true ]; then
+    step "load (B-191)"
+    cargo test --locked --offline -p mcf-checks --test load -- --ignored --nocapture
+fi
+
+if [ "$with_soak" = true ]; then
+    # One thread: resident memory and open descriptors are properties of the
+    # process, so a second test allocating in parallel reads as growth.
+    step "soak (B-191)"
+    cargo test --locked --offline -p mcf-checks --test soak -- --ignored --nocapture --test-threads=1
+fi
+
 if [ "$with_budget" = true ]; then
     step "performance budget (B-011, release profile)"
     # Release, because D24's ceilings are about the shipped artifact and a debug
@@ -78,19 +134,38 @@ if [ "$with_budget" = true ]; then
     cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
 fi
 
+if [ "$with_mutation" = true ]; then
+    step "mutation (B-191; the floor is B-186)"
+    "$root/scripts/check-mutants.sh"
+fi
+
 if [ "$with_reproducibility" = true ]; then
     step "reproducible build (B-001)"
     "$root/scripts/check-reproducible-build.sh"
-else
-    printf '\n=== not run in this tier\n'
-    printf '  reproducible build (B-001)  — scripts/ci.sh --with-reproducibility\n'
 fi
 
-if [ "$with_budget" = false ]; then
-    printf '  performance budget (B-011) — scripts/ci.sh --with-budget\n'
+# What did not run in this invocation, named. B38: a tier that has not run is
+# reported as such, never assumed green.
+printf '\n=== not run in this tier\n'
+not_run=false
+report_absent() {
+    # `if` rather than `[ … ] && printf`: under `errexit` a false test at the
+    # end of a && list is a failing command, and a script that exited 1 because
+    # every tier *did* run would be a gate that punished thoroughness.
+    if [ "$1" = false ]; then
+        printf '  %s\n' "$2"
+        not_run=true
+    fi
+}
+report_absent "$with_fuzz" "fuzz (B-191)                 — scripts/ci.sh --with-fuzz"
+report_absent "$with_load" "load (B-191)                 — scripts/ci.sh --with-load"
+report_absent "$with_soak" "soak (B-191)                 — scripts/ci.sh --with-soak"
+report_absent "$with_budget" "performance budget (B-011)   — scripts/ci.sh --with-budget"
+report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh --with-mutation"
+report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"
+if [ "$not_run" = false ]; then
+    printf '  nothing: every tier ran in this invocation\n'
 fi
+printf '  tier ages and a mutation floor are not built yet: B-185, B-186\n'
 
-printf '  load, soak, mutation, fault matrix (B38) — not built yet: B-191, B-185, B-186\n'
-
-
-printf '\nci: green\n'
+printf '\nci: green — the gating tiers took %ds\n' "$gating_seconds"
