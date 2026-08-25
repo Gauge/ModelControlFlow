@@ -168,7 +168,33 @@ fn the_offset_is_stated_and_never_folded_into_the_moment() {
 fn an_unread_offset_is_unknown_and_not_utc() {
     let rendered = Timestamp::from_utc_nanos(0, Attested::Unknown).to_string();
     assert!(rendered.contains("local offset unknown"), "{rendered}");
-    assert_eq!(Timestamp::now().offset(), Attested::Unknown);
+}
+
+/// B-352: the offset is read where the platform publishes one, and stays
+/// unknown where it does not — never `+00:00`, which is a real offset most
+/// machines do not have.
+#[test]
+fn the_offset_is_read_where_the_platform_publishes_one() {
+    let now = Timestamp::now();
+    match now.offset() {
+        Attested::Known(offset) => {
+            assert!(offset.seconds_east().abs() <= 14 * 3600);
+            assert!(!now.to_string().contains("local offset unknown"), "{now}");
+        }
+        // A machine with no zone file. The honest answer, and the one B19
+        // requires the suite to tolerate.
+        Attested::Unknown => assert!(now.to_string().contains("local offset unknown")),
+    }
+}
+
+/// D9: reading the offset does not move the moment. The two are stored side by
+/// side, and `Timestamp` has no arithmetic that could fold one into the other.
+#[test]
+fn reading_the_offset_does_not_move_the_moment() {
+    let now = Timestamp::now();
+    let without = Timestamp::from_utc_nanos(now.utc_nanos(), Attested::Unknown);
+    assert_eq!(now.utc_nanos(), without.utc_nanos());
+    assert_eq!(now.civil_utc(), without.civil_utc());
 }
 
 /// An offset outside any real zone has no representation.

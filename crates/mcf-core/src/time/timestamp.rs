@@ -74,14 +74,14 @@ impl Timestamp {
         Self { utc_nanos, offset }
     }
 
-    /// The moment the system clock reports now.
+    /// The moment the system clock reports now, with the local offset where
+    /// the platform publishes one.
     ///
-    /// The local offset is [`Attested::Unknown`]. Reading it requires a
-    /// platform call the standard library does not offer, and B15 admits
-    /// weight only against a stated cost — so until the condition-capture path
-    /// (B-007) admits one, MCF records that it does not know rather than
-    /// writing `+00:00` and being wrong for most of the world (A7). B-352
-    /// registers the work.
+    /// D9 wants the offset stored *alongside* the moment rather than folded
+    /// into it, and [`Timestamp`] has no arithmetic that could fold it. Where
+    /// the platform publishes no zone, or the moment lies beyond what the zone
+    /// file records, the offset is [`Attested::Unknown`] — never `+00:00`,
+    /// which is a real offset most machines do not have (A7, B-352).
     #[must_use]
     pub fn now() -> Self {
         let since_epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
@@ -99,9 +99,16 @@ impl Timestamp {
                 i128::try_from(before.duration().as_nanos()).map_or(i128::MIN, |nanos| -nanos)
             }
         };
-        Self {
+        // The moment first, then the offset in force *at* that moment — which
+        // is what makes an old record legible as the place it was taken rather
+        // than as wherever the machine is now.
+        let moment = Self {
             utc_nanos,
             offset: Attested::Unknown,
+        };
+        Self {
+            utc_nanos,
+            offset: super::zone::offset_at(moment),
         }
     }
 

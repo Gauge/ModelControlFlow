@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 55 |
+| **Version** | 56 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
-build items (28 done, 1 dropped, 4 in progress, 54 blocked on a decision, 110 open).** Every item cites
+build items (29 done, 1 dropped, 4 in progress, 54 blocked on a decision, 109 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -125,7 +125,7 @@ first and importance second.
 | B-353 | The letter `P` names two things — the five precedence rules in [rules.md](rules.md) and the seven proposals in [proposals.md](proposals.md) — and C5 forbids renumbering either | C5, [README.md](../README.md) citation style | A `P` citation resolves unambiguously, by deprecating one namespace in favour of a named successor or by a stated convention the conformance check enforces | **done** — the proposals are `PR<n>`, `P<n>` there is deprecated in favour of the named successor digit for digit, and the conformance check now resolves `P` against the precedence rules alone |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | **done** — `checks/tests/reference_model_neutrality.rs`: no shipped source and no test names the publisher or the family, documentation excepted; a third check fails if the documents stop naming it, so the first two cannot pass by the reference model quietly ceasing to exist |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **done** — `mcf_core::time` keeps the two apart by type; `mcf_record::journal::anomaly` notices a moved calendar by holding *both* clocks across an append, and two scenarios produce a backward step and a forward jump with a disposition of `invalidated`. The entry is still written: what an anomaly invalidates is what was measured across it, not the event |
-| B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | open |
+| B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | **done** — `mcf_core::time::zone` reads the zone file in safe Rust, resolves the offset in force *at the moment* rather than now, and is unknown beyond what the file records rather than extrapolating. Checked against what the system itself reports |
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
@@ -365,6 +365,31 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 56 — the offset is read, at the moment it applies to
+
+B-352 is done. Three choices in it are worth recording.
+
+**The zone file is parsed rather than a platform call made.** The obvious route
+is the C library's `localtime_r`, whose `tm_gmtoff` is a widely-implemented
+extension rather than POSIX — which means declaring another platform's
+`struct tm` by hand, in `unsafe`, for a field nobody standardized. The zone file
+is a published, stable format MCF can read in safe Rust and test against a value
+the machine itself can be asked for. B15 admits weight against a stated cost,
+and this is the cheaper side.
+
+**The offset is the one in force at the moment, not the one in force now.** That
+is the whole reason a zone file has transitions, and getting it wrong would make
+an old record legible as the wrong place.
+
+**A moment beyond the file is unknown rather than extrapolated.** A version 2
+footer carries a POSIX rule for the far future and this reader does not evaluate
+it, so it says so instead of guessing — and never `+00:00`, which is a real
+offset most machines do not have (A7).
+
+The check is A19's: the system's own `date +%z` is an independent
+implementation of the same question reading the same file, so agreement is
+evidence and disagreement would be a defect here.
 
 ### Version 55 — the vendoring register, before there is anything to vendor
 
