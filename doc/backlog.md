@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 53 |
+| **Version** | 54 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
-build items (26 done, 1 dropped, 4 in progress, 54 blocked on a decision, 112 open).** Every item cites
+build items (27 done, 1 dropped, 4 in progress, 54 blocked on a decision, 111 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -141,7 +141,7 @@ first and importance second.
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
 | B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
-| B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [PR2](proposals.md#pr2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
+| B-302 | Export: one command, one portable file, sharing the serialization §XIV and PR2 need | D20, §XIV, [PR2](proposals.md#pr2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | **done** — `mcf export --to <path>` and `mcf_record::export`: one format, three kinds differing only in what is *selected*; entries carried verbatim so a digest does not depend on the version that wrote it; a damaged bundle is refused rather than read as a smaller one |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
@@ -365,6 +365,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 54 — one portable file, and a citation the rename missed
+
+B-302 is done. Its condition was the interesting part — *one mechanism serves
+export, contribution and repro bundles* — and what it forced is that the three
+differ in **what is selected** and never in how it is written. Three
+serializations of the same evidence would eventually disagree about what the
+evidence was.
+
+Two decisions inside it. **Entries are carried verbatim rather than
+re-encoded**, because a bundle whose digest depended on the version that wrote
+it would defeat §XV. And **a damaged bundle is refused rather than read short**:
+a bundle with rows missing looks exactly like a smaller bundle, and reading it
+as one is B62's silent shortening arriving by post. A bundle from a
+*legitimately* incomplete journal is a different thing and says so.
+
+**This row also carried the defect B-353 was about.** Its title cited the repro
+bundle as a bare `P2`, which the rename to `PR<n>` missed because only the link
+beside it was rewritten — and the conformance check passed, because a bare `P2`
+now resolves as the *precedence rule* P2. That is a citation that silently
+started meaning something else, which is precisely what having one namespace per
+letter was supposed to prevent, and the check could not see it because both
+readings are valid identifiers. A sweep found this was the only one.
 
 ### Version 53 — the prohibition lands before the thing it constrains
 
