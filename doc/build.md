@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -281,21 +281,38 @@ and a debug binary is a different one — larger, slower, different code. The
 profile is a condition (§3.4), so a debug run reports every figure and asserts
 none. That is why the flag runs `cargo test --release`.
 
-**It asserts only on a quiet machine.** B35 holds that a timing taken under
-contention measures the contention, so the tier reads the machine's one-minute
-load, records it as a condition, and marks the run **unattributable** rather
-than failing it. A budget cannot be violated by somebody else's compile. The
-threshold — half a core's capacity free per core — is a judgement rather than a
-reading, and it is stated in `mcf_core::hardware::QUIET_PER_CORE` with its
-reasoning so that a reader can disagree with it.
+**It asserts only on a clean reading.** B35 holds that a timing taken under
+contention measures the contention, so each measurement is bracketed by a
+`Watch` — the kernel's per-thread accounting of how long the measuring thread
+was runnable and waiting — and a reading with too much queuing in it is marked
+**unattributable** rather than failing. A budget cannot be violated by somebody
+else's compile.
+
+This is a question about the *reading* and not about the machine, which is why
+it works on a workstation somebody is using: the machine being busy elsewhere
+does not contaminate a measurement that was not queuing behind it. MCF tried the
+machine-wide load average first and `findings.md` F3 records why that failed —
+a one-minute average read 0.29 both on a quiet machine and under thirty-two
+spinning processes, because it cannot answer a question about a
+140-millisecond measurement. The threshold is one part in a hundred, stated in
+`mcf_core::hardware::TOLERATED_DELAY_PPM`, and the two states F3 measured are
+three orders of magnitude apart.
 
 An unattributable run is not a pass either. Nothing yet enforces that, because
 tier ages are B-185 and a stored baseline is what a regression is measured
-against; until those exist the tier reports and does not gate. B20's
-before-and-after is not yet possible and the tier says so rather than implying
-otherwise.
+against; until those exist the tier asserts each figure and does not compare it
+with a previous one. B20's before-and-after is not yet possible and the tier says
+so rather than implying otherwise.
 
 ## Changelog
+
+### Version 8 — the budget tier judges the reading, not the machine
+
+§9 rewritten where it described the attributability signal. The load average
+answered a question about the machine on a time scale that could not see the
+measurement; the per-thread scheduling delay answers the question that was
+actually being asked. `findings.md` F3 holds the evidence, including the defect
+in the first implementation of the replacement.
 
 ### Version 7 — the gating tier's time is reported
 

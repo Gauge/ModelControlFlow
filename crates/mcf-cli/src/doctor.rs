@@ -20,7 +20,7 @@ use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::capture;
 use mcf_core::failure::Failure;
-use mcf_core::hardware::{self, Attributability, Characterization, Machine};
+use mcf_core::hardware::{Attributability, Characterization, Machine, Watch};
 use mcf_core::measurement::{Bytes, Conditions, Measurement};
 use mcf_core::self_cost::{
     self, Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, RECORD_WRITE, RESIDENT_IDLE, Verdict,
@@ -92,12 +92,6 @@ pub(crate) struct Report {
     pub(crate) recorded: Recorded,
     /// What the laboratory demonstrated here.
     pub(crate) laboratory: Laboratory,
-    /// Whether the machine was quiet enough for a timing to be about MCF.
-    ///
-    /// D27: a figure taken on a busy machine is *unattributable* rather than
-    /// passing or failing, because B35 holds that a timing under contention
-    /// measures the contention.
-    pub(crate) attributability: Attributability,
 }
 
 /// What MCF costs on this machine, against D24.
@@ -109,6 +103,15 @@ pub(crate) struct Cost {
     /// a machine with nowhere to write a record has an unmeasured observation
     /// cost, not a free one (A7).
     pub(crate) record_write: Option<Measurement<Duration<Monotonic>>>,
+    /// Whether the cold-start reading was about MCF (D30).
+    pub(crate) cold_start_attributability: Attributability,
+    /// Whether the record-write reading was.
+    ///
+    /// Separate verdicts, because D30 makes attributability a property of a
+    /// *reading* rather than of the machine: two measurements taken seconds
+    /// apart can differ, and reporting one verdict for both would be reporting
+    /// the machine again.
+    pub(crate) record_write_attributability: Attributability,
     /// The binary's size on disk.
     pub(crate) artifact: Attested<Bytes>,
     /// This process's resident set.
@@ -155,7 +158,6 @@ pub(crate) fn run(record: bool) -> Report {
     let mcf = BuildIdentity::current();
     let at = Timestamp::now();
     let machine = Machine::read();
-    let attributability = hardware::attributability(machine.processor.cores);
     let cost = measure_cost(&machine, record);
     let laboratory = Laboratory::run();
     let body = body(&machine, &cost, &laboratory);
@@ -171,7 +173,6 @@ pub(crate) fn run(record: bool) -> Report {
         cost,
         recorded,
         laboratory,
-        attributability,
     }
 }
 
@@ -203,14 +204,20 @@ fn measure_cost(machine: &Machine, recording: bool) -> Cost {
     // D27 reads an event-class figure at the 99th percentile over at least a
     // hundred trials, because a p99 of twenty is the maximum wearing a
     // percentile's name.
+    // D30: the verdict brackets the measurement, because the question is
+    // whether *this reading* was affected rather than whether the machine is
+    // busy.
+    let watch = Watch::start();
     let cold_start = binary.as_deref().and_then(|path| {
         self_cost::cold_start(path, &["--version"], EVENT_TRIALS, conditions.clone())
     });
+    let cold_start_attributability = watch.finish();
 
     // What MCF's own observation costs, measured beside the real record so it
     // sees the same filesystem. Not measured when nothing is being recorded:
     // the reduced arm's observation cost is zero by construction, and
     // measuring it would be measuring the probe.
+    let watch = Watch::start();
     let record_write = if recording {
         mcf_record::journal::default_path().and_then(|path| {
             mcf_record::overhead::record_write_cost(&path, conditions.clone())
@@ -220,12 +227,15 @@ fn measure_cost(machine: &Machine, recording: bool) -> Cost {
     } else {
         None
     };
+    let record_write_attributability = watch.finish();
 
     Cost {
         artifact,
         resident: self_cost::resident_bytes(),
         cold_start,
         record_write,
+        cold_start_attributability,
+        record_write_attributability,
         conditions,
     }
 }
@@ -392,7 +402,6 @@ impl core::fmt::Display for Report {
         }
 
         writeln!(f, "\nWHAT MCF COSTS HERE")?;
-        writeln!(f, "  {}", self.attributability)?;
         write!(f, "{}", Self::cost_line(&CORE_BINARY, self.cost.artifact))?;
         write!(f, "{}", Self::cost_line(&RESIDENT_IDLE, self.cost.resident))?;
         match &self.cost.cold_start {
@@ -406,7 +415,7 @@ impl core::fmt::Display for Report {
                     COLD_START.name,
                     COLD_START.statistic(measured),
                     measured.n(),
-                    COLD_START.read_measurement(measured, &self.attributability),
+                    COLD_START.read_measurement(measured, &self.cost.cold_start_attributability),
                 )?;
                 writeln!(
                     f,
@@ -415,6 +424,7 @@ impl core::fmt::Display for Report {
                     measured.spread().median,
                     COLD_START.ceiling,
                 )?;
+                writeln!(f, "  {:<38} {}", "", self.cost.cold_start_attributability)?;
             }
             None => writeln!(f, "  {:<38} {}", COLD_START.name, Verdict::NotMeasured)?,
         }
@@ -426,13 +436,15 @@ impl core::fmt::Display for Report {
                     RECORD_WRITE.name,
                     RECORD_WRITE.statistic(measured),
                     measured.n(),
-                    RECORD_WRITE.read_measurement(measured, &self.attributability),
+                    RECORD_WRITE
+                        .read_measurement(measured, &self.cost.record_write_attributability),
                 )?;
                 writeln!(
                     f,
                     "  {:<38} this is what MCF's own observation costs (§3.8, B3)",
                     "",
                 )?;
+                writeln!(f, "  {:<38} {}", "", self.cost.record_write_attributability)?;
             }
             None => writeln!(f, "  {:<38} {}", RECORD_WRITE.name, Verdict::NotMeasured)?,
         }
@@ -740,15 +752,22 @@ mod tests {
         }
     }
 
-    /// B35 and D27: a figure taken on a busy machine is unattributable rather
-    /// than passing or failing, and the report says which the machine was.
+    /// D30: the verdict is about the *reading*, and each reading gets its own.
+    /// A single verdict for the whole report would be reporting the machine
+    /// again, which F3 established the load average already does badly.
     #[test]
-    fn the_report_says_whether_the_machine_was_quiet() {
-        let rendered = run(false).render();
-        assert!(
-            rendered.contains("attributable") || rendered.contains("UNATTRIBUTABLE"),
-            "{rendered}"
-        );
+    fn each_reading_gets_its_own_verdict() {
+        let report = run(false);
+        let rendered = report.render();
+        if report.cost.cold_start.is_some() {
+            assert!(
+                rendered.contains("attributable") || rendered.contains("UNATTRIBUTABLE"),
+                "{rendered}"
+            );
+        }
+        // The two are answered separately even when they agree.
+        let _ = &report.cost.record_write_attributability;
+        let _ = &report.cost.cold_start_attributability;
     }
 
     /// §3.8 and B-012: what MCF's own observation costs is measured and

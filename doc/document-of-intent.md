@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 32 |
+| **Version** | 33 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,54 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D30 — Attributability is a property of a reading, not of the machine *(answers §7.51)*
+
+§7.51 recorded a deadlock: D27 refuses to count an unattributable run as a pass,
+B38 refuses a release on a stale tier, and F2 found a machine — the one MCF is
+written on — where every event-class reading was unattributable all day. Both
+rules are right. What was wrong was the question they were being asked.
+
+**The question is not "is this machine busy". It is "was this reading
+affected".** B24 already says so — *MCF knows the difference between "this model
+is slow" and "this machine was busy"* — and a machine-wide average cannot answer
+a question about one measurement. The kernel accounts, per thread, how long it
+was *runnable but not running*. Read across a measurement, that is the
+contamination, measured directly, on the measurement's own time scale.
+
+**The evidence, and it is not close.** F3 in [findings.md](findings.md) records
+it. A hundred cold starts quiet and the same hundred under thirty-two spinning
+processes:
+
+| | quiet | under load |
+|---|---|---|
+| p99 | 360 µs | 4 822 µs |
+| one-minute load average | 0.29 | **0.29** |
+| scheduling delay, as a fraction of the measurement | 0.019 % | **11.1 %** |
+
+The load average is not a coarse signal. It is a signal on the wrong time
+scale: a one-minute average cannot say anything about a 140-millisecond
+measurement, and it read identically in both. It is still recorded as a
+condition (§3.4) because it says something true about the machine, and it
+decides nothing.
+
+**The threshold is one part in a hundred**, stated rather than hidden. Below it,
+at most a hundredth of a measured interval was queuing, which cannot move a p99
+by the factors F1, F2 and F3 observed; above it, the contention is in the
+reading and the reading is about the contention. Three orders of magnitude
+separate the two states F3 measured, so the threshold is not a fine judgement.
+
+**What this dissolves.** The deadlock. A budget is asserted whenever the reading
+itself was clean, which on an ordinary workstation is most of the time even
+while its owner is working — the machine being busy elsewhere does not
+contaminate a measurement that was not queuing behind it. MCF does not need to
+ask for the machine, and B35's exclusive window stays what it is for: measuring
+*models*, where the contention competes for the accelerator rather than for a
+scheduler slot.
+
+**What it costs.** The reading is per-platform. A platform that does not account
+for it cannot assert a timing budget and says so, which is D29's *attempted,
+uncharacterized* applied to a capability rather than to a device.
 
 ### D29 — Every platform is in scope; Linux is first, and the rest say what they cannot do *(answers §7.35)*
 
@@ -3770,37 +3818,6 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
-### 7.51 How a budget is asserted on a machine somebody is using
-
-D27 settles which reading a budget figure is about and makes an unattributable
-run neither a pass nor a failure. F2 in [findings.md](findings.md) is what
-happens next: on the machine MCF is written on, the one-minute load sits in the
-forties all day from the operator's other work, so **every event-class figure is
-unattributable and none can ever be asserted**. The state-class figures are
-unaffected — a binary's size does not care what else is running — and this is
-therefore a gap in one half rather than a broken mechanism.
-
-There is no threshold that fixes it. The machine really is busy, a timing taken
-on it really does measure the contention (B35), and loosening the rule until the
-reading passed would be choosing the answer.
-
-A second, smaller question came out of the same run. Attributability currently
-gates any figure read from a measurement, event-class or state-class alike,
-because D27 stated the rule about the *run*. A fresh process's resident set is
-affected by memory pressure and not by CPU contention, so it is not obvious that
-a machine-wide load average should gate it — and a binary's size, read as a
-single value rather than a measurement, is not gated at all today. Whether the
-rule should distinguish is part of this void.
-
-Open: whether MCF's own budgets should open the exclusive window B35 already
-defines for measuring models (B-181, B-182, M6); whether a different signal —
-the measured process's own scheduling delay rather than the machine's load —
-answers *was this reading affected* better than a machine-wide average does; and
-what a scheduled tier reports on a CI runner that is never quiet, given that
-B38 refuses a release on a stale tier and D27 refuses to count an unattributable
-run as refreshing one. Those two rules are correct separately and together they
-can deadlock, which is the part that has to be decided rather than discovered.
-
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3822,6 +3839,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.8 | Hardware scope | §3.8, §3.4 | **D25** — characterized means MCF can read the device's live state |
 | §7.21 | What the laboratory simulates | §3.17, §6.16, A13 | **D26** — the taxonomy, observed rather than caused; the clock is structural |
 | §7.35 | Host platform scope | §I, A14, §XVI | **D29** — all platforms, Linux first; three states, per-platform artifacts |
+| §7.51 | Asserting a budget on a used machine | B24, B35, D27 | **D30** — attributability is a property of a reading, measured as scheduling delay |
 | §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
@@ -3857,6 +3875,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 33 — attributability is about the reading, not the machine
+
+D30 answers §7.51, and dissolves it rather than trading it off. The deadlock was
+real — D27 will not count an unattributable run as a pass, B38 will not release
+on a stale tier, and F2 found a machine where every reading was unattributable
+all day — but both rules were being asked the wrong question. B24 had already
+said which question was right: MCF knows the difference between a slow model and
+a busy machine, and *that* is a statement about a reading.
+
+The evidence is in F3 and it is not close. Over the same work, the one-minute
+load average read 0.29 quiet and 0.29 under thirty-two spinning processes, while
+the scheduling delay read 0.019 % and 11.1 %. The load average is not a coarse
+signal; it is a signal on the wrong time scale, and it now decides nothing while
+remaining a recorded condition.
+
+What this dissolves is the deadlock: a budget is asserted whenever the reading
+itself was clean, which on a workstation is most of the time even while its owner
+is working. MCF does not have to ask for the machine, and B35's exclusive window
+stays what it was written for — measuring models, where the contention is for the
+accelerator rather than for a scheduler slot.
 
 ### Version 32 — every platform, with Linux first
 
