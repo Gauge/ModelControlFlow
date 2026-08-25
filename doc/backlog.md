@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 31 |
+| **Version** | 32 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**244 items: 50 decisions (38 open, 1 drafted, 2 narrowed, 9 resolved) and 194
+**244 items: 50 decisions (37 open, 1 drafted, 2 narrowed, 10 resolved) and 194
 build items (10 done, 1 in progress, 59 blocked on a decision, 125 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -47,7 +47,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | open |
 | DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
-| DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | open |
+| DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
 | DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | open — [findings.md](findings.md) F1 shows one run whose cold-start median passes and whose p95 fails by a factor of two |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
@@ -116,7 +116,7 @@ first and importance second.
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a taxonomy category has no producing scenario | blocked (DEC-021) |
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
-| B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | blocked (DEC-008) |
+| B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | open — unblocked by D25 |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
@@ -361,6 +361,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 32 — hardware scope closes, and B-013 unblocks
+
+DEC-008 is resolved by D25, on the evidence F1 produced rather than on an
+argument. The boundary between *characterized* and *attempted,
+uncharacterized* is what MCF can read about a device at measurement time, not
+which vendor made it — because §3.8's requirement is about telling a slow model
+from a busy machine, and a vendor list answers nothing about that.
+
+B-013 unblocks. Its own condition already anticipated the answer — *unknown
+vendors produce an `Unattributed` profile rather than an inference* — and D25
+supplies what the other side of that line means.
 
 ### Version 31 — the prototype ran, and it moved two decisions
 
