@@ -35,6 +35,7 @@ use mcf_checks::scratch::Scratch;
 use mcf_core::attested::Attested;
 use mcf_core::digest::Sha256;
 use mcf_core::time::{Timestamp, Zone};
+use mcf_hub::reference;
 use mcf_record::export;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
@@ -303,6 +304,80 @@ fn zone_corpus() -> Vec<Vec<u8>> {
         }
     }
     corpus
+}
+
+/// A reference is the *first* untrusted input MCF meets: a string a person
+/// typed or a script produced, which becomes paths and network requests
+/// (B-020, §3.7, B7).
+///
+/// What is asserted is B7's commitment exactly: every input reaches a defined
+/// outcome. No panic, and nothing accepted that would escape a directory when
+/// joined to a path — which is the whole reason the syntax is where a hostile
+/// reference is stopped.
+#[test]
+#[ignore = "the fuzz tier is scheduled: scripts/ci.sh --with-fuzz (B38)"]
+fn the_reference_parser_reaches_an_outcome_for_every_string() {
+    let (seed, cases) = announce("reference::parse");
+    let reached = Reached::new("reference::parse");
+    let corpus: Vec<Vec<u8>> = [
+        "owner/name",
+        "owner/name@main:file.gguf",
+        "https://huggingface.co/owner/name/resolve/main/model.gguf",
+        "hf.co/owner/name",
+    ]
+    .iter()
+    .map(|written| written.as_bytes().to_vec())
+    .collect();
+
+    let verdict = check_from(seed, cases, |rng| {
+        let original = rng.pick(&corpus).ok_or("the corpus is not empty")?.clone();
+        let damaged = mutate(rng, &original);
+        let Ok(written) = std::str::from_utf8(&damaged) else {
+            // Not a case: a reference arrives as text, and what is not text was
+            // refused before it got here.
+            return Ok(());
+        };
+        let Ok(parsed) = reference::parse(written) else {
+            reached.refused();
+            return Ok(());
+        };
+        reached.accepted();
+
+        // Nothing accepted may escape a directory, because everything accepted
+        // is about to be joined to one.
+        for piece in [
+            parsed.owner.as_str(),
+            parsed.name.as_str(),
+            parsed.revision.as_deref().unwrap_or("x"),
+        ] {
+            if piece.is_empty() || piece.contains('/') || piece.contains('\\') || piece == ".." {
+                return Err(format!(
+                    "accepted {written:?}, whose {piece:?} would escape a directory"
+                ));
+            }
+        }
+        if let Some(file) = parsed.file.as_deref()
+            && (file.starts_with('/')
+                || file.split('/').any(|part| part == ".." || part.is_empty()))
+        {
+            return Err(format!("accepted {written:?} naming the file {file:?}"));
+        }
+
+        // And what was accepted renders back to itself, so a reference in a
+        // record is one somebody can type again (C5's habit).
+        let rendered = parsed.to_string();
+        match reference::parse(&rendered) {
+            Ok(again) if again == parsed => Ok(()),
+            Ok(again) => Err(format!(
+                "{written:?} read as {parsed}, rendered as {rendered}, and read back as {again}"
+            )),
+            Err(failure) => Err(format!(
+                "{written:?} read as {parsed}, rendered as {rendered}, which will not read: {failure}"
+            )),
+        }
+    });
+    reached.report();
+    assert_held(&verdict);
 }
 
 /// A model file is the largest untrusted input MCF will ever read, and the one

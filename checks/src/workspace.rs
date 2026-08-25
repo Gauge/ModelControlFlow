@@ -51,18 +51,18 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
-        name: "mcf-lab",
-        path: "crates/mcf-lab",
-        // `mcf-standin` because A13 requires a scenario for every category
-        // MCF's code constructs, and the model-file reader constructs two of
-        // them: a scenario that produced them by hand would be a scenario about
-        // a mock (D26).
-        depends_on: &["mcf-core", "mcf-record", "mcf-standin"],
-    },
-    Member {
         name: "mcf-hub",
         path: "crates/mcf-hub",
         depends_on: &["mcf-core", "mcf-record"],
+    },
+    Member {
+        name: "mcf-lab",
+        path: "crates/mcf-lab",
+        // `mcf-standin` and `mcf-hub` because A13 requires a scenario for
+        // every category MCF's code constructs, and the model-file reader and
+        // the reference parser construct four between them: a scenario that
+        // produced them by hand would be a scenario about a mock (D26).
+        depends_on: &["mcf-core", "mcf-hub", "mcf-record", "mcf-standin"],
     },
     Member {
         name: "mcf-serve",
@@ -110,7 +110,13 @@ pub const MEMBERS: &[Member] = &[
         // `mcf_lab::CATALOGUE`, and the property, fuzz, load and soak tiers
         // examine `mcf_record`'s codec and journal and `mcf_standin`'s model
         // reader. Nothing this crate builds ships.
-        depends_on: &["mcf-core", "mcf-lab", "mcf-record", "mcf-standin"],
+        depends_on: &[
+            "mcf-core",
+            "mcf-hub",
+            "mcf-lab",
+            "mcf-record",
+            "mcf-standin",
+        ],
     },
 ];
 

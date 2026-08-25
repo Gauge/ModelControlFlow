@@ -21,6 +21,7 @@ mod artifact;
 mod engine;
 mod environment;
 mod exchange;
+mod hub;
 mod record;
 mod time;
 
@@ -33,6 +34,7 @@ pub const CATALOGUE: &[Scenario] = &[
     artifact::FORMAT_MALFORMED,
     artifact::PROVENANCE_INCOMPLETE,
     engine::NO_VENDORED_ENGINE,
+    hub::REFERENCE_IS_NOT_ONE,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,

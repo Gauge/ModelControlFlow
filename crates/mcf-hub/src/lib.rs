@@ -7,5 +7,11 @@
 //! an unread licence or an absent checksum recorded as unknown rather than
 //! guessed.
 //!
-//! Empty at M0 beyond this statement of what it is for: M0 explicitly contains
-//! no network fetch. B-020 onward fill it at M1.
+//! **What is here, and what it deliberately is not.** [`reference`](mod@reference) reads what a
+//! user named — every way of writing it, and a defined outcome for every string
+//! — without asking anybody anything. Resolving a reference against the hub,
+//! fetching bytes and verifying them is B-021 onward and needs the network,
+//! which M0 explicitly does not have; keeping the two apart is what lets the
+//! laboratory exercise every branch of the first without a hub (D26).
+
+pub mod reference;
