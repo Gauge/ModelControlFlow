@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 29 |
+| **Version** | 30 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
-build items (8 done, 1 in progress, 59 blocked on a decision, 127 open).** Every item cites
+build items (9 done, 1 in progress, 59 blocked on a decision, 126 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -137,7 +137,7 @@ first and importance second.
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | open |
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | open |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | open |
-| B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | open |
+| B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
 | B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
 | B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [P2](proposals.md#p2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
@@ -360,6 +360,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 30 — identity is exact, and the floor grows by one
+
+B-272 is done. Two consequences worth recording.
+
+**Sampling parameters are carried as thousandths, not as floating point.** D18
+puts them in the identity, and identity is an equality question — `0.7` is not
+a value a binary float holds exactly, so two configurations that should be the
+same would depend on how each was parsed, and `Eq` and `Hash` are not available
+on `f64` at all. Thousandths are exact, orderable and hashable, at a resolution
+finer than any publisher states.
+
+**The condition floor grows from eight questions to nine.** Intent v16 splits
+placement: the declared intent is identity and the realized layout is a
+condition, because the realized layout names hardware and B57 keeps hardware out
+of identity. §3.3 says the floor never shrinks; it does not say it never grows,
+and "everything that varies and could change a result" plainly reaches which
+devices held which layers. The floor is a struct literal with no `Default`, so
+the ninth field broke every construction site — which is the friction the design
+intends.
 
 ### Version 29 — the estimate is a band, and it does not meet a measurement
 

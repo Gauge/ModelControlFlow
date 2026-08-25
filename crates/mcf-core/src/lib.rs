@@ -15,10 +15,12 @@
 //! is B37 expressed as two types that do not meet; and [`attested`], which is
 //! A7 expressed as a variant; and [`provenance`], which is §3.6 expressed as a
 //! field nothing can omit; and [`degradation`], which is A5 expressed as a
-//! type with no way back.
+//! type with no way back; and [`configuration`], which is B57 expressed as a
+//! struct with nowhere to put a machine.
 
 pub mod attested;
 pub mod build_identity;
+pub mod configuration;
 pub mod degradation;
 pub mod failure;
 pub mod measurement;
