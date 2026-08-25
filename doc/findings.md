@@ -431,7 +431,9 @@ suite to make either.
 **What was run.** `scripts/ci.sh --all`, the first invocation that runs every
 tier B-191 declares. The budget tier failed: cold start, p99 of 100 trials,
 **252 ms** against D24's ceiling of 100 ms, and the reading was judged
-*attributable* rather than refused.
+*attributable* rather than refused. A later run of the same command, on the same
+machine, passed the same figure at 0.58 ms — which is 5.3 below, and is the part
+that settles it.
 
 **Conditions.** The same machine as F1–F4. The one condition that turned out to
 matter is one nothing was recording: **the repository lives on
@@ -480,7 +482,28 @@ is a gap in the instrument rather than in the number: B-193 registers both
 halves, and until it is built the cold-start figure means *what a cold start
 costs on this storage*, which is worth knowing and is not what D24 asked for.
 
-### 5.3 What this does not change
+### 5.3 The same tier passes and fails on the same machine within the hour
+
+Run again twenty minutes later, with the mount's page cache warm from the run
+before it, the tier was green:
+
+| Run | Cold start, median | Cold start, p99 | Verdict |
+|---|---|---|---|
+| After the mutation tier had written ~10 GB to tmpfs | 152.2 ms | 252.4 ms | **over** |
+| With the mount's cache warm | 0.370 ms | 0.582 ms | within |
+
+A factor of four hundred on the median, between two runs of one command on one
+machine, with every condition MCF records identical. That is the sharper form of
+what 5.2 says: the figure is not merely mis-attributed, it is **not
+reproducible**, and P3
+puts reproducibility above convenience. A budget that passes or fails according
+to what else has been evicting the page cache is not yet a budget.
+
+It is also why the fix is two halves rather than one. Recording the filesystem
+would make the two runs legibly different; only the attributability half makes
+the second one *refuse* rather than report.
+
+### 5.4 What this does not change
 
 The tier is behaving as designed in the part it can see: the state-class figures
 assert, the reading was reported with its statistic and its sample count, and
@@ -496,8 +519,9 @@ the outcome a tier exists to produce.
 ### Version 5 — a budget that measures the filesystem
 
 F5 added. The first `--all` run failed its cold-start budget by a factor of
-two and a half, and the cause is a `fuseblk` mount whose p99 page-fault
-service time is a thousand times its median. Two things follow and both are
+two and a half and a later one passed it by two orders of magnitude, on one
+machine within the hour; the cause is a `fuseblk` mount whose p99 page-fault
+service time is a thousand times its median when its cache is cold. Two things follow and both are
 registered as B-193: the storage an artifact is executed from is a condition
 nothing records, and D30's signal watches the measuring thread, which for a
 cold start is the one thing not doing the work.
