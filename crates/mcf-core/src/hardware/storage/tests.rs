@@ -105,11 +105,19 @@ fn the_fault_counter_only_ever_grows() {
     );
 }
 
-/// It counts *children*, and a warm, tiny child costs nothing — which is what
-/// makes a non-zero delta mean something.
+/// It counts *children*, and a warm, tiny child usually costs nothing — but
+/// this is a **process-wide** counter, so what it reports here includes every
+/// child every other test on every other thread is spawning at the same time.
+///
+/// The observation is printed and not asserted, and that is F4.3's lesson
+/// arriving for the third time: a reading that belongs to the process cannot be
+/// taken beside another test. The assertion this test looks like it should make
+/// lives in `scripts/check-fault-signal.sh`, which owns its process and watches
+/// the counter go from zero to exactly one per spawn.
 #[test]
-fn spawning_a_trivial_child_costs_no_major_faults() {
+fn what_a_warm_child_costs_is_observed_here_and_asserted_elsewhere() {
     let Attested::Known(before) = children_major_faults() else {
+        println!("  this platform does not account for children's faults");
         return;
     };
     for _ in 0..20 {
@@ -118,9 +126,9 @@ fn spawning_a_trivial_child_costs_no_major_faults() {
     let Attested::Known(after) = children_major_faults() else {
         return;
     };
-    assert_eq!(
-        after, before,
-        "twenty spawns of a warm, tiny binary took major faults, so this signal cannot \
-         distinguish a cold artifact from an ordinary one"
+    println!(
+        "  twenty warm, tiny children and whatever else this process was running: \
+         {} major faults",
+        after.saturating_sub(before)
     );
 }

@@ -86,3 +86,41 @@ fn licence() -> String {
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
 }
+
+/// The artifact states the licence, and the list it states matches the register.
+///
+/// B-330's second half: *the licence is stated in the artifact and surfaced to a
+/// redistributor*. A redistributor has a binary, not a repository, so the
+/// question is what `mcf licence` says — and what it says about vendored
+/// components has to be what `doc/vendored.md` records, or a component's terms
+/// reach the person with the obligation in only one of the two places.
+#[test]
+fn the_artifact_states_the_licence_and_agrees_with_the_register() {
+    let source = std::fs::read_to_string(
+        mcf_checks::workspace::root().join("crates/mcf-cli/src/licence.rs"),
+    )
+    .expect("the licence surface is in the tree");
+
+    assert!(
+        source.contains("GPL-3.0-only"),
+        "the artifact's licence surface does not name the licence D28 chose"
+    );
+    assert!(
+        source.contains("include_str!(\"../../../LICENSE\")"),
+        "the artifact refers to the licence rather than carrying it, so a binary \
+         conveyed on its own carries no copy (GPL-3.0 §4)"
+    );
+
+    // The declared component list, and the register's admitted section. Both
+    // are empty today and the check is written for the day they are not.
+    let declared_empty = source.contains("pub(crate) const VENDORED: &[Component] = &[];");
+    let register = std::fs::read_to_string(mcf_checks::workspace::root().join("doc/vendored.md"))
+        .expect("doc/vendored.md is readable");
+    let register_empty = register.contains("*Nothing.* No component has been admitted");
+
+    assert_eq!(
+        declared_empty, register_empty,
+        "the artifact and doc/vendored.md disagree about whether anything is vendored \
+         (B-330): one of them lists components and the other does not"
+    );
+}
