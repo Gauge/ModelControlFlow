@@ -64,6 +64,20 @@ pub enum Behaviour {
     DeceptiveMetadata,
     /// Publishes an archive whose members climb out of the extraction root.
     HostileArchive,
+    /// Serves in pieces: every transfer stops after this many bytes, wherever
+    /// it started.
+    ///
+    /// Distinct from [`Behaviour::Truncates`], which always stops at the same
+    /// absolute offset and therefore never finishes. This one is a source that
+    /// keeps stopping and can be carried across by resuming — which is B-021's
+    /// case, and the only way to test that a resumption actually continues
+    /// rather than starting again.
+    StopsEvery {
+        /// How many bytes each attempt delivers.
+        bytes: u64,
+    },
+    /// Cannot continue from an offset at all, which is a real kind of hub.
+    NeverResumes,
 }
 
 /// One repository this hub publishes.
@@ -75,6 +89,12 @@ pub struct Repository {
     pub declared_licence: Option<String>,
     /// The revision it answers with.
     pub revision: Option<String>,
+    /// Whether its listings carry a digest per file.
+    ///
+    /// Both states are real: a hub that publishes plain files often declares
+    /// none, and an artifact acquired from one is *held* rather than verified
+    /// (A21). A scenario picks which world it is testing.
+    pub declares_digests: bool,
     /// How it misbehaves.
     pub behaviour: Behaviour,
 }
@@ -89,8 +109,17 @@ impl Repository {
             files,
             declared_licence: Some("apache-2.0".to_owned()),
             revision: Some("main".to_owned()),
+            declares_digests: true,
             behaviour: Behaviour::WellFormed,
         }
+    }
+
+    /// The same, declaring no digest — which is what a hub publishing plain
+    /// files usually does, and the state an acquisition cannot verify against.
+    #[must_use]
+    pub fn without_digests(mut self) -> Self {
+        self.declares_digests = false;
+        self
     }
 
     /// The same, misbehaving in a stated way.
@@ -186,6 +215,8 @@ impl FakeHub {
             Behaviour::NeedsCredentials
             | Behaviour::WellFormed
             | Behaviour::Truncates { .. }
+            | Behaviour::StopsEvery { .. }
+            | Behaviour::NeverResumes
             | Behaviour::ServesDifferentBytes
             | Behaviour::DeceptiveMetadata
             | Behaviour::HostileArchive => None,
@@ -215,12 +246,17 @@ impl Source for FakeHub {
         let entries = repository
             .files
             .iter()
-            .map(|(path, bytes)| Entry {
-                path: path.clone(),
-                // The size it *claims*. `ServesDifferentBytes` is the case where
-                // this and what arrives disagree, which is the whole point of
-                // keeping the claim and the measurement apart (A21).
-                size: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+            .map(|(path, bytes)| {
+                // The size and digest it *claims*. `ServesDifferentBytes` is the
+                // case where these and what arrives disagree, which is the whole
+                // point of keeping the claim and the measurement apart (A21).
+                let entry =
+                    Entry::new(path.clone(), u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+                if repository.declares_digests {
+                    entry.declaring(sha256(bytes).hex())
+                } else {
+                    entry
+                }
             })
             .collect();
 
@@ -256,12 +292,17 @@ impl Source for FakeHub {
             // The same length, different content: the file changed under the
             // fetch, which a size check cannot see and a digest can.
             Behaviour::ServesDifferentBytes => bytes.iter().map(|byte| byte ^ 0xFF).collect(),
+            Behaviour::StopsEvery { bytes: limit } => bytes
+                .get(..usize::try_from(*limit).unwrap_or(0).min(bytes.len()))
+                .unwrap_or(&[])
+                .to_vec(),
             Behaviour::WellFormed
             | Behaviour::NeedsCredentials
             | Behaviour::Gated
             | Behaviour::RateLimited { .. }
             | Behaviour::DeceptiveMetadata
-            | Behaviour::HostileArchive => bytes.clone(),
+            | Behaviour::HostileArchive
+            | Behaviour::NeverResumes => bytes.clone(),
         };
 
         if let Some(parent) = into.parent()
@@ -279,6 +320,96 @@ impl Source for FakeHub {
                 Category::ArtifactUnreadable,
                 Attribution::Machine,
                 "the fetched bytes could not be written",
+                &error.to_string(),
+            ));
+        }
+
+        Ok(Fetched {
+            bytes: u64::try_from(served.len()).unwrap_or(u64::MAX),
+            digest: sha256(&served).hex(),
+        })
+    }
+
+    fn fetch_from(
+        &self,
+        reference: &Reference,
+        entry: &Entry,
+        from: u64,
+        into: &Path,
+    ) -> Result<Fetched> {
+        let repository = self.find(reference)?;
+        if let Some(failure) = self.gate(repository, &reference.repository()) {
+            return Err(failure);
+        }
+        if repository.behaviour == Behaviour::NeverResumes {
+            // The default answer the trait gives, said by a source that means
+            // it: this hub has no ranges. A caller turns that into a restart it
+            // records rather than a failure.
+            return Err(failure(
+                Category::HubUnreachable,
+                Attribution::Machine,
+                "this source cannot continue a transfer from an offset",
+                &self.describe(),
+            ));
+        }
+        let bytes = repository.files.get(&entry.path).ok_or_else(|| {
+            failure(
+                Category::HubRefNotFound,
+                Attribution::User,
+                "this repository does not publish that file",
+                &entry.path,
+            )
+        })?;
+
+        let start = usize::try_from(from).unwrap_or(usize::MAX).min(bytes.len());
+        let rest = bytes.get(start..).unwrap_or(&[]);
+        let served: Vec<u8> = match &repository.behaviour {
+            Behaviour::Truncates { after } => {
+                // Always stops at the same absolute offset, so a resumption
+                // past it delivers nothing at all — which is what a source that
+                // is simply broken looks like.
+                let stop = usize::try_from(*after).unwrap_or(0);
+                if start >= stop {
+                    Vec::new()
+                } else {
+                    bytes.get(start..stop).unwrap_or(&[]).to_vec()
+                }
+            }
+            Behaviour::StopsEvery { bytes: limit } => rest
+                .get(..usize::try_from(*limit).unwrap_or(0).min(rest.len()))
+                .unwrap_or(&[])
+                .to_vec(),
+            Behaviour::ServesDifferentBytes => rest.iter().map(|byte| byte ^ 0xFF).collect(),
+            Behaviour::WellFormed
+            | Behaviour::NeedsCredentials
+            | Behaviour::Gated
+            | Behaviour::RateLimited { .. }
+            | Behaviour::DeceptiveMetadata
+            | Behaviour::HostileArchive
+            | Behaviour::NeverResumes => rest.to_vec(),
+        };
+
+        // Appended, because that is what continuing a transfer is.
+        let mut file = match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(into)
+        {
+            Ok(file) => file,
+            Err(error) => {
+                return Err(failure(
+                    Category::ArtifactUnreadable,
+                    Attribution::Machine,
+                    "the partial file could not be opened to continue",
+                    &error.to_string(),
+                ));
+            }
+        };
+        if let Err(error) = std::io::Write::write_all(&mut file, &served) {
+            return Err(failure(
+                Category::ArtifactUnreadable,
+                Attribution::Machine,
+                "the continued bytes could not be written",
                 &error.to_string(),
             ));
         }
