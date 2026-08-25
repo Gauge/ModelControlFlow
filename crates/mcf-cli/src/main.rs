@@ -27,6 +27,11 @@ enum Request<'a> {
     Version,
     /// Report the surface that exists.
     Usage,
+    /// Write the record to one portable file.
+    Export {
+        /// Where to write it.
+        to: &'a str,
+    },
     /// Report what this machine is and what MCF costs on it.
     Doctor {
         /// Whether to write the report to the record.
@@ -51,6 +56,18 @@ enum Request<'a> {
         command: &'a str,
         /// The first argument it does not take.
         argument: &'a str,
+    },
+    /// A command MCF has, without something it needs.
+    ///
+    /// Distinct from an unrecognized argument for the reason
+    /// [`Request::UnexpectedArgument`] is distinct from
+    /// [`Request::Unrecognized`]: telling an operator that `export` takes no
+    /// arguments when it requires one would be a confident wrong answer.
+    MissingArgument {
+        /// The command.
+        command: &'a str,
+        /// What it needs.
+        needs: &'static str,
     },
 }
 
@@ -81,6 +98,19 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
     match arguments {
         ["--version" | "-V"] => Request::Version,
         [] | ["--help" | "-h"] => Request::Usage,
+        ["export", "--to", to] => Request::Export { to },
+        // A2: an `export` with no destination is a named outcome carrying what
+        // it saw, not a guess at where the operator wanted the file.
+        ["export", rest @ ..] => match rest.first() {
+            Some(argument) => Request::UnexpectedArgument {
+                command: "export",
+                argument,
+            },
+            None => Request::MissingArgument {
+                command: "export",
+                needs: "--to <path>",
+            },
+        },
         ["doctor", rest @ ..] => match doctor_options(rest) {
             Ok(request) => request,
             Err(argument) => Request::UnexpectedArgument {
@@ -94,6 +124,53 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             ..,
         ] => Request::UnexpectedArgument { command, argument },
         [first, ..] => Request::Unrecognized(first),
+    }
+}
+
+/// Writes the record to one portable file (B-302, D20).
+///
+/// Not a gated category. A24 gates *publication* — the irreversible, itemized
+/// act of sending something off this machine — and writing a file to a path the
+/// operator named is not that; the gate belongs to whatever later *sends* a
+/// bundle (B-160). What this does state is what the bundle contains, because a
+/// portable file whose contents nobody described is a file nobody should send.
+fn export(to: &std::path::Path) -> Response {
+    let Some(journal) = mcf_record::journal::default_path() else {
+        return Response {
+            text: "mcf: there is no record to export — neither XDG_DATA_HOME nor HOME is set"
+                .to_owned(),
+            served: false,
+        };
+    };
+    if !journal.exists() {
+        return Response {
+            text: format!(
+                "mcf: there is no record at {} yet — run `mcf doctor` first",
+                journal.display()
+            ),
+            served: false,
+        };
+    }
+
+    match mcf_record::export::write(&journal, to, mcf_record::export::Kind::Export) {
+        Ok(manifest) => Response {
+            text: format!(
+                "wrote {}\n\
+                 \x20 {} entries · sha256:{}\n\
+                 \x20 no prompt or completion content, by construction: this reads the record \
+                 and the\n\x20 record is not the content store (A25)\n\
+                 \x20 nothing has left this machine — sending a bundle is a separate, \
+                 itemized act (A24)",
+                to.display(),
+                manifest.entries,
+                manifest.digest
+            ),
+            served: true,
+        },
+        Err(failure) => Response {
+            text: format!("mcf: the record could not be exported\n  {failure}"),
+            served: false,
+        },
     }
 }
 
@@ -128,6 +205,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  usage:\n\
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
+                 \x20 mcf export --to <path>              the record, as one portable file\n\
                  \x20 mcf --version                       what this binary is\n\
                  \n\
                  This is M0. Nothing here acquires, serves or measures a model."
@@ -157,6 +235,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             text: format!("mcf: {command} takes no arguments, and was given: {argument}"),
             served: false,
         },
+        Request::MissingArgument { command, needs } => Response {
+            text: format!("mcf: {command} needs {needs}"),
+            served: false,
+        },
+        Request::Export { to } => export(std::path::Path::new(to)),
     }
 }
 
@@ -204,12 +287,41 @@ mod tests {
         let Response { text, .. } = respond(&Request::Usage, BuildIdentity::current());
         assert!(text.contains("mcf --version"), "{text}");
         assert!(text.contains("mcf doctor"), "{text}");
+        assert!(text.contains("mcf export"), "{text}");
         for unbuilt in ["mcf pull", "mcf serve", "mcf bench", "mcf lab"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which M0 has not built"
             );
         }
+    }
+
+    /// `export` needs a destination, and says which rather than guessing at
+    /// one. A2: a named outcome carrying what it saw.
+    #[test]
+    fn export_needs_a_destination_and_says_so() {
+        assert_eq!(
+            parse(&["export", "--to", "/tmp/a.mcf"]),
+            Request::Export { to: "/tmp/a.mcf" }
+        );
+        assert_eq!(
+            parse(&["export"]),
+            Request::MissingArgument {
+                command: "export",
+                needs: "--to <path>"
+            }
+        );
+        assert_eq!(
+            parse(&["export", "--somewhere"]),
+            Request::UnexpectedArgument {
+                command: "export",
+                argument: "--somewhere"
+            }
+        );
+
+        let Response { text, served } = respond(&parse(&["export"]), BuildIdentity::current());
+        assert!(!served);
+        assert!(text.contains("--to <path>"), "{text}");
     }
 
     /// `doctor` reads its own options, and refuses anything else by name (A2).

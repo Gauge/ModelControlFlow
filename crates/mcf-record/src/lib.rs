@@ -18,6 +18,7 @@
 pub mod content;
 pub mod decode;
 pub mod encode;
+pub mod export;
 pub mod journal;
 pub mod json;
 pub mod overhead;

@@ -20,6 +20,7 @@ use super::scenario::Scenario;
 mod artifact;
 mod engine;
 mod environment;
+mod exchange;
 mod record;
 mod time;
 
@@ -31,6 +32,8 @@ pub const CATALOGUE: &[Scenario] = &[
     engine::NO_VENDORED_ENGINE,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
+    exchange::TRUNCATED_BUNDLE,
+    exchange::UNREADABLE_BUNDLE,
     record::UNWRITABLE_PATH,
     record::UNKNOWN_FORMAT,
     record::TORN_LAST_LINE,
