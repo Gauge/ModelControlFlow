@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -108,7 +108,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-021, DEC-022, DEC-008, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL), DEC-050 (which statistic a budget names). ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** DEC-022, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL), DEC-050 (which statistic a budget names). ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
@@ -544,6 +544,14 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 12 — two more M0 gates close
+
+DEC-008 and DEC-021 are answered by D25 and D26, so M0's gate list is down to
+four decisions and one new one. Both were closed on evidence and on what other
+documents already implied rather than by fresh argument: the hardware boundary
+followed from what F1 showed a file-only profiler cannot read, and the
+laboratory's scope had been settled the day the taxonomy existed.
 
 ### Version 11 — M0's prototype has run
 

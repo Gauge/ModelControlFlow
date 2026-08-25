@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 27 |
+| **Version** | 28 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,65 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D26 — The laboratory simulates what MCF observes, and its clock is structural *(answers §7.21)*
+
+§7.21 asked three things: what the laboratory must simulate, what it declines
+to, and whether simulated time is structural. The first has been answered since
+[taxonomy.md](taxonomy.md) existed, and the other two follow from it.
+
+**The scope is the taxonomy, and it is enumerable rather than a judgement.**
+A13 already holds that the fault catalogue and the failure taxonomy are the same
+list; §7.21 was open because the list did not exist. It does now — sixteen
+domains, 110 codes — so *what the laboratory must simulate* is not a scope to
+argue about but a table to work through.
+
+**A13 binds a claim, not a code.** *An untested claim is not made* is the rule,
+and MCF claims a category when its code can produce one. So the obligation is:
+**every category MCF's own code constructs has a scenario that produces it**, and
+the check fails the build when one does not (B-010). A category in the taxonomy
+that nothing yet constructs is a classification waiting for the code that will
+use it, and the code and the scenario arrive together. This makes A13 a ratchet
+rather than a cliff: the coverage that matters is complete from the first day,
+and it stays complete because a new failure site cannot land without its
+scenario.
+
+**What the laboratory declines, stated because §6.16 requires the boundary be
+stated.**
+
+- **It simulates what MCF observes, never what causes it.** A thermal ceiling is
+  injected by making a probe report a throttled device, not by heating one. A
+  torn journal is a file written short, not a power failure. The laboratory's
+  subject is MCF's *response*, and the cause is out of scope — which is exactly
+  why A12 puts reality above it: when the simulator and real hardware disagree,
+  the world is right and the divergence is a recorded finding about the
+  simulator.
+- **It produces no performance number** (A11). The laboratory tests behaviour.
+  A duration from its clock is a different *type* from one from the monotonic
+  clock (B37), so this is a compiler check rather than a convention.
+- **It does not model a vendor stack's internals.** A driver that crashes, a
+  kernel that miscomputes, a device that returns wrong numbers: MCF can simulate
+  *being told* any of those and cannot simulate the thing itself.
+- **It does not model the world's timing.** Simulated time makes a scenario
+  deterministic; it does not make it representative. A scenario that says "the
+  transfer stalled for thirty seconds" is a statement about what MCF then did,
+  never about how often that happens.
+
+**Simulated time is structural, and this is the part that had to be decided
+early.** §3.17 wants a failure found once to reproduce exactly, for ever, and a
+scenario whose outcome depends on how busy the machine was is not that. The
+consequence is a constraint on ordinary code rather than on tests: **anything
+that waits, times out or measures an interval takes its clock rather than
+reaching for one**, so a scenario can supply the simulated one. Retrofitting
+that is a rewrite of every deadline in the system, which is why §7.21 called it
+structural rather than a testing convenience.
+
+The same shape governs the other injection points. A fault is injected at a
+**seam** — the clock, the accelerator route, the process supervisor, the
+filesystem, the hub — and the seams are declared, not discovered: B19 already
+requires expensive paths be reachable through them, and this makes the same list
+the laboratory's injection surface. A subsystem with no seam is a subsystem the
+laboratory cannot reach, and that is a design defect rather than a coverage gap.
 
 ### D25 — A device is characterized when MCF can read its live state *(answers §7.8)*
 
@@ -3168,21 +3227,6 @@ Until this is answered, §VIII is an assertion rather than a discipline, and
 §6.16's low confidence rating stands. It is the highest-leverage void attached
 to §VIII, in the same way §7.16 is for §VII.
 
-### 7.21 What the laboratory is obliged to simulate
-
-§3.17 says every failure MCF claims to handle has a simulation that produces it,
-which makes the lab's fault catalogue and the failure taxonomy (§7.10) the same
-list — and neither exists yet. Someone must decide the scope: hardware absence
-and variety, accelerator failure modes, hub misbehaviour (malformed, gated,
-hostile, truncated, mutated-under-us), disk exhaustion, network stall and
-partial transfer, runtime death at every lifecycle stage, thermal throttling,
-memory pressure, contention, clock and time anomalies, upgrade and migration.
-
-Two second-order questions ride on it: whether simulated time is required (§3.17
-implies yes, and it is a structural decision, not a testing convenience), and
-what the lab explicitly declines to model, since §6.16 requires that boundary be
-stated so confidence is claimed only where earned.
-
 ### 7.22 What "full system" testing means for a daemon
 
 §3.5 requires whole-system coverage, but the end-to-end boundary is undrawn.
@@ -3646,6 +3690,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.10 | Failure taxonomy | §3.1, §3.17 | [taxonomy.md](taxonomy.md) — three axes, sixteen domains |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 | §7.8 | Hardware scope | §3.8, §3.4 | **D25** — characterized means MCF can read the device's live state |
+| §7.21 | What the laboratory simulates | §3.17, §6.16, A13 | **D26** — the taxonomy, observed rather than caused; the clock is structural |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -3680,6 +3725,33 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 28 — the laboratory's scope, and a clock that is not a convenience
+
+D26 answers §7.21, which asked what the laboratory must simulate, what it
+declines to, and whether simulated time is structural.
+
+The first was answered the day [taxonomy.md](taxonomy.md) existed and nobody
+noticed: A13 already made the fault catalogue and the taxonomy the same list,
+and §7.21 was open only because the list did not exist. What needed deciding was
+narrower and sharper — A13 binds a *claim*, not a code, and MCF claims a
+category when its own code can produce one. So every category MCF constructs has
+a scenario, and one nothing constructs is a classification waiting for the code
+that will use it. That makes A13 a ratchet rather than a cliff: coverage of what
+is claimed is complete from the first day and stays complete, because a new
+failure site cannot land without its scenario.
+
+What the laboratory declines is now stated, as §6.16 requires. The load-bearing
+line is that **it simulates what MCF observes, never what causes it** — a
+thermal ceiling is a probe reporting a throttled device, not a heated one — and
+that is precisely why A12 puts reality above the simulator rather than beside
+it.
+
+Simulated time is structural, and that is the part that had to be settled now
+rather than at M8. It is a constraint on ordinary code, not on tests: anything
+that waits, times out or measures an interval takes its clock rather than
+reaching for one. Retrofitting that is a rewrite of every deadline in the
+system.
 
 ### Version 27 — hardware scope is a capability, not a list
 
