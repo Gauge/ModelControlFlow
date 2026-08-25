@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**209 items: 43 decisions (40 open, 1 drafted, 1 narrowed, 1 resolved) and 166 build items.** Every item cites the clause that
+**212 items: 43 decisions (40 open, 1 drafted, 1 narrowed, 1 resolved) and 169 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -201,6 +201,8 @@ first and importance second.
 | B-082 | Real-hardware only for performance numbers: no performance figure may originate in simulation | §6.16 | The type system or the record prevents a simulated timing being published | open |
 | B-083 | Repeated trials with reported spread and sample count; single-shot timings are refused as anecdotes | §3.4 | No result is publishable with n=1 | blocked (DEC-007) |
 | B-084 | Warm-up and thermal steady state per DEC-007's acceptance criteria | §3.4, §7.7 | Runs that fail the criteria are marked invalid, not silently included | blocked (DEC-007) |
+| B-250 | Comparisons are constructed only from paired, interleaved, order-randomized trials sharing a session id; the reported quantity is the paired difference distribution | B53, §3.27, §3.4 | Block-then-subtract does not compile; a cross-session comparison is constructible but labelled weaker | open |
+| B-252 | Every generalized statement resolves on demand to the measurements, conditions and spread behind it; no summary is written in place of its evidence | B55, §3.28, §3.15 | A recommendation expands to its evidence without leaving the interface; the record retains full precision | open |
 | B-085 | Isolation check: a comparison in which more than one variable differed reports "these are not comparable" rather than a delta | §3.4 | An intentionally confounded comparison is refused by the tooling | open |
 | B-086 | Null and negative results are stored and surfaced as results — "does not fit here", "no measurable speedup" | §3.4 | Both appear in the record and in the window as outcomes, not failures | open |
 | B-087 | Partial success representation: nine of ten tasks completing is nine data points | §3.1 | Partial runs are queryable as partial, with their per-unit outcomes intact | open |
@@ -304,6 +306,7 @@ first and importance second.
 | B-166 | An imported configuration reads as `declared` until a local probe or benchmark verifies it; numbers that travelled with it are attributed elsewhere | B33, §3.21, §6.29 | No imported figure renders as though MCF measured it; verification promotes it and records the divergence | open |
 | B-172 | Failure to reproduce an identifier is a first-class outcome, and divergence between imported and local numbers is a recorded finding about how far results travel | §6.29, §6.3, §3.4 | "This identifier needs 48 GiB and you have 24" is a complete answer; a numeric divergence is stored as evidence, not an error | open |
 | B-170 | Contribution schema versioning: a contribution declares the schema and MCF version that wrote it, and a reader that cannot fully interpret one says so | §7.30, §3.1, §3.4 | An older contribution is read, marked, or refused — never silently misinterpreted | blocked (DEC-030) |
+| B-251 | A contribution carries comparisons in preference to absolutes: both arms, the pairing, and the effect size; absolute rows carry the full §3.4 condition set or are not contributable | B54, §3.27, §XIV | The corpus accumulates ratios that survive travel rather than bare numbers that do not | open |
 | B-171 | Contribution carries outcomes, never artifacts: scores, classifications, conditions and distributions leave; tasks, tools, fixtures and model outputs do not | §6.30, §3.19 | An audit of a contribution finds no task content; contamination exposure is recorded per task | open |
 | B-173 | `mcf share` / `mcf import`: the M9 product — evidence leaves deliberately, and a configuration found elsewhere reproduces here or explains why not | §XIV, §XV | A contribution is produced, inspected and sent; an identifier from that contribution reproduces the configuration on a second machine | open |
 
@@ -324,6 +327,16 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 10 — pairing and generalization
+
+B-250 registers paired interleaved comparison as a type property, B-251 makes
+the corpus carry ratios in preference to absolutes, and B-252 keeps
+generalization confined to the rendering.
+
+DEC-043 gains a candidate answer in §7.43 rather than a resolution: §3.27
+largely defuses the partial-box worry, since a box is no longer what holds
+conditions still.
 
 ### Version 9 — boxes and measured politeness
 

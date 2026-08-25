@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1302,6 +1302,80 @@ test — does a background run stutter an interactive workload — and what
 constrained resources cost the *model* is a laboratory (L24). Neither is
 established by intending to be considerate.
 
+### 3.27 The comparison is durable; the absolute number is local
+
+An absolute measurement — 38.4 tokens per second — is bound to the machine, the
+moment, the thermal state and whatever else was running. It is true, it is
+conditioned, and it travels badly. A *comparison* taken under the same
+conditions — this configuration was 1.31× that one — survives all of those,
+because whatever perturbed one arm perturbed the other.
+
+This is the strongest available answer to the problem that MCF runs on machines
+nobody controls: **common-mode noise cancels in a ratio and accumulates in a
+scalar.** It follows that the comparison, not the number, is MCF's durable
+output.
+
+The spirit:
+
+- **Compare by pairing, not by recall.** Arms are **interleaved** within one
+  session — A, B, A, B — rather than run in blocks, so drift in temperature,
+  contention or clock affects both equally. Order is randomized so that going
+  first is not an advantage.
+- **Report the paired difference and its distribution**, not the difference of
+  two means. Thirty paired differences carry information that two summaries have
+  already destroyed.
+- **A comparison assembled from separate sessions is weaker and says so.** It
+  may be all that exists, and it is not the same claim.
+- **Absolute numbers stay, and stay conditioned.** They answer "will this fit in
+  my latency budget", which a ratio cannot. They are simply not the thing that
+  travels.
+- **What is contributed is chiefly the comparison** (§XIV). A tokens-per-second
+  figure from a stranger's machine is nearly uninterpretable; *"on hardware like
+  this, this configuration beat that one by roughly this much"* is exactly what
+  another user needs, and it is far more robust to the messiness of the machines
+  it came from.
+
+The corollary is a caution rather than an exception: a ratio measured at one
+level of contention need not hold at another, because degradation is not
+uniform — a configuration that spills to host memory falls off a cliff that a
+resident one does not. Trends are durable *within* a regime and can invert
+across one, which is precisely what L25 exists to map.
+
+### 3.28 Gather precisely; recommend generally
+
+Two halves of the same instrument, held to opposite standards:
+
+**Inward, toward the record: as accurate as the machine allows.** Every
+condition captured, arms interleaved (§3.27), raw samples kept, boxes and
+windows used where they buy validity, uncertainty carried, contention recorded
+rather than ignored. Precision is cheap to keep and impossible to recover, so
+nothing is rounded away at the point of capture.
+
+**Outward, toward the user: as general as the evidence supports.** A
+recommendation speaks in the terms that survive — *meaningfully faster*, *within
+noise*, *about a third less memory*, *fails on this workload* — rather than in
+decimal places. False precision is not honesty; it is noise wearing the costume
+of rigour, and it invites a user to act on a difference that does not exist.
+
+The two are reconciled by direction, not by compromise:
+
+- **Generalization happens in the rendering, never in the record.** MCF stores
+  the precise thing and *renders* the general one. A summary that overwrote its
+  own evidence has destroyed the ability to re-ask the question.
+- **The precision is always one step away** (§3.15). Any generalized statement
+  can be expanded into the measurements, conditions and spread behind it, on
+  demand, without leaving the interface.
+- **The generalization states its own strength.** "Meaningfully faster" carries
+  the effect size and the confidence behind it, because a claim whose robustness
+  is hidden is a claim the user cannot weigh.
+- **Where the evidence supports nothing general, MCF says nothing general.**
+  §3.9 already requires "these are within noise, pick either", and that is this
+  principle's honest floor rather than a failure of it.
+
+This is also why §3.4's floor and §3.14's "minimal chrome, never minimal truth"
+are not in tension: the interface may show less, provided nothing was thrown
+away to let it.
+
 ---
 
 ## 4. Standing Tensions We Accept
@@ -2511,6 +2585,16 @@ So both survive, answering different questions:
 - **The two are never compared,** and a surface that renders them in the same
   column has produced a confounded comparison (A8).
 
+**What §3.27 does to this.** If the durable output is the paired comparison
+rather than the absolute number, the exclusive window's job narrows considerably.
+It is required for **small effects** that within-session noise would swamp, and
+for **numbers intended to leave the machine** where reproducibility is the
+point. It is *not* required for the everyday question — is A better than B here
+— because interleaving already cancels what the window would have excluded.
+
+That reordering is worth stating plainly: **most of what a user wants does not
+need a quiet machine at all.**
+
 **Confidence: high on the split, medium on how much a box helps at all.** On
 hardware with real partitioning the box may approach the window; on a consumer
 machine it may bound very little of what matters. That is measurable rather than
@@ -3020,6 +3104,17 @@ yielding.
 The trap to avoid is a box that appears to isolate and does not, which would
 attach a reproducible-looking number to an unreproducible quantity — the §6.1
 failure mode with a configuration screen in front of it.
+
+**Candidate answer, stated here rather than resolved.** §3.27 substantially
+defuses this. A partial box misleads mainly by licensing a comparison it cannot
+support — chiefly across sessions, where a user assumes conditions were held
+because a box was set. If comparisons are paired and interleaved within a
+session (§3.27), the box is never what holds conditions still, and its
+partiality stops mattering for the claim being made. That suggests: **offer
+partial boxes, name exactly which dimensions they bound, and forbid a box from
+being the sole basis of a cross-session comparison.** The remaining decision is
+whether any dimension is so weakly enforced that offering it is worse than
+refusing it.
 
 ### Retired voids
 

@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v13, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**87 rules in three tiers, each carrying a citation and a check.** Cite them by
+**90 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 52 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 55 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**70 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**73 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Fifty-two rules. Each holds under a stated condition, or permits something
+Fifty-five rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1014,6 +1014,46 @@ a good guest is worth exactly what those two measurements say.
 - **Violation looks like:** "runs at low priority" offered as evidence that it
   is unobtrusive.
 
+### B53 — Comparisons are paired, interleaved and randomized within one session
+Arms of a comparison are interleaved — A, B, A, B — rather than run in blocks,
+so drift in thermal state, contention or clock affects both equally, and order
+is randomized so going first is not an advantage. The reported quantity is the
+**paired difference and its distribution**, not the difference of two means. A
+comparison assembled from separate sessions is a weaker claim and is labelled as
+one.
+- **Absorbs:** §3.27, §3.4, §3.8, §6.41
+- **Check:** `compiler` — a comparison result can only be constructed from
+  paired trials carrying a common session id (B-250).
+- **Violation looks like:** thirty runs of A, then thirty of B, subtracted —
+  which reports the afternoon's drift as a difference between configurations.
+
+### B54 — What travels is the comparison; what stays is the absolute
+A contribution carries comparisons — *this configuration beat that one by
+roughly this much, on hardware like this* — in preference to absolute figures,
+because a tokens-per-second number from a stranger's machine is nearly
+uninterpretable while a ratio survives the messiness it came from. Absolute
+figures remain in the local record, fully conditioned, and remain the basis of
+every local decision (B34).
+- **Absorbs:** §3.27, §XIV, §6.28, §6.38
+- **Check:** `CI` — a contribution's comparison rows carry both arms and the
+  pairing; absolute rows carry the full §3.4 condition set or are not
+  contributable (B-251).
+- **Violation looks like:** a corpus of bare throughput numbers, which is a
+  leaderboard with extra steps.
+
+### B55 — Recommendations generalize; the record does not
+A recommendation speaks in terms the evidence supports — *meaningfully faster*,
+*within noise*, *about a third less memory* — and carries its effect size and
+confidence. Generalization happens in the **rendering only**: the record keeps
+the precise measurement, and any generalized statement expands on demand into
+the measurements, conditions and spread behind it (§3.15). Where the evidence
+supports nothing general, MCF says nothing general.
+- **Absorbs:** §3.28, §3.9, §3.15, §3.14
+- **Check:** `CI` — every generalized statement resolves to the measurements
+  behind it, and no summary is written in place of its evidence (B-252).
+- **Violation looks like:** "41.2 vs 38.4 tok/s" offered as a recommendation,
+  which is false precision inviting action on a difference inside the noise.
+
 ---
 
 ## C — Low value
@@ -1103,7 +1143,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 87 rules
+   is whether an existing rule already covers it. This file holds 90 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1146,6 +1186,8 @@ no rule is a defect in this file.
 | §3.26 MCF is a guest | B50, B49, B52 |
 | D15 Resource boxes | B51 |
 | §6.41 Boxes vs the window | B51, A8 |
+| §3.27 The comparison is durable | B53, B54 |
+| §3.28 Gather precisely, recommend generally | B55, B41 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1227,6 +1269,22 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 9 — pairing, and the two directions
+
+B53 is a technique rule and the most immediately useful in this file: interleave
+the arms of a comparison within one session and report the paired difference.
+Thirty runs of A followed by thirty of B, subtracted, reports the afternoon's
+drift as a difference between configurations — and on the machines MCF actually
+runs on, that drift is not small.
+
+B54 follows §3.27 into §XIV: what travels between machines is the comparison,
+because a bare throughput number from a stranger is nearly uninterpretable while
+a ratio survives the mess it came from.
+
+B55 encodes §3.28's direction — precise inward, general outward — with the
+guardrail that makes it safe: generalization happens in the rendering only, and
+never in the record.
 
 ### Version 8 — boxes, and measured politeness
 

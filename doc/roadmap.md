@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v12 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v13 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -284,6 +284,9 @@ the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
 - No performance number may originate in simulation (B-082) — §6.16
 - Repeated trials, mandatory spread, refusal of n=1 (B-083)
 - Warm-up and thermal steady state per acceptance criteria (B-084)
+- Paired, interleaved, order-randomized comparison (B-250) — §3.27: the arms
+  alternate within one session so drift hits both equally, and the reported
+  quantity is the paired difference rather than two summaries subtracted
 - Isolation checking, so a confounded comparison is refused (B-085)
 - Null and negative results stored and surfaced as results (B-086)
 - Partial success as a real outcome with its data intact (B-087)
@@ -530,7 +533,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 87. A milestone that can only be
+Every milestone above is subject to all 90. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -538,6 +541,12 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 10 — pairing lands in M5
+
+M5 gains paired interleaved comparison, which is the technique that makes a
+measurement on a messy machine trustworthy: drift affects both arms equally and
+cancels in the difference. M7 gains the rendering-only generalization rule.
 
 ### Version 9 — boxes join M6
 
