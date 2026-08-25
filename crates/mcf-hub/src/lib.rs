@@ -15,5 +15,6 @@
 //! laboratory exercise every branch of the first without a hub (D26).
 
 pub mod fitment;
+pub mod inspect;
 pub mod reference;
 pub mod source;
