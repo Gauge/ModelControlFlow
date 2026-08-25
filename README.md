@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 6 |
+| **Version** | 7 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -20,10 +20,17 @@ pick by leaderboard positions measured on someone else's hardware with someone
 else's quantization against benchmarks that do not resemble their work. MCF
 replaces folklore with measurement taken here.
 
-**Status: no implementation.** The repository holds intent, rules, a plan and a
-register. Start with [doc/document-of-intent.md](doc/document-of-intent.md) to
-know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
-[doc/roadmap.md](doc/roadmap.md) to see what gets built first.
+**Status: M0 in progress.** The workspace builds and reports what built it; it
+does nothing else yet, and `mcf doctor` — M0's product — is not written.
+Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
+MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
+[doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
+[doc/build.md](doc/build.md) to build it.
+
+```
+$ cargo build --locked --release && ./target/release/mcf --version
+MCF 0.1.0-m0  (revision unknown, rustc 1.98.0 (88d9e12ae 2026-08-18), target x86_64-unknown-linux-gnu, profile release)
+```
 
 ## The documents
 
@@ -36,12 +43,15 @@ know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
 | [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
 | [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
+| [build.md](doc/build.md) | Reference | The workspace, the toolchain pin, the crate layering, and the checks that gate a change | You are about to build, add a crate, or admit a dependency |
 | [mockup/](doc/mockup/) | Sketches | One picture per milestone of what finished looks like at that stage | You want to disagree with a design before it is code |
 
 **The chain of authority is one-directional.** The intent document is the source.
 Rules derive from it and carry its clauses forward with checks attached. The
 roadmap sequences the work the rules imply, and the backlog registers it.
-Proposals argue for work not yet accepted; mockups illustrate the result. A lower document never overrides a higher one: a
+Proposals argue for work not yet accepted; mockups illustrate the result, and
+references such as the taxonomy and the build document state what a decision
+settled. A lower document never overrides a higher one: a
 disagreement means the lower document is wrong, or that an amendment to the
 higher one is owed (§8).
 
@@ -133,6 +143,12 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 7 — there is code
+
+`doc/build.md` added and the status line corrected: the repository is no longer
+documentation alone. B-001 landed the workspace, so the front door has to say
+what building it involves rather than that there is nothing to build.
 
 ### Version 6 — the taxonomy joins the map
 

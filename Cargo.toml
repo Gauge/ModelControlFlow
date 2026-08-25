@@ -25,13 +25,20 @@ members = [
 version = "0.1.0-m0"
 edition = "2024"
 rust-version = "1.98.0"
-license = "AGPL-3.0-only"
-repository = "https://github.com/Gauge/ModelControlFlow"
-authors = ["The MCF authors"]
+# D22 settles that MCF is copyleft and reasons its way to GPL-3.0 over
+# AGPL-3.0 for a locally-installed tool. DEC-047 is still open on the
+# per-engine compatibility matrix, and B-330 adds the LICENSE file with it, so
+# this field states the decided half rather than leaving a manifest that claims
+# nothing.
+license = "GPL-3.0-only"
+# No `repository` and no `authors`. A7 forbids filling an unknown with a
+# plausible value, this tree has no published remote yet, and git already
+# records who wrote each line.
 
 # No workspace dependencies. B15 admits weight only against a stated cost, and
-# at M0 nothing has stated one. Every dependency added here carries its
-# justification in doc/dependencies.md before it is admitted.
+# at M0 nothing has stated one — the workspace compiles from the standard
+# library alone. The check in checks/tests/workspace_shape.rs asserts this, so
+# the first dependency admitted has to state its cost there to get in.
 [workspace.dependencies]
 
 # Lints applied to every member. These are the machine-checked form of rules
