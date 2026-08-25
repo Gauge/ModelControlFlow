@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 39 |
+| **Version** | 40 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (35 open, 1 drafted, 2 narrowed, 12 resolved) and 194
-build items (14 done, 3 in progress, 56 blocked on a decision, 121 open).** Every item cites
+build items (15 done, 3 in progress, 56 blocked on a decision, 120 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -144,7 +144,7 @@ first and importance second.
 | B-302 | Export: one command, one portable file, sharing the serialization §XIV and P2 need | D20, §XIV, [P2](proposals.md#p2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | open |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
-| B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
+| B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | blocked (DEC-047) |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
 
@@ -362,6 +362,25 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 40 — content is in a different place, not behind a flag
+
+B-161 is done. A25's guarantee has to be structural — *a filter can be
+misconfigured, a store that never held the data cannot leak it* — so there are
+two stores, in two directories, and neither module names the other's types. An
+export that walks the record cannot reach content because there is nothing to
+follow.
+
+Two smaller decisions inside it are worth keeping. `Content`'s `Debug` reports a
+length and never a body, because a debug rendering is a surface and A17's *nothing
+leaves the machine unchosen* includes a terminal somebody is sharing. And the
+accessor is called `disclose` rather than `text`, because that is what calling it
+does: the structure cannot help against a caller who has decided to look, so the
+call site says so.
+
+Length is deliberately not content. It is a measurement *about* content, it
+belongs in the system record, and it is what lets a record say "a 4 096-byte
+prompt" without holding one.
 
 ### Version 39 — the budget tier measures, and says when it is not judging
 
