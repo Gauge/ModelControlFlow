@@ -17,6 +17,9 @@
 //!   and every summary — minimum, median, percentile, maximum — is computed
 //!   when it is asked for. Nothing stores a mean, because a stored mean is a
 //!   question nobody can ask again.
+//! * **An estimate is not one of these.** A20 keeps [`Estimate`] a separate
+//!   type with no conversion in either direction, so a guess cannot be
+//!   promoted into a measurement or compared with one — only replaced by one.
 //! * **No NaN can enter.** [`Quantity`] requires [`Ord`], which rules out
 //!   floating-point sample types; every summary MCF reports is an order
 //!   statistic and needs ordering rather than arithmetic. See [`Quantity`].
@@ -34,11 +37,13 @@
 //! ```
 
 mod conditions;
+mod estimate;
 mod quantity;
 mod spread;
 
 pub use crate::attested::Attested;
 pub use conditions::{ConditionValue, Conditions, Floor};
+pub use estimate::{Basis, Estimate};
 pub use quantity::{Bytes, Count, PartsPerMillion, Quantity};
 pub use spread::{Percentile, Spread};
 

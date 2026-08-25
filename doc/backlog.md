@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 28 |
+| **Version** | 29 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
-build items (7 done, 1 in progress, 59 blocked on a decision, 128 open).** Every item cites
+build items (8 done, 1 in progress, 59 blocked on a decision, 127 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -107,7 +107,7 @@ first and importance second.
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
-| B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | open |
+| B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | **done** — `mcf_core::measurement::Estimate`: unrelated types, no `From` in either direction, a band rather than a point (B46), and a basis that carries its sample count when it is the corpus (B44) |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
 | B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | open |
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
@@ -360,6 +360,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 29 — the estimate is a band, and it does not meet a measurement
+
+B-350 is done. Two things it forced are worth recording.
+
+**"Replaced" needs no mechanism, and that is the enforcement.** A20 says an
+estimate can only be replaced by a measurement, and the temptation is to build
+the replacement — a `promote`, an `into_measurement`, a comparison helper. None
+exists: a caller that has taken a measurement uses the measurement, so there is
+no line of code that could be read as a promotion, and a source check refuses
+one added later.
+
+**An estimate is a band, not a point.** B46 requires it, and the reason is that
+a duration predicted from a rate is a range; rendering it as a single number is
+false precision, which B46 calls the smallest possible version of a confident
+wrong number. A zero-width band is still an estimate — the width says how
+uncertain the guess is, not whether it is one.
 
 ### Version 28 — the documents are checked, and four of them were wrong
 

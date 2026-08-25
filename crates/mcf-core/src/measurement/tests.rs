@@ -6,8 +6,8 @@
 //! about right is exactly what A19 forbids.
 
 use super::{
-    Attested, Bytes, ConditionValue, Conditions, Count, Floor, Measurement, PartsPerMillion,
-    Percentile,
+    Attested, Basis, Bytes, ConditionValue, Conditions, Count, Estimate, Floor, Measurement,
+    PartsPerMillion, Percentile,
 };
 use crate::build_identity::BuildIdentity;
 
@@ -210,4 +210,68 @@ fn a_prohibition_is_still_a_measurement() {
     let wakeups = Measurement::of(Count(0), Count(0), [Count(0)], conditions());
     assert_eq!(wakeups.maximum(), Count(0));
     assert_eq!(wakeups.n(), 3);
+}
+
+// ---------------------------------------------------------------------------
+// A20 — estimates and measurements are different types, and stay different.
+// ---------------------------------------------------------------------------
+
+/// A20's *clearly-labelled*: the rendering says `estimate` and names the
+/// basis, because a label nobody sees is not one.
+#[test]
+fn an_estimate_renders_as_an_estimate_with_its_basis() {
+    let banded = Estimate::band(Count(10), Count(30), Basis::LocalHistory);
+    let rendered = banded.to_string();
+    assert!(rendered.contains("estimate"), "{rendered}");
+    assert!(rendered.contains("local history"), "{rendered}");
+    assert!(
+        rendered.contains("10") && rendered.contains("30"),
+        "{rendered}"
+    );
+}
+
+/// B46: an estimate is a band. A point estimate is still an estimate — the
+/// width says how uncertain the guess is, not whether it is one.
+#[test]
+fn a_point_estimate_is_still_an_estimate() {
+    let point = Estimate::point(Bytes(4096), Basis::Declared);
+    assert!(point.is_point());
+    assert_eq!(point.low(), point.high());
+    assert!(point.to_string().contains("estimate"), "{point}");
+}
+
+/// The bounds are sorted rather than refused. A caller that passed them the
+/// other way round meant a band, and refusing would turn an argument order
+/// into a failure with no taxonomy category.
+#[test]
+fn a_band_is_ordered_however_it_was_written() {
+    let forwards = Estimate::band(Count(1), Count(9), Basis::LocalHistory);
+    let backwards = Estimate::band(Count(9), Count(1), Basis::LocalHistory);
+    assert_eq!(forwards, backwards);
+    assert_eq!(forwards.low(), Count(1));
+    assert_eq!(forwards.high(), Count(9));
+}
+
+/// B44: a corpus-derived claim carries its sample count, so a claim resting on
+/// two reports reads differently from one resting on four hundred.
+#[test]
+fn a_corpus_basis_carries_its_sample_count() {
+    let thin = Estimate::point(Count(5), Basis::Corpus { reports: 2 });
+    let thick = Estimate::point(Count(5), Basis::Corpus { reports: 400 });
+    assert_ne!(thin, thick);
+    assert!(thin.to_string().contains("n=2"), "{thin}");
+    assert!(thick.to_string().contains("n=400"), "{thick}");
+}
+
+/// A20: an estimate is never compared with a measurement. The compiler refuses
+/// it — the two are unrelated types with no shared trait that would let them
+/// meet — so what is recorded here is that neither renders as the other.
+#[test]
+fn an_estimate_and_a_measurement_do_not_look_alike() {
+    let measurement = Measurement::of(Count(10), Count(30), [Count(20)], conditions());
+    let estimate = Estimate::band(Count(10), Count(30), Basis::LocalHistory);
+    assert!(measurement.to_string().contains("n=3"));
+    assert!(!measurement.to_string().contains("estimate"));
+    assert!(estimate.to_string().contains("estimate"));
+    assert!(!estimate.to_string().contains("n=3"));
 }
