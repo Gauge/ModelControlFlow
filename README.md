@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -20,16 +20,17 @@ pick by leaderboard positions measured on someone else's hardware with someone
 else's quantization against benchmarks that do not resemble their work. MCF
 replaces folklore with measurement taken here.
 
-**Status: M0 in progress.** The workspace builds and reports what built it; it
-does nothing else yet, and `mcf doctor` — M0's product — is not written.
+**Status: M0 in progress.** `mcf doctor` works: it reports what this machine
+is, what MCF costs on it against its stated ceilings, and what MCF will and will
+not promise here, and writes the whole thing to an append-only record. Nothing
+acquires, serves or measures a model yet.
 Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
 MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 [doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
 [doc/build.md](doc/build.md) to build it.
 
 ```
-$ cargo build --locked --release && ./target/release/mcf --version
-MCF 0.1.0-m0  (revision unknown, rustc 1.98.0 (88d9e12ae 2026-08-18), target x86_64-unknown-linux-gnu, profile release)
+$ cargo build --locked --release && ./target/release/mcf doctor
 ```
 
 ## The documents
@@ -144,6 +145,12 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 9 — the M0 product runs
+
+The status line says what `mcf doctor` does rather than that it is unwritten,
+and the example command runs it. A front door that describes a plan when the
+thing exists is a front door that will be read as a plan.
 
 ### Version 8 — evidence gets a document
 

@@ -197,7 +197,10 @@ fn the_conditions_carry_the_instrument() {
 /// quantities with different units are different types and do not meet.
 #[test]
 fn quantities_render_with_their_units() {
-    assert_eq!(Bytes(1024).to_string(), "1024 B");
+    assert_eq!(Bytes(512).to_string(), "512 B");
+    assert_eq!(Bytes(1024).to_string(), "1024 B (1.0 KiB)");
+    assert_eq!(Bytes(1_610_612_736).to_string(), "1610612736 B (1.5 GiB)");
+    assert_eq!(Bytes(0).human(), "0 B");
     assert_eq!(PartsPerMillion(500).to_string(), "500 ppm");
     assert_eq!(Count(0).to_string(), "0");
 }

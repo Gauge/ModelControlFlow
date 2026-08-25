@@ -213,19 +213,18 @@ impl Journal {
 }
 
 /// The header every journal opens with.
+///
+/// The build identity is encoded by the same function every other record uses
+/// (`crate::encode::build_identity`), so a revision MCF does not know reads as
+/// `null` here exactly as it does everywhere else. Two encoders for one thing
+/// is how a record ends up saying `unknown` in one place and `null` in another
+/// for the same absence.
 fn header() -> Value {
-    let identity = BuildIdentity::current();
     Value::map([
         ("format", Value::Integer(FORMAT_VERSION)),
         (
             "created_by",
-            Value::map([
-                ("version", Value::text(identity.version)),
-                ("revision", Value::text(identity.revision.to_string())),
-                ("rustc", Value::text(identity.rustc)),
-                ("target", Value::text(identity.target)),
-                ("profile", Value::text(identity.profile)),
-            ]),
+            crate::encode::build_identity(BuildIdentity::current()),
         ),
     ])
 }

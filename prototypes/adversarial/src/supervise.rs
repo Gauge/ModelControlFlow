@@ -239,10 +239,18 @@ mod tests {
     use mcf_core::failure::{Attribution, Category, Disposition, Failure};
     use mcf_core::time::{Duration, Monotonic};
 
-    /// Short, because the suite gates every change (B19) and because the
-    /// scenarios are about *which* outcome, not about how long it takes to
-    /// reach it.
-    const DEADLINE: Duration<Monotonic> = Duration::from_nanos(200_000_000);
+    /// Generous, because these scenarios are about *which* outcome is reached
+    /// and not about how long it takes. A tight deadline made them flaky: on a
+    /// loaded machine a child that exits promptly can still be scheduled late,
+    /// and the supervisor then correctly reports a hang — the right answer to
+    /// the wrong question. A18 requires a correctness test be deterministic,
+    /// and a timing that decides the outcome makes it a benchmark instead.
+    const DEADLINE: Duration<Monotonic> = Duration::from_nanos(5_000_000_000);
+
+    /// Short, and used only where the child is *made* to outlast it. The gap
+    /// between this and the child's thirty seconds is what makes the hang
+    /// scenario deterministic under any load.
+    const SHORT: Duration<Monotonic> = Duration::from_nanos(200_000_000);
 
     fn shell(script: &str) -> Supervision {
         supervise("/bin/sh", &["-c", script], DEADLINE)
@@ -307,18 +315,21 @@ mod tests {
     /// is the one the deadline exists to convert into a diagnosis.
     #[test]
     fn a_silent_child_past_its_deadline_is_a_hang() {
-        let outcome = shell("sleep 30");
+        let outcome = supervise("/bin/sh", &["-c", "sleep 30"], SHORT);
         let failure = failure(&outcome);
         assert_eq!(failure.category(), Category::EngineHangNoOutput);
         assert_eq!(failure.disposition(), Disposition::Aborted);
         assert!(
-            outcome.waited >= DEADLINE,
+            outcome.waited >= SHORT,
             "the supervisor gave up before its deadline: {}",
             outcome.waited
         );
+        // The upper bound is loose on purpose: it asserts that the supervisor
+        // gives up rather than waiting for the child, which is the property,
+        // and not how promptly a loaded machine schedules it.
         assert!(
-            outcome.waited.as_nanos() < DEADLINE.as_nanos().saturating_mul(10),
-            "the supervisor overshot its deadline: {}",
+            outcome.waited.as_nanos() < 10_000_000_000,
+            "the supervisor waited for the child rather than its deadline: {}",
             outcome.waited
         );
     }

@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 34 |
+| **Version** | 35 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (37 open, 1 drafted, 2 narrowed, 10 resolved) and 194
-build items (11 done, 2 in progress, 58 blocked on a decision, 123 open).** Every item cites
+build items (12 done, 2 in progress, 58 blocked on a decision, 122 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -117,7 +117,7 @@ first and importance second.
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
-| B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
+| B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | **done** — `mcf doctor [--no-record] [--json]`: the machine, MCF's cost against D24's ceilings, what it cannot measure here and why, and the promises it cannot make listed beside the ones it can. Writes to the journal; a record it could not write is a stated degradation, not a lost report |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 99 rules in three tiers; 82 carry a machine check, 15 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | **done** — `checks/tests/documents_conform.rs`, twelve checks in the gating tier. The tense clause is checked only for the constructions the contract names outright; the rest stays a `review` obligation rather than a claim |
@@ -361,6 +361,32 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 35 — M0 has its product
+
+B-014 is done. `mcf doctor` reports what this machine is, what MCF costs on it
+against D24's ceilings, and what MCF will and will not promise here.
+
+Three things it refuses to do are the design rather than omissions from it.
+
+**It does not report an unmeasured budget as passing.** *Not measured* is its
+own verdict, beside *within* and *over*, because a figure with no reading that
+rendered as a tick would be a reassurance rather than a report (A7).
+
+**It names what it cannot measure.** Idle CPU, timer wakeups, memory growth
+over thirty simulated days and added latency are D24 figures about a daemon, and
+there is no daemon until M2 — so the report says that, in a list, rather than
+showing three figures where seven belong.
+
+**It lists the promises MCF cannot make.** A report showing only the ticks
+would read as complete. The two it cannot make at M0 — nothing about model
+quality, and no laboratory has demonstrated any failure MCF claims to handle —
+appear beside the ones it can.
+
+The cold-start line shows both the median and the p95 and says that which one
+D24's ceiling names is §7.50 and open. On the machine this was developed on the
+two disagree by more than an order of magnitude under load, so choosing one
+quietly would have been choosing the answer.
 
 ### Version 34 — the journal is the record
 

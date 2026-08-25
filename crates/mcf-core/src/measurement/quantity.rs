@@ -47,9 +47,53 @@ impl Quantity for Bytes {
     const UNIT: &'static str = "B";
 }
 
+impl Bytes {
+    /// The size in the largest binary unit that leaves a whole part, to one
+    /// decimal place.
+    ///
+    /// Computed with integer arithmetic, because this crate has no
+    /// floating-point anywhere by design (see [`Quantity`]) and a rendering is
+    /// not a reason to introduce one.
+    ///
+    /// C3: a minimalist surface shows less decoration, not less information.
+    /// The exact count is what a record holds and what a comparison uses; this
+    /// is what a person reads, and [`fmt::Display`] shows both rather than
+    /// making anyone choose.
+    #[must_use]
+    // Integer division is the conversion, and both operands are bounded: the
+    // unit is a power of two no larger than the value, so neither the quotient
+    // nor the remainder can overflow.
+    #[allow(clippy::integer_division)]
+    pub fn human(self) -> String {
+        const UNITS: [(&str, u64); 4] = [
+            ("GiB", 1024 * 1024 * 1024),
+            ("MiB", 1024 * 1024),
+            ("KiB", 1024),
+            ("B", 1),
+        ];
+        for (name, size) in UNITS {
+            if self.0 >= size && size > 1 {
+                let whole = self.0 / size;
+                let tenths = (self.0 % size).saturating_mul(10) / size;
+                return format!("{whole}.{tenths} {name}");
+            }
+        }
+        format!("{} B", self.0)
+    }
+}
+
 impl fmt::Display for Bytes {
+    /// The exact count, and the same size in a unit a person reads.
+    ///
+    /// Both, always. The exact number is the measurement; the rounded one is a
+    /// courtesy, and a surface that showed only the courtesy would be dropping
+    /// information A6 requires travel with a value.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.0, Self::UNIT)
+        if self.0 >= 1024 {
+            write!(f, "{} {} ({})", self.0, Self::UNIT, self.human())
+        } else {
+            write!(f, "{} {}", self.0, Self::UNIT)
+        }
     }
 }
 

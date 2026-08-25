@@ -1,0 +1,551 @@
+//! `mcf doctor` — the M0 product.
+//!
+//! It reports what this machine is, what MCF costs on it, and what MCF will
+//! and will not promise here, and it writes the whole thing to the record
+//! because running it is an event (B4, §3.3).
+//!
+//! **What it refuses to do is the design.** It does not guess at hardware it
+//! cannot read (A7), does not report a budget it did not measure as passing
+//! (A7 again — *not measured* is its own verdict), does not claim a promise it
+//! has not built, and does not fail because the machine is unusual: a machine
+//! with no accelerator, no `/proc`, no writable record path and no network is a
+//! valid subject, and the report says exactly that. B19 requires the whole
+//! thing work on a laptop, offline.
+//!
+//! **Exit status is zero even when the report is bleak.** `doctor` reports; it
+//! does not fail because the machine did. A non-zero status is reserved for
+//! `doctor` itself being unable to report.
+
+use mcf_core::attested::Attested;
+use mcf_core::build_identity::BuildIdentity;
+use mcf_core::failure::Failure;
+use mcf_core::hardware::{Characterization, Machine};
+use mcf_core::measurement::{Bytes, ConditionValue, Conditions, Floor, Measurement};
+use mcf_core::self_cost::{self, Budget, COLD_START, CORE_BINARY, RESIDENT_IDLE, Verdict};
+use mcf_core::time::{Duration, Monotonic, Timestamp};
+use mcf_record::encode;
+use mcf_record::journal::{Entry, EntryKind, Journal, default_path};
+use mcf_record::json::Value;
+
+/// Everything `doctor` found.
+#[derive(Debug)]
+pub(crate) struct Report {
+    /// What built the binary that produced this report.
+    pub(crate) mcf: BuildIdentity,
+    /// When it was produced.
+    pub(crate) at: Timestamp,
+    /// What the machine is.
+    pub(crate) machine: Machine,
+    /// What MCF costs here.
+    pub(crate) cost: Cost,
+    /// What happened when the report was written to the record.
+    pub(crate) recorded: Recorded,
+}
+
+/// What MCF costs on this machine, against D24.
+#[derive(Debug)]
+pub(crate) struct Cost {
+    /// The binary's size on disk.
+    pub(crate) artifact: Attested<Bytes>,
+    /// This process's resident set.
+    pub(crate) resident: Attested<Bytes>,
+    /// Cold start to first command response, or `None` if it could not be
+    /// measured.
+    pub(crate) cold_start: Option<Measurement<Duration<Monotonic>>>,
+    /// The conditions all of the above were taken under.
+    pub(crate) conditions: Conditions,
+}
+
+/// What became of the record write.
+#[derive(Debug)]
+pub(crate) enum Recorded {
+    /// Written, at this path, under this identifier.
+    Written {
+        /// Where.
+        path: std::path::PathBuf,
+        /// The entry's identifier.
+        id: String,
+    },
+    /// Not written, and why. §3.2: MCF degrades and says so — a report that
+    /// could not be recorded is still a report, and pretending otherwise would
+    /// throw away the reading to protect the filing.
+    Refused(Failure),
+    /// Not attempted, because the operator asked for it not to be.
+    Declined,
+}
+
+/// Runs the whole thing.
+///
+/// `record` is false when the operator asked for a report without a write.
+/// That is a real need — inspecting a machine without touching its record —
+/// and it is not a gated category, so B1 lets it flow.
+#[must_use]
+pub(crate) fn run(record: bool) -> Report {
+    let mcf = BuildIdentity::current();
+    let at = Timestamp::now();
+    let machine = Machine::read();
+    let cost = measure_cost(&machine);
+    let body = body(&machine, &cost);
+    let recorded = if record {
+        write(&body, at)
+    } else {
+        Recorded::Declined
+    };
+    Report {
+        mcf,
+        at,
+        machine,
+        cost,
+        recorded,
+    }
+}
+
+fn measure_cost(machine: &Machine) -> Cost {
+    // The conditions these figures were taken under. Sparse and honest: what
+    // MCF knows here is what compiled it and what the machine reported, and
+    // everything else is unknown rather than filled in (A7).
+    let conditions = Conditions::new(
+        BuildIdentity::current(),
+        Floor {
+            hardware_state: Attested::Known(ConditionValue::text(
+                machine.processor.model.to_string(),
+            )),
+            mcf_configuration: Attested::Known(ConditionValue::text("mcf doctor, defaults")),
+            ..Floor::nothing_known()
+        },
+    );
+
+    let binary = std::env::current_exe().ok();
+    let artifact = binary
+        .as_deref()
+        .map_or(Attested::Unknown, self_cost::artifact_bytes);
+    // The subject is `mcf --version`, the shortest complete command MCF has.
+    // Measuring `doctor` itself would measure a process that profiles hardware
+    // and writes a record, which is not what D24's figure is about — and, as
+    // F1 records, an instrument that measures itself measuring itself does not
+    // terminate.
+    let cold_start = binary
+        .as_deref()
+        .and_then(|path| self_cost::cold_start(path, &["--version"], 20, conditions.clone()));
+
+    Cost {
+        artifact,
+        resident: self_cost::resident_bytes(),
+        cold_start,
+        conditions,
+    }
+}
+
+fn body(machine: &Machine, cost: &Cost) -> Value {
+    Value::map([
+        ("mcf", encode::build_identity(BuildIdentity::current())),
+        ("machine", encode::machine(machine)),
+        (
+            "self_cost",
+            Value::map([
+                (
+                    "artifact_bytes",
+                    match cost.artifact {
+                        Attested::Known(Bytes(size)) => {
+                            Value::Integer(i64::try_from(size).unwrap_or(i64::MAX))
+                        }
+                        Attested::Unknown => Value::Null,
+                    },
+                ),
+                (
+                    "resident_bytes",
+                    match cost.resident {
+                        Attested::Known(Bytes(size)) => {
+                            Value::Integer(i64::try_from(size).unwrap_or(i64::MAX))
+                        }
+                        Attested::Unknown => Value::Null,
+                    },
+                ),
+                (
+                    "cold_start",
+                    match &cost.cold_start {
+                        Some(measured) => encode::measurement(measured, |d| {
+                            i64::try_from(d.as_nanos()).unwrap_or(i64::MAX)
+                        }),
+                        None => Value::Null,
+                    },
+                ),
+                // What is absent is named, rather than being absent silently.
+                // A7 governs values MCF could not read; this is the same
+                // instinct one level up, for quantities MCF cannot yet measure
+                // at all.
+                (
+                    "not_measurable_here",
+                    Value::List(vec![
+                        Value::text("idle CPU — needs a daemon (B-030, B-031)"),
+                        Value::text("timer wakeups while idle — needs a daemon (B-031)"),
+                        Value::text("memory growth over 30 simulated days — needs a daemon"),
+                        Value::text(
+                            "added request-to-first-token latency — needs a serving path (B-035)",
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ])
+}
+
+fn write(body: &Value, at: Timestamp) -> Recorded {
+    let Some(path) = default_path() else {
+        return Recorded::Refused(no_record_location());
+    };
+    let mut journal = match Journal::open(&path) {
+        Ok(journal) => journal,
+        Err(failure) => return Recorded::Refused(failure),
+    };
+    let entry = Entry::new(EntryKind::MachineProfile, at, 0, body.clone());
+    let id = entry.id().to_string();
+    match journal.append(&entry) {
+        Ok(()) => Recorded::Written { path, id },
+        Err(failure) => Recorded::Refused(failure),
+    }
+}
+
+fn no_record_location() -> Failure {
+    use mcf_core::failure::{Attribution, Category, Disposition, Subsystem};
+    Failure::new(
+        Category::RecordUnwritable,
+        Attribution::Machine,
+        Disposition::Degraded,
+        Subsystem::new("mcf-cli::doctor"),
+        "neither XDG_DATA_HOME nor HOME is set, so there is no place to keep the record",
+    )
+    .with_context("tried", "$XDG_DATA_HOME/mcf, $HOME/.local/share/mcf")
+}
+
+impl core::fmt::Display for Report {
+    /// The report, rendered for a terminal.
+    ///
+    /// C3: a minimalist surface shows less decoration, not less information.
+    /// Every figure here carries what it is read against, every condition that
+    /// could not be read says so, and every promise MCF cannot make on this
+    /// machine is listed beside the ones it can.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{}", self.mcf)?;
+        writeln!(f, "recorded at {}", self.at)?;
+        writeln!(f, "{}", self.record_line())?;
+
+        writeln!(f, "\nMACHINE")?;
+        for line in self.machine.to_string().lines() {
+            writeln!(f, "  {line}")?;
+        }
+        for device in &self.machine.accelerators {
+            if let Characterization::AttemptedUncharacterized { missing } =
+                device.characterization()
+            {
+                let names: Vec<&str> = missing.iter().map(|m| m.as_str()).collect();
+                writeln!(
+                    f,
+                    "\n  ⚠ accelerator #{} is present and not characterized.\n\
+                     \x20   MCF will attempt to use it and will mark every result taken on it\n\
+                     \x20   as degraded, because it cannot read: {}.\n\
+                     \x20   Those readings are what §3.8 needs to tell a slow model from a\n\
+                     \x20   busy machine, so results taken here are not comparable with\n\
+                     \x20   characterized ones and are not contributable (D25, A5, A8).",
+                    device.index(),
+                    names.join(", "),
+                )?;
+            }
+        }
+
+        writeln!(f, "\nWHAT MCF COSTS HERE")?;
+        write!(f, "{}", Self::cost_line(&CORE_BINARY, self.cost.artifact))?;
+        write!(f, "{}", Self::cost_line(&RESIDENT_IDLE, self.cost.resident))?;
+        match &self.cost.cold_start {
+            Some(measured) => {
+                let spread = measured.spread();
+                // Which statistic D24's ceiling names is §7.50 and is open, so
+                // both are shown and which is being read against the ceiling is
+                // stated rather than chosen quietly.
+                writeln!(
+                    f,
+                    "  {:<38} median {} over n={} — {}",
+                    COLD_START.name,
+                    spread.median,
+                    measured.n(),
+                    COLD_START.read(Attested::Known(spread.median)),
+                )?;
+                writeln!(
+                    f,
+                    "  {:<38} p95    {} — {}",
+                    "",
+                    spread.p95,
+                    COLD_START.read(Attested::Known(spread.p95)),
+                )?;
+                writeln!(
+                    f,
+                    "  {:<38} ceiling {} · which statistic it names is §7.50, open",
+                    "", COLD_START.ceiling,
+                )?;
+            }
+            None => writeln!(f, "  {:<38} {}", COLD_START.name, Verdict::NotMeasured)?,
+        }
+        writeln!(
+            f,
+            "\n  Not measurable here, and named rather than left out:\n\
+             \x20   idle CPU, timer wakeups while idle, memory growth over 30 simulated days,\n\
+             \x20   added request-to-first-token latency — all D24 figures about a daemon,\n\
+             \x20   and there is no daemon until M2 (B-030, B-031, B-035)."
+        )?;
+
+        // A6: the conditions travel with the figures, on the surface and not
+        // only in the record.
+        writeln!(f, "\n  Taken under: {}", self.cost.conditions)?;
+
+        writeln!(f, "\nWHAT MCF PROMISES HERE")?;
+        for (held, promise) in self.promises() {
+            writeln!(f, "  {} {promise}", if held { "✓" } else { "✗" })?;
+        }
+        Ok(())
+    }
+}
+
+impl Report {
+    /// The report, rendered for a terminal.
+    #[must_use]
+    pub(crate) fn render(&self) -> String {
+        self.to_string()
+    }
+
+    fn cost_line<Q: mcf_core::measurement::Quantity>(
+        budget: &Budget<Q>,
+        measured: Attested<Q>,
+    ) -> String {
+        format!(
+            "  {:<38} {} — ceiling {} — {}\n",
+            budget.name,
+            measured,
+            budget.ceiling,
+            budget.read(measured),
+        )
+    }
+
+    fn record_line(&self) -> String {
+        match &self.recorded {
+            Recorded::Written { path, id } => {
+                format!("record: {} · wrote {id}", path.display())
+            }
+            Recorded::Declined => "record: not written — asked not to".to_owned(),
+            Recorded::Refused(failure) => format!("record: NOT WRITTEN — {failure}"),
+        }
+    }
+
+    /// What MCF will and will not promise on this machine.
+    ///
+    /// Each entry is a claim MCF can either make here or cannot, and the ones
+    /// it cannot are listed rather than omitted — a report that showed only the
+    /// ticks would be a report that read as complete.
+    #[must_use]
+    pub(crate) fn promises(&self) -> Vec<(bool, String)> {
+        let recorded = matches!(self.recorded, Recorded::Written { .. });
+        let mut promises = vec![
+            (
+                true,
+                "Every failure is classified against the taxonomy, attributed and \
+                 carries its context"
+                    .to_owned(),
+            ),
+            (
+                true,
+                "Every measurement carries its conditions, its sample count and its spread"
+                    .to_owned(),
+            ),
+            (
+                true,
+                "Every artifact carries its provenance, or records it as unknown".to_owned(),
+            ),
+            (
+                recorded,
+                if recorded {
+                    "This report is in the record, and the record is append-only".to_owned()
+                } else {
+                    "Nothing was written to the record on this run".to_owned()
+                },
+            ),
+        ];
+
+        if self.machine.accelerators.is_empty() {
+            promises.push((
+                false,
+                "No accelerator claim of any kind — there is no accelerator here".to_owned(),
+            ));
+        } else if self.machine.every_accelerator_is_characterized() {
+            promises.push((
+                true,
+                "Every accelerator present is characterized, so results taken on one \
+                 carry the conditions §3.4 needs"
+                    .to_owned(),
+            ));
+        } else {
+            promises.push((
+                false,
+                "At least one accelerator is uncharacterized, so results taken on it \
+                 are degraded and not comparable"
+                    .to_owned(),
+            ));
+        }
+
+        promises.push((
+            false,
+            "Nothing about model quality, speed or fitness — that is M5 onward".to_owned(),
+        ));
+        promises.push((
+            false,
+            "No laboratory, so no failure MCF claims to handle has been demonstrated \
+             here (A13, B-009)"
+                .to_owned(),
+        ));
+        promises
+    }
+
+    /// The report as the record holds it.
+    #[must_use]
+    pub(crate) fn to_value(&self) -> Value {
+        body(&self.machine, &self.cost)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Recorded, run};
+    use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+
+    /// B-014's condition, and B19's: the report is produced on whatever machine
+    /// the suite is running on — with or without an accelerator, offline, with
+    /// no model present — and it is complete.
+    #[test]
+    fn a_report_is_produced_and_is_complete() {
+        let report = run(false);
+        let rendered = report.render();
+        for section in [
+            "MACHINE",
+            "WHAT MCF COSTS HERE",
+            "WHAT MCF PROMISES HERE",
+            "processor:",
+            "power profile:",
+        ] {
+            assert!(rendered.contains(section), "{rendered}");
+        }
+    }
+
+    /// The report names what it cannot measure rather than leaving it out. A
+    /// list of five figures that shows three and stops reads as five.
+    #[test]
+    fn what_cannot_be_measured_here_is_named() {
+        let rendered = run(false).render();
+        for absent in [
+            "idle CPU",
+            "timer wakeups while idle",
+            "memory growth over 30 simulated days",
+            "added request-to-first-token latency",
+        ] {
+            assert!(rendered.contains(absent), "{rendered} omits {absent:?}");
+        }
+    }
+
+    /// The promises MCF cannot make are listed alongside the ones it can. A
+    /// report showing only the ticks would read as complete.
+    #[test]
+    fn the_promises_include_the_ones_mcf_cannot_make() {
+        let report = run(false);
+        let promises = report.promises();
+        assert!(
+            promises.iter().any(|(held, _)| *held),
+            "nothing is promised"
+        );
+        assert!(
+            promises.iter().any(|(held, _)| !*held),
+            "every promise is held, which cannot be true at M0"
+        );
+        assert!(
+            promises.iter().any(|(_, text)| text.contains("M5 onward")),
+            "the report claims something about model quality"
+        );
+    }
+
+    /// `--no-record` writes nothing, and the report says so rather than
+    /// leaving a reader to assume either way.
+    #[test]
+    fn declining_to_record_is_stated() {
+        let report = run(false);
+        assert!(matches!(report.recorded, Recorded::Declined));
+        assert!(report.render().contains("record: not written"));
+    }
+
+    /// §3.2: a record MCF could not write is a degradation, not a reason to
+    /// throw the reading away. The report is still produced and says at full
+    /// volume what happened.
+    #[test]
+    fn a_record_that_could_not_be_written_is_reported_at_full_volume() {
+        let mut report = run(false);
+        report.recorded = Recorded::Refused(
+            Failure::new(
+                Category::RecordUnwritable,
+                Attribution::Machine,
+                Disposition::Degraded,
+                Subsystem::new("mcf-cli::doctor::tests"),
+                "the volume is read-only",
+            )
+            .with_context("path", "/nowhere"),
+        );
+        let rendered = report.render();
+        assert!(rendered.contains("NOT WRITTEN"), "{rendered}");
+        assert!(rendered.contains("record.unwritable"), "{rendered}");
+        assert!(rendered.contains("MACHINE"), "the report was thrown away");
+    }
+
+    /// A6: every figure the report shows carries what it is read against, and
+    /// a figure with no reading says *not measured* rather than nothing.
+    #[test]
+    fn every_cost_line_carries_its_ceiling() {
+        let rendered = run(false).render();
+        assert!(rendered.contains("ceiling"), "{rendered}");
+        for figure in [
+            "core binary, no engines",
+            "resident memory, nothing loaded",
+            "cold start to first command response",
+        ] {
+            assert!(rendered.contains(figure), "{rendered} omits {figure:?}");
+        }
+    }
+
+    /// §7.50 is open, so the report shows both statistics and says which
+    /// ceiling is which rather than choosing one quietly.
+    #[test]
+    fn the_open_question_about_the_statistic_is_on_the_surface() {
+        let report = run(false);
+        if report.cost.cold_start.is_some() {
+            let rendered = report.render();
+            assert!(rendered.contains("median"), "{rendered}");
+            assert!(rendered.contains("p95"), "{rendered}");
+            assert!(rendered.contains("§7.50"), "{rendered}");
+        }
+    }
+
+    /// The record's own form of the report is valid, self-describing JSON —
+    /// A22's headless path is complete only if something other than a person
+    /// can read it.
+    #[test]
+    fn the_reports_record_form_round_trips() {
+        let value = run(false).to_value();
+        let line = value.to_line();
+        assert_eq!(mcf_record::json::parse(&line), Ok(value));
+    }
+
+    /// A7: an unread condition is `null` in the record, never a substitute.
+    #[test]
+    fn unread_conditions_are_null_in_the_record() {
+        let value = run(false).to_value();
+        let line = value.to_line();
+        assert!(line.contains("null"), "nothing was recorded as unknown");
+        assert!(
+            !line.contains(r#""unknown""#),
+            "an unknown was written as the word rather than as null"
+        );
+    }
+}
