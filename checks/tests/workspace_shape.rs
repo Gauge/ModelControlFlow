@@ -230,3 +230,58 @@ fn the_workspace_declares_no_third_party_dependencies() {
         }
     }
 }
+
+/// The workspace denies the constructs A2 forbids.
+///
+/// `scripts/check-lints-bite.sh` proves each of these actually refuses code;
+/// this test proves the table still *claims* them. The two are different
+/// failures: a lint quietly deleted from the manifest would leave that script
+/// checking a shorter list and still reporting every entry refused.
+#[test]
+fn the_workspace_denies_the_constructs_a2_forbids() {
+    let manifest = read("Cargo.toml").expect("the workspace manifest is readable");
+    for lint in [
+        "unwrap_used",
+        "expect_used",
+        "panic",
+        "todo",
+        "unimplemented",
+        "indexing_slicing",
+        "let_underscore_must_use",
+        "exit",
+    ] {
+        assert_eq!(
+            manifest.get("workspace.lints.clippy", lint),
+            Some("\"deny\""),
+            "clippy::{lint} is not denied",
+        );
+    }
+    for lint in ["unsafe_code", "missing_docs", "unused_must_use"] {
+        assert_eq!(
+            manifest.get("workspace.lints.rust", lint),
+            Some("\"deny\""),
+            "{lint} is not denied",
+        );
+    }
+}
+
+/// Tests are exempt from the panicking constructs, and the exemption is
+/// declared rather than incidental. B-003 draws the line at non-test code: an
+/// assertion that fails loudly is the honest outcome in a test, and denying it
+/// there would push tests toward returning early instead — A2's silent failure,
+/// aimed at the suite.
+#[test]
+fn the_test_exemption_is_declared() {
+    let clippy = read("clippy.toml").expect("clippy.toml is readable");
+    for setting in [
+        "allow-unwrap-in-tests",
+        "allow-expect-in-tests",
+        "allow-panic-in-tests",
+    ] {
+        assert_eq!(
+            clippy.get("", setting),
+            Some("true"),
+            "{setting} is not set"
+        );
+    }
+}

@@ -54,6 +54,9 @@ missing_docs = "deny"
 missing_debug_implementations = "deny"
 unreachable_pub = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
+# A2: a discarded `Result` is the swallowed exception, spelled in Rust. Warned
+# by default, which is how it survives; denied here.
+unused_must_use = "deny"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -68,6 +71,12 @@ todo = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
 integer_division = "deny"
+# `let _ = fallible();` is the other spelling of the same discard.
+let_underscore_must_use = "deny"
+# A27: MCF restores what it changed, including after an interruption.
+# `process::exit` leaves destructors unrun, so the exit status travels back
+# through `main` instead.
+exit = "deny"
 # A6: measurements carry conditions. Silent numeric truncation is how a
 # condition-carrying value becomes a bare one.
 cast_possible_truncation = "deny"

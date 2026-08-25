@@ -1,6 +1,8 @@
 //! Workspace-shape checks.
 //!
-//! B-001 states the crate split and the direction of its dependency edges.
+//! B-001 states the crate split and the direction of its dependency edges, and
+//! B-003 states that the failure taxonomy in the code is the one in
+//! `doc/taxonomy.md`.
 //! B16 says to prefer the machine-checked form of every rule, so the split is
 //! a test rather than a paragraph: an edge that would invert the layering
 //! fails the gating suite instead of surviving until somebody notices it in
@@ -13,4 +15,5 @@
 //! written in this repository and hold to one shape.
 
 pub mod manifest;
+pub mod taxonomy;
 pub mod workspace;

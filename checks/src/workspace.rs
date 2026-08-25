@@ -75,7 +75,9 @@ pub const MEMBERS: &[Member] = &[
     Member {
         name: "mcf-checks",
         path: "checks",
-        depends_on: &[],
+        // A development dependency, and the only one: the taxonomy agreement
+        // check reads `mcf_core::failure`. Nothing this crate builds ships.
+        depends_on: &["mcf-core"],
     },
 ];
 

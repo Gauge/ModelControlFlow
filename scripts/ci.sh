@@ -58,6 +58,9 @@ cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 step "unit and integration tests"
 cargo test --workspace --locked --offline
 
+step "the lint denials bite (B-003)"
+"$root/scripts/check-lints-bite.sh"
+
 step "documentation builds"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline >/dev/null
 
