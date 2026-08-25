@@ -31,11 +31,13 @@
 # and a compiler error is the compiler noticing.
 #
 # **A mutant that hangs is killed, and is named as having hung.** This is not
-# hypothetical: the digest mutant below turns a buffer's remaining room from 63
-# into 62 bytes, and the loop that fills it then never terminates. Every suite
-# run is therefore bounded by MUTANT_TIMEOUT, because a scheduled tier that can
-# be stopped for ever by one entry in its own catalogue is a tier nobody will
-# run twice.
+# hypothetical: the digest mutant below takes the room left in a 64-byte buffer
+# from 64 to 63, so the loop that fills it eventually takes zero bytes per pass
+# and never terminates. Every suite run is therefore bounded by MUTANT_TIMEOUT,
+# because a scheduled tier that one entry in its own catalogue can stop for ever
+# is a tier nobody runs twice. A timeout is confirmed by a second run before it
+# is believed, since a machine busy with something else can miss a deadline
+# without the mutant having anything to do with it.
 #
 # Exit status: 0 when the run is meaningful (whatever the score), 2 when it is
 # not — the control was killed, the tree would not build, or cargo is absent.
@@ -151,6 +153,29 @@ printf 'running the unmutated suite\n'
 (cd "$workdir" && cargo test --workspace --offline >/dev/null 2>&1) ||
     fail_cannot_check "the unmutated copy's suite does not pass"
 
+run_suite() {
+    local status=0
+    # Reaped before as well as after: a spinning leftover from an earlier
+    # mutant would compete with this run for the machine, and the deadline
+    # below is what would notice it (B58's lesson from the laboratory —
+    # clearing on the way in matters as much as on the way out).
+    reap
+    (cd "$workdir" && timeout "$MUTANT_TIMEOUT" cargo test --workspace --offline \
+        >/dev/null 2>&1) || status=$?
+    # `timeout` signals cargo, and cargo's test binaries are not its children to
+    # signal. A mutant that hangs therefore leaves a test process spinning a
+    # core for as long as the machine is up, which is a change to the machine
+    # MCF did not put back (A27).
+    reap
+    return "$status"
+}
+
+# Kills anything still running out of this run's copy. By path, so nothing
+# outside it is touched.
+reap() {
+    pkill -KILL -f "$workdir/target" >/dev/null 2>&1 || true
+}
+
 apply() {
     # $1 file, $2 find, $3 replace. Refuses anything but exactly one match.
     MUTANT_FIND="$2" MUTANT_REPLACE="$3" python3 - "$workdir/$1" <<'PY'
@@ -176,6 +201,12 @@ judge() {
     local label="$1" file="$2" find="$3" replace="$4" role="$5"
     local backup="$workdir/$file.original"
 
+    # Before the build, not only before the run: a leftover from a hung mutant
+    # is still executing the binary the linker is about to replace, and the
+    # write fails with ETXTBSY. Reaping here is what makes the *next* mutant a
+    # measurement of the next mutant.
+    reap
+
     cp "$workdir/$file" "$backup"
     if ! apply "$file" "$find" "$replace"; then
         mv "$backup" "$workdir/$file"
@@ -190,17 +221,30 @@ judge() {
     (cd "$workdir" && cargo test --workspace --offline --no-run >/dev/null 2>&1) || compiled=$?
     local status=0
     if [ "$compiled" -eq 0 ]; then
-        (cd "$workdir" && timeout "$MUTANT_TIMEOUT" cargo test --workspace --offline \
-            >/dev/null 2>&1) || status=$?
-        # `timeout` signals cargo, and cargo's test binaries are not its
-        # children to signal. A mutant that hangs therefore leaves a test
-        # process spinning a core for as long as the machine is up, which is a
-        # change to the machine MCF did not put back (A27). They are reaped by
-        # path, so nothing outside this run's copy is touched.
-        pkill -KILL -f "$workdir/target" >/dev/null 2>&1 || true
+        # `|| status=$?` rather than a bare call: under `errexit` a function
+        # that returns non-zero in command position ends the script, and a
+        # mutant being killed is exactly that.
+        run_suite || status=$?
+        # A timeout is confirmed before it is believed. A suite run competing
+        # with something else on the machine can exceed a deadline without the
+        # mutant having anything to do with it — B35's point, arriving at a
+        # classification instead of at a measurement — and "hung" is a claim
+        # about the mutant. The first draft of this script reported a mutant as
+        # hanging that a unit test kills in a tenth of a second.
+        if [ "$status" -eq "$EXIT_TIMED_OUT" ]; then
+            printf '    (timed out; confirming)\n'
+            status=0
+            run_suite || status=$?
+        fi
     fi
 
+    # Restored, and given a new modification time. Cargo decides what to rebuild
+    # from mtimes, and a restored backup is *older* than the build made from the
+    # mutant — so without the touch the compiler considers the crate fresh, keeps
+    # the mutated binary, and the next mutant is judged by the previous one's
+    # code. That is how a hung digest mutant reappeared as a hung export mutant.
     mv "$backup" "$workdir/$file"
+    touch "$workdir/$file"
 
     if [ "$role" = "control" ]; then
         if [ "$compiled" -eq 0 ] && [ "$status" -eq 0 ]; then
@@ -235,6 +279,15 @@ for index in "${!files[@]}"; do
     judge "${files[$index]}: ${finds[$index]:0:56}" \
         "${files[$index]}" "${finds[$index]}" "${replaces[$index]}" mutant
 done
+
+# The copy is the tree again. Every mutation is applied to a file that is put
+# back afterwards, and a restore that silently failed would make every judgment
+# after it a judgment about the wrong code. Cheap, and definitive.
+if ! diff -r -q --exclude=target --exclude=.git "$root" "$workdir" >/dev/null 2>&1; then
+    printf '\n' >&2
+    diff -r -q --exclude=target --exclude=.git "$root" "$workdir" >&2 || true
+    fail_cannot_check "the copy is not the tree again, so these results are about some other code"
+fi
 
 scored=$(( ${#killed[@]} + ${#survived[@]} ))
 printf '\nmutation score: %d killed of %d scored' "${#killed[@]}" "$scored"
