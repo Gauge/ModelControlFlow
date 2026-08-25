@@ -14,10 +14,12 @@
 //! signature; [`measurement`], which is A6 expressed as one; [`time`], which
 //! is B37 expressed as two types that do not meet; and [`attested`], which is
 //! A7 expressed as a variant; and [`provenance`], which is §3.6 expressed as a
-//! field nothing can omit.
+//! field nothing can omit; and [`degradation`], which is A5 expressed as a
+//! type with no way back.
 
 pub mod attested;
 pub mod build_identity;
+pub mod degradation;
 pub mod failure;
 pub mod measurement;
 pub mod provenance;

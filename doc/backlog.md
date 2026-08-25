@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 26 |
+| **Version** | 27 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **243 items: 49 decisions (38 open, 1 drafted, 2 narrowed, 8 resolved) and 194
-build items (5 done, 1 in progress, 59 blocked on a decision, 129 open).** Every item cites
+build items (6 done, 1 in progress, 59 blocked on a decision, 128 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -110,7 +110,7 @@ first and importance second.
 | B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | open |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
 | B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | open |
-| B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | open |
+| B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | blocked (DEC-021) |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a taxonomy category has no producing scenario | blocked (DEC-021) |
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
@@ -359,6 +359,22 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 27 — degradation is contagious, not merely recorded
+
+B-008 is done. The item asks that a degraded result be *typed* rather than
+flagged, and the consequence worth recording is what that forces: there is no
+operation on `Degraded<T>` that returns a plain `T`, so anything computed from
+a degraded input is degraded. A flag would have made degradation something a
+later stage could forget; a type makes forgetting it a line somebody has to
+write, and `into_parts` hands the mark back alongside the value so that line is
+visible.
+
+A degradation is a `Failure` whose disposition is `degraded`, not a parallel
+vocabulary. §3.2 and §3.1 are the same requirement seen from two sides — a
+degradation is exactly a failure MCF continued past — so the taxonomy, the
+attribution and the context come along, and the M0 mockup's `⚠ DEGRADED` block
+renders from the same fields as any other failure.
 
 ### Version 26 — provenance closes, and the chain is the reason
 
