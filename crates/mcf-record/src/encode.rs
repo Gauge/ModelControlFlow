@@ -24,7 +24,7 @@ use mcf_core::build_identity::BuildIdentity;
 use mcf_core::degradation::{Degradation, Degraded};
 use mcf_core::failure::Failure;
 use mcf_core::hardware::{Accelerator, Characterization, Machine};
-use mcf_core::measurement::{Conditions, Measurement, Quantity};
+use mcf_core::measurement::{ConditionValue, Conditions, Measurement, Quantity};
 use mcf_core::trial::{Series, Trial, Trials};
 
 use crate::json::Value;
@@ -103,6 +103,15 @@ pub fn conditions(conditions: &Conditions) -> Value {
             (
                 question.to_owned(),
                 match value {
+                    // A condition keeps the shape it was read in. Rendering
+                    // an integer through `Display` was the first defect the
+                    // property tier found (B-191): a context length written as
+                    // `"4096"` read back as text, so B-007's *round-trips
+                    // losslessly* held for nine of the ten questions and not
+                    // for the one that is naturally a number. §3.3 asks the
+                    // record be machine-readable first, and a number a reader
+                    // has to re-parse from a string is not that.
+                    Attested::Known(ConditionValue::Integer(number)) => Value::Integer(*number),
                     Attested::Known(value) => Value::text(value.to_string()),
                     Attested::Unknown => Value::Null,
                 },

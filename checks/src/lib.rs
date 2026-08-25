@@ -16,5 +16,7 @@
 
 pub mod document;
 pub mod manifest;
+pub mod property;
+pub mod scratch;
 pub mod taxonomy;
 pub mod workspace;

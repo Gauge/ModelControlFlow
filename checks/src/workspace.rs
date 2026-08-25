@@ -84,9 +84,11 @@ pub const MEMBERS: &[Member] = &[
         name: "mcf-checks",
         path: "checks",
         // Development dependencies only: the taxonomy agreement check reads
-        // `mcf_core::failure`, and the fault catalogue check reads
-        // `mcf_lab::CATALOGUE`. Nothing this crate builds ships.
-        depends_on: &["mcf-core", "mcf-lab"],
+        // `mcf_core::failure`, the fault catalogue check reads
+        // `mcf_lab::CATALOGUE`, and the property, fuzz, load and soak tiers
+        // examine `mcf_record`'s codec and journal. Nothing this crate builds
+        // ships.
+        depends_on: &["mcf-core", "mcf-lab", "mcf-record"],
     },
 ];
 

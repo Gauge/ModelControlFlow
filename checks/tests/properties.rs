@@ -1,0 +1,501 @@
+//! The property tier: invariants MCF claims universally, examined over
+//! generated inputs (B-191, D10).
+//!
+//! Each test below states one thing MCF's documents claim for *every* input,
+//! and tries to falsify it over [`GATING_CASES`] generated cases. The seeds are
+//! fixed (see `mcf_checks::property`), so a failure here is reproducible on
+//! another machine from the seed the verdict prints.
+//!
+//! What belongs here and what does not: a property is a claim with a
+//! quantifier in it. "The spread is five values that were actually observed"
+//! (A6) is one; "a torn journal reports the byte it stopped at and how much it
+//! did not read" (B62) is one. "`mcf doctor` renders a heading" is not — that
+//! is an example, and examples belong to the unit and functional tiers.
+
+// Every item in this file is test code; see the note in
+// checks/tests/taxonomy_agreement.rs.
+#![allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+
+use mcf_checks::property::{FILESYSTEM_CASES, GATING_CASES, Rng, Verdict, check};
+use mcf_checks::scratch::Scratch;
+
+use mcf_core::attested::Attested;
+use mcf_core::build_identity::BuildIdentity;
+use mcf_core::digest::{Sha256, sha256};
+use mcf_core::measurement::{ConditionValue, Conditions, Count, Floor, Measurement, Percentile};
+use mcf_core::time::Timestamp;
+use mcf_core::trial::{Series, Thinning};
+use mcf_record::journal::{Entry, EntryKind, Journal, replay};
+use mcf_record::json::{self, Value};
+use mcf_record::{decode, encode};
+
+/// Fails the test with the verdict's own account of what it found, seed
+/// included.
+fn assert_held(verdict: &Verdict) {
+    assert!(verdict.held(), "{verdict}");
+}
+
+/// The conditions generated measurements are taken under. A6 requires them;
+/// what they say is not what these properties are about.
+fn conditions() -> Conditions {
+    Conditions::new(
+        BuildIdentity::current(),
+        Floor {
+            mcf_configuration: Attested::Known(ConditionValue::text("the property tier")),
+            ..Floor::nothing_known()
+        },
+    )
+}
+
+/// A measurement over between two and forty generated samples.
+fn measurement(rng: &mut Rng) -> (Measurement<Count>, Vec<u64>) {
+    let extra = rng.index(39);
+    let samples: Vec<u64> = (0..extra + 2)
+        .map(|_| u64::try_from(rng.integer_between(0, 1_000_000)).unwrap_or(0))
+        .collect();
+    let first = Count(samples[0]);
+    let second = Count(samples[1]);
+    let rest: Vec<Count> = samples[2..].iter().copied().map(Count).collect();
+    (Measurement::of(first, second, rest, conditions()), samples)
+}
+
+/// A6: the spread is five values that *were actually observed*, and they are
+/// ordered. An interpolating percentile would break the first half; a sort bug
+/// would break the second. Neither is visible from any single example.
+#[test]
+fn every_reported_statistic_is_a_sample_that_was_observed() {
+    let verdict = check(GATING_CASES, |rng| {
+        let (measured, samples) = measurement(rng);
+        let spread = measured.spread();
+        for (name, value) in [
+            ("minimum", spread.minimum),
+            ("p5", spread.p5),
+            ("median", spread.median),
+            ("p95", spread.p95),
+            ("maximum", spread.maximum),
+        ] {
+            if !samples.contains(&value.0) {
+                return Err(format!(
+                    "{name} is {} which is not among the {} samples",
+                    value.0,
+                    samples.len()
+                ));
+            }
+        }
+        if !(spread.minimum <= spread.p5
+            && spread.p5 <= spread.median
+            && spread.median <= spread.p95
+            && spread.p95 <= spread.maximum)
+        {
+            return Err(format!("the spread is not ordered: {spread:?}"));
+        }
+        let smallest = samples.iter().copied().min().unwrap_or(0);
+        let largest = samples.iter().copied().max().unwrap_or(0);
+        if spread.minimum.0 != smallest || spread.maximum.0 != largest {
+            return Err(format!(
+                "the extremes are {}..{} and the samples are {smallest}..{largest}",
+                spread.minimum.0, spread.maximum.0
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// A6 again, on the count: `n` is how many samples there were, not how many
+/// the type happened to keep. The two are the same only while nothing summarizes
+/// early, which is exactly what B56 forbids and what a property can watch for.
+#[test]
+fn the_sample_count_is_the_number_of_samples() {
+    let verdict = check(GATING_CASES, |rng| {
+        let (measured, samples) = measurement(rng);
+        if measured.n() != samples.len() {
+            return Err(format!(
+                "n is {} over {} samples",
+                measured.n(),
+                samples.len()
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// Every percentile between 0 and 100 lands on an observed sample, and the
+/// function is monotone in the rank. Stated separately from the spread because
+/// the spread only asks about five of the hundred and one ranks.
+#[test]
+fn percentiles_are_monotone_in_the_rank() {
+    let verdict = check(GATING_CASES, |rng| {
+        let (measured, samples) = measurement(rng);
+        let mut previous = None;
+        for rank in 0..=100u8 {
+            let percentile = Percentile::new(rank).ok_or("a rank of 0..=100 is a percentile")?;
+            let value = measured.at(percentile);
+            if !samples.contains(&value.0) {
+                return Err(format!("p{rank} is {} which was never observed", value.0));
+            }
+            if previous.is_some_and(|earlier| value < earlier) {
+                return Err(format!("p{rank} is {value:?}, below the rank before it"));
+            }
+            previous = Some(value);
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// A generated JSON value, up to a bounded depth.
+///
+/// Depth is bounded rather than left to chance: an unbounded generator produces
+/// a stack overflow eventually, which would be a finding about the generator
+/// and not about the codec.
+fn value(rng: &mut Rng, depth: u32) -> Value {
+    match rng.below(if depth == 0 { 4 } else { 6 }) {
+        0 => Value::Null,
+        1 => Value::Bool(rng.boolean()),
+        2 => Value::Integer(rng.integer_between(i64::MIN, i64::MAX)),
+        3 => Value::text(rng.text(12)),
+        4 => Value::List((0..rng.index(5)).map(|_| value(rng, depth - 1)).collect()),
+        _ => Value::map(
+            (0..rng.index(5))
+                .map(|_| (rng.text(8), value(rng, depth - 1)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+/// §7.30 makes the record's format an interface MCF keeps for ever, and a
+/// codec is only that if it is exact. Written and read back is the same value —
+/// for strings a uniform generator would never reach: quotes, backslashes, the
+/// C0 controls, and the astral plane that travels as a surrogate pair.
+#[test]
+fn every_record_value_survives_the_round_trip() {
+    let verdict = check(GATING_CASES, |rng| {
+        let original = value(rng, 3);
+        let line = original.to_line();
+        match json::parse(&line) {
+            Ok(read_back) if read_back == original => Ok(()),
+            Ok(read_back) => Err(format!("wrote {line}, read back {read_back:?}")),
+            Err(error) => Err(format!("wrote {line}, and it would not parse: {error}")),
+        }
+    });
+    assert_held(&verdict);
+}
+
+/// B62's *one line per entry* is what makes a torn write a torn line, and a
+/// torn line is what replay can bound and report. A value that encoded a raw
+/// newline would silently split one entry into two, and the second would be
+/// unreadable — the loss A2 forbids, arriving through the codec.
+#[test]
+fn an_encoded_value_is_always_one_line() {
+    let verdict = check(GATING_CASES, |rng| {
+        let line = value(rng, 3).to_line();
+        if line.contains('\n') || line.contains('\r') {
+            return Err(format!("the encoding holds a line break: {line:?}"));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// B-301 re-verifies a checksum by streaming a file, and `mcf export` digests
+/// one in a single pass. If the two disagreed for any chunking, an artifact
+/// would verify against itself and not against its record.
+#[test]
+fn a_streamed_digest_equals_a_single_pass_one() {
+    let verdict = check(GATING_CASES, |rng| {
+        let bytes = rng.bytes(4_000);
+        let whole = sha256(&bytes);
+        let mut streamed = Sha256::new();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let chunk = rng.index(200) + 1;
+            let end = (offset + chunk).min(bytes.len());
+            streamed.update(&bytes[offset..end]);
+            offset = end;
+        }
+        let streamed = streamed.finish();
+        if streamed != whole {
+            return Err(format!(
+                "{} bytes digest to {} whole and {} streamed",
+                bytes.len(),
+                whole.hex(),
+                streamed.hex()
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// A7 is the property: what MCF did not know comes back unknown, and what it
+/// knew comes back as what it wrote. A decoder that turned an unknown into the
+/// word "unknown" would compare equal to a floor that had read something.
+#[test]
+fn a_condition_floor_survives_the_record_including_its_unknowns() {
+    let verdict = check(GATING_CASES, |rng| {
+        let mut floor = Floor::nothing_known();
+        for (index, slot) in [
+            &mut floor.hardware_state,
+            &mut floor.thermal_state,
+            &mut floor.driver_versions,
+            &mut floor.runtime_versions,
+            &mut floor.quantization,
+            &mut floor.context_length,
+            &mut floor.batch_shape,
+            &mut floor.mcf_configuration,
+            &mut floor.realized_placement,
+            &mut floor.instrumentation,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            *slot = match rng.below(3) {
+                0 => Attested::Unknown,
+                1 => Attested::Known(ConditionValue::text(rng.text(10))),
+                _ => Attested::Known(ConditionValue::integer(
+                    rng.integer_between(-1_000, 1_000)
+                        .saturating_add(i64::try_from(index).unwrap_or(0)),
+                )),
+            };
+        }
+        let conditions = Conditions::new(BuildIdentity::current(), floor.clone());
+        let encoded = encode::conditions(&conditions);
+        let read_back = decode::floor(&encoded).ok_or("a floor MCF wrote is a floor it reads")?;
+        if read_back != floor {
+            return Err(format!("wrote {floor:?}, read back {read_back:?}"));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// The journal is the record (D20, B62), so what a journal holds is what was
+/// appended to it — for any entry, not for the handful the unit tests write.
+#[test]
+fn every_entry_survives_the_journal() {
+    let verdict = check(FILESYSTEM_CASES, |rng| {
+        let scratch = Scratch::new("property-journal");
+        let count = rng.index(6) + 1;
+        let entries: Vec<Entry> = (0..count)
+            .map(|sequence| {
+                let kind = *rng.pick(&EntryKind::ALL).unwrap_or(&EntryKind::Failure);
+                Entry::new(
+                    kind,
+                    Timestamp::from_utc_nanos(
+                        i128::from(rng.integer_between(0, 2_000_000_000_000_000_000)),
+                        Attested::Unknown,
+                    ),
+                    u64::try_from(sequence).unwrap_or(0),
+                    value(rng, 2),
+                )
+            })
+            .collect();
+
+        {
+            let mut journal =
+                Journal::open(&scratch.journal()).map_err(|failure| failure.to_string())?;
+            for entry in &entries {
+                journal
+                    .append(entry)
+                    .map_err(|failure| failure.to_string())?;
+            }
+        }
+
+        let replayed = replay(&scratch.journal()).map_err(|failure| failure.to_string())?;
+        if let Some(loss) = &replayed.loss {
+            return Err(format!("an undamaged journal reported a loss: {loss}"));
+        }
+        let written: Vec<&Value> = entries.iter().map(Entry::body).collect();
+        let read: Vec<&Value> = replayed.entries.iter().map(Entry::body).collect();
+        if written != read {
+            return Err(format!(
+                "appended {} entries and replayed {}",
+                written.len(),
+                read.len()
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// B62: a replay that cannot complete says which line, which byte, and how
+/// much it did not read. The property is that those three agree with the file
+/// for *every* place a crash could have torn it — which is the whole point,
+/// since a crash does not choose convenient offsets.
+#[test]
+fn a_journal_torn_anywhere_reports_exactly_what_it_lost() {
+    let verdict = check(FILESYSTEM_CASES, |rng| {
+        let scratch = Scratch::new("property-torn");
+        let count = rng.index(5) + 2;
+        {
+            let mut journal =
+                Journal::open(&scratch.journal()).map_err(|failure| failure.to_string())?;
+            for sequence in 0..count {
+                journal
+                    .append(&Entry::new(
+                        EntryKind::SelfCost,
+                        Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
+                        u64::try_from(sequence).unwrap_or(0),
+                        Value::map([("n", Value::Integer(i64::try_from(sequence).unwrap_or(0)))]),
+                    ))
+                    .map_err(|failure| failure.to_string())?;
+            }
+        }
+
+        let whole = std::fs::read(scratch.journal()).map_err(|error| error.to_string())?;
+        let cut = rng.index(whole.len());
+        std::fs::write(scratch.journal(), &whole[..cut]).map_err(|error| error.to_string())?;
+
+        let replayed = match replay(&scratch.journal()) {
+            Ok(replayed) => replayed,
+            // A journal cut inside its header is refused rather than replayed,
+            // which is a different honest answer and not a loss report.
+            Err(_) if cut < first_line_length(&whole) => return Ok(()),
+            Err(failure) => return Err(format!("cut at {cut} of {}: {failure}", whole.len())),
+        };
+        match replayed.loss {
+            None => {
+                if cut != whole.len() && !ends_at_a_line_boundary(&whole, cut) {
+                    return Err(format!(
+                        "cut at {cut} of {} mid-line, and the replay reported no loss",
+                        whole.len()
+                    ));
+                }
+                Ok(())
+            }
+            Some(loss) => {
+                if loss.byte_offset + loss.bytes_unread != cut {
+                    return Err(format!(
+                        "cut at {cut}: the loss says byte {} plus {} unread, which is {}",
+                        loss.byte_offset,
+                        loss.bytes_unread,
+                        loss.byte_offset + loss.bytes_unread
+                    ));
+                }
+                if loss.line == 0 {
+                    return Err("a loss names a one-based line, and named zero".to_owned());
+                }
+                Ok(())
+            }
+        }
+    });
+    assert_held(&verdict);
+}
+
+/// How long the header line is, including its newline.
+fn first_line_length(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(bytes.len(), |index| index + 1)
+}
+
+/// Whether a cut at this offset landed on a line boundary.
+fn ends_at_a_line_boundary(bytes: &[u8], cut: usize) -> bool {
+    cut == 0 || bytes.get(cut - 1) == Some(&b'\n')
+}
+
+/// B-271: thinning declares what it dropped. The property is that a thinned
+/// series keeps the points the factor names and says so — a series that kept a
+/// different number than its factor implies would make interior detail
+/// uninterpretable.
+#[test]
+fn thinning_keeps_what_its_factor_names() {
+    let verdict = check(GATING_CASES, |rng| {
+        let length = rng.index(200) + 1;
+        let points: Vec<Count> = (0..length)
+            .map(|index| Count(u64::try_from(index).unwrap_or(0)))
+            .collect();
+        let full = Series::new(points.clone(), Thinning::FULL);
+        if full.kept() != length {
+            return Err(format!(
+                "a full-resolution series of {length} kept {}",
+                full.kept()
+            ));
+        }
+        let factor = u32::try_from(rng.index(9) + 1).unwrap_or(1);
+        let thinned = full
+            .thinned(factor)
+            .ok_or_else(|| format!("thinning by {factor} is a factor"))?;
+        let expected = length.div_ceil(usize::try_from(factor).unwrap_or(1));
+        if thinned.kept() != expected {
+            return Err(format!(
+                "thinning {length} points by {factor} kept {} rather than {expected}",
+                thinned.kept()
+            ));
+        }
+        if thinned.thinning().factor() != factor {
+            return Err(format!(
+                "a series thinned by {factor} says {}",
+                thinned.thinning().factor()
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// A19: anything MCF reports is tested against an independently known value.
+/// The calendar is MCF's own arithmetic (Hinnant's `civil_from_days`), and the
+/// system's `date` is a separate implementation of the same question — so
+/// agreement over generated moments is evidence and disagreement is a defect
+/// here.
+///
+/// Skipped, loudly, where `date` is not the one this reads: a check that cannot
+/// run says so rather than passing (B38).
+#[test]
+fn the_civil_calendar_agrees_with_an_independent_one() {
+    let Some(oracle) = date_oracle() else {
+        println!(
+            "  not checked: `date -u -d @0 +%Y-%m-%dT%H:%M:%S` is unavailable here, \
+             so this property has no independent oracle on this machine"
+        );
+        return;
+    };
+    let verdict = check(64, |rng| {
+        // 1901-12-13 to 2038-01-19: the range every implementation of this
+        // question agrees is representable, so a disagreement is about the
+        // calendar and not about somebody's 32-bit boundary.
+        let seconds = rng.integer_between(-2_100_000_000, 2_100_000_000);
+        let moment =
+            Timestamp::from_utc_nanos(i128::from(seconds) * 1_000_000_000, Attested::Unknown);
+        let civil = moment.civil_utc();
+        let mine = format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+            civil.year, civil.month, civil.day, civil.hour, civil.minute, civil.second
+        );
+        let theirs =
+            oracle(seconds).ok_or_else(|| format!("`date` would not answer for {seconds}"))?;
+        if mine != theirs {
+            return Err(format!(
+                "MCF says {mine} for {seconds}s; `date` says {theirs}"
+            ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// The system's own answer to the same question, or `None` where there is not
+/// one to ask.
+fn date_oracle() -> Option<impl Fn(i64) -> Option<String>> {
+    let probe = ask_date(0)?;
+    if probe != "1970-01-01T00:00:00" {
+        return None;
+    }
+    Some(|seconds: i64| ask_date(seconds))
+}
+
+fn ask_date(seconds: i64) -> Option<String> {
+    let output = std::process::Command::new("date")
+        .args(["-u", &format!("-d@{seconds}"), "+%Y-%m-%dT%H:%M:%S"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8(output.stdout).ok()?.trim().to_owned())
+}
