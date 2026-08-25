@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 36 |
+| **Version** | 37 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **244 items: 50 decisions (36 open, 1 drafted, 2 narrowed, 11 resolved) and 194
-build items (12 done, 2 in progress, 56 blocked on a decision, 124 open).** Every item cites
+build items (14 done, 2 in progress, 56 blocked on a decision, 122 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -112,8 +112,8 @@ first and importance second.
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
 | B-007 | Condition capture at measurement time: hardware state, thermal, driver and runtime versions, quantization, context length, batch shape, MCF version and configuration | §3.3, §3.4 | The §3.4 floor is captured from a live machine and round-trips through the record store losslessly | open |
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | **done** — `mcf_core::degradation`: `Degraded<T>` is a distinct type with no `Deref`, no `into_inner` and no combinator returning an unmarked value; a degradation is a `Failure` with disposition `degraded`, so the taxonomy travels with the mark |
-| B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | open — unblocked by D26 |
-| B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | open — unblocked by D26 |
+| B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | **done** — `mcf-lab`: a constant catalogue (B32), a supplied simulated clock, a per-run world that clears itself on the way in as well as out (B58), and 100-run determinism asserted for every scenario |
+| B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a category MCF's own code constructs has no producing scenario (D26) | **done** — `checks/tests/fault_catalogue.rs`, both directions: a claimed category with no scenario fails, and a scenario for a category nothing constructs fails too |
 | B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | **done** — `mcf_core::hardware`: two routes, each declaring its coverage, merged without overwriting and with disagreements reported (A8); D25's verdict computed per read and naming which of the four readings is missing |
@@ -361,6 +361,28 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 37 — the laboratory exists, and `doctor` runs it
+
+B-009 and B-010 are done, and `mcf doctor` now runs the catalogue rather than
+reporting that one exists. The difference is §VIII's whole content: *there is a
+laboratory* is a fact about the repository, and *every failure MCF claims to
+handle was reproduced on this machine a moment ago* is a fact about the
+operator's machine.
+
+**A design defect the laboratory found in itself.** The first world gave each
+scenario a directory named for the scenario and the process, so that repeated
+runs would produce byte-identical failures. Two threads running the same
+scenario then cleared each other's directory. The fix is the more honest
+design: each run gets its own directory, and the path is elided from the
+outcome before outcomes are compared — because *where* a run happened is
+environment and *what happened* is the failure, and only the second is what
+§3.17 asks to reproduce.
+
+**B-010 checks both directions.** A claimed category with no scenario fails, as
+the item asks. So does a scenario for a category nothing constructs any more —
+which is worse than an absent scenario, because it passes for ever while
+testing nothing and looks like coverage.
 
 ### Version 36 — the laboratory unblocks, and B-010's condition sharpens
 

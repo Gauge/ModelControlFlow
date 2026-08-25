@@ -16,6 +16,7 @@ name = "mcf-checks"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+ "mcf-lab",
 ]
 
 [[package]]
