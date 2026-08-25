@@ -417,7 +417,7 @@ three orders of magnitude apart.
 **Every figure is also compared with the last one recorded** (B-011, B20). A
 ceiling catches a figure that became bad; a baseline catches one that became
 worse, which is earlier and more useful. The previous readings live in
-`.mcf-tiers/performance/`, one file per figure, machine-local for the same
+`.mcf-tiers/baselines/`, one file per figure, machine-local for the same
 reason the tier ages are: a baseline from somebody else's machine is not a
 baseline. A comparison is refused rather than made wrong when the two are not
 comparable — a different profile is a different artifact (A8) — and a run that
