@@ -30,11 +30,13 @@ mod clock;
 mod duration;
 mod instant;
 mod timestamp;
+mod zone;
 
 pub use clock::{Clock, ClockKind, Monotonic, Simulated, SimulatedClock, SystemClock};
 pub use duration::Duration;
 pub use instant::Instant;
-pub use timestamp::{Timestamp, UtcOffset};
+pub use timestamp::{Civil, Timestamp, UtcOffset};
+pub use zone::{Zone, offset_at};
 
 #[cfg(test)]
 mod tests;
