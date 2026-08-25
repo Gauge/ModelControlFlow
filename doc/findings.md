@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -29,6 +29,7 @@ forward as one.
 | § | Section |
 |---|---|
 | 1 | [F1 — The adversarial prototype (§7.19, DEC-019)](#1--f1--the-adversarial-prototype-719-dec-019) |
+| 2 | [F2 — The development machine cannot attribute a budget (DEC-051)](#2--f2--the-development-machine-cannot-attribute-a-budget-dec-051) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -151,7 +152,72 @@ measurable at this stage* rather than estimated, because A20 forbids an estimate
 that could be read as a measurement and A7 forbids a plausible substitute for
 one.
 
+## 2 · F2 — The development machine cannot attribute a budget (DEC-051)
+
+**What was run.** The budget tier (B-011), in release, on the machine MCF is
+being written on.
+
+**Conditions.** The same machine as F1: 16 cores, 32 threads. Its one-minute
+load average sat between 44 and 47 for the whole session, from work that has
+nothing to do with MCF — a language server pool and a long-running application
+belonging to the operator. That is not an artefact of measuring; it is what the
+machine is.
+
+**What happened.** Every event-class figure came back **unattributable**, which
+is what D27 says should happen and is the correct answer. Alongside it, the
+readings themselves:
+
+| Figure | Reading | Ceiling | Verdict |
+|---|---|---|---|
+| Core binary | 548 776 B | ≤ 40 MiB | within |
+| Resident memory | 7 655 424 B | ≤ 20 MiB | unattributable |
+| Cold start, median of 100 | 8.7 ms | ≤ 100 ms | — |
+| Cold start, **p99** of 100 | **42.3 ms** | ≤ 100 ms | unattributable |
+
+The median and the p99 differ by a factor of six on a machine that is simply
+being used. F1 saw the same shape at a factor of twenty-five under a compile.
+D27's rule — that the tail is what a budget is about — is doing real work here:
+a median-based budget would have reported a machine six times better than the
+one the operator has.
+
+**The finding is that the tier can assert exactly one figure here, and this is a
+gap rather than a defect.** The binary's size is asserted, because a file's
+length is read as a single value and does not consult attributability at all —
+nothing else running can change it. Everything that goes through a measurement
+comes back unattributable, event-class and state-class alike, because D27's rule
+is about the run rather than about the kind of figure.
+
+There is no threshold that would fix the event-class half. The machine really is
+busy, and a timing taken on it really does measure the contention (B35);
+loosening the rule until the reading passed would be choosing the answer.
+
+The state-class half is a smaller and more answerable question, and it is
+recorded rather than assumed: a fresh process's resident set is affected by
+memory pressure and not by CPU contention, so it is not obvious that the load
+average should gate it. D27 did not distinguish, and §7.51 now asks whether it
+should.
+
+So MCF currently has no way to assert an event-class budget on a machine
+somebody is using, which is most machines. B35 already names the mechanism that
+would — an exclusive window, announced, bounded and interruptible — and it is
+M6 work (B-181, B-182) built for measuring *models*. Whether MCF's own budgets
+should open one, and what a scheduled tier does on a CI runner that is never
+quiet, is **DEC-051**.
+
+**What is not in doubt.** The tier is not reporting a failure and calling it a
+success, nor the reverse. It reports the readings, states that it is not judging
+them and why, and does not refresh its own age (B38). The dishonest outcomes are
+the ones this design forecloses.
+
 ## Changelog
+
+### Version 2 — the budget tier reports that it cannot judge
+
+F2 added. B-011's first run on a real machine established something worth
+keeping: the tier's state-class figures assert cleanly, its event-class ones
+cannot be asserted at all on a machine somebody is using, and no threshold
+fixes that because the machine really is busy. DEC-051 registers the question
+rather than the tier quietly loosening until a number passed.
 
 ### Version 1 — the adversarial prototype reports
 

@@ -24,11 +24,13 @@
 //! [`AttemptedUncharacterized`]: Characterization::AttemptedUncharacterized
 
 mod accelerator;
+mod load;
 mod nvml;
 mod processor;
 mod route_files;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
+pub use load::{Attributability, LoadAverage, QUIET_PER_CORE, attributability, load_average};
 pub use processor::{Memory, PowerProfile, Processor};
 
 use core::fmt;
@@ -51,6 +53,13 @@ pub struct Machine {
     /// The host's power or performance profile, where the platform publishes
     /// one.
     pub power_profile: Attested<PowerProfile>,
+    /// What else the machine was doing when this was read.
+    ///
+    /// §3.8 makes contention part of what a machine *is* at a moment, and B24
+    /// makes it the difference between "this model is slow" and "this machine
+    /// was busy". It is read with everything else rather than separately,
+    /// because a load read at a different moment is a different machine.
+    pub load: Attested<LoadAverage>,
 }
 
 impl Machine {
@@ -69,6 +78,7 @@ impl Machine {
             memory: processor::read_memory(),
             accelerators: accelerator::read_all(),
             power_profile: processor::read_power_profile(),
+            load: load::load_average(),
         }
     }
 
@@ -97,7 +107,8 @@ impl fmt::Display for Machine {
                 writeln!(f, "{device}")?;
             }
         }
-        write!(f, "power profile: {}", self.power_profile)
+        writeln!(f, "power profile: {}", self.power_profile)?;
+        write!(f, "load, one minute: {}", self.load)
     }
 }
 
