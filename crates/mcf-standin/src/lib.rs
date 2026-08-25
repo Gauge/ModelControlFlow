@@ -35,6 +35,7 @@
 //! | [`llama`] | One family of model, assembled from those operations and run a token at a time |
 //! | [`sample`] | Choosing the next token, from a stated seed and stated settings |
 //! | [`session`] | The generation loop, and the mark every result from it carries (A5) |
+//! | [`tokenizer`] | The vocabulary in the file, and the segmentation it implies |
 //!
 //! What is not here yet: the tokenizer, which turns a prompt into the token
 //! identifiers everything above takes as given (B-360 names it among the
@@ -48,3 +49,4 @@ pub mod llama;
 pub mod ops;
 pub mod sample;
 pub mod session;
+pub mod tokenizer;
