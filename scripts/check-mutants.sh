@@ -93,6 +93,8 @@ declare -a files=(
     "crates/mcf-core/src/trial/series.rs"
     "crates/mcf-core/src/failure/mod.rs"
     "crates/mcf-core/src/self_cost.rs"
+    "crates/mcf-standin/src/ops.rs"
+    "crates/mcf-standin/src/dequantize.rs"
 )
 declare -a finds=(
     # A6: the reported spread is a value that was observed, at the right rank.
@@ -125,6 +127,13 @@ declare -a finds=(
     # This entry survived when it was first tried, which is how the test that
     # kills it came to exist.
     "Bytes(kib.saturating_mul(1024))"
+    # D31, A19: the rotary convention. Pairs are adjacent dimensions, and the
+    # other convention in the wild produces fluent nonsense that gets worse with
+    # distance — the failure a second implementation exists to catch.
+    "let at = pair.saturating_mul(2);"
+    # D31: the four-bit bias. A block decoded without it is the right size and
+    # the wrong values, which is the kind of wrongness that looks like a model.
+    "out.push(scale * (f32::from(value & 0x0F) - 8.0));"
 )
 declare -a replaces=(
     ".get(rank)"
@@ -139,6 +148,8 @@ declare -a replaces=(
     ".step_by(1)"
     "        Disposition::Degraded"
     "Bytes(kib.saturating_mul(1000))"
+    "let at = pair;"
+    "out.push(scale * f32::from(value & 0x0F));"
 )
 
 # The control: a mutation with no semantic effect at all — addition, the other
