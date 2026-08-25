@@ -10,10 +10,12 @@
 //! constructed without its conditions.
 //!
 //! At M0 it carries [`build_identity`], which every record MCF writes names
-//! among its conditions (§3.4), and [`failure`], which is A2 expressed as a
-//! signature.
+//! among its conditions (§3.4); [`failure`], which is A2 expressed as a
+//! signature; and [`measurement`], which is A6 expressed as one.
 
 pub mod build_identity;
 pub mod failure;
+pub mod measurement;
 
 pub use failure::{Failure, Result};
+pub use measurement::Measurement;
