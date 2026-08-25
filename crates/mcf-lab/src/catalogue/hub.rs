@@ -18,6 +18,30 @@ use crate::hub::{Behaviour, FakeHub, Repository};
 use crate::scenario::{Outcome, Scenario};
 use crate::world::World;
 
+/// The card says one thing and the weights say another.
+pub(super) const DECEPTIVE_METADATA: Scenario = Scenario {
+    id: "hub/deceptive-metadata",
+    produces: Category::HubMetadataDeceptive,
+    summary: "a repository declaring an architecture its weights are not is caught by reading them",
+    run: deceptive_metadata,
+};
+
+/// The repository declares no terms at all.
+pub(super) const NO_LICENCE: Scenario = Scenario {
+    id: "hub/no-licence",
+    produces: Category::HubMetadataAbsent,
+    summary: "a repository whose terms nobody can read is a state to report, not one to fill in",
+    run: no_licence,
+};
+
+/// The transfer ends early.
+pub(super) const TRUNCATED_TRANSFER: Scenario = Scenario {
+    id: "hub/truncated-transfer",
+    produces: Category::ArtifactIncomplete,
+    summary: "fewer bytes than the listing promised is a partial artifact, on the disk and in the record",
+    run: truncated_transfer,
+};
+
 /// A reference that is not one.
 pub(super) const REFERENCE_IS_NOT_ONE: Scenario = Scenario {
     id: "hub/reference-is-not-one",
@@ -87,6 +111,110 @@ fn gated(_world: &World) -> Outcome {
 
 fn rate_limited(_world: &World) -> Outcome {
     ask(Behaviour::RateLimited { retry_after: 30 }, true)
+}
+
+/// A GGUF that declares an architecture, with no tensors — enough for a reader
+/// to say what it is, which is all this scenario needs.
+fn model_declaring(architecture: &str) -> Vec<u8> {
+    let mut bytes = b"GGUF".to_vec();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u64.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    push_string(&mut bytes, "general.architecture");
+    bytes.extend_from_slice(&8_u32.to_le_bytes());
+    push_string(&mut bytes, architecture);
+    bytes
+}
+
+fn deceptive_metadata(world: &World) -> Outcome {
+    // The repository's card says llama; the weights it serves say mamba. The
+    // whole path runs: list, fetch, read the weights, compare.
+    let hub = FakeHub::new().with(
+        "owner/mislabelled",
+        Repository::holding("model.gguf", &model_declaring("mamba")),
+    );
+    let Ok(reference) = mcf_hub::reference::parse("owner/mislabelled") else {
+        return Outcome::Unexpected("owner/mislabelled is a reference".to_owned());
+    };
+    let listing = match hub.list(&reference) {
+        Ok(listing) => listing,
+        Err(failure) => return Outcome::Unexpected(format!("the listing failed: {failure}")),
+    };
+    let Some(entry) = listing.entry("model.gguf") else {
+        return Outcome::Unexpected("the repository lists no weights".to_owned());
+    };
+
+    let into = world.path("model.gguf");
+    if let Err(failure) = hub.fetch(&reference, entry, &into) {
+        return Outcome::Unexpected(format!("the fetch failed: {failure}"));
+    }
+    let file = match mcf_standin::gguf::read(&into) {
+        Ok(file) => file,
+        Err(failure) => {
+            return Outcome::Unexpected(format!("the weights would not read: {failure}"));
+        }
+    };
+
+    // The card is what the repository says; the architecture is what the
+    // weights say. A21's divergence, and the most useful thing MCF can report
+    // about a repository like this.
+    let compared = mcf_hub::inspect::Architecture::compare(Some("llama"), file.architecture());
+    match compared.divergence() {
+        Some(failure) => Outcome::Produced(failure),
+        None => Outcome::Unexpected(format!("the mislabelling was not noticed: {compared:?}")),
+    }
+}
+
+fn no_licence(_world: &World) -> Outcome {
+    let hub = FakeHub::new().with(
+        "owner/quiet",
+        Repository::holding("model.gguf", b"weights").without_licence(),
+    );
+    let Ok(reference) = mcf_hub::reference::parse("owner/quiet") else {
+        return Outcome::Unexpected("owner/quiet is a reference".to_owned());
+    };
+    let listing = match hub.list(&reference) {
+        Ok(listing) => listing,
+        Err(failure) => return Outcome::Unexpected(format!("the listing failed: {failure}")),
+    };
+    match mcf_hub::inspect::terms_are_legible(&listing) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(licence) => Outcome::Unexpected(format!("a licence appeared from nowhere: {licence}")),
+    }
+}
+
+fn truncated_transfer(world: &World) -> Outcome {
+    let hub = FakeHub::new().with(
+        "owner/model",
+        Repository::holding("model.gguf", b"0123456789")
+            .behaving(Behaviour::Truncates { after: 4 }),
+    );
+    let Ok(reference) = mcf_hub::reference::parse("owner/model") else {
+        return Outcome::Unexpected("owner/model is a reference".to_owned());
+    };
+    let listing = match hub.list(&reference) {
+        Ok(listing) => listing,
+        Err(failure) => return Outcome::Unexpected(format!("the listing failed: {failure}")),
+    };
+    let Some(entry) = listing.entry("model.gguf") else {
+        return Outcome::Unexpected("the repository lists no weights".to_owned());
+    };
+
+    let into = world.path("model.gguf");
+    let fetched = match hub.fetch(&reference, entry, &into) {
+        Ok(fetched) => fetched,
+        Err(failure) => return Outcome::Unexpected(format!("the fetch failed: {failure}")),
+    };
+    match mcf_hub::inspect::arrived_as_promised(entry, fetched.bytes) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(()) => Outcome::Unexpected("a short transfer passed as whole".to_owned()),
+    }
+}
+
+/// A length-prefixed string, as GGUF writes them.
+fn push_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(&u64::try_from(value.len()).unwrap_or(0).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
 }
 
 fn reference_is_not_one(_world: &World) -> Outcome {

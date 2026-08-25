@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 72 |
+| **Version** | 73 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 7 in progress, 52 blocked on a decision, 102 open).** Every item cites
+build items (36 done, 1 dropped, 8 in progress, 52 blocked on a decision, 101 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -158,7 +158,7 @@ first and importance second.
 |---|---|---|---|---|
 | B-020 | Hub reference resolution: accept any Hugging Face reference without special-casing, and reach a defined, actionable outcome for every one | §III, §6.3 | No input produces a hang, an unclassified crash or corrupted local state — asserted by the lab's hostile-hub scenarios | **in progress** — `mcf_hub::reference`: every way a reference is written — typed, pasted, from a browser's blob or resolve URL — and a named refusal for every string that is not one, including the traversals and schemes §3.7 exists to stop. Total, offline and deterministic, so the laboratory exercises every branch without a hub. It is a fuzz target and has a scenario (A13). The hostile-hub *fixtures* the done-when names need B-028's simulated hub |
 | B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | open |
-| B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | open |
+| B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | open |
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | open |
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
@@ -366,6 +366,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 73 — what a repository claims, against what is true
+
+B-022 in progress. The interesting half is the deceptive card, and it is only
+checkable because D31 gave MCF a second reader for the weights: a repository can
+say anything in its metadata, and the tensors either have the shape that
+architecture implies or they do not. A21's divergence, reported rather than
+raised — whether a user wants the weights anyway, knowing, is theirs to decide.
+
+Three scenarios now drive the whole path through the simulated hub: list, fetch,
+read, compare. That is what B-028 was built to make possible.
 
 ### Version 72 — what will run here, before the bandwidth is spent
 
