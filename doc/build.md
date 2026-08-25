@@ -615,9 +615,10 @@ and the script says so on every run rather than implying otherwise.
 
 ## 12 · A machine with something else on it
 
-This machine hosts several projects with heavy test workloads. Four suites
-started at once do not run four times slower; they measure each other, and the
-one that suffers most is the one whose figures are timings.
+A machine that hosts several projects with heavy test workloads — as the one MCF
+is developed on does — cannot run four suites at once and get four suites four
+times slower. It gets four suites that measure each other, and the one that
+suffers most is the one whose figures are timings.
 
 **Every scheduled tier runs inside an exclusive window** where
 `~/.local/bin/heavy` is on the path:
