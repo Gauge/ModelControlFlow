@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -189,6 +189,19 @@ first vendored dependency (§XVI, B64) will need
 **There are none.** The workspace compiles from the standard library alone, and
 a test asserts it: `the_workspace_declares_no_third_party_dependencies`.
 
+**The first candidate was refused, and the reasoning is the template.** The
+record needs a serialization (§3.3, D20), and a general one was the obvious
+dependency. It was not admitted. The data model is closed — MCF's own records,
+no user-defined shapes, no schema anyone else supplies — so a framework would
+bring derive macros, a trait hierarchy and a compile-time cost for a generality
+the format will never use, and it would put a third party in charge of an
+interface §7.30 makes MCF's to keep stable for ever. What it would have bought
+is correctness, and correctness here is a testable property of about three
+hundred lines, so it was bought with tests instead (A19).
+`crates/mcf-record/src/json.rs` is the result, and its refusals are the
+interesting part: a fraction is refused rather than rounded, a duplicate key
+rather than resolved, an unpaired surrogate rather than replaced.
+
 That test is the gate B15 asks for. Weight is admitted only against a stated
 cost, so the first dependency admitted has to be added to that check to get in,
 and the reason it justifies itself against not existing is recorded in the
@@ -240,6 +253,14 @@ B16 counts a review check as a cost, and claiming a machine check that is really
 a keyword search would be worse than counting it.
 
 ## Changelog
+
+### Version 5 — the first dependency is refused, in writing
+
+§6 gains the reasoning that kept the record's serialization in-tree. A section
+that only says "there are none" is a section that will one day say "there is
+one" with no account of why, and B15's requirement is that each dependency be
+*admitted for a stated reason* — which is worth nothing unless a refusal is
+stated too.
 
 ### Version 4 — one module opts out of `unsafe_code`
 

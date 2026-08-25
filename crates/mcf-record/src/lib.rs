@@ -11,6 +11,9 @@
 //! user content *by construction*, and a structural guarantee survives a
 //! misconfiguration in a way a filter does not.
 //!
-//! Empty at M0 beyond this statement of what it is for. B-004 brings the
-//! append-only store, B-042 the schema, B-300 the journal-and-index rebuild,
-//! and B-161 the type-level separation from the content store.
+//! B-004 brings the append-only store and B-042 the schema; B-300 the
+//! journal-and-index rebuild, and B-161 the type-level separation from the
+//! content store.
+
+pub mod journal;
+pub mod json;
