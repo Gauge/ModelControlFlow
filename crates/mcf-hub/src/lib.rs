@@ -17,5 +17,6 @@
 pub mod fetch;
 pub mod fitment;
 pub mod inspect;
+pub mod licence;
 pub mod reference;
 pub mod source;

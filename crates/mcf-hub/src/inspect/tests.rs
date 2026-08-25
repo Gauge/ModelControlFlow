@@ -1,5 +1,7 @@
 //! What a repository claims, against what is true.
 
+use mcf_core::provenance::Licence;
+
 use super::{Architecture, arrived_as_promised, ceiling_for, terms_are_legible};
 use crate::reference::parse;
 use crate::source::{Entry, Listing};
@@ -92,8 +94,14 @@ fn weights_that_cannot_be_read_leave_the_question_open() {
 fn terms_are_read_or_their_absence_is_reported() {
     assert_eq!(
         terms_are_legible(&listing(Some("apache-2.0"), 10)).expect("declared"),
-        "apache-2.0"
+        Licence::spdx("apache-2.0")
     );
+    assert_eq!(
+        terms_are_legible(&listing(Some("a licence of their own"), 10)).expect("declared"),
+        Licence::Stated,
+        "terms MCF cannot name are still terms, and saying so is not a failure"
+    );
+    terms_are_legible(&listing(Some("   "), 10)).expect_err("a blank declaration declares nothing");
     let failure = terms_are_legible(&listing(None, 10)).expect_err("nothing declared");
     assert_eq!(failure.category(), Category::HubMetadataAbsent);
     assert!(
