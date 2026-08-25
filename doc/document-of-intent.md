@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -765,6 +765,64 @@ Therefore:
 - **Box capability varies by platform and is stated, never assumed.** Where a
   platform offers no mechanism, boxing is `unknown` and unavailable (A7), not
   approximated. Where it requires privilege, §XVII and A26 govern.
+
+### D16 — The record keeps raw trials *(answers §7.33)*
+
+**Per-trial data is retained, always.** Every trial of every run is a row: its
+value, its arm, its position in the interleaving, its session. Summaries are
+*derived* at query time and never written in place of the trials that produced
+them.
+
+**Why it is not really a choice.** Three decisions already made depend on it.
+§6.17 holds that agentic outcomes are often bimodal, and a shape cannot be
+recovered from a mean. §3.27 requires paired differences, which is arithmetic
+over trial pairs a summary has already destroyed. And §7.7's acceptance criteria
+do not exist yet, so a result frozen under a statistic nobody has chosen is a
+result that can never be re-asked.
+
+**Intra-trial detail is per laboratory, and off by default.** Per-token arrival
+times, per-turn outcomes and similar interior detail are declared by the lab
+that needs them, justified the way a lab justifies its own existence (B32). A
+throughput lab needs them, because the inter-token *distribution* is its
+subject — a model averaging 40 tokens per second with periodic stalls feels
+worse than one steady at 35, and a summary cannot tell them apart. An extraction
+lab does not.
+
+**Size is not the constraint, and the numbers say so.** A trial row is on the
+order of a hundred bytes: a year of heavy daily use is tens of megabytes against
+model weights measured in gigabytes. The real cost of interior detail is
+cardinality — query and migration behaviour differ between thousands of rows and
+millions — which is why it is declared rather than global.
+
+**Where interior detail does grow, it is downsampled rather than dropped.** A
+long-generation lab producing a million rows per configuration keeps full
+resolution up to a declared cap and thins beyond it, **with the thinning
+recorded as a condition** (§3.4). A downsampled series that does not say it was
+downsampled is a silent alteration of evidence (§3.1).
+
+### D17 — Identity is the runnable configuration; hardware is a condition *(answers §7.34 in principle)*
+
+**A configuration is what the hosting system needs in order to run a model.**
+Weights and revision, quantization, context length, runtime, sampling
+parameters — the complete description of the thing that runs. That set is the
+identity: two runs share an identity when they share that description.
+
+**Hardware is not part of identity.** It is a *condition* of the measurement
+(§3.4). The same configuration measured on two machines is the same thing
+observed twice, not two things — which is precisely what makes §XIV's corpus
+possible: measurements group by configuration and hardware becomes the axis they
+are analysed *along*, rather than a key that fragments them into a separate
+universe per machine.
+
+**Grouping is a view, not the key.** Configurations are grouped and generalized
+at query time — by model family, by quantization class, by anything a question
+needs. This is the same principle as D16 one level up: **keep the fine-grained
+thing and derive the coarse one**, because grouping up is always possible and
+splitting down never is.
+
+*The residual question is which parameters are identity and which are
+conditions at the edges — placement, engine build, sampling — and it stays open
+in §7.34.*
 
 ## 3. Principles
 
@@ -2972,16 +3030,34 @@ weaker than it sounds if the underlying distribution is discarded. Recorded here
 rather than assumed, because it decides the schema (D6) and therefore must be
 settled before the first row is written.
 
-### 7.34 The identity of a measured configuration — **structural**
+### 7.34 The edges of configuration identity — **narrowed by D17**
 
-The whole project compares things, and nothing defines what makes two runs
-comparable *as a key*. Weights revision, quantization, context length, runtime
-build, sampling parameters, hardware, MCF version, instrumentation profile — the
-subset that constitutes identity determines what can be grouped, what
-invalidates history, and what §XV's identifier serializes.
+D17 settles the principle: identity is the runnable configuration, hardware is a
+condition, grouping is a view. Three parameters sit awkwardly at the boundary
+and none is obviously one or the other.
 
-§7.28 asks what an identifier looks like on the outside; this asks what it names
-on the inside, and it is needed at the first write rather than at §XV.
+**Placement.** A layer-offload split — thirty-five of forty-eight layers on the
+accelerator — is a configuration parameter that only means anything given a
+particular memory size. Treating it as identity makes a configuration
+unportable, which breaks §XV. Treating it as a condition means an identifier
+resolves to something different on a different machine, which may be exactly
+right: the likely answer is that a configuration carries a *declared* intent and
+the *realized* placement is recorded alongside, with divergence between them a
+finding (§6.29).
+
+**Engine build.** `llama.cpp b4321` and `b4400` are not the model and not the
+hardware. As identity, every engine update forks every configuration and the
+corpus fragments. As a condition, timings taken across builds get compared when
+they should not be. A candidate answer: the engine *family* is identity, the
+*build* is a condition — groupable, and honest about what changed.
+
+**Sampling parameters.** Temperature changes behaviour profoundly and throughput
+not at all, so it is identity for one laboratory and noise for another. D17's
+grouping-is-a-view rule suggests including it in identity and collapsing it at
+query time, since the reverse is impossible.
+
+The general principle to test each against: **err toward more in the identity,
+because a group can always be widened and never narrowed.**
 
 ### 7.35 Host platform scope, and the containment mechanism — **structural**
 
@@ -3162,6 +3238,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.3 | What quality is measured against | §IX | **D2** — quality is plural, measured per workflow |
 | §7.12 | The user surface | §XI | **D3** — both surfaces, headless primary |
 | §7.19 | Implementation substrate | §3.16 | **D4** — Rust |
+| §7.33 | Raw samples or summaries | §6.17, §3.27 | **D16** — raw trials, always |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.

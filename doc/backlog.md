@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**216 items: 45 decisions (42 open, 1 drafted, 1 narrowed, 1 resolved) and 171 build items.** Every item cites the clause that
+**220 items: 45 decisions (40 open, 1 drafted, 2 narrowed, 2 resolved) and 175 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -65,8 +65,8 @@ implemented, only gestured at, until the decision is made.
 | DEC-013 | Whether measurements survive MCF's own upgrades | §7.13 | §3.4 | M8 | open |
 | DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
 | DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
-| DEC-033 | Whether the record keeps raw per-trial samples or only summaries — unrecoverable in one direction, and DEC-023 concedes the right statistic is not yet known | §7.33 | **§II, D6** | M0 | open |
-| DEC-034 | What constitutes the identity of a measured configuration, and therefore what §XV's identifier serializes | §7.34 | **§IV, D6** | M0 | open |
+| DEC-033 | Whether the record keeps raw per-trial samples or only summaries | §7.33 | §II, D6 | M0 | **resolved** — D16: raw trials always; interior detail per lab, off by default |
+| DEC-034 | The edges of identity: placement, engine build, sampling parameters — which are identity and which are conditions | §7.34 | §IV, D6 | M0 | **narrowed** — D17 settles the principle; three boundary parameters remain |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
@@ -125,6 +125,9 @@ first and importance second.
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | open |
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | open |
+| B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | open |
+| B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | open |
+| B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
@@ -254,6 +257,7 @@ first and importance second.
 | B-227 | Anytime results: every lab reports as it goes; a run stopped early keeps what it produced, marked incomplete | B47, A4, §3.1 | A multi-day lab interrupted at hour three yields three hours of marked data | open |
 | B-228 | Environment ladder: report, wait for quiet, suspend-and-restore only with per-run approval of a named list, never terminate | B48, §6.39, A27 | A scenario asserts nothing outside the approved list is touched and every suspension resumes, including when MCF is killed | open |
 | B-222 | Every corpus statement renders its sample count; no filter removes a candidate from a listing | B44, §3.24 | An unreported option is ranked lower and annotated, never hidden | open |
+| B-273 | Lab setup and teardown: each lab owns both, may use its own tooling, and leaves nothing behind — asserted by running two labs back to back, including after the first is killed mid-run | B58, A27, §XIII | The second lab sees no trace of the first, warm caches included | open |
 | B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour), declares its capability gate and its workload slot, and states what it does and does not establish | §XIII, §3.17, §6.26, B40, B42 | A lab that cannot state its class, gate, slot or validity boundary fails to register | blocked (DEC-029) |
 | B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | open |
 | B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | open |
@@ -331,6 +335,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 12 — two M0 gates close
+
+DEC-033 resolved by D16 and DEC-034 narrowed by D17 — two of the three
+structural decisions that were blocking M0. Build items for unpersistable
+summaries, hardware-free identity, per-lab interior detail, and lab teardown.
 
 ### Version 11 — three gaps registered
 

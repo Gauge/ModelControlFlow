@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v13, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v15, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**90 rules in three tiers, each carrying a citation and a check.** Cite them by
+**93 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 55 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 58 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**73 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**76 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -379,7 +379,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Fifty-five rules. Each holds under a stated condition, or permits something
+Fifty-eight rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1054,6 +1054,46 @@ supports nothing general, MCF says nothing general.
 - **Violation looks like:** "41.2 vs 38.4 tok/s" offered as a recommendation,
   which is false precision inviting action on a difference inside the noise.
 
+### B56 — Trials are kept; summaries are derived
+Every trial is a row carrying its value, its arm, its position in the
+interleaving and its session. A summary is computed at query time and never
+written in place of the trials that produced it. Interior detail — per-token
+timings, per-turn outcomes — is declared by the laboratory that needs it and off
+by default, and where it must be thinned the thinning is recorded as a condition
+(§3.4).
+- **Absorbs:** D16, §6.17, §3.27, §7.7
+- **Check:** `compiler` — a summary type cannot be persisted, only projected
+  from trials (B-270); `CI` — a downsampled series carries its thinning factor
+  (B-271).
+- **Violation looks like:** a stored mean, which is a question nobody can ask
+  again.
+
+### B57 — Identity is the runnable configuration; hardware is a condition
+Two runs share an identity when they share the description the hosting system
+needs to run the model. Hardware never enters the key — it is a condition, so
+the same configuration measured on two machines is one thing observed twice.
+Grouping is a view applied at query time, never the key itself, and the rule for
+the boundary is to err toward more in the identity: a group can be widened and
+never narrowed.
+- **Absorbs:** D17, §3.4, §XIV, §XV
+- **Check:** `compiler` — the identity type excludes hardware fields by
+  construction (B-272).
+- **Violation looks like:** a per-machine configuration table, which gives every
+  user their own universe and makes the corpus unaggregatable.
+
+### B58 — A laboratory sets up, tears down, and leaves nothing behind
+Each lab owns its own setup and teardown and may use whatever tooling its
+question requires — labs are not forced through one harness shape. The
+obligation that comes with that freedom is A27's: whatever a lab changed, it
+restores, including after a crash and including state inside the sandbox. A lab
+that leaves residue has contaminated the next one.
+- **Absorbs:** §XIII, A27, §3.17, §6.26
+- **Check:** `lab` — a scenario runs two labs back to back and asserts the second
+  sees no trace of the first, including after the first is killed mid-run
+  (B-273).
+- **Violation looks like:** a warm cache left behind, which silently makes the
+  next lab's first trial different from its rest.
+
 ---
 
 ## C — Low value
@@ -1143,7 +1183,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 90 rules
+   is whether an existing rule already covers it. This file holds 93 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1188,6 +1228,8 @@ no rule is a defect in this file.
 | §6.41 Boxes vs the window | B51, A8 |
 | §3.27 The comparison is durable | B53, B54 |
 | §3.28 Gather precisely, recommend generally | B55, B41 |
+| D16 Raw trials are kept | B56 |
+| D17 Identity is the configuration | B57 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1269,6 +1311,15 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 10 — trials, identity, teardown
+
+B56 makes the summary unpersistable: it can only be projected from trials, so
+the question stays askable. B57 excludes hardware from the identity type by
+construction, which is what stops the corpus fragmenting into one universe per
+machine. B58 gives a laboratory freedom over its own tooling and binds it to
+A27's restore obligation — a lab that leaves a warm cache behind silently
+changes the next lab's first trial.
 
 ### Version 9 — pairing, and the two directions
 

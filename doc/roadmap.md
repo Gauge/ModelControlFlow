@@ -5,7 +5,7 @@
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
 | **Version** | 10 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v13 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v15 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -107,7 +107,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004, DEC-033, DEC-034, DEC-035, DEC-039.
+**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004, DEC-034 (edges only), DEC-035, DEC-039. ~~DEC-033~~ closed by D16.
 
 **Explicitly not in M0:** any model, any inference, any network fetch, any UI.
 
@@ -533,7 +533,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 90. A milestone that can only be
+Every milestone above is subject to all 93. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
