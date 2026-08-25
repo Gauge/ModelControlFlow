@@ -24,6 +24,7 @@ pub mod capture;
 pub mod configuration;
 pub mod degradation;
 pub mod digest;
+pub mod engine;
 pub mod failure;
 pub mod hardware;
 pub mod integrity;

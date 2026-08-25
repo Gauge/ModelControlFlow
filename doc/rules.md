@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**99 rules in three tiers, each carrying a citation and a check.** Cite them by
+**100 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -18,7 +18,7 @@ the rule is corrected.
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
 | A | [Absolute](#a--absolute) | 27 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 64 rules that permit something provided a condition holds |
+| B | [Conditional](#b--conditional) | 65 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -65,7 +65,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**82 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**83 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -382,7 +382,7 @@ to how it was found?*
 
 ## B — Conditional
 
-Sixty-four rules. Each holds under a stated condition, or permits something
+Sixty-five rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -1184,6 +1184,22 @@ another.
   installed something, presented as support — or a throughput figure quoted
   without the engine that produced it.
 
+### B65 — A stand-in engine answers behaviour questions and can never report a speed
+MCF ships its own deliberately slow implementation of inference, so that a model
+no vendored engine will run still runs and so that the vendored engine has
+something to be checked against (A19). The condition: **no timing-class result
+may be constructed from it.** A throughput figure from a naive kernel measures
+the naive kernel — it says nothing about the model and nothing about the
+machine — so a stand-in serves behaviour-class laboratories only (B31), every
+result taken on it is marked (A5), and it is a different configuration from a
+vendored-engine result rather than a comparable one (D17, A8).
+- **Absorbs:** D31, §III, §3.2, A19, B23, B31, §7.4
+- **Check:** `compiler` — a timing-class result cannot be constructed from a
+  stand-in engine handle, in the way `Duration<Simulated>` cannot become a
+  performance number (B-361).
+- **Violation looks like:** optimizing the stand-in, which is only worth doing
+  if it is going to report a speed.
+
 ---
 
 ## C — Low value
@@ -1326,6 +1342,7 @@ no rule is a defect in this file.
 | D21 Contributions are dedicated | B63 |
 | D22 MCF is copyleft | — licence, not a code rule |
 | D23 Three tiers of engine support | B64, B36 |
+| D31 The stand-in engine | B65 |
 | §6.40 Long runs on a used machine | B49, B47 |
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
@@ -1407,6 +1424,25 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 17 — B65, the stand-in engine's prohibition
+
+One rule, from D31. MCF is to write a second, deliberately slow implementation
+of inference so that coverage is true and so that the vendored engine has
+something to be checked against (A19) — and the rule is the condition that makes
+that safe rather than the permission itself: **a stand-in can never report a
+speed.**
+
+It earns its place against consolidation because nothing existing covers it.
+A11 is about simulation and a stand-in is not simulated; B31 divides
+laboratories by class and says nothing about engines; B64 would actually
+*permit* a stand-in's timings so long as the engine were named, which is not
+enough — a figure from a deliberately naive implementation is not a useful
+number about anything.
+
+The rule is also what keeps B23 satisfied. Without it a stand-in is weight
+admitted for capability, which B23 refuses; with it, the stand-in cannot make
+MCF's measurements faster or more numerous, only more checkable.
 
 ### Version 16 — the checks get their numbers
 
