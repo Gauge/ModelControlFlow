@@ -20,6 +20,7 @@ use super::scenario::Scenario;
 mod artifact;
 mod environment;
 mod record;
+mod time;
 
 /// Every scenario the laboratory has.
 pub const CATALOGUE: &[Scenario] = &[
@@ -33,6 +34,8 @@ pub const CATALOGUE: &[Scenario] = &[
     record::TORN_LAST_LINE,
     record::CORRUPT_LINE,
     record::HEADERLESS,
+    time::BACKWARD_STEP,
+    time::FORWARD_JUMP,
 ];
 
 /// The scenarios that produce a category.

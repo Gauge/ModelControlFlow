@@ -24,9 +24,11 @@
 //! At M0 the journal is the whole record. D6's SQLite index is derived from it
 //! and arrives with B-042; nothing here depends on that, which is D20's point.
 
+mod anomaly;
 mod entry;
 mod replay;
 
+pub use anomaly::{Reading, TOLERANCE, between as clock_anomaly_between};
 pub use entry::{Entry, EntryId, EntryKind};
 pub use replay::{Loss, Replay};
 
@@ -36,6 +38,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
+use mcf_core::time::{Clock as _, SystemClock, Timestamp};
 
 use crate::json::Value;
 
@@ -60,6 +63,35 @@ pub struct Journal {
     path: PathBuf,
     file: File,
     appended: u64,
+    /// Both clocks, as they were at the last append.
+    ///
+    /// Kept so that the next append can ask whether the calendar moved (D9,
+    /// B37). A wall-clock reading alone cannot answer that, which is why the
+    /// pair is held rather than the timestamp.
+    last_read: Option<Reading>,
+    /// Set while an anomaly is being recorded, so that recording one cannot
+    /// detect another and recur.
+    recording_anomaly: bool,
+}
+
+/// What an append did.
+#[derive(Debug)]
+pub struct Appended {
+    /// A clock anomaly noticed between this append and the one before it.
+    ///
+    /// `None` is the ordinary case. When it is `Some`, the entry was still
+    /// written — A1 forbids losing the event — and the anomaly was written
+    /// beside it; what is unsound is anything that was being *measured* across
+    /// it, and the caller is the only one that knows whether it was.
+    pub anomaly: Option<Failure>,
+}
+
+impl Appended {
+    /// Whether the clocks disagreed.
+    #[must_use]
+    pub const fn saw_a_clock_anomaly(&self) -> bool {
+        self.anomaly.is_some()
+    }
 }
 
 impl Journal {
@@ -94,6 +126,8 @@ impl Journal {
             path: path.to_path_buf(),
             file,
             appended: 0,
+            last_read: None,
+            recording_anomaly: false,
         };
         if fresh {
             journal.write_line(&header())?;
@@ -131,10 +165,36 @@ impl Journal {
     /// caller is told; nothing is retried silently, because a retried write
     /// that succeeded is a different event from one that succeeded first time
     /// (B2).
-    pub fn append(&mut self, entry: &Entry) -> Result<()> {
+    pub fn append(&mut self, entry: &Entry) -> Result<Appended> {
+        let now = Reading {
+            wall: Timestamp::now(),
+            monotonic: SystemClock.now(),
+        };
+        let anomaly = match self.last_read {
+            Some(earlier) if !self.recording_anomaly => anomaly::between(earlier, now),
+            Some(_) | None => None,
+        };
+        self.last_read = Some(now);
+
         self.write_line(&entry.to_value())?;
         self.appended = self.appended.saturating_add(1);
-        Ok(())
+
+        // A2: the anomaly is persisted, not only returned. A caller that
+        // ignored the return value would otherwise lose it, and a swallowed
+        // classification is the silent failure A2 calls worse than a crash.
+        if let Some(failure) = &anomaly {
+            self.recording_anomaly = true;
+            let recorded = self.append(&Entry::new(
+                EntryKind::Failure,
+                entry.recorded_at(),
+                self.appended,
+                crate::encode::failure(failure),
+            ));
+            self.recording_anomaly = false;
+            recorded?;
+        }
+
+        Ok(Appended { anomaly })
     }
 
     fn write_line(&mut self, value: &Value) -> Result<()> {
