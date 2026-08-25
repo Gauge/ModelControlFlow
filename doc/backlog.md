@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**234 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 185 build items.** Every item cites the clause that
+**235 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 186 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -123,7 +123,8 @@ first and importance second.
 | B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change | D10, §6.34, §3.5 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
-| B-320 | Engine tiering: a vendored engine reaches a first token with no vendor runtime present; a platform-provided runtime is detected, used, and its version recorded as part of engine identity; a declined engine yields a classified outcome naming the reason | B64, D23, §6.3 | The from-scratch conformance run passes on a machine with no vendor runtime installed | open |
+| B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
+| B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | open |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI | Asserted in CI on every platform in DEC-035's scope | blocked (DEC-035) |
 | B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
@@ -348,6 +349,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 19 — vendored only
+
+Tier 2 deferred. B-320 becomes the fully-vendored stack and B-321 registers the
+deferred-engine list, so the omissions are maintained rather than silent.
 
 ### Version 18 — engine tiers
 

@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v22, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
 **99 rules in three tiers, each carrying a citation and a check.** Cite them by
@@ -1159,21 +1159,26 @@ be undone and an unkeepable promise is worse than an honest refusal.
 - **Violation looks like:** a "delete my contribution" button, which cannot do
   what its label says.
 
-### B64 — Ship it, use it if present, or decline it — and tier 1 is never empty
-An engine or runtime is **vendored** (permissive, shipped, pinned),
-**platform-provided** (present on the user's machine, detected and used, never
-redistributed), or **declined** (terms MCF cannot meet). A vendored engine always
-works with no external dependency, so a platform-provided one is an accelerated
-path on top of a working baseline and never the baseline itself. Where a
-platform-provided runtime is absent, MCF states what is unavailable and continues
-(§3.2) rather than instructing the user to obtain it (B36). A platform-provided
-runtime's version is part of engine identity, because MCF did not pin it.
-- **Absorbs:** D23, D22, §XVI, §6.3, §7.34
+### B64 — Everything MCF runs on, MCF ships
+Engines, kernels and math libraries are vendored: permissive, shipped, version
+pinned. Anything requiring a component MCF cannot vendor is deferred and
+recorded as a candidate, not partially supported (D23). Nothing MCF runs through
+is left to whatever the user happens to have installed, so the whole stack is
+pinned and every measurement is taken against conditions MCF controls rather than
+merely records.
+
+The cost travels with the results: MCF's absolute figures describe **the stack
+MCF ships, not the hardware's ceiling**, and that is a §3.4 condition on every
+one of them. Comparisons are unaffected (§3.27) — a ratio between two
+configurations on one pinned stack does not care that the stack is slower than
+another.
+- **Absorbs:** D23, D22, §XVI, §3.12, §3.4
 - **Check:** `CI` — the from-scratch conformance run (B-183) reaches a first
-  token with no vendor runtime present; a declined engine yields a classified
-  outcome naming the reason (B-320).
-- **Violation looks like:** an accelerator path that only works if the user
-  installed something, presented as though MCF supports that hardware.
+  token on a machine with no vendor runtime installed, and every result renders
+  the shipped stack's versions among its conditions (B-320).
+- **Violation looks like:** an accelerator path that works only if the user
+  installed something, presented as support — or a throughput figure quoted
+  without the engine that produced it.
 
 ---
 
@@ -1398,6 +1403,14 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 15 — everything MCF runs on, MCF ships
+
+B64 narrows with D23: tier 2 is deferred, so the whole stack is vendored and
+pinned. The rule now carries the honesty clause that comes with that choice —
+MCF's absolute figures describe the stack MCF ships, not the hardware's ceiling,
+and a throughput figure quoted without its engine is a violation rather than a
+shorthand.
 
 ### Version 14 — engine tiers
 

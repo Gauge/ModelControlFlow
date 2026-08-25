@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 22 |
+| **Version** | 23 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1012,10 +1012,15 @@ engines and libraries MCF principally wants are MIT or Apache-2.0 and sit here
 without difficulty.
 
 **Tier 2 — Platform-provided.** Present on the user's machine already, by their
-own action or because it arrived with a driver. MCF detects it, uses it, and
-does not redistribute it — which sidesteps the licence-compatibility problem
-entirely, because nothing is being distributed. This is how a closed vendor
-runtime is supported without shipping it and without negotiating anything.
+own action or because it arrived with a driver. MCF would detect it, use it, and
+not redistribute it — which sidesteps licence compatibility entirely, because
+nothing is distributed.
+
+**Tier 2 is deferred, not adopted.** MCF ships a stack it controls end to end,
+and anything requiring a component it cannot vendor is **avoided for now and
+recorded as a candidate for later** — the same treatment as tier 3, arrived at by
+a different route. The reasoning is stated below, because deferring it costs
+something real and the cost should not be discovered later.
 
 **Tier 3 — Declined.** Anything requiring a negotiated licence, a payment, or
 redistribution terms MCF cannot meet is **not supported**, and that is a normal
@@ -1023,20 +1028,52 @@ outcome rather than a failure (§3.13, B15). It is recorded as declined with the
 reason, and revisited if the project ever becomes mature enough that negotiating
 is worth someone's time.
 
-**The constraint that keeps §XVI intact: tier 1 is never empty.** There is always
-a vendored engine that works with no external dependency, so the common path
-requires nothing of the user. Tier 2 is an *accelerated path on top of* a working
-baseline, never the baseline itself. Where a tier-2 runtime is absent, MCF states
-what is unavailable and continues (§3.2) — it does not send the user on an
-errand, because the capability was never load-bearing.
+### Why a fully-vendored stack, and what it costs
 
-**The scientific cost of tier 2, which is real and is recorded rather than
-absorbed.** A runtime MCF did not ship is a runtime MCF did not pin. Its exact
-version becomes a *condition* of every measurement taken through it, and since
-engine identity already includes the build (§7.34), the surrounding runtime stack
-belongs there too: measurements taken against two different vendor runtime
-versions are not the same configuration. Tier 1 buys reproducibility that tier 2
-cannot, and that difference is stated rather than glossed.
+**The scientific argument is the strong one, and it points the same way.** A
+stack MCF ships entirely is a stack MCF has pinned entirely: engine, kernels,
+math libraries, every version. Every measurement is then taken against
+conditions MCF controls rather than conditions it merely records. §3.12 puts
+reproducibility above convenience, and this is that principle applied to the
+largest available dependency — a tier-2 runtime is an unpinned variable in every
+result taken through it, forever.
+
+**It also keeps §XVI honest without a caveat.** One artifact, one behaviour, on
+every machine. No user gets a fast path because of what they happened to install,
+and no user is quietly slower for lacking it.
+
+**The cost, stated plainly.** The accelerator paths MCF can vendor are the open
+ones. On hardware whose vendor-optimized runtime is closed, a vendored path is
+frequently slower — sometimes substantially. So:
+
+- **MCF's numbers describe the stack MCF ships, not the hardware's ceiling.**
+  This is a §3.4 condition and must travel with every result, because a user
+  comparing MCF's throughput against a figure from a vendor-optimized tool will
+  otherwise conclude their hardware is slow when what they are seeing is a
+  different engine.
+- **The comparison MCF is *for* survives intact.** §3.27 already holds that the
+  durable output is the comparison rather than the absolute number, and a ratio
+  between two configurations measured on one pinned stack is unaffected by that
+  stack being slower than some other. What degrades is the absolute figure, which
+  was the local, least-transferable quantity anyway.
+- **Revisiting is a decision, not a drift.** If the performance gap proves large
+  enough to change which model a user should run — which is the only thing that
+  would make it matter to §IV — tier 2 is reconsidered on that evidence, with its
+  reproducibility cost understood in advance rather than absorbed silently.
+
+**The constraint that keeps §XVI intact: tier 1 is never empty, and at this
+revision it is the whole of what ships.** A vendored engine works with no
+external dependency, so the common path requires nothing of the user. Should
+tier 2 ever be adopted, it is an *accelerated path on top of* that baseline and
+never the baseline itself, and its absence is stated and continued past (§3.2)
+rather than turned into an errand.
+
+**If tier 2 is ever adopted, its cost is recorded rather than absorbed.** A
+runtime MCF did not ship is a runtime MCF did not pin. Its exact version becomes
+a *condition* of every measurement taken through it, and since engine identity
+already includes the build (§7.34), the surrounding runtime stack belongs there
+too: measurements taken against two vendor runtime versions are not the same
+configuration.
 
 **On "support all models" (§III).** Declining a tier-3 engine does not weaken
 §6.3, which governs *attempt and diagnosis* rather than success. "This model runs
