@@ -107,8 +107,8 @@ pub fn conditions(conditions: &Conditions) -> Value {
                     // an integer through `Display` was the first defect the
                     // property tier found (B-191): a context length written as
                     // `"4096"` read back as text, so B-007's *round-trips
-                    // losslessly* held for nine of the ten questions and not
-                    // for the one that is naturally a number. §3.3 asks the
+                    // losslessly* held for every floor question but the one
+                    // that is naturally a number. §3.3 asks the
                     // record be machine-readable first, and a number a reader
                     // has to re-parse from a string is not that.
                     Attested::Known(ConditionValue::Integer(number)) => Value::Integer(*number),

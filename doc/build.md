@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -159,6 +159,14 @@ uncharacterized one. The workspace denies `unsafe_code` as a `deny` rather than
 a `forbid` precisely so that this opt-in is possible with its reason written at
 the site. Every pointer is null-checked, every status code is checked before its
 out-parameter is read, and the library is closed on every path out.
+
+**A signal is a claim too.** `scripts/check-fault-signal.sh` spawns one binary
+thirty times warm and thirty times with its pages evicted, and requires the
+major-fault count to be zero and then non-zero. F3 records MCF shipping an
+attributability signal that silently could not fail; this is what keeps the
+second one honest. A machine that cannot evict a file's pages — a tmpfs has no
+device behind it — reports that it could not demonstrate the signal, which is
+not a pass and does not fail the gate.
 
 **A lint table is itself a claim, so it is checked.**
 `scripts/check-lints-bite.sh` writes each forbidden construct into a copy of
@@ -437,15 +445,19 @@ statistical judgments rather than assertions:
 An unattributable run is still not a pass. Nothing yet enforces that, and a
 stale-tier refusal now exists to build it on (B-185).
 
-**On a tree kept on a slow filesystem this tier currently fails, and the reason
-is understood.** [findings.md](findings.md) F5: the cold-start figure is
-dominated by how long the kernel takes to fault the binary's pages in, and on a
-FUSE mount that tail is a thousand times the median. The storage an artifact is
-executed from is a measurement condition MCF does not yet record, and the
-attributability signal watches the measuring thread, which during a cold start
-is the one thread not doing the work. Both halves are B-193. Until then, a
-`--with-budget` run from such a tree reports a number about the filesystem, and
-`--all` is red for that reason rather than a regression.
+**A reading is judged by two signals, not one** (B-193). The first is D30's:
+how long the measuring thread was runnable and not running. The second exists
+because the first cannot see a cost paid in another process — during a cold
+start the measuring thread is blocked in `wait` while the child faults its pages
+in — so a measurement whose work took a **major page fault** is refused as a
+reading of the device. [findings.md](findings.md) F5 is the run that established
+the gap and F7 is the experiment that shows the new signal moving; the threshold
+is zero faults, which is not a judgement but a fact about what a fault is.
+
+The storage an artifact was read from is also a condition now, the floor's
+eleventh question, so two runs that differ only in where the binary lives are
+legibly different — and the baseline comparison refuses them as incomparable
+(A8).
 
 ### The mutation tier
 
@@ -548,6 +560,13 @@ its score there, which is what B-186's floor will compare against and what B20
 means by a before and an after.
 
 ## Changelog
+
+### Version 14 — a reading is judged by two signals
+
+§9's performance section rewritten where it described B-193 as owed. The
+storage an artifact is read from is a condition, and a measurement that went to
+a device for bytes is refused rather than asserted. §4 gains the check that
+shows the new signal failing, which is the only way to know it works.
 
 ### Version 13 — the budget tier has a before
 

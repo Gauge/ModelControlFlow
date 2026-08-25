@@ -114,6 +114,22 @@ pub struct Floor {
     /// taken while it was not are two different measurements, and this is where
     /// the difference is visible (§3.8, B-012).
     pub instrumentation: Attested<ConditionValue>,
+    /// The storage the artifact under measurement was read from.
+    ///
+    /// The eleventh question, and it is here because a run of the budget tier
+    /// established that it changes a figure by three orders of magnitude
+    /// ([findings.md] F5): the same binary, on one machine, took 0.22 ms per
+    /// cold start from a tmpfs and had a p99 of 416 ms from a FUSE mount. Two
+    /// runs with identical stated conditions and a factor of a thousand between
+    /// them is exactly what A6 exists to prevent, and the missing condition was
+    /// *where the bytes came from*.
+    ///
+    /// §3.3 says the floor never shrinks; it does not say it never grows, and
+    /// "everything that varies and could change a result" plainly reaches this
+    /// (B-193).
+    ///
+    /// [findings.md]: ../../../doc/findings.md
+    pub artifact_storage: Attested<ConditionValue>,
 }
 
 impl Floor {
@@ -139,6 +155,7 @@ impl Floor {
             mcf_configuration: Attested::Unknown,
             realized_placement: Attested::Unknown,
             instrumentation: Attested::Unknown,
+            artifact_storage: Attested::Unknown,
         }
     }
 
@@ -149,7 +166,7 @@ impl Floor {
     /// them being edited — A6's "any surface that drops its conditions is
     /// doing damage", made hard to do by accident.
     #[must_use]
-    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 10] {
+    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 11] {
         [
             ("hardware_state", &self.hardware_state),
             ("thermal_state", &self.thermal_state),
@@ -161,6 +178,7 @@ impl Floor {
             ("mcf_configuration", &self.mcf_configuration),
             ("realized_placement", &self.realized_placement),
             ("instrumentation", &self.instrumentation),
+            ("artifact_storage", &self.artifact_storage),
         ]
     }
 

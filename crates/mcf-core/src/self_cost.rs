@@ -159,7 +159,12 @@ impl core::fmt::Display for Verdict {
             Self::Within => f.write_str("within"),
             Self::Over => f.write_str("OVER"),
             Self::NotMeasured => f.write_str("not measured"),
-            Self::Unattributable => f.write_str("not attributable — the machine was busy"),
+            // Deliberately not "the machine was busy": since B-193 there is a
+            // second way for a reading to be unattributable — the measured work
+            // went to a device for bytes — and naming the wrong cause would be
+            // a confident wrong answer (P1). The `Attributability` beside the
+            // verdict says which, and every surface prints it.
+            Self::Unattributable => f.write_str("not attributable"),
             Self::TooFewTrials { had, needs } => {
                 write!(
                     f,

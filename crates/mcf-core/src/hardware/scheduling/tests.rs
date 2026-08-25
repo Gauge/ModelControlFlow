@@ -10,6 +10,16 @@ use crate::attested::Attested;
 use crate::time::{Duration, Monotonic};
 
 fn judge(waited_ns: u64, elapsed_ns: u64) -> Attributability {
+    judge_with_faults(waited_ns, elapsed_ns, Attested::Known(0))
+}
+
+/// The same, with the second reading supplied: how many major page faults the
+/// measured work took (B-193).
+fn judge_with_faults(
+    waited_ns: u64,
+    elapsed_ns: u64,
+    major_faults: Attested<u64>,
+) -> Attributability {
     Watch::judge(
         Scheduling {
             on_cpu: 0,
@@ -20,6 +30,7 @@ fn judge(waited_ns: u64, elapsed_ns: u64) -> Attributability {
             waiting: waited_ns,
         },
         Duration::<Monotonic>::from_nanos(elapsed_ns),
+        major_faults,
     )
 }
 
@@ -141,4 +152,50 @@ fn a_watch_over_real_work_reaches_a_verdict() {
     assert!(total > 0);
     let verdict = watch.finish();
     assert!(!verdict.to_string().is_empty());
+}
+
+/// F5's case, as numbers. A cold start whose time went into faulting the
+/// artifact's pages in from a slow filesystem leaves the measuring thread
+/// perfectly clean — it was blocked in `wait`, not queuing — so the scheduling
+/// signal alone calls it attributable and the budget tier asserts on it.
+///
+/// One major fault is enough. It is not a threshold to tune: a warm, local
+/// artifact takes none, and every one that happens is the kernel going to a
+/// device for bytes this measurement then waited on.
+#[test]
+fn a_reading_that_went_to_a_device_is_not_a_reading_of_mcf() {
+    let clean = judge_with_faults(4_148, 21_834_777, Attested::Known(0));
+    assert!(clean.permits_assertion(), "{clean}");
+
+    let faulted = judge_with_faults(4_148, 21_834_777, Attested::Known(1));
+    assert!(!faulted.permits_assertion(), "{faulted}");
+    assert_eq!(faulted.major_faults(), Some(1));
+    assert!(faulted.to_string().contains("storage"), "{faulted}");
+    // The queuing figure survives into the verdict: it is still true, and a
+    // reader comparing two runs needs both numbers.
+    assert_eq!(faulted.delay_ppm(), Some(189));
+}
+
+/// Where both hold, the device is the verdict. Both mean *not a pass*, and the
+/// more specific fact is the one worth printing: a busy machine is somebody
+/// else's compile finishing, and an artifact that was not resident is a
+/// property of where it lives.
+#[test]
+fn storage_is_reported_ahead_of_queuing_when_both_hold() {
+    let both = judge_with_faults(15_477_083, 139_121_632, Attested::Known(9));
+    assert!(!both.permits_assertion(), "{both}");
+    assert_eq!(both.major_faults(), Some(9));
+}
+
+/// A platform that does not account for faults does not thereby become clean.
+/// A7: an absent reading is not a favourable one — the scheduling signal still
+/// decides, and it is the weaker claim, honestly made.
+#[test]
+fn an_unreadable_fault_counter_leaves_the_other_signal_deciding() {
+    let quiet = judge_with_faults(4_148, 21_834_777, Attested::Unknown);
+    assert!(quiet.permits_assertion(), "{quiet}");
+    assert_eq!(quiet.major_faults(), None);
+
+    let loaded = judge_with_faults(15_477_083, 139_121_632, Attested::Unknown);
+    assert!(!loaded.permits_assertion(), "{loaded}");
 }

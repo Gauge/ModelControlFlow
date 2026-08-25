@@ -12,9 +12,10 @@
 //! somebody calls when they take a reading, and there is nothing here that
 //! runs on its own.
 //!
-//! **What is read and what stays unknown.** Four of the ten come from the
+//! **What is read and what stays unknown.** Four of the eleven come from the
 //! machine profile and are as good as the profiler is (B-013, D25). One is
-//! MCF's own configuration, which MCF always knows. The remaining
+//! MCF's own configuration, which MCF always knows, and one is the storage the
+//! artifact under measurement was read from (B-193). The remaining
 //! four — quantization, context length, batch shape, realized placement —
 //! describe a *model being run*, and at M0 nothing runs a model, so they stay
 //! [`Attested::Unknown`] rather than being filled with something plausible
@@ -24,7 +25,7 @@
 use crate::attested::Attested;
 use crate::build_identity::BuildIdentity;
 use crate::configuration::Configuration;
-use crate::hardware::{Characterization, Machine};
+use crate::hardware::{Characterization, Machine, storage_of};
 use crate::measurement::{ConditionValue, Conditions, Floor};
 
 /// Captures the floor from a machine and, where there is one, a configuration.
@@ -34,12 +35,19 @@ use crate::measurement::{ConditionValue, Conditions, Floor};
 /// not anything can supply them yet, and a capture function that grew the
 /// argument later would be a capture function that silently omitted them until
 /// then.
+///
+/// `artifact` is the file the measurement is *about* — at M0 that is MCF's own
+/// binary, since nothing else is measured yet, and from M1 it is the model. The
+/// storage it lives on is a condition because F5 measured it changing a figure
+/// by three orders of magnitude (B-193). `None` where the caller does not know,
+/// which stays unknown rather than becoming the current directory's storage.
 #[must_use]
 pub fn floor(
     machine: &Machine,
     configuration: Option<&Configuration>,
     mcf_configuration: &str,
     instrumentation: &str,
+    artifact: Option<&std::path::Path>,
 ) -> Floor {
     Floor {
         hardware_state: known(describe_hardware(machine)),
@@ -62,6 +70,10 @@ pub fn floor(
         // (intent v16), and nothing has realized one yet.
         realized_placement: Attested::Unknown,
         instrumentation: Attested::Known(ConditionValue::text(instrumentation)),
+        artifact_storage: artifact.map_or(Attested::Unknown, |path| match storage_of(path) {
+            Attested::Known(storage) => Attested::Known(ConditionValue::text(storage.to_string())),
+            Attested::Unknown => Attested::Unknown,
+        }),
     }
 }
 
@@ -72,10 +84,17 @@ pub fn conditions(
     configuration: Option<&Configuration>,
     mcf_configuration: &str,
     instrumentation: &str,
+    artifact: Option<&std::path::Path>,
 ) -> Conditions {
     Conditions::new(
         BuildIdentity::current(),
-        floor(machine, configuration, mcf_configuration, instrumentation),
+        floor(
+            machine,
+            configuration,
+            mcf_configuration,
+            instrumentation,
+            artifact,
+        ),
     )
 }
 

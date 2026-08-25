@@ -190,7 +190,18 @@ fn measure_cost(machine: &Machine, recording: bool) -> Cost {
     } else {
         "reduced — nothing is being recorded"
     };
-    let conditions = capture::conditions(machine, None, "mcf doctor, no configuration", profile);
+    // The artifact under measurement at M0 is MCF itself, so the storage that
+    // matters is the one its own binary was read from (B-193, F5). `None` when
+    // the platform will not say which file is running: unknown rather than a
+    // guess (A7).
+    let binary_for_conditions = std::env::current_exe().ok();
+    let conditions = capture::conditions(
+        machine,
+        None,
+        "mcf doctor, no configuration",
+        profile,
+        binary_for_conditions.as_deref(),
+    );
 
     let binary = std::env::current_exe().ok();
     let artifact = binary

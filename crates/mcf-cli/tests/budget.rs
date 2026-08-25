@@ -80,6 +80,16 @@ fn conditions(machine: &Machine, attributability: &Attributability) -> Condition
             mcf_configuration: Attested::Known(ConditionValue::text(
                 "the budget tier, release profile",
             )),
+            // The storage the artifact was read from (B-193). F5 measured it
+            // changing a cold start by three orders of magnitude, and a
+            // baseline comparison below refuses two readings that do not share
+            // it (A8).
+            artifact_storage: match mcf_core::hardware::storage_of(&binary()) {
+                Attested::Known(storage) => {
+                    Attested::Known(ConditionValue::text(storage.to_string()))
+                }
+                Attested::Unknown => Attested::Unknown,
+            },
             ..Floor::nothing_known()
         },
     )
@@ -217,8 +227,12 @@ fn cold_start_is_within_its_ceiling() {
         "ns",
         measured.conditions(),
         &Judgement::NotJudged(
-            "an event-class figure whose reading is dominated by storage MCF does not \
-             record as a condition (findings.md F5, B-193)",
+            "a p99 over a hundred trials moves by a quarter between runs on an idle \
+             machine, so a tolerance tight enough to catch a regression would fire on \
+             the tail itself. The ceiling judges this figure; the baseline records it. \
+             What B-193 fixed is the other half — a reading that went to a device is now \
+             refused as unattributable, and one taken from different storage is refused \
+             as incomparable",
         ),
     );
 }
@@ -315,6 +329,7 @@ struct Reading {
     unit: String,
     profile: String,
     conditions: String,
+    storage: String,
 }
 
 fn read_baseline(figure: &str) -> Option<Reading> {
@@ -325,6 +340,11 @@ fn read_baseline(figure: &str) -> Option<Reading> {
         unit: value.get("unit")?.as_text()?.to_owned(),
         profile: value.get("profile")?.as_text()?.to_owned(),
         conditions: value.get("conditions")?.as_text()?.to_owned(),
+        storage: value
+            .get("storage")
+            .and_then(mcf_record::json::Value::as_text)
+            .unwrap_or("unknown")
+            .to_owned(),
     })
 }
 
@@ -343,6 +363,7 @@ fn write_baseline(figure: &str, reading: &Reading) {
             "conditions",
             mcf_record::json::Value::text(&reading.conditions),
         ),
+        ("storage", mcf_record::json::Value::text(&reading.storage)),
     ])
     .to_line();
     if std::fs::write(baseline_path(figure), line).is_err() {
@@ -378,6 +399,7 @@ fn against_baseline(
         unit: unit.to_owned(),
         profile: profile.clone(),
         conditions: conditions.to_string(),
+        storage: conditions.floor().artifact_storage.to_string(),
     };
 
     match read_baseline(figure) {
@@ -393,6 +415,16 @@ fn against_baseline(
             println!(
                 "    the baseline is in {} and this is in {unit}; not comparable (A8)",
                 previous.unit
+            );
+        }
+        Some(previous) if previous.storage != current.storage => {
+            // B-193, from F5: the storage an artifact is read from moves a
+            // cold start by three orders of magnitude. Two readings that do not
+            // share it are two measurements of different things, and A8 refuses
+            // a comparison where more than one thing differed.
+            println!(
+                "    the baseline was taken from {} and this from {}; not comparable (A8, B-193)",
+                previous.storage, current.storage
             );
         }
         Some(previous) => {
