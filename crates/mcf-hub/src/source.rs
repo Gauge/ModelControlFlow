@@ -30,6 +30,7 @@ use std::path::Path;
 
 use mcf_core::failure::Result;
 
+use crate::credentials::Identity;
 use crate::reference::Reference;
 
 /// One file a repository publishes.
@@ -135,6 +136,20 @@ pub trait Source {
     /// through it is measured (§3.4), and the difference between *the hub* and
     /// *a mirror somebody stood up* when a result is questioned.
     fn describe(&self) -> String;
+
+    /// Who this caller is to this source.
+    ///
+    /// The fourth question, and the one that makes *this account cannot read
+    /// it* distinguishable from *nobody can*. The default is
+    /// [`Identity::Anonymous`], which is the truth for a source holding no
+    /// credential; a source that holds one says so here, and a source that has
+    /// been told an account name says that instead of guessing at one.
+    ///
+    /// It is a condition of anything acquired through this source (§3.4), so it
+    /// is a question with an answer rather than a flag somewhere in a client.
+    fn identity(&self) -> Identity {
+        Identity::Anonymous
+    }
 
     /// What a repository publishes.
     ///

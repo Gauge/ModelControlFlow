@@ -36,6 +36,7 @@ pub const CATALOGUE: &[Scenario] = &[
     engine::NO_VENDORED_ENGINE,
     hub::REFERENCE_IS_NOT_ONE,
     hub::NEEDS_CREDENTIALS,
+    hub::CREDENTIAL_REFUSED,
     hub::GATED,
     hub::RATE_LIMITED,
     hub::DECEPTIVE_METADATA,

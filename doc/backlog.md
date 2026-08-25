@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 75 |
+| **Version** | 76 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **248 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 198
-build items (36 done, 1 dropped, 10 in progress, 52 blocked on a decision, 99 open).** Every item cites
+build items (36 done, 1 dropped, 11 in progress, 52 blocked on a decision, 98 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -160,7 +160,7 @@ first and importance second.
 | B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | **in progress** — `mcf_hub::fetch`: bytes accumulate in a `.partial` file and the artifact's own name is given only to something verified, so a crash at any moment leaves a state MCF can see, resume and name rather than a half-model where a whole one should be. A transfer interrupted at ninety per cent continues from there; a source that cannot resume is restarted and *said*; a file that changed under the transfer is `artifact.corrupt` and the mixture is deleted rather than kept for a later attempt to resume into. A hub declaring no digest leaves the artifact *held* rather than verified (A21). What remains is the transport: HTTPS needs a network stack no decision has admitted |
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
-| B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | open |
+| B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **in progress** — `mcf_hub::credentials`: a secret that redacts itself (`Debug` shows a digest fingerprint, there is no `Display`, and the only way to the bytes is `reveal`), an origin that is part of the conditions, and an `Identity` a source answers with — anonymous, offered, or an account the hub confirmed. The three refusals are written once, so every source says the same thing and each names the repository, what MCF was to the hub, and the one thing to do next. *Held deliberately* is structural rather than documented: nothing reads the environment, `sightings` is handed a way to look, and `checks/tests/a_credential_is_never_picked_up.rs` holds the line across the whole workspace. What remains: the surface an operator supplies one through, which is B-029, and the real client that offers it, which is B-021's transport |
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
@@ -366,6 +366,34 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 76 — a credential nobody handed over
+
+B-024 in progress. The failure this is against is not one anybody writes on
+purpose. It is a convenience: one line that reads a token out of the
+environment because the tests were annoying, after which MCF acquires artifacts
+under a condition nobody recorded. §3.4 makes conditions part of the
+measurement, so an artifact fetched with a token that happened to be set was
+fetched under different conditions from one fetched without it — and nothing
+downstream can tell.
+
+A comment cannot hold that line and a review will not, because the change that
+breaks it is one line and looks helpful. So it is held by the compiler and by a
+check: nothing in `mcf-hub` reads the environment at all, the survey is *handed*
+a way to look, and the names of the token variables appear in exactly one file
+across the workspace. An operator is told a credential is sitting there and
+decides; MCF does not decide for them.
+
+The secret redacts itself, because the rendering that leaks a token is never the
+one somebody wrote deliberately — it is `Debug` on some struct three layers up.
+What a record keeps is a fingerprint, which answers the question provenance
+actually has (*was this the same credential?*) and answers nothing else.
+
+Three refusals, written once so that three sources cannot phrase them three
+ways: no credential, a credential refused, and terms not accepted. They are
+different worlds and the difference is the point — a better token does not open
+a gated repository, and a fourth scenario now holds the distinction in the fault
+catalogue, which covers 24 of the 24 categories MCF's code constructs.
 
 ### Version 75 — three states, and the middle one is the one that matters
 
