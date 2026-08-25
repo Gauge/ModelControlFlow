@@ -27,6 +27,53 @@ use mcf_record::encode;
 use mcf_record::journal::{Entry, EntryKind, Journal, default_path};
 use mcf_record::json::Value;
 
+/// What the laboratory demonstrated on this machine, now.
+///
+/// §VIII puts MCF's confidence in the laboratory rather than in ambient
+/// observation, and A13 says an untested claim is not made. `doctor` therefore
+/// *runs* the catalogue rather than reporting that one exists: the difference
+/// between "there is a laboratory" and "every failure MCF claims to handle was
+/// reproduced on this machine a moment ago" is the whole of §VIII.
+#[derive(Debug)]
+pub(crate) struct Laboratory {
+    /// How many scenarios ran.
+    pub(crate) scenarios: usize,
+    /// How many produced the category they declare.
+    pub(crate) reproduced: usize,
+    /// The ones that did not, and what happened instead.
+    pub(crate) divergences: Vec<String>,
+    /// How many distinct taxonomy categories those scenarios reproduce.
+    pub(crate) categories: usize,
+}
+
+impl Laboratory {
+    fn run() -> Self {
+        let mut reproduced = 0;
+        let mut divergences = Vec::new();
+        for scenario in mcf_lab::CATALOGUE {
+            let outcome = mcf_lab::run(scenario);
+            if outcome.matches(scenario.produces) {
+                reproduced += 1;
+            } else {
+                divergences.push(format!("{} → {outcome}", scenario.id));
+            }
+        }
+        let mut codes: Vec<&str> = mcf_lab::CATALOGUE
+            .iter()
+            .map(|scenario| scenario.produces.code())
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+
+        Self {
+            scenarios: mcf_lab::CATALOGUE.len(),
+            reproduced,
+            divergences,
+            categories: codes.len(),
+        }
+    }
+}
+
 /// Everything `doctor` found.
 #[derive(Debug)]
 pub(crate) struct Report {
@@ -40,6 +87,8 @@ pub(crate) struct Report {
     pub(crate) cost: Cost,
     /// What happened when the report was written to the record.
     pub(crate) recorded: Recorded,
+    /// What the laboratory demonstrated here.
+    pub(crate) laboratory: Laboratory,
 }
 
 /// What MCF costs on this machine, against D24.
@@ -85,7 +134,8 @@ pub(crate) fn run(record: bool) -> Report {
     let at = Timestamp::now();
     let machine = Machine::read();
     let cost = measure_cost(&machine);
-    let body = body(&machine, &cost);
+    let laboratory = Laboratory::run();
+    let body = body(&machine, &cost, &laboratory);
     let recorded = if record {
         write(&body, at)
     } else {
@@ -97,6 +147,7 @@ pub(crate) fn run(record: bool) -> Report {
         machine,
         cost,
         recorded,
+        laboratory,
     }
 }
 
@@ -136,7 +187,7 @@ fn measure_cost(machine: &Machine) -> Cost {
     }
 }
 
-fn body(machine: &Machine, cost: &Cost) -> Value {
+fn body(machine: &Machine, cost: &Cost, laboratory: &Laboratory) -> Value {
     Value::map([
         ("mcf", encode::build_identity(BuildIdentity::current())),
         ("machine", encode::machine(machine)),
@@ -184,6 +235,33 @@ fn body(machine: &Machine, cost: &Cost) -> Value {
                             "added request-to-first-token latency — needs a serving path (B-035)",
                         ),
                     ]),
+                ),
+            ]),
+        ),
+        (
+            "laboratory",
+            Value::map([
+                (
+                    "scenarios",
+                    Value::Integer(i64::try_from(laboratory.scenarios).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "reproduced",
+                    Value::Integer(i64::try_from(laboratory.reproduced).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "categories",
+                    Value::Integer(i64::try_from(laboratory.categories).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "divergences",
+                    Value::List(
+                        laboratory
+                            .divergences
+                            .iter()
+                            .map(|what| Value::text(what.clone()))
+                            .collect(),
+                    ),
                 ),
             ]),
         ),
@@ -297,6 +375,21 @@ impl core::fmt::Display for Report {
         // only in the record.
         writeln!(f, "\n  Taken under: {}", self.cost.conditions)?;
 
+        writeln!(
+            f,
+            "\nTHE LABORATORY, RUN HERE JUST NOW\n  {} scenarios · {} taxonomy categories · {} reproduced",
+            self.laboratory.scenarios, self.laboratory.categories, self.laboratory.reproduced,
+        )?;
+        for divergence in &self.laboratory.divergences {
+            writeln!(f, "  ⚠ {divergence}")?;
+        }
+        writeln!(
+            f,
+            "  Every category MCF's own code can produce has a scenario here, and no\n\
+             \x20 more: the taxonomy's remaining codes are classifications waiting for the\n\
+             \x20 code that will use them (A13, D26)."
+        )?;
+
         writeln!(f, "\nWHAT MCF PROMISES HERE")?;
         for (held, promise) in self.promises() {
             writeln!(f, "  {} {promise}", if held { "✓" } else { "✗" })?;
@@ -394,11 +487,21 @@ impl Report {
             false,
             "Nothing about model quality, speed or fitness — that is M5 onward".to_owned(),
         ));
+        let laboratory = &self.laboratory;
         promises.push((
-            false,
-            "No laboratory, so no failure MCF claims to handle has been demonstrated \
-             here (A13, B-009)"
-                .to_owned(),
+            laboratory.divergences.is_empty() && laboratory.scenarios > 0,
+            if laboratory.divergences.is_empty() && laboratory.scenarios > 0 {
+                format!(
+                    "Every failure MCF claims to handle was reproduced on this machine \
+                     just now — {} scenarios, {} categories (A13, §VIII)",
+                    laboratory.scenarios, laboratory.categories,
+                )
+            } else {
+                format!(
+                    "The laboratory did not reproduce what it claims here: {:?}",
+                    laboratory.divergences
+                )
+            },
         ));
         promises
     }
@@ -406,7 +509,7 @@ impl Report {
     /// The report as the record holds it.
     #[must_use]
     pub(crate) fn to_value(&self) -> Value {
-        body(&self.machine, &self.cost)
+        body(&self.machine, &self.cost, &self.laboratory)
     }
 }
 
@@ -446,6 +549,28 @@ mod tests {
         ] {
             assert!(rendered.contains(absent), "{rendered} omits {absent:?}");
         }
+    }
+
+    /// The laboratory runs as part of the report, and what it demonstrated is
+    /// on the surface. §VIII puts confidence there rather than in ambient
+    /// observation, and the difference between "there is a laboratory" and
+    /// "every failure MCF claims was reproduced here a moment ago" is the whole
+    /// of it.
+    #[test]
+    fn the_laboratory_runs_and_reports_what_it_demonstrated() {
+        let report = run(false);
+        assert!(report.laboratory.scenarios > 0, "no scenario ran");
+        assert_eq!(
+            report.laboratory.reproduced, report.laboratory.scenarios,
+            "the laboratory did not reproduce what it claims: {:?}",
+            report.laboratory.divergences
+        );
+        let rendered = report.render();
+        assert!(
+            rendered.contains("THE LABORATORY, RUN HERE JUST NOW"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("taxonomy categories"), "{rendered}");
     }
 
     /// The promises MCF cannot make are listed alongside the ones it can. A

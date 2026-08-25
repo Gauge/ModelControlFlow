@@ -17,3 +17,4 @@ workspace = true
 # crate builds is shipped, and no MCF crate depends on it.
 [dev-dependencies]
 mcf-core = { path = "../crates/mcf-core" }
+mcf-lab = { path = "../crates/mcf-lab" }
