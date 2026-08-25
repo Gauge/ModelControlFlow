@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 28 |
+| **Version** | 29 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1091,6 +1091,50 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D27 — A budget names a statistic, a window and a quiet machine *(answers §7.50)*
+
+D24 gives sixteen figures and names a statistic for one of them. F1 in
+[findings.md](findings.md) showed what the omission costs: twenty cold-start
+trials on a quiet machine gave a median of 3.9 ms and a p95 of 9.6 ms, and the
+same twenty on a machine that was compiling gave a passing median and a p95 over
+the ceiling by a factor of two. One run, two verdicts, from a document that
+states one number.
+
+**Every figure is one of three kinds, and the kind decides the statistic.**
+
+| Kind | Statistic | Which of D24's figures | Why |
+|---|---|---|---|
+| **Prohibition** | The maximum, which must be exactly zero | Timer wakeups while idle; external requests from the interface | D24 already calls these prohibitions rather than thresholds. One occurrence is a violation, and a percentile would be a way of tolerating some |
+| **Ceiling on state** | The maximum over the window | Resident memory (both figures); installed footprint (both); memory growth over 30 days; daemon CPU with an idle tab open | These bound a quantity that *is*, not a quantity that *happens*. Memory that exceeded the ceiling once exceeded it |
+| **Ceiling on an event** | The 99th percentile over at least 100 trials, with the median reported beside it | Cold start; added request-to-first-token latency; record write per event; cold render | D24 says it for one of them and the reason generalizes: *the tail is what a user feels*. A median hides exactly the behaviour a budget exists to prevent |
+| **Rate over a window** | The mean over the stated window | Idle CPU over 60 s | D24 states the window in the figure itself, and a rate has no meaningful percentile without one |
+
+**Why one percentile rather than several.** Choosing p95 for some figures and
+p99 for others would be inventing variety D24 does not have. p99 is the one it
+names, and the cost of adopting it everywhere is a sample count: a p99 of twenty
+trials is the maximum wearing a percentile's name, so an event-class figure is
+asserted over at least a hundred. At the magnitudes involved — milliseconds —
+that is affordable, and where it is not the honest answer is to report the
+figure as not asserted rather than to assert it from too few trials (§3.4).
+
+**A budget is asserted only on an attributable run.** B35 holds that a timing
+taken under contention measures the contention, and B24 makes *unattributable* a
+verdict rather than a gap. So the suite reads the machine's load alongside the
+measurement, records it as a condition (§3.4), and **marks a run unattributable
+rather than failing it** when the machine was not quiet. A budget cannot be
+violated by somebody else's compile.
+
+That creates one hazard and it is closed rather than accepted: a real regression
+could hide behind a permanently busy machine. So an unattributable run does not
+count as a pass. The budget tier reports its most recent *attributable* run, and
+B38's staleness discipline applies — a tier whose last attributable run is old
+is **stale**, never green, and a release on a stale tier is refused with the age
+stated.
+
+**What this does not settle.** The numbers themselves stay D24's, and they stay
+ceilings rather than targets: a budget that is merely met has not been
+optimized. This says which reading is compared against them.
 
 ### D26 — The laboratory simulates what MCF observes, and its clock is structural *(answers §7.21)*
 
@@ -3648,29 +3692,6 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
-### 7.50 Which statistic each budget figure names
-
-D24 gives sixteen figures and names a statistic for exactly one of them: added
-latency is "≤ 5 ms **at p99** — the tail, not the mean, because the tail is what
-a user feels". The other fifteen say nothing, and F1 in
-[findings.md](findings.md) shows that the omission is not academic. Twenty
-measurements of cold start on a quiet machine gave a median of 3.9 ms and a p95
-of 9.6 ms; the same twenty on a machine that was compiling gave a median of
-7.2 ms and a p95 of 165–257 ms. One run, a passing median and a failing tail.
-
-Open: which statistic each figure names, and whether it is the same one for all
-of them. A median answers *what usually happens*; a high percentile answers
-*what a user notices*; a maximum answers *what MCF may never do*. The
-prohibitions — zero timer wakeups, zero external requests — are already maxima
-and need nothing.
-
-Two constraints on whatever answers this. The statistic is part of what a
-regression test asserts, so B-011 cannot be finished without it (B20). And a
-tail figure and a contended machine are the same reading seen twice: B35 makes a
-timing taken under contention a measurement of the contention, so this decision
-and the question of whether the budget suite opens an exclusive window are one
-decision, not two.
-
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -3691,6 +3712,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 | §7.8 | Hardware scope | §3.8, §3.4 | **D25** — characterized means MCF can read the device's live state |
 | §7.21 | What the laboratory simulates | §3.17, §6.16, A13 | **D26** — the taxonomy, observed rather than caused; the clock is structural |
+| §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -3725,6 +3747,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 29 — a budget says which reading it is about
+
+D27 answers §7.50, which existed because F1 found a single run of twenty
+cold-start trials that both passed and failed D24's ceiling depending on which
+statistic you read.
+
+Figures divide into three kinds and the kind decides the statistic: a
+prohibition is a maximum that must be zero, a ceiling on *state* is a maximum,
+and a ceiling on an *event* is the 99th percentile — the one D24 already names,
+for the reason it gives, which generalizes. Adopting one percentile rather than
+inventing variety costs a sample count: a p99 of twenty trials is the maximum
+wearing a percentile's name, so an event-class figure needs at least a hundred.
+
+The second half matters more than the first. A budget is asserted only on a run
+the machine was quiet enough to attribute, because B35 holds that a timing under
+contention measures the contention — so a busy machine makes a run
+*unattributable* rather than failing. The hazard that creates is closed rather
+than accepted: an unattributable run is not a pass either, and B38's staleness
+discipline applies, so a tier whose last attributable run is old is stale and a
+release on it is refused.
 
 ### Version 28 — the laboratory's scope, and a clock that is not a convenience
 
