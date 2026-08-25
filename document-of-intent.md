@@ -1,6 +1,6 @@
 # ModelControlFlow — Document of Intent
 
-**Status:** Living document. Revision 4.
+**Status:** Living document. Revision 5.
 **Nature:** This is a *spirit of the rules* document. It is not a requirements
 specification, not an architecture document, and not a backlog. Nothing here is
 directly implementable, and that is deliberate. Its job is to be the thing you
@@ -16,6 +16,18 @@ implementation. Section 6 (Conflicts) resolves tensions on principle alone.
 Where a resolution says *provisional*, it means exactly that: the first real
 implementation that touches the question gets to argue back, and this document
 should be amended rather than quietly violated.
+
+**Revision 5 note:** Three intents added (IX, X, XI). The first is the most
+consequential addition since the founding four: **agentic workflow benchmarking**
+substantially answers §7.3 — "what is quality measured against" — which this
+document has called the single hardest unanswered question in the project since
+Revision 1. It answers it well, because agentic task success is verifiable
+without a ground-truth corpus and resembles the work the models will actually
+do. It also brings expense, stochasticity, and a sandbox requirement, recorded
+in §6.17–§6.20. Intent X (capability discovery and auto-configuration) collides
+directly with §3.6's prohibition on inferring metadata, resolved in §6.19 by
+turning detection into measurement. Intent XI ratifies what §3.14 and §6.11
+already held and closes the rest of §7.12.
 
 **Revision 4 note:** Two decisions. The implementation substrate is settled —
 **Rust** (§7.19, resolved). And the project's confidence strategy has been
@@ -58,7 +70,8 @@ Four things follow from that sentence and they are the whole project:
    provenance intact and its licensing legible.
 2. **Serve** — host that model as a persistent, dependable local endpoint, on
    the hardware in front of us, with as little ceremony and as little overhead
-   as physically possible — or explain precisely why it cannot run.
+   as physically possible — configured to expose everything the model can
+   actually do — or explain precisely why it cannot run.
 3. **Judge** — measure what it costs and what it is worth here, on this
    hardware, for the work actually being done, and use those measurements to
    converge on the best available local configuration.
@@ -180,6 +193,41 @@ This intent is the counterweight to the deliberate de-prioritization of ambient
 telemetry in §3.3. A system that declines to watch itself in production must be
 able to *reproduce* itself on demand, and this is the trade being made
 knowingly: **rigor moves from the observatory to the laboratory.**
+
+### IX. Agentic evaluation — "benchmark models on agentic workflows"
+
+The quality that matters is not the quality measured by academic suites. It is
+whether a model can **do the work**: follow instructions across multiple turns,
+call tools correctly, produce parseable structured output, recover from its own
+errors, stay coherent over a long context, and know when to stop.
+
+MCF measures models on tasks of that shape, in a controlled environment, with
+outcomes that can be checked. This is what makes §IV's recommendations mean
+something to someone choosing a model to actually use, rather than someone
+comparing leaderboard positions.
+
+### X. Capability discovery — "identify and automatically configure full model capabilities"
+
+Getting a model to merely produce tokens is the easy half. Getting it to produce
+tokens *the way it was designed to* — correct chat template, tool-calling format,
+stop conditions, context window, vision or embedding or reasoning modes,
+structured-output support — is where local deployment usually goes wrong,
+silently, in ways that make a capable model look mediocre.
+
+MCF determines what each model can do and configures it accordingly, without
+requiring the user to know. **A misconfigured model is a measurement error**
+(§3.8), so this intent is a precondition for §IX and §IV being honest, not
+merely a convenience.
+
+### XI. Both surfaces — "a lightweight UI as well as a headless mode"
+
+MCF is fully operable with no interface attached, and equally usable with one.
+Neither is a degraded version of the other.
+
+This ratifies what §3.14 and §6.11 already held — the interface is a window over
+a service complete without it — and adds one requirement those did not state:
+**parity.** Every capability is reachable headlessly; the interface introduces no
+action that exists only there. See §6.21.
 
 ## 3. Principles
 
@@ -505,6 +553,50 @@ The spirit:
   worth only as much as its fidelity to real hardware, and that fidelity must
   itself be measured.
 
+### 3.18 Capabilities are measured, not believed
+
+§3.6 forbids inferring provenance. Intent X appears to require inferring
+capabilities. The resolution that keeps both is to **stop guessing and start
+testing**: what a model can do is established by *asking it to do the thing and
+observing the result*, not by trusting a config field, a filename, a model card,
+or a family resemblance.
+
+This is the right posture independently of the conflict, because hub metadata is
+frequently absent, stale, copy-pasted, or wrong, and §3.7 already says the hub is
+untrusted input. A chat template that claims tool support proves nothing; a model
+that emits a well-formed tool call proves something.
+
+The spirit:
+
+- **Three states, never confused: *declared*, *verified*, and *unknown*.**
+  Declared is what the artifact claims. Verified is what MCF observed. Unknown is
+  unknown, and is recorded as such rather than filled with a plausible default —
+  the §3.6 rule, applied to a new category.
+- **Divergence between declared and verified is a finding**, recorded and
+  surfaced. It is often the most useful thing MCF can tell a user about a model.
+- **Capability probes are experiments** and inherit §3.4 whole: a method, a
+  result, conditions, and a record. They are cheap, bounded experiments, but they
+  are experiments.
+- **Configuration derived from a capability carries that capability's
+  provenance.** If MCF set a parameter because a probe said so, the parameter
+  knows that, and the user can ask.
+
+### 3.19 The benchmark should resemble the work
+
+A measurement's validity comes from its relationship to the thing the user
+actually cares about. MCF exists to help someone choose a model to *use*, so its
+evaluations should look like use: multi-turn, tool-calling, instruction-bound,
+format-constrained, error-prone, and scored on whether the task got done.
+
+This is also the answer to the contamination problem §3.4 raises. A task with a
+*checkable outcome* — the tool call parsed, the file was written, the value
+matched, the loop terminated — needs no ground-truth corpus to grade and is far
+harder to have memorised than a multiple-choice benchmark. Verifiable tasks are
+worth more to this project than famous ones.
+
+The corollary is a warning: resemblance is not the same as reality, and an
+agentic suite is still a proxy. §6.17 records what that proxy costs.
+
 ---
 
 ## 4. Standing Tensions We Accept
@@ -524,6 +616,10 @@ should be *managed* rather than solved. Naming them prevents relitigating them.
 - **Observation costs performance.** Resolved rather than merely managed in
   Revision 4: see §6.9. The residual tension is now §6.15 — reduced observation
   costs retrospective diagnosis.
+- **Good evaluation is expensive evaluation.** Agentic benchmarks are long,
+  multi-turn, and must be repeated to mean anything. There is no cheap version
+  that is also honest; §6.17 manages the cost, and §4's rigor-costs-time rule
+  applies with more force than anywhere else in the document.
 - **Simulated confidence is not real confidence.** §VIII buys determinism and
   breadth at the price of fidelity. §6.16 manages this; nothing abolishes it.
 - **Ease costs transparency.** Every step removed from the user's path is a step
@@ -561,6 +657,10 @@ Stating what MCF is *not* protects the intents above from dilution.
 - **Not a platform.** No plugin ecosystem, no extension API, no configurability
   for its own sake. Every generalization is weight (§3.13), and weight is spent
   only where a stated intent demands it.
+- **Not an agent framework.** MCF runs agentic tasks to *measure models*, not to
+  help users build agents. The harness is an instrument (§6.18). Every feature
+  that would make it a better agent platform and not a better measuring device
+  is out of scope by construction.
 - **Not an observability platform.** MCF keeps the record §II requires and no
   more. It does not accumulate dashboards, metric streams, trace backends, or
   the apparatus of production monitoring — that weight is refused under §VII,
@@ -980,6 +1080,146 @@ hardware validation is enough, and how often, is genuinely unresolved and
 recorded as §7.20. It is the question that determines whether §VIII is rigor or
 theatre.
 
+### 6.17 Agentic benchmarking vs. "isolate the variable" and reproducibility
+
+**Tension.** §3.4 demands isolated variables, repeatability, and stated
+uncertainty. Agentic workflows are the least isolated, least repeatable
+measurement available: multi-turn runs compound variance at every step, a single
+early misstep changes everything downstream, tool environments carry state, and
+success is often bimodal rather than normally distributed. A single agentic run
+tells you close to nothing, and averaging a handful of them can be worse than
+useless because the distribution is not the shape averaging assumes.
+
+**Resolution — agentic results are *distributions*, never scores, and the
+environment is pinned even though the model is not.**
+
+- **Sample counts are large enough for the shape of the outcome, and the shape
+  is reported.** Success rate over n trials with its spread — not a number. §3.4's
+  "uncertainty is mandatory" rule is doing real work here, not ceremony.
+- **Everything except the model is held still.** The task, the tool
+  implementations, the environment's starting state, the seeds where seeding is
+  possible, the harness version, the sampling parameters. This is where §VIII
+  pays off unexpectedly: the laboratory MCF already needs (§3.17) is the same
+  machinery an agentic environment requires — deterministic, constructible,
+  replayable. **The agentic benchmark environment and the test laboratory should
+  be the same apparatus**, and it would be a mistake to build two.
+- **Irreducible stochasticity is reported, not engineered away.** Temperature
+  zero is not a fix; it is a different, less representative experiment. If two
+  models are within noise, §3.9 already requires MCF to say so rather than
+  manufacture a ranking.
+- **A failed agentic run is data** (§3.4), and *how* it failed — wrong tool,
+  malformed call, loop, early stop, gave up — is more informative than the pass
+  rate. Failure taxonomy (§7.10) applies to models under test, not only to MCF.
+
+**Confidence: high on the framing, medium on the statistics.** How many trials,
+and what test distinguishes a real difference from noise, is a genuine
+statistical question this document cannot answer by assertion. Recorded as
+§7.23.
+
+### 6.18 An agentic harness vs. lightness and "not a platform"
+
+**Tension.** §IX requires MCF to run agents: a loop, a tool registry, tool
+implementations, an execution environment, a scoring layer. That is a substantial
+subsystem, and §5 says MCF is not a platform while §3.13 says every
+generalization is weight.
+
+**Resolution — the harness is an instrument, and instruments are built to the
+minimum that makes the measurement valid.** It exists to exercise models under
+controlled conditions, not to be useful for building agents. The test is
+directional and should be applied ruthlessly: *does this make the measurement
+more valid, or does it make the harness more capable?* Only the first justifies
+weight.
+
+Two structural consequences: it shares the §VIII laboratory rather than
+duplicating it (§6.17), and under §3.13's idle rule it costs nothing when no
+benchmark is running — a benchmark subsystem that consumes resources during
+ordinary serving would be the worst kind of weight this document knows how to
+describe.
+
+**Confidence: high.** The failure mode here is well understood and easy to name:
+harnesses of this kind grow into frameworks. §5's new anti-goal exists to make
+that growth require an argument.
+
+### 6.19 Automatic configuration vs. "provenance is never inferred" and "no hidden choices"
+
+**Tension.** §X wants MCF to work out what a model can do and set it up
+correctly, unattended. §3.6 forbids filling unknown metadata with plausible
+values. §3.15 forbids consequential choices the user cannot see. Naively, "detect
+and configure automatically" is exactly the inference §3.6 prohibits — and it
+would contaminate the record, because a guessed capability that looks like a
+known one corrupts every measurement taken under it.
+
+**Resolution — §3.18: detection is *measurement*, not inference, and
+configuration is *derived, recorded, and overridable*.** MCF may configure
+anything automatically provided it can say, for every setting, whether the value
+came from a declaration, from an observation, or from a default — and which
+probe, if any, established it.
+
+This is the reading that satisfies both intents rather than trading one off:
+empirical capability detection is *more* rigorous than trusting metadata, not
+less, so §X and §3.6 turn out to be allies once "identify" is read as "test"
+rather than "assume." Where a capability cannot be established either way, it is
+unknown, MCF says so, and it does not quietly pick a value that makes the model
+appear to work.
+
+**Confidence: high on the principle, medium on the cost.** Probing every
+capability of every model is not free, and §7.24 records the unresolved question
+of when probes run and how their cost is bounded.
+
+### 6.20 Executing agentic tool calls vs. "the hub is untrusted"
+
+**Tension.** §IX requires that a model under test emit tool calls which are then
+*executed*. The model is an artifact of unknown quality fetched from an untrusted
+source (§3.7), and it is now producing instructions that MCF acts on. Whether the
+model is malicious or merely bad barely matters — an incompetent agent deleting
+files is the same outcome as a hostile one.
+
+**Resolution — the benchmark environment is a sandbox by construction, and no
+benchmark tool ever touches anything real.** Tools available to a model under
+test operate on constructed, disposable state within the §VIII laboratory. No
+benchmark tool reaches the user's filesystem, the network, MCF's own records, or
+the serving path — not by policy or by configuration, but because those
+capabilities are not present in the environment to begin with.
+
+This is a case where the strict answer is also the cheap one: §6.17 already
+requires a pinned, reconstructible environment for validity, and a pinned
+environment is inherently a contained one. **The rigor requirement and the safety
+requirement have the same implementation**, which is the strongest possible
+argument for it.
+
+Note the §6.4 distinction still applies and is separate: *loading* a model may
+require executing repository code, which is the user's explicit decision.
+*Benchmarking* a model executes the model's outputs, which is never a decision
+the user should have to think about, because the answer is always the sandbox.
+
+**Confidence: high.** Any weaker answer makes §IX unsafe to run unattended, and
+an evaluation suite that cannot run unattended will not be run.
+
+### 6.21 A UI and a headless mode vs. "the interface is a window"
+
+**Tension.** Minimal, since §3.14 and §6.11 already resolved most of it — but §XI
+phrases headless as a *mode*, and this document has held that headless is the
+*base case* and the interface an optional attachment. The difference matters:
+"mode" implies two supported configurations that could diverge, which is how
+interfaces quietly acquire exclusive features.
+
+**Resolution — one system, two equally complete access paths, with the headless
+path primary by construction.** The service is the system (§3.14). Both surfaces
+are first-class in *capability*, and neither is degraded — that is §XI's real
+requirement and it is accepted. But the ordering is not symmetric: **the
+interface may not be the only way to do anything.**
+
+Concretely: every action is available without a display attached; the interface
+is a client of the same interface a script would use, which under §VII is also
+the cheapest possible implementation; and a feature that would be awkward to
+express headlessly is a design problem to solve, not a reason to make it
+visual-only.
+
+**Confidence: high.** It is also self-enforcing in a way worth noting: §VIII's
+whole-system tests exercise MCF headlessly, so a capability reachable only
+through the interface is a capability the laboratory cannot test — which §3.5
+already forbids.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -1017,15 +1257,32 @@ intent cannot be implemented, only gestured at. §VI raises its urgency: a tool
 that is frictionless by intent must ship a default opinion, and §6.5 requires
 that opinion be stated rather than emergent.
 
-### 7.3 What "quality" is measured against — **blocking §IV**
+### 7.3 ~~What "quality" is measured against~~ — **LARGELY RESOLVED in Revision 5**
 
-Intent IV says "accuracy benchmarks" without saying accuracy at what. Public
-academic suites are contaminated and often unrepresentative of real use. The
-user's own work is representative but has no ground truth. A stronger model as
-judge introduces its own biases and a dependency MCF may not want. How MCF
-measures *quality* — as opposed to *speed*, which is comparatively easy — is the
-single hardest unanswered question in the project, and the credibility of Intent
-IV rests entirely on it.
+Open since Revision 1, and described there as the single hardest unanswered
+question in the project. Intent IX answers it: **quality is agentic task
+success**, measured on multi-turn, tool-using, instruction-bound tasks with
+checkable outcomes, run in a controlled environment.
+
+This is a strong answer, not a convenient one. It sidesteps the three traps
+Revision 1 identified: contamination (a verifiable task needs no ground-truth
+corpus and is hard to memorise), unrepresentativeness (§3.19 — the benchmark now
+resembles the work), and judge dependency (outcomes are checked, not graded by
+another model). It also gives §IV's recommendations a meaning a user recognises:
+*this model completes the kind of task you are going to give it, this often.*
+
+*Still open, and narrower than what it replaces:*
+
+- **Non-agentic quality is not covered.** Prose, summarization, translation,
+  explanation, and tone have no checkable outcome and are not measured by this
+  answer. Whether MCF measures them at all, declines to, or admits a
+  model-as-judge for them with its biases declared, is undecided — and §5's
+  "not a model-quality authority" makes declining a legitimate option.
+- **The suite's contents** are unspecified — see §7.23.
+- **Contamination is reduced, not eliminated.** Widely published agentic
+  benchmarks will be trained on eventually. Whether MCF's tasks must be private,
+  rotated, or procedurally generated to stay honest is unanswered, and it is a
+  §3.4 obligation rather than a nicety.
 
 ### 7.4 Engine ownership: does MCF perform inference, or delegate it? — **blocking §VI and §VII**
 
@@ -1156,17 +1413,23 @@ but this has never been stated as an intent and deserves to be. Intent V adds a
 wrinkle: an interface reachable from other devices assumes a local network even
 when there is no internet, and those two conditions should not be conflated.
 
-### 7.12 ~~The user surface~~ — **PARTIALLY RESOLVED in Revision 2**
+### 7.12 ~~The user surface~~ — **RESOLVED in Revision 5**
 
-Intent V answers the character of the interface — minimal, lightweight,
-device-agnostic — and §6.11 and §3.14 answer its strategy: a thin client over a
-service that is complete without it. §7.1 confirms a daemon underneath.
+Intent V gave the interface its character (minimal, lightweight,
+device-agnostic); §3.14 and §6.11 gave it its strategy (a thin client over a
+service complete without it); §7.1 confirmed the daemon beneath. Intent XI closes
+the remainder: **both surfaces are first-class in capability, the headless path
+is primary by construction, and the interface may not be the only way to do
+anything** (§6.21).
 
-*Still open:* whether a command-line surface exists alongside the visual one and
-whether it is the primary or secondary control path; whether the API MCF exposes
-for serving is the same API its own interface consumes (a strong simplifying
-answer, and cheaper under §VII, but it couples the two); and what happens when
-more than one client is attached at once.
+That also settles the sub-question Revision 2 left open about whether MCF's own
+interface consumes the same API a script would. It does — §6.21 requires parity,
+§VII prefers not paying for two, and §VIII can only test what is reachable
+headlessly. Three intents converging on one answer is about as settled as this
+document gets.
+
+*Residual detail, no longer blocking:* what happens when several clients attach
+at once, which is a concurrency question (§7.9) rather than a surface question.
 
 ### 7.13 State, versioning, and migration
 
@@ -1267,6 +1530,56 @@ behaviours that only exist between components — supervision, recovery,
 contention, degradation — which are precisely the ones §I is about, and which
 unit tests structurally cannot reach.
 
+### 7.23 The agentic suite: contents, statistics, and honesty over time — **blocking §IX**
+
+§7.3 is answered in kind but not in substance. What tasks? Drawn from published
+agentic benchmarks (comparable, but contaminating over time), written for MCF
+(honest, but unvalidated and laborious), procedurally generated (fresh and
+uncontaminatable, but of uncertain difficulty and realism), or derived from the
+user's own work (maximally valid, ungradable without effort)?
+
+Riding on it, and equally unresolved:
+
+- **How many trials, and what counts as a difference.** §6.17 requires
+  distributions rather than scores but cannot supply the statistics. Without an
+  answer, §3.9's "these are within noise, pick either" cannot be said honestly,
+  and §7.7's acceptance criteria have nothing to bind to for agentic runs.
+- **What a task's tools are, and how difficulty is calibrated** — a suite every
+  model passes and a suite every model fails are equally uninformative.
+- **How the suite stays uncontaminated** as it ages, per §7.3.
+- **What an agentic run costs**, since §4 now concedes that good evaluation is
+  expensive, and §7.9's arbitration question becomes acute when a benchmark
+  occupies the machine for hours.
+
+### 7.24 The scope and cost of capability probing — **blocking §X**
+
+Intent X says "full capabilities" without bounding *full*. The plausible list —
+chat template correctness, tool-calling format and reliability, structured
+output, context length actually usable versus claimed, vision, embeddings,
+reasoning modes, multilingual, stop-condition behaviour, prompt-format
+sensitivity — is open-ended, and each entry is a probe someone must design and
+validate against §3.18's measurement standard.
+
+Also unresolved: **when probing happens** (acquisition, first load, on demand,
+lazily as needed), **what it costs** in time and resources under §VII, whether a
+probe's result may be cached across MCF versions given §7.13's comparability
+problem, and what MCF does when a probe is *inconclusive* rather than
+positive or negative — the third state §3.18 requires but does not describe how
+to act on.
+
+### 7.25 Whether automatic configuration may change under a user
+
+§X implies MCF improves its configuration decisions over time — better probes,
+better defaults, better hardware knowledge. §3.12 and §6.13 say results depending
+on hidden history are irreproducible, and §3.11 says nothing changes without
+deliberation.
+
+So: may MCF silently reconfigure a model the user has been using, if it learns
+something better? If it does, yesterday's benchmark and today's are not
+comparable and §3.4 is violated. If it never does, the configuration rots.
+Neither branch has been chosen, and the choice determines whether an
+auto-configured setting is a decision or a live value.
+
 ---
 
 ## 8. Amending This Document
@@ -1306,6 +1619,14 @@ Recorded so that the *reasoning* behind each change survives it, per §8.
 - **Revision 3** — Corrected the Ollama framing: cited as an example of a
   *friction level*, never as an architectural model. Added §3.16 (prefer
   substrates a machine can hold to the principles) and recorded §7.19.
+- **Revision 5** — Intents IX–XI added. §IX (agentic benchmarking) largely
+  resolved §7.3, open since Revision 1 as the project's hardest question, and
+  brought §6.17–§6.20 with it — most usefully the finding that the agentic
+  environment and the §VIII laboratory are the same apparatus, and that this
+  makes the rigor requirement and the sandbox requirement one implementation.
+  §X (capability discovery) collided with §3.6 and was resolved by §3.18:
+  detection is measurement, not inference. §XI closed §7.12 by adding parity
+  between the surfaces.
 - **Revision 4** — Two decisions. **Rust** chosen as the substrate (§7.19
   resolved, on §3.16 grounds rather than performance ones). **Confidence
   strategy rebalanced** from ambient telemetry to testing and simulation: §6.9
