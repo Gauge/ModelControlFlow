@@ -11,6 +11,12 @@ exists yet — and to be the source from which real rules are written.
 code review comment, cite the principle it serves. If you cannot find one, that
 is a finding — record it in §7 (Voids) rather than inventing intent silently.
 
+**Derived documents.** This document is the source; three others are downstream
+of it and are corrected when it changes, never the reverse: [rules.md](rules.md)
+(the enforceable rules, in one place, each citing a clause here and carrying a
+check), [roadmap.md](roadmap.md) (milestones), and [backlog.md](backlog.md) (the
+work register, which tracks §7's voids rather than relocating them).
+
 **Provenance note:** At the time of this revision the repository contains no
 implementation. Section 6 (Conflicts) resolves tensions on principle alone.
 Where a resolution says *provisional*, it means exactly that: the first real

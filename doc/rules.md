@@ -1,0 +1,789 @@
+# ModelControlFlow — Rules
+
+**Status:** Living document. The single place rules live. Derived from
+[document-of-intent.md](document-of-intent.md) Revision 5, which remains the
+authority: where a rule here and the intent document disagree, the intent
+document wins and the rule is corrected.
+
+**What changed and why this file exists.** Rules were previously scattered
+across four documents — §3 (principles), §4 (tensions), §5 (anti-goals) and §6
+(resolutions) of the intent document, the roadmap's standing rules, the
+backlog's conventions, and the mockup conventions. Roughly 120 normative
+statements, many restating one another in different words, none carrying a
+stated means of enforcement. This file refines them into **58 rules**, each with
+a citation, a check, and a description of what its violation looks like. Nothing
+was discarded: §"Coverage" at the end maps every source clause to the rule that
+absorbed it, so the refinement can be audited rather than trusted.
+
+**The three tiers, defined precisely,** because the labels are otherwise
+readings-in-the-eye-of-the-beholder:
+
+- **Absolute (A).** Admits no exception. No cost — performance, ergonomics,
+  schedule, elegance — justifies violating one. A violation is a defect, not a
+  trade-off, and it is fixed rather than argued. If an absolute rule genuinely
+  cannot be held, that is an amendment to the intent document, not a local
+  decision.
+- **Conditional (B).** Holds under a stated condition, or *permits* something
+  provided a condition is met. The condition is the rule; the permission is what
+  makes it worth stating. Many conditional rules are the operational form of an
+  absolute one — B2 is how A6 is honoured while optimizing — and where they
+  meet, the absolute governs.
+- **Low value (C).** Real rules, kept, and the least load-bearing ones we have.
+  They are decided **last** when rules compete, and they may be dropped without
+  amending the intent document. *Low value does not mean optional to follow.* It
+  means the cost of enforcing them is closest to the benefit, so they are the
+  first candidates for deletion if this file grows unwieldy.
+
+**The low-value tier is deliberately small — eight rules.** That is itself a
+finding. A document of intent whose statements are 86 % load-bearing is doing
+its job; if this tier ever grows large, the correct response is to delete from
+it rather than to organize it.
+
+**Every rule carries a check.** §3.16 holds that a principle depending on human
+discipline will eventually be violated by someone tired at the end of a long
+change. A rule with no check is a wish, so each rule names one of:
+
+| Check | Meaning |
+|---|---|
+| `compiler` | The violation does not compile. Strongest available. |
+| `CI` | An automated test fails the build. |
+| `lab` | A laboratory scenario demonstrates the rule holds. |
+| `review` | A human check. Weakest; each instance is a candidate for promotion to `CI`. |
+| `blocked` | Not yet checkable. Names the backlog item or decision that will make it so. |
+
+Counts at this revision, as *mentions* across 58 rules, of which six name more
+than one check: `compiler` 7 · `CI` 29 · `lab` 8 · `review` 16 · `blocked` 4.
+Counted as *rules*: **42 carry at least one machine check, 14 rest on review
+alone, and 2 are not yet checkable at all.** That second figure is the number to
+drive down (B16) — it is the amount of this document that currently depends on
+somebody remembering it.
+
+---
+
+## Precedence
+
+Rules conflict. When two genuinely do, this is the order, and it is the same
+order the intent document argues for rather than a new invention.
+
+| | Ordering | Source |
+|---|---|---|
+| **P1** | **Honesty outranks continuity.** It is always correct to report that a run failed, a number is untrustworthy or a comparison is invalid. It is never correct to substitute, smooth, retry-until-pretty or omit in order to preserve an appearance of success. | §6.1 |
+| **P2** | **Science outranks speed.** MCF may be fast in *how* it validates, records and repeats. It may not become fast *by* validating, recording or repeating less than the science requires. | §6.10 |
+| **P3** | **Reproducibility outranks convenience.** Where a convenience would make a result harder to reproduce, reproducibility wins. | §3.12 |
+| **P4** | **Explanation outranks autonomy.** Where MCF could either decide for the user or explain to them, it explains. | §4 |
+| **P5** | **Lightness outranks features.** Refusing a feature on weight is a normal outcome, not a failure. | §3.13, §4 |
+
+Two constraints on using this list. A conditional or low-value rule never
+overrides an absolute one, whatever the precedence order suggests. And
+precedence resolves *conflicts*, never inconvenience: reaching for P5 to avoid
+work that A6 requires is a misuse of the list, and P2 exists to say so.
+
+---
+
+## A — Absolute
+
+Twenty-three rules. Each admits no exception.
+
+### A1 — Never lose information
+"Never fail" means MCF never becomes unable to tell you what happened. It is
+always correct to report failure, untrustworthiness or invalidity; it is never
+correct to substitute a value, smooth a curve, retry until the output looks
+good, or omit an inconvenient outcome.
+- **Absorbs:** §6.1, §I, §3.1
+- **Check:** `review` — the load-bearing rule of the project, and the one least
+  reducible to a mechanism. Every other absolute rule below is a specific,
+  checkable instance of it, which is how it gets enforced in practice.
+- **Violation looks like:** a retried request presented as the original; a
+  failed trial dropped from an average; an error rendered as a zero.
+
+### A2 — No silent failure
+Every failure is caught, classified against the taxonomy, attributed to a
+subsystem, and persisted with enough context to reconstruct it without a rerun.
+A swallowed exception, a bare catch-and-continue, or a default substituted for a
+missing value without a record is worse than a crash, because a crash is honest.
+- **Absorbs:** §3.1
+- **Check:** `compiler` + `CI` — no `unwrap`, `expect`, `panic`, `todo`,
+  `unimplemented` or discarded `Result` in non-test code (B-003).
+- **Violation looks like:** `let _ = write_record(…);`
+
+### A3 — The manager survives the managed
+No failure of a managed thing — a download, a conversion, a benchmark run, a
+served runtime — may take down MCF itself.
+- **Absorbs:** §3.1, §I, §7.1
+- **Check:** `lab` — child death is injected at every lifecycle stage and the
+  daemon returns coherent and queryable (B-033).
+- **Violation looks like:** a segfaulting inference engine taking the daemon
+  with it.
+
+### A4 — Partial outcomes are outcomes
+Partial success is representable and preserved. Nine of ten benchmark tasks
+completing is a result with nine data points. Eleven tokens before a runtime
+died are eleven tokens, marked truncated.
+- **Absorbs:** §3.1, §6.17
+- **Check:** `CI` — partial results round-trip through the record with their
+  per-unit outcomes intact (B-087).
+- **Violation looks like:** an all-or-nothing return type on anything that can
+  partially succeed.
+
+### A5 — Degradation is marked
+Reduced capability is always accompanied by an explicit statement of what was
+lost, and every result produced under it carries that mark. An unmarked degraded
+result is a corrupted result.
+- **Absorbs:** §3.2
+- **Check:** `compiler` — a degraded result is a distinct type that cannot be
+  rendered or exported as an undegraded one (B-008).
+- **Violation looks like:** a CPU-derived timing displayed beside
+  accelerator-derived ones with no distinction.
+
+### A6 — No number without its conditions, its sample count and its spread
+The unit of scientific output is not a number; it is a number bound to the
+conditions that produced it. Single-shot timings are anecdotes. Any surface that
+displays a result and drops its conditions is doing damage.
+- **Absorbs:** §3.4, §3.3 (the floor), §II
+- **Check:** `compiler` — `Measurement<T>` cannot be constructed without
+  conditions, `n` and spread (B-005); `CI` asserts no surface renders a bare
+  value (B-073).
+- **Violation looks like:** `throughput: 41.2` anywhere in a record or a view.
+
+### A7 — Unknown is recorded as unknown
+What is not known is never filled with a plausible value. This governs
+provenance, licensing, hardware attributes, model metadata and capability
+verdicts alike. Inferred data that looks like recorded data is a form of the
+silent failure A2 forbids.
+- **Absorbs:** §3.6, §3.18
+- **Check:** `compiler` — `Unknown` is a variant of the type, not a sentinel
+  value, so the absence has to be handled (B-006).
+- **Violation looks like:** defaulting a missing context length to 4096.
+
+### A8 — Confounded comparisons are refused
+A comparison is only meaningful when one thing differs. When more than one did,
+the honest output is "these are not comparable", not a delta. A confound the
+operator declares is science; a confound nobody declared is an error.
+- **Absorbs:** §3.4
+- **Check:** `CI` — an intentionally confounded comparison is refused by the
+  tooling (B-085).
+- **Violation looks like:** subtracting two numbers taken at different thermal
+  states and reporting the difference.
+
+### A9 — Null and negative results are results
+"This model does not fit on this hardware" and "quantization gave no measurable
+speedup here" are valuable outputs. They are stored and surfaced as results,
+never discarded as failures.
+- **Absorbs:** §3.4, §6.3
+- **Check:** `CI` — both appear in the record and in the interface as outcomes
+  (B-086).
+- **Violation looks like:** an empty result set where a null result belongs.
+
+### A10 — Never train on the test
+Any suite used for selection is protected from the contamination and
+overfitting that would make its numbers meaningless — including MCF's own
+tendency to tune toward whatever it measures. Selection and validation suites
+share no task, no template and no generator seed.
+- **Absorbs:** §3.4, §7.3
+- **Check:** `CI` — the two suites are structurally separate and the separation
+  is audited (B-125).
+- **Violation looks like:** tuning a default until the selection suite improves.
+
+### A11 — No performance number originates in simulation
+The laboratory tests *behaviour*, never *speed*. A simulated timing is fiction,
+and publishing one violates P1 outright.
+- **Absorbs:** §6.16
+- **Check:** `compiler` — a measurement taken under the simulated clock cannot
+  be constructed as a performance result (B-082).
+- **Violation looks like:** a throughput figure produced by a lab scenario.
+
+### A12 — Reality outranks the laboratory
+When simulation and real hardware disagree, the world is right and the simulator
+is defective. Divergence is a recorded finding about the simulator, and that
+direction is never reversed to preserve a green suite.
+- **Absorbs:** §6.16, §3.17
+- **Check:** `lab` + `blocked (DEC-020)` — real-hardware validation, at a cadence
+  and coverage not yet decided (B-140).
+- **Violation looks like:** adjusting a real-hardware expectation to match what
+  the simulator predicts.
+
+### A13 — Every failure MCF claims to handle has a simulation that produces it
+The failure taxonomy and the laboratory's fault catalogue are the same list. A
+category with no scenario is an untested claim, and an untested claim is not
+made.
+- **Absorbs:** §3.17, §7.21
+- **Check:** `CI` — the two lists are cross-checked and divergence fails the
+  build (B-010).
+- **Violation looks like:** a taxonomy entry added without its scenario.
+
+### A14 — The benchmark environment is a sandbox by construction
+Tools available to a model under test operate on constructed, disposable state.
+No benchmark tool reaches the filesystem, the network, MCF's records or the
+serving path — not by policy or configuration, but because those capabilities
+are absent from the environment. The result must be identical for a hostile
+model and a merely incompetent one.
+- **Absorbs:** §6.20
+- **Check:** `lab` — an adversarial model attempts escape across every vector
+  and reaches nothing real (B-101).
+- **Violation looks like:** a capability present and disabled by a check.
+
+### A15 — Untrusted code never runs implicitly
+Executing code from a model repository is always the user's explicit, per
+artifact decision, made with the risk stated and recorded in provenance. MCF's
+own integrity never depends on that code behaving.
+- **Absorbs:** §3.7, §6.4
+- **Check:** `lab` — deliberately hostile repository code runs and MCF's records
+  and state are provably intact (B-025).
+- **Violation looks like:** a `trust_remote_code` default of true, anywhere,
+  under any convenience argument.
+
+### A16 — Four categories are always gated
+These are asked every time, no matter how much friction it adds: executing
+untrusted code, consuming large irrecoverable resources, exposing the system to
+a network, destroying existing artifacts. The line is drawn at *category*, never
+at *frequency*. Everything else flows (B1).
+- **Absorbs:** §6.14, §3.11, §6.12
+- **Check:** `CI` — the four categories are enumerable in code and each has a
+  test asserting the gate (B-039).
+- **Violation looks like:** a `--yes` flag that covers all four.
+
+### A17 — Nothing leaves the machine unchosen
+Anything that leaves does so because the user chose it, knowing what it
+contains. Local inference is often chosen precisely for privacy, and a tool that
+manages it while leaking its contents has betrayed the reason it was installed.
+- **Absorbs:** §3.10, §6.8
+- **Check:** `CI` + `lab` — no egress path exists that is not user-initiated;
+  asserted at the network layer, not by inspection (B-145, B-146).
+- **Violation looks like:** anonymous usage statistics, however aggregated.
+
+### A18 — Tests and benchmarks are never conflated
+Tests gate correctness: fast, deterministic, hermetic, green. Benchmarks produce
+measurements: slow, stochastic, hardware-bound, and with **no pass condition**.
+A benchmark that "fails" has usually just told you something true. A regression
+detector built on benchmark results is a third thing, and its thresholds are
+statistical judgments, not assertions.
+- **Absorbs:** §6.7
+- **Check:** `CI` — benchmarks cannot fail the build; correctness tests cannot
+  emit measurements (B-080).
+- **Violation looks like:** a throughput assertion in the test suite, which is
+  how suites become flaky and then ignored.
+
+### A19 — Anything reported is tested against an independently known value
+Nobody should believe published numbers from software that cannot demonstrate it
+computes what it claims. Failure paths are tested as rigorously as success
+paths, because A2 makes them a feature; untested error handling is decorative.
+- **Absorbs:** §3.5, §II
+- **Check:** `CI` — every reported quantity has a test with an independently
+  known answer.
+- **Violation looks like:** a statistic whose only validation is that it looks
+  about right.
+
+### A20 — Estimates are labelled and never promoted
+Fast, clearly-labelled estimates are permitted. An estimate can never be
+mistaken for a measurement, never be promoted into one, and never be compared
+with one. It can only be *replaced* by one.
+- **Absorbs:** §4
+- **Check:** `compiler` — estimates and measurements are different types with no
+  conversion between them.
+- **Violation looks like:** an interactive session's tok/s appearing in a
+  comparison table.
+
+### A21 — Declared, verified, unknown — never a fourth state
+What an artifact claims, what MCF observed, and what nobody knows are three
+distinct things and are never confused. Divergence between declared and verified
+is a finding, recorded and surfaced; it is often the most useful thing MCF can
+say about a model.
+- **Absorbs:** §3.18, §6.19, §X
+- **Check:** `compiler` — the type prevents a declared capability being read as
+  a verified one (B-050); `CI` surfaces divergence (B-058).
+- **Violation looks like:** a boolean `supports_tools` field.
+
+### A22 — The headless path can do everything
+Every action is available with no display attached. The interface may not be the
+only way to do anything. This is self-enforcing: a capability reachable only
+through the interface is one the laboratory cannot test, which A19 already
+forbids.
+- **Absorbs:** §6.21, §XI, §3.14
+- **Check:** `CI` — interface actions and control operations are enumerated and
+  matched; any orphan fails the build (B-072).
+- **Violation looks like:** a confirmation dialog with logic behind it.
+
+### A23 — Work cites intent
+Every rule, specification, test and design decision cites the clause it serves.
+Work that cannot cite is a finding: record a void in §7 of the intent document
+rather than inventing intent silently. An unrecorded void is how a project
+acquires intent nobody chose.
+- **Absorbs:** §8, doc §"How to use it"
+- **Check:** `review` — enforced at review; every rule in this file and every
+  item in the backlog carries a citation.
+- **Violation looks like:** a rule that seemed obviously right to somebody once.
+
+---
+
+## B — Conditional
+
+Twenty-seven rules. Each holds under a stated condition, or permits something
+provided a condition is met.
+
+### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
+MCF chooses a sensible default for everything reversible and benign —
+quantization, context length, runtime, placement — so nothing blocks the first
+token. The condition: every such choice is visible, attributed, explained on
+demand with the reasoning and measurements behind it, and overridable. The user
+is never stopped to be *informed*; only to *authorize* (A16).
+- **Absorbs:** §3.15, §6.14, §VI
+- **Check:** `CI` — every configured value resolves to a source and an
+  explanation (B-038, B-059).
+- **Violation looks like:** a default nobody can ask about, which is also a
+  measurement condition nobody can reproduce.
+
+### B2 — Optimization may not introduce undeclared state
+Caching, process reuse and adaptation are permitted and expected. The condition:
+anything that could change a result is visible in that result's conditions. A
+measurement taken with a warm cache is a different measurement from one taken
+cold, and MCF must know which it produced.
+- **Absorbs:** §6.13, §3.12
+- **Check:** `CI` — warm and cold are distinguishable in the record (B-081).
+- **Violation looks like:** "we already validated this once, so skip it."
+
+### B3 — The measurement path does not adapt, and its instrumentation is reduced and characterized
+What MCF does to be fast for the user, it does not do while measuring. Adaptive
+behaviour that improves the serving experience destroys the isolation A8
+requires. Instrumentation during measurement is reduced to a declared profile,
+and MCF's own overhead is measured and travels as a condition — an
+uncharacterized instrument is not a scientific one.
+- **Absorbs:** §6.13, §6.2, §3.8
+- **Check:** `CI` — pre-flight disables adaptive paths and records the profile;
+  overhead is measured and attached (B-081, B-012).
+- **Violation looks like:** a batch size that responds to load during a
+  benchmark.
+
+### B4 — Record at events, not on a timer
+Something happening is a reason to write; time passing is not. Ambient
+telemetry — continuous sampling, always-on tracing, metric streams — is refused
+by default. **The condition is a decision, not a discovery:** this holds until
+§6.9 is amended, and reducing telemetry may never be allowed to erode the record
+itself, which is not on the dial.
+- **Absorbs:** §3.3, §6.9, §3.13, §5
+- **Check:** `CI` — an idle daemon performs zero timer wakeups and writes zero
+  records over the observation window (B-004, B-031).
+- **Violation looks like:** a background sampler that runs whether or not
+  anything is occurring.
+
+### B5 — Untrusted execution: per artifact, authorized, contained, recorded
+Where A15 permits the user to choose execution, it happens under containment
+strong enough that hostile or broken model code cannot corrupt MCF's records or
+state, and the choice is recorded in provenance permanently.
+- **Absorbs:** §6.4, §3.6
+- **Check:** `lab` + `blocked (§7.17 degree)` — containment strength is a real
+  open question; the current answer is asserted by scenario (B-025).
+- **Violation looks like:** containment that protects the host but not the
+  record.
+
+### B6 — Optimize against a declared objective
+There is no universally best configuration. MCF maps the frontier and lets a
+declared objective choose the point. Absent a declared objective it uses an
+explicit, visible, overridable default — never a hidden or emergent one. Every
+recommendation carries its objective, its reasoning and its runners-up.
+- **Absorbs:** §6.5, §3.9, §IV
+- **Check:** `blocked (DEC-002)` — unfalsifiable until the objective function
+  exists (B-120).
+- **Violation looks like:** a recommendation with no stated objective, which is
+  an oracle.
+
+### B7 — Coverage governs attempt and diagnosis, not success
+"Any model" commits MCF to accepting any reference without special-casing,
+reaching a defined actionable outcome for every one, and never being damaged by
+a hostile or malformed one. It does not commit MCF to running any of them. The
+commitment is **no unhandled outcomes**, not **no unsuccessful outcomes**.
+- **Absorbs:** §6.3, §III, §3.7
+- **Check:** `lab` — hostile-hub fixtures all reach a classified outcome with no
+  state damage (B-020, B-022).
+- **Violation looks like:** a hang, which is the one outcome that is neither
+  success nor diagnosis.
+
+### B8 — Local by default; exposure is deliberate and revocable
+MCF binds locally. Reachability from another device is a capability the user
+turns on deliberately, knowing what becomes reachable, and can revoke. It is
+never the out-of-box state and never a side effect of enabling something else.
+Access to the control plane is access to a service that downloads and runs code
+from the internet, and is treated with that seriousness rather than the
+informality typical of localhost developer tools.
+- **Absorbs:** §6.12, §3.10, §V
+- **Check:** `CI` — the default configuration is unreachable from another host
+  (B-036); protection once exposed is `blocked (DEC-017)`.
+- **Violation looks like:** binding `0.0.0.0` because it was convenient for
+  testing.
+
+### B9 — Record the system exhaustively, the content minimally, and never in the same store
+Metrics, timings, resource states, configurations and error conditions are
+recorded in full. Prompt and completion content is a distinct category with its
+own explicit retention. Benchmark suite content is fixture data, not user data,
+and may be kept in full — which is exactly why the two must be structurally
+separated rather than separated by a flag.
+- **Absorbs:** §6.8, §3.10
+- **Check:** `CI` — separate stores; the separation cannot be defeated by
+  configuration (B-146). Defaults are `blocked (DEC-005)`.
+- **Violation looks like:** one table with a `is_user_content` column.
+
+### B10 — Configure only from an observation or a marked declaration
+MCF may configure anything automatically provided it can say, for every setting,
+whether the value came from a declaration, from an observation, or from a
+default — and which probe established it. Where a capability cannot be
+established either way it is unknown (A7, A21), and MCF does not quietly pick a
+value that makes the model appear to work.
+- **Absorbs:** §6.19, §3.18, §X
+- **Check:** `CI` — every auto-set parameter resolves to a probe reference or a
+  marked default (B-059, B-060).
+- **Violation looks like:** an inconclusive probe coerced into a working
+  default, which corrupts every measurement taken under it.
+
+### B11 — Automatic configuration does not change under the user silently
+If MCF learns something better, it either asks, or it marks prior results as not
+comparable, or both. It never silently reconfigures a model the user has been
+using, because yesterday's benchmark and today's would then not be comparable
+and A6 would be violated invisibly.
+- **Absorbs:** §7.25, §6.13, §3.11
+- **Check:** `blocked (DEC-025)` — the branch has not been chosen (B-061).
+- **Violation looks like:** a probe methodology change applied on upgrade
+  without a word.
+
+### B12 — Agentic results are distributions, and everything except the model is held still
+Success rate over `n` trials with its spread and its **shape** — bimodal
+outcomes make a mean a poor summary and it is labelled as such. The task, the
+tool implementations, the environment's starting state, the seeds, the harness
+version and the sampling parameters are all pinned and recorded. Irreducible
+stochasticity is reported, not engineered away: temperature zero is not a fix,
+it is a different and less representative experiment.
+- **Absorbs:** §6.17, §IX, §3.4
+- **Check:** `CI` — no surface can render an agentic result as a single number
+  (B-104); trial counts and difference tests are `blocked (DEC-023)`.
+- **Violation looks like:** a leaderboard row.
+
+### B13 — Evaluation resembles the work and grades by verification
+Evaluations look like use: multi-turn, tool-calling, instruction-bound,
+format-constrained, error-prone, scored on whether the task got done. Outcomes
+are *checked* — the call parsed, the file was written, the value matched, the
+loop terminated — never graded by another model. A verifiable task needs no
+ground-truth corpus and is far harder to have memorised. *How* a trial failed is
+more informative than the pass rate.
+- **Absorbs:** §3.19, §IX, §6.17, §7.3
+- **Check:** `CI` — every task grades by verification (B-102); every failed
+  trial is classified (B-105).
+- **Violation looks like:** a model-as-judge introduced quietly for convenience.
+
+### B14 — Destruction is previewed, and the record outlives the artifact
+Eviction, overwrite and cleanup are real operations with real cost: previewed,
+logged, reversible where reasonable, and never automatic to reclaim space.
+Removing an artifact never erases the fact that it was here.
+- **Absorbs:** §3.11, §3.6
+- **Check:** `CI` — no code path deletes without a recorded authorization
+  (B-027).
+- **Violation looks like:** a cache eviction policy.
+
+### B15 — Weight is admitted only against a stated cost
+The overhead of a feature is part of the feature's cost, and features are
+refused on that basis; refusal is a normal outcome. Each dependency is admitted
+for a stated reason and justifies itself against the alternative of not
+existing. An instrument grows for **validity**, never for capability (B23).
+- **Absorbs:** §3.13, §4, §5, §6.18
+- **Check:** `review` + `CI` — budgets fail the build (B20); the reasoning is a
+  review artifact.
+- **Violation looks like:** a dependency added because it was familiar.
+
+### B16 — Prefer the machine-checked form of every rule
+Where a choice of language, structure or tooling determines whether a rule is
+checked by a compiler or merely hoped for, choose the one that checks. Make
+illegal states unrepresentable rather than validating against them. Every
+`review` check in this file is a standing candidate for promotion to `CI` or
+`compiler`.
+- **Absorbs:** §3.16, §7.19
+- **Check:** `review` — measured by the review-check count reported at the top of
+  this file, which this rule exists to drive down.
+- **Violation looks like:** a code review comment where a type would have done.
+
+### B17 — Coverage is whole-system
+A suite that proves every function correct in isolation and never exercises the
+daemon end to end has tested the parts and not the thing. Supervision, recovery,
+contention and degradation exist only *between* components, and those are
+precisely the behaviours §I is about.
+- **Absorbs:** §3.5, §7.22
+- **Check:** `CI` — whole-system tests cross the process boundary and exercise
+  restart with persisted state; the exact boundary is `blocked (DEC-022)`.
+- **Violation looks like:** 100 % unit coverage and no end-to-end test.
+
+### B18 — A bug becomes a fixture before it becomes a fix
+An escaped bug is reproduced in the laboratory as a permanent scenario first.
+Diagnosis happens by reproduction, not by having logged enough in advance — that
+is the telemetry strategy B4 declines.
+- **Absorbs:** §3.5, §3.17, §6.15
+- **Check:** `review` — checkable from the commit record (B-143).
+- **Violation looks like:** a fix with no test, justified by the bug being
+  obvious.
+
+### B19 — The suite runs on a laptop, offline, with no accelerator
+Tests must not require a GPU, a network or a large model. Expensive paths are
+tested through seams, and the seams are part of the design rather than an
+afterthought. Simulated hardware, synthetic artifacts, fake hubs and replayed
+conditions are legitimate and expected: a lab has calibration rigs, and so do
+we.
+- **Absorbs:** §3.5, §3.17
+- **Check:** `CI` — the full suite runs offline on a machine with no accelerator
+  (B-015).
+- **Violation looks like:** a test skipped in CI because the runner has no GPU.
+
+### B20 — Budgets are asserted, and performance changes carry before-and-after
+Idle CPU, resident memory, disk footprint, cold start and the latency MCF
+interposes between request and first token are budgeted, measured and
+regression-tested. A performance change without a before-and-after under stated
+conditions is not a performance change; it is a guess that also increased
+complexity. Optimize what is measured, not what is imagined.
+- **Absorbs:** §3.13, §3.5, §VII
+- **Check:** `CI` — budgets fail the build on regression (B-011); the numbers
+  themselves are `blocked (DEC-016)`.
+- **Violation looks like:** "fastest and lightest possible" invoked with no
+  number attached, which is unfalsifiable and therefore indefensible.
+
+### B21 — The failure record is sufficient exactly when the lab can rebuild the failure from it
+This is a measurable requirement, not an aspiration. When the laboratory cannot
+reconstruct a failure from its record alone, that is a defect **in the record**,
+and the fix is more context at the failure site — never a return to ambient
+streaming.
+- **Absorbs:** §6.15, §3.1, §3.17
+- **Check:** `CI` — a sample of real failures is reconstructed from records
+  alone and the rate is tracked against a target (B-142).
+- **Violation looks like:** a failure record that reads well and reproduces
+  nothing.
+
+### B22 — The interface is a client, not a place
+The interface makes state legible and triggers actions. It holds no logic, no
+authority, and nothing hides in it. It consumes the same API a script uses.
+Universality is bought by demanding almost nothing of the client — not by
+bundling a runtime, shipping a framework or building per-platform applications —
+and its idle cost, when nobody is looking, is indistinguishable from zero.
+- **Absorbs:** §3.14, §6.11, §V, §XI
+- **Check:** `CI` — client weight and cold render meet budget; daemon CPU with
+  an idle tab open is zero (B-070, B-071).
+- **Violation looks like:** a UI that polls a busy machine every second in order
+  to look responsive, spending the user's inference budget on decoration.
+
+### B23 — The instrument grows for validity, never for capability
+Applied ruthlessly and directionally to the agentic harness, the laboratory and
+every measuring device MCF builds: *does this make the measurement more valid,
+or does it make the harness more capable?* Only the first justifies weight. It
+costs nothing when no benchmark is running.
+- **Absorbs:** §6.18, §5, §3.13
+- **Check:** `CI` + `review` — zero idle cost asserted (B-108); refusals
+  recorded rather than forgotten (B-109).
+- **Violation looks like:** a tool-authoring API, which is how a harness becomes
+  a framework.
+
+### B24 — Unattributable is a verdict
+Hardware is a time-varying condition, not a static fact read once at install.
+MCF knows the difference between "this model is slow" and "this machine was
+busy". When it cannot tell, it says so rather than attributing the result — and
+contended trials are excluded from a claim rather than averaged into one.
+- **Absorbs:** §3.8, §7.9
+- **Check:** `lab` — a deliberately contended run is marked unattributable
+  (B-088).
+- **Violation looks like:** a number that is really a claim about an unrelated
+  process.
+
+### B25 — Scope refusals
+A feature is refused, without further argument, when it exists only to make MCF:
+a training or fine-tuning platform; a cross-machine leaderboard; a fleet
+orchestrator; a model-quality authority; a wrapper that makes the runtime
+unreachable; opinionated about which model you should want; a chat product; a
+platform with a plugin ecosystem or extension API; an agent framework; an
+observability platform; or a clone of another tool. "Because that is how the
+other tools do it" is not an argument, and matching a competitor's feature is
+never in itself a reason to carry its weight.
+- **Absorbs:** §5 (all eleven anti-goals)
+- **Check:** `review` — a refusal cites this rule and the specific anti-goal.
+- **Violation looks like:** a feature whose only justification is a comparison
+  table.
+
+### B26 — Managed tensions are not relitigated
+These are permanent conditions of the problem, named so that they are managed
+rather than re-argued: rigor costs time; coverage costs sharpness; automation
+costs agency; good evaluation is expensive; simulated confidence is not real
+confidence; ease costs transparency; lightness costs features; and reduced
+observation costs retrospective diagnosis. Reopening one requires new
+information, not renewed discomfort.
+- **Absorbs:** §4, §6.15
+- **Check:** `review` — a proposal to resolve one of these cites what is new.
+- **Violation looks like:** the third redesign this year of the same trade-off.
+
+### B27 — The laboratory is production code and does not grade itself
+The lab is held to every rule in this file, because everything else is believed
+on its authority — a sloppy simulator produces confident wrong results.
+Determinism is a feature of the lab, not of the world: simulated time, injected
+faults and replayable scenarios exist so a failure found once reproduces
+exactly, forever. Its fidelity is measured against reality (A12) and its
+boundary is stated, so confidence is claimed only where it was earned.
+- **Absorbs:** §3.17, §6.16, §VIII
+- **Check:** `CI` — scenarios are deterministic across repeated runs (B-009);
+  the stated fidelity boundary is `blocked (DEC-021)` (B-141).
+- **Violation looks like:** a test helper nobody reviews, which is where
+  confident wrong results come from.
+
+---
+
+## C — Low value
+
+Eight rules. Real, kept, and the least load-bearing we have. They are decided
+last when rules compete and may be dropped without amending the intent document.
+
+### C1 — Prose logs are a rendering of the record, never the record itself
+- **Absorbs:** §3.3 · **Check:** `review`
+- **Why low value:** A6 and B4 already force the record to be structured and
+  complete. This rule only prevents someone treating a formatted string as the
+  source of truth, which the type system makes awkward anyway.
+
+### C2 — Verbosity above the floor is a dial, defaulting low
+The §3.4 floor is not on the dial; everything above it is, and the default is
+quiet.
+- **Absorbs:** §3.3 · **Check:** `review`
+- **Why low value:** a preference about defaults. Nothing downstream breaks if
+  the default is wrong, and the floor — which does matter — is protected by A6.
+
+### C3 — Minimal chrome, never minimal truth
+A minimalist interface shows less decoration, not less information.
+- **Absorbs:** §3.14 · **Check:** `review`
+- **Why low value:** the substantive half is A6, which already forbids stripping
+  conditions from a measurement on any surface. What remains is taste.
+
+### C4 — Repeatability before precision
+A number reproducible to ±10 % beats one quotable to three decimals once.
+- **Absorbs:** §3.4 · **Check:** `review`
+- **Why low value:** a tie-breaking heuristic for methodology arguments. A6 and
+  the acceptance criteria (DEC-007) do the actual work.
+
+### C5 — Identifiers are stable for life
+Rule IDs, backlog IDs, void numbers and record IDs are never reused and never
+renumbered, so a citation made once remains valid.
+- **Absorbs:** §7 preamble, backlog convention · **Check:** `review`
+- **Why low value:** a convention. Cheap to hold, mildly annoying to violate,
+  nothing scientific rests on it.
+
+### C6 — Nothing is deleted; dropped work keeps its reasoning
+Backlog items, rules and resolutions that die are marked dropped with the
+reasoning rather than removed, so they are not re-proposed later as oversights.
+- **Absorbs:** §8, backlog convention · **Check:** `review`
+- **Why low value:** it preserves institutional memory, which is valuable but
+  recoverable from version control if the rule lapses.
+
+### C7 — Mockups are illustrative and never citable
+Every figure in `mockup/` is invented. No figure there may be cited as a
+measurement, and where a mockup and the intent document disagree, the document
+wins.
+- **Absorbs:** §5, mockup convention · **Check:** `review`
+- **Why low value:** A20 and B25 already forbid treating a non-local, non-
+  measured number as evidence. This states it where the temptation is highest.
+
+### C8 — Documentation conventions
+In documents: `$` is the operator's shell and output is verbatim; records are
+shown as JSON for legibility regardless of on-disk form; placeholders are
+written `<like-this>`; a surface that must show something unknown shows
+`unknown` (A7).
+- **Absorbs:** mockup conventions · **Check:** `review`
+- **Why low value:** presentation. The one substantive clause is a restatement
+  of A7.
+
+---
+
+## Not adopted as rules
+
+Recorded so their absence is deliberate rather than an oversight, per C6.
+
+| Statement | Why it is not a rule here |
+|---|---|
+| "The fastest, lightest tool it can possibly be" (§VII) | Unfalsifiable as written. It becomes B20 the moment DEC-016 supplies numbers; until then it is a mood, and a rule nothing can be checked against is worse than none. |
+| "The highest scientific standards" (§II) | Not operationalized. It is the *source* of A6, A8, A9, A10, A19, B3 and B12, and DEC-007 will make its acceptance criteria checkable. As a standalone rule it would be cited to justify anything. |
+| "Runs on any system or device" (§V) | Unbounded as stated (§6.11 says so). B22 carries the checkable half; the client bound is DEC-016. |
+| "Reproducible" (§3.12) | Present as precedence P3 rather than a rule, because reproducible *to what tolerance across what changes* is DEC-006. A rule would have to guess the answer. |
+| Reliability as uptime | Deliberately not a rule. §6.1 redefined "never fail" as "never lose information", which is A1. A rule about uptime would compete with A1 and lose. |
+
+---
+
+## Amending this file
+
+1. **The intent document is upstream.** A rule changes because a principle,
+   resolution or void changed — not the reverse. Code that diverges from a rule
+   is either a bug or an argument, and an argument is raised in the intent
+   document first (§8).
+2. **A new rule must cite, and must carry a check.** A rule with no citation is
+   invented intent (A23). A rule with no check is a wish (B16); if the only
+   available check is `review`, say so and record what would make it stronger.
+3. **A new rule must earn its place against consolidation.** The first question
+   is whether an existing rule already covers it. This file was built by
+   reducing about 120 statements to 58, and it is worth less the moment it
+   starts growing back.
+4. **Tier changes are decisions, not edits.** Promoting a rule to absolute means
+   asserting that no cost justifies violating it. Demoting one means the
+   opposite. Both are recorded with reasoning.
+5. **Deleting from tier C is normal.** That is what the tier is for.
+
+---
+
+## Coverage
+
+Every normative clause of the source documents, and the rule that absorbed it.
+This table is the audit that the refinement lost nothing; a source clause with
+no rule is a defect in this file.
+
+| Source | Absorbed by |
+|---|---|
+| §I Reliability | A1, A2, A3, P1 |
+| §II Science | A6, A19, P2, "Not adopted" |
+| §III Custody | B7, A7, A15 |
+| §IV Optimization | B6, A6 |
+| §V Interface | B22, B8, "Not adopted" |
+| §VI Hosting | B1, A16, B22 |
+| §VII Lightness | B20, B15, B4, P5, "Not adopted" |
+| §VIII Verification | B27, A13, A12, B17 |
+| §IX Agentic evaluation | B12, B13, A14 |
+| §X Capability discovery | A21, B10, B11 |
+| §XI Both surfaces | A22, B22 |
+| §3.1 Failure is first-class | A2, A3, A4, A1 |
+| §3.2 Degrade, don't die | A5 |
+| §3.3 The record | A6, B4, C1, C2 |
+| §3.4 Measurements carry conditions | A6, A8, A9, A10, C4 |
+| §3.5 Tests establish credibility | A19, B17, B18, B19, B20 |
+| §3.6 Provenance never inferred | A7, B14, B5 |
+| §3.7 The hub is untrusted | A15, B7, A16 |
+| §3.8 The machine is the apparatus | B24, B3, B20 |
+| §3.9 "Optimal" needs an objective | B6, A9 |
+| §3.10 The user's data is theirs | A17, B8, B9 |
+| §3.11 Nothing destroyed casually | B14, A16 |
+| §3.12 Reproducibility over convenience | P3, B2 |
+| §3.13 Lightness is a budget | B20, B15, B4, B23, P5 |
+| §3.14 The interface is a window | B22, A22, C3 |
+| §3.15 Ease means fewer decisions | B1, A16 |
+| §3.16 Machine-enforced principles | B16, and the `Check` field on every rule |
+| §3.17 The laboratory | B27, A13, B18, B19, B21 |
+| §3.18 Capabilities are measured | A21, A7, B10 |
+| §3.19 The benchmark resembles the work | B13, A10 |
+| §4 Standing tensions | B26, A20, B15 |
+| §5 Anti-goals (11) | B25, B4, B23 |
+| §6.1 Honesty wins | P1, A1 |
+| §6.2 Separable measurement path | B3 |
+| §6.3 "Any" governs attempt | B7, A9 |
+| §6.4 Untrusted execution never implicit | A15, B5 |
+| §6.5 Declared objective | B6 |
+| §6.6 "Build" means compose | B25 (training anti-goal), B6 |
+| §6.7 Tests vs benchmarks | A18 |
+| §6.8 System vs content | B9, A17 |
+| §6.9 Lightness vs telemetry (resolved) | B4 |
+| §6.10 Science outranks speed | P2 |
+| §6.11 Thin client, not portable runtime | B22 |
+| §6.12 Local by default | B8, A16 |
+| §6.13 No undeclared state | B2, B3, B11 |
+| §6.14 Gate by category | A16, B1 |
+| §6.15 Reproduce, don't observe | B21, B18, B26 |
+| §6.16 Simulated confidence | A11, A12, B27 |
+| §6.17 Distributions, not scores | B12, B13, A8 |
+| §6.18 Instrument, not platform | B23, B15 |
+| §6.19 Detection is measurement | B10, A21 |
+| §6.20 Sandbox by construction | A14 |
+| §6.21 Parity, headless primary | A22 |
+| §7 Voids — the process | A23 |
+| §8 Amending | A23, C6, §"Amending this file" |
+| Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
+| Backlog conventions | C5, C6, A23 |
+| Mockup conventions | C7, C8, A7 |

@@ -395,22 +395,17 @@ much of MCF's confidence is therefore earned.
 
 ## Standing rules across every milestone
 
-Drawn directly from the Document of Intent, restated here because a roadmap is
-where they are most likely to be traded away under pressure.
+The rules live in one place: **[rules.md](rules.md)**. They are not restated
+here, because a rule restated in two documents is a rule that will eventually
+say two different things.
 
-1. **No silent failure, ever** (§3.1). A swallowed exception is worse than a
-   crash, because a crash is honest.
-2. **Degraded results carry their mark** (§3.2). An unlabelled degraded result is
-   a corrupted result.
-3. **Honesty outranks continuity** (§6.1). It is always correct to report that a
-   run failed or a number is untrustworthy; it is never correct to substitute,
-   smooth, retry-until-pretty or omit.
-4. **Science outranks speed where they meet** (§6.10). MCF may be fast in how it
-   validates, records and repeats — never fast by doing less of it.
-5. **A feature's overhead is part of its cost, and refusing a feature is a normal
-   outcome** (§3.13).
-6. **Tests are green and deterministic; benchmarks have no pass condition**
-   (§6.7). Conflating them destroys both.
-7. **A bug becomes a lab fixture before it becomes a fix** (§3.5, §3.17).
-8. **Work cites intent** (§8). Work that cannot cite is a finding: record a void
-   in §7 rather than inventing intent silently.
+The five that a roadmap is most likely to trade away under schedule pressure,
+by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
+**A2** no silent failure · **A18** tests and benchmarks are never conflated ·
+**B20** budgets are asserted, and a performance change carries a
+before-and-after.
+
+Every milestone above is subject to all 58. A milestone that can only be
+delivered by breaking one is a milestone that has been mis-drawn, and the
+correct response is to amend the intent document (§8) rather than to make a
+local exception.

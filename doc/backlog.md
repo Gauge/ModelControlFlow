@@ -1,7 +1,7 @@
 # ModelControlFlow — Backlog
 
 **Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
-Revision 5. Companion to [roadmap.md](roadmap.md).
+Revision 5. Companion to [roadmap.md](roadmap.md). Governed by [rules.md](rules.md).
 
 **What this is.** The single register of outstanding work. Every item here traces
 to a citation in the Document of Intent — an intent (§I–§XI), a principle (§3.x),
@@ -31,9 +31,9 @@ previously exist in written form anywhere.
 - **M** — the milestone in [roadmap.md](roadmap.md) that owns it.
 
 **Status vocabulary:** `open`, `in progress`, `blocked (by ID)`, `done`,
-`dropped (reason)`. Nothing is deleted from this file; items that die are marked
-`dropped` with the reasoning, per §8's rule that the reasoning must survive the
-change.
+`dropped (reason)`. Per **C5** and **C6** in [rules.md](rules.md), IDs are stable
+for life and nothing is deleted from this file: items that die are marked
+`dropped` with the reasoning, so they are not re-proposed later as oversights.
 
 ---
 
@@ -106,7 +106,7 @@ first and importance second.
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | blocked (DEC-008) |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
-| B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it" | Every rule cites; every rule is checkable by a machine or names the human check it replaces | open |
+| B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
 
 ### M1 — Acquire

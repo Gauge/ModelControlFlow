@@ -42,10 +42,9 @@ differently.
 
 ## Conventions
 
-- `$` is the operator's shell. Output is verbatim.
-- Records are shown as JSON for legibility; §3.3 requires structured and
-  machine-readable first, human-readable second, and the on-disk form is an
-  implementation detail.
-- Placeholder values are written `<like-this>`.
-- Where a surface must show something it does not yet know, it shows `unknown` —
-  never a plausible default (§3.6, §3.18).
+Governed by **C7** and **C8** in [rules.md](../rules.md), which is where the
+rules live. In short: `$` is the operator's shell and output is verbatim;
+records are shown as JSON regardless of on-disk form; placeholders are written
+`<like-this>`; a surface that must show something it does not know shows
+`unknown` rather than a plausible default (**A7**); and no figure in these
+files may ever be cited as a measurement.
