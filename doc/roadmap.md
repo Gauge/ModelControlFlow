@@ -5,7 +5,7 @@
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
 | **Version** | 10 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -78,14 +78,15 @@ as a static binary that runs offline with no models present.
 
 **Delivers**
 - Rust workspace, pinned toolchain, reproducible build (B-001)
-- Failure taxonomy, and a `Result` discipline the compiler enforces (DEC-010, B-003)
+- Failure taxonomy ([taxonomy.md](taxonomy.md)) and a `Result` discipline the
+  compiler enforces (B-003)
 - `Measurement<T>` and `Provenance` types that cannot exist without their
   conditions and origins attached (B-005, B-006) — §3.16 applied at the smallest
   scale, where it is cheapest
 - Append-only, event-driven record store; zero timer wakeups when idle (B-004)
 - Laboratory skeleton: simulated clock, injectable faults, replayable scenarios
   (B-009), with a catalogue cross-checked against the taxonomy (B-010)
-- Performance budget numbers, asserted in CI (DEC-016, B-011)
+- The performance budget (D24), asserted in CI (B-011)
 - Hardware profiler, degrading and labelling on unrecognized hardware (B-013)
 - The adversarial Rust prototype §7.19 asks for as validation (B-002)
 - `rules.md`, derived from the Document of Intent, every rule citing (B-016)
@@ -107,7 +108,9 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004, DEC-035, DEC-039, DEC-047 (sub-questions). ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
+**Gated on:** DEC-021, DEC-022, DEC-008, DEC-004, DEC-035, DEC-039, DEC-047 (GPL/AGPL). ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+
+**Note on the remainder:** all six are questions a working prototype answers better than an argument does. D4 commits to that prototype and §7.19 says building it is early work rather than a gate. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
 **Explicitly not in M0:** any model, any inference, any network fetch, any UI.
 

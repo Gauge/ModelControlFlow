@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 23 |
+| **Version** | 24 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1080,6 +1080,55 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D24 — The performance budget *(answers §7.16)*
+
+Numbers, so that §VII can be defended rather than invoked. Each is asserted by
+the suite (B20) and fails the build on regression.
+
+**MCF's own cost**
+
+| Quantity | Budget | Reasoning |
+|---|---|---|
+| Idle CPU, 60 s average | **≤ 0.05 %** | B4 makes recording event-driven, so idle work should be indistinguishable from none |
+| Timer wakeups while idle | **exactly 0** | The number that should embarrass us first (§3.13). Not a threshold — a prohibition |
+| Resident memory, nothing loaded | **≤ 20 MiB** | A Rust daemon with an embedded store, no interpreter and no GC |
+| Resident memory above the engine, model resident | **≤ 30 MiB** | MCF's overhead, not the model's footprint |
+| Cold start to first command response | **≤ 100 ms** | Static binary, process spawn plus opening a file |
+| Added latency, request to the engine's first token | **≤ 5 ms at p99** | An HTTP hop and a routing decision. Tail, not mean — the tail is what a user feels |
+| Record write, per event | **≤ 2 ms** | An append to a journal (D20) |
+| Memory growth over 30 simulated days | **≤ 1 MiB** | A daemon that must run for months |
+
+**Installed footprint** is budgeted separately, because §6.31 holds that §VII
+governs behaviour rather than download size and one number cannot honestly do
+both:
+
+| Quantity | Budget |
+|---|---|
+| Core binary, no engines | **≤ 40 MiB** |
+| Complete artifact, engines vendored (D23, §XVI) | **≤ 250 MiB** |
+
+**The interface** (§V, §6.11)
+
+| Quantity | Budget |
+|---|---|
+| Document, gzipped | ≤ 40 KiB |
+| JavaScript | 0 by default; any is a budgeted addition with a stated reason |
+| External requests | exactly 0 |
+| Cold render on the reference client | ≤ 400 ms |
+| Daemon CPU with an idle tab open | ≤ 0.02 % |
+| Daemon wakeups with an idle tab open | exactly 0 |
+
+**The reference client**, which §6.11 requires be bounded honestly: a browser on
+a mid-range phone roughly ten years old, over local Wi-Fi. A decade-old laptop is
+in scope. A smart fridge is not a commitment this project makes.
+
+**Two honest notes.** The footprint figures are the least certain here, because
+§XVI's vendoring and D23's tiering decide them and neither has been built — D4's
+adversarial prototype exists partly to check them, and this entry is amended if
+it goes badly rather than defended. And every figure above is a **ceiling, not a
+target**: a budget that is merely met has not been optimized, and §3.13's
+accounting discipline is about the direction of travel, not about passing.
 
 ## 3. Principles
 
@@ -3006,13 +3055,6 @@ rather than a scheduler. What remains is everything outside a lab — a download
 that would exhaust the disk mid-flight, several clients of a served model, two
 models resident at once — and §7.37's question of who writes to the record.
 
-### 7.10 Failure taxonomy
-
-§3.1 requires every failure to be classified, but the classification scheme does
-not exist. It needs to be designed once, deliberately, because it will appear in
-logs, telemetry, tests, the recommendation engine, and the user interface — and
-retrofitting it later will be miserable.
-
 ### 7.11 Offline and degraded-network operation
 
 Local inference is frequently chosen for disconnected environments. How much of
@@ -3036,24 +3078,6 @@ Neither "reliable" nor "scientific" nor "optimal" has a stated threshold. What
 state would let us say MCF works? Without an answer, §3.5's test suites have no
 target to be complete against, and the project has no way to distinguish
 progress from motion.
-
-### 7.16 The performance budget itself — **blocking §VII**
-
-§3.13 requires that weight be budgeted, and §3.5 requires those budgets be
-tested — but no numbers exist. "Fastest and lightest possible" is unfalsifiable
-as written and therefore cannot be defended, only invoked. What is the target
-idle CPU? Resident memory with nothing loaded? Cold start? Acceptable added
-latency between an inbound request and the engine's first token? Installed
-footprint?
-
-Until real numbers exist, §VII is a mood rather than a constraint, and §3.13's
-regression tests have nothing to assert against. This is the highest-leverage
-void to close, because it converts the newest intent from rhetoric into
-something that can be enforced.
-
-Related and equally unstated: **what "any device" bounds mean** (§6.11) — the
-oldest, weakest client MCF commits to serving usefully. Without it, §V is also
-unfalsifiable.
 
 ### 7.17 Authentication and the trust posture of the control plane
 
@@ -3536,6 +3560,8 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.34 | The identity of a measured configuration | §XIV, §XV | **D17**, **D18**, **D19** — the runnable configuration; hardware and seed are conditions |
 | §7.48 | What rights a contribution carries | §3.20, §XIV | **D21** — dedicated, stated up front, no withdrawal |
 | §7.49 | What protects the record from loss | §3.1, D6 | **D20** — a rebuildable index over an append-only journal |
+| §7.16 | The performance budget | §VII, §3.13 | **D24** — the numbers, asserted in CI |
+| §7.10 | Failure taxonomy | §3.1, §3.17 | [taxonomy.md](taxonomy.md) — three axes, sixteen domains |
 | §7.15 | Success beyond the author | §XIV, §XV | **D7** — MCF is for other people |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.

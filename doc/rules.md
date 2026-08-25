@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 15 |
+| **Version** | 16 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
 **99 rules in three tiers, each carrying a citation and a check.** Cite them by
@@ -23,6 +23,7 @@ the rule is corrected.
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
 | — | [Coverage](#coverage) | Every source clause, and the rule that absorbed it |
+| — | Companions | [taxonomy.md](taxonomy.md) · [labs.md](labs.md) |
 | — | [Changelog](#changelog) | |
 
 ## The tiers
@@ -114,7 +115,9 @@ A swallowed exception, a bare catch-and-continue, or a default substituted for a
 missing value without a record is worse than a crash, because a crash is honest.
 - **Absorbs:** §3.1
 - **Check:** `compiler` + `CI` — no `unwrap`, `expect`, `panic`, `todo`,
-  `unimplemented` or discarded `Result` in non-test code (B-003).
+  `unimplemented` or discarded `Result` in non-test code (B-003); every failure
+  carries a category from [taxonomy.md](taxonomy.md), an attribution and a
+  disposition, and `internal.unclassified` is tracked against a target of zero.
 - **Violation looks like:** `let _ = write_record(…);`
 
 ### A3 — The manager survives the managed
@@ -600,8 +603,9 @@ regression-tested. A performance change without a before-and-after under stated
 conditions is not a performance change; it is a guess that also increased
 complexity. Optimize what is measured, not what is imagined.
 - **Absorbs:** §3.13, §3.5, §VII
-- **Check:** `CI` — budgets fail the build on regression (B-011); the numbers
-  themselves are `blocked (DEC-016)`.
+- **Check:** `CI` — budgets fail the build on regression (B-011); the numbers are
+  D24's, and two of them are prohibitions rather than thresholds: zero idle timer
+  wakeups, zero external requests from the interface.
 - **Violation looks like:** "fastest and lightest possible" invoked with no
   number attached, which is unfalsifiable and therefore indefensible.
 
@@ -1403,6 +1407,15 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 16 — the checks get their numbers
+
+A2 and B20 were both citing decisions that did not exist. B20 now asserts
+against D24's figures, two of which are prohibitions rather than thresholds, and
+A2 now requires every failure carry a category from [taxonomy.md](taxonomy.md)
+with its attribution and disposition — plus the tracked count of
+`internal.unclassified`, whose target is zero because every occurrence is a
+missing category.
 
 ### Version 15 — everything MCF runs on, MCF ships
 

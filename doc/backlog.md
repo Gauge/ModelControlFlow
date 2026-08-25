@@ -7,7 +7,7 @@
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**235 items: 49 decisions (38 open, 1 drafted, 3 narrowed, 7 resolved) and 186 build items.** Every item cites the clause that
+**235 items: 49 decisions (36 open, 1 drafted, 3 narrowed, 9 resolved) and 186 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -40,8 +40,8 @@ implemented, only gestured at, until the decision is made.
 
 | ID | Question | Void | Blocks | M | Status |
 |---|---|---|---|---|---|
-| DEC-016 | The performance budget numbers, and the oldest client "any device" commits to | §7.16 | **§VII** | M0 | open |
-| DEC-010 | The failure classification scheme, designed once | §7.10 | **§3.1** | M0 | open |
+| DEC-016 | The performance budget numbers | §7.16 | §VII | M0 | **resolved** — D24: sixteen figures, ceilings not targets; footprint provisional pending the prototype |
+| DEC-010 | The failure classification scheme | §7.10 | §3.1 | M0 | **resolved** — [taxonomy.md](taxonomy.md): three axes, sixteen domains, 110 codes |
 | DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | open |
 | DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | open |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | open |
@@ -103,7 +103,7 @@ first and importance second.
 |---|---|---|---|---|
 | B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | open |
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against the budgets | §7.19 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | blocked (DEC-016, DEC-010) |
-| B-003 | Failure type: every fallible boundary returns a classified, attributed, context-carrying error; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16 | CI denies `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `let _ =` on `Result` outside tests | blocked (DEC-010) |
+| B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | open |
 | B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | open |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | open |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | open |
@@ -111,7 +111,7 @@ first and importance second.
 | B-008 | Degradation marking: a result produced under reduced capability is typed as degraded and cannot be rendered without its mark | §3.2 | A CPU-derived result cannot be displayed or exported as though it were accelerator-derived | open |
 | B-009 | Laboratory skeleton: deterministic harness, simulated clock, injectable faults, replayable scenarios; held to production code standards | §3.17, §VIII | A scenario reproduces a given failure identically across 100 runs and on a machine with no accelerator | blocked (DEC-021) |
 | B-010 | Fault catalogue cross-check: the lab's catalogue and the failure taxonomy are the same list, and a taxonomy entry with no simulation fails the check | §3.17, §7.21 | An automated check fails CI when a taxonomy category has no producing scenario | blocked (DEC-010, DEC-021) |
-| B-011 | Performance budget test suite: idle CPU, resident memory, cold start, added latency and installed footprint asserted against numbers, not eyeballed | §3.13, §3.5, §VII | Budgets are asserted in CI; a regression fails the build with a before/after under stated conditions | blocked (DEC-016) |
+| B-011 | Performance budget suite: every D24 figure asserted, with zero idle wakeups and zero external requests enforced as prohibitions rather than thresholds | §3.13, §3.5, D24 | A regression fails the build with a before/after under stated conditions | open |
 | B-012 | Overhead self-characterization: MCF measures and reports the cost of its own observation, because an uncharacterized instrument is not a scientific one | §6.2, §3.8 | The measured delta between instrumented and reduced-instrumentation paths is reported as part of a result's conditions | open |
 | B-013 | Hardware profiler: accelerators, memory, thermal and power state, driver and runtime versions; unrecognized hardware degrades and is labelled, never guessed | §3.8, §7.8 | Profiles a machine with and without an accelerator; unknown vendors produce an `Unattributed` profile rather than an inference | blocked (DEC-008) |
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
@@ -349,6 +349,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 20 — two M0 gates close
+
+DEC-016 resolved by D24 and DEC-010 by [taxonomy.md](taxonomy.md). B-011 and
+B-003 unblock, and with them the four other items that were waiting on numbers
+or on a classification scheme.
 
 ### Version 19 — vendored only
 

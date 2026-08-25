@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -32,6 +32,7 @@ know what MCF is for, [doc/rules.md](doc/rules.md) before writing anything, and
 | [document-of-intent.md](doc/document-of-intent.md) | Intent | Why MCF exists, what it refuses to be, and every conflict and open question between its intents | A rule is ambiguous, two rules conflict, or no rule exists yet |
 | [rules.md](doc/rules.md) | Rules | 99 enforceable rules in three tiers, each with a citation and a check | You are writing code, a test, a specification or a review comment |
 | [roadmap.md](doc/roadmap.md) | Plan | Ten milestones, each a vertical MVP slice, with gating decisions and exit criteria | You are deciding what to build next |
+| [taxonomy.md](doc/taxonomy.md) | Reference | The failure classification: three axes, sixteen domains, 110 codes | You are handling an error, writing a lab scenario, or rendering a failure |
 | [labs.md](doc/labs.md) | Catalogue | Twenty-three candidate laboratories in four families, with what gates each and what it can claim | You are deciding what to measure, or designing a lab |
 | [proposals.md](doc/proposals.md) | Proposals | Seven features argued in full — the claim each enables, how it works, what it costs, what it collides with | You are considering a feature, or about to propose one |
 | [backlog.md](doc/backlog.md) | Register | Every outstanding decision and build item, with status | You are picking up work, or recording new work |
@@ -132,6 +133,11 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 6 — the taxonomy joins the map
+
+`doc/taxonomy.md` added, answering the failure-classification void that had been
+open since the first version of the intent document.
 
 ### Version 5 — the lab catalogue joins the map
 
