@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7, which wins on any disagreement |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
 
-**67 rules in three tiers, each carrying a citation and a check.** Cite them by
+**73 rules in three tiers, each carrying a citation and a check.** Cite them by
 ID. Where a rule and the intent document disagree, the intent document wins and
 the rule is corrected.
 
@@ -17,8 +17,8 @@ the rule is corrected.
 | § | Section | Holds |
 |---|---|---|
 | — | [Precedence](#precedence) | P1–P5, the order when rules genuinely conflict |
-| A | [Absolute](#a--absolute) | 25 rules that admit no exception |
-| B | [Conditional](#b--conditional) | 34 rules that permit something provided a condition holds |
+| A | [Absolute](#a--absolute) | 26 rules that admit no exception |
+| B | [Conditional](#b--conditional) | 39 rules that permit something provided a condition holds |
 | C | [Low value](#c--low-value) | 8 rules that are decided last and may be dropped |
 | — | [Not adopted](#not-adopted-as-rules) | Statements deliberately not made rules |
 | — | [Amending](#amending-this-file) | How a rule changes |
@@ -64,7 +64,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**50 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**56 rules carry at least one machine check, 15 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -93,7 +93,7 @@ work that A6 requires is a misuse of the list, and P2 exists to say so.
 
 ## A — Absolute
 
-Twenty-five rules. Each admits no exception.
+Twenty-six rules. Each admits no exception.
 
 ### A1 — Never lose information
 "Never fail" means MCF never becomes unable to tell you what happened. It is
@@ -347,11 +347,24 @@ filter can be misconfigured, a store that never held the data cannot leak it.
 - **Violation looks like:** one database with an `is_user_content` column and an
   export query that excludes it.
 
+### A26 — Privilege is per-operation, and never reaches untrusted code
+The long-lived daemon holds no ambient privilege. Elevation belongs to a small,
+auditable helper that performs one named operation from a short enumerable list
+and exits. Model repository code and models under test run unprivileged in the
+sandbox, always, with no configuration that relaxes it. Elevation is a gated
+category (A16) and MCF runs without it, marking every measurement it could not
+take.
+- **Absorbs:** §XVII, §6.32, §3.7, §6.20, §3.10
+- **Check:** `lab` — the privileged surface is enumerated and each entry tested;
+  a scenario asserts untrusted code cannot reach an elevated path (B-180).
+- **Violation looks like:** running the daemon as root because one reading
+  needed it, which converts every other rule in this file into a formality.
+
 ---
 
 ## B — Conditional
 
-Thirty-four rules. Each holds under a stated condition, or permits something
+Thirty-nine rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -751,6 +764,71 @@ row without its full conditions is not contributable at all.
 - **Violation looks like:** "most users run Q4_K_M" appearing anywhere near a
   recommendation.
 
+### B35 — A laboratory owns the machine while it runs
+A lab runs alone: no user traffic served, no second lab beside it. Within its
+run it may take whatever resources accuracy requires — the whole accelerator,
+locked pages, pinned cores, raised priority. The condition on that greed is that
+it belongs to an experiment somebody started: a lab costs nothing when it is not
+running (B30). Suspension of the serving path is declared, announced with an
+expected duration, bounded, and interruptible with the partial result preserved.
+- **Absorbs:** D8, §6.33, §3.8, §3.4, §7.9
+- **Check:** `CI` — starting a lab while serving requires an explicit decision
+  and drains the endpoint; a request during a lab receives an immediate refusal
+  naming the lab, never a queue or a timeout (B-181, B-182).
+- **Violation looks like:** a benchmark that runs beside a served model, which
+  measures the pair and reports it as the model.
+
+### B36 — MCF ships what it needs; a missing prerequisite is never the user's errand
+The user obtains MCF and runs it: no runtime, interpreter, toolchain, framework
+or separately-fetched engine. Anything on the common path is vendored or
+reimplemented; where that is impossible the feature is refused rather than
+converted into an instruction. Absent *platform* capabilities — a vendor driver,
+hardware that is not present — are stated, marked unavailable, and continued
+past (§3.2), never turned into a request.
+- **Absorbs:** §XVI, §6.31, §3.12, §3.2
+- **Check:** `CI` — a from-scratch container with no toolchain runs the binary
+  and reaches a first token (B-183).
+- **Violation looks like:** an error message containing installation
+  instructions, which is an unpinned dependency wearing a helpful face.
+
+### B37 — Durations are monotonic, records are UTC, lab time is simulated
+A duration is never computed from wall-clock readings. Records timestamp in UTC
+with the local offset stored alongside. The laboratory's clock is simulated and
+a result knows which clock produced it, so a simulated duration can never be a
+performance number (A11). A clock anomaly during a measurement invalidates that
+measurement loudly rather than being smoothed.
+- **Absorbs:** D9, §3.4, §3.17, §6.1
+- **Check:** `compiler` — duration and timestamp are distinct types with no
+  arithmetic between them (B-184); `lab` — clock-jump scenarios invalidate
+  rather than corrupt.
+- **Violation looks like:** `end_wall - start_wall`, which silently reports an
+  NTP correction as latency.
+
+### B38 — The suite is tiered, and every tier reports its age
+The fast hermetic tier gates every change and stays hermetic and fast (B19).
+Load, soak, mutation and the full fault matrix run on a schedule and before
+every release. A heavy tier that has not run recently is reported as **stale**,
+never assumed green — an unstated staleness is A2's silent failure aimed at the
+suite. Mutation score is budgeted like any other property (B20) and may not
+regress silently.
+- **Absorbs:** D10, §6.34, §3.5, §3.13
+- **Check:** `CI` — tier ages are published with every result set and a stale
+  tier fails a release (B-185); mutation score has a floor (B-186).
+- **Violation looks like:** a green badge that means "the fast tests passed" and
+  is read as "the software works".
+
+### B39 — Energy is measured, estimated, or unknown — and sampled only in a lab
+Power and thermal counters are read during a laboratory run, at a declared
+sampling rate recorded as a condition, never by an ambient sampler. A vendor's
+modelled figure is recorded as an estimate (A20); a platform with no interface
+yields `unknown` (A7) and never a number derived from utilization. Energy
+figures taken under different sampling profiles are not comparable (A8).
+- **Absorbs:** D11, §6.35, §3.9, D5
+- **Check:** `CI` — idle MCF reads no counters (B-187); every energy value
+  carries its provenance and sampling rate (B-188).
+- **Violation looks like:** watts inferred from GPU utilization, presented in
+  the same column as watts that were measured.
+
 ---
 
 ## C — Low value
@@ -840,8 +918,8 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 67 rules
-   refined from about 140 scattered statements, and it is worth less the moment
+   is whether an existing rule already covers it. This file holds 73 rules
+   refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
 4. **Tier changes are decisions, not edits.** Promoting a rule to absolute means
@@ -874,6 +952,12 @@ no rule is a defect in this file.
 | §XIII Analysis laboratories | B30, B31, B32 |
 | §XIV The shared record | A24, A25, B34 |
 | §XV Reproduce by identifier | B33, A15, A16 |
+| §XVI Self-contained | B36, B15 |
+| §XVII Full utilization | A26, B35 |
+| D8 Labs run exclusively | B35, B30 |
+| D9 The time model | B37 |
+| D10 Test the app, measure the model | B38, A18, B19 |
+| D11 Energy is first-class | B39 |
 | D6 The record is SQLite | A25, B9 |
 | D7 MCF is for other people | B15, A23 |
 | §3.1 Failure is first-class | A2, A3, A4, A1 |
@@ -930,6 +1014,11 @@ no rule is a defect in this file.
 | §6.28 Contribute outward, decide inward | B34, A6 |
 | §6.29 An identifier is a request to reproduce | B33, A15 |
 | §6.30 Publishing vs contamination | B13, A10 |
+| §6.31 Self-contained vs delegation | B36, B20 |
+| §6.32 Privilege boundary | A26, A16 |
+| §6.33 Exclusive labs vs the endpoint | B35 |
+| §6.34 Heavy tiers vs a fast suite | B38, B19 |
+| §6.35 Power vs the observer effect | B39, B30 |
 | §7 Voids — the process | A23 |
 | §8 Amending | A23, C6, §"Amending this file" |
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |
@@ -939,6 +1028,24 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 4 — six rules for privilege, exclusivity, self-containment, time, tiers and energy
+
+A26 is the rule that makes §XVII survivable: the daemon holds no ambient
+privilege, elevation is a short enumerable list performed by a helper that
+exits, and nothing untrusted ever runs privileged. Written as absolute because
+the alternative — running the daemon as root because one reading needed it —
+converts every other rule in this file into a formality.
+
+B35 states what D8 decided: a lab owns the machine, may be greedy while running,
+and costs nothing when it is not. B36 makes §XVI checkable by the only test that
+matters — a from-scratch container with no toolchain runs the binary and reaches
+a first token. B37 makes D9's time model a compiler property rather than a
+convention, since `end_wall - start_wall` is the bug that silently reports an
+NTP correction as latency. B38 tiers the suite and requires every tier report
+its age, because an unstated staleness is A2's silent failure aimed at the
+suite. B39 keeps energy honest: measured, estimated or unknown, sampled only
+inside a lab.
 
 ### Version 3 — seven rules for the analysis and exchange intents
 

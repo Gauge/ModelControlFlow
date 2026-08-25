@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7 and governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
 
 **Every milestone is a product, not a phase.** The MVP rule applies per
@@ -89,11 +89,22 @@ as a static binary that runs offline with no models present.
 - Hardware profiler, degrading and labelling on unrecognized hardware (B-013)
 - The adversarial Rust prototype §7.19 asks for as validation (B-002)
 - `rules.md`, derived from the Document of Intent, every rule citing (B-016)
+- The self-contained artifact (B-192, B-183): engine and common-path tooling
+  vendored, statically linked, and a from-scratch container with no toolchain
+  proving §XVI by the only test that matters
+- The privileged helper (B-190, B-180): a separate auditable executable, the
+  daemon holding no ambient privilege, and a scenario proving untrusted code
+  cannot reach an elevated path — §6.32's boundary, built before anything needs
+  it rather than after
+- The time model as types (B-184) — `end_wall - start_wall` should not compile
+- Test tiers with published ages and a mutation floor (B-191, B-185, B-186) —
+  D10's discipline, including the tier that measures whether the suite would
+  notice a deliberate break
 - Reference-model neutrality: no code path special-cases the reference model,
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004.
+**Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004, DEC-033, DEC-034, DEC-035, DEC-039.
 
 **Explicitly not in M0:** any model, any inference, any network fetch, any UI.
 
@@ -309,6 +320,12 @@ harness §XIII would have to be retrofitted onto.
 - Distributions, never scores (B-104); model failure taxonomy as the primary
   output (B-105) — *how* it failed beats the pass rate
 - A statistical test for "is this a real difference" (B-106)
+- Lab exclusivity and declared suspension (B-181, B-182): a lab owns the
+  machine, the endpoint is drained by an explicit decision, and a request
+  arriving during a run is refused within a round trip naming the lab and its
+  remaining time — D8's greed paid for by §6.33's honesty
+- The energy laboratory (B-189, B-187, B-188): joules per token with its
+  measurement provenance, sampled only while a lab runs
 - The lab framework (B-111): a lab is named, versioned, reproducible, declares
   whether it is timing-class or behaviour-class, and states what it does and
   does not establish — §XIII's unit of work
@@ -469,7 +486,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 67. A milestone that can only be
+Every milestone above is subject to all 73. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.
@@ -477,6 +494,18 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 4 — v8's work lands, and three structural decisions move to M0
+
+M0 gains the self-contained artifact, the privileged helper, the time model as
+types, and the test tiers — and gains DEC-033, DEC-034 and DEC-035 as gates,
+because a record whose sample retention and configuration identity are undecided
+cannot be written, and a sandbox whose host platform is undecided cannot be
+built.
+
+M6 gains lab exclusivity and the energy laboratory. Exclusivity is milestone
+work rather than a policy note: draining the serving path, refusing requests
+within a round trip, and bounding and interrupting a run are all mechanisms.
 
 ### Version 3 — the bench, and the exchange
 

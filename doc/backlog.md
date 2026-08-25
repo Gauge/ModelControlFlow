@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v7, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v8, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**151 items: 31 decisions (30 open, 1 resolved) and 120 build items.** Every item cites the clause that
+**172 items: 39 decisions (37 open, 1 narrowed, 1 resolved) and 133 build items.** Every item cites the clause that
 justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -49,7 +49,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | open |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
-| DEC-009 | Who arbitrates the accelerator, the disk and memory between serving and benchmarking | §7.9 | §3.8 | M2 | open |
+| DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
 | DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open |
 | DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
 | DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | open |
@@ -65,6 +65,14 @@ implemented, only gestured at, until the decision is made.
 | DEC-013 | Whether measurements survive MCF's own upgrades | §7.13 | §3.4 | M8 | open |
 | DEC-005 | How long the record is kept, who may purge it, and what happens when its budget is exhausted | §7.5 | §3.10 | M8 | open |
 | DEC-014 | What state lets us say MCF works | §7.14 | §3.5 | M8 | open |
+| DEC-033 | Whether the record keeps raw per-trial samples or only summaries — unrecoverable in one direction, and DEC-023 concedes the right statistic is not yet known | §7.33 | **§II, D6** | M0 | open |
+| DEC-034 | What constitutes the identity of a measured configuration, and therefore what §XV's identifier serializes | §7.34 | **§IV, D6** | M0 | open |
+| DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | open |
+| DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
+| DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
+| DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
+| DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
+| DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-029 | Which laboratories exist, in what order, and what a lab must state about its own validity | §7.29 | **§XIII** | M6 | open |
 | DEC-028 | What an identifier is: content-addressed or looked up, what it binds, whether it resolves offline | §7.28 | **§XV** | M9 | open |
 | DEC-027 | What a contribution contains, and whether a machine can be de-identified without being made useless | §7.27 | **§XIV** | M9 | open |
@@ -101,6 +109,14 @@ first and importance second.
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
 | B-041 | Documentation conformance check: front matter, changelog, present tense outside changelogs, no dangling `B-*`/`DEC-*`/`§` citation, no broken relative link | [README.md](../README.md) format contract, C5, B16 | A single command fails when any document in `doc/` violates the contract; run in CI beside the code checks | open |
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
+| B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | open |
+| B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change | D10, §6.34, §3.5 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
+| B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
+| B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
+| B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | open |
+| B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI | Asserted in CI on every platform in DEC-035's scope | blocked (DEC-035) |
+| B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
+| B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
@@ -199,6 +215,11 @@ first and importance second.
 | B-107 | Contamination strategy: private, rotated or procedurally generated tasks, per DEC-023 | §7.3, §3.4 | The strategy is stated, implemented and re-checkable as the suite ages | blocked (DEC-023) |
 | B-108 | Zero cost when idle: the benchmark subsystem consumes nothing during ordinary serving | §6.18, §3.13 | Measured serving footprint is identical with the harness compiled in and no benchmark running | open |
 | B-109 | Harness minimality guard: each addition must make the measurement more valid, not the harness more capable | §6.18, §5 | Additions cite validity; capability-only additions are refused and the refusal is recorded | open |
+| B-181 | Lab exclusivity: starting a lab drains the serving path by an explicit decision; no second lab runs beside it | B35, D8, §6.33 | Two labs cannot run at once; serving is suspended before a lab begins | open |
+| B-182 | Suspension is declared: a request during a lab receives an immediate refusal naming the lab and the expected remaining time, never a queue or a timeout; a lab is bounded and interruptible with its partial result preserved | B35, §6.33, §3.1 | Requests during a lab are refused within one round trip; interrupting preserves and marks the partial result | open |
+| B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | open |
+| B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
+| B-189 | Energy laboratory: energy per token, sustained power draw and thermal behaviour under load, with fidelity stated per platform | D11, §3.9, §XIII | The lab reports joules per token with its measurement provenance, or states that this platform cannot supply it | blocked (DEC-029) |
 | B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour) and states what it does and does not establish | §XIII, §3.17, §6.26 | A lab that cannot state its class or its validity boundary fails to register | blocked (DEC-029) |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
@@ -266,6 +287,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 4 — the structural decisions surface, and v8's work is registered
+
+Eight decisions added. Three are marked structural and pulled into M0 because
+deciding them late destroys data or forces a rewrite: whether the record keeps
+raw samples (DEC-033), what constitutes the identity of a measured configuration
+(DEC-034), and which host platforms MCF runs on together with the containment
+mechanism A14 requires there (DEC-035). None of the three had been asked in any
+earlier version, which is the finding.
+
+DEC-009 is narrowed rather than closed: D8 answers the lab-versus-serving half,
+leaving disk exhaustion mid-download, several clients and two resident models.
+
+Build items added for the self-contained artifact and its from-scratch
+conformance check, the privileged helper and the scenario proving untrusted code
+cannot reach it, the time types, the test tiers with their published ages and a
+mutation floor, lab exclusivity and its declared suspension, and the energy
+laboratory.
 
 ### Version 3 — the analysis and exchange work is registered
 
