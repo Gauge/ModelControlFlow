@@ -2,8 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{Authorization, preview, purge, remove, restore};
+use super::{
+    Authorization, held, preview, provenance_of, provenance_path, purge, record_provenance, remove,
+    restore,
+};
+use mcf_core::attested::Attested;
 use mcf_core::failure::Category;
+use mcf_core::provenance::{Licence, Origin, Provenance, Repository, Revision};
 use mcf_core::time::Timestamp;
 use mcf_record::journal::Journal;
 
@@ -334,4 +339,141 @@ fn a_plan_with_nothing_in_it_is_not_reversible_or_otherwise() {
     assert_eq!(plan.bytes(), Some(0));
     assert!(!plan.reversible(), "there is nothing to reverse");
     assert!(plan.doomed().is_empty());
+}
+
+/// An artifact's provenance lives beside it, and comes back the way it went.
+#[test]
+fn provenance_is_written_beside_the_artifact_and_read_from_there() {
+    let scratch = Scratch::new("sidecar");
+    let model = scratch.holding("model.gguf", 16);
+    let provenance = Provenance::acquired(
+        Origin::hub(
+            Repository::new("owner/model"),
+            Some(Revision::new("abc123")),
+        ),
+        Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
+    )
+    .with_licence(Licence::spdx("apache-2.0"));
+
+    let sidecar = record_provenance(&model, &provenance).expect("it is written");
+    assert!(sidecar.exists());
+    assert!(
+        sidecar
+            .display()
+            .to_string()
+            .starts_with(&model.display().to_string()),
+        "the sidecar is not beside the artifact: {}",
+        sidecar.display()
+    );
+    assert_eq!(provenance_of(&model).expect("it reads back"), provenance);
+}
+
+/// An artifact somebody dropped in by hand has no provenance, and that is a
+/// state to report rather than a defect to hide (A7).
+#[test]
+fn an_artifact_with_no_provenance_says_so() {
+    let scratch = Scratch::new("no-sidecar");
+    let model = scratch.holding("model.gguf", 16);
+    let failure = provenance_of(&model).expect_err("nothing beside it");
+    assert_eq!(failure.category(), Category::ArtifactMissing);
+
+    let holding = held(&scratch.path).expect("the directory reads");
+    let listed = holding
+        .iter()
+        .find(|held| held.path == model)
+        .expect("the artifact is listed");
+    assert_eq!(listed.provenance, Err(None));
+    let described = listed.describe();
+    assert!(described.contains("origin unknown"), "{described}");
+}
+
+/// A provenance that is there and cannot be read is a third state, and an
+/// operator can act on it — unlike an artifact quietly listed as having none.
+#[test]
+fn a_provenance_that_cannot_be_read_is_not_the_same_as_none() {
+    let scratch = Scratch::new("bad-sidecar");
+    let model = scratch.holding("model.gguf", 16);
+    std::fs::write(provenance_path(&model), "{not json at all").expect("the sidecar is written");
+
+    let holding = held(&scratch.path).expect("the directory reads");
+    let listed = holding
+        .iter()
+        .find(|held| held.path == model)
+        .expect("the artifact is listed");
+    match &listed.provenance {
+        Err(Some(failure)) => assert_eq!(
+            failure.category(),
+            Category::ArtifactProvenanceIncomplete,
+            "{failure}"
+        ),
+        other => panic!("an unreadable provenance was listed as {other:?}"),
+    }
+    assert!(listed.describe().contains("unreadable"));
+}
+
+/// A listing names the artifacts and not MCF's own bookkeeping beside them.
+#[test]
+fn a_listing_does_not_list_the_sidecars() {
+    let scratch = Scratch::new("listing");
+    let first = scratch.holding("a/model.gguf", 10);
+    let second = scratch.holding("b/model.gguf", 20);
+    for artifact in [&first, &second] {
+        record_provenance(
+            artifact,
+            &Provenance::acquired(
+                Origin::Unattributed,
+                Timestamp::from_utc_nanos(0, Attested::Unknown),
+            ),
+        )
+        .expect("it is written");
+    }
+
+    let holding = held(&scratch.path).expect("the directory reads");
+    let paths: Vec<&PathBuf> = holding.iter().map(|held| &held.path).collect();
+    assert_eq!(paths, vec![&first, &second], "{holding:?}");
+    assert_eq!(holding.first().map(|held| held.bytes), Some(10));
+}
+
+/// Removing an artifact takes its provenance with it: a sidecar left behind
+/// records something that is no longer there, and an artifact shelved without
+/// one can no longer say where it came from (§3.6).
+#[test]
+fn a_removal_takes_the_provenance_with_the_artifact() {
+    let scratch = Scratch::new("removal-sidecar");
+    let model = scratch.holding("model.gguf", 24);
+    let sidecar = record_provenance(
+        &model,
+        &Provenance::acquired(
+            Origin::hub(Repository::new("owner/model"), None),
+            Timestamp::from_utc_nanos(0, Attested::Unknown),
+        ),
+    )
+    .expect("it is written");
+
+    let plan = preview(std::slice::from_ref(&model), &scratch.at("shelf")).expect("a plan");
+    assert_eq!(
+        plan.doomed().len(),
+        2,
+        "the plan does not name the provenance: {}",
+        plan.describe()
+    );
+    assert!(
+        plan.describe().contains("mcf-provenance"),
+        "{}",
+        plan.describe()
+    );
+
+    let authorization = Authorization::given(&plan, "clearing it out").expect("authorized");
+    let mut journal = scratch.journal();
+    let removed = remove(&plan, &authorization, &mut journal, now()).expect("the removal runs");
+
+    assert!(removed.complete(), "{:?}", removed.refused);
+    assert!(!model.exists());
+    assert!(!sidecar.exists(), "the provenance was left behind");
+    assert_eq!(removed.shelved.len(), 2);
+
+    restore(&removed, &plan).expect("it comes back");
+    assert!(model.exists());
+    assert!(sidecar.exists(), "the provenance did not come back");
+    assert!(provenance_of(&model).is_ok());
 }
