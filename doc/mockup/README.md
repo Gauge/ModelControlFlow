@@ -36,6 +36,10 @@ differently.
   illustrative. They will be wrong in detail and are expected to be amended.
 - **Not a specification.** Where a mockup and the Document of Intent disagree,
   the document wins and the mockup is corrected.
+- **Not the reference model.** The mockups predate Revision 6 and use invented
+  model names for illustration. The reference model for initial work is
+  `unsloth/Qwen3.8-27B-GGUF` (§XII); nothing about these sketches depends on
+  which model appears in them, which is B28's point restated.
 - **Not real data.** Every figure shown is invented for illustration. Per §5,
   MCF is actively suspicious of numbers that did not originate locally — and
   none of these did. No figure here may ever be cited as a measurement.

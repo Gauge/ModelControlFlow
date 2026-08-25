@@ -1,6 +1,6 @@
 # ModelControlFlow — Document of Intent
 
-**Status:** Living document. Revision 5.
+**Status:** Living document. Revision 6.
 **Nature:** This is a *spirit of the rules* document. It is not a requirements
 specification, not an architecture document, and not a backlog. Nothing here is
 directly implementable, and that is deliberate. Its job is to be the thing you
@@ -22,6 +22,17 @@ implementation. Section 6 (Conflicts) resolves tensions on principle alone.
 Where a resolution says *provisional*, it means exactly that: the first real
 implementation that touches the question gets to argue back, and this document
 should be amended rather than quietly violated.
+
+**Revision 6 note:** One intent added (XII), and it is the first that names a
+*specific artifact* rather than a property of the system. Choosing a reference
+model for initial work is a smaller decision than any of I–XI, and it collides
+with more of this document than its size suggests: with §3.5's rule that tests
+require no large model, with §3.4's warning about tuning toward whatever is
+measured, and with §III's "any model" — all resolved in §6.22 and §6.23 by
+holding the line that **the reference model is a fixture, never a special
+case.** It also narrows §7.8 and §7.16 by making the development hardware
+concrete, and it opens §7.26: one model is enough to build an instrument and
+never enough to generalize from.
 
 **Revision 5 note:** Three intents added (IX, X, XI). The first is the most
 consequential addition since the founding four: **agentic workflow benchmarking**
@@ -234,6 +245,43 @@ This ratifies what §3.14 and §6.11 already held — the interface is a window 
 a service complete without it — and adds one requirement those did not state:
 **parity.** Every capability is reachable headlessly; the interface introduces no
 action that exists only there. See §6.21.
+
+### XII. The reference model — "use Qwen3.8-27B for all initial testing"
+
+Early work needs something real to be developed against. The stated choice is
+**`unsloth/Qwen3.8-27B-GGUF`** (https://huggingface.co/unsloth/Qwen3.8-27B-GGUF),
+and it is the first intent in this document that names a specific artifact
+rather than a property of the system.
+
+What the repository *declares*, recorded as declaration rather than fact
+(§3.7, §3.18): a 27B model, licensed Apache-2.0, derived from
+`Qwen/Qwen3.8-27B`, published in GGUF form across quantizations from roughly
+1-bit through BF16. MCF has verified none of it, and will not until §X probes
+it. That is not a caveat about this repository in particular; it is the posture
+toward every repository, and the reference model earns no exemption from it by
+being the reference.
+
+Three properties make it a *good* fixture, and they are the reason to record
+this as intent rather than as a note:
+
+- **It is the hard provenance case, not the easy one.** A third-party
+  requantization is a derivative whose chain runs through one publisher's
+  pipeline back to another's weights. §3.6 demands exactly that chain be
+  preserved, and building against this artifact exercises the requirement from
+  the first commit rather than discovering it later against something simpler.
+- **Its breadth of quantizations is a frontier in itself.** One model, one
+  machine, twenty quantizations is the cleanest possible §3.4 comparison: a
+  single variable, many points. §IV's frontier work has a subject before any
+  second model exists.
+- **27B is the useful size.** Large enough that residency (§7.18), arbitration
+  (§7.9) and memory pressure are real problems on consumer hardware rather than
+  hypothetical ones; small enough that one machine can hold it. A 7B model would
+  have let those questions stay theoretical.
+
+What this intent does **not** license is set out in §6.22 and §6.23. In
+summary: no code path may behave specially because an artifact is the reference
+model, the test suite may not depend on it, and nothing measured on it
+generalizes to models in general.
 
 ## 3. Principles
 
@@ -1226,6 +1274,69 @@ whole-system tests exercise MCF headlessly, so a capability reachable only
 through the interface is a capability the laboratory cannot test — which §3.5
 already forbids.
 
+### 6.22 A reference model vs. "any model" and the hermetic suite
+
+**Tension.** §XII names one artifact as the subject of early work. Two rules
+push back. §III and §6.3 commit MCF to accepting *any* hub reference without
+special-casing, and a system developed against one model acquires quiet
+dependencies on its format, its family and its template without anyone
+deciding to. §3.5 is sharper still: tests must not require a GPU, a network or
+a large model, and a 27B fixture is precisely the dependency that rule forbids.
+
+**Resolution — the reference model is a fixture for the *instrument*, never a
+dependency of the *suite*, and never a case in the code.**
+
+- **The suite stays hermetic.** Unit, whole-system and laboratory tests run on a
+  laptop, offline, with no accelerator and no real weights, against synthetic
+  artifacts and the simulated hub (§3.17). Nothing in §XII changes that, and a
+  test that cannot run without downloading 27B of weights is a defect regardless
+  of how convenient it was to write.
+- **Where the reference model is legitimately used:** benchmarking (§IV),
+  capability probing (§X), agentic evaluation (§IX), real-hardware validation of
+  the laboratory (§6.16), and the §7.19 substrate prototype. All of these are
+  activities that require real weights by their nature. None of them gate a
+  build.
+- **No special-casing, ever.** A code path that behaves differently because an
+  artifact happens to be the reference model is a defect, not an optimization.
+  The honest test is mechanical: substituting a different model must change what
+  is measured and nothing about how MCF behaves.
+
+**Confidence: high.** The distinction it rests on — §6.7's separation of tests
+from benchmarks — is already load-bearing elsewhere in this document, and this
+is the same line drawn through a new question.
+
+### 6.23 One reference model vs. generalization
+
+**Tension.** §IV exists to tell a user which model to run, which is a claim
+about models in general. §3.4 warns specifically about MCF's own tendency to
+tune toward whatever it measures. Develop the whole instrument against one
+artifact and two failures follow: MCF becomes correct about that model rather
+than correct in general, and nobody notices, because the only thing measuring
+MCF is the thing MCF was built around.
+
+**Resolution — one model is enough to build an instrument and never enough to
+generalize from, and MCF must say which it is doing.**
+
+- **Instrument development is single-model work and is honest about it.** During
+  early milestones, results measured on the reference model characterize *the
+  instrument* — that it records conditions, classifies failures, reproduces
+  runs. They characterize the model only incidentally.
+- **No §IV recommendation is made from a single model.** A recommendation
+  requires alternatives by construction; §3.9's frontier has one point until a
+  second model exists, and a frontier with one point is not a frontier. MCF
+  should refuse rather than rank a field of one.
+- **Breadth is a prerequisite for a generality claim, and its extent is
+  unresolved** — recorded as §7.26.
+- **The §3.4 anti-overfitting rule applies to MCF itself.** Tuning a default
+  until the reference model looks better is training on the test, whoever is
+  doing the tuning and however reasonable each individual adjustment seemed.
+
+**Confidence: high on the principle, medium on the discipline.** This is the
+resolution most likely to be violated accidentally rather than deliberately,
+because every individual act of tuning toward the one model in front of you is
+locally sensible. It is the §3.12 failure mode — erosion by a hundred small
+reasonable decisions — pointed at a new target.
+
 ---
 
 ## 7. Voids — Where Intent Is Missing or Underdetermined
@@ -1586,6 +1697,24 @@ comparable and §3.4 is violated. If it never does, the configuration rots.
 Neither branch has been chosen, and the choice determines whether an
 auto-configured setting is a decision or a live value.
 
+### 7.26 The reference set — how much breadth a generality claim requires
+
+§6.23 holds that one model builds an instrument and never supports a claim about
+models in general, without saying what does. Someone must decide what the
+reference *set* becomes and when: how many models, chosen along which axes —
+family, format, size, quantization lineage, instruction-tuning style — and at
+what point in the roadmap the second and third join.
+
+The axes are not equally informative, and choosing badly is cheap to do and
+expensive to discover. Three models from one family test less than two from
+different ones. A second GGUF derivative tests less than a first safetensors
+one, because format handling is where §III's coverage claim actually lives.
+
+Riding on it: whether §IV may make any recommendation before the set exists
+(§6.23 says no, but not how large "exists" is), and whether the laboratory's
+real-hardware validation (§7.20) needs the same breadth or a different one —
+they are asking different questions of the same weights.
+
 ---
 
 ## 8. Amending This Document
@@ -1633,6 +1762,15 @@ Recorded so that the *reasoning* behind each change survives it, per §8.
   §X (capability discovery) collided with §3.6 and was resolved by §3.18:
   detection is measurement, not inference. §XI closed §7.12 by adding parity
   between the surfaces.
+- **Revision 6** — Intent XII added: `unsloth/Qwen3.8-27B-GGUF` as the reference
+  model for initial work. The first intent naming a specific artifact, and it
+  collided with more of the document than its size suggested — §3.5's hermetic
+  suite, §3.4's anti-overfitting rule, and §III's no-special-casing commitment.
+  Resolved in §6.22 (the reference model is a fixture for the instrument, never
+  a dependency of the suite or a case in the code) and §6.23 (one model builds
+  an instrument and never supports a generality claim). Opened §7.26, and
+  narrowed §7.8 and §7.16 by making the development hardware concrete: whatever
+  runs a 27B model is now the first characterized machine.
 - **Revision 4** — Two decisions. **Rust** chosen as the substrate (§7.19
   resolved, on §3.16 grounds rather than performance ones). **Confidence
   strategy rebalanced** from ambient telemetry to testing and simulation: §6.9

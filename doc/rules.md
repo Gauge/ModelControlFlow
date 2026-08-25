@@ -10,7 +10,7 @@ across four documents — §3 (principles), §4 (tensions), §5 (anti-goals) and
 (resolutions) of the intent document, the roadmap's standing rules, the
 backlog's conventions, and the mockup conventions. Roughly 120 normative
 statements, many restating one another in different words, none carrying a
-stated means of enforcement. This file refines them into **58 rules**, each with
+stated means of enforcement. This file refines them into **60 rules**, each with
 a citation, a check, and a description of what its violation looks like. Nothing
 was discarded: §"Coverage" at the end maps every source clause to the rule that
 absorbed it, so the refinement can be audited rather than trusted.
@@ -35,7 +35,7 @@ readings-in-the-eye-of-the-beholder:
   first candidates for deletion if this file grows unwieldy.
 
 **The low-value tier is deliberately small — eight rules.** That is itself a
-finding. A document of intent whose statements are 86 % load-bearing is doing
+finding. A document of intent whose statements are 87 % load-bearing is doing
 its job; if this tier ever grows large, the correct response is to delete from
 it rather than to organize it.
 
@@ -51,9 +51,7 @@ change. A rule with no check is a wish, so each rule names one of:
 | `review` | A human check. Weakest; each instance is a candidate for promotion to `CI`. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that will make it so. |
 
-Counts at this revision, as *mentions* across 58 rules, of which six name more
-than one check: `compiler` 7 · `CI` 29 · `lab` 8 · `review` 16 · `blocked` 4.
-Counted as *rules*: **42 carry at least one machine check, 14 rest on review
+Counted as *rules*: **44 carry at least one machine check, 14 rest on review
 alone, and 2 are not yet checkable at all.** That second figure is the number to
 drive down (B16) — it is the amount of this document that currently depends on
 somebody remembering it.
@@ -317,7 +315,7 @@ acquires intent nobody chose.
 
 ## B — Conditional
 
-Twenty-seven rules. Each holds under a stated condition, or permits something
+Twenty-nine rules. Each holds under a stated condition, or permits something
 provided a condition is met.
 
 ### B1 — Defaults flow, provided they are recorded, attributed, explained and overridable
@@ -622,6 +620,33 @@ boundary is stated, so confidence is claimed only where it was earned.
 - **Violation looks like:** a test helper nobody reviews, which is where
   confident wrong results come from.
 
+### B28 — The reference model is a fixture, never a case in the code
+`unsloth/Qwen3.8-27B-GGUF` is the subject of early benchmarking, probing,
+evaluation and real-hardware validation. The condition: no code path behaves
+differently because an artifact is the reference model, and the test suite never
+depends on it — B19's hermetic suite is unchanged by §XII. The check is
+mechanical: substituting a different model must change what is measured and
+nothing about how MCF behaves.
+- **Absorbs:** §XII, §6.22, §III, §3.5
+- **Check:** `CI` — the suite runs offline with no real weights (B-015, B19);
+  a grep-level check that no identifier names the reference model outside
+  fixtures and documentation (B-018).
+- **Violation looks like:** a special case for GGUF-from-unsloth that makes the
+  reference model work and quietly breaks the next artifact.
+
+### B29 — One model builds an instrument; it never supports a generality claim
+Results measured on the reference model characterize *the instrument* — that it
+records conditions, classifies failures and reproduces runs. They characterize
+models in general not at all. No §IV recommendation is made from a field of one:
+a frontier with one point is not a frontier, and MCF refuses rather than ranks.
+A10 applies to MCF itself here — tuning a default until the reference model
+looks better is training on the test, however reasonable each adjustment seemed.
+- **Absorbs:** §6.23, §3.4, §3.9, §XII
+- **Check:** `CI` — the recommender refuses a single-candidate field (B-127);
+  the breadth required before a generality claim is `blocked (DEC-026)`.
+- **Violation looks like:** "measured on the reference model" quietly becoming
+  "measured", which is how one artifact turns into a claim about the world.
+
 ---
 
 ## C — Low value
@@ -713,7 +738,8 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
 3. **A new rule must earn its place against consolidation.** The first question
    is whether an existing rule already covers it. This file was built by
    reducing about 120 statements to 58, and it is worth less the moment it
-   starts growing back.
+   starts growing back. Revision 6 of the intent document added two, which is
+   what integrating a new intent should cost.
 4. **Tier changes are decisions, not edits.** Promoting a rule to absolute means
    asserting that no cost justifies violating it. Demoting one means the
    opposite. Both are recorded with reasoning.
@@ -740,6 +766,7 @@ no rule is a defect in this file.
 | §IX Agentic evaluation | B12, B13, A14 |
 | §X Capability discovery | A21, B10, B11 |
 | §XI Both surfaces | A22, B22 |
+| §XII The reference model | B28, B29, B19 |
 | §3.1 Failure is first-class | A2, A3, A4, A1 |
 | §3.2 Degrade, don't die | A5 |
 | §3.3 The record | A6, B4, C1, C2 |
@@ -782,6 +809,8 @@ no rule is a defect in this file.
 | §6.19 Detection is measurement | B10, A21 |
 | §6.20 Sandbox by construction | A14 |
 | §6.21 Parity, headless primary | A22 |
+| §6.22 Reference model is a fixture | B28, B19 |
+| §6.23 One model does not generalize | B29, A10 |
 | §7 Voids — the process | A23 |
 | §8 Amending | A23, C6, §"Amending this file" |
 | Roadmap standing rules (8) | A2, A5, P1, P2, B15, A18, B18, A23 — now removed from the roadmap and cited from there |

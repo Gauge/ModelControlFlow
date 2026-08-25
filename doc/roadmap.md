@@ -1,8 +1,8 @@
 # ModelControlFlow — Roadmap
 
 **Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
-Revision 5. Work register: [backlog.md](backlog.md). Stage mockups:
-[mockup/](mockup/).
+Revision 6. Rules: [rules.md](rules.md). Work register: [backlog.md](backlog.md).
+Stage mockups: [mockup/](mockup/).
 
 ---
 
@@ -61,7 +61,7 @@ be the first thing to erode it.
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
 | **M5** | **The measurement** — `mcf bench` | Obtain a defensible performance number taken *here*, with its conditions and its uncertainty | §II, §IV | §7.7, §7.6 |
 | **M6** | **The judgment** — `mcf eval` | Find out whether a model can actually do the work, as a distribution rather than a score | §IX, §3.19 | §7.23, §7.3 residuals |
-| **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2 |
+| **M7** | **The loop** — `mcf recommend` | Be told which configuration to run, why, what came second, and when the difference is noise | §IV, §3.9 | §7.2, §7.26 |
 | **M8** | **Endurance** | Trust all of it over time, across upgrades, offline, and on hardware the lab only simulated | §VIII, §I | §7.20, §7.13, §7.5, §7.14, §7.15 |
 
 Each milestone's finished state is drawn in `mockup/M<n>-*.md`. Those are
@@ -98,6 +98,9 @@ as a static binary that runs offline with no models present.
 - Hardware profiler, degrading and labelling on unrecognized hardware (B-013)
 - The adversarial Rust prototype §7.19 asks for as validation (B-002)
 - `rules.md`, derived from the Document of Intent, every rule citing (B-016)
+- Reference-model neutrality: no code path special-cases the reference model,
+  and the suite never depends on it (B-018) — §6.22, built in at M0 because a
+  special case is far cheaper to prevent than to find
 
 **Gated on:** DEC-016, DEC-010, DEC-021, DEC-022, DEC-008, DEC-004.
 
@@ -136,6 +139,9 @@ deliberation.
   provenance (B-025) — §6.4
 - Deliberate eviction; disk exhaustion as a decision, not a surprise (B-026, B-027)
 - The fake hub: well-formed, malformed, gated, hostile, truncated, mutating (B-028)
+- The reference model acquired and pinned (B-019) — `unsloth/Qwen3.8-27B-GGUF`
+  is a third-party requantization, so §XII's first real artifact is also §3.6's
+  hard provenance case rather than its easy one
 
 **Gated on:** DEC-011, DEC-009 (partial — the disk arbitration half).
 
@@ -271,6 +277,9 @@ the honest outcomes: *within noise*, *not comparable*, *does not fit here*.
 - Null and negative results stored and surfaced as results (B-086)
 - Partial success as a real outcome with its data intact (B-087)
 - Contention marked unattributable rather than attributed (B-088) — §3.8
+- The quantization frontier on the reference model (B-091): one model, one
+  machine, the full GGUF range — a single variable across many points, which is
+  the cleanest §3.4 comparison available before a second model exists
 
 **Gated on:** DEC-007, DEC-006, DEC-009.
 
@@ -344,8 +353,11 @@ that the prediction held.
   (B-124) — §6.6's reading of "build"
 - Structural separation of selection and validation suites (B-125) — §3.4's
   prohibition on training on the test, applied to MCF's own tuning instinct
+- Refusal to recommend from a field of one (B-127), and the reference set
+  expanded to the breadth DEC-026 requires before any generality claim (B-128) —
+  §6.23: one model builds an instrument and never supports a claim about models
 
-**Gated on:** DEC-002, B-106.
+**Gated on:** DEC-002, DEC-026, B-106.
 
 **Exit criteria**
 - A recommendation is produced, applied, re-measured, and the prediction checked
@@ -405,7 +417,7 @@ by ID: **P1** honesty outranks continuity · **P2** science outranks speed ·
 **B20** budgets are asserted, and a performance change carries a
 before-and-after.
 
-Every milestone above is subject to all 58. A milestone that can only be
+Every milestone above is subject to all 60. A milestone that can only be
 delivered by breaking one is a milestone that has been mis-drawn, and the
 correct response is to amend the intent document (§8) rather than to make a
 local exception.

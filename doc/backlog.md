@@ -1,7 +1,7 @@
 # ModelControlFlow — Backlog
 
 **Status:** Living document. Derived from [document-of-intent.md](document-of-intent.md)
-Revision 5. Companion to [roadmap.md](roadmap.md). Governed by [rules.md](rules.md).
+Revision 6. Companion to [roadmap.md](roadmap.md). Governed by [rules.md](rules.md).
 
 **What this is.** The single register of outstanding work. Every item here traces
 to a citation in the Document of Intent — an intent (§I–§XI), a principle (§3.x),
@@ -54,6 +54,7 @@ design they block, which is §7's own ordering.
 | DEC-022 | DEC | What "full system" means for a daemon — does an end-to-end test drive real HTTP, cross a process boundary, start a real or simulated engine, exercise restart with persisted state | §7.22, §3.5 | M0 | open |
 | DEC-020 | DEC | How much reality validates the lab — what fraction of the suite needs a real-hardware counterpart, on which hardware, and what divergence declares the simulator defective | §7.20, §6.16, §VIII | M8 | open |
 | DEC-002 | DEC | The objective function — how quality, latency, throughput, memory, power and disk trade, and how a user states their weighting; §VI additionally requires a *default* opinion that is visible as a default | §7.2, §IV, §6.5 | M7 | open |
+| DEC-026 | DEC | The reference set — how many models beyond `unsloth/Qwen3.8-27B-GGUF`, chosen along which axes (family, format, size, quantization lineage, tuning style), and when models two and three join; §6.23 forbids a generality claim from a field of one but does not say how large "exists" is | §7.26, §6.23, §XII | M7 | open |
 | DEC-023 | DEC | The agentic suite: contents, statistics, and honesty over time — task provenance (published / authored / generated / user-derived), trial counts, what counts as a difference, difficulty calibration, contamination strategy, cost per run | §7.23, §IX, §6.17 | M6 | open |
 | DEC-024 | DEC | Scope and cost of capability probing — which capabilities, when probes run, what they cost, whether results cache across MCF versions, and how to act on *inconclusive* | §7.24, §X, §3.18 | M3 | open |
 | DEC-007 | DEC | Scientific acceptance criteria — minimum sample count, maximum variance, required warm-up, thermal steady state, what retroactively invalidates a run | §7.7, §II, §3.4 | M5 | open |
@@ -107,6 +108,7 @@ first and importance second.
 | B-014 | `mcf doctor`: the M0 product — reports what the machine is, what MCF costs on it, and what it can and cannot promise here | §I, §3.8, §VII | Runs on a machine with no models, no network and no accelerator, and produces a complete, honest report | open |
 | B-015 | Test seams for expensive paths: no test requires a GPU, a network or a large model | §3.5 | The full suite runs green on a laptop, offline, in under the time budget set by DEC-016 | open |
 | B-016 | `rules.md`: the enforceable rules derived from the Document of Intent, each citing the principle it serves | §II, doc §"How to use it", §3.16 | Every rule cites; every rule is checkable by a machine or names the human check it replaces | **done** — [rules.md](rules.md): 58 rules in three tiers; 42 carry a machine check, 14 rest on review alone (tracked as the number to reduce, B16), 2 await a decision |
+| B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | open |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | open |
 
 ### M1 — Acquire
@@ -122,6 +124,7 @@ first and importance second.
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | open |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | blocked (DEC-021) |
+| B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | open |
 
 ### M2 — Serve
@@ -185,6 +188,7 @@ first and importance second.
 | B-087 | Partial success representation: nine of ten tasks completing is nine data points | §3.1 | Partial runs are queryable as partial, with their per-unit outcomes intact | open |
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
 | B-089 | Environment pinning to the tolerance DEC-006 sets | §3.12, §7.6 | Every result carries enough environment to be reproduced to the stated tolerance | blocked (DEC-006) |
+| B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
 | B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | open |
 
 ### M6 — Judge
@@ -213,6 +217,8 @@ first and importance second.
 | B-123 | Refusal to manufacture a distinction: "the differences here are within noise, pick either" is a supported output | §3.9 | The recommender returns it when the statistics warrant | blocked (B-106) |
 | B-124 | Construct the configuration, not merely name it: compose base model, quantization, format, context size, runtime and sampling parameters, then validate the result | §6.6, §IV | A recommended configuration is materialized and re-measured to confirm it performs as predicted | open |
 | B-125 | Anti-overfitting guard: MCF must not tune toward whatever it measures | §3.4 | The selection suite and the validation suite are structurally separate | blocked (DEC-023) |
+| B-127 | The recommender refuses a field of one: a frontier with a single point is not a frontier, and a single-model recommendation is a claim MCF has no basis for | §6.23, §3.9 | A single-candidate field produces a refusal with its reasoning, never a ranking | open |
+| B-128 | Expand the reference set to the breadth DEC-026 requires before any §IV recommendation is published | §7.26, §6.23 | No generality claim is made until the set exists; results before that say so on every surface | blocked (DEC-026) |
 | B-126 | `mcf recommend`: the M7 product — the closed loop, measure→compare→select→re-measure | §1, §IV | A recommendation is produced, applied, re-measured, and the prediction is checked against the outcome | open |
 
 ### M8 — Endurance
