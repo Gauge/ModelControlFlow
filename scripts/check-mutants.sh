@@ -167,10 +167,16 @@ judge() {
         fail_cannot_check "could not place the mutation for $label"
     fi
 
-    local status=0
-    (cd "$workdir" && cargo test --workspace --offline >/dev/null 2>&1) || status=$?
+    # Two steps rather than one, and in this order. `--no-run` answers whether
+    # the mutant compiles; running the suite afterwards reuses what it just
+    # built. Asking `cargo build` separately would compile the workspace a
+    # second time under a different profile for an answer already in hand.
     local compiled=0
-    (cd "$workdir" && cargo build --workspace --offline >/dev/null 2>&1) || compiled=$?
+    (cd "$workdir" && cargo test --workspace --offline --no-run >/dev/null 2>&1) || compiled=$?
+    local status=0
+    if [ "$compiled" -eq 0 ]; then
+        (cd "$workdir" && cargo test --workspace --offline >/dev/null 2>&1) || status=$?
+    fi
 
     mv "$backup" "$workdir/$file"
 

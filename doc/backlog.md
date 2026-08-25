@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 56 |
+| **Version** | 57 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **247 items: 50 decisions (32 open, 1 drafted, 2 narrowed, 15 resolved) and 197
-build items (29 done, 1 dropped, 4 in progress, 54 blocked on a decision, 109 open).** Every item cites
+build items (30 done, 1 dropped, 4 in progress, 54 blocked on a decision, 108 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -126,7 +126,7 @@ first and importance second.
 | B-018 | Reference-model neutrality: no code path behaves differently because an artifact is the reference model, and the suite never depends on it | §6.22, §XII, §3.5 | Substituting a different model changes what is measured and nothing about how MCF behaves; a CI check fails if the reference model is named outside fixtures and documentation | **done** — `checks/tests/reference_model_neutrality.rs`: no shipped source and no test names the publisher or the family, documentation excepted; a third check fails if the documents stop naming it, so the first two cannot pass by the reference model quietly ceasing to exist |
 | B-184 | Duration and timestamp are distinct types with no arithmetic between them; the lab clock is simulated and travels with the result | B37, D9 | `end_wall - start_wall` does not compile; a clock-jump scenario invalidates rather than corrupts | **done** — `mcf_core::time` keeps the two apart by type; `mcf_record::journal::anomaly` notices a moved calendar by holding *both* clocks across an append, and two scenarios produce a backward step and a forward jump with a disposition of `invalidated`. The entry is still written: what an anomaly invalidates is what was measured across it, not the event |
 | B-352 | Read the machine's local UTC offset, or record that this platform offers no way to | D9, A7, §3.4 | A record carries a known offset where the platform supplies one, and `unknown` where it does not — never `+00:00` as a stand-in | **done** — `mcf_core::time::zone` reads the zone file in safe Rust, resolves the offset in force *at the moment* rather than now, and is unknown beyond what the file records rather than extrapolating. Checked against what the system itself reports |
-| B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | open |
+| B-191 | Test tiers: unit, property, functional, whole-system, fault-injection, load, soak, fuzz, performance, mutation — with the fast hermetic tier gating every change, and the end-to-end boundary drawn by DEC-022 | D10, §6.34, §3.5, DEC-022 | Each tier runs; the gating tier stays offline and fast on a laptop | **done** — all ten exist, declared in `checks/src/tiers.rs` and compared against `scripts/ci.sh`, the tree and [build.md](build.md) in both directions. Five gate, in five seconds; five are scheduled behind flags. The whole-system tier covers the one of §7.22's four questions M0 has anything to answer and names the other three, so DEC-022 governs its extension rather than its existence |
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | open |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | open |
 | B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open |
@@ -365,6 +365,20 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 57 — the suite has all ten tiers
+
+B-191 done. D10's ten disciplines all exist and all run: five gate every change
+and five are scheduled behind flags on the same command. What is not done is
+named where it belongs — tier ages are B-185, the mutation floor is B-186, and
+the end-to-end boundary is DEC-022, which the whole-system tier cites rather
+than pre-empts.
+
+Three of the new tiers found something on their first run, and each is recorded
+with the work rather than in a commit message alone: a condition that did not
+round-trip through the record ([build.md](build.md) §9, fixed), a replay whose
+footprint is proportional to the journal, and the reason the soak tier can only
+be read on one thread.
 
 ### Version 56 — the offset is read, at the moment it applies to
 

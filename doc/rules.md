@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
@@ -861,8 +861,12 @@ never assumed green — an unstated staleness is A2's silent failure aimed at th
 suite. Mutation score is budgeted like any other property (B20) and may not
 regress silently.
 - **Absorbs:** D10, §6.34, §3.5, §3.13
-- **Check:** `CI` — tier ages are published with every result set and a stale
-  tier fails a release (B-185); mutation score has a floor (B-186).
+- **Check:** `CI` — the ten tiers are declared in `checks/src/tiers.rs` and
+  compared against the script that runs them, the tree that holds them and
+  [build.md](build.md), in both directions; a gating tier that ignores its own
+  tests fails the build (B-191). Tier ages are published with every result set
+  and a stale tier fails a release (B-185); mutation score has a floor
+  (B-186).
 - **Violation looks like:** a green badge that means "the fast tests passed" and
   is read as "the software works".
 
@@ -1289,7 +1293,7 @@ Recorded so their absence is deliberate rather than an oversight, per C6.
    invented intent (A23). A rule with no check is a wish (B16); if the only
    available check is `review`, say so and record what would make it stronger.
 3. **A new rule must earn its place against consolidation.** The first question
-   is whether an existing rule already covers it. This file holds 99 rules
+   is whether an existing rule already covers it. This file holds 100 rules
    refined from about 150 scattered statements, and it is worth less the moment
    it starts growing back. Integrating a whole new intent should cost one or two
    rules, not a section.
@@ -1424,6 +1428,21 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 18 — B38's check has a machine-checked half
+
+No rule added, removed or reworded. B38's check named two items that do not
+exist yet — tier ages (B-185) and the mutation floor (B-186) — and therefore
+described nothing that runs. B-191 built the ten tiers and the register that is
+compared against the script, the tree and [build.md](build.md), so the check now
+names something a build fails on today and keeps the two future halves where
+they belong.
+
+Two stale counts corrected while here: this file has held 100 rules since B65
+arrived in version 17, and §"Amending this file" and the repository README both
+still said 99. A rule count nobody maintains is a small thing; a document that
+miscounts its own contents is the kind of drift `documents_conform` exists to
+catch and cannot, since neither number is a citation.
 
 ### Version 17 — B65, the stand-in engine's prohibition
 
