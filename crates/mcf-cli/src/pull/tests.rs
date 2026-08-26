@@ -8,6 +8,12 @@
 use mcf_hub::reference;
 use mcf_hub::source::{Entry, Listing};
 
+/// A listing with no plan behind it, and the reason MCF gives when there is
+/// none: an offer still has to say why it is not planning (A2).
+fn no_plan() -> std::result::Result<Vec<String>, String> {
+    Err("this repository publishes no configuration, and a plan needs one".to_owned())
+}
+
 use super::{DEFAULT_HUB, Offered, PLANNING_CONTEXT, credential, licence_of, offer, run, wire_for};
 use mcf_hub::http::Url;
 
@@ -29,7 +35,7 @@ fn a_listing() -> Listing {
 /// actually asking (§3.13, A7).
 #[test]
 fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
-    let offered = offer(&a_listing(), None);
+    let offered = offer(&a_listing(), &no_plan());
     assert!(offered.contains("Q4_K_M.gguf"), "{offered}");
     assert!(offered.contains("396705472"), "{offered}");
     assert!(offered.contains("50968a44"), "{offered}");
@@ -41,7 +47,7 @@ fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
 /// nobody can check is a condition of every measurement taken on it (A21).
 #[test]
 fn a_file_with_no_declared_digest_is_pointed_out() {
-    let offered = offer(&a_listing(), None);
+    let offered = offer(&a_listing(), &no_plan());
     let undeclared = offered
         .lines()
         .find(|line| line.contains("Q8_0.gguf"))
@@ -58,7 +64,7 @@ fn a_file_with_no_declared_digest_is_pointed_out() {
 /// §III asks and B-023 built.
 #[test]
 fn the_terms_are_offered_with_the_files() {
-    let offered = offer(&a_listing(), None);
+    let offered = offer(&a_listing(), &no_plan());
     assert!(offered.contains("apache-2.0"), "{offered}");
     assert!(offered.contains("permissive"), "{offered}");
     assert_eq!(
@@ -114,7 +120,7 @@ fn a_hub_that_is_not_a_url_is_refused() {
 #[test]
 fn a_plan_is_offered_at_a_stated_context() {
     let plan = vec!["  Q4_K_M.gguf — fits: needs 1 of 2 usable, 1 left".to_owned()];
-    let offered = offer(&a_listing(), Some(&plan));
+    let offered = offer(&a_listing(), &Ok(plan.clone()));
     assert!(
         offered.contains(&format!("at {PLANNING_CONTEXT} tokens of context")),
         "{offered}"
@@ -127,7 +133,7 @@ fn a_plan_is_offered_at_a_stated_context() {
 /// answers (A7).
 #[test]
 fn no_plan_is_said_rather_than_shown_empty() {
-    let offered = offer(&a_listing(), None);
+    let offered = offer(&a_listing(), &no_plan());
     assert!(
         offered.contains("cannot say which of these would run here"),
         "{offered}"

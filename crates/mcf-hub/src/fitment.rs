@@ -56,7 +56,15 @@ pub const USABLE_PER_CENT: u64 = 90;
 /// a shape MCF guessed at would produce a plan about a different model (A7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Shape {
-    /// How many transformer blocks.
+    /// How many blocks hold a key/value cache.
+    ///
+    /// Not *how many blocks the model has*. A model whose configuration lists
+    /// its layer types — some full attention, some linear — caches only in the
+    /// full-attention ones, and counting every block would overstate the cache
+    /// by the ratio between them. The reference model publishes exactly that
+    /// shape: sixty-four blocks, sixteen of them full attention, so the plain
+    /// count is four times the truth ([findings.md](../../../doc/findings.md)
+    /// F16).
     pub blocks: u64,
     /// How many key/value heads — the grouped count, not the query count, and
     /// getting that wrong overstates the cache by the grouping factor.
@@ -87,14 +95,29 @@ impl Shape {
     /// The cache element is a *parameter of the run* rather than a fact about
     /// the model — two bytes for the half-precision caches engines use by
     /// default — so it is passed in rather than read.
+    /// **Nested configurations are read where the model puts them.** A
+    /// multimodal repository publishes one `config.json` describing several
+    /// models, with the transformer's fields under `text_config` and the top
+    /// level holding the composition. MCF looks at the top level first and then
+    /// there — not because it is guessing, but because that is where the field
+    /// is written (F16). A configuration with neither is one MCF will not plan
+    /// for.
     #[must_use]
     pub fn from_configuration(configuration: &Value, bytes_per_element: u64) -> Option<Self> {
+        let text = configuration.get("text_config");
         let field = |name: &str| {
             configuration
                 .get(name)
+                .or_else(|| text.and_then(|nested| nested.get(name)))
                 .and_then(Value::as_integer)
                 .and_then(|value| u64::try_from(value).ok())
                 .filter(|value| *value > 0)
+        };
+        let list = |name: &str| {
+            configuration
+                .get(name)
+                .or_else(|| text.and_then(|nested| nested.get(name)))
+                .and_then(Value::as_list)
         };
         let head_dimension = match field("head_dim") {
             Some(stated) => stated,
@@ -103,8 +126,14 @@ impl Shape {
             // (§3.7).
             None => field("hidden_size")?.checked_div(field("num_attention_heads")?)?,
         };
+        let declared_blocks = field("num_hidden_layers")?;
         Some(Self {
-            blocks: field("num_hidden_layers")?,
+            // Only the blocks that cache. Where a configuration lists its layer
+            // types, MCF counts the full-attention ones; where it does not,
+            // every block caches, which is what a transformer without a hybrid
+            // attention scheme does. Both are readings of the declaration
+            // rather than assumptions about the model (§3.18, A21).
+            blocks: caching_blocks(list("layer_types"), declared_blocks)?,
             key_value_heads: field("num_key_value_heads")?,
             head_dimension,
             bytes_per_element,
@@ -124,6 +153,25 @@ impl Shape {
             .checked_mul(self.head_dimension)?
             .checked_mul(self.bytes_per_element)
     }
+}
+
+/// How many blocks hold a key/value cache.
+///
+/// `None` when the configuration lists layer types and *none* of them is a full
+/// attention layer: a model that caches nothing at all is either a shape MCF
+/// does not understand or a configuration that is wrong, and both are reasons
+/// to refuse a plan rather than to produce one claiming a variant costs no
+/// memory (A7).
+fn caching_blocks(layer_types: Option<&[Value]>, declared: u64) -> Option<u64> {
+    let Some(layers) = layer_types else {
+        return Some(declared);
+    };
+    let caching = layers
+        .iter()
+        .filter_map(Value::as_text)
+        .filter(|kind| kind.contains("full_attention"))
+        .count();
+    u64::try_from(caching).ok().filter(|count| *count > 0)
 }
 
 /// One variant of a model, and what holding it would cost.

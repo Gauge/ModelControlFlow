@@ -281,6 +281,76 @@ fn a_shape_is_read_from_a_configuration() {
     );
 }
 
+/// A multimodal repository publishes one configuration describing several
+/// models, and the transformer's fields are under `text_config`.
+///
+/// The reference model is exactly this shape, and before MCF looked there it
+/// could not plan for it at all ([findings.md](../../../doc/findings.md) F16).
+#[test]
+fn a_nested_configuration_is_read_where_the_model_puts_it() {
+    let nested = mcf_record::json::parse(
+        r#"{"model_type":"a-multimodal-model","vision_config":{"num_hidden_layers":27},
+            "text_config":{"num_hidden_layers":64,"num_key_value_heads":4,"head_dim":256,
+            "hidden_size":5120,"num_attention_heads":24,"rms_norm_eps":1e-06}}"#,
+    )
+    .expect("JSON");
+    assert_eq!(
+        Shape::from_configuration(&nested, 2),
+        Some(Shape {
+            blocks: 64,
+            key_value_heads: 4,
+            head_dimension: 256,
+            bytes_per_element: 2,
+        }),
+        "the transformer's own fields were not read"
+    );
+}
+
+/// Only the blocks that cache are counted.
+///
+/// A model whose configuration lists its layer types caches in the
+/// full-attention ones and not in the linear ones. Counting every block
+/// overstates the cache by the ratio between them — fourfold on the reference
+/// model, which lists sixty-four layers of which sixteen are full attention
+/// (F16) — and an operator would be told a variant does not fit that does.
+#[test]
+fn only_the_blocks_that_cache_are_counted() {
+    let hybrid = mcf_record::json::parse(
+        r#"{"num_hidden_layers":8,"num_key_value_heads":4,"head_dim":128,
+            "layer_types":["linear_attention","linear_attention","linear_attention",
+            "full_attention","linear_attention","linear_attention","linear_attention",
+            "full_attention"]}"#,
+    )
+    .expect("JSON");
+    assert_eq!(
+        Shape::from_configuration(&hybrid, 2).map(|shape| shape.blocks),
+        Some(2),
+        "every block was counted, and only two of them cache"
+    );
+
+    // Where nothing lists the layers, every block caches — which is what a
+    // transformer without a hybrid attention scheme does.
+    let plain = mcf_record::json::parse(
+        r#"{"num_hidden_layers":8,"num_key_value_heads":4,"head_dim":128}"#,
+    )
+    .expect("JSON");
+    assert_eq!(
+        Shape::from_configuration(&plain, 2).map(|shape| shape.blocks),
+        Some(8)
+    );
+
+    // A configuration listing layers of which none caches is a shape MCF does
+    // not understand, and a plan claiming a variant costs no memory would be
+    // worse than no plan (A7).
+    let cacheless = mcf_record::json::parse(
+        r#"{"num_hidden_layers":4,"num_key_value_heads":4,"head_dim":128,
+            "layer_types":["linear_attention","linear_attention","linear_attention",
+            "linear_attention"]}"#,
+    )
+    .expect("JSON");
+    assert_eq!(Shape::from_configuration(&cacheless, 2), None);
+}
+
 /// A configuration that does not say is not guessed at: the grouping factor is
 /// exactly what a guess gets wrong, and an operator would be told a variant
 /// does not fit that does (A7).

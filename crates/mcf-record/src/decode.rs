@@ -83,10 +83,11 @@ fn condition(value: &Value, question: &str) -> Option<Attested<ConditionValue>> 
         Value::Null => Some(Attested::Unknown),
         Value::Text(text) => Some(Attested::Known(ConditionValue::text(text.clone()))),
         Value::Integer(number) => Some(Attested::Known(ConditionValue::integer(*number))),
-        // A condition written as a boolean, a list or an object is a shape this
-        // version does not ask for. It is not decoded into text, because a
-        // decoder that coerced would make a record say something nobody wrote.
-        Value::Bool(_) | Value::List(_) | Value::Map(_) => None,
+        // A condition written as a boolean, a list, an object or a number this
+        // format does not carry is a shape this version does not ask for. It is
+        // not decoded into text, because a decoder that coerced would make a
+        // record say something nobody wrote.
+        Value::Bool(_) | Value::ForeignNumber(_) | Value::List(_) | Value::Map(_) => None,
     }
 }
 
