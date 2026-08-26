@@ -19,10 +19,12 @@
 //! not invent a repository URL it cannot verify — an offer nobody can act on is
 //! worse than a stated absence.
 //!
-//! **The vendored list is empty and says so.** When D23 admits a component, it
-//! appears here *and* in [vendored.md], and a check requires the two agree:
-//! a component whose terms a redistributor cannot read is exactly the failure
-//! B-330 exists to prevent.
+//! **The vendored list is the TLS stack.** It appears here *and* in
+//! [vendored.md], and a check requires the two agree: a component whose terms a
+//! redistributor cannot read is exactly the failure B-330 exists to prevent.
+//! What is listed is what is *compiled in* — the tree also holds crates cargo
+//! requires to be present and nothing builds, and a conveyor is not conveying
+//! those.
 //!
 //! [vendored.md]: ../../../doc/vendored.md
 
@@ -36,13 +38,90 @@ const FULL_TEXT: &str = include_str!("../../../LICENSE");
 
 /// A component MCF ships that it did not write.
 ///
-/// Empty, and the emptiness is checked: `checks/tests/the_licence_it_says.rs`
-/// requires this list and [vendored.md]'s admitted section to name the same
-/// components, so a vendored tree cannot arrive without the artifact learning
-/// to say what its terms are.
+/// The TLS stack, and nothing else: fourteen crates that are *compiled into
+/// this binary*, which is what a redistributor conveys and therefore what they
+/// need the terms of. The vendored tree also holds crates no target compiles —
+/// cargo requires them present — and those are in [vendored.md] rather than
+/// here, because a list of what somebody is conveying should not include what
+/// they are not.
+///
+/// `checks/tests/the_licence_is_what_it_says.rs` requires this list and the
+/// register to agree, so a vendored tree cannot arrive without the artifact
+/// learning to say what its terms are.
 ///
 /// [vendored.md]: ../../../doc/vendored.md
-pub(crate) const VENDORED: &[Component] = &[];
+pub(crate) const VENDORED: &[Component] = &[
+    Component {
+        name: "cfg-if",
+        terms: "MIT OR Apache-2.0",
+        revision: "1.0.4",
+    },
+    Component {
+        name: "getrandom",
+        terms: "MIT OR Apache-2.0",
+        revision: "0.2.17",
+    },
+    Component {
+        name: "getrandom",
+        terms: "MIT OR Apache-2.0",
+        revision: "0.3.4",
+    },
+    Component {
+        name: "graviola",
+        terms: "Apache-2.0 OR ISC OR MIT-0",
+        revision: "0.4.1",
+    },
+    Component {
+        name: "libc",
+        terms: "MIT OR Apache-2.0",
+        revision: "0.2.189",
+    },
+    Component {
+        name: "once_cell",
+        terms: "MIT OR Apache-2.0",
+        revision: "1.21.4",
+    },
+    Component {
+        name: "rustls",
+        terms: "Apache-2.0 OR ISC OR MIT",
+        revision: "0.23.43",
+    },
+    Component {
+        name: "rustls-graviola",
+        terms: "Apache-2.0 OR ISC OR MIT-0",
+        revision: "0.4.0",
+    },
+    Component {
+        name: "rustls-pki-types",
+        terms: "MIT OR Apache-2.0",
+        revision: "1.15.1",
+    },
+    Component {
+        name: "rustls-webpki",
+        terms: "ISC",
+        revision: "0.103.15",
+    },
+    Component {
+        name: "subtle",
+        terms: "BSD-3-Clause",
+        revision: "2.6.1",
+    },
+    Component {
+        name: "untrusted",
+        terms: "ISC",
+        revision: "0.9.0",
+    },
+    Component {
+        name: "webpki-roots",
+        terms: "CDLA-Permissive-2.0",
+        revision: "1.0.9",
+    },
+    Component {
+        name: "zeroize",
+        terms: "Apache-2.0 OR MIT",
+        revision: "1.9.0",
+    },
+];
 
 /// What a redistributor needs to know about one shipped component.
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +186,12 @@ pub(crate) fn render(identity: BuildIdentity, full: bool) -> String {
                 component.name, component.revision, component.terms
             );
         }
+        out.push_str(
+            "  Each is under terms compatible with GPL-3.0-only, and conveying this binary
+               conveys them too: doc/vendored.md records what each declares, what MCF
+               found in its tree, and the three that state their terms and ship no copy.
+",
+        );
     }
 
     if full {
@@ -164,15 +249,47 @@ mod tests {
         assert!(text.len() > FULL_TEXT.len());
     }
 
-    /// An empty vendored list says so rather than printing nothing, because a
-    /// blank section reads as an omission and this one is a fact.
+    /// What MCF ships that it did not write is named, with its terms and the
+    /// revision — which is what a person conveying the binary is obliged to
+    /// pass on, and what they cannot get from a repository they do not have
+    /// (GPL-3.0 §4, B-330).
     #[test]
-    fn nothing_vendored_is_stated_rather_than_left_blank() {
-        assert!(VENDORED.is_empty(), "the list grew and this test did not");
-        let text = render(BuildIdentity::current(), false);
+    fn what_is_shipped_is_named_with_its_terms() {
         assert!(
-            text.contains("Nothing. No component has been admitted"),
-            "{text}"
+            !VENDORED.is_empty(),
+            "the vendored list emptied and this test did not: if nothing is shipped, say so \
+             the way the render does"
         );
+        let text = render(BuildIdentity::current(), false);
+        for component in VENDORED {
+            assert!(
+                text.contains(component.name),
+                "{} is shipped and unnamed",
+                component.name
+            );
+            assert!(
+                text.contains(component.terms),
+                "{} is named without its terms",
+                component.name
+            );
+            assert!(
+                text.contains(component.revision),
+                "{} is named without the revision shipped, so its terms cannot be checked \
+                 against the tree they came from",
+                component.name
+            );
+        }
+    }
+
+    /// The TLS stack is what is shipped, and the reader is pointed at the
+    /// register for what MCF verified about each of them (A21).
+    #[test]
+    fn the_shipped_list_is_the_stack_and_points_at_the_register() {
+        let text = render(BuildIdentity::current(), false);
+        for expected in ["rustls", "rustls-graviola", "webpki-roots"] {
+            assert!(text.contains(expected), "{expected} is not named: {text}");
+        }
+        assert!(text.contains("doc/vendored.md"), "{text}");
+        assert!(text.contains("GPL-3.0-only"), "{text}");
     }
 }

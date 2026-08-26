@@ -3,15 +3,16 @@
 | | |
 |---|---|
 | **Type** | Register — what MCF ships, what it declined to ship, and why |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living |
 | **Authority** | Governed by [rules.md](rules.md); the licence is D28, the tiers are D23, the stand-in is D31 |
 | **Registers to** | B-192, B-320, B-321, B-330 in [backlog.md](backlog.md) |
 
-**Nothing is vendored yet.** This file exists before the first component is
-admitted, because B-330's condition is that *no component ships without a
-recorded compatibility finding* — a register written after the fact is a
-register that describes what happened rather than one that gated it.
+**One component is vendored: the TLS stack MCF needs to reach a hub.** Nothing
+else. This file existed before it was admitted, because B-330's condition is
+that *no component ships without a recorded compatibility finding* — a register
+written after the fact is a register that describes what happened rather than
+one that gated it.
 
 Read it before admitting a component, and when asking why MCF does not support
 something.
@@ -50,14 +51,105 @@ no row here.
 
 ## 2 · Vendored
 
-*Nothing.* No component has been admitted, so there is nothing to ship and
-nothing to be compatible.
+**A TLS 1.3 client, and nothing else.** §III requires that models enter this
+machine; the hub answers only over TLS; and a TLS implementation is not
+something anybody here is going to write, which A19 makes a refusal to claim it
+rather than a matter of ambition. [findings.md](findings.md) F9 is the stated
+reason B15 requires, and it is a measurement rather than an argument: the hub
+speaks HTTP/1.1 and serves ranges, so the protocol is MCF's own and written;
+what MCF lacked was cryptography.
 
-The first admission will be an inference engine. D32 settles that there is one
-to admit — MCF delegates inference and owns the wrapper — and which one is this
-register's question rather than that decision's. D31 already settles what MCF writes itself — a stand-in engine,
-so that coverage is true and the vendored engine has something to be checked
-against — and B65 settles that a stand-in can never report a speed.
+**The provider was chosen by what it costs, not by what is usual.** The usual
+choice is `ring`, which is C and assembly, and which cannot be built for
+`x86_64-unknown-linux-musl` without a cross toolchain — the target B-183's
+from-scratch container uses, so admitting it would make an existing check
+runnable in fewer places (F9.5). `rustls-graviola` is Rust and inline assembly
+by `rustls`'s own author, builds for both targets with nothing installed,
+compiles fourteen crates rather than sixteen, and held a real TLS 1.3 session
+with the hub before it was admitted (F9.6).
+
+**What that costs, stated rather than discovered.** `graviola` is young; the
+mature providers are C. MCF is choosing a newer implementation to keep a check
+runnable everywhere, and the exchange is worth writing down: a weakness here is
+a weakness in what MCF verifies a hub with. Two things bound it. The provider
+sits behind `mcf_hub::wire::Wire`, so choosing differently later is a change to
+one struct rather than to the acquisition path. And what MCF checks the bytes
+against is the digest that arrived with the *listing*, so a source substituting
+weights has to substitute both — which does not make TLS optional and does mean
+it is not the only thing standing there.
+
+**What is compiled into the artifact.** Fourteen crates. These are what a
+redistributor conveys, and `mcf licence` names them for exactly that reason
+(B-330, GPL-3.0 §4).
+
+| Crate | Declared | Verified |
+|---|---|---|
+| `cfg-if-1.0.4` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `getrandom-0.2.17` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `getrandom-0.3.4` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `graviola-0.4.1` | Apache-2.0 OR ISC OR MIT-0 | **no copy in the tree** |
+| `libc-0.2.189` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `once_cell-1.21.4` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `rustls-0.23.43` | Apache-2.0 OR ISC OR MIT | the crate carries LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT |
+| `rustls-graviola-0.4.0` | Apache-2.0 OR ISC OR MIT-0 | **no copy in the tree** |
+| `rustls-pki-types-1.15.1` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `rustls-webpki-0.103.15` | ISC | the crate carries LICENSE |
+| `subtle-2.6.1` | BSD-3-Clause | the crate carries LICENSE |
+| `untrusted-0.9.0` | ISC | the crate carries LICENSE.txt |
+| `webpki-roots-1.0.9` | CDLA-Permissive-2.0 | the crate carries LICENSE |
+| `zeroize-1.9.0` | Apache-2.0 OR MIT | the crate carries LICENSE-APACHE, LICENSE-MIT |
+
+**What is in the tree and in no build.** Eighteen crates that no target MCF
+builds ever compiles: Windows import libraries, a WASI runtime, the C
+cryptography provider MCF did not choose, and the build tools they would need.
+Cargo requires every crate in the lock graph to be present in a vendored
+directory even when nothing compiles it (F9.4), so they are here as a manifest,
+their licence files and an empty `lib.rs` — which is what `scripts/vendor.sh`
+does, and why the tree is 18 MiB rather than 95.
+
+| Crate | Declared | Verified |
+|---|---|---|
+| `cc-1.4.4` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `find-msvc-tools-0.1.11` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `r-efi-5.3.0` | MIT OR Apache-2.0 OR LGPL-2.1-or-later | **no copy in the tree** |
+| `ring-0.17.14` | Apache-2.0 AND ISC | the crate carries LICENSE, LICENSE-BoringSSL, LICENSE-other-bits |
+| `shlex-2.0.1` | MIT OR Apache-2.0 | the crate carries LICENSE-APACHE, LICENSE-MIT |
+| `wasi-0.11.1+wasi-snapshot-preview1` | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | the crate carries LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT |
+| `wasip2-1.0.4+wasi-0.2.12` | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | the crate carries LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT |
+| `windows-sys-0.52.0` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows-targets-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_aarch64_gnullvm-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_aarch64_msvc-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_i686_gnu-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_i686_gnullvm-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_i686_msvc-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_x86_64_gnu-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_x86_64_gnullvm-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `windows_x86_64_msvc-0.52.6` | MIT OR Apache-2.0 | the crate carries license-apache-2.0, license-mit |
+| `wit-bindgen-0.57.1` | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | the crate carries LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT |
+
+**Declared is not verified, and three rows say so.** `graviola`,
+`rustls-graviola` and `r-efi` state their terms in their manifests and ship no
+copy of them. A21 keeps that apart from a crate that carries the text: what MCF
+has read is the project's statement about itself, not a licence. It is recorded
+rather than resolved, because resolving it means changing somebody else's crate
+— and what would change it is upstream shipping the file.
+`scripts/check-vendored-terms.sh` reads the tree on every run and names any
+crate whose declaration is not in the set MCF has decided it can ship under, so
+a new dependency cannot arrive quietly under terms nobody looked at.
+
+**The root certificates expire.** `webpki-roots` is a pinned set rather than the
+machine's store, because §3.12 makes what MCF built with a condition of what it
+did and a trust store that differs between two machines is two verifications
+wearing one name. The consequence is that it is a row to *re-pin*: a certificate
+authority added or withdrawn after this version is not in it.
+
+The next admission is expected to be an inference engine. D32 settles that there
+is one to admit — MCF delegates inference and owns the wrapper — and which one
+is this register's question rather than that decision's. D31 already settles
+what MCF writes itself: a stand-in engine, so that coverage is true and the
+vendored engine has something to be checked against, and B65 settles that a
+stand-in can never report a speed.
 
 ## 3 · Deferred
 
@@ -128,6 +220,22 @@ is a check of the tree that is actually vendored, at the revision that is
 actually pinned, and it is what turns a row in §4 into a row in §2.
 
 ## Changelog
+
+### Version 4 — the first admission
+
+A TLS stack is vendored: `rustls` with the `graviola` provider, fourteen crates
+compiled and eighteen present-but-stubbed, 18 MiB in the tree. §2 stops saying
+*nothing* and says what, with what each crate declares and what MCF actually
+found in it — three of them declare terms and carry no copy, which is A21's
+distinction and is recorded rather than smoothed over.
+
+The provider was chosen by measurement (F9.5, F9.6): the usual one is C and
+cannot be built for the target B-183's from-scratch container uses without a
+cross toolchain, so admitting it would have made an existing check runnable in
+fewer places. The one admitted builds everywhere with nothing installed and held
+a real session with the hub before it was let in. What it costs — a younger
+implementation than the mature C ones — is written down beside it, with the two
+things that bound the risk.
 
 ### Version 3 — the first candidate that is not an engine
 

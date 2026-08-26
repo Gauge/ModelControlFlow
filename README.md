@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -38,11 +38,16 @@ says what is held and where each thing came from, keeping *nothing says* and
 *something says and MCF cannot read it* apart. `mcf rm` previews, and removes
 only against a stated reason; nothing is deleted without `--purge`.
 
-**What it cannot do yet is reach an encrypted hub.** MCF has vendored no TLS
-stack, so `mcf pull` against `https://` is refused in as many words rather than
-attempted and failed obscurely; `--from` reaches an `http` mirror, which is what
-the tests use. [doc/findings.md](doc/findings.md) F9 measured what admitting a
-stack costs and B-322 is where it is decided.
+**It reaches an encrypted hub, and one dependency is vendored to do it.** MCF
+writes the HTTP itself — the hub speaks HTTP/1.1 and serves ranges, which
+[doc/findings.md](doc/findings.md) F9 established by asking it — and vendors a
+TLS stack, because nobody here is going to write TLS and A19 forbids claiming
+what is not tested. Which stack was chosen by measurement: the usual provider is
+C and cannot be built for the target MCF's from-scratch container uses, so the
+one admitted is Rust throughout, builds everywhere with nothing installed, and
+held a real session with the hub before it was let in.
+[doc/vendored.md](doc/vendored.md) records every crate in the tree and what MCF
+verified about each.
 
 **No number about a model's speed or quality exists.** Serving is M2 and needs a
 daemon; measurement is M2 onwards and needs an engine.
@@ -177,6 +182,16 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 15 — the first dependency, and what it was chosen for
+
+The status paragraph said MCF could not reach an encrypted hub. It can now, and
+the interesting half is not that a TLS stack was vendored but how it was
+picked: the usual provider is C and cannot be built for the target the
+from-scratch container uses, so admitting it would have made an existing check
+runnable in fewer places. The one admitted is Rust throughout and held a real
+session with the hub before it was let in. That is the shape every future
+admission is meant to have.
 
 ### Version 14 — models can arrive now
 

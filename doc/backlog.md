@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 87 |
+| **Version** | 90 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
-build items (40 done, 1 dropped, 11 in progress, 52 blocked on a decision, 96 open).** Every item cites
+build items (42 done, 1 dropped, 10 in progress, 52 blocked on a decision, 95 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -161,15 +161,15 @@ first and importance second.
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **done** — `mcf_hub::credentials` and the surface that uses it. A secret redacts itself, an origin travels with it into the record, and an `Identity` says what MCF is to a hub — anonymous, offered, or an account it confirmed. The three refusals are written once so a real hub and a simulated one say the same sentence, each naming the repository, what MCF was, and the one thing to do next. *Held deliberately* is structural: nothing reads the environment, and `checks/tests/a_credential_is_never_picked_up.rs` holds that across the workspace. At the surface, `mcf pull --token-from <file>` and `--token-from-env <VARIABLE>` are the only ways in; a repository that needs one is told which, and MCF reports what it has *looked at and not used* rather than spending it. A credential is refused rather than downgraded over a connection that cannot keep it |
-| B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
+| B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | **in progress** — MCF today executes *nothing* it acquires, which is stronger than what this item will eventually claim, and `checks/tests/nothing_acquired_is_ever_run.rs` holds it while it is true: every place shipped code starts a process is declared with what it starts and why that is not an artifact — MCF starting itself to time its own start, the compiler at build time, and `dlopen` of the vendor's management library, whose two candidate names are a constant a check pins. The other half is what a model file's *contents* are: a test reads a model whose metadata is a shell command, a path traversal and a format specifier, and asserts each comes back exactly as written — neither run, nor resolved, nor interpolated. What remains is containment for an engine that *can* run a repository's own code, which arrives with the engine (B-320) |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
-| B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **in progress** — the half MCF writes is written. `mcf_hub::http` turns a request into bytes and bytes into an answer and touches no socket, which is what makes the behaviours that matter testable without a network: a redirect answers *where to go and whether the credential goes with it*, and it does not go to another origin — the hub's own redirect is to a signed CDN URL, and a client that forwarded the token would hand it to a host the network named. Every claim a response makes is checked before it is believed, every input reaches a classified outcome, and the header block has a stated ceiling rather than *whatever arrives*. It is a fuzz target, and the tier immediately found a source contradicting itself in two numbers a fetcher acts on. `mcf_hub::wire` is the socket behind a boundary the cryptography slots into: deadlines everywhere, because a host that accepts a connection and says nothing is where a hang comes from; a body streamed rather than held, because a model is larger than this machine's memory; a redirect that keeps its range and drops its credential; and a refusal — not a downgrade — when a credential is offered over a wire that cannot keep it. Eleven tests drive it over real loopback sockets, and a scenario holds B7's *a hang is a defined outcome* against a host that never answers. `mcf_hub::client` is the hub itself as a `Source`: two cheap questions before a byte of weights moves — the card for the revision to pin and the terms, the tree for every file, its size and the SHA-256 the hub declares — then a download that follows the redirect to wherever it is served from. It is pointed at a *base* rather than at Hugging Face, so nineteen tests drive the whole path against a server the suite is holding on the loopback address, and an operator on a network that cannot reach the hub has somewhere to point MCF. What remains is TLS itself, and it is one struct and one decision: [findings.md](findings.md) F9.4 measured that a vendored tree cannot be trimmed to the platform — cargo resolves the whole lock graph before it compiles any of it — so admitting a stack means about ninety megabytes of third-party source in this repository rather than the fifteen a Linux build compiles. The stated reason B15 wants is F9; the register row is [vendored.md](vendored.md)'s; the size is the thing to weigh, and it is left as a deliberate admission rather than folded into a commit about something else |
+| B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **done** — the protocol is MCF's own (`mcf_hub::http`, `wire`, `client`) and the cryptography is vendored: `rustls` with the `graviola` provider, fourteen crates compiled, eighteen present-and-stubbed, 18 MiB. The provider was chosen by measurement rather than by default — the usual one is C and cannot build for the musl target B-183's container uses, which would have made an existing check runnable in fewer places (F9.5) — and it held a real TLS 1.3 session with the hub before it was admitted (F9.6). The from-scratch check still passes: the static binary runs with no libc, no shell and no `/etc`. `scripts/vendor.sh` builds the tree and checks both targets against it; `scripts/check-vendored-terms.sh` gates on what every crate declares; [vendored.md](vendored.md) §2 records what MCF verified, including the three crates that declare terms and ship no copy (A21) |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | **in progress** — the chain is built and traverses. A publisher names the weights they worked from in the hub's own tags, and `mcf pull` writes that down: the artifact, what the publisher says was done to it in their word, and the upstream repository as a link MCF has *not* fetched. Writing it found a defect in the type — `Provenance::retrieved_at` was a plain `Timestamp`, so an upstream link could only claim a moment MCF was never there for. It is `Attested` now, `known_of` is the constructor for a link nobody fetched, and the check that exempted the field no longer does. What remains is the reference model itself, which needs the real hub and therefore B-322 |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — the plan is made from what the hub publishes and nothing else. `Shape::from_configuration` reads the model's own `config.json` — every field or no shape at all, because the grouping factor is exactly what a guess gets wrong and an operator would be told a variant does not fit that does. `mcf pull` on a repository with no file named answers the question actually being asked: which of these will run here, at a stated context, with what is left over or what is short. A whole-system test plans a repository of variants in three cheap questions and downloads no weights at all. What remains: the re-check against reality on acquisition, and a repository that publishes no configuration is honestly unplannable rather than planned badly |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
-| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — all three commands exist and the offline half of the condition is met: a whole-system test acquires a model from a hub on the loopback address, lists it with where it came from, and removes it, each as a separate process against a real record. `pull` without a file offers what the repository publishes with the sizes and the terms and acquires nothing — choosing a quantization for somebody is choosing what they will measure. With one it verifies against the digest the hub declared, writes the provenance beside the artifact and the acquisition in the journal, and says plainly when a hub declared no digest to check against (A21). What remains is *online against the real one*, which is TLS and B-322 |
+| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **done** — both halves. Offline: a whole-system test acquires a model from a hub on the loopback address, lists it with where it came from, and removes it, each as a separate process against a real record. Online: `scripts/check-online.sh` does the same against Hugging Face over TLS — a real 1.2 MiB GGUF, verified against the LFS digest the hub declared with the listing, followed through the redirect to the CDN, listed with its provenance, purged, and both events read back out of the record. `pull` without a file offers what the repository publishes with the sizes and the terms and acquires nothing; with one it says plainly when a hub declared no digest to check against (A21) |
 
 ### M2 — Serve
 
@@ -367,6 +367,84 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 90 — MCF runs nothing it downloaded
+
+B-025 in progress, and the useful part is a check that is true *now* rather
+than a design for later. §6.4 will one day allow repository code to be run
+deliberately; today MCF runs none of it, and that is a stronger claim worth
+holding while it holds.
+
+Every place shipped code starts a process is declared with what it starts:
+three, and each of them is MCF's own business — MCF starting itself to time how
+long MCF takes to start, the compiler at build time recording what built this,
+and `dlopen` of the vendor's management library to read an accelerator. That
+third one is the interesting one, because loading a library is how bytes become
+code without anything looking like execution, so the check on it is not that it
+is absent but that what it opens is a constant: two library names, no path
+joined to anything, and a test that fails if the module learns to build a path
+at all.
+
+The other half is what a model file *contains*, which no source check can
+reach. A model whose metadata is a shell command, a path traversal and a format
+specifier is read with MCF's own reader, and every field comes back exactly as
+written — neither run, nor resolved, nor interpolated. That is what *data* has
+to mean for the largest untrusted input MCF will ever read.
+
+### Version 89 — a real model, from the real hub
+
+B-029 done, and the second half of its condition is the one worth reporting:
+*online against the real one*. `scripts/check-online.sh` acquires a 1.2 MiB GGUF
+from Hugging Face over TLS — a real redirect to a CDN, a real LFS digest
+declared with the listing and checked against the bytes that arrived — then
+lists it with its provenance, purges it, and reads both events back out of the
+record. It ran, and it passed, on the first machine that had a network.
+
+Scheduled rather than gating, for the reason the fuzz tier is: a gate that needs
+a network is a gate that fails on a train. What it acquires is small and really
+a model, because a check that pulled 27 GiB would be one nobody runs and one
+that pulled nothing would prove nothing.
+
+Reproducibility needed defending on the way here. The first vendored dependency
+put this machine's directory into every panic location rustc compiled, and two
+checkouts at different paths stopped producing the same bytes.
+`--remap-path-prefix` is the fix, it is part of the build MCF documents rather
+than a flag the check adds to itself, and it also stops a panic message naming
+somebody's home directory into whatever a panic is reported to (§XIV).
+
+### Version 88 — the first dependency, admitted the way the rules ask
+
+B-322 done. MCF has a TLS stack, and the interesting part is not that one was
+vendored but that the choosing was a measurement.
+
+The usual provider for `rustls` is `ring`, which is C and assembly. It cannot be
+built for `x86_64-unknown-linux-musl` without a cross toolchain nobody here has
+— and that is the target B-183's from-scratch container uses, so admitting it
+would have quietly made an existing check runnable in fewer places. The provider
+admitted instead is Rust and inline assembly by rustls's own author, builds for
+both targets with nothing installed, compiles fourteen crates rather than
+sixteen, and held a real TLS 1.3 session with the hub before it was let in.
+[findings.md](findings.md) F9.5 and F9.6 are the evidence.
+
+The tree is 18 MiB rather than 95, and that too was measured: a vendored tree
+cannot be *deleted* down to the platform, because cargo resolves the whole lock
+graph — but a crate nothing compiles can keep its manifest, its licence and an
+empty `lib.rs`. `scripts/vendor.sh` does that and then checks both targets
+against the result.
+
+What it costs is written beside it rather than discovered later. `graviola` is
+young where the mature providers are C, and the exchange is stated in
+[vendored.md](vendored.md) §2 with the two things that bound it: the provider is
+one struct behind `Wire`, and the digest MCF checks bytes against arrives with
+the listing rather than with the file. Three crates declare their terms and ship
+no copy of them, and that is recorded as a difference between declared and
+verified rather than smoothed over (A21).
+
+The checks moved with it. `the_workspace_declares_no_third_party_dependencies`
+became `the_workspace_takes_exactly_what_the_register_admits`, which names three
+crates and fails on a fourth anywhere; `mcf licence` lists what is compiled into
+the binary, because that is what a redistributor conveys; and the from-scratch
+container still runs MCF with no libc, no shell and no `/etc`.
 
 ### Version 87 — the chain, and the field that could only lie
 

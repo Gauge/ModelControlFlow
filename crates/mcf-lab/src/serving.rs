@@ -21,6 +21,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -36,12 +37,23 @@ enum Behaviour {
     /// Accepts the connection and says nothing at all, which is the hang B7
     /// makes a defined outcome.
     Silence,
+    /// Says this the moment a connection arrives, without waiting to be asked.
+    ///
+    /// What a plain HTTP server does to a client that opened a TLS handshake:
+    /// the first thing it hears is not a TLS record, and it can say so at once
+    /// rather than waiting for a deadline (B-322).
+    Blurting(String),
 }
 
 /// A server on the loopback address, answering from a script.
 pub struct Serving {
     port: u16,
     asked: Arc<Mutex<Vec<String>>>,
+    /// Set by `Drop`, read by the thread. A server that only stopped when a
+    /// connection said nothing could not be stopped at all once it started
+    /// answering before it listened (`Blurting`), and the test that used one
+    /// would hang rather than fail.
+    stopping: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
 }
 
@@ -54,6 +66,7 @@ impl core::fmt::Debug for Serving {
             .field("port", &self.port)
             .field("asked", &self.asked().len())
             .field("running", &self.handle.is_some())
+            .field("stopping", &self.stopping)
             .finish()
     }
 }
@@ -74,11 +87,19 @@ impl Serving {
         Self::start(Behaviour::Silence)
     }
 
+    /// A server that speaks first and is not speaking the caller's protocol.
+    #[must_use]
+    pub fn blurting(answer: &str) -> Option<Self> {
+        Self::start(Behaviour::Blurting(answer.to_owned()))
+    }
+
     fn start(behaviour: Behaviour) -> Option<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").ok()?;
         let port = listener.local_addr().ok()?.port();
         let asked = Arc::new(Mutex::new(Vec::new()));
         let recording = Arc::clone(&asked);
+        let stopping = Arc::new(AtomicBool::new(false));
+        let told_to_stop = Arc::clone(&stopping);
 
         let handle = thread::spawn(move || {
             // Connections the silent behaviour is holding open. They close when
@@ -87,7 +108,16 @@ impl Serving {
             // would be demonstrating a different failure.
             let mut held = Vec::new();
             for connection in listener.incoming() {
+                if told_to_stop.load(Ordering::SeqCst) {
+                    break;
+                }
                 let Ok(stream) = connection else { break };
+                if let Behaviour::Blurting(answer) = &behaviour {
+                    // Not a word is read: the point is that the far end speaks
+                    // first, and speaks something else.
+                    write_answer(stream, answer.as_bytes());
+                    continue;
+                }
                 let request = read_request(&stream);
                 if request.is_empty() {
                     // The connection `Drop` makes to wake this thread: nothing
@@ -113,6 +143,8 @@ impl Serving {
                         write_answer(stream, answer.as_bytes());
                     }
                     Behaviour::Silence => held.push(stream),
+                    // Answered above, before anything was read.
+                    Behaviour::Blurting(_) => {}
                 }
             }
             drop(held);
@@ -121,6 +153,7 @@ impl Serving {
         Some(Self {
             port,
             asked,
+            stopping,
             handle: Some(handle),
         })
     }
@@ -149,6 +182,7 @@ impl Serving {
 
 impl Drop for Serving {
     fn drop(&mut self) {
+        self.stopping.store(true, Ordering::SeqCst);
         // The connection is dropped *before* the join: one held open would
         // leave the server reading a request that never comes, waiting for a
         // thread that is waiting for this one.

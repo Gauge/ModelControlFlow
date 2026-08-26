@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 19 |
+| **Version** | 21 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -33,6 +33,7 @@ with B-014.
 | 9 | [The tiers](#9--the-tiers) |
 | 10 | [Ages, and what a release refuses](#10--ages-and-what-a-release-refuses) |
 | 11 | [A machine with nothing on it](#11--a-machine-with-nothing-on-it) |
+| 11a | [The real hub](#11a--the-real-hub) |
 | 12 | [A machine with something else on it](#12--a-machine-with-something-else-on-it) |
 | — | [Changelog](#changelog) |
 
@@ -233,8 +234,13 @@ first vendored dependency (§XVI, B64) will need
 
 ## 6 · Dependencies
 
-**There are none.** The workspace compiles from the standard library alone, and
-a test asserts it: `the_workspace_declares_no_third_party_dependencies`.
+**There is one: a TLS client.** Everything else compiles from the standard
+library alone, and a test asserts exactly that —
+`the_workspace_takes_exactly_what_the_register_admits` names the three crates
+`mcf-hub` may take and fails on a fourth in any manifest, in any table. The
+admission is B-322, the stated reason B15 requires is
+[findings.md](findings.md) F9, and the compatibility findings are
+[vendored.md](vendored.md) §2.
 
 **The first candidate was refused, and the reasoning is the template.** The
 record needs a serialization (§3.3, D20), and a general one was the obvious
@@ -249,18 +255,22 @@ hundred lines, so it was bought with tests instead (A19).
 interesting part: a fraction is refused rather than rounded, a duplicate key
 rather than resolved, an unpaired surrogate rather than replaced.
 
-**The second candidate is measured and undecided, which is a different state
-from refused.** MCF cannot reach an encrypted hub, and §III requires that models
-enter this machine. [findings.md](findings.md) F9 measured what crossing that
-boundary costs rather than arguing about it: the hub speaks HTTP/1.1 and serves
-ranges, so the protocol is MCF's own and written; what MCF lacks is TLS, which
-is not something anybody here is going to write. The honest price is sixteen
-crates a Linux build compiles — and about ninety megabytes of source in this
-repository, because cargo resolves a vendored tree's whole lock graph before
-compiling any of it and the platform's share cannot be trimmed out (F9.4).
-B-322 is where that is decided; [vendored.md](vendored.md) is where the row goes
-when it is. Until then `mcf pull` says *no TLS stack is vendored* in as many
-words, which is what a boundary should sound like.
+**The second candidate was admitted, and the shape of the decision is the
+point.** MCF could not reach an encrypted hub, and §III requires that models
+enter this machine. F9 measured the boundary rather than arguing about it: the
+hub speaks HTTP/1.1 and serves ranges, so the protocol is MCF's own and written;
+what was missing was cryptography, which nobody here is going to write.
+
+Three things about how it went in. The provider was chosen by what it costs —
+the usual one is C and cannot build for the musl target the from-scratch check
+uses, so it would have made an existing check runnable in fewer places (F9.5).
+The tree is 18 MiB rather than 95 because crates no target compiles are stubbed
+down to a manifest and a licence, which cargo accepts and deletion does not
+(F9.4, F9.6). And the source is *in the repository*: every build here runs
+`--offline --locked`, so a dependency resolved from a registry at build time is
+a dependency nobody pinned. `scripts/vendor.sh` builds that tree and checks both
+targets against it; `scripts/check-vendored-terms.sh` reads what every crate
+declares and gates the build on it.
 
 **What the artifact requires of a *machine* is a separate question, and it is
 checked too.** B36 refuses to make a missing prerequisite the user's errand, and
@@ -626,6 +636,30 @@ that genuinely lacks something.
 acquisition work (B-019, B-020). B-183's condition is not met until that exists,
 and the script says so on every run rather than implying otherwise.
 
+## 11a · The real hub
+
+```
+$ scripts/ci.sh --with-online           # or scripts/check-online.sh
+```
+
+Everything else about acquisition runs against a hub the laboratory holds on the
+loopback address, because B19 requires M1's suite to run with no network. That
+is right, and it leaves one thing unchecked: whether the hub MCF was written
+against behaves the way MCF believes.
+[findings.md](findings.md) F9 answered that once by hand; this is the repeatable
+form, and it is scheduled rather than gating for the same reason the fuzz tier
+is — a gate that needs a network is a gate that fails on a train.
+
+It acquires a 1.2 MiB GGUF from a repository of deliberately tiny models: real
+weights, a real LFS digest, a real redirect to a CDN. Then it lists what is
+held, removes it, purges it, and reads the record for both events. A check that
+downloaded a 27 GiB model to prove a transfer works would be one nobody runs;
+one that downloaded nothing would prove nothing.
+
+**Nothing here is timed.** The hub is somebody else's machine on somebody else's
+network, and A6 would want conditions MCF cannot state for any number taken
+across it.
+
 ## 12 · A machine with something else on it
 
 A machine that hosts several projects with heavy test workloads — as the one MCF
@@ -664,6 +698,28 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 21 — the real hub, on purpose
+
+Section 11a added with B-029's online half. Everything about acquisition is tested
+against a hub the laboratory holds, which is what B19 asks and what leaves one
+thing open: whether the real hub behaves the way MCF believes. F9 answered that
+by hand once; `--with-online` is the repeatable form, acquiring a 1.2 MiB model
+that is really a model, from the hub that really serves it.
+
+### Version 20 — the first dependency
+
+§6 stops saying *there are none*. A TLS client is vendored, in the one crate
+that reaches a hub, and the check that used to assert emptiness now asserts the
+list: three crates named, and a fourth in any manifest fails until somebody puts
+it in the register too.
+
+The section keeps the first candidate's refusal beside the second's admission,
+because the pair is the template: what it would have bought, what it would have
+cost, and which way that came out. Two scripts arrived with it —
+`scripts/vendor.sh`, which builds the tree deterministically and checks both
+targets against it, and `scripts/check-vendored-terms.sh`, which reads what
+every vendored crate declares and gates on it.
 
 ### Version 19 — the second candidate
 

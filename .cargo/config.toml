@@ -1,0 +1,11 @@
+# The vendored tree is what MCF builds from (B-322, scripts/vendor.sh).
+#
+# Source replacement rather than a lockfile alone: every build in this project
+# runs --offline, and a dependency resolved from a registry at build time is a
+# dependency nobody pinned (§3.12).
+[source.crates-io]
+replace-with = "vendored"
+
+[source.vendored]
+directory = "vendor"
+

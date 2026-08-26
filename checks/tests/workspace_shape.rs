@@ -203,30 +203,55 @@ fn package_names_match_the_declaration() {
     }
 }
 
-/// The workspace admits no third-party dependencies yet, and the check says so
-/// out loud rather than the fact being noticed later. B15 admits weight only
-/// against a stated cost; when the first dependency arrives, this test is the
-/// place the cost is recorded.
+/// The workspace takes exactly the dependencies the register admits, in exactly
+/// the crate that needs them.
+///
+/// B15 admits weight only against a stated cost, and the cost of the one
+/// admission is in [findings.md](../../doc/findings.md) F9 with the register
+/// row in `doc/vendored.md`. What this holds is that the list does not grow
+/// quietly: a crate added to any manifest, in any table, fails here until
+/// somebody puts it in both places.
 #[test]
-fn the_workspace_declares_no_third_party_dependencies() {
+fn the_workspace_takes_exactly_what_the_register_admits() {
     let workspace = read("Cargo.toml").expect("the workspace manifest is readable");
     assert!(
         workspace.keys("workspace.dependencies").is_empty(),
         "a shared dependency was admitted without this check being updated",
     );
+
+    // The TLS stack, and only in the crate that reaches a hub. Written out
+    // rather than pattern-matched: B15 admits weight *for a stated reason*, and
+    // a check that accepted anything with a row somewhere would be a check that
+    // accepts the next thing too (B-322, doc/vendored.md §2).
+    let admitted: &[(&str, &[&str])] =
+        &[("mcf-hub", &["rustls", "rustls-graviola", "webpki-roots"])];
+    let register = std::fs::read_to_string(root().join("doc/vendored.md"))
+        .expect("doc/vendored.md is readable");
+
     for member in MEMBERS {
         let manifest = read_member(member).expect("a member manifest is readable");
+        let allowed = admitted
+            .iter()
+            .find(|(name, _)| *name == member.name)
+            .map_or(&[] as &[&str], |(_, crates)| *crates);
         for table in ["dependencies", "dev-dependencies", "build-dependencies"] {
             let foreign: Vec<&str> = manifest
                 .keys(table)
                 .into_iter()
                 .filter(|name| !name.starts_with("mcf-"))
                 .collect();
-            assert!(
-                foreign.is_empty(),
-                "{} takes {table} outside the workspace: {foreign:?}",
-                member.name,
-            );
+            for name in &foreign {
+                assert!(
+                    allowed.contains(name),
+                    "{} takes {name} in {table}, which nothing has admitted: a dependency is \
+                     admitted for a stated reason (B15) and recorded in doc/vendored.md (B-330)",
+                    member.name,
+                );
+                assert!(
+                    register.contains(name),
+                    "{name} is a dependency and has no row in doc/vendored.md (B-330)"
+                );
+            }
         }
     }
 }

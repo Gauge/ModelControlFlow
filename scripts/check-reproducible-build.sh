@@ -12,8 +12,12 @@
 # The two builds differ in every way a build is allowed to differ and still be
 # the same build:
 #
-#   * the path of the source tree, and its length, which is what
-#     `--remap-path-prefix` exists to defeat when it is needed;
+#   * the path of the source tree, and its length. `--remap-path-prefix` is
+#     what defeats it, and since the first vendored dependency it is *needed*
+#     rather than optional: a vendored crate is a path source, so rustc records
+#     where it was on this machine in every panic location it compiles. The
+#     flag is part of the build MCF documents (build.md §2) and both builds
+#     below use it;
 #   * the target directory;
 #   * `SOURCE_DATE_EPOCH`, so a build that embeds a timestamp is caught;
 #   * `TZ` and the umask, which reach a build through file metadata.
@@ -81,6 +85,13 @@ for index in 0 1; do
             export SOURCE_DATE_EPOCH=1700000000 TZ=Pacific/Kiritimati
             umask 077
         fi
+        # The build MCF documents, which is the one this claim is about. The
+        # remap is not a trick to make the check pass: a vendored crate is a
+        # *path* source, so without it rustc writes this machine's directory
+        # into every panic location in the tree — into the artifact, and from
+        # there into whatever a panic is reported to (§XIV). `scripts/ci.sh`
+        # builds the same way, so what is checked here is what is built there.
+        export RUSTFLAGS="--remap-path-prefix=$src=."
         cargo build --locked --offline --release --bin mcf >/dev/null
     )
 
