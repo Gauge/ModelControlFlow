@@ -380,3 +380,154 @@ fn a_scheme_that_is_not_implemented_is_named() {
         .expect_err("a scheme with no decoder is refused");
     assert!(refused.to_string().contains("engine"), "{refused}");
 }
+
+/// The four-bit non-linear scheme is a table lookup, and the test says so by
+/// naming the values it expects rather than by asking the decoder.
+///
+/// The table is the format's, transcribed with its source recorded, and the
+/// first thing to check is that a code means what the table says at the ends
+/// where an off-by-one would hide: code 0 is −127 and code 15 is 113.
+#[test]
+fn a_non_linear_block_reads_its_codes_as_table_entries() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    // Low nibbles 0..16, high nibbles 15..0.
+    for index in 0..16_u8 {
+        raw.push(index | ((15 - index) << 4));
+    }
+    let decoded = tensor(TensorKind::IQ4_NL, &raw, 32).expect("an IQ4_NL block decodes");
+    assert_eq!(decoded.len(), 32);
+
+    let table = crate::codebook::IQ4_VALUES;
+    assert_eq!(table[0], -127, "the table's first entry is not what it was");
+    assert_eq!(table[15], 113, "the table's last entry is not what it was");
+    for index in 0..16_usize {
+        assert!(
+            (decoded[index] - f32::from(table[index])).abs() < 1e-3,
+            "low nibble {index}: wanted {}, got {}",
+            table[index],
+            decoded[index]
+        );
+        assert!(
+            (decoded[16 + index] - f32::from(table[15 - index])).abs() < 1e-3,
+            "high nibble {index}: wanted {}, got {}",
+            table[15 - index],
+            decoded[16 + index]
+        );
+    }
+}
+
+/// `IQ4_XS` is the same table with a six-bit scale per sub-block, assembled
+/// from two planes and centred by subtracting thirty-two.
+///
+/// The scale is where this scheme is easy to get wrong: four bits in one array
+/// and two in a sixteen-bit word, and a reader that forgot the offset would
+/// produce values thirty-two times too large for every sub-block at once —
+/// which looks like a scaling bug rather than a packing one.
+#[test]
+fn a_non_linear_super_block_assembles_its_scale_from_two_planes() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    // Sub-block n gets scale n + 32, so the centred scale is n: the low nibble
+    // is n and the high pair is 2 (32 = 0b100000, so bit 5 is in the high two).
+    let mut low = [0_u8; 4];
+    let mut high = 0_u16;
+    for sub in 0..8_usize {
+        let scale = u16::try_from(sub + 32).unwrap_or(0);
+        let nibble = u8::try_from(scale & 0x0F).unwrap_or(0);
+        low[sub.wrapping_div(2)] |= nibble << (4 * (sub % 2));
+        high |= ((scale >> 4) & 3) << (2 * sub);
+    }
+    raw.extend_from_slice(&high.to_le_bytes());
+    raw.extend_from_slice(&low);
+    // Every code 8, whose table entry is 1.
+    raw.extend(std::iter::repeat_n(0x88_u8, 128));
+
+    let decoded = tensor(TensorKind::IQ4_XS, &raw, 256).expect("an IQ4_XS super-block decodes");
+    assert_eq!(decoded.len(), 256);
+    assert_eq!(
+        crate::codebook::IQ4_VALUES[8],
+        1,
+        "the table moved under this test"
+    );
+
+    for sub in 0..8_usize {
+        let want = small(sub);
+        for position in 0..32_usize {
+            let got = decoded[sub * 32 + position];
+            assert!(
+                (got - want).abs() < 1e-3,
+                "sub-block {sub} value {position}: wanted {want}, got {got}"
+            );
+        }
+    }
+}
+
+/// `IQ3_S` reads a grid rather than a scale, and its signs live apart from its
+/// magnitudes.
+///
+/// What is asserted is the shape of the arithmetic: every value is a grid entry
+/// times the sub-block's step, negated where the sign plane says so. A decoder
+/// that ignored the sign plane would produce a tensor of the right magnitudes
+/// and no negative numbers, which is exactly the kind of wrong that still
+/// *looks* like weights.
+#[test]
+fn a_grid_scheme_takes_its_magnitudes_from_the_grid_and_its_signs_from_the_plane() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    raw.extend(std::iter::repeat_n(0_u8, 64)); // every code 0 → grid entry 0
+    raw.extend(std::iter::repeat_n(0_u8, 8)); // no ninth bits
+    // Signs: the first byte negates every value it covers, the rest none.
+    let mut signs = vec![0_u8; 32];
+    signs[0] = 0xFF;
+    raw.extend_from_slice(&signs);
+    // Scales: every nibble 0, so each step is d * (1 + 0) = 1.
+    raw.extend(std::iter::repeat_n(0_u8, 4));
+
+    let decoded = tensor(TensorKind::IQ3_S, &raw, 256).expect("an IQ3_S super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    let entry = crate::codebook::IQ3S_GRID[0];
+    for (position, magnitude) in entry.into_iter().enumerate() {
+        let want = -f32::from(magnitude);
+        assert!(
+            (decoded[position] - want).abs() < 1e-3,
+            "the first quarter is not negated: wanted {want}, got {}",
+            decoded[position]
+        );
+    }
+    // And a value the sign plane does not cover keeps its sign.
+    let later = decoded[64];
+    assert!(
+        later >= 0.0,
+        "a value outside the negated span came back negative: {later}"
+    );
+}
+
+/// The grid is the size the format says, and its entries are the bytes they
+/// were transcribed as.
+///
+/// A table is data rather than logic, so what can be checked about it is that
+/// it has not been truncated, reordered at the ends, or had its packing
+/// misread — the three ways a transcription goes wrong.
+#[test]
+fn the_transcribed_tables_are_the_size_and_shape_they_were() {
+    assert_eq!(crate::codebook::IQ3S_GRID.len(), 512);
+    assert_eq!(crate::codebook::IQ4_VALUES.len(), 16);
+    // The first and last entries, as the source writes them: `0x01010101` and
+    // `0x0f0f0101`, little-endian into four bytes. Written out here because a
+    // transcription that dropped or reordered an end is the failure this test
+    // exists for, and an assertion taken from the transcription would not
+    // catch it.
+    assert_eq!(crate::codebook::IQ3S_GRID[0], [1, 1, 1, 1]);
+    assert_eq!(
+        crate::codebook::IQ3S_GRID[511],
+        [1, 1, 15, 15],
+        "the grid's last entry is not what was transcribed"
+    );
+    // Every entry is odd in every byte: the grid holds odd magnitudes only,
+    // which is a property of the scheme rather than of the transcription and
+    // therefore catches a mis-shifted unpack.
+    for (index, entry) in crate::codebook::IQ3S_GRID.iter().enumerate() {
+        for byte in entry {
+            assert_eq!(byte % 2, 1, "grid entry {index} holds an even magnitude");
+        }
+    }
+}

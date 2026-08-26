@@ -193,6 +193,16 @@ pub enum TensorKind {
     /// bits held apart, with eight-bit signed scales. `Q4_K_M` uses it for the
     /// tensors it will not round further.
     Q6_K,
+    /// The 4-bit non-linear scheme: codes are indices into a fixed sixteen-value
+    /// table rather than multiples of a scale, over blocks of 32.
+    IQ4_NL,
+    /// The same table over a super-block of 256, with a six-bit scale per
+    /// sub-block split across two planes. Most of what an *Unsloth Dynamic*
+    /// quantization is made of.
+    IQ4_XS,
+    /// The 3-bit scheme that indexes a five-hundred-and-twelve entry grid of
+    /// four values each, with a plane of sign bits and four-bit scales.
+    IQ3_S,
     /// A type this reader does not know, carrying the number the file used.
     Unknown(u32),
 }
@@ -212,6 +222,9 @@ impl TensorKind {
             12 => Self::Q4_K,
             13 => Self::Q5_K,
             14 => Self::Q6_K,
+            20 => Self::IQ4_NL,
+            21 => Self::IQ3_S,
+            23 => Self::IQ4_XS,
             other => Self::Unknown(other),
         }
     }
@@ -225,22 +238,40 @@ impl TensorKind {
     pub const fn block_size(self) -> u64 {
         match self {
             Self::F32 | Self::F16 => 1,
-            Self::Q4_0 | Self::Q4_1 | Self::Q8_0 => 32,
+            // `IQ4_NL` is here rather than beside the other non-linear scheme:
+            // it shares the four-bit table with `IQ4_XS` and the block of 32
+            // with `Q4_0`, and the block size is what this function is about.
+            Self::Q4_0 | Self::Q4_1 | Self::Q8_0 | Self::IQ4_NL => 32,
             // The K-schemes share a super-block of 256, which is what makes
             // their per-sub-block scales worth their bytes.
-            Self::Q2_K | Self::Q3_K | Self::Q4_K | Self::Q5_K | Self::Q6_K => 256,
+            Self::Q2_K
+            | Self::Q3_K
+            | Self::Q4_K
+            | Self::Q5_K
+            | Self::Q6_K
+            | Self::IQ4_XS
+            | Self::IQ3_S => 256,
             Self::Unknown(_) => 0,
         }
     }
 
     /// How many bytes one block occupies.
     #[must_use]
+    #[allow(
+        clippy::match_same_arms,
+        reason = "two schemes whose blocks happen to be the same size are still two \
+                  schemes, and merging their arms would put one scheme's arithmetic \
+                  under another's comment"
+    )]
     pub const fn bytes_per_block(self) -> u64 {
         match self {
             Self::F32 => 4,
             Self::F16 => 2,
             // A scale in half precision, then 32 four-bit values.
-            Self::Q4_0 => 2 + 16,
+            // One multiplier and sixteen bytes of four-bit codes, whichever way
+            // the codes are read: `Q4_0`'s are offsets from eight, `IQ4_NL`'s
+            // are indices into a table, and the block is the same size.
+            Self::Q4_0 | Self::IQ4_NL => 2 + 16,
             // A scale and a minimum, then 32 four-bit values.
             Self::Q4_1 => 2 + 2 + 16,
             // A scale in half precision, then 32 signed bytes.
@@ -259,6 +290,12 @@ impl TensorKind {
             // 128 bytes of low nibbles, 64 of high pairs, 16 signed scales and
             // one multiplier.
             Self::Q6_K => 128 + 64 + 16 + 2,
+            // A multiplier, six-bit scales split across a sixteen-bit plane and
+            // four bytes, then 128 bytes of indices.
+            Self::IQ4_XS => 2 + 2 + 4 + 128,
+            // A multiplier, 64 bytes of grid indices, 8 of high bits, 32 of
+            // signs and 4 of scales.
+            Self::IQ3_S => 2 + 64 + 8 + 32 + 4,
             Self::Unknown(_) => 0,
         }
     }
@@ -280,6 +317,9 @@ impl core::fmt::Display for TensorKind {
             Self::Q4_K => f.write_str("Q4_K"),
             Self::Q5_K => f.write_str("Q5_K"),
             Self::Q6_K => f.write_str("Q6_K"),
+            Self::IQ4_NL => f.write_str("IQ4_NL"),
+            Self::IQ4_XS => f.write_str("IQ4_XS"),
+            Self::IQ3_S => f.write_str("IQ3_S"),
             Self::Q4_0 => f.write_str("q4_0"),
             Self::Q4_1 => f.write_str("q4_1"),
             Self::Q8_0 => f.write_str("q8_0"),

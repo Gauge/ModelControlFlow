@@ -27,6 +27,7 @@
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 
+use crate::codebook;
 use crate::gguf::TensorKind;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::dequantize");
@@ -119,6 +120,9 @@ fn decode_block(kind: TensorKind, raw: &[u8], out: &mut Vec<f32>) -> Result<()> 
         TensorKind::Q4_K => q4_k(raw, out),
         TensorKind::Q5_K => q5_k(raw, out),
         TensorKind::Q6_K => q6_k(raw, out),
+        TensorKind::IQ4_NL => iq4_nl(raw, out),
+        TensorKind::IQ4_XS => iq4_xs(raw, out),
+        TensorKind::IQ3_S => iq3_s(raw, out),
         TensorKind::Unknown(_) => return Err(unavailable(kind)),
     }
     Ok(())
@@ -342,6 +346,106 @@ fn as_float(value: i32) -> f32 {
     {
         value as f32
     }
+}
+
+/// The 4-bit non-linear scheme: 32 values, indices into a fixed table.
+///
+/// *Non-linear* means the codes are not multiples of a scale — they name
+/// entries in [`codebook::IQ4_VALUES`], chosen so that four bits land where a
+/// weight distribution actually is rather than where an even spacing would put
+/// them. The scale multiplies what the table says.
+fn iq4_nl(raw: &[u8], out: &mut Vec<f32>) {
+    let d = from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]));
+    let codes = raw.get(2..18).unwrap_or_default();
+    for code in codes {
+        out.push(d * f32::from(value_of(code & 0x0F)));
+    }
+    for code in codes {
+        out.push(d * f32::from(value_of(code >> 4)));
+    }
+}
+
+/// The same table over a super-block of 256.
+///
+/// Eight sub-blocks of 32, each with a six-bit scale assembled from four bits
+/// in one plane and two in another, centred by subtracting 32. This is most of
+/// what an *Unsloth Dynamic* quantization is made of — 117 of the reference
+/// model's 866 tensors.
+fn iq4_xs(raw: &[u8], out: &mut Vec<f32>) {
+    let d = from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]));
+    let scales_high = u16::from_le_bytes([byte(raw, 2), byte(raw, 3)]);
+    let scales_low = raw.get(4..8).unwrap_or_default();
+    let codes = raw.get(8..136).unwrap_or_default();
+
+    for sub in 0..8_usize {
+        let low = u16::from(scales_low.get(nth(sub, 2)).copied().unwrap_or(0));
+        let nibble = (low >> (4 * (sub % 2))) & 0x0F;
+        let high = (scales_high >> (2 * sub)) & 3;
+        let scale = i32::from(nibble | (high << 4)) - 32;
+        let step = d * as_float(scale);
+        let chunk = codes.get(sub * 16..sub * 16 + 16).unwrap_or_default();
+        for code in chunk {
+            out.push(step * f32::from(value_of(code & 0x0F)));
+        }
+        for code in chunk {
+            out.push(step * f32::from(value_of(code >> 4)));
+        }
+    }
+}
+
+/// The 3-bit scheme that indexes a grid of four values at a time.
+///
+/// Each code names one of five hundred and twelve four-value groups; a ninth
+/// bit for each code lives in a separate plane, the signs live in a third, and
+/// the scales are four bits doubled and offset by one. Nothing here is
+/// derivable — the grid is the arithmetic (see [`codebook`]).
+fn iq3_s(raw: &[u8], out: &mut Vec<f32>) {
+    let d = from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]));
+    let codes = raw.get(2..66).unwrap_or_default();
+    let ninth = raw.get(66..74).unwrap_or_default();
+    let signs = raw.get(74..106).unwrap_or_default();
+    let scales = raw.get(106..110).unwrap_or_default();
+
+    for pair in 0..4_usize {
+        let packed = scales.get(pair).copied().unwrap_or(0);
+        let steps = [
+            d * (1.0 + 2.0 * f32::from(packed & 0x0F)),
+            d * (1.0 + 2.0 * f32::from(packed >> 4)),
+        ];
+        for (half, step) in steps.into_iter().enumerate() {
+            let group = pair * 2 + half;
+            let high = u32::from(ninth.get(group).copied().unwrap_or(0));
+            for quarter in 0..4_usize {
+                let at = group * 8 + quarter * 2;
+                let sign = signs.get(group * 4 + quarter).copied().unwrap_or(0);
+                for which in 0..2_usize {
+                    let code = u32::from(codes.get(at + which).copied().unwrap_or(0));
+                    // The ninth bit for this code, shifted out of the byte the
+                    // group shares. The two codes of a quarter take adjacent
+                    // bits, which is why the shift counts down by two.
+                    let shift = 8
+                        - 2 * u32::try_from(quarter).unwrap_or(0)
+                        - u32::try_from(which).unwrap_or(0);
+                    let index = usize::try_from(code | ((high << shift) & 256)).unwrap_or(0);
+                    let entry = codebook::IQ3S_GRID.get(index).copied().unwrap_or([0; 4]);
+                    for (position, magnitude) in entry.into_iter().enumerate() {
+                        let bit = 1_u8 << (which * 4 + position);
+                        let negative = sign & bit != 0;
+                        let value = step * f32::from(magnitude);
+                        out.push(if negative { -value } else { value });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One entry of the four-bit non-linear table.
+fn value_of(code: u8) -> i8 {
+    codebook::IQ4_VALUES
+        .get(usize::from(code & 0x0F))
+        .copied()
+        .unwrap_or(0)
 }
 
 /// IEEE 754 binary16 to binary32, written out.
