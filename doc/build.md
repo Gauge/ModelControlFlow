@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 30 |
+| **Version** | 31 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
 
 **One command builds it and one command gates it.** `cargo build --locked`
@@ -688,6 +688,40 @@ what a real artifact does here is B-019's, which needs fifteen gigabytes and
 somebody's decision to spend them. The other platforms D29 names each need a
 machine to run this on.
 
+## 11b · The conformance corpus
+
+```
+$ scripts/ci.sh --with-corpus           # or scripts/check-corpus.sh
+```
+
+The engine is developed against the smallest *trained* model of each family MCF
+covers or means to cover, one distinct quantization apiece, so that architecture
+and quantization coverage come from the same handful of files (D40, DEC-054).
+Six of them are 1.4 GB against the reference model's 16.5 GB — which is the
+point: the size that makes residency a real problem is the size that makes every
+engine iteration slow.
+
+**Each entry declares what MCF does with it today, and the check fails both
+ways.** A model that ran and now refuses is a regression. A model that refused
+and now runs is *also* reported, because the entry is then out of date and
+somebody should say which family MCF covers. A check that quietly accepted good
+news would be a check that stops being read.
+
+**A refusal is checked for what it says.** Today four of the six refuse, and
+each names a different missing thing — a `smollm` pre-tokenizer, a `bert`
+tokenizer scheme, a per-expert gate where MCF looked for `ffn_gate.weight`, and
+an architecture MCF has not been taught. That list is B-365's order of work,
+read off artifacts rather than predicted, and a refusal that stopped naming what
+it wanted would have lost the thing that made it useful.
+
+**Where the corpus is.** `MCF_CORPUS`, or the store MCF itself would use. It is
+scheduled rather than gating because a gate that needs 1.4 GB of models is a
+gate that fails on a fresh clone; `mcf pull` the artifacts named in
+[findings.md](findings.md) F21 to have it.
+
+**Nothing here is timed and nothing here may be** (B65). The figures in F21 and
+F22 are recorded as what the decision was about, not as properties of any model.
+
 ## 11a · The real hub
 
 ```
@@ -896,6 +930,14 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 31 — the conformance corpus
+
+`--with-corpus` added (B-370). The engine's development subject is no longer the
+reference model: §XII is amended by D40, and the corpus of six small trained
+models is what an iteration runs. The tier checks each entry against what the
+register says it does, in both directions, and reads a refusal for what it
+names.
 
 ### Version 21 — the real hub, on purpose
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 43 |
+| **Version** | 44 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4354,20 +4354,39 @@ random-weight: a model with random weights exercises the plumbing and cannot
 show that the arithmetic is right, and F20's defects were both arithmetic that
 plumbing tests passed straight through.
 
-**The consequence that orders the work, and it is not a small one.** A small
-model makes the *coherence* oracle weaker. F20 told a correct engine from a
-subtly wrong one because the correct one said `Paris` and the wrong one said
-fluent English with no answer in it — a judgement that needs a model good enough
-to be right. A 135M model is not reliably right, so its output cannot referee
-the difference.
+**What decides the model is the question the test asks** *(refined on the
+operator's instruction, and measured — F22)*. Not a size policy in either
+direction. MCF is not limited to small models and does not reach for large ones
+by default; each tier names what it must establish, and that names the artifact:
 
-So this decision **depends on** D39's oracle rather than merely preferring it. A
-small corpus without a reference implementation to compare against is a corpus
-that can catch a model repeating one token forever and cannot catch a rotation
-applied to the wrong pair. With one, the corpus is strictly better than the
-reference model ever was: agreeing with a known-good implementation logit for
-logit is a sharper instrument than reading the output and being satisfied, and
-it is sharper at 135M than coherence is at 27B (A19).
+| what the test must establish | what it needs | what it costs |
+|---|---|---|
+| the format is read, the refusal is named, the plumbing runs | the smallest artifact of the shape — 20 MB is enough | milliseconds |
+| the arithmetic is right, exactly | any artifact plus an oracle to compare against numerically | seconds |
+| the engine produces *behaviour* a person would accept | a model good enough to be right about what is asked | seconds to a minute |
+| residency, arbitration, memory pressure, the quantization frontier | a model large enough that the pressure is real | what §XII always cost |
+
+**The third row has a measured floor and it is low.** F22 ran the same engine,
+correct and with one rotary pairing swapped, against two corpus models. At 160M
+the two are indistinguishable — not through subtlety, but because the correct
+engine answers three of four ordinary questions wrongly by itself, and a model
+that does not know the answer cannot be asked whether the engine found it. At
+0.6B every prompt separates them and the correct column is right. The floor for
+refereeing behaviour sits below a billion parameters and costs about sixteen
+seconds, and *the smallest member of the corpus is below it*.
+
+That is the whole of the size argument. Most of the work — reading a format,
+naming a refusal, exercising a path — is the first row, which is why the corpus
+is mostly small. The rest picks up an artifact that can answer the question
+being put to it, and the reference model remains the right answer for the fourth
+row.
+
+**An oracle is still worth building, and no longer as a precondition.** A
+numeric comparison against a reference implementation is exact where the third
+row is a judgement, works on artifacts too small to referee anything, and
+catches defects that leave output fluent at any size. D39 opens it and B-368 is
+the item. What F22 removes is the claim that the corpus cannot function without
+it.
 
 **What the reference model keeps.** Everything §XII's three reasons justify: the
 provenance chain MCF reads, the frontier's subject, and the artifact against
@@ -4468,6 +4487,19 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 44 — the question picks the model
+
+D40 refined and F22 recorded. The rule is not a preference for small artifacts;
+it is that each tier names what it must establish and that names the artifact.
+Reading a format needs 20 MB. Refereeing behaviour needs a model good enough to
+be right. Residency needs a model big enough to press on the machine.
+
+The middle floor was measured rather than assumed: at 160M a correct engine and
+one with a swapped rotary pairing are indistinguishable, because the correct
+engine gets three of four ordinary questions wrong on its own. At 0.6B they are
+unmistakable. Version 43 claimed the corpus depends on B-368's oracle; that is
+true only of the corpus's smallest member, and the claim is withdrawn.
 
 ### Version 43 — the reference model was asked to be two things
 

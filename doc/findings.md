@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 25 |
+| **Version** | 26 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1729,7 +1729,92 @@ measures quality, and the two timings measure this machine and this stand-in.
 Whether the four refusals are the *only* things those files need is unknown —
 a refusal names the first thing missing, not every thing.
 
+## 22 · F22 — Where a model becomes able to referee an engine (B-370, D40, DEC-054, A19)
+
+**The question.** F21 asserted that a small model cannot tell a correct engine
+from a subtly wrong one, and used that to make the conformance corpus depend on
+an oracle. The assertion was reasoning, not measurement. This measures it.
+
+**The method.** Two corpus models were run against a correct engine and against
+one with a single defect: the rotary pairing swapped, so each family gets the
+other convention. That is the defect from F20 that produces *English* rather
+than gibberish — the hard case, deliberately. Four prompts with answers a person
+knows, greedy, seed 0, fourteen tokens. The engine was rebuilt from a
+git-clean tree before each block; a first attempt at this measurement compared
+two runs of the same stale binary and produced two identical tables, which is
+how the rebuild came to be part of the method.
+
+**Llama-160M-Chat, Q4_K:**
+
+| prompt | correct engine | rotation swapped |
+|---|---|---|
+| The capital of France is | `Paris.` | `the capital city of Paris.` |
+| Water freezes at a temperature of | `100 °C. The water freezes at a temperature` | `120°C. The water dropleases are formed` |
+| The largest planet in our solar system is | `Mercury. Mercury is the second-largest planet in our` | `the Sun.` |
+| The opposite of hot is | `hot.` | `hot.` |
+
+**Qwen3-0.6B, Q4_K_M:**
+
+| prompt | correct engine | rotation swapped |
+|---|---|---|
+| The capital of France is | `Paris. The capital of France is also the capital of the Republic of` | `the the capital of of the the country which is the the capital of` |
+| Water freezes at a temperature of | `0°C, and the boiling point of water is at 1` | `at 200000000000` |
+| The largest planet in our solar system is | `...? A. Mercury B. Venus C. Earth D. Mars` | `called the...? A.. B B.. C..` |
+| The opposite of hot is | `cold, and the opposite of cold is hot. So, the opposite` | `a the of the the same as the opposite of cold. So,` |
+
+**At 160M the reader cannot tell which column is the broken engine, and the
+reason is not subtlety.** It is that the correct engine's own answers are wrong:
+water freezing at 100 °C, Mercury as the largest planet, the opposite of hot
+being hot. Three of four prompts are answered incorrectly by a *correctly
+implemented* engine. A model that does not know the answer cannot be asked
+whether the engine found it, and on one prompt the two engines produce
+character-identical output. The one row that looks like a signal — `dropleases`,
+which is not a word — is the only one, and one non-word in four prompts is not
+something to build a tier on.
+
+**At 0.6B all four are unmistakable, and the correct column is right.** Freezing
+at 0 °C, the opposite of hot being cold. The broken column repeats function
+words and emits a run of twelve digits. No judgement is required to separate
+them.
+
+**So the threshold is between the two, and it is cheap.** 0.6B is 397 MB and
+answers in about sixteen seconds on this machine — not the 16.5 GB the reference
+model costs. The useful statement is not *small models are unfit* but **a model
+must be good enough to be right about the thing being asked**, and that turns
+out to start well below a billion parameters.
+
+**This corrects F21 and the decision that cited it.** F21 concluded the corpus
+*depends on* an oracle because coherence cannot referee at small sizes. The
+dependency is real at the bottom of the corpus and absent one step up. The
+oracle is still worth building — it is exact where this is a judgement, it works
+on the 160M model where this does not, and it catches defects that leave output
+fluent at any size — but it is not a precondition for the corpus to be useful.
+B-368 keeps its priority on its own merits and not on this one.
+
+**What was not established.** One defect, one seed, one greedy sampler, four
+prompts, two models. That 0.6B suffices *for this defect* is not that it
+suffices for every defect; a defect subtler than a swapped rotation may be
+invisible at 0.6B and visible only to a numeric comparison. The threshold is a
+lower bound on what is needed, never an upper bound on what is enough (A21).
+
 ## Changelog
+
+### Version 26 — where a model becomes able to referee an engine
+
+F22, which measures what F21 asserted. Two corpus models, run against a correct
+engine and one with the rotary pairing swapped — F20's *fluent* defect, chosen
+because it is the hard one to see.
+
+At 160M the reader cannot tell the columns apart, because the correct engine
+answers three of four prompts wrongly on its own: a model that does not know the
+answer cannot be asked whether the engine found it. At 0.6B every prompt is
+unmistakable and the correct column is right.
+
+The rule is therefore not *small models are unfit* but *a model must be good
+enough to be right about the thing being asked* — which starts below a billion
+parameters and costs sixteen seconds. F21's claim that the corpus depends on an
+oracle is corrected: the dependency exists at the bottom of the corpus and not
+one step up.
 
 ### Version 25 — six families for a tenth of one model's bytes
 
