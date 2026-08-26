@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 23 |
+| **Version** | 24 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1598,7 +1598,93 @@ cause; this is its sibling for fixtures — *a fixture that cannot be wrong the
 way a real file is wrong hides the defect it was built to catch*. Real artifacts
 are how that is escaped, and B-368's oracle is how it is escaped systematically.
 
+## 20 · F20 — A second architecture, and two silences that fail differently (B-365, A2, A19, D26)
+
+**What was run.** Qwen3 0.6B, as Ollama already holds it on this machine —
+`sha256-7f4030…e1fa`, 28 blocks, 1024 wide, 16 query heads over 8 key/value
+heads, a stated head width of 128 that is *not* the embedding divided by the
+heads, and a `gpt2` byte-pair vocabulary of 151,936 tokens with 151,387 merges.
+The prompt was `The capital of France is`, greedy, seed 0, twelve tokens, run
+through `mcf run` on the build in the working tree.
+
+**What it produced, in four states.** The engine was run with each of the two
+corrections this finding is about present and absent, and the four outputs are
+the finding:
+
+| rotary pairing | per-head query/key norm | what came out |
+|---|---|---|
+| adjacent pairs (llama's) | not applied | `了吗了吗了吗了吗了吗了吗…` |
+| split halves (Qwen's) | not applied | `了吗了吗了吗了吗了吗了吗…` |
+| adjacent pairs (llama's) | applied | `the the capital of of the the country of in which the` |
+| split halves (Qwen's) | applied | `Paris, and the capital of the United States is Washington,` |
+
+**The first thing this establishes is that the two defects fail differently, and
+only one of them looks like a defect.** A missing per-head normalization
+collapses the model onto a single token and is unmistakable. A wrong rotary
+pairing produces *English* — words in the right proportions, function words in
+plausible places, and no answer. Anybody watching the third row without the
+fourth beside it would report a small model doing what small models do. The
+rotation was already suspected and already documented as the thing to suspect;
+what the experiment adds is that its signature is fluency, so *fluent output is
+not evidence the rotation is right*. Nothing short of a second implementation or
+a known answer distinguishes row three from a model that is simply small (A19).
+
+**The second is that neither defect was a mistake in arithmetic.** Both were
+silences.
+
+The rotary pairing is not in the file. GGUF states the base frequency and the
+head width and never states which two components of a head turn together, so
+every engine that runs these files carries a table from architecture to pairing
+under some name, and MCF's absence of one was a table with one entry that never
+said so. It is now `rotation_for`, written out, defaulting to llama's, with the
+families that want the other named — because being wrong there does not fail, it
+produces text.
+
+The per-head normalization was worse, because MCF had the code for it. The
+weights are two tensors per block that llama does not carry, the engine asked
+for them with `if let Ok(weights) = self.tensor(…)`, and the tensor map was
+built from a manifest that did not list them. The lookup failed on every block
+of every model, and an `if let Ok` cannot say so. That is A2's silent failure
+inside an engine written under A2 — the guard was shaped like an option and was
+in fact an error being discarded. Optional tensors are now loaded by asking the
+file whether it carries them; a tensor that is there and unreadable is a refusal
+rather than an absence, which is the difference between an optional part and a
+skipped one.
+
+**What this says about where to look next.** Both defects are of the same
+family: something the architecture requires that the *file* does not say and the
+*llama* path does not need. That family has more members — gemma3's sandwich
+normalizations, llama4's expert routing, the reference model's sixteen
+full-attention blocks among sixty-four — and none of them will announce
+themselves. The reference implementation of B-368 is the systematic answer; a
+real file per family, run and read, is what is available before it.
+
+**What was not established.** Nothing here is a speed, and it cannot be (B65).
+Twelve tokens from one prompt at one seed is not a measure of quality, and the
+fourth row's claim about Washington is the model's own. That the engine now
+produces coherent text for two architectures says that the paths it exercises
+are right for these two files; it says nothing about the paths they do not
+exercise — long contexts, other quantization schemes, the grouped-query ratios
+these two happen not to have.
+
 ## Changelog
+
+### Version 24 — a second architecture, and two silences that fail differently
+
+F20. Qwen3 needed two things llama does not: a rotary pairing that splits the
+head in half rather than taking adjacent pairs, and a normalization of each
+query and key head before the rotation. Neither is stated in the file.
+
+Running the engine with each correction present and absent gives four outputs,
+and the point of the finding is that they are not four degrees of one failure.
+Without the per-head normalization the model emits one token forever. With it
+and the wrong rotation, it emits *English* — and an observer without the fourth
+row beside it would call that a small model being small.
+
+The normalization was the more serious of the two, because the code for it was
+already written: it asked for its weights with `if let Ok(…)`, the manifest
+never loaded them, and the error was discarded on every block of every model.
+A2 inside an engine written under A2.
 
 ### Version 23 — two defects a real model found in an hour
 

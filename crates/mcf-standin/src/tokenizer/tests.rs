@@ -189,15 +189,15 @@ fn an_unknown_identifier_decodes_visibly() {
 /// state, at the level of a vocabulary.
 #[test]
 fn another_tokenizer_is_refused_by_name() {
-    let bytes = file_with(&["a"], &[], "gpt2", None);
+    let bytes = file_with(&["a"], &[], "rwkv", None);
     let file = gguf::parse(&bytes).expect("well formed");
-    let failure = Vocabulary::read(&file).expect_err("gpt2 is not implemented");
+    let failure = Vocabulary::read(&file).expect_err("rwkv is not implemented");
     assert_eq!(failure.category(), Category::EngineUnavailable);
     assert!(
         failure
             .context()
             .iter()
-            .any(|entry| entry.value.contains("gpt2")),
+            .any(|entry| entry.value.contains("rwkv")),
         "the refusal does not name what it found"
     );
 }
@@ -259,4 +259,245 @@ fn what_is_encoded_decodes_back() {
             vocabulary.decode(&encoded)
         );
     }
+}
+
+// ── the byte-pair half, through the vocabulary that dispatches to it ────────
+
+/// Builds a GGUF file carrying a byte-level byte-pair vocabulary.
+fn pairs_file(
+    tokens: &[&str],
+    merges: &[&str],
+    pre: Option<&str>,
+    types: Option<&[i32]>,
+    add_bos: Option<bool>,
+) -> Vec<u8> {
+    let mut metadata: Vec<(String, u32, Vec<u8>)> = Vec::new();
+
+    let mut model = length("gpt2".len()).to_vec();
+    model.extend_from_slice(b"gpt2");
+    metadata.push(("tokenizer.ggml.model".to_owned(), 8, model));
+
+    for (key, strings) in [
+        ("tokenizer.ggml.tokens", tokens),
+        ("tokenizer.ggml.merges", merges),
+    ] {
+        let mut list = 8_u32.to_le_bytes().to_vec();
+        list.extend_from_slice(&length(strings.len()));
+        for text in strings {
+            list.extend_from_slice(&length(text.len()));
+            list.extend_from_slice(text.as_bytes());
+        }
+        metadata.push((key.to_owned(), 9, list));
+    }
+
+    if let Some(pre) = pre {
+        let mut value = length(pre.len()).to_vec();
+        value.extend_from_slice(pre.as_bytes());
+        metadata.push(("tokenizer.ggml.pre".to_owned(), 8, value));
+    }
+
+    if let Some(types) = types {
+        let mut list = 5_u32.to_le_bytes().to_vec();
+        list.extend_from_slice(&length(types.len()));
+        for kind in types {
+            list.extend_from_slice(&kind.to_le_bytes());
+        }
+        metadata.push(("tokenizer.ggml.token_type".to_owned(), 9, list));
+    }
+
+    if let Some(add) = add_bos {
+        metadata.push((
+            "tokenizer.ggml.add_bos_token".to_owned(),
+            7,
+            vec![u8::from(add)],
+        ));
+    }
+    metadata.push((
+        "tokenizer.ggml.bos_token_id".to_owned(),
+        5,
+        0_u32.to_le_bytes().to_vec(),
+    ));
+
+    let mut out = b"GGUF".to_vec();
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&length(0));
+    out.extend_from_slice(&length(metadata.len()));
+    for (key, kind, value) in &metadata {
+        out.extend_from_slice(&length(key.len()));
+        out.extend_from_slice(key.as_bytes());
+        out.extend_from_slice(&kind.to_le_bytes());
+        out.extend_from_slice(value);
+    }
+    out
+}
+
+fn pairs(
+    tokens: &[&str],
+    merges: &[&str],
+    types: Option<&[i32]>,
+    add_bos: Option<bool>,
+) -> Vocabulary {
+    let bytes = pairs_file(
+        tokens,
+        merges,
+        Some(crate::architecture::a_pre_tokenizer(
+            crate::bpe::Split::Modern,
+        )),
+        types,
+        add_bos,
+    );
+    let file = gguf::parse(&bytes).expect("well formed");
+    Vocabulary::read(&file).expect("a byte-pair vocabulary")
+}
+
+/// The whole path, on a vocabulary small enough to work out by hand: the text
+/// is spelled in the alphabet, cut at the space, and merged in list order.
+#[test]
+fn byte_pairs_segment_by_the_merge_list() {
+    // `Ġ` is a space. The merges make `th`, then `the`, then ` the`.
+    let vocabulary = pairs(
+        &[
+            "<s>",
+            "t",
+            "h",
+            "e",
+            "\u{120}",
+            "th",
+            "the",
+            "\u{120}the",
+            "r",
+            "e\u{120}",
+        ],
+        &["t h", "th e", "\u{120} the"],
+        None,
+        None,
+    );
+    // "the the" is `the` (no leading space) then ` the` (one piece).
+    assert_eq!(vocabulary.encode("the the", false), Ok(vec![6, 7]));
+    assert_eq!(vocabulary.decode(&[6, 7]), "the the");
+}
+
+/// The merge list decides, and nothing else does: the same tokens with the
+/// merges in the other order give the other answer.
+#[test]
+fn the_order_of_the_merges_is_what_is_followed() {
+    let tokens = ["<s>", "a", "b", "c", "ab", "bc"];
+    let first = pairs(&tokens, &["a b", "b c"], None, None);
+    let second = pairs(&tokens, &["b c", "a b"], None, None);
+    assert_eq!(first.encode("abc", false), Ok(vec![4, 3]));
+    assert_eq!(second.encode("abc", false), Ok(vec![1, 5]));
+}
+
+/// Every byte has a token, so text no merge covers still segments — into the
+/// characters of the alphabet, which is what a byte-level vocabulary is for.
+#[test]
+fn text_no_merge_covers_still_segments() {
+    let vocabulary = pairs(&["<s>", "a", "b", "\u{120}"], &["x y"], None, None);
+    assert_eq!(vocabulary.encode("a b", false), Ok(vec![1, 3, 2]));
+    assert_eq!(vocabulary.decode(&[1, 3, 2]), "a b");
+}
+
+/// A character outside ASCII is several byte tokens, and decoding them one at
+/// a time would make every one a replacement mark (F19, in the other scheme).
+#[test]
+fn a_multi_byte_character_survives_the_round_trip() {
+    let alphabet: Vec<String> = (0..=u8::MAX)
+        .map(|byte| crate::bpe::character_of(byte).to_string())
+        .collect();
+    let tokens: Vec<&str> = std::iter::once("<s>")
+        .chain(alphabet.iter().map(String::as_str))
+        .collect();
+    let vocabulary = pairs(&tokens, &["x y"], None, None);
+    for text in [
+        "\u{e9}",
+        "\u{4f60}\u{597d}",
+        "\u{1f600}",
+        "na\u{ef}ve caf\u{e9}",
+    ] {
+        let identifiers = vocabulary
+            .encode(text, false)
+            .expect("every byte is a token");
+        assert_eq!(
+            vocabulary.decode(&identifiers),
+            text,
+            "{text:?} did not come back"
+        );
+    }
+}
+
+/// A control token is one token and not a merge of its characters. A chat
+/// template that produced `<|im_start|>` as pieces would be a prompt the model
+/// has never seen.
+#[test]
+fn a_control_token_is_matched_whole() {
+    let vocabulary = pairs(
+        &["<s>", "a", "b", "\u{120}", "<|im_start|>", "<", "|"],
+        &["x y"],
+        // 1 is NORMAL, 3 is CONTROL.
+        Some(&[3, 1, 1, 1, 3, 1, 1]),
+        None,
+    );
+    assert_eq!(
+        vocabulary.encode("a<|im_start|>b", false),
+        Ok(vec![1, 4, 2])
+    );
+    assert_eq!(vocabulary.decode(&[1, 4, 2]), "a<|im_start|>b");
+}
+
+/// A file that says it wants no beginning-of-text token does not get one.
+/// Prefixing it anyway shifts every position by one, invisibly.
+#[test]
+fn the_file_decides_whether_a_beginning_is_added() {
+    let tokens = ["<s>", "a", "b", "\u{120}"];
+    assert_eq!(
+        pairs(&tokens, &["x y"], None, Some(false)).encode("a", true),
+        Ok(vec![1])
+    );
+    assert_eq!(
+        pairs(&tokens, &["x y"], None, Some(true)).encode("a", true),
+        Ok(vec![0, 1])
+    );
+    // Where the file does not say, the convention of the models that carry a
+    // beginning at all is followed.
+    assert_eq!(
+        pairs(&tokens, &["x y"], None, None).encode("a", true),
+        Ok(vec![0, 1])
+    );
+}
+
+/// A byte-pair vocabulary with no merges is not a byte-pair vocabulary, and a
+/// pre-tokenizer this crate does not implement is refused by name rather than
+/// substituted for one that looks close (A7).
+#[test]
+fn what_a_byte_pair_vocabulary_must_carry_is_checked() {
+    let empty = pairs_file(
+        &["a"],
+        &[],
+        Some(crate::architecture::a_pre_tokenizer(
+            crate::bpe::Split::Modern,
+        )),
+        None,
+        None,
+    );
+    let file = gguf::parse(&empty).expect("well formed");
+    let failure = Vocabulary::read(&file).expect_err("no merges is not a merge list");
+    assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
+
+    let strange = pairs_file(
+        &["a"],
+        &["a b"],
+        Some("a pre-tokenizer nobody has written"),
+        None,
+        None,
+    );
+    let file = gguf::parse(&strange).expect("well formed");
+    let failure = Vocabulary::read(&file).expect_err("tekken is not implemented");
+    assert_eq!(failure.category(), Category::EngineUnavailable);
+    assert!(
+        failure
+            .context()
+            .iter()
+            .any(|entry| entry.value.contains("nobody has written")),
+        "the refusal does not name what it asked for"
+    );
 }

@@ -131,10 +131,12 @@ declare -a finds=(
     # This entry survived when it was first tried, which is how the test that
     # kills it came to exist.
     "Bytes(kib.saturating_mul(1024))"
-    # D31, A19: the rotary convention. Pairs are adjacent dimensions, and the
-    # other convention in the wild produces fluent nonsense that gets worse with
-    # distance — the failure a second implementation exists to catch.
-    "let at = pair.saturating_mul(2);"
+    # D31, A19: the rotary convention. Which two components of a head turn
+    # together is the whole of it, and the two conventions differ in nothing
+    # else — so making one of them the other is a mutation that changes only
+    # the thing that matters. F20 measured what being wrong here costs: not a
+    # crash and not gibberish, but English with no answer in it.
+    "            Rotation::Halved => (pair, pair.saturating_add(pairs)),"
     # D31: the four-bit bias. A block decoded without it is the right size and
     # the wrong values, which is the kind of wrongness that looks like a model.
     "out.push(scale * (f32::from(value & 0x0F) - 8.0));"
@@ -167,7 +169,7 @@ declare -a replaces=(
     ".step_by(1)"
     "        Disposition::Degraded"
     "Bytes(kib.saturating_mul(1000))"
-    "let at = pair;"
+    "            Rotation::Halved => (pair, pair.saturating_mul(2)),"
     "out.push(scale * f32::from(value & 0x0F));"
     "blocks: declared_blocks,"
     "                | Self::Unreachable { .. }"

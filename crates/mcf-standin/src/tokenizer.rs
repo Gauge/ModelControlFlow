@@ -5,14 +5,15 @@
 //! implies. Without it a caller has to supply token identifiers, which is a
 //! fine way to test a forward pass and no way to run a model.
 //!
-//! **One algorithm is implemented and the other is named.** GGUF's llama models
-//! carry a *unigram* vocabulary with a score per token, segmented by choosing
-//! the split whose scores sum highest — which is what this does. Models
-//! carrying byte-pair *merges* instead are refused as `engine.unavailable`
-//! naming the scheme, which is D31's third state for an artifact: it does not
-//! run, and MCF says which component was missing. A tokenizer that guessed at
-//! the other algorithm would produce identifiers that are valid, plausible and
-//! not what the model was trained on.
+//! **Two algorithms, and the file says which.** GGUF's `llama` vocabularies are
+//! *unigram*: a score per token, segmented by merging the highest-scoring
+//! adjacent pair, which is what this module does. GGUF's `gpt2` vocabularies
+//! are *byte-pair*: no scores at all, an ordered list of merges, and text
+//! spelled in a printable alphabet before anything is looked up — which
+//! [`crate::bpe`] does, and this module dispatches to. The two produce
+//! different identifiers from the same text, so a vocabulary carrying a third
+//! scheme is refused by name rather than segmented by whichever of these two
+//! looks closer (A7).
 //!
 //! **Byte fallback is part of the algorithm, not a rescue.** A unigram
 //! vocabulary includes single-byte tokens spelled `<0xNN>` precisely so that
@@ -30,6 +31,7 @@ use std::collections::BTreeMap;
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 
+use crate::bpe::{self, Ranks, Split};
 use crate::gguf::{Model as File, Value};
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::tokenizer");
@@ -37,9 +39,57 @@ const WHERE: Subsystem = Subsystem::new("mcf-standin::tokenizer");
 /// The character `SentencePiece` writes a space as.
 pub const SPACE: char = '\u{2581}';
 
+/// Which segmentation a vocabulary is for.
+///
+/// The distinction is not a detail of storage: it decides what the text is
+/// spelled in, what is looked up, and in what order — three things that have to
+/// agree with how the model was trained or the identifiers mean nothing.
+#[derive(Debug, Clone)]
+pub enum Scheme {
+    /// A score per token; the highest-scoring adjacent pair merges first, and
+    /// text the vocabulary cannot spell falls back to `<0xNN>` tokens.
+    Unigram,
+    /// An ordered merge list over a printable alphabet of all 256 bytes; the
+    /// earliest listed merge applies first, and there is nothing to fall back
+    /// to because the alphabet already covers every byte.
+    Pairs {
+        /// The merges, by what they join.
+        ranks: Ranks,
+        /// How the text is cut up before any merge applies.
+        split: Split,
+    },
+}
+
+impl Scheme {
+    /// What to call it in a sentence a person reads.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Unigram => "llama (unigram, with byte fallback)",
+            Self::Pairs { .. } => "gpt2 (byte-level byte-pair)",
+        }
+    }
+}
+
 /// A vocabulary, as a model file carries it.
 #[derive(Debug, Clone)]
 pub struct Vocabulary {
+    /// Which of the two segmentations this vocabulary is for.
+    scheme: Scheme,
+    /// The tokens the file marks as control or user-defined, longest first.
+    ///
+    /// These are matched in the text literally, before anything is segmented:
+    /// `<|im_start|>` is one token and not a merge of seven, and a chat
+    /// template that produced it as pieces would be a prompt the model has
+    /// never seen (F19's lesson, one layer up).
+    specials: Vec<(String, usize)>,
+    /// Whether the file says a beginning-of-text token belongs at the front.
+    ///
+    /// `None` where the file does not say, which is read as *yes* for the
+    /// vocabularies that carry a beginning at all — the convention every
+    /// unigram model was trained with. Qwen's files say **no** explicitly, and
+    /// prefixing one anyway shifts every position by one.
+    add_beginning: Option<bool>,
     tokens: Vec<String>,
     scores: Vec<f32>,
     /// Which tokens the file marks as raw bytes rather than pieces.
@@ -64,23 +114,44 @@ impl Vocabulary {
     /// not implement, naming which; `artifact.provenance.incomplete` when it
     /// carries none at all; `artifact.format.malformed` when the tokens and
     /// their scores disagree about how many there are.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "reading a vocabulary is one sequence of readings from one file, and each is \
+                  guarded by what its absence means; splitting it would put the guards in one \
+                  place and what they guard in another"
+    )]
     pub fn read(file: &File) -> Result<Self> {
         let kind = file
             .get("tokenizer.ggml.model")
             .and_then(Value::as_text)
             .unwrap_or("unstated");
-        // "llama" is what a unigram vocabulary is called in GGUF, for the model
-        // family it came from rather than for the algorithm.
-        if kind != "llama" {
-            return Err(Failure::new(
-                Category::EngineUnavailable,
-                Attribution::Mcf,
-                Disposition::Refused,
-                WHERE,
-                "the stand-in engine implements one tokenizer, and this file carries another",
-            )
-            .with_context("carried", kind.to_owned())
-            .with_context("implemented", "llama (unigram, with byte fallback)"));
+        // "llama" and "gpt2" are what the two schemes are called in GGUF, for
+        // the model families they came from rather than for the algorithms.
+        let scheme = match kind {
+            "llama" => Scheme::Unigram,
+            "gpt2" => Scheme::Pairs {
+                ranks: Ranks::read(&strings(file, "tokenizer.ggml.merges")),
+                split: pre_tokenizer(file)?,
+            },
+            _ => {
+                return Err(Failure::new(
+                    Category::EngineUnavailable,
+                    Attribution::Mcf,
+                    Disposition::Refused,
+                    WHERE,
+                    "the stand-in engine implements two tokenizers, and this file carries a third",
+                )
+                .with_context("carried", kind.to_owned())
+                .with_context(
+                    "implemented",
+                    "llama (unigram, with byte fallback), gpt2 (byte-level byte-pair)",
+                ));
+            }
+        };
+        if let Scheme::Pairs { ranks, .. } = &scheme
+            && ranks.is_empty()
+        {
+            return Err(missing("tokenizer.ggml.merges"));
         }
 
         let tokens: Vec<String> = file
@@ -145,7 +216,40 @@ impl Vocabulary {
             by_token.entry(token.clone()).or_insert(identifier);
         }
 
+        // Types 3 and 4 are GGUF's CONTROL and USER_DEFINED. Longest first, so
+        // that a token which is a prefix of another cannot claim the text the
+        // longer one wanted.
+        let mut specials: Vec<(String, usize)> = match file
+            .get("tokenizer.ggml.token_type")
+            .and_then(Value::as_list)
+        {
+            Some(types) => tokens
+                .iter()
+                .enumerate()
+                .filter(|(identifier, _)| {
+                    matches!(
+                        types.get(*identifier).and_then(Value::as_integer),
+                        Some(CONTROL_TOKEN | USER_DEFINED_TOKEN)
+                    )
+                })
+                .map(|(identifier, token)| (token.clone(), identifier))
+                .collect(),
+            None => Vec::new(),
+        };
+        specials.sort_by(|left, right| {
+            right
+                .0
+                .len()
+                .cmp(&left.0.len())
+                .then_with(|| left.1.cmp(&right.1))
+        });
+
         Ok(Self {
+            scheme,
+            specials,
+            add_beginning: file
+                .get("tokenizer.ggml.add_bos_token")
+                .and_then(Value::as_bool),
             byte_tokens,
             tokens,
             scores,
@@ -173,6 +277,133 @@ impl Vocabulary {
         self.tokens.get(identifier).map(String::as_str)
     }
 
+    /// Which segmentation this vocabulary is for.
+    #[must_use]
+    pub fn scheme(&self) -> &Scheme {
+        &self.scheme
+    }
+
+    /// Segments text into identifiers.
+    ///
+    /// `with_beginning` asks for the model's own convention rather than for a
+    /// beginning-of-text token: a file that says `add_bos_token = false` does
+    /// not get one, because prefixing a token the model was not trained to see
+    /// shifts every position by one and is invisible in the output.
+    ///
+    /// # Errors
+    ///
+    /// `artifact.format.malformed` when the vocabulary cannot represent the
+    /// text: for a unigram vocabulary, a byte no token spells and no byte
+    /// fallback covers; for a byte-pair one, a merged piece whose characters
+    /// are not tokens either. Both are refusals rather than dropped
+    /// characters, because losing a byte silently is what A1 forbids.
+    pub fn encode(&self, text: &str, with_beginning: bool) -> Result<Vec<usize>> {
+        let mut identifiers = Vec::new();
+        // Control and user-defined tokens are matched literally first, and
+        // what falls between them is segmented. A vocabulary that declares
+        // none of them takes the whole text as one span, which is the same
+        // walk with nothing to find.
+        let mut at = 0;
+        while at <= text.len() {
+            let Some(rest) = text.get(at..) else { break };
+            let Some((offset, length, identifier)) = self.next_special(rest) else {
+                if !rest.is_empty() {
+                    identifiers.extend(self.segment(rest)?);
+                }
+                break;
+            };
+            if let Some(before) = rest.get(..offset)
+                && !before.is_empty()
+            {
+                identifiers.extend(self.segment(before)?);
+            }
+            identifiers.push(identifier);
+            at = at.saturating_add(offset).saturating_add(length);
+        }
+
+        if with_beginning
+            && self.add_beginning.unwrap_or(true)
+            && let Some(beginning) = self.beginning
+        {
+            identifiers.insert(0, beginning);
+        }
+        Ok(identifiers)
+    }
+
+    /// The first control or user-defined token in the text: where, how long,
+    /// and which.
+    fn next_special(&self, text: &str) -> Option<(usize, usize, usize)> {
+        let mut best: Option<(usize, usize, usize)> = None;
+        for (token, identifier) in &self.specials {
+            // A one-character special would match inside ordinary words, so
+            // only tokens spelled the way markers are spelled are looked for.
+            if token.len() < 3 {
+                continue;
+            }
+            if let Some(offset) = text.find(token.as_str()) {
+                let candidate = (offset, token.len(), *identifier);
+                // Earliest wins; at the same place the longer one wins, which
+                // is why the list is sorted longest-first and this only has to
+                // compare offsets.
+                if best.is_none_or(|(previous, _, _)| offset < previous) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        best
+    }
+
+    /// One span of ordinary text, by whichever algorithm this vocabulary is
+    /// for.
+    fn segment(&self, text: &str) -> Result<Vec<usize>> {
+        match &self.scheme {
+            Scheme::Unigram => self.unigram(text),
+            Scheme::Pairs { ranks, split } => self.pairs(text, ranks, *split),
+        }
+    }
+
+    /// Segments text the byte-pair way: spelled in the alphabet, cut into
+    /// pieces, and each piece merged on its own.
+    ///
+    /// # Errors
+    ///
+    /// `artifact.format.malformed` when a merged piece is not a token and
+    /// neither are the characters it is made of — which cannot happen in a
+    /// vocabulary that carries all 256 alphabet characters, and is a refusal
+    /// rather than a dropped character in one that does not (A1).
+    fn pairs(&self, text: &str, ranks: &Ranks, split: Split) -> Result<Vec<usize>> {
+        let mut identifiers = Vec::new();
+        for piece in bpe::pieces(text, split) {
+            for merged in bpe::merge(&bpe::spell(piece), ranks) {
+                match self.by_token.get(&merged).copied() {
+                    Some(identifier) => identifiers.push(identifier),
+                    None => {
+                        // A merge produced something the vocabulary does not
+                        // have, which means the merge list and the token list
+                        // disagree. The characters are still tokens, so the
+                        // text survives; that this happened at all is worth
+                        // knowing, and the fallback below makes it visible by
+                        // failing loudly when even that is impossible.
+                        for character in merged.chars() {
+                            let single = character.to_string();
+                            match self.by_token.get(&single).copied() {
+                                Some(identifier) => identifiers.push(identifier),
+                                None => {
+                                    return Err(malformed(
+                                        "the vocabulary cannot represent this text: neither the \
+                                         merged piece nor its characters are tokens",
+                                        &merged,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(identifiers)
+    }
+
     /// Segments text into identifiers, by the unigram algorithm.
     ///
     /// The segmentation maximizes the sum of the chosen tokens' scores over
@@ -186,7 +417,7 @@ impl Vocabulary {
     /// `artifact.format.malformed` when a byte of the text has no
     /// representation at all: no token spells it and the vocabulary has no
     /// byte fallback. Dropping it would be losing information silently (A1).
-    pub fn encode(&self, text: &str, with_beginning: bool) -> Result<Vec<usize>> {
+    fn unigram(&self, text: &str) -> Result<Vec<usize>> {
         let prepared = prepare(text);
 
         // Every character is a symbol, in a chain that merges rather than a
@@ -286,10 +517,6 @@ impl Vocabulary {
             }
             walk = symbol.next;
         }
-
-        if with_beginning && let Some(beginning) = self.beginning {
-            identifiers.insert(0, beginning);
-        }
         Ok(identifiers)
     }
 
@@ -340,6 +567,49 @@ impl Vocabulary {
     /// nonsense look like a model that produced nothing (A1).
     #[must_use]
     pub fn decode(&self, identifiers: &[usize]) -> String {
+        match self.scheme {
+            Scheme::Unigram => self.decode_unigram(identifiers),
+            Scheme::Pairs { .. } => self.decode_pairs(identifiers),
+        }
+    }
+
+    /// Undoing the byte-level alphabet: every character of every token is one
+    /// byte, and the bytes are text only once they are all there.
+    ///
+    /// Nothing is decoded token by token, because a character outside ASCII is
+    /// two to four tokens' worth of bytes and decoding each on its own turns
+    /// every one of them into a replacement mark (F19).
+    fn decode_pairs(&self, identifiers: &[usize]) -> String {
+        use std::fmt::Write as _;
+
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut unknown: Vec<usize> = Vec::new();
+        for identifier in identifiers {
+            match self.token(*identifier) {
+                Some(token) => {
+                    for character in token.chars() {
+                        match bpe::byte_of(character) {
+                            Some(byte) => bytes.push(byte),
+                            // A character outside the alphabet is not a byte
+                            // this vocabulary can have meant. It is written
+                            // through as itself rather than dropped.
+                            None => bytes.extend_from_slice(character.to_string().as_bytes()),
+                        }
+                    }
+                }
+                None => unknown.push(*identifier),
+            }
+        }
+        let mut out = String::from_utf8_lossy(&bytes).into_owned();
+        // An identifier the vocabulary does not have is said rather than
+        // dropped, at the end because it has no position among the bytes (A1).
+        for identifier in unknown {
+            let _written = write!(out, "<id {identifier}>");
+        }
+        out
+    }
+
+    fn decode_unigram(&self, identifiers: &[usize]) -> String {
         use std::fmt::Write as _;
 
         let mut out = String::new();
@@ -400,6 +670,55 @@ fn byte_of(token: &str) -> Option<u8> {
 
 /// The type GGUF gives a token that stands for one raw byte.
 const BYTE_TOKEN: i64 = 6;
+
+/// The type GGUF gives a token the model was trained to read as a marker.
+const CONTROL_TOKEN: i64 = 3;
+
+/// The type GGUF gives a token added to the vocabulary after training.
+const USER_DEFINED_TOKEN: i64 = 4;
+
+/// A list of strings out of the file's metadata, or none.
+fn strings(file: &File, key: &str) -> Vec<String> {
+    file.get(key)
+        .and_then(Value::as_list)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_text().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Which pre-tokenizer a byte-pair vocabulary asks for.
+///
+/// A file that names one this crate does not implement is refused by that name.
+/// Substituting another is not a small inaccuracy: it changes where the text is
+/// cut, and therefore which merges can apply, and therefore the identifiers —
+/// silently, and in a way that reads as the model being poor rather than as MCF
+/// being wrong (A7, A19).
+fn pre_tokenizer(file: &File) -> Result<Split> {
+    let named = file
+        .get("tokenizer.ggml.pre")
+        .and_then(Value::as_text)
+        // A file that does not say is GPT-2's own, which is what the format
+        // meant before the field existed.
+        .unwrap_or("default");
+    crate::architecture::pre_tokenizer(named).ok_or_else(|| {
+        Failure::new(
+            Category::EngineUnavailable,
+            Attribution::Mcf,
+            Disposition::Refused,
+            WHERE,
+            "this vocabulary asks for a pre-tokenizer the stand-in engine does not implement",
+        )
+        .with_context("asked for", named.to_owned())
+        .with_context(
+            "implemented",
+            crate::architecture::PRE_TOKENIZERS.join(", "),
+        )
+    })
+}
 
 /// Whether a token is spelled the way every byte token is spelled.
 fn spelled_as_a_byte(token: &str) -> bool {

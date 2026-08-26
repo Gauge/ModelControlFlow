@@ -37,20 +37,7 @@ use crate::ops;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
-/// The architectures this module runs.
-///
-/// A list rather than one name, and a list rather than *whatever loads*: the
-/// families here are the ones somebody has checked have the structure this
-/// module implements — RMS normalization, rotary positions, grouped attention
-/// and a gated feed-forward — under whatever names their files use. A family
-/// that merely *loads* is not a family that runs correctly, and producing
-/// fluent nonsense from a structure MCF guessed at is the failure a second
-/// implementation exists to catch rather than to cause (A19, D38).
-pub const FAMILIES: &[&str] = &[
-    // The architecture the format was designed around, and the one every
-    // structural decision here was read from.
-    "llama",
-];
+pub use crate::architecture::FAMILIES;
 
 /// The architecture this module was written against, named for a message.
 pub const ARCHITECTURE: &str = "llama";
@@ -77,16 +64,44 @@ pub struct Shape {
     pub context: usize,
     /// How many tokens the vocabulary has.
     pub vocabulary: usize,
+    /// The width of one attention head, where the file states it.
+    ///
+    /// `None` means it does not, and the width is the embedding divided by the
+    /// heads — which is true of the family this module was written against and
+    /// **false** of the next one. Qwen3 0.6B states 128 against an embedding of
+    /// 1024 and sixteen heads, so the divided answer is 64 and the model is
+    /// twice as wide as MCF would have assumed. A shape MCF assumed is a model
+    /// MCF would have run confidently and wrongly (A21, F19's lesson).
+    pub stated_head_dimension: Option<usize>,
 }
 
 impl Shape {
     /// The width of one attention head.
     #[must_use]
     pub const fn head_dimension(&self) -> usize {
+        if let Some(stated) = self.stated_head_dimension {
+            return stated;
+        }
         match self.embedding.checked_div(self.heads) {
             Some(width) => width,
             None => 0,
         }
+    }
+
+    /// The width of every query head together, which is what the query
+    /// projection produces and what the output projection consumes.
+    ///
+    /// Equal to the embedding only where the head width was not stated
+    /// separately, which is why it is a method rather than an assumption.
+    #[must_use]
+    pub const fn query_width(&self) -> usize {
+        self.head_dimension().saturating_mul(self.heads)
+    }
+
+    /// The width of every key/value head together.
+    #[must_use]
+    pub const fn key_value_width(&self) -> usize {
+        self.head_dimension().saturating_mul(self.key_value_heads)
     }
 }
 
@@ -99,6 +114,11 @@ pub struct Loaded {
     epsilon: f32,
     /// The rope base frequency the file states.
     rope_theta: f32,
+    /// Which two components of a head the rotation turns together.
+    ///
+    /// Read from the architecture rather than from the file, because no file
+    /// states it — see [`rotation_for`].
+    rotation: ops::Rotation,
     /// Every tensor, dequantized once and kept.
     ///
     /// Dequantizing on load rather than per token is the one memory-for-time
@@ -179,6 +199,18 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
     }
 
+    // What some architectures carry and others do not. *Present in the file*
+    // is the whole test — but a tensor that is there and cannot be read is a
+    // failure rather than an absence, which is the difference between an
+    // optional part and a silently skipped one (A2). Skipping it silently is
+    // exactly how MCF ran Qwen3 without its per-head normalization and got
+    // fluent nonsense back (F20).
+    for (name, elements) in optional(&shape) {
+        if file.tensor(&name).is_some() {
+            tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
+        }
+    }
+
     // The output projection is tied to the embedding in some models and its own
     // tensor in others. Both are ordinary rather than exceptional, so the
     // absence is not a failure — but which one was used is a fact about the
@@ -196,6 +228,7 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         shape,
         epsilon,
         rope_theta,
+        rotation: crate::architecture::rotation(architecture),
         tensors,
     })
 }
@@ -224,6 +257,9 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
         },
         feed_forward: count(file, &key("feed_forward_length"))?,
         context: count(file, &key("context_length"))?,
+        stated_head_dimension: number(file, &key("attention.key_length"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|width| *width > 0),
         vocabulary: file
             .get("tokenizer.ggml.tokens")
             .and_then(Value::as_list)
@@ -255,9 +291,8 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
 /// a model missing a tensor is a named absence rather than a forward pass that
 /// quietly skips a block.
 fn manifest(shape: &Shape) -> Vec<(String, usize)> {
-    let head = shape.head_dimension();
-    let kv_width = head.saturating_mul(shape.key_value_heads);
-    let square = shape.embedding.saturating_mul(shape.embedding);
+    let kv_width = shape.key_value_width();
+    let query = shape.query_width().saturating_mul(shape.embedding);
     let gate = shape.feed_forward.saturating_mul(shape.embedding);
 
     let mut wanted = vec![
@@ -270,10 +305,10 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     for block in 0..shape.blocks {
         for (suffix, elements) in [
             ("attn_norm.weight", shape.embedding),
-            ("attn_q.weight", square),
+            ("attn_q.weight", query),
             ("attn_k.weight", kv_width.saturating_mul(shape.embedding)),
             ("attn_v.weight", kv_width.saturating_mul(shape.embedding)),
-            ("attn_output.weight", square),
+            ("attn_output.weight", query),
             ("ffn_norm.weight", shape.embedding),
             ("ffn_gate.weight", gate),
             ("ffn_up.weight", gate),
@@ -285,7 +320,54 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
     wanted
 }
 
+/// The tensors an architecture may carry and llama does not.
+///
+/// Read for their presence rather than named by a flag: a file that carries
+/// `attn_q_norm` is a file whose model expects it, and a file that does not is
+/// one whose model does not (§3.18, D26 — build the observable).
+fn optional(shape: &Shape) -> Vec<(String, usize)> {
+    let head = shape.head_dimension();
+    let mut wanted = Vec::new();
+    for block in 0..shape.blocks {
+        for suffix in ["attn_q_norm.weight", "attn_k_norm.weight"] {
+            wanted.push((format!("blk.{block}.{suffix}"), head));
+        }
+    }
+    wanted
+}
+
+/// Normalizes each head of a projection in place, against one set of weights.
+///
+/// The weights are one head wide and shared by every head, which is what makes
+/// this a *per-head* normalization rather than a normalization of the whole
+/// projection: the scale of one head must not depend on what another head is
+/// doing.
+fn normalize_each_head(values: &mut [f32], head: usize, weights: &[f32], epsilon: f32) {
+    if head == 0 {
+        return;
+    }
+    let heads = values.len().wrapping_div(head);
+    for index in 0..heads {
+        let at = index.saturating_mul(head);
+        let Some(slice) = values.get(at..at.saturating_add(head)) else {
+            continue;
+        };
+        let normalized = ops::rms_norm(slice, weights, epsilon);
+        if let Some(slot) = values.get_mut(at..at.saturating_add(head)) {
+            slot.copy_from_slice(&normalized);
+        }
+    }
+}
+
 impl Loaded {
+    /// A tensor this file may or may not carry.
+    ///
+    /// Distinct from [`Self::tensor`], which is for the ones the shape says
+    /// must be there and whose absence is a malformed file.
+    fn carried(&self, name: &str) -> Option<&[f32]> {
+        self.tensors.get(name).map(Vec::as_slice)
+    }
+
     /// Whether the output projection reuses the embedding matrix.
     #[must_use]
     pub fn output_is_tied(&self) -> bool {
@@ -364,7 +446,8 @@ impl Loaded {
     ) -> Result<Vec<f32>> {
         let width = self.shape.embedding;
         let head = self.shape.head_dimension();
-        let kv_width = head.saturating_mul(self.shape.key_value_heads);
+        let query_width = self.shape.query_width();
+        let kv_width = self.shape.key_value_width();
         let groups = self
             .shape
             .heads
@@ -379,7 +462,7 @@ impl Loaded {
         let mut queries = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.attn_q.weight"))?,
             &normalized,
-            width,
+            query_width,
             width,
         );
         let mut keys = ops::matmul_vec(
@@ -394,24 +477,35 @@ impl Loaded {
             kv_width,
             width,
         );
-        if queries.len() != width || keys.len() != kv_width || values.len() != kv_width {
+        if queries.len() != query_width || keys.len() != kv_width || values.len() != kv_width {
             return Err(malformed(
                 "a projection produced the wrong width",
                 &format!("block {block}"),
             ));
         }
 
+        // Normalize each head before it is rotated, where the file carries the
+        // weights for it. Qwen3 does and llama does not, and the difference is
+        // whether the tensors are there rather than a flag MCF sets: a file
+        // that carries `attn_q_norm` is a file whose model expects it (§3.18).
+        if let Some(weights) = self.carried(&format!("blk.{block}.attn_q_norm.weight")) {
+            normalize_each_head(&mut queries, head, weights, self.epsilon);
+        }
+        if let Some(weights) = self.carried(&format!("blk.{block}.attn_k_norm.weight")) {
+            normalize_each_head(&mut keys, head, weights, self.epsilon);
+        }
+
         // Rotate each head of the query and the key by this position.
         for index in 0..self.shape.heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = queries.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta);
+                ops::rope(slice, position, self.rope_theta, self.rotation);
             }
         }
         for index in 0..self.shape.key_value_heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = keys.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta);
+                ops::rope(slice, position, self.rope_theta, self.rotation);
             }
         }
 
@@ -421,7 +515,7 @@ impl Loaded {
 
         // The scale keeps the logits' variance independent of the head width.
         let scale = f32::from(u16::try_from(head).unwrap_or(1)).sqrt().recip();
-        let mut attended = vec![0.0_f32; width];
+        let mut attended = vec![0.0_f32; query_width];
         for head_index in 0..self.shape.heads {
             let group = head_index.checked_div(groups).unwrap_or(0);
             let query_at = head_index.saturating_mul(head);
@@ -451,7 +545,7 @@ impl Loaded {
             self.tensor(&format!("blk.{block}.attn_output.weight"))?,
             &attended,
             width,
-            width,
+            query_width,
         ))
     }
 

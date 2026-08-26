@@ -368,6 +368,15 @@ impl Value {
         }
     }
 
+    /// The value as a flag, where it is one.
+    #[must_use]
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// The list, if this is one.
     #[must_use]
     pub fn as_list(&self) -> Option<&[Self]> {

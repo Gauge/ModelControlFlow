@@ -125,16 +125,30 @@ pub fn swiglu(gate: &[f32], up: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+/// Which two components of a head a rotary embedding turns together.
+///
+/// **This is not a detail, and no file states it.** GGUF carries the base and
+/// the head width but never says which pairing the model was trained with, so
+/// it is a property of the architecture and MCF keeps a table of it. A model
+/// run under the wrong one produces fluent nonsense that gets worse with
+/// distance — which is exactly the failure a second implementation exists to
+/// catch (A19), and exactly what MCF produced for Qwen3 before this existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    /// Component `2i` with component `2i+1`: what llama was trained with, and
+    /// what llama.cpp calls `NORM`.
+    Interleaved,
+    /// Component `i` with component `i + head_dim/2`: what the GPT-NeoX line
+    /// and everything descended from it was trained with, Qwen included, and
+    /// what llama.cpp calls `NEOX`.
+    Halved,
+}
+
 /// Rotary position embedding, applied in place to one head's vector.
 ///
-/// The convention here is the one GGUF's llama models are written for: the
-/// vector is treated as `head_dim / 2` **adjacent pairs**, and pair `i` is
-/// rotated by `position · theta^(-2i/head_dim)`. The other convention in the
-/// wild splits the vector in half and pairs `i` with `i + head_dim/2`; a model
-/// run under the wrong one produces fluent nonsense that gets worse with
-/// distance, which is precisely the failure a second implementation exists to
-/// catch (A19).
-pub fn rope(vector: &mut [f32], position: usize, theta: f32) {
+/// Pair `i` is rotated by `position · theta^(-2i/head_dim)` under either
+/// convention; the convention decides only *which two components* are the pair.
+pub fn rope(vector: &mut [f32], position: usize, theta: f32, rotation: Rotation) {
     let head_dimension = vector.len();
     if head_dimension < 2 {
         return;
@@ -147,17 +161,21 @@ pub fn rope(vector: &mut [f32], position: usize, theta: f32) {
         let frequency = theta.powf(-exponent);
         let angle = position * frequency;
         let (sine, cosine) = angle.sin_cos();
-        let at = pair.saturating_mul(2);
-        let (Some(first), Some(second)) = (
-            vector.get(at).copied(),
-            vector.get(at.saturating_add(1)).copied(),
-        ) else {
+        let (at, and) = match rotation {
+            Rotation::Interleaved => (
+                pair.saturating_mul(2),
+                pair.saturating_mul(2).saturating_add(1),
+            ),
+            Rotation::Halved => (pair, pair.saturating_add(pairs)),
+        };
+        let (Some(first), Some(second)) = (vector.get(at).copied(), vector.get(and).copied())
+        else {
             continue;
         };
         if let Some(slot) = vector.get_mut(at) {
             *slot = first.mul_add(cosine, -(second * sine));
         }
-        if let Some(slot) = vector.get_mut(at.saturating_add(1)) {
+        if let Some(slot) = vector.get_mut(and) {
             *slot = first.mul_add(sine, second * cosine);
         }
     }

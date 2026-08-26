@@ -10,7 +10,7 @@
 // tolerance explicitly.
 #![allow(clippy::float_cmp)]
 
-use super::{add, argmax, dot, matmul_vec, rms_norm, rope, silu, softmax, swiglu};
+use super::{Rotation, add, argmax, dot, matmul_vec, rms_norm, rope, silu, softmax, swiglu};
 
 /// How close two floats must be where an exponential or a sine is involved.
 ///
@@ -141,7 +141,7 @@ fn swiglu_gates_one_vector_by_the_other() {
 #[test]
 fn rope_at_position_zero_changes_nothing() {
     let mut vector = [1.0, 2.0, 3.0, 4.0];
-    rope(&mut vector, 0, 10_000.0);
+    rope(&mut vector, 0, 10_000.0, Rotation::Interleaved);
     assert_eq!(vector, [1.0, 2.0, 3.0, 4.0]);
 }
 
@@ -152,7 +152,7 @@ fn the_first_pair_rotates_by_the_position() {
     let mut vector = [1.0, 0.0];
     // A rotation of π/2 radians: position 1 with theta such that the frequency
     // is π/2 is awkward, so rotate by 1 radian and check against cos and sin.
-    rope(&mut vector, 1, 10_000.0);
+    rope(&mut vector, 1, 10_000.0, Rotation::Interleaved);
     assert_close(vector[0], 1.0_f32.cos(), "the real part");
     assert_close(vector[1], 1.0_f32.sin(), "the imaginary part");
 }
@@ -163,7 +163,7 @@ fn the_first_pair_rotates_by_the_position() {
 #[test]
 fn rope_pairs_adjacent_dimensions() {
     let mut vector = [1.0, 0.0, 1.0, 0.0];
-    rope(&mut vector, 1, 10_000.0);
+    rope(&mut vector, 1, 10_000.0, Rotation::Interleaved);
     // Pair 0 has frequency 1 and pair 1 has frequency theta^-1, so the two
     // pairs rotate by different angles — and the second element of each pair
     // becomes the sine of its own angle.
@@ -183,7 +183,7 @@ fn rotation_preserves_length() {
     for position in [1, 7, 64, 1000] {
         let mut vector = [0.6, 0.8, -1.5, 2.0];
         let before: f32 = vector.iter().map(|value| value * value).sum();
-        rope(&mut vector, position, 10_000.0);
+        rope(&mut vector, position, 10_000.0, Rotation::Interleaved);
         let after: f32 = vector.iter().map(|value| value * value).sum();
         assert!(
             (before - after).abs() < 1e-4,
@@ -206,4 +206,51 @@ fn argmax_breaks_ties_toward_the_lowest_index() {
     assert_eq!(argmax(&[5.0, 5.0, 1.0]), Some(0));
     assert_eq!(argmax(&[]), None);
     assert_eq!(argmax(&[-3.0, -1.0, -2.0]), Some(1));
+}
+
+/// The two conventions are different rotations, and the difference is visible
+/// on a vector small enough to check by hand.
+///
+/// Under `Interleaved` the pair is (0,1) and (2,3); under `Halved` it is (0,2)
+/// and (1,3). At position 1 with the first pair's frequency of 1, component 0
+/// turns with component 1 in one and with component 2 in the other — so a
+/// vector that is zero everywhere but component 2 moves under one and not the
+/// other. A single implementation could not tell these apart, which is why
+/// both are here.
+#[test]
+fn the_two_rotations_are_not_the_same_rotation() {
+    let mut interleaved = vec![0.0_f32, 0.0, 1.0, 0.0];
+    let mut halved = interleaved.clone();
+    rope(&mut interleaved, 1, 10_000.0, Rotation::Interleaved);
+    rope(&mut halved, 1, 10_000.0, Rotation::Halved);
+    assert_ne!(
+        interleaved, halved,
+        "the two conventions produced the same vector, which would make the distinction unreal"
+    );
+    // Component 0 is untouched by `Interleaved` here, because its partner
+    // (component 1) is zero and it is itself zero.
+    assert_eq!(interleaved.first().copied(), Some(0.0));
+    // Under `Halved`, component 0's partner is component 2, which is one — so
+    // component 0 picks up `-sin(1)`.
+    let moved = halved.first().copied().unwrap_or(0.0);
+    assert!(
+        (moved - -1.0_f32.sin()).abs() < 1e-6,
+        "component 0 should have picked up -sin(1), got {moved}"
+    );
+}
+
+/// Either rotation preserves the length of every pair it turns, which is the
+/// one property a rotation has to have.
+#[test]
+fn a_rotation_keeps_the_length_of_the_pair() {
+    for rotation in [Rotation::Interleaved, Rotation::Halved] {
+        let before = vec![0.3_f32, -1.2, 0.7, 2.0, -0.5, 1.1, 0.9, -0.2];
+        let mut after = before.clone();
+        rope(&mut after, 7, 10_000.0, rotation);
+        let length = |vector: &[f32]| vector.iter().map(|value| value * value).sum::<f32>();
+        assert!(
+            (length(&before) - length(&after)).abs() < 1e-4,
+            "{rotation:?} changed the length of the vector"
+        );
+    }
 }
