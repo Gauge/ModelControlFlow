@@ -77,6 +77,7 @@ name = "mcf-checks"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+ "mcf-helper",
  "mcf-hub",
  "mcf-lab",
  "mcf-record",
@@ -101,6 +102,13 @@ name = "mcf-core"
 version = "0.1.0-m0"
 
 [[package]]
+name = "mcf-helper"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+]
+
+[[package]]
 name = "mcf-hub"
 version = "0.1.0-m0"
 dependencies = [
@@ -116,6 +124,7 @@ name = "mcf-lab"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+ "mcf-helper",
  "mcf-hub",
  "mcf-record",
  "mcf-serve",

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 24 |
+| **Version** | 25 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -67,8 +67,9 @@ reach back and weaken a type in `mcf-core`.
 | `mcf-core` | The types every rule is enforced through — failure (B-003), `Measurement` (B-005), `Provenance` (B-006), the time model (B-184), configuration identity (B-272), degradation (B-008), build identity — and the machine profiler those types describe (B-013) | — |
 | `mcf-record` | The journal, and the index derived from it (D20, D6) | `mcf-core` |
 | `mcf-standin` | MCF's own implementation of inference: the model file, the operations, the forward pass, the tokenizer (D31, B-360) | `mcf-core` |
+| `mcf-helper` | The privileged helper: three named operations, performed and then gone — binary `mcf-helper` (B-190, D35, §6.32) | `mcf-core` |
 | `mcf-hub` | Resolving, fetching and pinning artifacts, and the interface a source of them answers (§III) | `mcf-core`, `mcf-record` |
-| `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-hub`, `mcf-record`, `mcf-standin` |
+| `mcf-lab` | Simulated clock, injected faults, replayable scenarios (§3.17) | `mcf-core`, `mcf-helper`, `mcf-hub`, `mcf-record`, `mcf-serve`, `mcf-standin` |
 | `mcf-serve` | The daemon, engine adapters, the serving surface (§VI) | `mcf-core`, `mcf-record` |
 | `mcf-bench` | Measurement, and the laboratories that produce it (§II, §XIII) | `mcf-core`, `mcf-record`, `mcf-serve` |
 | `mcf-cli` | The headless surface; binary `mcf` (A22) | all of the above |
@@ -82,6 +83,14 @@ the declaration has drifted and can no longer be read as the architecture.
 `mcf-bench` depends on `mcf-serve` and not the reverse, so no serving path can
 acquire a dependency on the benchmark harness — A18's separation of tests from
 benchmarks, drawn in the dependency graph.
+
+`mcf-helper` links `mcf-core` and nothing else, and nothing links it back
+except the laboratory that reproduces its failures. §6.32 asks for a privileged
+surface that is *auditable*, and a program which runs with rights the daemon
+does not have should be readable in one sitting; the daemon starts it as a
+process rather than calling into it, which is what keeps the daemon
+unprivileged (`checks/tests/the_daemon_holds_no_privilege.rs` holds both
+halves).
 
 `mcf-standin` is an engine rather than an adapter, which is why it is its own
 crate and not part of `mcf-serve`: B65 forbids a stand-in from reporting a
@@ -731,6 +740,14 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 25 — a ninth crate, and the only one with rights
+
+`mcf-helper` joins the table: three named operations from D35's list, performed
+by an executable that exits. It links `mcf-core` and nothing else, nothing links
+it back but the laboratory, and the daemon starts it as a process rather than
+calling into it — which is the arrangement that keeps the daemon unprivileged
+rather than the promise that it is.
 
 ### Version 24 — the record's own growth, measured on a schedule
 

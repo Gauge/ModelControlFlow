@@ -18,5 +18,6 @@ mcf-record = { path = "../mcf-record" }
 mcf-standin = { path = "../mcf-standin" }
 # The same reason: a reference MCF refuses is a category its code constructs,
 # and a scenario that built that failure by hand would be about a mock.
+mcf-helper = { path = "../mcf-helper" }
 mcf-hub = { path = "../mcf-hub" }
 mcf-serve = { path = "../mcf-serve" }

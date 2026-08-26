@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 112 |
+| **Version** | 113 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -134,7 +134,7 @@ first and importance second.
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | **in progress** — `scripts/check-from-scratch.sh` behind `scripts/ci.sh --with-from-scratch`: a statically linked `x86_64-unknown-linux-musl` artifact in an image holding it and nothing else — no libc, no shell, no package manager, no `/etc`, no `/tmp` — running `--version`, `licence` and the whole of `doctor`, laboratory included. What it lacks it reports: the accelerator comes back *attempted, uncharacterized* because the vendor library is not there (D25, A5). The first token needs a model artifact (B-019), and the other platforms D29 names need a machine to run on |
-| B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | open — unblocked by D35, which enumerates the surface: three operations, each one named call with fixed arguments in an executable that exits, and the daemon holding nothing. What remains is building it, and the per-platform table for machines [findings.md](findings.md) F15 did not measure |
+| B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | **done** — `crates/mcf-helper`, binary `mcf-helper`. Three operations, and they are D35's three: set every processor's governor and say what each one *was* (so a restoration is possible at all), take or release a device's exclusive compute mode, and read the processor's energy counter. It links `mcf-core` and nothing else, reads no environment — the arguments are the whole input — writes to no record, and refuses every name that is not on the list. The value written to a governor is chosen from the machine's own `scaling_available_governors` rather than passed through from an argument, because a helper that writes what it is told is a helper that writes anything. A failure part-way through is **partial** and names what was already changed, since a restoration that does not know what was altered cannot be made (A4, A27). `--under <path>` points every fixed path at a fixture, which is how three laboratory scenarios drive a privileged program without letting it near the machine (D26). `checks/tests/the_daemon_holds_no_privilege.rs` holds both halves of the row: nothing shipped reaches for elevation, nothing links the helper but the laboratory, and the surface is compared against D35 in both directions |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | **done** — `mcf_core::origin`: `LocallyMeasured<T>` and `FromCorpus<T>` are unrelated types with no conversion either way; a corpus value cannot be built without the sample count B44 requires, and neither reads like the other on a surface |
@@ -368,6 +368,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 113 — the only program with rights
+
+B-190. §6.32 has asked since it was written for a privileged surface that is
+enumerable, auditable and short; D35 enumerated it, and this is that list as a
+program: `mcf-helper`, three operations, performed and then gone.
+
+What makes it auditable is what it does *not* have. It links `mcf-core` and
+nothing else. It reads no environment — the arguments are the whole input. It
+writes to no record, because a privileged program that writes to the operator's
+record is a second thing to audit. And nothing links it back: the daemon starts
+it as a process, which is what keeps the daemon unprivileged rather than a
+promise that it is.
+
+Two details are worth the reading. The value written to a governor is chosen
+from the machine's own list of offered governors rather than passed through from
+an argument — a helper that writes what it is told is a helper that writes
+anything. And a failure part-way through is *partial* and names what was already
+changed, because a restoration that does not know what was altered cannot be
+made (A27).
+
+Three scenarios drive it through a fixture root, which is how a laboratory
+watches a privileged program work without letting it near the machine.
 
 ### Version 112 — the boundary, drawn where the parts now are
 

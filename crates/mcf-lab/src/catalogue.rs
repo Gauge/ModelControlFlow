@@ -22,6 +22,7 @@ mod engine;
 mod environment;
 mod exchange;
 mod hub;
+mod platform;
 mod record;
 mod serve;
 mod store;
@@ -56,6 +57,9 @@ pub const CATALOGUE: &[Scenario] = &[
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,
     exchange::UNREADABLE_BUNDLE,
+    platform::PRIVILEGE_DENIED,
+    platform::MECHANISM_UNAVAILABLE,
+    platform::PRIVILEGE_UNAVAILABLE,
     record::UNWRITABLE_PATH,
     record::UNKNOWN_FORMAT,
     record::TORN_LAST_LINE,
