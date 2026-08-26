@@ -987,9 +987,16 @@ fn a_private_repository_says_what_is_missing_and_what_was_not_used() {
     let refused = machine.run(&["pull", "owner/model", "--from", &serving.base()]);
     assert!(!refused.status.success());
     let said = error_text(&refused);
-    assert!(said.contains("not readable without a credential"), "{said}");
+    assert!(
+        said.contains("would not say whether this repository exists"),
+        "{said}"
+    );
     assert!(said.contains("owner/model"), "{said}");
     assert!(said.contains("--token-from-env"), "{said}");
+    // And it names the ambiguity the hub imposes: withdrawn, private and never
+    // existed are one answer, and advising a credential as though it must work
+    // would be advice for one of three cases (F17, D37).
+    assert!(said.contains("withdrawn"), "{said}");
     assert!(
         said.contains("looked") && said.contains("nothing"),
         "the refusal does not say what MCF found and did not use: {said}"

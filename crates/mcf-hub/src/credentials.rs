@@ -289,6 +289,20 @@ impl core::fmt::Display for Identity {
 /// know, and says nothing that would let a reader be that credential.
 ///
 /// This is the one where no credential was offered at all.
+///
+/// **It names the ambiguity, because the hub will not.**
+/// [findings.md](../../../doc/findings.md) F17 measured what a hub says about a
+/// repository that does not exist: `401`, with the body *Invalid username or
+/// password* — the same answer it gives for a private repository and for one
+/// that has been withdrawn. Telling an anonymous caller that a private
+/// repository exists would be a leak, so this is deliberate on the hub's part
+/// and permanent from MCF's.
+///
+/// What that costs is the advice. *Supply a credential* is right for a private
+/// repository, useless for a withdrawn one and misleading for a typo — offered
+/// as though it could work when for two of the three it cannot. So the refusal
+/// says what was observed and names the question it is not answering, which is
+/// what D33 does for a missing network and D37 for a decayed pin.
 #[must_use]
 pub fn missing(reference: &Reference, source: &str) -> Failure {
     Failure::new(
@@ -296,16 +310,25 @@ pub fn missing(reference: &Reference, source: &str) -> Failure {
         Attribution::User,
         Disposition::Refused,
         WHERE,
-        "this repository is not readable without a credential, and MCF was given none",
+        "the hub would not say whether this repository exists without a credential, and MCF \
+         was given none",
     )
     .with_context("repository", reference.repository())
     .with_context("source", source.to_owned())
     .with_context("identity", Identity::Anonymous.to_string())
     .with_context(
+        "what_this_does_not_say",
+        "a hub answers the same way for a repository that is private, one that has been \
+         withdrawn, and one that never existed (F17). MCF reports what it observed rather \
+         than guessing which of the three this is",
+    )
+    .with_context(
         "what_to_do",
         format!(
-            "supply a hub access token with read scope for {}; MCF does not take one from the \
-             environment on its own, and will say so if one is sitting there",
+            "if {} is private to you, supply a hub access token with read scope for it — MCF \
+             does not take one from the environment on its own, and will say so if one is \
+             sitting there. If it is not, check the name: a repository that is gone and a \
+             repository misspelled look identical from here",
             reference.repository()
         ),
     )
