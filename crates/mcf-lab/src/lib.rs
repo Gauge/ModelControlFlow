@@ -38,6 +38,7 @@
 mod catalogue;
 pub mod hub;
 mod scenario;
+pub mod serving;
 mod world;
 
 pub use catalogue::{CATALOGUE, find};

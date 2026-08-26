@@ -36,6 +36,15 @@ pub enum EntryKind {
     /// Trials rather than results: what is recorded is what was observed, and
     /// every summary is projected from these when a question is asked.
     Trials,
+    /// An artifact arrived on this machine, with everything about where it
+    /// came from (B-029, §3.6).
+    ///
+    /// Written at the moment of acquisition rather than derived from the
+    /// sidecar beside the artifact, because the two answer different questions:
+    /// the sidecar says what this file is, and the record says what happened on
+    /// this machine and when. An artifact that is later moved by hand keeps the
+    /// first and cannot change the second.
+    ArtifactAcquired,
     /// An artifact left this machine, and who said it could (B-027, §3.11).
     ///
     /// A kind of its own rather than a failure or a note, because it is the one
@@ -48,11 +57,12 @@ pub enum EntryKind {
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
         Self::Trials,
+        Self::ArtifactAcquired,
         Self::ArtifactRemoved,
     ];
 
@@ -67,6 +77,7 @@ impl EntryKind {
             Self::Failure => "failure",
             Self::SelfCost => "self_cost",
             Self::Trials => "trials",
+            Self::ArtifactAcquired => "artifact_acquired",
             Self::ArtifactRemoved => "artifact_removed",
         }
     }

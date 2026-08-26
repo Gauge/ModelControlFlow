@@ -241,6 +241,23 @@ pub fn vetted(
     into: &mut dyn std::io::Write,
     vet: &dyn Fn(&Response) -> Result<()>,
 ) -> Result<Exchanged> {
+    if request.url().scheme() == "https" && !wire.carries_secrets() {
+        return Err(Failure::new(
+            Category::ConfigUnsatisfiable,
+            Attribution::Mcf,
+            Disposition::Refused,
+            WHERE,
+            "MCF cannot open an encrypted connection: no TLS stack is vendored",
+        )
+        .with_context("asked", request.url().to_string())
+        .with_context("wire", wire.describe())
+        .with_context(
+            "what_to_do",
+            "this is stated rather than attempted and failed obscurely. A stack is admitted in \
+             doc/vendored.md and B-322 is the item; until then an http source — a mirror, or \
+             the laboratory's own hub — is what MCF can reach",
+        ));
+    }
     if request.is_authenticated() && !wire.carries_secrets() {
         return Err(Failure::new(
             Category::ConfigInvalid,

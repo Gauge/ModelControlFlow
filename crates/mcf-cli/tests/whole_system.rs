@@ -594,6 +594,184 @@ fn removing_something_that_is_not_there_says_so() {
     assert!(model.exists(), "the model that was there is gone");
 }
 
+/// The two answers a listing needs and the file itself, in the hub's own
+/// shapes (F9).
+fn a_hub_serving(weights: &str, digest: &str) -> mcf_lab::serving::Serving {
+    use mcf_lab::serving::answer;
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/owner/model".to_owned(),
+            answer(&format!(
+                r#"{{"sha":"{revision}","tags":["gguf","license:apache-2.0"],"cardData":{{"license":"apache-2.0"}}}}"#
+            )),
+        ),
+        (
+            format!("/api/models/owner/model/tree/{revision}?recursive=true"),
+            answer(&format!(
+                r#"[{{"type":"file","size":{},"lfs":{{"oid":"{digest}","size":{}}},"path":"model.gguf"}}]"#,
+                weights.len(),
+                weights.len()
+            )),
+        ),
+        (
+            format!("/owner/model/resolve/{revision}/model.gguf"),
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{weights}",
+                weights.len()
+            ),
+        ),
+    ]))
+    .expect("a loopback port")
+}
+
+/// The M1 claim, as processes: a model enters this machine, is listed with its
+/// provenance, and leaves deliberately — none of it against a network (B-029,
+/// B19).
+#[test]
+fn a_model_is_acquired_listed_and_removed() {
+    let machine = Machine::new("pull-lifecycle");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    // Nothing is chosen for the operator: without a file, the repository's
+    // contents are offered and nothing is acquired.
+    let offered = machine.run(&["pull", "owner/model", "--from", &serving.base()]);
+    assert!(offered.status.success(), "{}", error_text(&offered));
+    let offered = text(&offered);
+    assert!(offered.contains("model.gguf"), "{offered}");
+    assert!(offered.contains("nothing was acquired"), "{offered}");
+    assert!(offered.contains("apache-2.0"), "{offered}");
+
+    // Named, it arrives, verified against the digest the hub declared.
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    let pulled = text(&pulled);
+    assert!(pulled.contains("acquired"), "{pulled}");
+    assert!(pulled.contains(&digest), "{pulled}");
+    assert!(pulled.contains("verified against"), "{pulled}");
+
+    let held = machine.0.join("mcf/models/owner/model/model.gguf");
+    assert_eq!(
+        std::fs::read(&held).expect("the model is on the disk"),
+        weights.as_bytes()
+    );
+
+    // The acquisition is in the record, and the provenance is beside the file.
+    let record = std::fs::read_to_string(machine.journal()).expect("a record");
+    assert!(record.contains("artifact_acquired"), "{record}");
+    assert!(
+        record.contains("50968a4468ef4233ed78cd7c3de230dd1d61a56b"),
+        "{record}"
+    );
+
+    // Listed, with where it came from.
+    let listed = text(&machine.run(&["list"]));
+    assert!(listed.contains("model.gguf"), "{listed}");
+    assert!(listed.contains("owner/model"), "{listed}");
+    assert!(!listed.contains("origin unknown"), "{listed}");
+
+    // And removed, deliberately.
+    let removed = machine.run(&[
+        "rm",
+        "owner/model/model.gguf",
+        "--because",
+        "the lifecycle test is done with it",
+    ]);
+    assert!(removed.status.success(), "{}", error_text(&removed));
+    assert!(!held.exists(), "the model is still there");
+    let record = std::fs::read_to_string(machine.journal()).expect("a record");
+    assert!(record.contains("artifact_removed"), "{record}");
+}
+
+/// A second acquisition of a verified artifact costs nothing: the bytes are
+/// already here and they are still what they should be.
+#[test]
+fn acquiring_something_already_held_does_not_fetch_it_again() {
+    let machine = Machine::new("pull-again");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    let first = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(first.status.success(), "{}", error_text(&first));
+    let asked_after_first = serving.asked().len();
+
+    let again = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(again.status.success(), "{}", error_text(&again));
+
+    let downloads = serving
+        .asked()
+        .iter()
+        .filter(|request| request.contains("GET /owner/model/resolve/"))
+        .count();
+    assert_eq!(
+        downloads,
+        1,
+        "the weights were fetched twice: {:?}",
+        serving.asked()
+    );
+    assert!(
+        serving.asked().len() > asked_after_first,
+        "nothing was asked at all"
+    );
+}
+
+/// A hub that publishes no digest leaves the artifact *held* rather than
+/// verified, and the surface says so in as many words (A21).
+#[test]
+fn an_artifact_nobody_could_check_is_reported_as_held() {
+    let machine = Machine::new("pull-unverified");
+    let weights = "GGUF the weights";
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/owner/model".to_owned(),
+            mcf_lab::serving::answer(&format!(r#"{{"sha":"{revision}"}}"#)),
+        ),
+        (
+            format!("/api/models/owner/model/tree/{revision}?recursive=true"),
+            mcf_lab::serving::answer(&format!(
+                r#"[{{"type":"file","size":{},"path":"model.gguf"}}]"#,
+                weights.len()
+            )),
+        ),
+        (
+            format!("/owner/model/resolve/{revision}/model.gguf"),
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{weights}",
+                weights.len()
+            ),
+        ),
+    ]))
+    .expect("a loopback port");
+
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    let pulled = text(&pulled);
+    assert!(pulled.contains("HELD, NOT VERIFIED"), "{pulled}");
+    assert!(
+        pulled.contains("declared no digest"),
+        "the surface does not say why: {pulled}"
+    );
+    // And the terms nobody declared are reported as unknown rather than filled
+    // in (A7, B-023).
+    assert!(pulled.contains("licence: unknown"), "{pulled}");
+}
+
+/// An encrypted hub is refused in as many words rather than attempted and
+/// failed obscurely (B-322, F9).
+#[test]
+fn the_default_hub_needs_a_tls_stack_and_says_so() {
+    let machine = Machine::new("pull-https");
+    let refused = machine.run(&["pull", "owner/model"]);
+    assert!(!refused.status.success());
+    let said = error_text(&refused);
+    assert!(said.contains("no TLS stack is vendored"), "{said}");
+    assert!(said.contains("B-322"), "{said}");
+}
+
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;

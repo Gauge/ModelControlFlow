@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -769,6 +769,24 @@ in principle maintain; a TLS 1.3 implementation is not, and A19 forbids
 claiming what is not tested. The alternative to vendoring cryptography is
 having no network, and having no network is the end of §III.
 
+### 9.4 The tree cannot be trimmed to the platform
+
+The obvious answer to *72 of 91 MiB are Windows import libraries* is to vendor
+only what this platform builds. Cargo will not have it: with a vendored source
+directory it resolves the whole lock graph before it compiles anything, so a
+tree with `windows-sys` removed fails to build on Linux — not because Linux
+needs it, but because the resolution does.
+
+Measured rather than assumed, and it changes the number that matters. Admitting
+a TLS stack means **about 90 MiB of third-party source in the repository**, not
+15. The 15 MiB is what a Linux build *compiles*, which is the right number for
+reviewing what MCF ships and the wrong one for what a checkout costs.
+
+That is a cost worth stating in one place rather than discovering in a diff, and
+it is the reason B-322's remaining step is a deliberate admission rather than
+another commit: everything else the transport needs is written and tested, and
+what is left is one struct and a decision about ninety megabytes.
+
 **Verdict: the transport is TLS-shaped.** The evidence says vendor the
 cryptography and own the protocol — the same shape D32 settled for inference,
 for the same reason: delegate what specialists maintain, own the wrapper that
@@ -781,6 +799,17 @@ Admitting a component is [vendored.md](vendored.md)'s business and B-322 is
 where it happens. This finding is the stated reason B15 requires.
 
 ## Changelog
+
+### Version 10 — what a vendored tree actually costs
+
+F9.4 added after the obvious economy turned out not to exist. Most of a
+vendored TLS tree is Windows import libraries a Linux build never compiles, so
+the natural move is to trim them — and cargo refuses, because with a vendored
+directory it resolves the whole lock graph before compiling any of it. The
+honest figure for admitting a TLS stack is therefore about ninety megabytes of
+source in the repository rather than fifteen. The fifteen is what gets
+compiled, which is the right number for reviewing what MCF ships and the wrong
+one for what a checkout costs.
 
 ### Version 9 — the transport, measured before it was argued
 
