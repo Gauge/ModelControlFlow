@@ -448,8 +448,8 @@ fn deceptive_metadata(world: &World) -> Outcome {
     // The card is what the repository says; the architecture is what the
     // weights say. A21's divergence, and the most useful thing MCF can report
     // about a repository like this.
-    let compared = mcf_hub::inspect::Architecture::compare(Some("llama"), file.architecture());
-    match compared.divergence() {
+    let compared = mcf_hub::inspect::architecture(Some("llama"), file.architecture());
+    match mcf_hub::inspect::deception(&compared) {
         Some(failure) => Outcome::Produced(failure),
         None => Outcome::Unexpected(format!("the mislabelling was not noticed: {compared:?}")),
     }

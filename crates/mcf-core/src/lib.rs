@@ -21,6 +21,7 @@
 pub mod attested;
 pub mod authorization;
 pub mod build_identity;
+pub mod capability;
 pub mod capture;
 pub mod configuration;
 pub mod degradation;
