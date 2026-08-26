@@ -59,6 +59,8 @@ enum Request<'a> {
         reference: &'a str,
         /// A hub other than the default.
         from: Option<&'a str>,
+        /// Where MCF may read a credential from, if the operator named one.
+        offered: pull::Offered<'a>,
     },
     /// What this machine is holding.
     List,
@@ -235,6 +237,7 @@ fn export(to: &std::path::Path) -> Response {
 fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut reference = None;
     let mut from = None;
+    let mut offered = pull::Offered::Nothing;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -247,13 +250,35 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            "--token-from" => match rest.next() {
+                Some(path) => offered = pull::Offered::File(path),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "pull",
+                        needs: "--token-from <file>",
+                    });
+                }
+            },
+            "--token-from-env" => match rest.next() {
+                Some(variable) => offered = pull::Offered::Variable(variable),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "pull",
+                        needs: "--token-from-env <VARIABLE>",
+                    });
+                }
+            },
             other if other.starts_with("--") => return Err(other),
             other if reference.is_none() => reference = Some(other),
             other => return Err(other),
         }
     }
     match reference {
-        Some(reference) => Ok(Request::Pull { reference, from }),
+        Some(reference) => Ok(Request::Pull {
+            reference,
+            from,
+            offered,
+        }),
         None => Ok(Request::MissingArgument {
             command: "pull",
             needs: "<owner/name[:file]>",
@@ -337,7 +362,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                     costs here, and what it promises\n\
                  \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
                  \x20          [--from <hub>]             provenance; without a file it\n\
-                 \x20                                     says what the repository has\n\
+                 \x20          [--token-from <file>]      says which variants would run\n\
+                 \x20          [--token-from-env <VAR>]   here. MCF reads a credential\n\
+                 \x20                                     only where you name one\n\
                  \x20 mcf list                            what this machine is holding\n\
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
                  \x20            [--purge]                this previews and removes nothing\n\
@@ -365,7 +392,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 served: true,
             }
         }
-        Request::Pull { reference, from } => pull::run(reference, *from),
+        Request::Pull {
+            reference,
+            from,
+            offered,
+        } => pull::run(reference, *from, *offered),
         Request::List => models::list(),
         Request::Remove {
             names,

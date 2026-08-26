@@ -832,6 +832,65 @@ fn an_artifact_nobody_could_check_is_reported_as_held() {
     assert!(pulled.contains("licence: unknown"), "{pulled}");
 }
 
+/// A private repository says which credential is missing, and tells the
+/// operator what MCF has looked at and not used (B-024).
+#[test]
+fn a_private_repository_says_what_is_missing_and_what_was_not_used() {
+    let machine = Machine::new("pull-private");
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([(
+        "/api/models/owner/model".to_owned(),
+        mcf_lab::serving::status(401, "Unauthorized"),
+    )]))
+    .expect("a loopback port");
+
+    let refused = machine.run(&["pull", "owner/model", "--from", &serving.base()]);
+    assert!(!refused.status.success());
+    let said = error_text(&refused);
+    assert!(said.contains("not readable without a credential"), "{said}");
+    assert!(said.contains("owner/model"), "{said}");
+    assert!(said.contains("--token-from-env"), "{said}");
+    assert!(
+        said.contains("looked") && said.contains("nothing"),
+        "the refusal does not say what MCF found and did not use: {said}"
+    );
+}
+
+/// A credential is read only from where the operator names, and never sent over
+/// a connection that cannot keep it (B-024).
+#[test]
+fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
+    let machine = Machine::new("pull-credential");
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([(
+        "/api/models/owner/model".to_owned(),
+        mcf_lab::serving::status(401, "Unauthorized"),
+    )]))
+    .expect("a loopback port");
+
+    let token = machine.0.join("token");
+    std::fs::write(&token, "hf_a_real_looking_token\n").expect("a token file");
+
+    let refused = machine.run(&[
+        "pull",
+        "owner/model",
+        "--from",
+        &serving.base(),
+        "--token-from",
+        &token.display().to_string(),
+    ]);
+    assert!(!refused.status.success());
+    let said = error_text(&refused);
+    assert!(said.contains("cannot keep it"), "{said}");
+    assert!(
+        !said.contains("hf_a_real_looking_token"),
+        "the token is in the output: {said}"
+    );
+    assert!(
+        serving.asked().is_empty(),
+        "a request went out carrying a credential: {:?}",
+        serving.asked()
+    );
+}
+
 /// An encrypted hub is refused in as many words rather than attempted and
 /// failed obscurely (B-322, F9).
 #[test]

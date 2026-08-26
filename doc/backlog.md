@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 85 |
+| **Version** | 86 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
-build items (37 done, 1 dropped, 13 in progress, 52 blocked on a decision, 96 open).** Every item cites
+build items (38 done, 1 dropped, 12 in progress, 52 blocked on a decision, 96 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -160,7 +160,7 @@ first and importance second.
 | B-021 | Resumable, integrity-checked fetch: checksums verified, partial transfers resumed, mutation-under-us detected | §III, §3.7 | A transfer interrupted at 90% resumes and verifies; a file that changed mid-fetch is a classified failure, not a corrupt local artifact | **in progress** — `mcf_hub::fetch`: bytes accumulate in a `.partial` file and the artifact's own name is given only to something verified, so a crash at any moment leaves a state MCF can see, resume and name rather than a half-model where a whole one should be. A transfer interrupted at ninety per cent continues from there; a source that cannot resume is restarted and *said*; a file that changed under the transfer is `artifact.corrupt` and the mixture is deleted rather than kept for a later attempt to resume into. A hub declaring no digest leaves the artifact *held* rather than verified (A21). What remains is the transport, and [findings.md](findings.md) F9 has now measured what that costs: the hub speaks HTTP/1.1, serves ranges and publishes the digest before the bytes, so what MCF lacks is TLS rather than a protocol. B-322 is the admission |
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
-| B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **in progress** — `mcf_hub::credentials`: a secret that redacts itself (`Debug` shows a digest fingerprint, there is no `Display`, and the only way to the bytes is `reveal`), an origin that is part of the conditions, and an `Identity` a source answers with — anonymous, offered, or an account the hub confirmed. The three refusals are written once, so every source says the same thing and each names the repository, what MCF was to the hub, and the one thing to do next. *Held deliberately* is structural rather than documented: nothing reads the environment, `sightings` is handed a way to look, and `checks/tests/a_credential_is_never_picked_up.rs` holds the line across the whole workspace. What remains: the surface an operator supplies one through, which is B-029, and the real client that offers it, which is B-021's transport |
+| B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **done** — `mcf_hub::credentials` and the surface that uses it. A secret redacts itself, an origin travels with it into the record, and an `Identity` says what MCF is to a hub — anonymous, offered, or an account it confirmed. The three refusals are written once so a real hub and a simulated one say the same sentence, each naming the repository, what MCF was, and the one thing to do next. *Held deliberately* is structural: nothing reads the environment, and `checks/tests/a_credential_is_never_picked_up.rs` holds that across the workspace. At the surface, `mcf pull --token-from <file>` and `--token-from-env <VARIABLE>` are the only ways in; a repository that needs one is told which, and MCF reports what it has *looked at and not used* rather than spending it. A credential is refused rather than downgraded over a connection that cannot keep it |
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
@@ -367,6 +367,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 86 — the operator's credential, and only theirs
+
+B-024 done. What was missing was the surface, and the surface is where the rule
+either holds or quietly stops holding: `mcf pull --token-from <file>` and
+`--token-from-env <VARIABLE>` are the only two ways a credential reaches MCF,
+and both of them are the operator naming a place rather than MCF finding one.
+
+The nicest part is what happens when a repository asks for one. MCF says which
+repository and what to do, and then says what it has *looked at and not used* —
+a token sitting in the environment is reported with the flag that would offer
+it, not spent on the operator's behalf. Finding a credential is not permission
+to use it, and this is the one place where that distinction is visible to
+somebody who has never read the rules.
+
+A credential offered over a connection that cannot keep it is refused rather
+than downgraded, and a whole-system test asserts the request never goes out at
+all: the refusal happens before the socket, and the token is not in the output.
 
 ### Version 85 — which of these will run here
 
