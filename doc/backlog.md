@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 125 |
+| **Version** | 126 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,24 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 126 — reading the surfaces as a stranger would
+
+Loop step five, done by running the binary and reading what it says rather than
+by grepping for stale citations. Two things were wrong.
+
+The usage text still said an encrypted hub *needs a TLS stack MCF has not
+vendored yet*, weeks after B-322 vendored one and after `mcf pull` had acquired
+from the real hub over it. A stale *cannot* is worse than a missing line,
+because it is read by somebody deciding whether to try something (D7). It now
+says what MCF actually cannot do — serve a model, time one — and mentions
+`mcf-helper`, which an operator would otherwise never learn exists.
+
+And `mcf check` called a machine that has never acquired anything *the model
+store could not be read*, where `mcf list` calls it *does not exist yet*. Two
+answers to one situation (A6), and the failing one was the wrong one: a store
+nobody has created is not a store that cannot be read. Both are asserted now, on
+every surface that looks at the store.
 
 ### Version 125 — the catalogue that stopped describing the code
 

@@ -657,10 +657,18 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                     binary obliges you to (GPL-3.0-only)\n\
                  \x20 mcf --version                       what this binary is\n\
                  \n\
-                 Acquisition reaches an http hub — a mirror, or the laboratory's own.\n\
-                 An encrypted one needs a TLS stack MCF has not vendored yet, and says\n\
-                 so rather than failing obscurely (B-322). Nothing here serves or\n\
-                 measures a model."
+                 Acquisition reaches an encrypted hub over MCF's own HTTP and a vendored\n\
+                 TLS stack, or a plain one where you name it — a mirror, or the\n\
+                 laboratory's own (B-322).\n\
+                 \n\
+                 What MCF cannot do yet is serve a model or time one. `mcf serve` runs\n\
+                 the daemon and says so when asked; `mcf run` answers with MCF's own\n\
+                 stand-in and marks every answer as one, because a timing taken from it\n\
+                 would measure the stand-in rather than the model (D31, B65).\n\
+                 \n\
+                 `mcf-helper` is beside this binary and does three things that need\n\
+                 rights this one does not have: the processor governor, a device's\n\
+                 exclusive mode, and the processor's energy counter (D35)."
             ),
             served: true,
         },
@@ -782,12 +790,21 @@ mod tests {
         assert!(text.contains("mcf log"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         assert!(text.contains("mcf check"), "{text}");
-        for unbuilt in ["mcf bench", "mcf lab"] {
+        for unbuilt in ["mcf bench", "mcf lab", "mcf probe", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),
-                "usage advertises {unbuilt}, which M0 has not built"
+                "usage advertises {unbuilt}, which nothing has built"
             );
         }
+        // And it does not claim what MCF stopped being unable to do. The TLS
+        // sentence outlived the vendoring by several weeks; a usage text is
+        // read by somebody deciding whether to try something (D7), so a stale
+        // *cannot* is worse than a missing line.
+        assert!(
+            !text.contains("has not vendored"),
+            "usage still says a vendored dependency is not vendored: {text}"
+        );
+        assert!(text.contains("mcf-helper"), "{text}");
     }
 
     /// `export` needs a destination, and says which rather than guessing at
