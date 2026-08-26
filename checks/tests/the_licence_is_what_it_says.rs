@@ -7,7 +7,7 @@
 //! redistributor with an obligation nobody can read.
 
 // Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
-#![allow(clippy::panic)]
+#![allow(clippy::panic, clippy::expect_used)]
 
 /// The repository contains the licence, verbatim.
 ///
@@ -111,16 +111,80 @@ fn the_artifact_states_the_licence_and_agrees_with_the_register() {
          conveyed on its own carries no copy (GPL-3.0 §4)"
     );
 
-    // The declared component list, and the register's admitted section. Both
-    // are empty today and the check is written for the day they are not.
-    let declared_empty = source.contains("pub(crate) const VENDORED: &[Component] = &[];");
+    // The two lists, compared name by name and revision by revision. It used
+    // to be enough to check that both were empty or both were not, which was
+    // written when both were empty; fourteen components later, *agreeing about
+    // whether anything is vendored* is not the property B-330 wants. A
+    // redistributor's obligations are what `mcf licence` prints, and the
+    // compatibility finding for each is in the register — if the two lists
+    // differ, one of them is about a binary nobody is shipping.
     let register = std::fs::read_to_string(mcf_checks::workspace::root().join("doc/vendored.md"))
         .expect("doc/vendored.md is readable");
-    let register_empty = register.contains("*Nothing.* No component has been admitted");
 
-    assert_eq!(
-        declared_empty, register_empty,
-        "the artifact and doc/vendored.md disagree about whether anything is vendored \
-         (B-330): one of them lists components and the other does not"
+    let in_artifact = compiled_in(&source);
+    let in_register = admitted(&register);
+    assert!(
+        !in_artifact.is_empty(),
+        "the artifact names no vendored component, and the tree has a vendor directory"
     );
+    assert_eq!(
+        in_artifact, in_register,
+        "the artifact and doc/vendored.md do not name the same vendored components \
+         (B-330). What `mcf licence` prints is what a redistributor is obliged to \
+         convey, and the register is where each one's compatibility finding lives"
+    );
+}
+
+/// Every `name-revision` the artifact says it ships.
+fn compiled_in(source: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let (_, table) = source
+        .split_once("pub(crate) const VENDORED: &[Component] = &[")
+        .expect("the artifact declares a vendored table");
+    let (table, _) = table.split_once("\n];").expect("the table ends");
+    let mut name = None;
+    for line in table.lines() {
+        let line = line.trim();
+        if let Some(value) = field(line, "name:") {
+            name = Some(value);
+        } else if let Some(revision) = field(line, "revision:") {
+            let named = name
+                .take()
+                .expect("a component is named before its revision");
+            found.push(format!("{named}-{revision}"));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Every `name-revision` the register says is compiled in.
+///
+/// The first table only: the register's second one is the crates Cargo requires
+/// to be present and nothing compiles (F9.4), which a redistributor does not
+/// convey and `mcf licence` therefore does not print.
+fn admitted(register: &str) -> Vec<String> {
+    let (_, rest) = register
+        .split_once("**What is compiled into the artifact.**")
+        .expect("the register says what is compiled in");
+    let (table, _) = rest.split_once("\n\n**").unwrap_or((rest, ""));
+    let mut found: Vec<String> = table
+        .lines()
+        .filter_map(|line| {
+            let cell = line.trim().strip_prefix("| `")?;
+            let (name, _) = cell.split_once('`')?;
+            Some(name.to_owned())
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// The value of a `field: "value",` line, if this is one.
+fn field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    line.strip_prefix(name)?
+        .trim()
+        .strip_prefix('"')?
+        .split_once('"')
+        .map(|(value, _)| value)
 }
