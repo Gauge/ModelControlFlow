@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 20 |
+| **Version** | 21 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1452,7 +1452,67 @@ private repository and misleading for a withdrawn one — advice that cannot wor
 offered as though it could. That is corrected where it is written rather than
 here.
 
+## 18 · F18 — The wall three findings kept hitting is a packaged toolchain (B-320, B-183, DEC-047)
+
+**Why it was asked.** Three separate findings have run into the same obstacle
+and each treated it as fixed. F12 could not build either engine candidate for
+`x86_64-unknown-linux-musl` — llama.cpp because it is C++, candle because
+`tokenizers` reaches Oniguruma — and concluded that the musl question does not
+separate them. F14 found SQLite's amalgamation unbuildable for the same target.
+F15 recorded, in passing, that no C cross compiler is on this machine. Three
+conclusions rest on an absence that nobody had priced.
+
+**What was run.** `dnf info` and `dnf search`, which query this machine's
+package manager and install nothing.
+
+| Package | Download | Installed | What it is |
+|---|---|---|---|
+| `musl-gcc` | 12.0 KiB | 7.2 KiB | a wrapper that points the host gcc at musl |
+| `musl-devel` | 214.6 KiB | 590.2 KiB | headers |
+| `musl-libc-static` | 1.7 MiB | 8.0 MiB | the static library |
+| `musl-clang` | 12.1 KiB | 7.8 KiB | the same wrapper for clang |
+
+All from Fedora's own repository, from one source RPM, at musl 1.2.5.
+
+**What this establishes and what it very deliberately does not.** It establishes
+that a C toolchain targeting musl is **packaged for this machine** and costs
+about nine megabytes installed. It does **not** establish that installing it
+makes any of the three candidates build: a wrapper that compiles C for musl says
+nothing about a C++ project's CMake, about `cc-rs` finding the right linker for
+a Rust build script, or about Oniguruma's own configure. Each of those is a
+thing to try, and trying it means changing a machine somebody else is using —
+which is a decision for its operator rather than for a measurement.
+
+**Why it matters anyway.** F12 left B-320 open partly because *neither candidate
+keeps B-183's check runnable on a machine without a C cross toolchain*. That
+sentence is true and its weight is different now: the machine can have one for
+the price of a small package, so the question becomes *are we willing to require
+a toolchain at build time* rather than *is it possible at all*. B36 constrains
+what a **user** needs (nothing), not what a **build** needs, and MCF already
+requires a pinned Rust toolchain nobody calls a violation.
+
+The counter-argument survives and is worth stating: every build-time requirement
+is a thing that breaks on somebody else's machine, and D29's per-platform
+artifacts multiply it by the number of platforms. That is an argument about
+which engine to admit rather than about whether the wall is real, and B-320 is
+where it gets made.
+
 ## Changelog
+
+### Version 21 — the wall was a package nobody priced
+
+F18. Three findings — F12 on the engines, F14 on SQLite, F15 on elevation — each
+ran into the same absence and treated it as a fact of the world: this machine
+has no C compiler targeting musl. Asking the package manager takes a second and
+nobody had.
+
+It is packaged: `musl-gcc`, `musl-devel` and `musl-libc-static`, from Fedora's
+own repository, about nine megabytes installed. That does not make any candidate
+build — a C wrapper says nothing about a C++ project's CMake or about
+Oniguruma's configure — and trying it means changing a machine somebody else is
+using, which is its operator's call. What it changes is the question B-320 is
+answering: not *is this possible* but *are we willing to require a toolchain at
+build time*.
 
 ### Version 20 — what a hub says when something is gone
 
