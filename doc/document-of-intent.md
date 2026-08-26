@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 38 |
+| **Version** | 39 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1177,6 +1177,62 @@ to. Or a decision that MCF may make an unrequested request — which would be a
 change to §3.2 rather than to this entry.
 
 [findings.md]: findings.md
+
+### D35 — Three privileged operations, one of them a read, and a list of things MCF declines to do to a machine *(answers §7.39)*
+
+§6.32 asks for an enumerable, auditable, short list. [findings.md](findings.md)
+F15 asked a machine what it actually permits, and the list falls into three
+parts.
+
+**What MCF does itself, because it needs nothing.** Pin its own processes to
+cores; bound its own memory through the cgroup the platform already delegates to
+the user; read temperatures; read per-process accelerator occupancy for PR5's
+contention snapshot. None of this is privileged on the machine F15 measured, and
+where a platform makes one of them privileged the capability degrades and says
+so (A5) rather than reaching for a helper.
+
+**What a helper does, and it is three things.**
+
+1. **Set the CPU frequency governor, and put it back.** §6.39's ladder and
+   §3.25's environment control; A27 makes the restoration part of the operation
+   rather than a courtesy, and the ledger that survives a kill (B-220) is what
+   makes that keepable.
+2. **Take and release an accelerator's exclusive compute mode.** D8's exclusive
+   laboratory, on hardware whose vendor tool makes this root-only.
+3. **Read the processor's energy counter.** The awkward one §7.39 anticipated: a
+   *read* that needs elevation. D11 makes energy first-class and this
+   distribution made `intel-rapl` root-readable after the counters were shown to
+   leak what a machine is doing. Without it there is no energy-per-token figure
+   on a processor at all.
+
+Each is one named operation with fixed arguments, performed by a separate
+executable that exits, with the daemon holding no ambient privilege (§6.32,
+B-190). A helper that cannot be installed is not a failure: the capability that
+needed it is absent and marked absent (A5, A7), which is the shape §6.39 already
+has for a ladder whose rungs a platform does not offer.
+
+**What MCF declines to do at all, and why that is a decision rather than an
+omission.** Disable simultaneous multithreading, take cores offline, set IRQ
+affinity, drop the page cache, or run its own work at real-time priority. Every
+one of them is available to root on the machine F15 measured, and every one
+changes the machine *for everybody using it* — a shared workstation's other
+tenants did not agree to a laboratory. §3.25 bounds environment control to what
+is proportionate and reversible, and A27 requires MCF put back what it changed;
+a real-time process that hangs a machine cannot be put back by a process that is
+no longer scheduled. These become **conditions MCF records** (§3.4) rather than
+knobs MCF turns: a measurement taken with SMT on says so.
+
+**Why *reconsider rather than grant* is what §6.32 gets here.** The list is
+three operations rather than a capability set, and two of them are reversible
+state on hardware MCF is using. If a fourth is proposed, F15's method is how it
+is argued: measure what the platform actually requires, and ask whether the
+figure it buys is worth an operation nobody can audit at a glance.
+
+**Per platform, because the answer is.** F15 measured one Linux distribution.
+Another distribution, a machine without systemd, a container with no writable
+`/sys`, macOS and Windows are each their own column, and B-190's helper carries
+the table rather than assuming this one. A platform MCF has not measured is
+*unknown* rather than *the same* (A7).
 
 ### D34 — Every program writes to the record directly, and carries a token so its identifiers name one thing *(answers §7.37)*
 
@@ -3850,18 +3906,21 @@ should not, since the local weights are unchanged, but the provenance chain now
 points at something that no longer exists and that must be recorded rather than
 quietly tolerated.
 
-### 7.39 Which operations actually require elevation, on which platforms
+### 7.39 Which operations actually require elevation, on which platforms *(answered by D35)*
 
 §6.32 requires the privileged surface be an enumerable, auditable, short list.
-The list does not exist. Reading power and thermal counters, setting a
+The list did not exist. Reading power and thermal counters, setting a
 performance governor, requesting exclusive accelerator access, locking pages,
 pinning cores and raising scheduling priority each require different rights on
 different platforms, and some require none at all.
 
-Riding on it: whether a helper that turns out to need broad rights for a narrow
-job should be granted them or the capability abandoned. §6.32's answer is
-reconsider rather than grant, and that answer costs measurements MCF would
-otherwise take.
+**Answered by D35**, from a machine rather than from documentation
+([findings.md](findings.md) F15): four of those need nothing, three are what a
+helper is for — governor, exclusive accelerator mode, and the processor's energy
+counter — and five more are declined outright because they change a machine for
+everybody using it. The riding question is answered the way §6.32 asks:
+reconsider rather than grant, and the things that would have needed broad rights
+became recorded conditions instead.
 
 ### 7.40 What makes two machines alike
 
@@ -4062,6 +4121,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.4 | Engine ownership | §VI, §VII, §IV | **D32** — delegate the kernels, own the wrapper; measured in [findings.md](findings.md) F8 |
 | §7.11 | Offline and degraded-network operation | §3.2, §V | **D33** — offline is the ordinary case; MCF reports what it observed, never which layer is missing; measured in [findings.md](findings.md) F10 |
 | §7.37 | Who writes to the record | §3.1, D6 | **D34** — everybody writes; the identifier carries the writer; measured in [findings.md](findings.md) F13 |
+| §7.39 | Which operations require elevation | §6.32, §XVII | **D35** — three privileged operations, one of them a read; five declined; measured in [findings.md](findings.md) F15 |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -4096,6 +4156,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 39 — three privileged operations, and five MCF declines
+
+D35 added, closing §7.39. The void asked which operations actually require
+elevation; the answer was taken from a machine rather than from documentation
+([findings.md](findings.md) F15), without changing anything on it.
+
+Four things MCF wants need no privilege at all — pinning cores, bounding its own
+memory through the cgroup the platform already delegates, reading temperatures,
+and reading per-process accelerator occupancy. Three are what a helper is for:
+the CPU governor, an accelerator's exclusive mode, and the processor's energy
+counter, which is a *read* that needs elevation and which D11 makes first-class.
+
+Five more are declined outright — disabling SMT, offlining cores, IRQ affinity,
+dropping the page cache, real-time scheduling — because each changes the machine
+for everybody using it, and §3.25 bounds environment control to what is
+proportionate and reversible. They become conditions MCF records rather than
+knobs MCF turns.
+
+The list is per platform, because the answer is: a platform MCF has not measured
+is unknown rather than the same.
 
 ### Version 38 — everybody writes to the record, and says who they are
 

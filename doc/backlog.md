@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 110 |
+| **Version** | 111 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -75,7 +75,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-049 | What protects the record from loss | §7.49 | §II, D6 | M0 | **resolved** — D20: rebuildable index over an append-only journal |
 | DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | **resolved** — D29: all platforms, Linux first; three states as D25 gives a device; per-platform artifacts, since the target triple is already a §3.4 condition |
-| DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
+| DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | **decided** — D35, from a machine rather than from documentation ([findings.md](findings.md) F15, `prototypes/elevation/measure.sh`, which changes nothing). Four things MCF wants need no privilege: pinning its own processes to cores, bounding its own memory through the cgroup the platform already delegates, reading temperatures, and reading per-process accelerator occupancy. Three are what a helper is for: the CPU frequency governor, an accelerator's exclusive compute mode, and the processor's energy counter — a *read* that needs elevation, which is the awkward case §7.39 anticipated and which D11 makes first-class. Five are declined outright — SMT, core offlining, IRQ affinity, dropping the page cache, real-time scheduling — because each changes the machine for everybody using it, and they become recorded conditions rather than knobs MCF turns. Per platform, because the answer is |
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | **decided** — D34: everybody writes, nobody arbitrates, and an identifier carries the writer that minted it. [findings.md](findings.md) F13 measured that concurrent appends of whole lines do not tear — eight processes, sixteen thousand lines, two filesystems, none torn — so the question was never coordination. It was naming: each writer counted its own appends from zero, so two programs recording the same kind of event in the same second produced one identifier for two events. A writer token — the process, the moment the writer was made, and a count of the writers made in that process — makes that impossible without any coordination at all. A write that fails is classified and returned, never retried silently and never dropped. The single-writer alternative is priced in D34: a running daemon for every command, to buy an ordering the record already has |
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
@@ -134,7 +134,7 @@ first and importance second.
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | **in progress** — `scripts/check-from-scratch.sh` behind `scripts/ci.sh --with-from-scratch`: a statically linked `x86_64-unknown-linux-musl` artifact in an image holding it and nothing else — no libc, no shell, no package manager, no `/etc`, no `/tmp` — running `--version`, `licence` and the whole of `doctor`, laboratory included. What it lacks it reports: the accelerator comes back *attempted, uncharacterized* because the vendor library is not there (D25, A5). The first token needs a model artifact (B-019), and the other platforms D29 names need a machine to run on |
-| B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | blocked (DEC-039) |
+| B-190 | Privileged helper: a separate, auditable executable performing one named operation from a short list and exiting; the daemon holds no ambient privilege | A26, §6.32, §XVII | The daemon runs unprivileged in every scenario; the helper's surface is enumerated | open — unblocked by D35, which enumerates the surface: three operations, each one named call with fixed arguments in an executable that exits, and the daemon holding nothing. What remains is building it, and the per-platform table for machines [findings.md](findings.md) F15 did not measure |
 | B-180 | Untrusted code cannot reach an elevated path, asserted by scenario rather than by policy | A26, §6.20, §6.4 | An adversarial model and hostile repository code both fail to touch a privileged operation | open |
 | B-220 | Environment restoration: a scenario kills MCF mid-run at every stage and asserts governors, priorities, exclusive modes and suspended processes are all restored | A27, §3.25, §6.39 | The machine is returned to how it was found from every interruption point | **in progress** — `mcf_record::restore`: a ledger written *before* the change and recovered on next open, so a killed process leaves a machine the next run puts back; two laboratory scenarios and seven tests, interrupting at each stage. The four things B-220 names — governors, priorities, exclusive modes, suspensions — do not exist to be interrupted yet (§6.39, DEC-041, DEC-042), so the item stays open until they do |
 | B-221 | Corpus-sourced values and locally-measured values are distinct types; only the second can back a recommendation | B43, B34, §6.38 | A foreign number cannot reach a recommendation, enforced by the compiler | **done** — `mcf_core::origin`: `LocallyMeasured<T>` and `FromCorpus<T>` are unrelated types with no conversion either way; a corpus value cannot be built without the sample count B44 requires, and neither reads like the other on a surface |
@@ -368,6 +368,30 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 111 — what a machine actually makes you ask for
+
+DEC-039 decided. §6.32 has wanted the privileged surface enumerated since it was
+written, and §7.39 recorded that nobody had done it; documentation cannot,
+because the answer differs by kernel, distribution and how a machine was set up.
+So a probe asked one — reading, and testing permission the way `open` does,
+without changing a thing.
+
+The answers were not the expected ones. Pinning cores and bounding memory need
+no privilege at all, because cgroup v2 delegates them to the user's own slice.
+Per-process accelerator occupancy is readable, so PR5's contention snapshot is
+unprivileged. But *reading processor energy* is not — the counters were made
+root-only after they were shown to leak what a machine is doing — and D11 makes
+energy first-class, so a helper has to exist for a read.
+
+The probe also got its own first row wrong in a useful way: `nice -n -5 true`
+exits zero having failed, because the shell reports the command's status rather
+than whether the priority was applied. Asking the child what it actually ran at
+reverses the answer. A declaration is not an observation, at the level of a
+shell script.
+
+D35 has the list and the five things MCF declines to do to a machine at all.
+B-190 is unblocked.
 
 ### Version 110 — the terms, where the model is
 
