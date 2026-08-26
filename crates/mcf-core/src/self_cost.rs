@@ -260,6 +260,26 @@ pub const COLD_START: Budget<Duration<Monotonic>> = Budget {
     kind: Kind::CeilingOnEvent,
 };
 
+/// D24's figure for the latency MCF interposes between a request arriving and
+/// the engine being asked (B-035, §VII, §3.13).
+///
+/// Event-class, and D24 names the statistic itself: *tail, not mean — the tail
+/// is what a user feels*.
+///
+/// **What can honestly be read against it today is the control plane's half.**
+/// There is no engine (B-320), so the second half of the round trip — hand the
+/// request to a runtime, wait for its first token — does not exist to be
+/// measured. What does exist is everything MCF does on either side of that
+/// hand-off, and that is what `mcf_serve::cost` measures. A21's habit applies
+/// to a figure as much as to a claim: the reading is named for what it is, and
+/// the part that is missing is named too rather than being quietly counted as
+/// zero.
+pub const ADDED_LATENCY: Budget<Duration<Monotonic>> = Budget {
+    name: "added latency, request to the engine's first token",
+    ceiling: Duration::from_nanos(5_000_000),
+    kind: Kind::CeilingOnEvent,
+};
+
 /// D24's figure for the cost of writing one record.
 pub const RECORD_WRITE: Budget<Duration<Monotonic>> = Budget {
     name: "record write, per event",

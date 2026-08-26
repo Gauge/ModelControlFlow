@@ -55,7 +55,7 @@ use mcf_core::build_identity::BuildIdentity;
 use mcf_core::hardware::{Attributability, Machine, Watch};
 use mcf_core::measurement::{Bytes, ConditionValue, Conditions, Floor, Measurement, Quantity};
 use mcf_core::self_cost::{
-    self, Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, RESIDENT_IDLE, Verdict,
+    self, ADDED_LATENCY, Budget, COLD_START, CORE_BINARY, EVENT_TRIALS, RESIDENT_IDLE, Verdict,
 };
 use mcf_core::time::{Duration, Monotonic};
 
@@ -235,6 +235,141 @@ fn cold_start_is_within_its_ceiling() {
              as incomparable",
         ),
     );
+}
+
+/// D24's added-latency figure, as far as it can honestly be read today
+/// (B-035).
+///
+/// **What is measured.** A real `mcf serve` process on a machine of its own,
+/// asked a hundred questions over its control socket from outside — which is
+/// what an operator's client does, across a process boundary, through the same
+/// parser and the same writer.
+///
+/// **What is not, and why that is said rather than assumed.** There is no
+/// engine (B-320), so the half of D24's figure that waits for a first token
+/// does not exist. `mcf_serve::cost` names every omission and this prints them
+/// beside the reading: a number compared against a ceiling without them would
+/// be claiming to be the whole of what D24 named (A21, §3.4). When B-032 gives
+/// the daemon something to dispatch to, the rest of the figure arrives here.
+#[test]
+#[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
+fn the_latency_mcf_interposes_is_within_its_ceiling() {
+    let machine = Machine::read();
+    let quarters = Quarters::new("interposed");
+    let Some(mut daemon) = quarters.serve() else {
+        judge(&ADDED_LATENCY, Verdict::NotMeasured, "no daemon started");
+        return;
+    };
+
+    let watch = Watch::start();
+    let conditions = conditions(&machine, &Attributability::Unknown);
+    let measured = mcf_serve::cost::interposed(&quarters.socket(), EVENT_TRIALS, conditions);
+    let attributable = watch.finish();
+    let stopped = quarters.stop();
+    let _reaped = daemon.wait();
+
+    let Some(measured) = measured else {
+        judge(
+            &ADDED_LATENCY,
+            Verdict::NotMeasured,
+            "the daemon did not answer",
+        );
+        assert!(stopped, "the daemon under measurement would not stop");
+        return;
+    };
+
+    let spread = measured.round_trip.spread();
+    judge(
+        &ADDED_LATENCY,
+        ADDED_LATENCY.read_measurement(&measured.round_trip, &attributable),
+        &format!(
+            "p99 {} (median {}, n={})",
+            ADDED_LATENCY.statistic(&measured.round_trip),
+            spread.median,
+            measured.round_trip.n()
+        ),
+    );
+    for missing in &measured.excludes {
+        println!("    this reading excludes {missing}");
+    }
+    against_baseline(
+        ADDED_LATENCY.name,
+        i64::try_from(ADDED_LATENCY.statistic(&measured.round_trip).as_nanos()).unwrap_or(i64::MAX),
+        "ns",
+        measured.round_trip.conditions(),
+        &Judgement::NotJudged(
+            "the same reason the cold start is not judged against its baseline: a p99 over a \
+             hundred trials moves with the tail rather than with the code. The ceiling judges \
+             this figure; the baseline records it. It is also half a figure until there is an \
+             engine (B-320), and a tolerance on half a figure would be a tolerance on which \
+             half",
+        ),
+    );
+    assert!(stopped, "the daemon under measurement would not stop");
+}
+
+/// A machine of its own for a daemon to run on, and the two things a
+/// measurement needs from it: somewhere to listen, and a way to stop.
+struct Quarters(PathBuf);
+
+impl Quarters {
+    fn new(name: &str) -> Self {
+        let root = std::env::temp_dir().join(format!("mcf-budget-{name}-{}", std::process::id()));
+        let _removed = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("a place for the daemon to live");
+        Self(root)
+    }
+
+    fn socket(&self) -> PathBuf {
+        self.0.join("mcf").join("control.sock")
+    }
+
+    /// Starts the shipped binary as a daemon, and waits for it to be reachable.
+    ///
+    /// Waits rather than sleeps a fixed time: a cold start is its own D24
+    /// figure and this measurement is not about it, so what is wanted is *the
+    /// moment it is answering*, whenever that is.
+    fn serve(&self) -> Option<std::process::Child> {
+        let mut command = std::process::Command::new(binary());
+        command.arg("serve");
+        command.env("XDG_DATA_HOME", &self.0);
+        command.env("XDG_RUNTIME_DIR", &self.0);
+        command.env_remove("HOME");
+        let child = command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+
+        for _ in 0..200 {
+            if std::os::unix::net::UnixStream::connect(self.socket()).is_ok() {
+                return Some(child);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        None
+    }
+
+    fn stop(&self) -> bool {
+        use std::io::{BufRead as _, BufReader, Write as _};
+        let Ok(mut connection) = std::os::unix::net::UnixStream::connect(self.socket()) else {
+            return false;
+        };
+        let request = mcf_serve::control::Request::Stop {
+            reason: "the budget tier is finished with it".to_owned(),
+        };
+        if writeln!(connection, "{}", request.to_line()).is_err() {
+            return false;
+        }
+        let mut answer = String::new();
+        BufReader::new(&connection).read_line(&mut answer).is_ok()
+    }
+}
+
+impl Drop for Quarters {
+    fn drop(&mut self) {
+        let _removed = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// The tier says what it measured under, always. B20 requires a performance

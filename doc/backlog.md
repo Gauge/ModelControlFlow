@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 107 |
+| **Version** | 108 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -181,7 +181,7 @@ first and importance second.
 | B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | open — unblocked by D32; needs an engine admitted (B-320) and the daemon (B-030) |
 | B-033 | Supervision contract: a runtime that dies mid-token is a classified, attributed failure that does not take the manager down | §3.1, §7.1 | The lab kills a runtime at every stage — pre-load, mid-load, mid-token, post-token — and the daemon stays coherent | blocked (DEC-001) |
 | B-034 | Serving API: models addressed by name, stable surface, first token without the user knowing about runtimes, formats or flags | §VI, §3.15 | A first token is obtained from a named model in one command, on a machine that has never served before | blocked (DEC-001) |
-| B-035 | Added-latency budget: the overhead MCF interposes between an inbound request and the engine's first token is measured and asserted | §VII, §3.13 | The interposed latency is measured under stated conditions and defended in CI | open |
+| B-035 | Added-latency budget: the overhead MCF interposes between an inbound request and the engine's first token is measured and asserted | §VII, §3.13 | The interposed latency is measured under stated conditions and defended in CI | **in progress** — the half that exists is measured and defended. `mcf_serve::cost::interposed` starts nothing and asks a running daemon a hundred questions across a real process boundary, timing from the write of the request to the read of the answer; the budget tier reads it against D24's 5 ms at p99 (`mcf_core::self_cost::ADDED_LATENCY`) with a baseline beside it. The other half of D24's figure — hand the request to a runtime, wait for its first token — does not exist to be measured, so the reading **names what it excludes** and the tier prints those lines beside the number: a figure compared against a ceiling without them would be claiming to be the whole of what D24 named (A21, §3.4). It arrives whole with B-032 |
 | B-036 | Local-only by default: the control plane binds locally; network exposure is an explicit, informed, revocable act, never a side effect | §6.12, §3.10 | Default configuration is unreachable from another host; exposure requires an explicit authorization that is recorded | **in progress** — local by construction rather than by configuration: the control plane is a Unix socket under `$XDG_RUNTIME_DIR`, and there is no bind address, no port and no flag, so exposure is not something a mistake can do because it is not something MCF can do. What remains is the *deliberate* half — what exposing it would take, and what records it — which needs §XI's remote surface and DEC-017 |
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is visible with its source | §3.15, §6.14 | Every default is enumerable with its origin; changing one is recorded | **in progress** — `mcf explain <model>` shows three columns and says which each line is: what the *file declares* (A21 — read, never believed), what *MCF read from the bytes* (the size, the digest, the tensor types, the provenance beside it), and what *MCF would choose* (engine, sampler, seed, budget, planning context, placement) with where each is written down so a reader can go and disagree. It ends with the questions MCF has no basis to answer — which quantization, how fast, what it is good at — each with the reason and the milestone that earns it, because a defaults screen listing only what MCF chose would imply a basis for choosing (§6.5, C7). What remains is the half that needs an engine: quantization and placement are not chosen because there is nothing to choose between, and *changing* a default is not yet a thing that can be done or recorded |
@@ -368,6 +368,21 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 108 — what MCF interposes, as far as it goes
+
+B-035's figure is D24's *added latency, request to the engine's first token*,
+and half of it cannot be measured: there is no engine. The half that can be is
+now measured and defended — a real `mcf serve` process, asked a hundred
+questions from outside, timed from the write of the request to the read of the
+answer, read against the 5 ms ceiling at p99 the way D27 says an event-class
+figure is read.
+
+What makes it honest rather than flattering is that the reading carries what it
+leaves out, and the tier prints those lines beside the number: the engine's own
+latency and the hand-off to it, model residency, and a network hop. A number
+compared against D24's ceiling without them would be claiming to be the whole of
+the thing D24 named.
 
 ### Version 107 — everybody writes, and says who they are
 
