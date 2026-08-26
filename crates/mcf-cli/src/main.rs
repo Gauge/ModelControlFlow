@@ -11,6 +11,7 @@
 //! the record.
 
 mod doctor;
+mod explain;
 mod licence;
 mod models;
 mod pull;
@@ -66,6 +67,11 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Say what a model declares and what MCF would do with it.
+    Explain {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+    },
     /// Ask a model something, with MCF's own engine.
     Run {
         /// The model: a path, or something `mcf list` names.
@@ -179,6 +185,15 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["serve"] => Request::Serve,
         ["serve", argument, ..] => Request::UnexpectedArgument {
             command: "serve",
+            argument,
+        },
+        ["explain", model] => Request::Explain { model },
+        ["explain"] => Request::MissingArgument {
+            command: "explain",
+            needs: "<model>",
+        },
+        ["explain", _, argument, ..] => Request::UnexpectedArgument {
+            command: "explain",
             argument,
         },
         ["run", rest @ ..] => match run_options(rest) {
@@ -486,6 +501,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf explain <model>                 what it declares, what MCF read,\n\
+                 \x20                                     what MCF would choose, and what\n\
+                 \x20                                     it cannot tell you\n\
                  \x20 mcf status                          ask a running daemon what it is\n\
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -522,6 +540,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             offered,
         } => pull::run(reference, *from, *offered),
         Request::Serve => serve::run(),
+        Request::Explain { model } => explain::run(model),
         Request::Run {
             model,
             prompt,
@@ -610,6 +629,7 @@ mod tests {
         assert!(text.contains("mcf stop"), "{text}");
         assert!(text.contains("mcf status"), "{text}");
         assert!(text.contains("mcf run"), "{text}");
+        assert!(text.contains("mcf explain"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         for unbuilt in ["mcf bench", "mcf lab"] {
             assert!(

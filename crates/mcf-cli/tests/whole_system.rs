@@ -1117,6 +1117,30 @@ fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
     assert!(text(&by_path).contains("no"), "{}", text(&by_path));
 }
 
+/// What MCF chose is visible with its source, and what it cannot say is said
+/// (B-038, §3.15, §6.5).
+#[test]
+fn a_models_defaults_are_visible_with_their_sources() {
+    let machine = Machine::new("explain");
+    let model = machine.0.join("mcf/models/owner/model/model.gguf");
+    std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let explained = machine.run(&["explain", "owner/model:model.gguf"]);
+    assert!(explained.status.success(), "{}", error_text(&explained));
+    let said = text(&explained);
+
+    // Three columns, each saying which kind of thing it is.
+    assert!(said.contains("WHAT THE FILE DECLARES"), "{said}");
+    assert!(said.contains("WHAT MCF READ FROM THE BYTES"), "{said}");
+    assert!(said.contains("WHAT MCF WOULD CHOOSE"), "{said}");
+    // A model with no provenance beside it says so rather than leaving a blank.
+    assert!(said.contains("nothing beside it says"), "{said}");
+    // And the questions MCF has no basis to answer are named as unanswered.
+    assert!(said.contains("WHAT MCF CANNOT TELL YOU"), "{said}");
+    assert!(said.contains("Which quantization should I run?"), "{said}");
+}
+
 /// A run of a model that is not one is refused legibly, and says why MCF's own
 /// reader is strict.
 #[test]
