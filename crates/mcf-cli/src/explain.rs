@@ -128,17 +128,57 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
     lines.push(String::new());
     lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (§3.15: no hidden choices)".to_owned());
     for (what, value, source) in chosen() {
-        lines.push(format!("  {what:<38}{value:<22}{source}"));
+        // Three columns with the last one wrapped under itself. A space after
+        // the value rather than a wider column: a value that exactly filled the
+        // width used to run into its source with nothing between them, and
+        // widening only moves where that happens.
+        let mut under = wrapped(source, 56).into_iter();
+        lines.push(format!(
+            "  {what:<38}{value:<22} {}",
+            under.next().unwrap_or_default()
+        ));
+        for line in under {
+            lines.push(format!("  {:<38}{:<22} {line}", "", ""));
+        }
     }
 
     lines.push(String::new());
     lines.push("WHAT MCF CANNOT TELL YOU, AND WHY".to_owned());
     for (question, why) in unanswered() {
         lines.push(format!("  {question}"));
-        lines.push(format!("    {why}"));
+        // Wrapped, because the rest of this report is: a paragraph that runs
+        // past a terminal's width is one somebody stops reading, and what is
+        // in these is the honest half of a defaults screen (C7).
+        for line in wrapped(why, 88) {
+            lines.push(format!("    {line}"));
+        }
     }
 
     lines.join("\n")
+}
+
+/// Breaks a paragraph at word boundaries, at most `width` characters a line.
+///
+/// Counted in characters rather than bytes: these sentences contain § and — ,
+/// and a wrap that counted bytes would break lines short for no reason a reader
+/// could see.
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let would_be = line.chars().count() + 1 + word.chars().count();
+        if !line.is_empty() && would_be > width {
+            lines.push(core::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
 }
 
 /// What the file says about itself, in the order a reader wants it.

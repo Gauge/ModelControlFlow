@@ -36,6 +36,34 @@ fn an_explanation_separates_declared_read_and_chosen() {
     let _cleared = std::fs::remove_dir_all(&scratch);
 }
 
+/// Nothing in the report runs two columns together, and nothing runs past a
+/// terminal.
+///
+/// The value column used to be exactly as wide as its widest value, so that one
+/// row read `32 unless --limit saystokens rather than seconds` — two columns
+/// with nothing between them. A report a reader has to decode is one they stop
+/// reading (D7).
+#[test]
+fn the_columns_do_not_collide_and_the_lines_do_not_run_off() {
+    let scratch = std::env::temp_dir().join(format!("mcf-explain-columns-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let model = scratch.join("model.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let said = run(model.to_str().unwrap_or_default()).text;
+    for line in said.lines() {
+        assert!(
+            line.chars().count() <= 120,
+            "a line runs past any terminal ({} characters): {line}",
+            line.chars().count()
+        );
+    }
+    // The row that used to collide, with the space that keeps it apart.
+    assert!(said.contains("says tokens rather than seconds"), "{said}");
+
+    let _cleared = std::fs::remove_dir_all(&scratch);
+}
+
 /// The terms are shown where somebody decides whether to run it (§III, B-023),
 /// and an artifact nothing accounts for says its terms are unknown rather than
 /// leaving the line out — an absent line reads as *no restrictions* (A7).
