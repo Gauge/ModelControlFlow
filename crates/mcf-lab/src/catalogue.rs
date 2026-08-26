@@ -23,6 +23,7 @@ mod environment;
 mod exchange;
 mod hub;
 mod record;
+mod serve;
 mod store;
 mod time;
 
@@ -60,6 +61,7 @@ pub const CATALOGUE: &[Scenario] = &[
     record::TORN_LAST_LINE,
     record::CORRUPT_LINE,
     record::HEADERLESS,
+    serve::TWO_DAEMONS,
     store::AUTHORIZATION_IS_STALE,
     store::SHELF_WILL_NOT_EMPTY,
     time::BACKWARD_STEP,

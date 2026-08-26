@@ -49,6 +49,13 @@ const DECLARED: &[Deletes] = &[
                when they turn out to be a mixture of two files (B-021)",
     },
     Deletes {
+        file: "crates/mcf-serve/src/daemon.rs",
+        calls: 2,
+        what: "the daemon's own control socket — one left behind by a process that died, \
+               and its own on the way out. A socket is a name the kernel gave this process, \
+               not something anybody's model is in (A27, B-030)",
+    },
+    Deletes {
         file: "crates/mcf-lab/src/world.rs",
         calls: 3,
         what: "a laboratory scratch directory this process made, and the leavings of \

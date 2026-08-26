@@ -56,18 +56,29 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core", "mcf-record"],
     },
     Member {
-        name: "mcf-lab",
-        path: "crates/mcf-lab",
-        // `mcf-standin` and `mcf-hub` because A13 requires a scenario for
-        // every category MCF's code constructs, and the model-file reader and
-        // the reference parser construct four between them: a scenario that
-        // produced them by hand would be a scenario about a mock (D26).
-        depends_on: &["mcf-core", "mcf-hub", "mcf-record", "mcf-standin"],
-    },
-    Member {
         name: "mcf-serve",
         path: "crates/mcf-serve",
-        depends_on: &["mcf-core", "mcf-record"],
+        // `mcf-hub` because a daemon is asked what models this machine is
+        // holding, and what is held is the store's answer rather than a second
+        // reader that could disagree with it (B-030, §VI).
+        depends_on: &["mcf-core", "mcf-record", "mcf-hub"],
+    },
+    Member {
+        name: "mcf-lab",
+        path: "crates/mcf-lab",
+        // `mcf-standin`, `mcf-hub` and `mcf-serve` because A13 requires a
+        // scenario for every category MCF's code constructs, and a scenario
+        // that produced one by hand would be a scenario about a mock (D26).
+        // That is why the laboratory sits above everything it reproduces
+        // failures for, and why this list grows when a new crate starts
+        // classifying something.
+        depends_on: &[
+            "mcf-core",
+            "mcf-hub",
+            "mcf-record",
+            "mcf-serve",
+            "mcf-standin",
+        ],
     },
     Member {
         name: "mcf-bench",

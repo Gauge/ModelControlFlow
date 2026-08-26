@@ -117,6 +117,7 @@ dependencies = [
  "mcf-core",
  "mcf-hub",
  "mcf-record",
+ "mcf-serve",
  "mcf-standin",
 ]
 
@@ -146,6 +147,7 @@ name = "mcf-serve"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+ "mcf-hub",
  "mcf-record",
 ]
 

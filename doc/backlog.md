@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 93 |
+| **Version** | 94 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 199
-build items (45 done, 1 dropped, 8 in progress, 51 blocked on a decision, 95 open).** Every item cites
+build items (47 done, 1 dropped, 9 in progress, 51 blocked on a decision, 92 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -107,7 +107,7 @@ first and importance second.
 | B-001 | Rust workspace: crate split (`mcf-core`, `mcf-record`, `mcf-lab`, `mcf-hub`, `mcf-serve`, `mcf-bench`, `mcf-cli`), pinned toolchain, reproducible build | §7.19, §3.12 | `cargo build --locked` reproduces byte-identically from a clean checkout on a pinned toolchain | **done** — [build.md](build.md); toolchain pinned to 1.98.0, layering asserted by test, `scripts/check-reproducible-build.sh` compares two checkouts byte for byte |
 | B-002 | Adversarial substrate prototype: probe an accelerator, supervise a child process made to die badly, record both, measure the result against D24's budgets — the run that confirms or amends D4 | §7.19, DEC-019, D24 | Both scenarios produce a well-typed record and a measured footprint; §7.19 is amended or confirmed in writing | **done** — `prototypes/adversarial`; written up as [findings.md](findings.md) F1 and confirmed in D4. Superseded in place by B-013, B-033 and B-011, and dropped when those land |
 | B-003 | Failure type: every fallible boundary returns an error carrying a [taxonomy.md](taxonomy.md) category, an attribution and a disposition; no `unwrap`, no `panic`, no discarded `Result` in non-test code | §3.1, §3.16, A2 | CI denies the panicking constructs, and `internal.unclassified` is counted against a target of zero | **done** — `mcf_core::failure`: three axes as types, all 110 codes, cross-checked against [taxonomy.md](taxonomy.md) in both directions; ten constructs denied and demonstrated to bite with a negative control; nothing constructs `internal.unclassified` |
-| B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | **in progress** — `mcf_record::journal`: append-only, one JSON line per entry, `sync_data` per append, schema-versioned from the first write, and a replay that reports the line, offset and bytes of anything it could not read. The stated condition needs a daemon and is B-031's assertion at M2 |
+| B-004 | Record store: append-only, structured-first, machine-readable, written at events and never on a timer | §3.3, §6.9 | A running idle daemon writes zero records and performs zero timer wakeups over 60 s | **done** — `mcf_record::journal`: append-only, one JSON line per entry, `sync_data` per append, schema-versioned from the first write, and a replay that reports the line, offset and bytes of anything it could not read. The stated condition waited for a daemon to exist and is now measured: an idle daemon over sixty seconds wrote nothing and was scheduled zero times (B-031) |
 | B-005 | `Measurement<T>` type that cannot be constructed without its conditions, sample count and spread — illegal states unrepresentable rather than validated against | §3.4, §3.16 | No code path can produce a measurement value without conditions attached; enforced by the type, not a check | **done** — `mcf_core::measurement`: two samples are positional arguments so n≥2 is a property of the type; `Quantity: Ord` rules out floating point, so no NaN can enter; the §3.3 floor is a struct literal with eight `Attested` fields and no `Default` |
 | B-350 | `Estimate<T>` and `Measurement<T>` are distinct types with no conversion between them; an estimate can be *replaced* by a measurement and never promoted into one | A20, §4 | The compiler refuses to compare, average or substitute one for the other; a source check refuses a conversion added later | **done** — `mcf_core::measurement::Estimate`: unrelated types, no `From` in either direction, a band rather than a point (B46), and a basis that carries its sample count when it is the corpus (B44) |
 | B-006 | `Provenance` type that travels with an artifact by construction: repository, revision, checksum, license, retrieval time, and every transformation since | §3.6, §3.16 | An artifact handle cannot exist without provenance; unknown fields are the `Unknown` variant, never a plausible default | **done** — `mcf_core::provenance`: one constructor, a private field and no setter; every readable field is `Attested`; the upstream artifact's provenance is kept whole, so §XII's requantization chain traverses to its source or stops at a stated unknown |
@@ -175,17 +175,17 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | open |
-| B-031 | Idle discipline: no polling loops, no background timers, no always-on watchers; idle cost indistinguishable from zero | §3.13, §6.9 | Measured idle CPU and wakeups meet DEC-016's budget, asserted in CI | open |
+| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | **in progress** — `mcf_serve::daemon`, with `mcf serve` and `mcf stop` at the surface. It keeps no state a crash could lose: what it knows on start is what the record and the model store say, both read fresh, so *recovering across a restart* is a property of the disk rather than of a memory. A damaged record is recovered **and said** (B62). A second daemon on one socket is refused, because two would share one record and D20 makes the record what MCF is; a socket left by a process that died is taken over rather than mistaken for one. Nothing a client says can stop it: a request that is not one is a classified answer and the daemon stays up (A3). What remains is the lab killing it at every stage, which needs work to be killed in the middle of |
+| B-031 | Idle discipline: no polling loops, no background timers, no always-on watchers; idle cost indistinguishable from zero | §3.13, §6.9 | Measured idle CPU and wakeups meet DEC-016's budget, asserted in CI | **done** — measured rather than designed-for. The soak tier runs a real daemon for the minute D24 names, with nobody talking to it, and reads what the kernel keeps: **zero context switches and zero clock ticks of processor time**, with the record byte-for-byte unchanged. The shape is what makes it true — the daemon blocks in `accept` and has no tick, no poll and no watcher — and the tier is what makes it a claim rather than an intention |
 | B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | open — unblocked by D32; needs an engine admitted (B-320) and the daemon (B-030) |
 | B-033 | Supervision contract: a runtime that dies mid-token is a classified, attributed failure that does not take the manager down | §3.1, §7.1 | The lab kills a runtime at every stage — pre-load, mid-load, mid-token, post-token — and the daemon stays coherent | blocked (DEC-001) |
 | B-034 | Serving API: models addressed by name, stable surface, first token without the user knowing about runtimes, formats or flags | §VI, §3.15 | A first token is obtained from a named model in one command, on a machine that has never served before | blocked (DEC-001) |
 | B-035 | Added-latency budget: the overhead MCF interposes between an inbound request and the engine's first token is measured and asserted | §VII, §3.13 | The interposed latency is measured under stated conditions and defended in CI | open |
-| B-036 | Local-only by default: the control plane binds locally; network exposure is an explicit, informed, revocable act, never a side effect | §6.12, §3.10 | Default configuration is unreachable from another host; exposure requires an explicit authorization that is recorded | open |
+| B-036 | Local-only by default: the control plane binds locally; network exposure is an explicit, informed, revocable act, never a side effect | §6.12, §3.10 | Default configuration is unreachable from another host; exposure requires an explicit authorization that is recorded | **in progress** — local by construction rather than by configuration: the control plane is a Unix socket under `$XDG_RUNTIME_DIR`, and there is no bind address, no port and no flag, so exposure is not something a mistake can do because it is not something MCF can do. What remains is the *deliberate* half — what exposing it would take, and what records it — which needs §XI's remote surface and DEC-017 |
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | open |
-| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | open |
+| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking half: `mcf stop --because <why>` reaches the daemon, the daemon answers, and it says what it was told rather than dying to a signal with no account (A26). Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
 
@@ -367,6 +367,32 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 94 — the daemon, and an idle cost of zero
+
+M2's foundation. D1 settled that MCF is a process with clients attached; this is
+that process, and it cannot serve a model — there is no engine — and says so
+when asked, which is the honest shape of a daemon that exists before the thing
+it will host.
+
+Three things about it are worth stating. It keeps **no state a crash could
+lose**: what it knows on start is what the record and the model store say, read
+fresh, so recovering across a restart is a property of the disk rather than of a
+memory — and a damaged record is recovered *and said*. It is **local by
+construction**: a Unix socket with no bind address, no port and no flag, so
+exposure is not something a mistake can do because it is not something MCF can
+do. And **nothing a client says can stop it**: a request that is not one gets a
+classified answer and the daemon stays up.
+
+The part worth the most is B-031, and it is a measurement rather than a design
+note. D24 states idle cost as a prohibition — zero timer wakeups — and the soak
+tier now runs a real daemon for the minute D24 names, with nobody talking to it,
+and reads what the kernel keeps: **zero context switches, zero clock ticks of
+processor time**, and a record byte-for-byte unchanged. The shape is what makes
+it true, and the tier is what makes it a claim.
+
+B-004's stated condition closes with it: it has said *a running idle daemon
+writes zero records* since M0 and there was no daemon to measure.
 
 ### Version 93 — the plan, asked again once the model is here
 

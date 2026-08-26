@@ -6,5 +6,12 @@
 //! a runtime that will not spawn — may take MCF down. B8 keeps it bound
 //! locally until the user deliberately says otherwise.
 //!
-//! Empty at M0 beyond this statement of what it is for: M0 explicitly contains
-//! no inference. B-030 onward fill it at M2.
+//! **What is here now.** The daemon and the control plane it answers on
+//! (B-030, B-036). Not inference: MCF has no engine to drive, and a daemon that
+//! advertised serving would be claiming what it cannot do (A19). What it does
+//! is stay up, recover what it was holding across a restart, answer three
+//! questions, and cost nothing while nobody is asking — which is the part §3.13
+//! makes central, because a daemon idles far more than it works.
+
+pub mod control;
+pub mod daemon;

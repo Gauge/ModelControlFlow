@@ -14,6 +14,7 @@ mod doctor;
 mod licence;
 mod models;
 mod pull;
+mod serve;
 
 use std::process::ExitCode;
 
@@ -61,6 +62,13 @@ enum Request<'a> {
         from: Option<&'a str>,
         /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
+    },
+    /// Start the daemon and stay there.
+    Serve,
+    /// Ask a running daemon to stop.
+    Stop {
+        /// Why, which the daemon records rather than being killed silently.
+        because: Option<&'a str>,
     },
     /// What this machine is holding.
     List,
@@ -153,6 +161,23 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 command: "pull",
                 argument,
             },
+        },
+        ["serve"] => Request::Serve,
+        ["serve", argument, ..] => Request::UnexpectedArgument {
+            command: "serve",
+            argument,
+        },
+        ["stop"] => Request::Stop { because: None },
+        ["stop", "--because", reason] => Request::Stop {
+            because: Some(reason),
+        },
+        ["stop", "--because"] => Request::MissingArgument {
+            command: "stop",
+            needs: "--because <why>",
+        },
+        ["stop", argument, ..] => Request::UnexpectedArgument {
+            command: "stop",
+            argument,
         },
         ["list"] => Request::List,
         ["list", argument, ..] => Request::UnexpectedArgument {
@@ -365,6 +390,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20          [--token-from <file>]      says which variants would run\n\
                  \x20          [--token-from-env <VAR>]   here. MCF reads a credential\n\
                  \x20                                     only where you name one\n\
+                 \x20 mcf serve                           start the daemon: it stays up,\n\
+                 \x20                                     recovers what is on the disk and\n\
+                 \x20                                     costs nothing while idle\n\
+                 \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
                  \x20 mcf list                            what this machine is holding\n\
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
                  \x20            [--purge]                this previews and removes nothing\n\
@@ -397,6 +426,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             from,
             offered,
         } => pull::run(reference, *from, *offered),
+        Request::Serve => serve::run(),
+        Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::List => models::list(),
         Request::Remove {
             names,
@@ -473,8 +504,10 @@ mod tests {
         assert!(text.contains("mcf licence"), "{text}");
         assert!(text.contains("mcf list"), "{text}");
         assert!(text.contains("mcf rm"), "{text}");
+        assert!(text.contains("mcf serve"), "{text}");
+        assert!(text.contains("mcf stop"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
-        for unbuilt in ["mcf serve", "mcf bench", "mcf lab"] {
+        for unbuilt in ["mcf bench", "mcf lab"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which M0 has not built"

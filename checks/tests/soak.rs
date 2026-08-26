@@ -339,3 +339,151 @@ fn a_month_of_simulated_time_arrives_where_the_arithmetic_says() {
             .unwrap_or(0)
     );
 }
+
+/// An idle daemon costs nothing, measured rather than asserted by design
+/// (B-031, B-004, D24, §3.13).
+///
+/// D24 states two of its figures as prohibitions rather than thresholds, and
+/// this is one: **zero timer wakeups while idle**. The daemon's shape is what
+/// makes it true — it blocks in `accept` and has no tick, no poll and no
+/// watcher — and a shape is a claim until something measures it. This runs a
+/// real daemon for a minute with nobody talking to it and reads three things
+/// the kernel keeps:
+///
+/// * the processor time it used, which should be indistinguishable from none;
+/// * its context switches, voluntary and involuntary, which count the times it
+///   was scheduled at all;
+/// * the record, which must be byte-for-byte what it was — B-004's condition is
+///   *writes zero records*, and a daemon that logged a heartbeat would fail
+///   here rather than in review.
+///
+/// A minute is D24's own window. It is long, and this is the tier for long.
+#[test]
+#[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
+fn an_idle_daemon_costs_nothing_for_a_minute() {
+    use std::io::BufRead as _;
+
+    let scratch = Scratch::new("idle-daemon");
+    let journal = scratch.path().join("mcf").join("record.jsonl");
+    // A record with something in it, so that "unchanged" is a claim about a
+    // file with content rather than about an absence.
+    {
+        let mut writing = Journal::open(&journal).expect("a journal opens");
+        writing.append(&entry(0)).expect("it appends");
+    }
+
+    // The binary this workspace built, found by path rather than by
+    // `CARGO_BIN_EXE_*`: that variable exists only for a crate's own tests, and
+    // the tier this belongs to lives in the checks crate. A machine that has
+    // not built one reports that it could not measure, which is not a pass.
+    let Some(binary) = the_built_binary() else {
+        println!("no mcf binary is built; the idle claim stands unmeasured");
+        return;
+    };
+    let mut daemon = std::process::Command::new(&binary)
+        .arg("serve")
+        .env("XDG_DATA_HOME", scratch.path())
+        .env("XDG_RUNTIME_DIR", scratch.path())
+        .env_remove("HOME")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the daemon starts");
+
+    // Wait until it says it is up, so the minute is a minute of *idling*
+    // rather than of starting.
+    {
+        let stdout = daemon.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up"), "{line}");
+    }
+
+    let pid = daemon.id();
+    let before_record = std::fs::read(&journal).expect("the record is readable");
+    let before_switches = context_switches(pid);
+    std::thread::sleep(std::time::Duration::from_secs(60));
+    let after_switches = context_switches(pid);
+    let after_record = std::fs::read(&journal).expect("the record is readable");
+    let used = processor_time(pid);
+
+    let stop = std::process::Command::new(&binary)
+        .args(["stop", "--because", "the idle measurement is done"])
+        .env("XDG_DATA_HOME", scratch.path())
+        .env("XDG_RUNTIME_DIR", scratch.path())
+        .env_remove("HOME")
+        .status();
+    let _ended = daemon.wait();
+    assert!(
+        stop.is_ok_and(|status| status.success()),
+        "it would not stop"
+    );
+
+    assert_eq!(
+        before_record, after_record,
+        "the record changed while the daemon was idle: B-004's condition is that an idle \
+         daemon writes zero records"
+    );
+    match (before_switches, after_switches) {
+        (Some(before), Some(after)) => {
+            let woken = after.saturating_sub(before);
+            println!("  idle daemon: {woken} context switches over 60 s");
+            assert!(
+                woken <= 2,
+                "the daemon was scheduled {woken} times while idle, which is a timer somewhere \
+                 (D24, §3.13)"
+            );
+        }
+        _ => println!("  this platform does not publish context switches; unmeasured"),
+    }
+    match used {
+        Some(ticks) => {
+            println!("  idle daemon: {ticks} clock ticks of processor time over 60 s");
+            assert!(
+                ticks <= 2,
+                "an idle daemon used {ticks} ticks of processor time, which is work nobody \
+                 asked for"
+            );
+        }
+        None => println!("  this platform does not publish processor time; unmeasured"),
+    }
+}
+
+/// The `mcf` binary this workspace built, debug or release.
+fn the_built_binary() -> Option<std::path::PathBuf> {
+    let root = mcf_checks::workspace::root();
+    ["debug", "release"]
+        .into_iter()
+        .map(|profile| root.join("target").join(profile).join("mcf"))
+        .find(|path| path.is_file())
+}
+
+/// How many times a process has been scheduled, voluntarily or not.
+fn context_switches(pid: u32) -> Option<u64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    let mut total = 0_u64;
+    for line in status.lines() {
+        if line.starts_with("voluntary_ctxt_switches:")
+            || line.starts_with("nonvoluntary_ctxt_switches:")
+        {
+            total = total.saturating_add(line.split_whitespace().nth(1)?.parse::<u64>().ok()?);
+        }
+    }
+    Some(total)
+}
+
+/// How much processor time a process has used, in the platform's own ticks.
+fn processor_time(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // The command name can contain spaces and parentheses, so the fields after
+    // it are found from the last `)` rather than by splitting the whole line.
+    let after_name = stat.rsplit_once(american_paren())?.1;
+    let fields: Vec<&str> = after_name.split_whitespace().collect();
+    // utime and stime are the 12th and 13th fields after the state.
+    let utime: u64 = fields.get(11)?.parse().ok()?;
+    let stime: u64 = fields.get(12)?.parse().ok()?;
+    Some(utime.saturating_add(stime))
+}
+
+const fn american_paren() -> char {
+    ')'
+}

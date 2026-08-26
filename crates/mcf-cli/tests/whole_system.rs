@@ -78,6 +78,10 @@ impl Machine {
         // The whole point of the tier: the process gets a machine of its own,
         // and everything it persists lands where the test can read it.
         command.env("XDG_DATA_HOME", &self.0);
+        // Including its control socket: without this the daemon under test
+        // would listen where the *operator's* daemon listens, and a test that
+        // reaches outside its machine is not a test of one (B19).
+        command.env("XDG_RUNTIME_DIR", &self.0);
         // `default_path` falls back to $HOME when XDG_DATA_HOME is unset or
         // relative; removing it means a mistake here writes nothing to the
         // person's real record rather than quietly using it.
@@ -1009,6 +1013,68 @@ fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
         "a request went out carrying a credential: {:?}",
         serving.asked()
     );
+}
+
+/// The daemon, as processes: one starts and stays up, another asks it to stop,
+/// and it says why it stopped (B-030, B-210, D1).
+#[test]
+fn the_daemon_starts_stays_up_and_stops_when_asked() {
+    let machine = Machine::new("daemon");
+    let mut serving = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the daemon starts");
+
+    // It says it is up before it blocks, so a client knows when to connect.
+    let mut said = String::new();
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.stdout.as_mut().expect("it prints where it is");
+        let mut reader = std::io::BufReader::new(stdout);
+        for _ in 0..4 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                break;
+            }
+            said.push_str(&line);
+        }
+    }
+    assert!(said.contains("mcf is up on"), "{said}");
+    assert!(said.contains("cannot serve a model yet"), "{said}");
+    assert!(said.contains("idle costs nothing"), "{said}");
+
+    // A second daemon refuses rather than sharing the record.
+    let second = machine.run(&["serve"]);
+    assert!(!second.status.success(), "two daemons started");
+    assert!(
+        error_text(&second).contains("already listening"),
+        "{}",
+        error_text(&second)
+    );
+
+    let stopped = machine.run(&["stop", "--because", "the whole-system test is done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(
+        text(&stopped).contains("it said it is stopping"),
+        "{}",
+        text(&stopped)
+    );
+
+    let ended = serving.wait().expect("the daemon exits");
+    assert!(ended.success(), "the daemon exited badly: {ended:?}");
+}
+
+/// Asking a daemon that is not there to stop says so, and says what would start
+/// one — rather than failing with a socket error nobody can act on.
+#[test]
+fn stopping_nothing_says_so_and_says_what_would_start_one() {
+    let machine = Machine::new("stop-nothing");
+    let refused = machine.run(&["stop"]);
+    assert!(!refused.status.success());
+    let said = error_text(&refused);
+    assert!(said.contains("nothing is listening"), "{said}");
+    assert!(said.contains("mcf serve"), "{said}");
 }
 
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
