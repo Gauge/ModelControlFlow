@@ -1118,7 +1118,7 @@ fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
 }
 
 /// The record can be read back from a command, and what it could not read is
-/// said rather than skipped (B-333, A22, B62).
+/// said rather than skipped (B-363, A22, B62).
 #[test]
 fn the_record_reads_back_and_says_what_it_could_not_read() {
     let machine = Machine::new("log");

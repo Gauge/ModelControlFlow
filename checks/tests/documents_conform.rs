@@ -448,3 +448,50 @@ fn clause_citations(text: &str) -> Vec<String> {
     }
     found
 }
+
+/// Every identifier in a register is unique.
+///
+/// The one thing a register has to be. `every_identifier_citation_resolves`
+/// checks that a citation finds *something*; this checks that it finds one
+/// thing. Two rows sharing a number make every reference to it ambiguous, and
+/// the way it happens is not carelessness — it is somebody adding an item at
+/// the end of a long file and choosing a number that looked free.
+#[test]
+fn every_register_identifier_is_used_once() {
+    let backlog = documents()
+        .into_iter()
+        .find(|document| document.relative_path.ends_with("backlog.md"))
+        .expect("the backlog is one of the documents");
+
+    let mut seen: Vec<(String, usize)> = Vec::new();
+    let mut twice = Vec::new();
+    for (line, text) in backlog.prose() {
+        let trimmed = text.trim_start();
+        let Some(identifier) = trimmed.strip_prefix("| ") else {
+            continue;
+        };
+        let Some((identifier, _)) = identifier.split_once(" |") else {
+            continue;
+        };
+        // A row in one of the two registers: `| B-021 | …` or `| DEC-011 | …`.
+        if !(identifier.starts_with("B-") || identifier.starts_with("DEC-")) {
+            continue;
+        }
+        match seen.iter().find(|(already, _)| already == identifier) {
+            Some((_, first)) => twice.push(format!(
+                "{identifier} is used at line {first} and again at line {line}"
+            )),
+            None => seen.push((identifier.to_owned(), line)),
+        }
+    }
+
+    assert!(
+        seen.len() > 100,
+        "only {} identifiers were found, so this check is reading the register wrong",
+        seen.len()
+    );
+    assert!(
+        twice.is_empty(),
+        "an identifier names two items, so every citation of it is ambiguous: {twice:#?}"
+    );
+}
