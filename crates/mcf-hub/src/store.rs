@@ -76,6 +76,28 @@ impl Held {
         };
         format!("{} ({} bytes) — {origin}", self.path.display(), self.bytes)
     }
+
+    /// What its terms are, as far as anything beside it says (B-023, §III).
+    ///
+    /// §III asks that a licence be surfaced *before use*, and the place an
+    /// operator sees a model before using it is the list of what they hold. The
+    /// three states are kept apart here exactly as `mcf_hub::licence` keeps
+    /// them: an identifier MCF recognized, terms that are present and
+    /// unidentified, and nothing declared — none of which is a default (A7).
+    ///
+    /// An artifact with no readable provenance has no *stated* terms either,
+    /// and that is what it says: MCF does not go looking for a licence file to
+    /// guess from.
+    #[must_use]
+    pub fn terms(&self) -> String {
+        match &self.provenance {
+            Ok(provenance) => crate::licence::describe(provenance.licence().known()),
+            Err(None) => "licence: unknown — nothing beside it states any terms (A7)".to_owned(),
+            Err(Some(_)) => {
+                "licence: unknown — the provenance beside it could not be read".to_owned()
+            }
+        }
+    }
 }
 
 /// Where an artifact's provenance is written.

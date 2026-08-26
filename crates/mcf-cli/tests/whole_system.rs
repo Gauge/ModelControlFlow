@@ -669,11 +669,20 @@ fn a_model_is_acquired_listed_and_removed() {
         "{record}"
     );
 
-    // Listed, with where it came from.
+    // Listed, with where it came from and what its terms are — §III asks that
+    // a licence be legible *before use*, and this is where an operator sees
+    // what they hold (B-023).
     let listed = text(&machine.run(&["list"]));
     assert!(listed.contains("model.gguf"), "{listed}");
     assert!(listed.contains("owner/model"), "{listed}");
     assert!(!listed.contains("origin unknown"), "{listed}");
+    assert!(listed.contains("licence: apache-2.0"), "{listed}");
+    assert!(listed.contains("permissive"), "{listed}");
+
+    // `mcf explain` says the same sentence about the same model, and the unit
+    // test beside that surface is where it is asserted: the fixture here is
+    // four words of text rather than a readable model, because what this test
+    // is about is the transfer rather than the format.
 
     // And removed, deliberately.
     let removed = machine.run(&[

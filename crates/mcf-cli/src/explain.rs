@@ -98,12 +98,31 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
         file.tensors.len(),
         quantizations(file)
     ));
-    match store::provenance_of(path) {
-        Ok(provenance) => lines.push(format!("  {:<38}{}", "came from", provenance.origin())),
-        Err(_) => lines.push(format!(
+    if let Ok(provenance) = store::provenance_of(path) {
+        lines.push(format!("  {:<38}{}", "came from", provenance.origin()));
+        // The terms, where somebody is deciding whether to run it (§III,
+        // B-023). What MCF says about a licence is what was declared and which
+        // family the identifier puts it in — never whether a particular use is
+        // allowed, which is a legal judgement about a specific person, and a
+        // tool that guessed would be worse than one that stays quiet.
+        lines.push(format!(
+            "  {:<38}{}",
+            "terms",
+            mcf_hub::licence::describe(provenance.licence().known())
+                .trim_start_matches("licence: ")
+        ));
+    } else {
+        lines.push(format!(
             "  {:<38}{}",
             "came from", "nothing beside it says (A7)"
-        )),
+        ));
+        // Said rather than left out: an absent line reads as *no restrictions*,
+        // which is the one thing MCF must not imply about somebody else's
+        // model (A7, §III).
+        lines.push(format!(
+            "  {:<38}{}",
+            "terms", "unknown — nothing beside it states any (A7)"
+        ));
     }
 
     lines.push(String::new());
