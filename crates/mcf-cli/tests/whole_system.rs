@@ -1117,6 +1117,60 @@ fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
     assert!(text(&by_path).contains("no"), "{}", text(&by_path));
 }
 
+/// The record can be read back from a command, and what it could not read is
+/// said rather than skipped (B-333, A22, B62).
+#[test]
+fn the_record_reads_back_and_says_what_it_could_not_read() {
+    let machine = Machine::new("log");
+    seed_record(&machine, 2);
+
+    let read = machine.run(&["log"]);
+    assert!(read.status.success(), "{}", error_text(&read));
+    let said = text(&read);
+    assert!(said.contains("2 entries"), "{said}");
+    assert!(said.contains("self_cost"), "{said}");
+
+    // A kind MCF does not have is refused with the list it does, rather than
+    // silently showing nothing.
+    let wrong = machine.run(&["log", "--kind", "not_a_kind"]);
+    assert!(!wrong.status.success());
+    assert!(
+        error_text(&wrong).contains("artifact_acquired"),
+        "{}",
+        error_text(&wrong)
+    );
+
+    // A filter says what it counted, so it cannot be mistaken for the whole.
+    let filtered = text(&machine.run(&["log", "--kind", "self_cost"]));
+    assert!(filtered.contains("2 self_cost entries"), "{filtered}");
+
+    // And the record's own JSON is what a script gets.
+    let full = text(&machine.run(&["log", "--full"]));
+    assert!(full.contains("\"kind\":\"self_cost\""), "{full}");
+
+    // A crash mid-append leaves a torn last line. It is reported, and what came
+    // before it is still read.
+    {
+        use std::io::Write as _;
+        let mut torn = std::fs::OpenOptions::new()
+            .append(true)
+            .open(machine.journal())
+            .expect("the record opens");
+        torn.write_all(b"{\"id\":\"half a line").expect("it writes");
+    }
+    let damaged = machine.run(&["log"]);
+    assert!(damaged.status.success(), "{}", error_text(&damaged));
+    let said = text(&damaged);
+    assert!(
+        said.contains("2 entries"),
+        "what was whole was not read: {said}"
+    );
+    assert!(
+        said.contains("PART OF THE RECORD COULD NOT BE READ"),
+        "the log read past a torn line without saying so: {said}"
+    );
+}
+
 /// What MCF chose is visible with its source, and what it cannot say is said
 /// (B-038, §3.15, §6.5).
 #[test]
