@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 35 |
+| **Version** | 36 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1094,6 +1094,55 @@ configuration.
 only under an engine MCF cannot distribute, so it cannot run here" is a defined,
 actionable outcome and a complete discharge of §III — the same shape as "this
 needs 48 GiB and you have 24."
+
+### D33 — Offline is the ordinary case, and MCF reports what it observed rather than which layer is missing *(answers §7.11)*
+
+**Everything except acquisition works with no network at all.** `--version`,
+`licence`, `doctor` — the hardware profile, the self-cost measurement, the whole
+laboratory — `list`, `rm` and `export` need nothing but this machine. That is
+not an aspiration: B-183's from-scratch check runs them in a container with no
+network interface, no libc, no shell and no `/etc`, every time it runs. §3.2
+suggested *most of it, loudly labelled*; this states it, and the only command
+that needs a network is the one that fetches.
+
+**What MCF says when a network is needed and missing is what it saw.**
+[findings.md] F10 measured what a platform actually tells a program, and the
+deciding row is small: a name that will not resolve produces
+`ErrorKind::Uncategorized` — no error kind at all, no errno — whether this
+machine has no network, has no resolver, or asked for a name that does not
+exist. One observation, three causes, and nothing in the report distinguishes
+them.
+
+So MCF reports the observation and names the question it is not answering:
+*this machine could not turn that name into an address*, and — explicitly —
+*this does not say whether there is no network, no resolver, or no such name*.
+A7 forbids the plausible substitute, and the plausible substitute here is
+"you're offline", which is wrong exactly when somebody has a mirror they could
+have used.
+
+**The three failures that *are* distinguishable are kept apart**, because they
+are three different things to act on: a refusal means something answered and
+said no, so a path exists; no route means this machine cannot get there at all;
+and silence means MCF's own deadline ended the wait rather than the far end.
+Two of the three are asserted in the gating tier without a network, because
+`.invalid` never resolves and a closed loopback port is always refused.
+
+**§V's wrinkle — no internet is not no local network — is answered by not
+asserting it.** MCF could tell the two apart only by making requests nobody
+asked for: a second resolver, a known-good address, a ping. §3.2 refuses
+unrequested network traffic and §3.13's idle discipline refuses it again, and a
+tool that quietly probes to improve its error messages has become a tool that
+talks to the network when nobody asked. The distinction is one an operator
+draws with `--from`: pointing at a mirror is a request MCF was *told* to make,
+and its outcome — reached, refused, or unresolvable — is the same three
+observations reported the same way.
+
+**What would reopen it.** A platform that does distinguish the causes of a
+failed lookup, in which case MCF should say which it was rather than declining
+to. Or a decision that MCF may make an unrequested request — which would be a
+change to §3.2 rather than to this entry.
+
+[findings.md]: findings.md
 
 ### D32 — MCF delegates inference and owns the wrapper *(answers §7.4)*
 
@@ -3453,14 +3502,6 @@ rather than a scheduler. What remains is everything outside a lab — a download
 that would exhaust the disk mid-flight, several clients of a served model, two
 models resident at once — and §7.37's question of who writes to the record.
 
-### 7.11 Offline and degraded-network operation
-
-Local inference is frequently chosen for disconnected environments. How much of
-MCF works with no network at all? §3.2 suggests "most of it, loudly labelled,"
-but this has never been stated as an intent and deserves to be. Intent V adds a
-wrinkle: an interface reachable from other devices assumes a local network even
-when there is no internet, and those two conditions should not be conflated.
-
 ### 7.13 State, versioning, and migration
 
 MCF accumulates a catalog, a measurement history, and configuration that must
@@ -3938,6 +3979,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.51 | Asserting a budget on a used machine | B24, B35, D27 | **D30** — attributability is a property of a reading, measured as scheduling delay |
 | §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
 | §7.4 | Engine ownership | §VI, §VII, §IV | **D32** — delegate the kernels, own the wrapper; measured in [findings.md](findings.md) F8 |
+| §7.11 | Offline and degraded-network operation | §3.2, §V | **D33** — offline is the ordinary case; MCF reports what it observed, never which layer is missing; measured in [findings.md](findings.md) F10 |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -3972,6 +4014,24 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 36 — offline is the ordinary case
+
+D33 added, closing §7.11. Two halves, and the first needed no argument: the
+from-scratch container has been running everything except acquisition with no
+network at all since B-183, so *how much works offline* is a thing MCF already
+demonstrates on every scheduled run rather than a thing to decide.
+
+The second half turned on a measurement. [findings.md](findings.md) F10 asked
+what a platform tells a program when a name will not resolve, and the answer is
+*nothing useful*: no error kind, no errno, the same report whether the machine
+has no network, no resolver, or asked for a name that does not exist. MCF
+therefore says what it observed and names the question it is not answering — and
+declines to tell the two conditions §V distinguishes apart, because the only way
+to tell them apart is to make a request nobody asked for, which §3.2 forbids for
+better reasons than a nicer error message.
+
+§7.11 joins the answered table, where its number stays citable.
 
 ### Version 35 — the engine question is measured and answered
 
