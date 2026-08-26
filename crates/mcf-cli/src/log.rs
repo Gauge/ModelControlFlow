@@ -75,7 +75,7 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
         Ok(replayed) => replayed,
         Err(failure) => {
             return Response {
-                text: format!("mcf: the record could not be read\n  {failure}"),
+                text: crate::say::refusal("the record could not be read", &failure),
                 served: false,
             };
         }

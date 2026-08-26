@@ -79,15 +79,8 @@ pub(crate) fn run() -> Response {
     let mut daemon = match Daemon::start(places) {
         Ok(daemon) => daemon,
         Err(failure) => {
-            let mut lines = vec![
-                "mcf: the daemon did not start".to_owned(),
-                format!("  {failure}"),
-            ];
-            for entry in failure.context() {
-                lines.push(format!("    {}: {}", entry.key, entry.value));
-            }
             return Response {
-                text: lines.join("\n"),
+                text: crate::say::refusal("the daemon did not start", &failure),
                 served: false,
             };
         }
@@ -126,7 +119,7 @@ pub(crate) fn run() -> Response {
             served: true,
         },
         Stopped::Broken { failure } => Response {
-            text: format!("mcf: the daemon stopped because it could not go on\n  {failure}"),
+            text: crate::say::refusal("the daemon stopped because it could not go on", &failure),
             served: false,
         },
     }
