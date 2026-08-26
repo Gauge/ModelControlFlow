@@ -29,12 +29,14 @@ mod nvml;
 mod processor;
 mod route_files;
 mod scheduling;
+mod space;
 mod storage;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
 pub use load::{LoadAverage, load_average};
 pub use processor::{Memory, PowerProfile, Processor};
 pub use scheduling::{Attributability, Scheduling, TOLERATED_DELAY_PPM, Watch, scheduling};
+pub use space::{Space, on as space_on};
 pub use storage::{Storage, children_major_faults, of as storage_of};
 
 use core::fmt;

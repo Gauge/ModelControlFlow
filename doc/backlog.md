@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 91 |
+| **Version** | 92 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 199
-build items (42 done, 1 dropped, 10 in progress, 52 blocked on a decision, 95 open).** Every item cites
+build items (43 done, 1 dropped, 10 in progress, 51 blocked on a decision, 95 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -52,7 +52,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-051 | How an event-class budget is ever asserted on a machine somebody is using, and what a scheduled tier does on a CI runner that is never quiet | §7.51 | **B-011**, B38 | M0 | **resolved** — D30: attributability is a property of a *reading*, measured as the scheduling delay across it. [findings.md](findings.md) F3 has the evidence and the defect the first implementation had |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | **resolved** — D33: offline is the ordinary case (everything but acquisition runs in a container with no network at all), and what MCF says when a network is needed and missing is what it *observed* rather than which layer is absent. [findings.md](findings.md) F10 measured why: a name that will not resolve reports no error kind at all, whether the cause is no network, no resolver or no such name. The distinction §V asks about is one an operator draws with `--from`, not one MCF probes for |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
-| DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
+| DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half, and the disk half is now built rather than decided: B-026 refuses a download that would not fit, with the arithmetic, and classifies a filesystem that fills anyway (F11). What remains is genuinely M2's: several clients at once, and two resident models |
 | DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open |
 | DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
 | DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | open |
@@ -162,7 +162,7 @@ first and importance second.
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **done** — `mcf_hub::credentials` and the surface that uses it. A secret redacts itself, an origin travels with it into the record, and an `Identity` says what MCF is to a hub — anonymous, offered, or an account it confirmed. The three refusals are written once so a real hub and a simulated one say the same sentence, each naming the repository, what MCF was, and the one thing to do next. *Held deliberately* is structural: nothing reads the environment, and `checks/tests/a_credential_is_never_picked_up.rs` holds that across the workspace. At the surface, `mcf pull --token-from <file>` and `--token-from-env <VARIABLE>` are the only ways in; a repository that needs one is told which, and MCF reports what it has *looked at and not used* rather than spending it. A credential is refused rather than downgraded over a connection that cannot keep it |
 | B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | **in progress** — MCF today executes *nothing* it acquires, which is stronger than what this item will eventually claim, and `checks/tests/nothing_acquired_is_ever_run.rs` holds it while it is true: every place shipped code starts a process is declared with what it starts and why that is not an artifact — MCF starting itself to time its own start, the compiler at build time, and `dlopen` of the vendor's management library, whose two candidate names are a constant a check pins. The other half is what a model file's *contents* are: a test reads a model whose metadata is a shell command, a path traversal and a format specifier, and asserts each comes back exactly as written — neither run, nor resolved, nor interpolated. What remains is containment for an engine that *can* run a repository's own code, which arrives with the engine (B-320) |
-| B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
+| B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | **done** — both halves, because one alone would be a promise. Before a byte moves, the hub's declared size is checked against what the kernel says is available and a file that will not fit is refused with the arithmetic — needs, available, short by, and which filesystem — rather than a verdict. Where MCF cannot read the room it proceeds, because `Unknown` is not `no` (A7). And a filesystem that fills anyway is classified rather than reported as a general write failure: [findings.md](findings.md) F11 found that a buffered write to a full disk *succeeds* and the flush is where it surfaces, so a fetcher that checked one and not the other would verify a digest over bytes that never landed. `hub/no-room-on-the-disk` holds it against `/dev/full`. Nothing whole-looking is ever left behind — the artifact's name is only ever given to something verified (B-021) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
 | B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **done** — the protocol is MCF's own (`mcf_hub::http`, `wire`, `client`) and the cryptography is vendored: `rustls` with the `graviola` provider, fourteen crates compiled, eighteen present-and-stubbed, 18 MiB. The provider was chosen by measurement rather than by default — the usual one is C and cannot build for the musl target B-183's container uses, which would have made an existing check runnable in fewer places (F9.5) — and it held a real TLS 1.3 session with the hub before it was admitted (F9.6). The from-scratch check still passes: the static binary runs with no libc, no shell and no `/etc`. `scripts/vendor.sh` builds the tree and checks both targets against it; `scripts/check-vendored-terms.sh` gates on what every crate declares; [vendored.md](vendored.md) §2 records what MCF verified, including the three crates that declare terms and ship no copy (A21) |
@@ -367,6 +367,31 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 92 — a full disk, decided rather than discovered
+
+B-026 done, and it needed a measurement to be done properly. Writing to a full
+filesystem through a buffered writer *succeeds* — the buffer takes the bytes and
+`ENOSPC` arrives at the flush ([findings.md](findings.md) F11). A fetcher that
+checked its writes and ignored its flush would verify a digest over bytes that
+never reached the disk, rename a file that was never written, and record an
+acquisition that did not happen.
+
+So both halves are built. A file that will not fit is refused before a byte
+moves, with the arithmetic in the refusal rather than a verdict: what it needs,
+what is available, what it is short by, and which filesystem. That needed the
+number the standard library does not expose, so `mcf_core::hardware::space` is
+the second module in the workspace to take the `unsafe_code` opt-out — one
+`statvfs` call, checked against `df`, and `Unknown` wherever it fails, because
+*could not look* and *no room* are opposite answers.
+
+And the case the check cannot catch — another process taking the room a moment
+later — is classified rather than reported as a general write failure, with
+`/dev/full` as the scenario: a device every Linux machine has that accepts
+everything and stores nothing.
+
+DEC-009's disk half is therefore built rather than pending. What remains of it
+is M2's: several clients at once, and two resident models.
 
 ### Version 91 — offline, decided by what a machine actually says
 

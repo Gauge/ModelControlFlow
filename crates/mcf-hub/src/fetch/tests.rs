@@ -42,6 +42,11 @@ impl StandIn {
         }
     }
 
+    /// How many transfers this source was asked for.
+    fn attempts(&self) -> usize {
+        *self.attempts.borrow()
+    }
+
     fn entry(&self) -> Entry {
         Entry::new("model.gguf", self.bytes.len() as u64).declaring(sha256(&self.bytes).hex())
     }
@@ -353,4 +358,51 @@ fn the_partial_name_is_never_the_artifacts_name() {
         into.parent(),
         "it stays beside the artifact"
     );
+}
+
+/// A file larger than the filesystem is refused before a byte moves, with the
+/// arithmetic in the refusal rather than a verdict (§3.11, A6).
+#[test]
+fn a_file_larger_than_the_disk_is_refused_before_the_transfer() {
+    let scratch = Scratch::new("no-room");
+    let source = StandIn::new(b"weights", Serves::Everything);
+    // Larger than any filesystem: what the hub *declares* is what a plan is
+    // made against (A21), and this one declares more than there is.
+    let enormous = Entry::new("model.gguf", u64::MAX.wrapping_shr(1));
+
+    let failure = acquire(
+        &source,
+        &parse("owner/model").expect("a reference"),
+        &enormous,
+        &scratch.at("model.gguf"),
+    )
+    .expect_err("there is not that much room anywhere");
+
+    assert_eq!(failure.category(), Category::ResourceDiskExhausted);
+    for named in ["needs_bytes", "available_bytes", "short_by_bytes"] {
+        assert!(
+            failure.context_value(named).is_some(),
+            "the refusal does not carry {named}: an operator is owed the arithmetic"
+        );
+    }
+    assert_eq!(
+        source.attempts(),
+        0,
+        "the transfer started before the room was checked"
+    );
+}
+
+/// And a file that fits is not refused, which is the other half of the claim:
+/// the check is a bound, not an obstacle.
+#[test]
+fn a_file_that_fits_is_not_refused() {
+    let scratch = Scratch::new("room-enough");
+    let source = StandIn::new(b"weights", Serves::Everything);
+    acquire(
+        &source,
+        &parse("owner/model").expect("a reference"),
+        &source.entry(),
+        &scratch.at("model.gguf"),
+    )
+    .expect("seven bytes fit");
 }

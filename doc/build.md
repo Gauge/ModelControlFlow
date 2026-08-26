@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 22 |
+| **Version** | 23 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -174,7 +174,7 @@ loudly is the honest outcome, and `crates/mcf-core/build.rs` carries the one
 documented opt-out: a build script has no MCF failure type available to it and
 no record to write to.
 
-**One module opts out of `unsafe_code`, and it is the one D4 predicted.**
+**Two modules opt out of `unsafe_code`, and both say why at the site.**
 `crates/mcf-core/src/hardware/nvml.rs` loads the vendor's management library at
 runtime and calls it over the C ABI, because F1 established that a device's live
 state — available memory, temperature — is reachable no other way, and D25 makes
@@ -183,6 +183,18 @@ uncharacterized one. The workspace denies `unsafe_code` as a `deny` rather than
 a `forbid` precisely so that this opt-in is possible with its reason written at
 the site. Every pointer is null-checked, every status code is checked before its
 out-parameter is read, and the library is closed on every path out.
+
+The second is `crates/mcf-core/src/hardware/space.rs`, one `statvfs` call, and
+its reason is §3.11: a download that would exhaust the disk is meant to be a
+decision rather than a surprise, and a decision needs the number *before* the
+download. The standard library does not expose it. The struct is declared here
+rather than taken from a binding crate — eleven integers, named as the manual
+page names them so the layout is checkable rather than trusted — and the reading
+is `Unknown` wherever the call fails, because *could not look* and *no room* are
+opposite answers. It is checked against `df` (A12), and
+[findings.md](findings.md) F11 has the measurement that made it necessary: a
+buffered write to a full filesystem *succeeds*, and the failure arrives at the
+flush.
 
 **A signal is a claim too.** `scripts/check-fault-signal.sh` spawns one binary
 thirty times warm and thirty times with its pages evicted, and requires the
@@ -709,6 +721,13 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 23 — the second `unsafe` opt-out
+
+§4 gains it: one `statvfs` call, so that a download which would exhaust the disk
+is refused with the arithmetic rather than discovered at ninety per cent (§3.11,
+B-026). The pair now reads as the policy it is — `deny` rather than `forbid`,
+two sites, each with its reason where a reader will find it.
 
 ### Version 22 — the second figure grown on purpose
 

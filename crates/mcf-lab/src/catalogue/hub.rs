@@ -121,6 +121,56 @@ pub(super) const ANSWER_NEVER_COMES: Scenario = Scenario {
     run: answer_never_comes,
 };
 
+/// There is no room for what is arriving.
+pub(super) const NO_ROOM_ON_THE_DISK: Scenario = Scenario {
+    id: "hub/no-room-on-the-disk",
+    produces: Category::ResourceDiskExhausted,
+    summary: "a filesystem that fills mid-transfer is a decision, said as one, not a surprise",
+    run: no_room_on_the_disk,
+};
+
+/// A transfer written to a filesystem with no room at all.
+///
+/// `/dev/full` is a device every Linux machine has that accepts a connection to
+/// it and answers every write with `ENOSPC`. That is the observation — a write
+/// that will not go — and the cause a real operator would have (a disk that
+/// filled) stays out of it (D26). [findings.md](../../../doc/findings.md) F11
+/// records the part that makes this worth a scenario: with a buffered writer
+/// the *write* succeeds and the **flush** fails, so a fetcher that ignored one
+/// of the two would believe it had written the file.
+fn no_room_on_the_disk(_world: &World) -> Outcome {
+    use std::io::Write as _;
+
+    let weights = "GGUF the weights";
+    let Some(serving) = Serving::answering(BTreeMap::from([(
+        "/owner/model/resolve/abc123/model.gguf".to_owned(),
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{weights}",
+            weights.len()
+        ),
+    )])) else {
+        return Outcome::Unexpected("no loopback port is available".to_owned());
+    };
+    let Ok(full) = std::fs::OpenOptions::new().write(true).open("/dev/full") else {
+        return Outcome::Unexpected("this machine has no /dev/full to write to".to_owned());
+    };
+    let Ok(url) = mcf_hub::http::Url::parse(&format!(
+        "{}owner/model/resolve/abc123/model.gguf",
+        serving.base()
+    )) else {
+        return Outcome::Unexpected("the loopback address is a URL".to_owned());
+    };
+
+    let mut sink = std::io::BufWriter::new(full);
+    let outcome = match mcf_hub::wire::fetch(&quick_wire(), &Request::get(url), &mut sink) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a filesystem with no room accepted a file".to_owned()),
+    };
+    // Nothing to clean up: the bytes went to a device that keeps none of them.
+    let _flushed = sink.flush();
+    outcome
+}
+
 /// MCF is asked to send a credential over a wire that cannot keep one.
 pub(super) const NO_WAY_TO_ENCRYPT: Scenario = Scenario {
     id: "hub/no-way-to-encrypt",

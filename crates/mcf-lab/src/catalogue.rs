@@ -50,6 +50,7 @@ pub const CATALOGUE: &[Scenario] = &[
     hub::RESUMPTION_RESTARTED,
     hub::NO_WAY_TO_ENCRYPT,
     hub::NOT_A_TLS_HOST,
+    hub::NO_ROOM_ON_THE_DISK,
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,

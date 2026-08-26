@@ -596,13 +596,31 @@ fn stalled(what: &str, error: &std::io::Error) -> Failure {
     .with_context("reason", error.to_string())
 }
 
+/// A write that did not happen, classified by why.
+///
+/// A full filesystem is its own outcome rather than a general write failure:
+/// §3.11 makes disk exhaustion a decision, and an operator who is told *could
+/// not write* when the answer is *there is no room* looks at permissions.
+///
+/// [findings.md](../../../doc/findings.md) F11 records where it surfaces: a
+/// buffered write succeeds and the **flush** fails, so a fetcher that ignored
+/// the flush would believe it had written the file.
 fn unwritable(error: &std::io::Error) -> Failure {
+    let full = error.kind() == std::io::ErrorKind::StorageFull;
     Failure::new(
-        Category::ResourceDiskReadonly,
+        if full {
+            Category::ResourceDiskExhausted
+        } else {
+            Category::ResourceDiskReadonly
+        },
         Attribution::Machine,
         Disposition::Refused,
         WHERE,
-        "what arrived could not be written",
+        if full {
+            "the filesystem filled while the transfer was being written"
+        } else {
+            "what arrived could not be written"
+        },
     )
     .with_context("reason", error.to_string())
 }
