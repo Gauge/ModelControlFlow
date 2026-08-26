@@ -57,9 +57,12 @@ pub(crate) fn run(model: &str) -> Response {
         Err(failure) => {
             return Response {
                 text: format!(
-                    "mcf: {} is not a model file MCF can read\n  {failure}\n  MCF reads GGUF; \
-                     what a vendored engine would accept is B-320's question",
-                    path.display()
+                    "{}\n  MCF reads GGUF; what a vendored engine would accept is B-320's \
+                     question",
+                    crate::say::refusal(
+                        &format!("{} is not a model file MCF can read", path.display()),
+                        &failure
+                    )
                 ),
                 served: false,
             };

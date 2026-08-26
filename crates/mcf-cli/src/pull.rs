@@ -639,14 +639,10 @@ fn render(
     lines.join("\n")
 }
 
-/// A refusal, with the context that makes it actionable.
+/// A refusal, said the way every other command says one (`crate::say`).
 fn refused(what: &str, failure: &Failure) -> Response {
-    let mut lines = vec![format!("mcf: {what}"), format!("  {failure}")];
-    for entry in failure.context() {
-        lines.push(format!("    {}: {}", entry.key, entry.value));
-    }
     Response {
-        text: lines.join("\n"),
+        text: crate::say::refusal(what, failure),
         served: false,
     }
 }

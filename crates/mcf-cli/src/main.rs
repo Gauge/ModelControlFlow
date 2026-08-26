@@ -17,6 +17,7 @@ mod log;
 mod models;
 mod pull;
 mod run;
+mod say;
 mod serve;
 
 use std::process::ExitCode;

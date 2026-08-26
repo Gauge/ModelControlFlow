@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 104 |
+| **Version** | 105 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 105 — one way to say a refusal
+
+Five commands had grown five ways to print the same failure: `mcf pull`, `mcf
+run`, `mcf serve`, `mcf list`/`mcf rm` and `mcf log` each assembled the failure
+line and its context entries slightly differently, so that one refusal read
+differently depending on which command produced it.
+
+`Failure`'s `Display` is deliberately one line and deliberately without context
+(C1: the record keeps the structure, a surface builds the view). That is right,
+and it meant every surface rebuilt the actionable form by hand. Rebuilt once
+now, in `crates/mcf-cli/src/say.rs`, and the chain of causes is printed rather
+than dropped — the disk being full is what explains the model not arriving, and
+a reader given only the second is guessing at the first (A1).
+
+No behaviour changed except that a cause is now shown where four of the five
+renderers had silently discarded it.
 
 ### Version 104 — an identifier that was already taken
 

@@ -26,25 +26,6 @@ use mcf_record::journal::Journal;
 
 use crate::Response;
 
-/// A failure, with the context that makes it actionable.
-///
-/// `Display` on a failure is one line and deliberately does not include the
-/// context (C1: the record keeps the structure, and a surface builds what it
-/// needs from the fields). What an operator needs here is precisely that
-/// context — *which* path, *what* to do about it — so this is where it is put
-/// back together. Nothing is dropped: A1 at the surface as well as in the
-/// record.
-fn explain(failure: &mcf_core::failure::Failure) -> String {
-    let mut lines = vec![format!("  {failure}")];
-    for entry in failure.context() {
-        lines.push(format!("    {}: {}", entry.key, entry.value));
-    }
-    for cause in failure.chain().skip(1) {
-        lines.push(format!("  caused by: {cause}"));
-    }
-    lines.join("\n")
-}
-
 /// Where this machine keeps its models.
 ///
 /// `None` when neither `XDG_DATA_HOME` nor `HOME` is set, which is the same
@@ -96,7 +77,7 @@ pub(crate) fn list() -> Response {
         Err(failure) => Response {
             text: format!(
                 "mcf: the model store could not be read\n{}",
-                explain(&failure)
+                crate::say::beneath(&failure)
             ),
             served: false,
         },
@@ -159,7 +140,10 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
         Ok(plan) => plan,
         Err(failure) => {
             return Response {
-                text: format!("mcf: nothing was removed\n{}", explain(&failure)),
+                text: format!(
+                    "mcf: nothing was removed\n{}",
+                    crate::say::beneath(&failure)
+                ),
                 served: false,
             };
         }
@@ -176,7 +160,10 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
         Ok(authorization) => authorization,
         Err(failure) => {
             return Response {
-                text: format!("mcf: nothing was removed\n{}", explain(&failure)),
+                text: format!(
+                    "mcf: nothing was removed\n{}",
+                    crate::say::beneath(&failure)
+                ),
                 served: false,
             };
         }
@@ -196,7 +183,10 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
         Ok(removed) => removed,
         Err(failure) => {
             return Response {
-                text: format!("mcf: nothing was removed\n{}", explain(&failure)),
+                text: format!(
+                    "mcf: nothing was removed\n{}",
+                    crate::say::beneath(&failure)
+                ),
                 served: false,
             };
         }
@@ -217,7 +207,10 @@ pub(crate) fn remove(names: &[&str], reason: Option<&str>, purge: bool) -> Respo
                 "purged: {freed} bytes are gone and cannot be brought back"
             )),
             Err(failure) => {
-                lines.push(format!("the purge did not finish\n{}", explain(&failure)));
+                lines.push(format!(
+                    "the purge did not finish\n{}",
+                    crate::say::beneath(&failure)
+                ));
                 return Response {
                     text: lines.join("\n"),
                     served: false,
@@ -258,7 +251,7 @@ fn the_record() -> std::result::Result<(Journal, PathBuf), Response> {
             text: format!(
                 "mcf: nothing was removed — the record could not be opened, and the record goes \
                  first (A1)\n{}",
-                explain(&failure)
+                crate::say::beneath(&failure)
             ),
             served: false,
         }),

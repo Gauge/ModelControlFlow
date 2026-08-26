@@ -173,21 +173,14 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
     .replace("{prompt}", prompt)
 }
 
-/// A refusal, with the context that makes it actionable.
+/// A refusal, said the shared way, plus the sentence that is this command's
+/// own: MCF's reader is strict because there is nothing else to fall back to.
 fn refused(path: &Path, failure: &Failure) -> String {
-    let mut lines = vec![
-        format!("mcf: {} did not run", path.display()),
-        format!("  {failure}"),
-    ];
-    for entry in failure.context() {
-        lines.push(format!("    {}: {}", entry.key, entry.value));
-    }
-    lines.push(
-        "  MCF's stand-in implements one architecture and reads GGUF: a model it refuses is \
-         one a vendored engine would take, and there is no vendored engine yet (D31, B-320)"
-            .to_owned(),
-    );
-    lines.join("\n")
+    format!(
+        "{}\n  MCF's stand-in implements one architecture and reads GGUF: a model it refuses \
+         is one a vendored engine would take, and there is no vendored engine yet (D31, B-320)",
+        crate::say::refusal(&format!("{} did not run", path.display()), failure)
+    )
 }
 
 #[cfg(test)]
