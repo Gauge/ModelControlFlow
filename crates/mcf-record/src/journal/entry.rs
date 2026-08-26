@@ -36,6 +36,18 @@ pub enum EntryKind {
     /// Trials rather than results: what is recorded is what was observed, and
     /// every summary is projected from these when a question is asked.
     Trials,
+    /// The daemon started, and what it recovered when it did (B-030, D1).
+    ///
+    /// Written at the event and not on a timer (§6.9): a daemon that logged
+    /// while idle would fail B-031's measurement, and one that recorded nothing
+    /// at all would leave *MCF was up between these two moments* unanswerable —
+    /// which is a condition of anything measured in between (§3.4).
+    DaemonStarted,
+    /// The daemon stopped, and on whose word (A26).
+    ///
+    /// A process that can only be killed leaves no account of why it stopped.
+    /// This is the account: what was asked, and by what reason.
+    DaemonStopped,
     /// An artifact arrived on this machine, with everything about where it
     /// came from (B-029, §3.6).
     ///
@@ -57,11 +69,13 @@ pub enum EntryKind {
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
         Self::Trials,
+        Self::DaemonStarted,
+        Self::DaemonStopped,
         Self::ArtifactAcquired,
         Self::ArtifactRemoved,
     ];
@@ -77,6 +91,8 @@ impl EntryKind {
             Self::Failure => "failure",
             Self::SelfCost => "self_cost",
             Self::Trials => "trials",
+            Self::DaemonStarted => "daemon_started",
+            Self::DaemonStopped => "daemon_stopped",
             Self::ArtifactAcquired => "artifact_acquired",
             Self::ArtifactRemoved => "artifact_removed",
         }

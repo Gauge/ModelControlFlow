@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::time::{Clock as _, Instant, Monotonic, SystemClock, Timestamp};
+use mcf_record::journal::{Entry, EntryKind};
 use mcf_record::json::Value;
 
 use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
@@ -150,13 +151,72 @@ impl Daemon {
         let listener = UnixListener::bind(&places.socket)
             .map_err(|error| unusable("the control socket", &places.socket, &error))?;
 
-        Ok(Self {
+        let started = Timestamp::now();
+        let daemon = Self {
             places,
             listener,
-            started: Timestamp::now(),
+            started,
             since: SystemClock.now(),
             recovered,
-        })
+        };
+        // An event, not a tick. *MCF was up between these two moments* is a
+        // condition of anything measured in between (§3.4), and a daemon that
+        // recorded nothing would leave it unanswerable — while one that
+        // recorded on a timer would fail B-031's measurement. A record that
+        // cannot be written does not stop the daemon: it is reported and the
+        // daemon carries on, because a machine with a full disk still wants
+        // MCF up (A4).
+        daemon.note(
+            EntryKind::DaemonStarted,
+            started,
+            daemon.recovered_as_value(),
+        );
+        Ok(daemon)
+    }
+
+    /// Writes one line to the record, or says why it could not.
+    ///
+    /// Deliberately not a `Result`: the caller is a lifecycle event rather than
+    /// a request, and a daemon that refused to start because it could not
+    /// write down that it had started would be trading a working MCF for a
+    /// tidy record (A4, A2 — said, not swallowed).
+    fn note(&self, kind: EntryKind, at: Timestamp, body: Value) {
+        let Ok(mut journal) = mcf_record::journal::Journal::open(&self.places.journal) else {
+            eprintln!(
+                "mcf: the record at {} could not be opened, so this event is unrecorded",
+                self.places.journal.display()
+            );
+            return;
+        };
+        let sequence = journal.appended();
+        if let Err(failure) = journal.append(&Entry::new(kind, at, sequence, body)) {
+            eprintln!("mcf: {kind} could not be recorded: {failure}");
+        }
+    }
+
+    /// What this daemon recovered, in the record's own shape.
+    fn recovered_as_value(&self) -> Value {
+        Value::map([
+            (
+                "socket",
+                Value::text(self.places.socket.display().to_string()),
+            ),
+            (
+                "record_entries",
+                Value::Integer(i64::try_from(self.recovered.entries).unwrap_or(i64::MAX)),
+            ),
+            (
+                "record_unreadable",
+                match &self.recovered.unreadable {
+                    Some(what) => Value::text(what.clone()),
+                    None => Value::Null,
+                },
+            ),
+            (
+                "models_held",
+                Value::Integer(i64::try_from(self.recovered.held).unwrap_or(i64::MAX)),
+            ),
+        ])
     }
 
     /// What this daemon recovered when it started.
@@ -204,6 +264,29 @@ impl Daemon {
                 }
             };
             if let Some(stopped) = self.answer_one(&connection) {
+                // A26: a stop has an account, and the account is in the record
+                // rather than only in what the client was told.
+                self.note(
+                    EntryKind::DaemonStopped,
+                    Timestamp::now(),
+                    match &stopped {
+                        Stopped::Asked { reason } => Value::map([
+                            ("how", Value::text("asked")),
+                            (
+                                "reason",
+                                if reason.is_empty() {
+                                    Value::Null
+                                } else {
+                                    Value::text(reason.clone())
+                                },
+                            ),
+                        ]),
+                        Stopped::Broken { failure } => Value::map([
+                            ("how", Value::text("broken")),
+                            ("why", mcf_record::encode::failure(failure)),
+                        ]),
+                    },
+                );
                 return stopped;
             }
         }

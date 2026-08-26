@@ -50,8 +50,10 @@ held a real session with the hub before it was let in.
 verified about each.
 
 **There is a daemon now, and it cannot serve a model.** `mcf serve` starts the
-process D1 settled MCF is: it recovers what the disk says, answers what it is
-and what it is holding, stops when asked and says why. What it cannot do is run
+process D1 settled MCF is; `mcf status` asks it what it is, what it recovered
+and what it is holding; `mcf stop --because <why>` asks it to stop and puts the
+reason in the record, because a process that can only be killed leaves no
+account of why it stopped. What it cannot do is run
 a model, because no inference engine is vendored — and it says that when asked
 rather than leaving it to be inferred. Its idle cost is measured rather than
 intended: over the minute §VII's budget names, a real daemon with nobody talking
