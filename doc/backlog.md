@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 129 |
+| **Version** | 130 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 130 — the same reason, on the other side of an acquisition
+
+`mcf pull` says why it cannot plan for a repository *before* it fetches
+anything — that was v116's fix — and after the file arrived it still said the
+generic sentence: *that needs the model's own configuration and this machine's
+free memory*. Same question, same command, two different answers depending on
+which side of the transfer you were on.
+
+It now carries the reason through: *this repository publishes no configuration,
+and a plan needs one*, which for a repository of deliberately tiny models is the
+whole truth and is actionable in a way the generic sentence is not.
 
 ### Version 129 — the check that broke the tier it was protecting
 
