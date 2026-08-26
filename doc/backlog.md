@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 100 |
+| **Version** | 101 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -183,7 +183,7 @@ first and importance second.
 | B-035 | Added-latency budget: the overhead MCF interposes between an inbound request and the engine's first token is measured and asserted | §VII, §3.13 | The interposed latency is measured under stated conditions and defended in CI | open |
 | B-036 | Local-only by default: the control plane binds locally; network exposure is an explicit, informed, revocable act, never a side effect | §6.12, §3.10 | Default configuration is unreachable from another host; exposure requires an explicit authorization that is recorded | **in progress** — local by construction rather than by configuration: the control plane is a Unix socket under `$XDG_RUNTIME_DIR`, and there is no bind address, no port and no flag, so exposure is not something a mistake can do because it is not something MCF can do. What remains is the *deliberate* half — what exposing it would take, and what records it — which needs §XI's remote surface and DEC-017 |
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
-| B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
+| B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is visible with its source | §3.15, §6.14 | Every default is enumerable with its origin; changing one is recorded | **in progress** — `mcf explain <model>` shows three columns and says which each line is: what the *file declares* (A21 — read, never believed), what *MCF read from the bytes* (the size, the digest, the tensor types, the provenance beside it), and what *MCF would choose* (engine, sampler, seed, budget, planning context, placement) with where each is written down so a reader can go and disagree. It ends with the questions MCF has no basis to answer — which quantization, how fast, what it is good at — each with the reason and the milestone that earns it, because a defaults screen listing only what MCF chose would imply a basis for choosing (§6.5, C7). What remains is the half that needs an engine: quantization and placement are not chosen because there is nothing to choose between, and *changing* a default is not yet a thing that can be done or recorded |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
 | B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking and the account. `mcf stop --because <why>` reaches the daemon, the daemon answers, and the reason goes into the record as `daemon_stopped` rather than being lost with the process (A26): a stop is now a thing that leaves a trace, which a signal never is. Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) — half of the condition is met early: the load tier exercises concurrent writers on one record and asserts the replay reports no loss (F13). What waits on the decision is *ownership* — whether there is one writer at all — and the identifier collision F13 found |
@@ -367,6 +367,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 101 — the defaults, and the questions MCF cannot answer
+
+B-038 in progress. `mcf explain <model>` puts everything MCF knows about a model
+into three columns and says which each line is: **declared** by the file,
+**read** from the bytes, or **chosen** by MCF. §3.15 forbids hidden choices and
+A21 forbids treating a declaration as a fact, so a table whose provenance a
+reader has to guess is the thing this replaces.
+
+Every chosen line names where it is written down — `crates/mcf-cli/src/run.rs`
+for the sampler, D19 for the seed, B49 for the token budget — so that disagreeing
+with a default means opening a file rather than guessing at an intention.
+
+The last section is the one worth having. It lists the questions MCF has no
+basis to answer, with the reason and the milestone that would earn each: which
+quantization to run (DEC-002 and M5–M7), how fast it is (B65 — a timing from the
+stand-in measures the stand-in), what it is good at (M6, gated on capabilities
+M3 verifies). A defaults screen that listed only what MCF chose would imply it
+had a basis for choosing, which is exactly the fabricated report C7 is written
+against.
 
 ### Version 100 — a model on this machine answers something
 
