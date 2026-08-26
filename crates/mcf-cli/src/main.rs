@@ -65,6 +65,8 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Ask a running daemon what it is.
+    Status,
     /// Ask a running daemon to stop.
     Stop {
         /// Why, which the daemon records rather than being killed silently.
@@ -165,6 +167,11 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["serve"] => Request::Serve,
         ["serve", argument, ..] => Request::UnexpectedArgument {
             command: "serve",
+            argument,
+        },
+        ["status"] => Request::Status,
+        ["status", argument, ..] => Request::UnexpectedArgument {
+            command: "status",
             argument,
         },
         ["stop"] => Request::Stop { because: None },
@@ -393,6 +400,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf serve                           start the daemon: it stays up,\n\
                  \x20                                     recovers what is on the disk and\n\
                  \x20                                     costs nothing while idle\n\
+                 \x20 mcf status                          ask a running daemon what it is\n\
+                 \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
                  \x20 mcf list                            what this machine is holding\n\
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
@@ -427,6 +436,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             offered,
         } => pull::run(reference, *from, *offered),
         Request::Serve => serve::run(),
+        Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::List => models::list(),
         Request::Remove {
@@ -506,6 +516,7 @@ mod tests {
         assert!(text.contains("mcf rm"), "{text}");
         assert!(text.contains("mcf serve"), "{text}");
         assert!(text.contains("mcf stop"), "{text}");
+        assert!(text.contains("mcf status"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         for unbuilt in ["mcf bench", "mcf lab"] {
             assert!(

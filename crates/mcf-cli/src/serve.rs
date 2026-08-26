@@ -23,6 +23,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use mcf_record::json::Value;
 use mcf_serve::control::{Answer, Request};
 use mcf_serve::daemon::{Daemon, Places, Stopped};
 
@@ -128,6 +129,115 @@ pub(crate) fn run() -> Response {
             text: format!("mcf: the daemon stopped because it could not go on\n  {failure}"),
             served: false,
         },
+    }
+}
+
+/// Asks a running daemon what it is and what it is holding.
+///
+/// A22: the headless surface is the complete one. A daemon that answered
+/// questions no command could ask would be a capability reachable only through
+/// a client, which is what that rule forbids.
+pub(crate) fn status() -> Response {
+    let Some(socket) = socket_path() else {
+        return Response {
+            text: "mcf: there is nowhere to look for a daemon — neither XDG_RUNTIME_DIR, \
+                   XDG_DATA_HOME nor HOME is set"
+                .to_owned(),
+            served: false,
+        };
+    };
+
+    let status = match ask(&socket, &Request::Status) {
+        Ok(answer) if answer.served => answer.body,
+        Ok(answer) => {
+            return Response {
+                text: format!("mcf: the daemon would not say\n  {}", answer.body.to_line()),
+                served: false,
+            };
+        }
+        Err(text) => {
+            return Response {
+                text,
+                served: false,
+            };
+        }
+    };
+
+    let mut lines = vec![format!("mcf is up on {}", socket.display())];
+    if let Some(build) = status.get("build") {
+        lines.push(format!("  build: {}", one_line(build)));
+    }
+    if let Some(up) = status.get("up_nanoseconds").and_then(Value::as_integer) {
+        // Seconds, computed without dividing: the workspace denies integer
+        // division because a truncated quotient is a silently wrong number.
+        lines.push(format!(
+            "  up for {} seconds",
+            up.checked_div(1_000_000_000).unwrap_or(0)
+        ));
+    }
+    if let Some(recovered) = status.get("recovered") {
+        lines.push(format!(
+            "  recovered {} record entries and {} model files",
+            recovered
+                .get("record_entries")
+                .and_then(Value::as_integer)
+                .unwrap_or(0),
+            recovered
+                .get("models_held")
+                .and_then(Value::as_integer)
+                .unwrap_or(0),
+        ));
+        if let Some(lost) = recovered.get("record_unreadable").and_then(Value::as_text) {
+            lines.push(format!("  PART OF THE RECORD COULD NOT BE READ: {lost}"));
+        }
+    }
+    for cannot in status
+        .get("cannot")
+        .and_then(Value::as_list)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_text)
+    {
+        lines.push(format!("  it cannot: {cannot}"));
+    }
+
+    // What it is holding, asked separately because they are separate questions
+    // and a client that wanted one should not be sent the other.
+    match ask(&socket, &Request::Holding) {
+        Ok(answer) if answer.served => {
+            let models = answer
+                .body
+                .get("models")
+                .and_then(Value::as_list)
+                .map(<[Value]>::to_vec)
+                .unwrap_or_default();
+            lines.push(format!("  holding {} model file(s)", models.len()));
+            for model in models {
+                if let Some(path) = model.get("path").and_then(Value::as_text) {
+                    lines.push(format!("    {path}"));
+                }
+            }
+        }
+        Ok(_) | Err(_) => lines.push("  what it is holding could not be read".to_owned()),
+    }
+
+    Response {
+        text: lines.join("\n"),
+        served: true,
+    }
+}
+
+/// A value on one line, for a surface that is showing rather than recording.
+fn one_line(value: &Value) -> String {
+    match value.get("version").and_then(Value::as_text) {
+        Some(version) => format!(
+            "{version} ({})",
+            value
+                .get("target")
+                .and_then(Value::as_text)
+                .unwrap_or("an unnamed target")
+        ),
+        None => value.to_line(),
     }
 }
 

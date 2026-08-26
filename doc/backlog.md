@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 97 |
+| **Version** | 98 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -175,7 +175,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | **in progress** — `mcf_serve::daemon`, with `mcf serve` and `mcf stop` at the surface. It keeps no state a crash could lose: what it knows on start is what the record and the model store say, both read fresh, so *recovering across a restart* is a property of the disk rather than of a memory. A damaged record is recovered **and said** (B62). A second daemon on one socket is refused, because two would share one record and D20 makes the record what MCF is; a socket left by a process that died is taken over rather than mistaken for one. Nothing a client says can stop it: a request that is not one is a classified answer and the daemon stays up (A3). What remains is the lab killing it at every stage, which needs work to be killed in the middle of |
+| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | **in progress** — `mcf_serve::daemon`, with `mcf serve`, `mcf status` and `mcf stop` at the surface. It keeps no state a crash could lose: what it knows on start is what the record and the model store say, both read fresh, so *recovering across a restart* is a property of the disk rather than of a memory — and a test asserts that what one daemon leaves the next recovers. A damaged record is recovered **and said** (B62). Starting and stopping are recorded as events rather than on a timer, so *MCF was up between these two moments* is answerable (§3.4) without costing anything while idle (B-031). A second daemon on one socket is refused; a socket left by a dead process is taken over. Nothing a client says can stop it (A3). What remains is the lab killing it at every stage, which needs work to be killed in the middle of |
 | B-031 | Idle discipline: no polling loops, no background timers, no always-on watchers; idle cost indistinguishable from zero | §3.13, §6.9 | Measured idle CPU and wakeups meet DEC-016's budget, asserted in CI | **done** — measured rather than designed-for. The soak tier runs a real daemon for the minute D24 names, with nobody talking to it, and reads what the kernel keeps: **zero context switches and zero clock ticks of processor time**, with the record byte-for-byte unchanged. The shape is what makes it true — the daemon blocks in `accept` and has no tick, no poll and no watcher — and the tier is what makes it a claim rather than an intention |
 | B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | open — unblocked by D32; needs an engine admitted (B-320) and the daemon (B-030) |
 | B-033 | Supervision contract: a runtime that dies mid-token is a classified, attributed failure that does not take the manager down | §3.1, §7.1 | The lab kills a runtime at every stage — pre-load, mid-load, mid-token, post-token — and the daemon stays coherent | blocked (DEC-001) |
@@ -185,7 +185,7 @@ first and importance second.
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
-| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking half: `mcf stop --because <why>` reaches the daemon, the daemon answers, and it says what it was told rather than dying to a signal with no account (A26). Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
+| B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking and the account. `mcf stop --because <why>` reaches the daemon, the daemon answers, and the reason goes into the record as `daemon_stopped` rather than being lost with the process (A26): a stop is now a thing that leaves a trace, which a signal never is. Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
 
@@ -367,6 +367,28 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 98 — the daemon answers, and its stopping leaves a trace
+
+Two gaps closed on the daemon, both small and both the kind that matter.
+
+`mcf status` exists. The daemon has been able to say what it is and what it is
+holding since it was written, and no command could ask — which is precisely the
+capability-reachable-only-through-a-client that A22 forbids. It now reports the
+build, how long it has been up, what it recovered, what it is holding, and what
+it cannot do.
+
+And starting and stopping are recorded. A process that can only be killed leaves
+no account of why it stopped; `daemon_stopped` carries the reason the operator
+gave, and `daemon_started` carries what was recovered — so *MCF was up between
+these two moments* is answerable, which is a condition of anything measured in
+between (§3.4). Both are events rather than ticks, and the idle measurement
+still reads zero: sixty seconds, no context switches, no processor time, record
+unchanged.
+
+A record that cannot be written does not stop the daemon. It is reported and MCF
+carries on, because a machine with a full disk still wants MCF up — A4's shape,
+with A2's requirement that the loss be said rather than swallowed.
 
 ### Version 97 — four gates, two of them absences
 

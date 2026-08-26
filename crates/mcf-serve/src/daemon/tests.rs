@@ -165,7 +165,7 @@ fn a_restart_recovers_what_the_record_holds() {
     assert_eq!(
         recovered.get("record_entries").and_then(Value::as_integer),
         Some(3),
-        "{recovered:?}"
+        "the daemon did not recover the three entries that were there before it: {recovered:?}"
     );
     assert_eq!(
         recovered.get("record_unreadable"),
@@ -180,7 +180,19 @@ fn a_restart_recovers_what_the_record_holds() {
     );
     let _ended = handle.join();
 
-    // And again: the second daemon reads the same record the first left.
+    // And again: the second daemon recovers what the first *left* — the three
+    // entries plus the two the first wrote about starting and stopping. The
+    // relation matters more than the number: a daemon that recovered a stale
+    // count would be reading its own memory rather than the disk (D20).
+    let left = mcf_record::journal::replay(&places.journal)
+        .expect("the record replays")
+        .entries
+        .len();
+    assert!(
+        left > 3,
+        "the first daemon recorded neither its start nor its stop"
+    );
+
     let (handle, socket) = running(places);
     let status = ask(&socket, &Request::Status);
     assert_eq!(
@@ -189,7 +201,8 @@ fn a_restart_recovers_what_the_record_holds() {
             .get("recovered")
             .and_then(|recovered| recovered.get("record_entries"))
             .and_then(Value::as_integer),
-        Some(3)
+        Some(i64::try_from(left).expect("a count that fits")),
+        "the second daemon did not recover what the first left"
     );
     let _stopped = ask(
         &socket,
