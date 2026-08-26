@@ -308,43 +308,103 @@ fn small(value: usize) -> f32 {
     f32::from(u8::try_from(value).unwrap_or(0))
 }
 
-/// A `Q6_K` super-block, the same way: six-bit values centred by subtracting
-/// thirty-two, against signed eight-bit scales.
+/// A `Q6_K` super-block where **every position holds a different value**, so
+/// that where each one lands is part of what is asserted.
+///
+/// The test this replaces set every value the same and checked they were all
+/// there. They were — in the wrong places. `Q6_K` writes the four values a
+/// byte-pair produces at strides of 32, not next to each other, and a uniform
+/// block cannot tell the two apart because any permutation of identical values
+/// is the same list ([findings.md](../../../../doc/findings.md) F19).
+///
+/// So: distinct low nibbles, distinct high nibbles, distinct scales per
+/// sub-block, and an expectation computed from the format's own indexing.
 #[test]
-fn a_q6_k_super_block_centres_its_values_and_reads_its_scales_as_signed() {
+fn a_q6_k_super_block_puts_each_value_where_the_format_says() {
     let mut raw = vec![0_u8; 210];
-    // Every low nibble 0 and every high nibble 0, so the value is decided by
-    // the high plane alone: two bits per value, all set.
-    for byte in raw.iter_mut().take(128) {
-        *byte = 0;
+    for half in 0..2_usize {
+        for l in 0..32_usize {
+            // Low plane: q1's nibble and q3's nibble.
+            raw[half * 64 + l] =
+                u8::try_from(l % 16).unwrap_or(0) | (u8::try_from((l + 1) % 16).unwrap_or(0) << 4);
+            // The second 32 bytes of this half: q2's and q4's.
+            raw[half * 64 + l + 32] = u8::try_from((l + 2) % 16).unwrap_or(0)
+                | (u8::try_from((l + 3) % 16).unwrap_or(0) << 4);
+        }
+        for slot in 0..8_usize {
+            raw[192 + half * 8 + slot] = u8::try_from(slot + 1).unwrap_or(0);
+        }
     }
-    for byte in raw.iter_mut().skip(128).take(64) {
-        *byte = 0xFF;
-    }
-    // Scales: the first eight +1, the second eight -1, which is the thing a
-    // reader that took them as unsigned would get wrong by 256.
-    for index in 0..8 {
-        raw[192 + index] = 1;
-        raw[200 + index] = 0xFF;
-    }
-    // d = 1.
     raw[208] = 0x00;
-    raw[209] = 0x3C;
+    raw[209] = 0x3C; // d = 1
 
     let decoded = tensor(TensorKind::Q6_K, &raw, 256).expect("a Q6_K super-block decodes");
-    assert_eq!(decoded.len(), 256);
-
-    // Every stored value is 0b110000 = 48, which centres to +16.
-    for (index, value) in decoded.iter().enumerate() {
-        let want = if index < 128 { 16.0 } else { -16.0 };
-        assert!(
-            (value - want).abs() < 1e-3,
-            "value {index}: wanted {want}, got {value}"
-        );
+    for half in 0..2_usize {
+        for l in 0..32_usize {
+            let which = l.wrapping_div(16);
+            // (offset into the half, which nibble, which scale)
+            for (offset, nibble, scale_at) in [
+                (0_usize, l % 16, 0_usize),
+                (32, (l + 2) % 16, 2),
+                (64, (l + 1) % 16, 4),
+                (96, (l + 3) % 16, 6),
+            ] {
+                let scale = small(which + scale_at + 1);
+                let want = scale * (small(nibble) - 32.0);
+                let got = decoded[half * 128 + l + offset];
+                assert!(
+                    (got - want).abs() < 1e-3,
+                    "half {half}, position {l}, offset {offset}: wanted {want}, got {got}"
+                );
+            }
+        }
     }
 }
 
-/// Every K-scheme agrees with itself about how many values a super-block holds.
+/// The two-bit scheme walks its sub-blocks the same way, and the same uniform
+/// test would have missed the same class of error.
+///
+/// Sixteen sub-blocks of sixteen: two halves, four shifts of the same
+/// thirty-two bytes, two runs per shift. Distinct scales make the walk visible.
+#[test]
+fn a_q2_k_super_block_walks_its_sub_blocks_in_the_formats_order() {
+    let mut raw = vec![0_u8; 84];
+    // Scale n: scale nibble (n mod 15) + 1, minimum nibble 0. The modulus is
+    // not decoration — a four-bit scale cannot hold sixteen, and a test that
+    // asked for one would be asserting something the format cannot store.
+    for (index, slot) in raw.iter_mut().take(16).enumerate() {
+        *slot = u8::try_from(index % 15 + 1).unwrap_or(0);
+    }
+    // Every value byte 0b11_10_01_00, so the two-bit value is the shift index.
+    for slot in raw.iter_mut().skip(16).take(64) {
+        *slot = 0b1110_0100;
+    }
+    raw[80] = 0x00;
+    raw[81] = 0x3C; // d = 1
+    raw[82] = 0x00;
+    raw[83] = 0x00; // dmin = 0
+
+    let decoded = tensor(TensorKind::Q2_K, &raw, 256).expect("a Q2_K super-block decodes");
+    let mut at = 0_usize;
+    for half in 0..2_usize {
+        for shift in 0..4_usize {
+            for run in 0..2_usize {
+                let scale = small((half * 8 + shift * 2 + run) % 15 + 1);
+                for _ in 0..16_usize {
+                    let want = scale * small(shift);
+                    assert!(
+                        (decoded[at] - want).abs() < 1e-3,
+                        "value {at}: wanted {want}, got {}",
+                        decoded[at]
+                    );
+                    at = at.saturating_add(1);
+                }
+            }
+        }
+    }
+}
+
+/// Every K-scheme agrees with itself about how many values a super-block holds./// Every K-scheme agrees with itself about how many values a super-block holds.
 ///
 /// A decoder that produced 255 or 257 would be caught by the first real tensor
 /// it met and not before, because the caller truncates to what it asked for.

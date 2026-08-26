@@ -78,20 +78,54 @@ fn a_vocabulary_reads_out_of_a_file() {
     assert_eq!(vocabulary.ending, None);
 }
 
-/// The segmentation takes the highest-scoring split, not the longest match.
+/// The segmentation merges pairs, best score first, and keeps merging.
 ///
-/// With `▁ab` scoring -5 and `▁a` + `b` scoring -1 each, the two-token split
-/// wins — which a greedy longest-match tokenizer would get wrong, and which is
-/// the whole reason the algorithm is a dynamic program.
+/// This test used to assert the opposite — that a higher-scoring *split* beats
+/// a longer match — because the tokenizer was a dynamic program over the whole
+/// string. [findings.md](../../../../doc/findings.md) F19 found that the models
+/// themselves are tokenized by a different algorithm: adjacent symbols merge,
+/// highest-scoring pair first, and a pair that spells a token merges whatever
+/// the alternatives score. Getting this wrong does not fail loudly; it hands
+/// the model a sequence it was never trained on.
 #[test]
-fn the_highest_scoring_split_wins_over_the_longest_match() {
-    let split = vocabulary(&["<s>", "▁ab", "▁a", "b"], &[0.0, -5.0, -1.0, -1.0]);
-    let encoded = split.encode("ab", false).expect("it segments");
-    assert_eq!(encoded, vec![2, 3], "expected ▁a + b, got {encoded:?}");
+fn adjacent_symbols_merge_best_first_and_keep_merging() {
+    // `▁a` and `b` merge into `▁ab` because the pair spells one, even though
+    // `▁ab` scores worse than either half. A dynamic program would keep the
+    // split; the algorithm these models use does not.
+    let merging = vocabulary(&["<s>", "▁ab", "▁a", "b"], &[0.0, -5.0, -1.0, -1.0]);
+    assert_eq!(merging.encode("ab", false).expect("it segments"), vec![1]);
 
-    // And with the scores the other way round, the single token wins.
-    let whole = vocabulary(&["<s>", "▁ab", "▁a", "b"], &[0.0, -1.0, -5.0, -5.0]);
-    assert_eq!(whole.encode("ab", false).expect("segments"), vec![1]);
+    // Where the pair spells nothing, the symbols stay apart.
+    let apart = vocabulary(&["<s>", "▁a", "b"], &[0.0, -1.0, -1.0]);
+    assert_eq!(apart.encode("ab", false).expect("it segments"), vec![1, 2]);
+}
+
+/// Which merge happens first is the score's decision, and it changes the
+/// answer.
+///
+/// `▁ab` and `bc` both spell tokens; whichever merges first takes the `b`. The
+/// higher score wins, which is the whole ordering the algorithm rests on.
+#[test]
+fn the_higher_scoring_merge_takes_the_character_they_share() {
+    let left = vocabulary(
+        &["<s>", "▁ab", "bc", "▁a", "b", "c"],
+        &[0.0, -1.0, -9.0, -3.0, -3.0, -3.0],
+    );
+    assert_eq!(
+        left.encode("abc", false).expect("it segments"),
+        vec![1, 5],
+        "the better-scoring left merge did not win"
+    );
+
+    let right = vocabulary(
+        &["<s>", "▁ab", "bc", "▁a", "b", "c"],
+        &[0.0, -9.0, -1.0, -3.0, -3.0, -3.0],
+    );
+    assert_eq!(
+        right.encode("abc", false).expect("it segments"),
+        vec![3, 2],
+        "the better-scoring right merge did not win"
+    );
 }
 
 /// A space is a character, written `▁`, and the text begins with one. Getting
@@ -201,9 +235,20 @@ fn a_file_with_no_vocabulary_says_that_instead() {
 /// the property a caller actually relies on.
 #[test]
 fn what_is_encoded_decodes_back() {
+    // Every intermediate piece is here, which is what a real vocabulary has
+    // and what the merge algorithm needs: a token is reached by merging pairs,
+    // so a vocabulary holding `▁fox` and not `▁f` cannot build it (F19).
     let vocabulary = vocabulary(
-        &["<s>", "▁the", "▁quick", "▁brown", "▁fox", "es"],
-        &[0.0, -1.0, -1.0, -1.0, -1.0, -2.0],
+        &[
+            "<s>", "▁the", "▁quick", "▁brown", "▁fox", "es", "▁", "t", "h", "e", "q", "u", "i",
+            "c", "k", "b", "r", "o", "w", "n", "f", "x", "s", "▁t", "▁th", "▁q", "▁qu", "▁qui",
+            "▁quic", "▁b", "▁br", "▁bro", "▁brow", "▁f", "▁fo",
+        ],
+        &[
+            0.0, -1.0, -1.0, -1.0, -1.0, -2.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0,
+            -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -9.0, -5.0, -5.0, -5.0, -5.0, -5.0,
+            -5.0, -5.0, -5.0, -5.0, -5.0, -5.0, -5.0,
+        ],
     );
     for text in ["the quick brown fox", "the foxes", "quick"] {
         let encoded = vocabulary.encode(text, false).expect("segments");
