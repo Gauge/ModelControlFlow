@@ -36,6 +36,7 @@
 //! and reality disagree, reality is right.
 
 mod catalogue;
+pub mod fixture;
 pub mod hub;
 mod scenario;
 pub mod serving;

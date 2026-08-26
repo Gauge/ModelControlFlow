@@ -14,6 +14,7 @@ mod doctor;
 mod licence;
 mod models;
 mod pull;
+mod run;
 mod serve;
 
 use std::process::ExitCode;
@@ -65,6 +66,17 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Ask a model something, with MCF's own engine.
+    Run {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// What to ask it.
+        prompt: &'a str,
+        /// How many tokens to produce at most.
+        limit: Option<usize>,
+        /// The seed, which is a condition of the answer (D19).
+        seed: u64,
+    },
     /// Ask a running daemon what it is.
     Status,
     /// Ask a running daemon to stop.
@@ -169,6 +181,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "serve",
             argument,
         },
+        ["run", rest @ ..] => match run_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "run",
+                argument,
+            },
+        },
         ["status"] => Request::Status,
         ["status", argument, ..] => Request::UnexpectedArgument {
             command: "status",
@@ -259,6 +278,70 @@ fn export(to: &std::path::Path) -> Response {
             text: format!("mcf: the record could not be exported\n  {failure}"),
             served: false,
         },
+    }
+}
+
+/// Reads `run`'s own arguments.
+///
+/// Total: an option it does not have is named back rather than ignored, and a
+/// number that is not one is a refusal rather than a default quietly
+/// substituted (A7).
+fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut model = None;
+    let mut prompt = None;
+    let mut limit = None;
+    let mut seed = 0_u64;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--prompt" => match rest.next() {
+                Some(asked) => prompt = Some(*asked),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs: "--prompt <text>",
+                    });
+                }
+            },
+            "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(tokens) => limit = Some(tokens),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs: "--limit <tokens>, a number",
+                    });
+                }
+            },
+            "--seed" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(chosen) => seed = chosen,
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs: "--seed <number>",
+                    });
+                }
+            },
+            other if other.starts_with("--") => return Err(other),
+            other if model.is_none() => model = Some(other),
+            other => return Err(other),
+        }
+    }
+
+    match (model, prompt) {
+        (Some(model), Some(prompt)) => Ok(Request::Run {
+            model,
+            prompt,
+            limit,
+            seed,
+        }),
+        (None, _) => Ok(Request::MissingArgument {
+            command: "run",
+            needs: "<model>",
+        }),
+        (Some(_), None) => Ok(Request::MissingArgument {
+            command: "run",
+            needs: "--prompt <text>",
+        }),
     }
 }
 
@@ -400,6 +483,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf serve                           start the daemon: it stays up,\n\
                  \x20                                     recovers what is on the disk and\n\
                  \x20                                     costs nothing while idle\n\
+                 \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
+                 \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
+                 \x20                                     never a speed (D31, B65)\n\
                  \x20 mcf status                          ask a running daemon what it is\n\
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -436,6 +522,12 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             offered,
         } => pull::run(reference, *from, *offered),
         Request::Serve => serve::run(),
+        Request::Run {
+            model,
+            prompt,
+            limit,
+            seed,
+        } => run::run(model, prompt, *limit, *seed),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::List => models::list(),
@@ -517,6 +609,7 @@ mod tests {
         assert!(text.contains("mcf serve"), "{text}");
         assert!(text.contains("mcf stop"), "{text}");
         assert!(text.contains("mcf status"), "{text}");
+        assert!(text.contains("mcf run"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         for unbuilt in ["mcf bench", "mcf lab"] {
             assert!(

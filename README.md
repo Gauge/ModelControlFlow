@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -59,8 +59,17 @@ rather than leaving it to be inferred. Its idle cost is measured rather than
 intended: over the minute §VII's budget names, a real daemon with nobody talking
 to it used **zero context switches and zero processor ticks**, and wrote nothing.
 
-**No number about a model's speed or quality exists.** That needs an engine,
-which is the next admission after the TLS stack.
+**A model on this machine answers something.** `mcf run <model> --prompt <text>`
+drives MCF's own implementation of inference end to end — deliberately slow,
+written to be read — and the answer arrives with its mark, its sampler, its seed
+and a sentence saying what it cannot be. That is the behaviour half of §VI's bar
+and it is the half MCF can reach honestly today.
+
+**No number about a model's *speed* exists, and none can yet.** A stand-in is
+forbidden from reporting one (B65): a timing taken from it would measure the
+stand-in. That needs a vendored engine, which is the next admission after the
+TLS stack and the one [doc/findings.md](doc/findings.md) F12 has the numbers
+for.
 Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
 MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 [doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
@@ -192,6 +201,13 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 17 — something to ask a model
+
+`mcf run` exists, which makes the status paragraph a shorter distance from
+§VI's bar: having a model and using a model are one command apart, for the
+behaviour half. The other half — how fast — is still absent, and now absent for
+a stated reason rather than for want of a command.
 
 ### Version 16 — there is a daemon, and its idle cost is a measurement
 

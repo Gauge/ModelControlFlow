@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 99 |
+| **Version** | 100 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -187,7 +187,7 @@ first and importance second.
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
 | B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking and the account. `mcf stop --because <why>` reaches the daemon, the daemon answers, and the reason goes into the record as `daemon_stopped` rather than being lost with the process (A26): a stop is now a thing that leaves a trace, which a signal never is. Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) — half of the condition is met early: the load tier exercises concurrent writers on one record and asserts the replay reports no loss (F13). What waits on the decision is *ownership* — whether there is one writer at all — and the identifier collision F13 found |
-| B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
+| B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — `mcf run <model> --prompt <text>` drives MCF's own engine end to end: model file, vocabulary, forward pass, sampler, tokens, text. It is the behaviour half and says so — the answer arrives with its mark, its sampler, its seed and a sentence saying it can never be a speed (B65, D31, A5). The conditions are printed beside the answer rather than under it (§3.4). What remains is the half that needs an engine: a *timed* answer, and `serve` handing a model to a client rather than a command loading one per run |
 
 ### M3 — Configure by measurement
 
@@ -367,6 +367,30 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 100 — a model on this machine answers something
+
+B-040 in progress, in the half MCF can do honestly. `mcf run <model> --prompt
+<text>` drives the whole path — model file, vocabulary, forward pass, sampler,
+tokens, text — through MCF's own stand-in engine, which D31 put there so that a
+model no vendored engine will run still runs, *marked*.
+
+The marking is the point rather than a caveat. B65 forbids a stand-in from
+producing a speed; the type refuses to hand over a bare result; and the surface
+prints the mark beside the answer with a sentence saying what it cannot be. A
+tool that showed the tokens and left the reader to wonder which engine produced
+them would be the demo this project exists not to be.
+
+What arrives with the answer is what somebody would need to reproduce it: the
+model, the sampler, the seed, the token budget, the engine and its build. §3.4's
+habit at the smallest scale, and the reason `--seed` is a flag rather than a
+default nobody sees.
+
+The laboratory gained a fixture with it — a four-token, one-block model whose
+embedding table is one-hot, so greedy decoding repeats what it is given and the
+answer is something a person can state in advance. A whole-system test asks it
+`yes` and expects ` yes yes yes`, which is the smallest end-to-end claim MCF can
+make about inference and is now made as a process.
 
 ### Version 99 — two writers, measured before they were argued about
 

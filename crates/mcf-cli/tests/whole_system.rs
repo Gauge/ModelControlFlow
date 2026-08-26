@@ -1077,6 +1077,66 @@ fn stopping_nothing_says_so_and_says_what_would_start_one() {
     assert!(said.contains("mcf serve"), "{said}");
 }
 
+/// §VI's bar, as far as MCF can honestly reach it today: having a model and
+/// using a model are one command apart (B-040, D31, B65).
+#[test]
+fn a_model_on_this_machine_answers_something_and_the_answer_is_marked() {
+    let machine = Machine::new("run");
+    let model = machine.0.join("mcf/models/owner/model/model.gguf");
+    std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let answered = machine.run(&[
+        "run",
+        "owner/model:model.gguf",
+        "--prompt",
+        "yes",
+        "--limit",
+        "3",
+    ]);
+    assert!(answered.status.success(), "{}", error_text(&answered));
+    let said = text(&answered);
+
+    // The answer this model gives, which a person can state in advance: its
+    // embedding table is one-hot, so greedy decoding repeats what it is given.
+    assert!(said.contains("yes yes yes"), "{said}");
+
+    // And the conditions, beside it rather than under it.
+    assert!(said.contains("what produced it"), "{said}");
+    assert!(said.contains("greedy, seed 0"), "{said}");
+    assert!(said.contains("3 token(s)"), "{said}");
+    assert!(said.contains("MARKED"), "{said}");
+    assert!(
+        said.contains("can never be a speed"),
+        "the answer does not say what it cannot be (B65): {said}"
+    );
+
+    // A path works as well as a name, because both are things somebody types.
+    let by_path = machine.run(&["run", &model.display().to_string(), "--prompt", "no"]);
+    assert!(by_path.status.success(), "{}", error_text(&by_path));
+    assert!(text(&by_path).contains("no"), "{}", text(&by_path));
+}
+
+/// A run of a model that is not one is refused legibly, and says why MCF's own
+/// reader is strict.
+#[test]
+fn running_something_that_is_not_a_model_is_refused_legibly() {
+    let machine = Machine::new("run-refused");
+    let not_a_model = machine.0.join("not-a-model.gguf");
+    std::fs::write(&not_a_model, b"ONNX or something").expect("a file");
+
+    let refused = machine.run(&[
+        "run",
+        &not_a_model.display().to_string(),
+        "--prompt",
+        "anything",
+    ]);
+    assert!(!refused.status.success());
+    let said = error_text(&refused);
+    assert!(said.contains("did not run"), "{said}");
+    assert!(said.contains("no vendored engine"), "{said}");
+}
+
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;

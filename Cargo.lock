@@ -93,6 +93,7 @@ dependencies = [
  "mcf-lab",
  "mcf-record",
  "mcf-serve",
+ "mcf-standin",
 ]
 
 [[package]]

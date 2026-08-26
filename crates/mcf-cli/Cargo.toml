@@ -18,5 +18,6 @@ mcf-core = { path = "../mcf-core" }
 mcf-record = { path = "../mcf-record" }
 mcf-lab = { path = "../mcf-lab" }
 mcf-hub = { path = "../mcf-hub" }
+mcf-standin = { path = "../mcf-standin" }
 mcf-serve = { path = "../mcf-serve" }
 mcf-bench = { path = "../mcf-bench" }
