@@ -190,6 +190,15 @@ pub struct Exchanged {
     pub redirects: usize,
 }
 
+/// What to do with a body once its head has been read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handling {
+    /// Write it out.
+    Take,
+    /// Read no further: the head was enough to know this is not the answer.
+    Skip,
+}
+
 /// Makes a request, follows what it is told to, and writes the body out.
 ///
 /// The credential travels only as far as the origin it was given for: a
@@ -207,6 +216,30 @@ pub fn fetch(
     wire: &dyn Wire,
     request: &Request,
     into: &mut dyn std::io::Write,
+) -> Result<Exchanged> {
+    vetted(wire, request, into, &|_| Ok(()))
+}
+
+/// The same, with a chance to refuse the answer before a byte of it is written.
+///
+/// `vet` sees the head of the answer that is *not* a redirect, and nothing has
+/// been written when it is called. That ordering is the whole point: a source
+/// that answers a resumption by starting again, or answers a request for
+/// weights with an error page, must be refused **before** its bytes reach the
+/// file — an append that is undone afterwards is a file that was wrong in
+/// between, and a crash in between leaves it wrong for good (B-021, A1).
+///
+/// A redirect's body is never read at all: the head named somewhere else to go,
+/// and reading the courtesy page underneath it would be bytes nobody wanted.
+///
+/// # Errors
+///
+/// As [`fetch`], plus whatever `vet` returns.
+pub fn vetted(
+    wire: &dyn Wire,
+    request: &Request,
+    into: &mut dyn std::io::Write,
+    vet: &dyn Fn(&Response) -> Result<()>,
 ) -> Result<Exchanged> {
     if request.is_authenticated() && !wire.carries_secrets() {
         return Err(Failure::new(
@@ -228,9 +261,29 @@ pub fn fetch(
     let mut visited: Vec<String> = Vec::new();
     for redirects in 0..=REDIRECT_CEILING {
         visited.push(attempt.url().to_string());
-        let (response, bytes) = once(wire, &attempt, into)?;
-        match next(&response, attempt.url())? {
+        // A cell rather than a plain binding: the decision is made inside a
+        // closure that only borrows, and where a redirect leads is the one
+        // thing the caller needs back out of it.
+        let going: std::cell::RefCell<Option<(Url, bool)>> = std::cell::RefCell::new(None);
+        let (response, bytes) = once(wire, &attempt, into, &|response| match next(
+            response,
+            attempt.url(),
+        )? {
             Next::Body => {
+                vet(response)?;
+                Ok(Handling::Take)
+            }
+            Next::Follow {
+                to,
+                carrying_the_credential,
+            } => {
+                *going.borrow_mut() = Some((to, carrying_the_credential));
+                Ok(Handling::Skip)
+            }
+        })?;
+        let going = going.into_inner();
+        match going {
+            None => {
                 return Ok(Exchanged {
                     response,
                     bytes,
@@ -238,13 +291,7 @@ pub fn fetch(
                     redirects,
                 });
             }
-            Next::Follow {
-                to,
-                carrying_the_credential,
-            } => {
-                // The body of a redirect is not the artifact, and anything
-                // written for it is discarded by the caller: `into` is only
-                // ever given bytes from the answer that is not a redirect.
+            Some((to, carrying_the_credential)) => {
                 attempt = attempt.redirected(to, carrying_the_credential);
             }
         }
@@ -270,6 +317,7 @@ fn once(
     wire: &dyn Wire,
     request: &Request,
     into: &mut dyn std::io::Write,
+    decide: &dyn Fn(&Response) -> Result<Handling>,
 ) -> Result<(Response, u64)> {
     let url = request.url();
     let mut connection = wire.dial(url.host(), url.port())?;
@@ -315,6 +363,12 @@ fn once(
         }
         head.extend_from_slice(buffer.get(..read).unwrap_or_default());
     };
+
+    // Nothing has been written yet, which is what lets a caller refuse an
+    // answer whose head is enough to know it is wrong.
+    if decide(&response)? == Handling::Skip {
+        return Ok((response, 0));
+    }
 
     // Whatever arrived after the head is the beginning of the body.
     let mut bytes = 0_u64;

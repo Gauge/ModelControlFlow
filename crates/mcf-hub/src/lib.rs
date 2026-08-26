@@ -14,6 +14,7 @@
 //! which M0 explicitly does not have; keeping the two apart is what lets the
 //! laboratory exercise every branch of the first without a hub (D26).
 
+pub mod client;
 pub mod credentials;
 pub mod fetch;
 pub mod fitment;

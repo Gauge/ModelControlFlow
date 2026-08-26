@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use mcf_core::failure::Category;
 use mcf_hub::http::Request;
-use mcf_hub::source::Source as _;
+use mcf_hub::reference::Reference;
+use mcf_hub::source::{Entry, Source as _};
 use mcf_hub::wire::{Deadlines, Tcp as Wire};
 
 use crate::hub::{Behaviour, FakeHub, Repository};
@@ -118,6 +119,96 @@ pub(super) const ANSWER_NEVER_COMES: Scenario = Scenario {
     run: answer_never_comes,
 };
 
+/// The hub answers a resumption by starting again.
+pub(super) const RESUMPTION_RESTARTED: Scenario = Scenario {
+    id: "hub/resumption-restarted",
+    produces: Category::TransferMutated,
+    summary: "a source that answers a resumption from somewhere else is refused, not appended to",
+    run: resumption_restarted,
+};
+
+/// A hub asked to continue from an offset that sends the file from the start.
+///
+/// The observation is the answer, not why it was sent: a cache that lost the
+/// object, a mirror that never supported ranges and a hostile source splicing
+/// two files together all look the same from here (D26). What must not happen
+/// is the append — a partial file plus a whole one is a model that is its own
+/// first megabyte twice, and B-021 exists to make that impossible.
+fn resumption_restarted(world: &World) -> Outcome {
+    let restarted = "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-5/6\r\n\
+                     Content-Length: 6\r\n\r\nGGUFxx";
+    let Some((port, serving)) = answering_once(restarted) else {
+        return Outcome::Unexpected("no loopback port is available".to_owned());
+    };
+
+    let into = world.path("model.gguf");
+    if let Err(error) = std::fs::write(&into, b"GGUF") {
+        return Outcome::Unexpected(format!("could not write the partial file: {error}"));
+    }
+    let Ok(base) = mcf_hub::http::Url::parse(&format!("http://127.0.0.1:{port}/")) else {
+        return Outcome::Unexpected("the loopback address is a URL".to_owned());
+    };
+    let hub = mcf_hub::client::Hub::at(base, Box::new(quick_wire()));
+    let reference = Reference {
+        owner: "owner".to_owned(),
+        name: "model".to_owned(),
+        revision: Some("abc123".to_owned()),
+        file: None,
+    };
+
+    let outcome = match hub.fetch_from(&reference, &Entry::new("model.gguf", 6), 4, &into) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a source that restarted was treated as resuming".to_owned()),
+    };
+    // The partial file must be untouched: a refused resumption that had already
+    // appended would have destroyed what it refused to add to.
+    let held = std::fs::read(&into).unwrap_or_default();
+    let _joined = serving.join();
+    if held != b"GGUF" {
+        return Outcome::Unexpected(format!(
+            "the partial file was changed by a refused resumption: {} bytes",
+            held.len()
+        ));
+    }
+    outcome
+}
+
+/// A listener that answers one request with this and then stops.
+fn answering_once(answer: &'static str) -> Option<(u16, std::thread::JoinHandle<()>)> {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").ok()?;
+    let port = listener.local_addr().ok()?.port();
+    let serving = std::thread::spawn(move || {
+        if let Ok((mut held, _)) = listener.accept() {
+            let _deadline = held.set_read_timeout(Some(Duration::from_secs(5)));
+            let mut seen = Vec::new();
+            let mut byte = [0_u8; 1];
+            while held.read(&mut byte).unwrap_or(0) == 1 {
+                seen.push(byte[0]);
+                if seen.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let _written = held.write_all(answer.as_bytes());
+            let _flushed = held.flush();
+            let _closed = held.shutdown(std::net::Shutdown::Write);
+        }
+    });
+    Some((port, serving))
+}
+
+/// A wire with deadlines short enough to run a hundred times in §3.17's check.
+fn quick_wire() -> Wire {
+    Wire {
+        deadlines: Deadlines {
+            connect: Duration::from_secs(5),
+            idle: Duration::from_millis(500),
+        },
+    }
+}
+
 /// A host that takes the connection and never answers.
 ///
 /// The observation is *silence after an accept*, which is what a hung server, a
@@ -149,12 +240,12 @@ fn answer_never_comes(_world: &World) -> Outcome {
         }
     });
 
+    // Short deadlines on purpose: the scenario reproduces a hundred times over
+    // in §3.17's check, and what is being demonstrated is *that* a deadline
+    // ends the wait rather than how long MCF's is.
     let wire = Wire {
         deadlines: Deadlines {
             connect: Duration::from_secs(5),
-            // Short on purpose: the scenario reproduces a hundred times over in
-            // §3.17's check, and what is being demonstrated is *that* a
-            // deadline ends the wait rather than how long MCF's is.
             idle: Duration::from_millis(20),
         },
     };

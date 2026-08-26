@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 81 |
+| **Version** | 82 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -165,7 +165,7 @@ first and importance second.
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
-| B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **in progress** — the half MCF writes is written. `mcf_hub::http` turns a request into bytes and bytes into an answer and touches no socket, which is what makes the behaviours that matter testable without a network: a redirect answers *where to go and whether the credential goes with it*, and it does not go to another origin — the hub's own redirect is to a signed CDN URL, and a client that forwarded the token would hand it to a host the network named. Every claim a response makes is checked before it is believed, every input reaches a classified outcome, and the header block has a stated ceiling rather than *whatever arrives*. It is a fuzz target, and the tier immediately found a source contradicting itself in two numbers a fetcher acts on. `mcf_hub::wire` is the socket behind a boundary the cryptography slots into: deadlines everywhere, because a host that accepts a connection and says nothing is where a hang comes from; a body streamed rather than held, because a model is larger than this machine's memory; a redirect that keeps its range and drops its credential; and a refusal — not a downgrade — when a credential is offered over a wire that cannot keep it. Eleven tests drive it over real loopback sockets, and a scenario holds B7's *a hang is a defined outcome* against a host that never answers. What remains is TLS itself: F9's stated reason, [vendored.md](vendored.md)'s row, and the vendored tree |
+| B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **in progress** — the half MCF writes is written. `mcf_hub::http` turns a request into bytes and bytes into an answer and touches no socket, which is what makes the behaviours that matter testable without a network: a redirect answers *where to go and whether the credential goes with it*, and it does not go to another origin — the hub's own redirect is to a signed CDN URL, and a client that forwarded the token would hand it to a host the network named. Every claim a response makes is checked before it is believed, every input reaches a classified outcome, and the header block has a stated ceiling rather than *whatever arrives*. It is a fuzz target, and the tier immediately found a source contradicting itself in two numbers a fetcher acts on. `mcf_hub::wire` is the socket behind a boundary the cryptography slots into: deadlines everywhere, because a host that accepts a connection and says nothing is where a hang comes from; a body streamed rather than held, because a model is larger than this machine's memory; a redirect that keeps its range and drops its credential; and a refusal — not a downgrade — when a credential is offered over a wire that cannot keep it. Eleven tests drive it over real loopback sockets, and a scenario holds B7's *a hang is a defined outcome* against a host that never answers. `mcf_hub::client` is the hub itself as a `Source`: two cheap questions before a byte of weights moves — the card for the revision to pin and the terms, the tree for every file, its size and the SHA-256 the hub declares — then a download that follows the redirect to wherever it is served from. It is pointed at a *base* rather than at Hugging Face, so nineteen tests drive the whole path against a server the suite is holding on the loopback address, and an operator on a network that cannot reach the hub has somewhere to point MCF. What remains is TLS itself: F9's stated reason, [vendored.md](vendored.md)'s row, and the vendored tree |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
@@ -367,6 +367,35 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 82 — the hub, on the other end of the wire
+
+B-322 further, and B-021's transport with it. `mcf_hub::client` answers the
+four questions a source is asked by asking a real hub, in the shapes F9
+measured — and the laboratory's simulated hub, which has been standing in for
+one since B-028, now has something to have been standing in for.
+
+Two questions before a byte of weights moves: the card, which names the
+revision to pin and the terms; and the tree, which names every file, its size,
+and the SHA-256 the hub declares for anything in LFS. That second answer is
+what makes B-213's arithmetic possible before a download and B-021's
+verification possible at all — a digest that arrives *with the listing* is one
+the bytes can be checked against, rather than one the same connection could
+have invented to match what it sent.
+
+Writing it found two defects of the kind that only appear when something real
+is on the other end, and both were the same mistake: acting before checking.
+The client appended a resumption's bytes and *then* noticed the source had
+started again from zero, and it wrote a 404's error page into the artifact
+before reading the status. Both are now decided from the head of the answer,
+before anything is written — an append undone afterwards is a file that was
+wrong in between, and a crash in between leaves it wrong for good. A scenario
+holds the first: it asserts the partial file is byte-for-byte untouched after
+the refusal.
+
+A redirect's own body is no longer read either, which is a smaller thing and
+the same principle: the head said to go elsewhere, so what is underneath it is
+bytes nobody asked for.
 
 ### Version 81 — the socket, and the shape the cryptography drops into
 
