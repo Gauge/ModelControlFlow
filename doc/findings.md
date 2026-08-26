@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 19 |
+| **Version** | 20 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1387,7 +1387,89 @@ the *variety* of what a hub publishes. A repository with a nested configuration,
 a hybrid attention scheme and an exponent in its metadata is not an edge case;
 it is the reference model.
 
+## 17 · F17 — What a hub says when something is not there (DEC-038, §7.38)
+
+**Why it was run.** MCF pins revisions and nothing says what happens when the
+pin goes bad underneath it — a repository withdrawn, gated after acquisition,
+relicensed, or a tag repointed (§7.38). What MCF is *able* to detect is a
+property of the hub rather than of MCF, so it was asked.
+`prototypes/upstream-decay/measure.sh`, anonymously, metadata only, no model
+downloaded.
+
+### 17.1 What it said
+
+| Asked | Answer |
+|---|---|
+| A repository that does not exist | **401** |
+| A gated repository, its card | 200, with `"gated":"manual"` |
+| A gated repository, its file list | 200 |
+| A gated repository, one file | 401 |
+| A repository that is there | 200 |
+| A revision that is not there | 404 |
+
+The body of the first is `{"error":"Invalid username or password."}`.
+
+**The hub does not distinguish *gone* from *private* from *never existed*, and
+says so in the least helpful way available: by asking for a password.** That is
+not an accident and it is not a defect — telling an anonymous caller that a
+private repository exists is a leak — but it decides what MCF can honestly say.
+A withdrawn pin and a typo produce the same answer, and no credential MCF could
+be given would tell them apart unless the operator happens to have access to the
+thing that is gone.
+
+**A gate is visible before it bites.** The model card is readable and carries
+`"gated":"manual"`; the file is not. So a repository that becomes gated *after*
+acquisition is detectable — the flag changes, the card still answers — which is
+the one decay in §7.38's list that MCF can name precisely.
+
+**404 means one thing only: a revision that is not in a repository that is.**
+Which makes it the reliable signal for a repointed or withdrawn *revision*, as
+distinct from a repository.
+
+### 17.2 The two decays that never refuse anything
+
+A relicensing and a repointed tag are both a field with a different value and a
+200 beside it. Nothing fails; nothing is refused; the request an operator makes
+succeeds. They are detectable only by MCF **looking and comparing against what
+it recorded at acquisition** — which is the same shape B-058 already has for
+declared-versus-verified, applied along time instead of across sources.
+
+### 17.3 What this settles
+
+It gives DEC-038 the half that had to be measured, and the answer constrains the
+decision rather than confirming it:
+
+- **MCF can detect** a repointed or withdrawn revision (404), a gate that closed
+  (the flag), a relicensing (the field), and any change of digest or size in the
+  listing.
+- **MCF cannot detect** the difference between withdrawn, private and
+  never-existed. Anything it says about a 401 must carry that ambiguity, which is
+  D33's shape exactly: report what was observed, and name the question being left
+  unanswered.
+
+MCF's current refusal on a 401 says *supply a credential*, which is right for a
+private repository and misleading for a withdrawn one — advice that cannot work,
+offered as though it could. That is corrected where it is written rather than
+here.
+
 ## Changelog
+
+### Version 20 — what a hub says when something is gone
+
+F17. §7.38 has asked since it was written what happens when a pinned artifact
+decays, and what MCF can detect is a property of the hub rather than of MCF, so
+the hub was asked — anonymously, metadata only.
+
+A repository that does not exist answers **401**, with the body *Invalid
+username or password*. So *gone*, *private* and *never existed* are one answer,
+and no credential MCF could be given tells them apart. A gate, by contrast, is
+visible before it bites: the card reads 200 with `"gated":"manual"` while the
+file reads 401. And 404 means exactly one thing — a revision that is not in a
+repository that is.
+
+The two decays that matter most refuse nothing at all: a relicensing and a
+repointed tag are a changed field with a 200 beside it, detectable only by
+comparing against what was recorded at acquisition.
 
 ### Version 19 — three defects, found by pointing MCF at one real repository
 

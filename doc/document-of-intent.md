@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 40 |
+| **Version** | 41 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1177,6 +1177,51 @@ to. Or a decision that MCF may make an unrequested request — which would be a
 change to §3.2 rather than to this entry.
 
 [findings.md]: findings.md
+
+### D37 — Decay is checked when somebody asks, recorded against the provenance, and never retroactive *(answers §7.38)*
+
+A pinned artifact can go bad upstream four ways — the revision withdrawn or
+repointed, the repository gated after acquisition, the licence changed, the
+files replaced — and [findings.md](findings.md) F17 measured which of them a hub
+will actually tell MCF about. The answer shapes all three parts of this
+decision.
+
+**When MCF looks: when it is asked, and never on its own.** B4 makes recording
+event-driven and §3.13 forbids the polling that a watcher would need. There is
+no background check, no daily poll, no "MCF noticed overnight". A decay check is
+a command an operator runs and a step `mcf pull` already performs when it is
+about to acquire something.
+
+**What it can find, and what it must not claim.** F17's table is the whole of
+it. A withdrawn *revision* is a 404 and is unambiguous. A gate that closed is
+visible in the card while the file refuses. A relicensing or a repointed tag
+refuses nothing at all — they are a changed field beside a 200, found only by
+comparing with what was recorded at acquisition. And a repository that does not
+answer is **not distinguishable from a private one or one that never existed**:
+the hub answers 401 to all three. MCF says that, rather than advising a
+credential that may not exist — the same discipline D33 applies to a missing
+network.
+
+**What it does about it: writes it down, next to what was true before.** A
+finding of decay is a new event in the record (D20) and a new entry in the
+artifact's provenance chain. It does not rewrite the provenance, because the
+provenance is a record of *what was true at acquisition* and that has not
+changed: §3.6 makes it a history rather than a status.
+
+**A withdrawn upstream does not invalidate anything measured locally, and this
+is the part worth being explicit about.** The artifact is here; its digest is
+verifiable against what was recorded (B-301); the conditions of every
+measurement taken from it are recorded. A model vanishing from a hub says
+nothing about the bytes on this disk, and a tool that greyed out its own
+measurements because somebody else deleted something would be destroying
+evidence for a reason that is not scientific. What decay *does* cost is
+**reproducibility by a third party**, which is a real cost and belongs in the
+repro bundle (PR2, B-211) as a stated condition rather than as a retraction.
+
+**What this obliges of the record.** For a decay to be findable at all, what was
+declared at acquisition has to be there to compare against — the revision, the
+digest, the licence, the gate. That is already what `mcf pull` writes down
+(B-006, B-029), and D37 is what makes it load-bearing rather than decorative.
 
 ### D36 — A whole-system test drives the shipped binary across every boundary MCF ships, and mocks nothing on MCF's side *(answers §7.22)*
 
@@ -3943,18 +3988,20 @@ appends of whole lines do not tear ([findings.md](findings.md) F13), so nothing
 arbitrates. What needed fixing was the identifier, which now carries the writer
 that minted it. The number stays citable; the question is closed.
 
-### 7.38 What happens when a pinned artifact decays
+### 7.38 What happens when a pinned artifact decays *(answered by D37)*
 
-MCF pins revisions, which is right. Nothing says what happens when the pin goes
+MCF pins revisions, which is right. Nothing said what happens when the pin goes
 bad underneath it: a revision withdrawn, a repository gated after acquisition, a
-licence changed, a tag repointed, a file replaced. The hub is mutable (§3.7) and
-the record depends on it (§3.6).
+licence changed, a tag repointed. The hub is mutable (§3.7) and the record
+depends on it (§3.6).
 
-Open: whether MCF ever checks, when, what it does on discovery, and whether a
-withdrawn upstream invalidates measurements taken from the local copy — it
-should not, since the local weights are unchanged, but the provenance chain now
-points at something that no longer exists and that must be recorded rather than
-quietly tolerated.
+**Answered by D37**, on [findings.md](findings.md) F17's measurement of what a
+hub will actually say: checked when somebody asks and never on a timer, recorded
+against the provenance rather than over it, and never retroactive — a model
+vanishing from a hub says nothing about the bytes on this disk. What MCF cannot
+do is tell *withdrawn* from *private* from *never existed*, because the hub
+answers all three the same way, and it says so rather than advising a credential
+that may not exist.
 
 ### 7.39 Which operations actually require elevation, on which platforms *(answered by D35)*
 
@@ -4173,6 +4220,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.37 | Who writes to the record | §3.1, D6 | **D34** — everybody writes; the identifier carries the writer; measured in [findings.md](findings.md) F13 |
 | §7.39 | Which operations require elevation | §6.32, §XVII | **D35** — three privileged operations, one of them a read; five declined; measured in [findings.md](findings.md) F15 |
 | §7.22 | Where the end-to-end boundary falls | §3.5, D10 | **D36** — the shipped binary across every boundary MCF ships; nothing on MCF's side is mocked |
+| §7.38 | What happens when a pinned artifact decays | §3.6, §3.7 | **D37** — checked on demand, recorded against the provenance, never retroactive; measured in [findings.md](findings.md) F17 |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -4207,6 +4255,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 41 — a pin that goes bad underneath you
+
+D37 added, closing §7.38. What MCF can detect about a decayed pin is a property
+of the hub rather than of MCF, so the hub was asked ([findings.md](findings.md)
+F17), and the measurement constrained the decision more than it confirmed it.
+
+A withdrawn *revision* is unambiguous. A gate that closed is visible in the card
+while the file refuses. A relicensing and a repointed tag refuse nothing at all
+— they are a changed field beside a 200, findable only by comparing against what
+was recorded at acquisition. And a repository that does not answer is
+indistinguishable from a private one or one that never existed, because the hub
+answers 401 to all three: MCF says that rather than advising a credential that
+may not exist.
+
+The part worth being explicit about is what decay does *not* do. It does not
+invalidate anything measured locally. The artifact is here, its digest is
+verifiable, and a tool that greyed out its own measurements because somebody
+else deleted something would be destroying evidence for a reason that is not
+scientific. What is really lost is reproducibility by a third party, which
+belongs in the repro bundle as a stated condition rather than as a retraction.
 
 ### Version 40 — where a whole-system test stops
 
