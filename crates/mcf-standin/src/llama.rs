@@ -114,11 +114,11 @@ pub struct Loaded {
     epsilon: f32,
     /// The rope base frequency the file states.
     rope_theta: f32,
-    /// Which two components of a head the rotation turns together.
+    /// What this family does that its file does not say it does.
     ///
-    /// Read from the architecture rather than from the file, because no file
-    /// states it — see [`rotation_for`].
-    rotation: ops::Rotation,
+    /// Read from the architecture rather than from the file, because nothing in
+    /// the file states any of it — see [`crate::architecture::habits`].
+    habits: crate::architecture::Habits,
     /// Every tensor, dequantized once and kept.
     ///
     /// Dequantizing on load rather than per token is the one memory-for-time
@@ -228,7 +228,7 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         shape,
         epsilon,
         rope_theta,
-        rotation: crate::architecture::rotation(architecture),
+        habits: crate::architecture::habits(architecture),
         tensors,
     })
 }
@@ -332,6 +332,12 @@ fn optional(shape: &Shape) -> Vec<(String, usize)> {
         for suffix in ["attn_q_norm.weight", "attn_k_norm.weight"] {
             wanted.push((format!("blk.{block}.{suffix}"), head));
         }
+        // The normalizations on the way *out* of each half of a block. A file
+        // that carries them is a file whose model was trained with them; a
+        // file that does not is left alone.
+        for suffix in ["post_attention_norm.weight", "post_ffw_norm.weight"] {
+            wanted.push((format!("blk.{block}.{suffix}"), shape.embedding));
+        }
     }
     wanted
 }
@@ -408,10 +414,32 @@ impl Loaded {
             })?
             .to_vec();
 
+        // Some families scale the embedding on the way in. It is one multiply
+        // and it moves every number that follows, so it is stated in the
+        // architecture table rather than inferred from anything (F20's lesson
+        // about habits no file declares).
+        if self.habits.scales_the_embedding {
+            let scale = f32::from(u16::try_from(width).unwrap_or(1)).sqrt();
+            for value in &mut hidden {
+                *value *= scale;
+            }
+        }
+
         for block in 0..self.shape.blocks {
-            let attended = self.attention(block, &hidden, position, cache)?;
+            let mut attended = self.attention(block, &hidden, position, cache)?;
+            // A normalization on the way out of the attention half, where the
+            // file carries the weights for it — the other half of what makes
+            // these blocks a "sandwich". Read from the tensors, not the name.
+            if let Some(weights) = self.carried(&format!("blk.{block}.post_attention_norm.weight"))
+            {
+                attended = ops::rms_norm(&attended, weights, self.epsilon);
+            }
             hidden = ops::add(&hidden, &attended);
-            let fed = self.feed_forward(block, &hidden)?;
+
+            let mut fed = self.feed_forward(block, &hidden)?;
+            if let Some(weights) = self.carried(&format!("blk.{block}.post_ffw_norm.weight")) {
+                fed = ops::rms_norm(&fed, weights, self.epsilon);
+            }
             hidden = ops::add(&hidden, &fed);
         }
 
@@ -499,13 +527,13 @@ impl Loaded {
         for index in 0..self.shape.heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = queries.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta, self.rotation);
+                ops::rope(slice, position, self.rope_theta, self.habits.rotation);
             }
         }
         for index in 0..self.shape.key_value_heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = keys.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta, self.rotation);
+                ops::rope(slice, position, self.rope_theta, self.habits.rotation);
             }
         }
 
@@ -574,7 +602,7 @@ impl Loaded {
             self.shape.feed_forward,
             width,
         );
-        let activated = ops::swiglu(&gate, &up);
+        let activated = ops::gated(&gate, &up, self.habits.activation);
         Ok(ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_down.weight"))?,
             &activated,

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 27 |
+| **Version** | 28 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1872,7 +1872,89 @@ sense A21 means, and B-368's oracle is what would verify it: two
 implementations agreeing on identifiers for the same text is a check, and one
 implementation agreeing with itself is not.
 
+## 24 · F24 — A third architecture, and three habits that fail three different ways (B-365, B-370, A19, §3.18)
+
+**What was added.** Gemma 3, read from llama.cpp's `models/gemma3.cpp` rather
+than inferred, and run against the corpus artifact `gemma-3-270m-it` at Q6_K —
+18 blocks, 640 wide, 4 query heads over 1 key/value head, a stated head width
+of 256, and a unigram vocabulary of 262,144 tokens that declares
+`add_space_prefix = false`.
+
+It differs from llama in five places. Two the file states and three it does not,
+and that division is the finding.
+
+**What the file states, and is therefore read from the file (§3.18):** two more
+normalizations per block — on the way *out* of the attention half and out of
+the feed-forward half, which is what makes these blocks a "sandwich" — carried
+as `post_attention_norm.weight` and `post_ffw_norm.weight`. MCF applies them
+because the tensors are there, so a file of any family carrying them gets them
+and a gemma file without them would not.
+
+**What the file does not state, and is therefore a table:** the gated block
+activates with `GELU` rather than `SiLU`, the embedding is multiplied by the
+square root of its width on the way in, and the rotation pairs halves rather
+than adjacent components. None of the three is visible in any tensor or any
+metadata key. A `GELU`-gated block and a `SiLU`-gated one have the same tensors
+of the same shapes.
+
+**Each was removed in turn, and they fail in three different registers.** The
+prompts are `The capital of France is` and `The opposite of hot is`; correct,
+the model says `Paris.` and `cold.`
+
+| what was removed | what came out |
+|---|---|
+| the two sandwich normalizations | `incessant intensive intensiveHighwayHighwayHighway…` |
+| `GELU`, using `SiLU` instead | `the 12th city, and the` · `a cold. It's a cold, a` |
+| the embedding's scale | `चौ चौ चौلسللسللسللسل…` |
+
+Word salad, fluent-and-wrong, and characters from another script. **Only the
+middle one is dangerous**, and it is the one that would survive review: real
+words, plausible grammar, and no answer. It is the same signature F20 measured
+for the rotary pairing and F22 measured again — and it is now three habits, in
+two different families, that produce it. That is no longer a coincidence worth
+noting once. *An unobservable habit, got wrong, produces fluent text* looks like
+the general case, and the loud failures are the lucky ones.
+
+**Where this leaves the division of labour.** Everything observable is read
+from the artifact, which is why gemma3 needed no new code path for its
+normalizations — only two more names in the list of tensors MCF will load if
+they are there. Everything unobservable is in one table, `architecture.rs`,
+which DEC-053 already requires and which the neutrality check already holds to
+naming no artifact. Growing a family is now: read the reference, add what the
+file cannot tell you, and let the rest be found.
+
+**What was not established.** Gemma 3 alternates local and global attention on a
+five-to-one pattern with a different rotary base for each, and this artifact
+declares a sliding window of 512 but **no** separate base for the local layers.
+MCF therefore uses the one base the file states, for every layer, which is what
+the file says and not necessarily what the model was trained with (A7, A21). At
+twelve tokens no window truncates anything, so nothing here exercises the
+sliding window at all. A file that declares a second base, or a prompt longer
+than 512 tokens, is untested ground.
+
+Nor is the 27B variant's attention scale exercised: gemma scales queries by the
+inverse root of the head width except at 27B, where it is the inverse root of
+the embedding over the heads. On this artifact those coincide with what MCF
+already computes.
+
 ## Changelog
+
+### Version 28 — a third architecture, and three habits that fail three ways
+
+F24. Gemma 3 runs, read from the reference rather than inferred. It differs from
+llama in five places: two the file states — the normalizations on the way out of
+each half of a block — and three it does not — a `GELU` gate, an embedding
+scaled by the square root of its width, and the other rotary pairing.
+
+Removing each in turn gives word salad, fluent-and-wrong, and text in another
+script. The middle one is the dangerous one, and it is now the third
+unobservable habit across two families to fail that way. *Unobservable habit,
+got wrong, produces fluent text* looks like the general case rather than a
+coincidence.
+
+The division holds up: everything observable is read from the artifact, so
+gemma3's normalizations needed no new code path — only two more tensor names.
+Everything unobservable is in the one table DEC-053 already governs.
 
 ### Version 27 — four expressions where MCF had two
 

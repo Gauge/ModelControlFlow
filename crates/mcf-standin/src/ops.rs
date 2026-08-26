@@ -115,13 +115,45 @@ pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x).exp())
 }
 
-/// The gated feed-forward activation the llama family uses:
-/// `silu(gate) · up`, elementwise.
+/// The `GELU` activation, in the `tanh` approximation every one of these models
+/// was trained with.
+///
+/// The exact form uses the Gaussian error function; the approximation below is
+/// what the reference implementations compute, and computing the *exact* one
+/// here would make MCF disagree with them by a small amount everywhere — which
+/// is the kind of difference that is invisible in the output and fatal to a
+/// comparison against an oracle (A19).
 #[must_use]
-pub fn swiglu(gate: &[f32], up: &[f32]) -> Vec<f32> {
+pub fn gelu(x: f32) -> f32 {
+    const ROOT_TWO_OVER_PI: f32 = 0.797_884_6;
+    const FUDGE: f32 = 0.044_715;
+    0.5 * x * (1.0 + (ROOT_TWO_OVER_PI * x.mul_add(FUDGE * x * x, x)).tanh())
+}
+
+/// Which activation a gated feed-forward block uses.
+///
+/// Not observable from the file: the tensors of a `SiLU`-gated block and a
+/// `GELU`-gated one are the same tensors of the same shapes. It is a property
+/// of the architecture, so it lives in the one table that holds those (B28,
+/// DEC-053).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activation {
+    /// `x · sigmoid(x)`, what the llama family was trained with.
+    Silu,
+    /// The Gaussian error linear unit, what the gemma family was trained with.
+    Gelu,
+}
+
+/// The gated feed-forward activation: `activation(gate) · up`, elementwise.
+#[must_use]
+pub fn gated(gate: &[f32], up: &[f32], activation: Activation) -> Vec<f32> {
+    let apply = match activation {
+        Activation::Silu => silu,
+        Activation::Gelu => gelu,
+    };
     gate.iter()
         .zip(up.iter())
-        .map(|(gate, up)| silu(*gate) * up)
+        .map(|(gate, up)| apply(*gate) * up)
         .collect()
 }
 

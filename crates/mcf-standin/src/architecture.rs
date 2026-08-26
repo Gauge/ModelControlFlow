@@ -22,7 +22,7 @@
 //! (§3.18); only what no file states is read from a name.
 
 use crate::bpe::Split;
-use crate::ops::Rotation;
+use crate::ops::{Activation, Rotation};
 
 /// The families the stand-in engine's structure is written for.
 ///
@@ -40,6 +40,12 @@ pub const FAMILIES: &[&str] = &[
     // read from what the file carries — a file of this family without
     // `attn_q_norm` would simply not be normalized (§3.18).
     "qwen3",
+    // The same structure again, with a normalization on the way *out* of each
+    // half of the block as well as into it — which the file carries as two more
+    // tensors per block — and three habits it does not carry: a gated block
+    // that activates with `GELU`, an embedding scaled by the square root of its
+    // width, and the other rotary pairing.
+    "gemma3",
 ];
 
 /// Which rotary convention a family was trained with.
@@ -58,6 +64,47 @@ pub fn rotation(family: &str) -> Rotation {
         "qwen2" | "qwen3" | "qwen3moe" | "gemma" | "gemma2" | "gemma3" | "phi2" | "phi3"
         | "stablelm" | "gptneox" | "olmo" | "starcoder2" | "cohere" => Rotation::Halved,
         _ => Rotation::Interleaved,
+    }
+}
+
+/// What a family does that its file does not say it does.
+///
+/// **Everything here is unobservable, and that is the entry condition.** A
+/// tensor MCF can look for is read from the file (§3.18) — that is how the
+/// per-head normalizations and the sandwich normalizations are found, and why
+/// a file that carries them gets them whoever published it. What lands in this
+/// struct is what no tensor and no metadata key reveals: which activation a
+/// gated block was trained with, whether the embedding is scaled on the way in,
+/// which two components of a head the rotation turns. Being wrong about any of
+/// them produces text rather than an error (F20).
+#[derive(Debug, Clone, Copy)]
+pub struct Habits {
+    /// Which two components of a head the rotary embedding turns together.
+    pub rotation: Rotation,
+    /// Which activation the gated feed-forward block applies.
+    pub activation: Activation,
+    /// Whether the embedding is multiplied by the square root of its width on
+    /// the way into the first block.
+    ///
+    /// The gemma family was trained that way and the llama family was not. It
+    /// is a single scalar multiply and it changes every number after it.
+    pub scales_the_embedding: bool,
+}
+
+/// What a family does, by name.
+///
+/// The default is the llama family's, and every departure is named — because a
+/// family MCF has not heard of is better run as the architecture the format was
+/// designed around than refused for a habit it may not even have.
+#[must_use]
+pub fn habits(family: &str) -> Habits {
+    Habits {
+        rotation: rotation(family),
+        activation: match family {
+            "gemma" | "gemma2" | "gemma3" | "gemma3n" => Activation::Gelu,
+            _ => Activation::Silu,
+        },
+        scales_the_embedding: matches!(family, "gemma" | "gemma2" | "gemma3" | "gemma3n"),
     }
 }
 
