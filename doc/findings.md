@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 15 |
+| **Version** | 16 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -40,6 +40,7 @@ forward as one.
 | 10 | [F10 — What a machine says when a network is missing (DEC-011, D33)](#10--f10--what-a-machine-says-when-a-network-is-missing-dec-011-d33) |
 | 11 | [F11 — A disk fills at the flush, not at the write (B-026)](#11--f11--a-disk-fills-at-the-flush-not-at-the-write-b-026)  |
 | 12 | [F12 — What an engine would cost, as far as it has been measured (B-320)](#12--f12--what-an-engine-would-cost-as-far-as-it-has-been-measured-b-320) |
+| 13 | [F13 — Two writers, one record (DEC-037)](#13--f13--two-writers-one-record-dec-037) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -1061,7 +1062,77 @@ B-320 is where the choice is made, and it is left open on purpose: this is the
 largest single thing MCF will ship, and the register asks for a finding before
 an admission rather than after.
 
+## 13 · F13 — Two writers, one record (DEC-037)
+
+**Why it was run.** The daemon exists, and with it MCF has more than one thing
+that writes to the record: `mcf pull` records an acquisition, `mcf rm` a
+removal, and the daemon its own starting and stopping. D20 makes the journal
+*the record*, and §7.37 asks who writes to it and what happens to a write that
+loses. Before deciding, it was worth knowing what the platform actually gives
+without any coordination at all.
+
+**What was run.** Eight processes appending to one file, each writing one whole
+line per entry — the shape `mcf_record::journal` uses, which opens with
+`O_APPEND` and issues one `write` per line. 2,000 lines each, at three sizes,
+on the two filesystems that matter here: `tmpfs`, where a scratch record goes,
+and `btrfs`, where the operator's own lives.
+
+| Line size | Filesystem | Lines expected | Lines found | Interleaved | Short |
+|---|---|---|---|---|---|
+| 400 B | tmpfs | 16,000 | 16,000 | 0 | 0 |
+| 8 KiB | tmpfs | 16,000 | 16,000 | 0 | 0 |
+| 128 KiB | tmpfs | 16,000 | 16,000 | 0 | 0 |
+| 8 KiB | btrfs | 16,000 | 16,000 | 0 | 0 |
+
+**No line was torn**, at any size, including 128 KiB — far past `PIPE_BUF`,
+which is the bound people usually quote for atomic appends and which applies to
+pipes rather than to regular files. What the kernel guarantees here is that an
+`O_APPEND` write takes the offset and the write together; a short write would
+still tear a line, and none occurred.
+
+### 13.1 What this settles and what it does not
+
+It settles the alarming half. Two MCF processes writing one record do not
+produce a record nobody can read: `checks/tests/load.rs` now asserts it —
+concurrent writers, then a replay that reports no loss and finds every body
+whole — and B62's *a replay reports what was lost* has nothing to report.
+
+It does not settle DEC-037, and the residue is precise:
+
+- **Identifiers can collide.** Each writer counts its *own* appends, so two
+  entries from two processes can carry the same sequence number and therefore
+  the same `EntryId`. Nothing is lost and nothing is unreadable; what is broken
+  is the assumption that an identifier names one entry.
+- **A short write would still tear a line**, and nothing here forces one. What
+  was measured is that it does not happen on these filesystems at these sizes,
+  not that it cannot.
+- **A network filesystem was not measured.** `O_APPEND` is the classic thing NFS
+  does not honour, and a record on a network share is a configuration MCF has
+  not been asked about.
+
+**What it argues for.** Not a lock. The measurement says the cheap arrangement
+is sound where it has been tried, so the question is narrower than *how do we
+coordinate* — it is *who mints an identifier*. A single writer answers it and
+costs a running daemon for every command; a writer-scoped identifier answers it
+and costs a change to something C5 makes stable for life. DEC-037 is where that
+is chosen, and this is the evidence it should be chosen against rather than
+guessed at.
+
 ## Changelog
+
+### Version 16 — two writers, one record
+
+F13 added, because the daemon gave MCF a second thing that writes to the record
+and §7.37 has never been answered. Eight processes, one file, one whole line per
+write, at 400 bytes and 8 KiB and 128 KiB, on tmpfs and on btrfs: sixteen
+thousand lines every time, none torn, none interleaved.
+
+That settles the alarming half — two MCF processes do not produce a record
+nobody can read, and the load tier now asserts it — and leaves DEC-037's real
+question, which turns out to be narrower than it looked. Not *how do we
+coordinate writes*, but *who mints an identifier*: each writer counts its own
+appends, so two entries can carry the same `EntryId`. Nothing is lost; what is
+broken is the assumption that an identifier names one entry.
 
 ### Version 15 — the engine's second half, and an expectation removed
 

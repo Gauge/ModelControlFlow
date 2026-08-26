@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 98 |
+| **Version** | 99 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -76,7 +76,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | **resolved** — D29: all platforms, Linux first; three states as D25 gives a device; per-platform artifacts, since the target triple is already a §3.4 condition |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
-| DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | open |
+| DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | **narrowed** — [findings.md](findings.md) F13 measured what the platform gives with no coordination at all: eight processes appending whole lines to one journal, at 400 B, 8 KiB and 128 KiB, on tmpfs and btrfs — sixteen thousand lines, none torn, none interleaved, and the load tier now asserts it. So the question is not *how do we coordinate writes* but *who mints an identifier*: each writer counts its own appends, so two processes can produce the same `EntryId`. A single writer answers it and costs a running daemon for every command; a writer-scoped identifier answers it and costs a change to something C5 makes stable for life |
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
@@ -186,7 +186,7 @@ first and importance second.
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
 | B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking and the account. `mcf stop --because <why>` reaches the daemon, the daemon answers, and the reason goes into the record as `daemon_stopped` rather than being lost with the process (A26): a stop is now a thing that leaves a trace, which a signal never is. Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
-| B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) |
+| B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) — half of the condition is met early: the load tier exercises concurrent writers on one record and asserts the replay reports no loss (F13). What waits on the decision is *ownership* — whether there is one writer at all — and the identifier collision F13 found |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
 
 ### M3 — Configure by measurement
@@ -367,6 +367,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 99 — two writers, measured before they were argued about
+
+The daemon gave MCF a second thing that writes to the record, and §7.37 has
+never said who may. Rather than reach for a lock,
+[findings.md](findings.md) F13 measured what the platform gives with none:
+eight processes appending whole lines to one journal, at three sizes up to
+128 KiB, on both filesystems that matter here. Sixteen thousand lines every
+time, none torn, none interleaved — and the load tier now asserts it, which is
+half of B-332's condition met before its decision.
+
+What the measurement leaves is narrower and sharper than the question that
+prompted it. Not *how do we coordinate writes* — the cheap arrangement holds —
+but *who mints an identifier*: each writer counts its own appends, so two
+processes can produce the same `EntryId`. Nothing is lost and nothing is
+unreadable; what is broken is the assumption that an identifier names one entry.
+DEC-037 now has evidence to be decided against rather than guessed at.
 
 ### Version 98 — the daemon answers, and its stopping leaves a trace
 
