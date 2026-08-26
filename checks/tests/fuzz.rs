@@ -120,6 +120,22 @@ fn valid_line(rng: &mut Rng) -> String {
                 ),
                 ("nothing", Value::Null),
                 ("list", Value::List(vec![Value::Bool(true), Value::Null])),
+                // A number this format does not carry, which the reader keeps
+                // as written so that a document MCF did not write can be read
+                // at all (F16). It is in the corpus because the round-trip
+                // property below is exactly what would break if it were ever
+                // re-encoded rather than kept: a record with two spellings of
+                // one value is the thing §XV's promise rests on not happening.
+                (
+                    "foreign",
+                    mcf_record::json::parse(&format!(
+                        "{}.{}e-0{}",
+                        rng.integer_between(0, 9),
+                        rng.integer_between(0, 999_999),
+                        rng.integer_between(1, 9)
+                    ))
+                    .unwrap_or(Value::Null),
+                ),
             ]),
         ),
     ])
