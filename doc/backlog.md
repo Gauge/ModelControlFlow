@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 127 |
+| **Version** | 128 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 128 — a column that ran into the next one
+
+Still reading the surfaces as a stranger would. `mcf explain`'s defaults table
+had a value exactly as wide as its column, so one row read `32 unless --limit
+saystokens rather than seconds` — two columns with nothing between them — and
+three rows ran past 130 characters, which is past any terminal.
+
+Fixed by a space the column cannot eat and a wrap with a hanging indent, and
+asserted: no line in the report exceeds 120 characters and the row that used to
+collide has its space. §3.15 asks that every default be visible with its source;
+a table a reader has to decode is not visible.
 
 ### Version 127 — the report knew about a daemon that had arrived
 
