@@ -457,11 +457,15 @@ impl Drop for Daemon {
 /// What the disk says, read at start.
 fn recover(places: &Places) -> Result<Recovered> {
     let (entries, unreadable) = if places.journal.exists() {
-        let replayed = mcf_record::journal::replay(&places.journal)?;
-        (
-            replayed.entries.len(),
-            replayed.loss.as_ref().map(ToString::to_string),
-        )
+        // Through the index rather than a replay (B-300, D20): a daemon start
+        // that parsed the whole history would cost seconds on a record that has
+        // been measuring models for a while — 7.9 s at a million entries, where
+        // the index takes 72 ms (F14) — and would do it at every start.
+        let index = mcf_record::journal::Index::over(
+            &places.journal,
+            &mcf_record::journal::index::default_path(&places.journal),
+        )?;
+        (index.entries().len(), index.loss().map(ToString::to_string))
     } else {
         // No record is not a damaged record: a machine that has never run MCF
         // has nothing to recover, and saying so is different from saying it

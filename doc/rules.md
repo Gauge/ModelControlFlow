@@ -1353,7 +1353,7 @@ no rule is a defect in this file.
 | D9 The time model | B37 |
 | D10 Test the app, measure the model | B38, A18, B19 |
 | D11 Energy is first-class | B39 |
-| D6 The record is SQLite | A25, B9 |
+| D6 The record is one portable file | A25, B9 |
 | D7 MCF is for other people | B15, A23 |
 | §3.1 Failure is first-class | A2, A3, A4, A1 |
 | §3.2 Degrade, don't die | A5 |

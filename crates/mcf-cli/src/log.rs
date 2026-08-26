@@ -8,11 +8,18 @@
 //! nobody can read from a command is a record only its author can read.
 //!
 //! **A replay is not a `cat`.** The journal is line-delimited and a crash
-//! mid-append leaves a torn last line, so reading it is `mcf_record::replay`'s
-//! job: it reports the line, the offset and the bytes of anything it could not
-//! read (B62). This surface shows that report rather than hiding it — a log
-//! that quietly stopped at a damaged line would be the silent failure A2 calls
-//! worse than a crash.
+//! mid-append leaves a torn last line, so reading it is the record's own job:
+//! it reports the line, the offset and the bytes of anything it could not read
+//! (B62). This surface shows that report rather than hiding it — a log that
+//! quietly stopped at a damaged line would be the silent failure A2 calls worse
+//! than a crash.
+//!
+//! **It reads through the index, and only the entries it prints.** D20's
+//! derived index says where each entry is and what kind it is, so *the last
+//! twenty acquisitions* costs twenty seeks rather than a parse of the whole
+//! history — 196 µs against 7.9 s at a million entries (F14). The index is
+//! never the answer: every line printed here is read back out of the journal
+//! at the offset the index gave.
 //!
 //! **One line per event, and the interesting field first.** What a reader wants
 //! from an acquisition is what was acquired; from a failure, the category and
@@ -20,7 +27,8 @@
 //! there — `--full` prints the record's own JSON, which is what a script reads
 //! and what `mcf export` sends.
 
-use mcf_record::journal::{Entry, EntryKind, replay};
+use mcf_record::journal::index::{self, Index};
+use mcf_record::journal::{Entry, EntryKind};
 use mcf_record::json::Value;
 
 use crate::Response;
@@ -71,8 +79,8 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
         },
     };
 
-    let replayed = match replay(&path) {
-        Ok(replayed) => replayed,
+    let index = match Index::over(&path, &index::default_path(&path)) {
+        Ok(index) => index,
         Err(failure) => {
             return Response {
                 text: crate::say::refusal("the record could not be read", &failure),
@@ -81,17 +89,13 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
         }
     };
 
-    let matching: Vec<&Entry> = replayed
-        .entries
-        .iter()
-        .filter(|entry| wanted.is_none_or(|kind| entry.kind() == kind))
-        .collect();
-    let shown = last.unwrap_or(SHOWN).min(matching.len());
-    let skipped = matching.len().saturating_sub(shown);
+    let matching = index.count_matching(wanted);
+    let shown = last.unwrap_or(SHOWN).min(matching);
+    let skipped = matching.saturating_sub(shown);
 
     let mut lines = vec![format!(
         "{} in {}{}",
-        counted(matching.len(), wanted),
+        counted(matching, wanted),
         path.display(),
         if skipped == 0 {
             String::new()
@@ -101,17 +105,25 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
     )];
     lines.push(String::new());
 
-    for entry in matching.into_iter().skip(skipped) {
-        if full {
-            lines.push(entry.to_value().to_line());
-        } else {
-            lines.push(format!("{}  {}", entry.id(), summarize(entry)));
+    for located in index.latest(wanted, shown) {
+        // The entry comes from the journal, at the offset the index gave: the
+        // index is a pointer and never an answer (D20).
+        match index.read(&located) {
+            Ok(entry) => lines.push(if full {
+                entry.to_value().to_line()
+            } else {
+                format!("{}  {}", entry.id(), summarize(&entry))
+            }),
+            Err(failure) => lines.push(format!(
+                "line {}: THIS ENTRY COULD NOT BE READ: {failure}",
+                located.line()
+            )),
         }
     }
 
     // B62: what could not be read is said, at the end where it is the last
     // thing a reader sees rather than the first thing they scroll past.
-    if let Some(loss) = &replayed.loss {
+    if let Some(loss) = index.loss() {
         lines.push(String::new());
         lines.push(format!("PART OF THE RECORD COULD NOT BE READ: {loss}"));
         lines.push(

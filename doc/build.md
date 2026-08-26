@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 23 |
+| **Version** | 24 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -490,6 +490,16 @@ comparable — a different profile is a different artifact (A8) — and a run th
 fails leaves the baseline it failed against rather than adopting the worse
 number.
 
+**One thing in this tier is a measurement rather than a budget.** `cargo test
+-p mcf-record --test how_the_record_grows` writes journals of a thousand to a
+million entries and prints what a replay, an index build, an index open and a
+query cost on this machine. It asserts one fact — that the index and the journal
+agree about what happened — and gates on none of the timings, because A18 keeps
+a measurement out of a pass condition. It rides here because it needs the same
+quiet machine everything else in this tier needs, and its figures are what
+[findings.md](findings.md) F14 was written from: re-run it when somebody
+doubts that the derived index still earns its bytes.
+
 **Growing a figure on purpose is a deliberate act, and looks like one.** Delete
 that figure's file in `.mcf-tiers/baselines/` and say in the commit what was
 bought. B-330's licence text is the first instance: carrying the whole GPL into
@@ -721,6 +731,14 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 24 — the record's own growth, measured on a schedule
+
+The performance tier gains `how_the_record_grows`, which is not a budget: it
+prints what a replay and the derived index cost at four sizes of record and
+asserts only that the two agree. It is in this tier because it wants the same
+quiet machine, and it is in the documentation because its figures are the ones
+D6's amendment rests on ([findings.md](findings.md) F14).
 
 ### Version 23 — the second `unsafe` opt-out
 
