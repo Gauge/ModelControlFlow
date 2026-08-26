@@ -73,6 +73,20 @@ pub(crate) fn run(
             served: false,
         };
     };
+    // A machine that has never acquired anything has no store, and that is not
+    // an unreadable one: `mcf list` has always said so and this said *the model
+    // store could not be read*, which is two answers to one situation (A6) and
+    // the wrong one of the two.
+    if !root.exists() {
+        return Response {
+            text: format!(
+                "no models: {} does not exist yet\n\
+                 \x20 nothing has been acquired on this machine, so there is nothing to check",
+                root.display()
+            ),
+            served: true,
+        };
+    }
     let holding = match store::held(&root) {
         Ok(holding) => holding,
         Err(failure) => {

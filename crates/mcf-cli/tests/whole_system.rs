@@ -773,6 +773,31 @@ fn what_was_acquired_is_checked_against_what_the_hub_says_now() {
     assert!(record.contains("relicensed"), "{record}");
 }
 
+/// A machine that has never acquired anything answers the same way to every
+/// surface that looks at the store (A6).
+///
+/// `mcf check` used to call it *the model store could not be read* while `mcf
+/// list` called it *does not exist yet* — two answers to one situation, and the
+/// failing one was the wrong one: a store nobody has created is not a store
+/// that cannot be read.
+#[test]
+fn a_machine_holding_nothing_says_the_same_thing_to_every_surface() {
+    let machine = Machine::new("check-empty");
+    for arguments in [vec!["list"], vec!["check"], vec!["check", "--here"]] {
+        let output = machine.run(&arguments);
+        assert!(
+            output.status.success(),
+            "{arguments:?} failed on a machine holding nothing: {}",
+            error_text(&output)
+        );
+        let said = text(&output);
+        assert!(
+            said.contains("does not exist yet"),
+            "{arguments:?} said something else: {said}"
+        );
+    }
+}
+
 /// Corruption on this disk is found by re-reading, and is a different fact
 /// from anything the hub says (B-301, §7.49, §3.8).
 ///
