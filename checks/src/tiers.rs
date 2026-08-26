@@ -122,7 +122,13 @@ pub const TIERS: &[Tier] = &[
         covers: "the binary as a process, against a real record, including restart and a kill",
         cadence: Cadence::Gating,
         command: "cargo test --workspace --locked --offline",
-        holds: &["crates/mcf-cli/tests/whole_system.rs"],
+        holds: &[
+            "crates/mcf-cli/tests/whole_system.rs",
+            // B-180's containment scenario is whole-system by necessity: what
+            // it asserts is that no *process* is started, which only a process
+            // can be hostile to.
+            "crates/mcf-cli/tests/untrusted_cannot_elevate.rs",
+        ],
     },
     Tier {
         id: "fault-injection",
