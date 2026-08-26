@@ -109,7 +109,7 @@ declare -a finds=(
     # resolved differently by whichever reader gets there first.
     "if entries.insert(key, value).is_some() {"
     # B62: a torn last line is a loss, and is not read as a whole one.
-    "let complete = line.ends_with('\\n');"
+    "let complete = raw.last() == Some(&b'\\n');"
     # §7.30: a journal written by a format this build does not read is refused
     # rather than appended to.
     "            Some(FORMAT_VERSION) => Ok(()),"

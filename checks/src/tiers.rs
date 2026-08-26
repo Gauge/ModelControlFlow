@@ -177,7 +177,14 @@ pub const TIERS: &[Tier] = &[
             flag: "with-mutation",
         },
         command: "scripts/check-mutants.sh",
-        holds: &["scripts/check-mutants.sh"],
+        holds: &[
+            "scripts/check-mutants.sh",
+            // The catalogue's *placement* is checked by the gating tier, not by
+            // this one: a mutation that cannot be placed stops the whole tier
+            // with `cannot check`, and the person who can fix it is whoever
+            // moved the line rather than whoever runs the tier half a day later.
+            "checks/tests/the_mutation_catalogue_still_fits.rs",
+        ],
     },
 ];
 
