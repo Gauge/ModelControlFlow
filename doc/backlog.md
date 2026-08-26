@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 140 |
+| **Version** | 141 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**251 items: 51 decisions (30 open, 1 drafted, 2 narrowed, 18 resolved) and 200
-build items (50 done, 1 dropped, 10 in progress, 51 blocked on a decision, 89 open).** Every item cites
+**253 items: 52 decisions (30 open, 1 drafted, 2 narrowed, 19 resolved) and 201
+build items (50 done, 1 dropped, 11 in progress, 51 blocked on a decision, 89 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -80,6 +80,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §3.6, §3.7 | M1 | **decided** — D37, on [findings.md](findings.md) F17's measurement of what a hub will actually say. Checked when somebody asks and never on a timer (B4, §3.13); recorded against the provenance rather than over it, because provenance is what was true at acquisition (§3.6); and never retroactive — a model vanishing from a hub says nothing about the bytes on this disk, and a tool that greyed out its own measurements because somebody else deleted something would be destroying evidence. What is really lost is third-party reproducibility, which belongs in the repro bundle as a stated condition (PR2). What MCF cannot detect is *withdrawn* versus *private* versus *never existed*: the hub answers 401 to all three, so the refusal names the ambiguity instead of advising a credential that may not exist |
 | DEC-052 | What a *controlled environment* is, concretely: a container MCF builds, a prefix MCF manages, or something else — and what containment it must give against an engine's own installer | §7.53 | D39, A27, §6.32 | M2 | open — D39 states the four conditions any answer must satisfy (pinned and recorded, reproducible, contained and reversible, never the baseline). What is not settled is the mechanism, and it decides how much of somebody else's installer MCF is prepared to run |
 | DEC-053 | What B28 forbids, exactly: recognizing an *artifact* against reading a *field the file states* — and where a family may be named | §XII, B28, B29 | D26, A19 | M2 | **resolved** — they are different things and only the first is forbidden. GGUF states `general.architecture` and `tokenizer.ggml.pre`, and an engine that would not read them is an engine that runs one family; the reference model's publisher, repository and digest are identity and are read nowhere. A family may be named in `crates/mcf-standin/src/architecture.rs` and nowhere else, and that module is held to three things the neutrality check verifies: it names no publisher, it names no artifact, and no function in it takes a name and answers yes or no — the shape *is this the special one* is what B28 is actually about. Totality is deliberately **not** checked: a `match` on a `&str` does not compile without a catch-all, so a check for it would be one that cannot fail (F19) |
+| DEC-054 | What the engine is developed against, given that the reference model is 16 GB and every iteration runs it | §XII, D38, §3.12 | D40, B-370 | M2 | **resolved** — not the reference model. §XII's three justifications are provenance, the quantization frontier, and residency pressure; none is about running a model, and the size that makes residency real makes iteration slow. The engine is developed against a conformance corpus of the smallest *trained* model per family, one distinct quantization each. §XII amended. The consequence that decides the order of work: a small model weakens the *coherence* oracle — F20 told a right engine from a subtly wrong one by `Paris` against plausible English, and a 135M model cannot be relied on for that — so a small corpus **requires** B-368's reference implementation, and with it is strictly better, because agreeing logit-for-logit is a sharper test than reading the output and being satisfied (A19) |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-044 | How a user declares a workflow — a named list, a weighting across laboratories, inference from their own traffic, or from an imported configuration | §7.44 | **§6.36, B41** | M7 | open |
@@ -154,6 +155,7 @@ first and importance second.
 | B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
 | B-364 | Quantization coverage: every scheme the formats MCF acquires can carry, decoded against published vectors rather than against MCF's own reader | D38, §III, A19 | A file in each scheme decodes to the values its reference implementation produces; a scheme MCF cannot decode is named, never guessed | **in progress** — the reference model's own file reads. The K family (Q2_K, Q3_K, Q4_K, Q5_K, Q6_K) and three of the non-linear family (IQ4_NL, IQ4_XS, IQ3_S) are decoded, which takes `Qwen3.8-27B-UD-Q4_K_M` from *five schemes MCF cannot read* to **all 866 tensors in schemes it can**. The IQ schemes needed two codebooks, which are data rather than logic and are transcribed with their source and terms recorded ([vendored.md](vendored.md) §2b): a table cannot be derived, and one MCF invented would decode 128 tensors into confident nonsense. Every test is hand-computed from the format's own sentence rather than recorded from the decoder, which is the only check available until B-368's oracle. Three of the five K decoders were then found **wrong** by the first real model to use one — every value decoded correctly and written to the wrong position ([findings.md](findings.md) F19) — and rewritten against the format's own source. The tests that missed it are replaced by ones that could not: every position holds a distinct value, so a permutation fails. What remains: the schemes no acquired file has needed yet, and the ones a later format adds |
 | B-365 | Architecture coverage: the families the hub actually publishes, each as its own reading of the same operations rather than a special case bolted onto llama | D38, §III | A model of each covered family reaches a first token; one MCF does not cover is refused by name with what it declared | in progress — llama and qwen3 run and are read from real files. Qwen3 needed a second tokenizer (byte-level byte-pair, 151k merges, a pre-tokenizer split) and two things no file states: the rotary pairing and a per-head query/key normalization (F20). Remaining, in order: gemma3's sandwich normalizations, mixture-of-experts routing, embedding-only families, and the hybrid attention the reference model itself uses (F16 found sixteen full-attention layers in sixty-four) |
+| B-370 | The conformance corpus: smallest trained model per family, one quantization each, acquired by MCF with provenance, run by a scheduled tier | D40, DEC-054, §3.12, §XII | Every family MCF claims runs a corpus model and is compared against the oracle; every family it does not claim is refused by name saying what it wanted; the whole corpus runs in a scheduled tier without the exclusive window | in progress — six acquired (1.4 GB against the reference model's 16 GB): llama with a byte-pair vocabulary, llama with a unigram one, qwen3, gemma3, a mixture-of-experts, and an embedding family. Two run today; the other four refuse, each naming exactly what it wants — a pre-tokenizer, a third tokenizer scheme, an expert-routing tensor, an architecture. That list is B-365's order of work |
 | B-366 | Threads without changing the answer: work split across processors, partitioned by index and reduced in a fixed order, so a result does not depend on how busy the machine was | D38, §3.12, D19 | The same input produces the same bytes at one thread and at many, asserted as a property over generated inputs | open — floating-point addition is not associative, which makes this the one place reproducibility can be lost without anybody noticing |
 | B-367 | Provisioned environments: MCF installs, builds and pins a component itself, records exactly what it got, can do it again, and can remove it without residue | D39, §3.4, A27, §6.32 | A provisioned engine is reproducible from its record; removing it leaves the machine as it was found; nothing outside the environment MCF made is touched | open — D39's four conditions are the specification. The container runtime is one candidate for *controlled*, a managed prefix is another, and which is a decision (DEC-052) |
 | B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is a recorded finding about one of them | D39, D38, A19, §II | A divergence is reported with both outputs and the conditions of each; agreement across a corpus of models is what licenses MCF's own engine to be believed | open — this is what A19 has wanted since it was written, and what D31 could only half-answer with a second implementation MCF also wrote |
@@ -376,6 +378,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 141 — the reference model was asked to be two things
+
+DEC-054 resolved and B-370 opened, against D40's amendment of §XII. The engine
+is developed against a conformance corpus of the smallest trained model per
+family — six of them, 1.4 GB against the reference model's 16.5 GB, each a
+different quantization ([findings.md](findings.md) F21). Two run; the four that
+refuse name what they want, and that list is B-365's remaining order of work.
+
+The cost is recorded with the decision: a small model cannot referee what F20
+turned on, so B-368's oracle moves ahead of the remaining families rather than
+after them.
+
+### Version 140 — what B28 forbids, exactly
+
+DEC-053 resolved. Reading `general.architecture` is not recognizing an artifact,
+and B28's check now distinguishes them: a family may be named in one declared
+module, which may name no publisher, no artifact, and no function taking a name
+and answering yes or no. B-365 advanced to in progress — llama and qwen3 both
+run against real files (F20).
 
 ### Version 139 — a real model, and the two defects it found in an hour
 

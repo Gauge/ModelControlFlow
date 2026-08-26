@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 24 |
+| **Version** | 25 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1667,7 +1667,85 @@ are right for these two files; it says nothing about the paths they do not
 exercise — long contexts, other quantization schemes, the grouped-query ratios
 these two happen not to have.
 
+## 21 · F21 — Six families for a tenth of one model's bytes (B-369, D40, DEC-054, §3.12)
+
+**What prompted it.** The operator observed that development against the
+reference model is slow, that §XII's choice of it was made for its quality
+rather than for its fitness as a development subject, and that the models
+already on this machine should not be used — their state is unknown and they are
+all large. F19 had reached for those models precisely because they were already
+there, which is how an unexamined convenience becomes a condition of the work.
+
+**What was acquired.** The smallest *trained* model of each family MCF covers or
+means to cover, one distinct quantization apiece so that architecture coverage
+and quantization coverage come from the same six files. Every one was fetched by
+`mcf pull`, digest-verified, and recorded with its provenance.
+
+| family | artifact | quantization | bytes |
+|---|---|---|---|
+| llama, unigram vocabulary | `Felladrin/gguf-Llama-160M-Chat-v1` | Q4_K | 121,295,296 |
+| llama, byte-pair vocabulary | `bartowski/SmolLM2-135M-Instruct-GGUF` | Q8_0 | 144,811,360 |
+| qwen3 | `unsloth/Qwen3-0.6B-GGUF` | Q4_K_M | 396,705,472 |
+| gemma3 | `unsloth/gemma-3-270m-it-GGUF` | Q6_K | 282,975,264 |
+| mixture-of-experts | `RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf` | Q5_K_M | 500,878,816 |
+| embedding | `leliuga/all-MiniLM-L6-v2-GGUF` | Q4_0 | 19,699,648 |
+
+**1.4 GB for six families against 16.5 GB for one model.** The two that run
+today answer a five-token prompt in 3.9 s (160M) and 15.9 s (0.6B) on this
+machine, measured with `time` around `mcf run` at a ten-token budget. These are
+*not* speeds in B65's sense and cannot become them — they are the stand-in's own
+cost and are recorded here only as the quantity the decision was about: how long
+it takes to find out you were wrong.
+
+**The other four refuse, and what they say is the finding's second half.** Each
+names exactly what it wanted:
+
+- the byte-pair llama asks for a pre-tokenizer called `smollm`, which MCF has
+  not implemented and will not substitute (A7);
+- the embedding model carries a third tokenizer scheme, `bert`;
+- the mixture-of-experts file has no `blk.0.ffn_gate.weight`, because its gate
+  is per-expert;
+- gemma3 is an architecture MCF has not been taught, and says which it has.
+
+Four refusals, four different subsystems, four different categories, and not one
+of them a crash or a guess. That is the surface working — but note what it also
+is: **the refusals are the order of work**, derived from artifacts rather than
+from a list somebody wrote down. B-365's remaining sequence is now read off six
+files instead of being predicted.
+
+**What this costs, stated because it is not free.** A 135M model cannot referee
+the difference F20 turned on. That finding separated a correct engine from a
+subtly wrong one because the correct one answered `Paris` and the wrong one
+produced fluent English containing no answer; the judgement needed a model good
+enough to be right. The corpus buys iteration speed by giving up the oracle that
+F20 used, and the only thing that buys it back is a reference implementation to
+compare against numerically — which is D39's opening and B-368's item. That is
+why DEC-054 moves B-368 ahead of the remaining families rather than after them.
+
+**What was not established.** That these six are the smallest such models, only
+that they are the smallest found by asking the hub for each family's known small
+releases; a smaller trained gemma3 or mixture-of-experts may exist. Nothing here
+measures quality, and the two timings measure this machine and this stand-in.
+Whether the four refusals are the *only* things those files need is unknown —
+a refusal names the first thing missing, not every thing.
+
 ## Changelog
+
+### Version 25 — six families for a tenth of one model's bytes
+
+F21. The reference model is 16.5 GB and every engine iteration ran it. Six small
+trained models — one per family, one quantization each, 1.4 GB together —
+replace it for that job, and §XII is amended (D40) to say which job each
+artifact has.
+
+Two of the six run. The other four refuse, each naming what it wants: a
+pre-tokenizer, a tokenizer scheme, an expert-routing tensor, an architecture.
+Those four refusals are B-365's remaining order of work, read off artifacts
+rather than predicted.
+
+The cost is stated rather than glossed: small models cannot referee what F20
+turned on, so the corpus depends on B-368's oracle rather than merely preferring
+it.
 
 ### Version 24 — a second architecture, and two silences that fail differently
 

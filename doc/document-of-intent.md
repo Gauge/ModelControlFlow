@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 42 |
+| **Version** | 43 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -269,10 +269,30 @@ this as intent rather than as a note:
   hypothetical ones; small enough that one machine can hold it. A 7B model would
   have let those questions stay theoretical.
 
+**Amended (D40, F21): the reference model is the subject of provenance,
+frontier and residency work, and is not what the engine is developed against.**
+The three properties above are all still true and none of them is about running
+the model. The size that makes residency a real problem is the size that makes
+every engine iteration slow, and "for all initial testing" quietly asked one
+artifact to be both the hard case and the fast one. It cannot be both.
+
+What the engine is developed against is a **conformance corpus**: the smallest
+*trained* model of each family MCF covers, one distinct quantization apiece, all
+acquired by MCF with provenance recorded. Six of them together are a tenth of
+the reference model's bytes and answer in seconds rather than in whatever a 27B
+model costs on the stand-in. The corpus is a fixture in exactly the sense §6.22
+means — no code path may know a model is in it — and it is bound by the same
+three prohibitions below.
+
+The reference model keeps everything §XII gave it: it is the provenance case
+MCF reads, the frontier's subject, and the artifact against which residency,
+arbitration and memory pressure are real. It is simply not run to find out
+whether an attention block is right.
+
 What this intent does **not** license is set out in §6.22 and §6.23. In
 summary: no code path may behave specially because an artifact is the reference
-model, the test suite may not depend on it, and nothing measured on it
-generalizes to models in general.
+model — or a member of the corpus — the test suite may not depend on any single
+one of them, and nothing measured on one generalizes to models in general.
 
 ### XIII. Analysis — "an analysis tool as well as a hosting platform"
 
@@ -4308,6 +4328,59 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
+### D40 — The reference model is not what the engine is developed against *(amends §XII, on the operator's instruction)*
+
+**§XII named one 27-billion-parameter artifact "for all initial testing". It is
+the right choice for what its own three reasons are about, and the wrong one for
+running the engine. Those are separate jobs and get separate artifacts.**
+
+**What §XII actually argued.** Its three properties are that the reference model
+is the hard *provenance* case, that its breadth of quantizations is a frontier,
+and that 27B makes *residency* pressure real rather than hypothetical. Every one
+of those is true and none of them is about whether a forward pass is correct.
+The phrase "for all initial testing" reached further than the reasons under it.
+
+**Why the reach is expensive.** Development against an engine is a loop: change
+a block, run a model, read what came out. The size that makes residency a real
+problem is exactly the size that makes that loop slow, and a loop nobody wants
+to run is a loop that gets run less often than the work needs. This is D26's
+habit turned on MCF's own process — build the observable — and the observable
+here is *how long it takes to find out you were wrong*.
+
+**The conformance corpus.** The engine is developed against the smallest
+**trained** model of each family MCF covers, one distinct quantization each,
+every one acquired by MCF with its provenance recorded. Trained rather than
+random-weight: a model with random weights exercises the plumbing and cannot
+show that the arithmetic is right, and F20's defects were both arithmetic that
+plumbing tests passed straight through.
+
+**The consequence that orders the work, and it is not a small one.** A small
+model makes the *coherence* oracle weaker. F20 told a correct engine from a
+subtly wrong one because the correct one said `Paris` and the wrong one said
+fluent English with no answer in it — a judgement that needs a model good enough
+to be right. A 135M model is not reliably right, so its output cannot referee
+the difference.
+
+So this decision **depends on** D39's oracle rather than merely preferring it. A
+small corpus without a reference implementation to compare against is a corpus
+that can catch a model repeating one token forever and cannot catch a rotation
+applied to the wrong pair. With one, the corpus is strictly better than the
+reference model ever was: agreeing with a known-good implementation logit for
+logit is a sharper instrument than reading the output and being satisfied, and
+it is sharper at 135M than coherence is at 27B (A19).
+
+**What the reference model keeps.** Everything §XII's three reasons justify: the
+provenance chain MCF reads, the frontier's subject, and the artifact against
+which residency, arbitration and memory pressure are measured. It is not run to
+find out whether an attention block is right.
+
+**What the corpus does not license.** §6.22 and §6.23 apply to it unchanged and
+in the plural. No code path may know that a model is in the corpus, no single
+member may become something the suite depends on, and nothing measured on one
+generalizes to models in general. B28's mechanical check is what enforces the
+first, and DEC-053 settled how it tells a family GGUF states from an artifact
+MCF must not recognize.
+
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
 D39 admits a component MCF *provisions* rather than ships, and states four
@@ -4395,6 +4468,24 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 43 — the reference model was asked to be two things
+
+**D40** amends §XII. Its three reasons — the hard provenance case, the breadth
+of quantizations, the size at which residency is a real problem — are all about
+what a *large* artifact is good for, and "for all initial testing" quietly asked
+the same 16 GB file to also be what the engine is developed against. The size
+that makes residency real is the size that makes every iteration slow.
+
+The engine now has a conformance corpus instead: the smallest trained model of
+each family, one quantization each, six of them totalling a tenth of the
+reference model's bytes ([findings.md](findings.md) F21).
+
+The part worth keeping is the cost. Small models weaken the coherence oracle —
+F20 separated a correct engine from a subtly wrong one on the strength of the
+model knowing the answer, and a 135M model does not reliably know it. So this
+decision does not merely prefer D39's oracle, it depends on it, and B-368 moves
+ahead of the remaining families in the order of work.
 
 ### Version 42 — the engine is ours, and setup is a thing MCF may do
 
