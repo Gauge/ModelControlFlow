@@ -848,6 +848,52 @@ fn a_requantization_records_the_weights_it_was_made_from() {
     );
 }
 
+/// The plan is re-asked once the model is here, because it was made from what a
+/// hub declared and what is true now is a different question (PR3, B-213).
+#[test]
+fn what_arrived_is_planned_again_now_that_it_is_here() {
+    use mcf_lab::serving::answer;
+    let machine = Machine::new("pull-replan");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    let configuration = r#"{"num_hidden_layers":4,"num_key_value_heads":2,"head_dim":64}"#;
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/owner/model".to_owned(),
+            answer(&format!(r#"{{"sha":"{revision}"}}"#)),
+        ),
+        (
+            format!("/api/models/owner/model/tree/{revision}?recursive=true"),
+            answer(&format!(
+                r#"[{{"type":"file","size":{},"path":"config.json"}},
+                    {{"type":"file","size":{},"lfs":{{"oid":"{digest}","size":{}}},"path":"model.gguf"}}]"#,
+                configuration.len(),
+                weights.len(),
+                weights.len()
+            )),
+        ),
+        (
+            format!("/owner/model/resolve/{revision}/config.json"),
+            answer(configuration),
+        ),
+        (
+            format!("/owner/model/resolve/{revision}/model.gguf"),
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{weights}",
+                weights.len()
+            ),
+        ),
+    ]))
+    .expect("a loopback port");
+
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    let said = text(&pulled);
+    assert!(said.contains("now that it is here"), "{said}");
+    assert!(said.contains("model.gguf — fits"), "{said}");
+}
+
 /// A repository that publishes no configuration cannot be planned for, and MCF
 /// says that rather than showing a plan it guessed (A7).
 #[test]

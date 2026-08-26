@@ -168,8 +168,22 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     };
 
     let recorded = record(hub, listing, entry, &acquired, at);
+    // The plan is made from what a hub declares, before anything is fetched.
+    // What is true *now* is a different question, and PR3 asks it explicitly:
+    // the machine may have less memory than it had, and the file that arrived
+    // may not be the size the listing promised. Both are re-read here rather
+    // than assumed to have held.
+    let again = plan_for(hub, listing)
+        .and_then(|plan| plan.into_iter().find(|line| line.contains(&entry.path)));
     Response {
-        text: render(&acquired, listing, &sidecar, &provenance, recorded.as_ref()),
+        text: render(
+            &acquired,
+            listing,
+            &sidecar,
+            &provenance,
+            recorded.as_ref(),
+            again.as_deref(),
+        ),
         served: true,
     }
 }
@@ -555,6 +569,7 @@ fn render(
     sidecar: &Path,
     provenance: &Provenance,
     recorded: Result<&PathBuf, &Failure>,
+    plan_now: Option<&str>,
 ) -> String {
     let verification = match &acquired.verification {
         Verification::Digest { digest } => format!("verified against the hub's digest: {digest}"),
@@ -600,6 +615,19 @@ fn render(
                 ", starting again each time"
             }
         ));
+    }
+    match plan_now {
+        Some(verdict) => {
+            lines.push(format!(
+                "  and now that it is here, at {PLANNING_CONTEXT} tokens of context:"
+            ));
+            lines.push(format!("  {}", verdict.trim_start()));
+        }
+        None => lines.push(
+            "  whether it will run here is a question MCF cannot answer for this repository: \
+             that needs the model's own configuration and this machine's free memory (A7)"
+                .to_owned(),
+        ),
     }
     match recorded {
         Ok(path) => lines.push(format!("  recorded in {}", path.display())),
