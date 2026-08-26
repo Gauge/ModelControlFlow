@@ -14,4 +14,5 @@
 //! makes central, because a daemon idles far more than it works.
 
 pub mod control;
+pub mod cost;
 pub mod daemon;

@@ -669,11 +669,20 @@ fn a_model_is_acquired_listed_and_removed() {
         "{record}"
     );
 
-    // Listed, with where it came from.
+    // Listed, with where it came from and what its terms are — §III asks that
+    // a licence be legible *before use*, and this is where an operator sees
+    // what they hold (B-023).
     let listed = text(&machine.run(&["list"]));
     assert!(listed.contains("model.gguf"), "{listed}");
     assert!(listed.contains("owner/model"), "{listed}");
     assert!(!listed.contains("origin unknown"), "{listed}");
+    assert!(listed.contains("licence: apache-2.0"), "{listed}");
+    assert!(listed.contains("permissive"), "{listed}");
+
+    // `mcf explain` says the same sentence about the same model, and the unit
+    // test beside that surface is where it is asserted: the fixture here is
+    // four words of text rather than a readable model, because what this test
+    // is about is the transfer rather than the format.
 
     // And removed, deliberately.
     let removed = machine.run(&[
@@ -1062,6 +1071,112 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
 
     let ended = serving.wait().expect("the daemon exits");
     assert!(ended.success(), "the daemon exited badly: {ended:?}");
+}
+
+/// A daemon killed at every stage of its life comes back (B-030, A27, §3.1).
+///
+/// **What B-030's condition asks.** *The lab kills the daemon at every
+/// lifecycle stage and it recovers to a coherent, queryable state each time.*
+/// The stages a daemon has today are the ones it can be killed *in*: starting
+/// up, recording that it started, idle in `accept`, and answering a request.
+/// Each is reached by killing at a different moment after the spawn, the way
+/// `a_run_killed_mid_write_leaves_a_record_that_still_opens` reaches the
+/// moments of an ordinary run.
+///
+/// **What must be true afterwards, whichever moment the kill landed on.** A
+/// dead daemon leaves a socket file behind — the kernel does not remove one for
+/// a process that did not get to — and the next daemon must take it over rather
+/// than refuse to start beside a corpse. The record must open, whole or with a
+/// bounded loss it reports (B62). And the machine must be *queryable*: `mcf
+/// status` gets an answer from the new daemon.
+///
+/// **The kill is `SIGKILL`.** A28's shape: what is asserted is what survives
+/// the worst interruption, not what a polite shutdown manages to clean up.
+#[test]
+fn a_daemon_killed_at_any_stage_comes_back() {
+    let machine = Machine::new("daemon-killed");
+
+    for attempt in 0..8_u64 {
+        let mut daemon = machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("the daemon spawns");
+
+        // Spread across the window a daemon's start occupies — spawn, recover
+        // the record and the store, bind, record that it started — so that
+        // some kills land before the socket exists, some during the append
+        // that says it is up, and some while it is idle in `accept`. The last
+        // two attempts talk to it first, so the kill lands on a daemon that
+        // has answered.
+        std::thread::sleep(std::time::Duration::from_millis(attempt * 4));
+        if attempt >= 6 {
+            let _asked = machine.run(&["status"]);
+        }
+        let _killed = daemon.kill();
+        let _reaped = daemon.wait();
+
+        // The record either replays whole or says exactly what it lost. A
+        // daemon killed mid-append is the one thing that can tear a line, and
+        // the loss must be the tail rather than the history (A4, B62).
+        if machine.journal().exists() {
+            let replayed = replay(&machine.journal()).expect("the record opens after a kill");
+            if let Some(loss) = &replayed.loss {
+                let length = std::fs::metadata(machine.journal())
+                    .expect("the journal is there")
+                    .len();
+                assert!(
+                    u64::try_from(loss.byte_offset).unwrap_or(u64::MAX) < length,
+                    "attempt {attempt}: the loss is not inside the file: {loss}"
+                );
+            }
+        }
+
+        // And the machine is queryable again: a new daemon starts, over the
+        // socket the dead one left, and answers.
+        let mut next = machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("a second daemon spawns");
+
+        let mut answered = None;
+        for _ in 0..200 {
+            let asked = machine.run(&["status"]);
+            if asked.status.success() {
+                answered = Some(text(&asked));
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let answered = answered
+            .unwrap_or_else(|| panic!("attempt {attempt}: no daemon answered after the kill"));
+        assert!(
+            answered.contains("mcf is up on"),
+            "attempt {attempt}: {answered}"
+        );
+        // Coherent as well as answering: what it recovered is what the disk
+        // holds, and it says so rather than starting with an empty history
+        // (B-030, B62).
+        assert!(
+            answered.contains("recovered"),
+            "attempt {attempt}: the daemon did not say what it recovered: {answered}"
+        );
+
+        let stopped = machine.run(&["stop", "--because", "the next attempt needs the socket"]);
+        assert!(
+            stopped.status.success(),
+            "attempt {attempt}: {}",
+            error_text(&stopped)
+        );
+        let ended = next.wait().expect("the daemon exits");
+        assert!(
+            ended.success(),
+            "attempt {attempt}: the daemon exited badly: {ended:?}"
+        );
+    }
 }
 
 /// Asking a daemon that is not there to stop says so, and says what would start

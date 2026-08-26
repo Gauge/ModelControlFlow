@@ -107,6 +107,9 @@ fn render(root: &Path, holding: &[Held]) -> String {
     let mut unaccounted = 0_usize;
     for held in holding {
         lines.push(format!("  {}", held.describe()));
+        // §III asks that terms be legible *before use*, and this is where an
+        // operator sees a model before using it (B-023).
+        lines.push(format!("    {}", held.terms()));
         if held.provenance.is_err() {
             unaccounted = unaccounted.saturating_add(1);
         }

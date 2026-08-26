@@ -36,6 +36,42 @@ fn an_explanation_separates_declared_read_and_chosen() {
     let _cleared = std::fs::remove_dir_all(&scratch);
 }
 
+/// The terms are shown where somebody decides whether to run it (§III, B-023),
+/// and an artifact nothing accounts for says its terms are unknown rather than
+/// leaving the line out — an absent line reads as *no restrictions* (A7).
+#[test]
+fn the_terms_are_shown_and_an_unaccounted_model_says_they_are_unknown() {
+    let scratch = std::env::temp_dir().join(format!("mcf-explain-terms-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let model = scratch.join("model.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let bare = run(model.to_str().unwrap_or_default()).text;
+    assert!(bare.contains("terms"), "{bare}");
+    assert!(bare.contains("unknown"), "{bare}");
+
+    // With provenance beside it, the identifier the repository declared and the
+    // family its own name puts it in — and nothing further (B-023).
+    let provenance = mcf_core::provenance::Provenance::acquired(
+        mcf_core::provenance::Origin::hub(
+            mcf_core::provenance::Repository::new("a-publisher/a-model"),
+            None,
+        ),
+        mcf_core::time::Timestamp::now(),
+    )
+    // Through `recognize`, which is the only way a licence enters MCF: it
+    // normalizes the case an identifier is written in, and a `Spdx` built by
+    // hand from a differently-cased string is one nothing would match.
+    .with_licence(mcf_hub::licence::recognize("Apache-2.0").expect("a known identifier"));
+    mcf_hub::store::record_provenance(&model, &provenance).expect("a sidecar");
+
+    let said = run(model.to_str().unwrap_or_default()).text;
+    assert!(said.contains("apache-2.0"), "{said}");
+    assert!(said.contains("permissive"), "{said}");
+
+    let _cleared = std::fs::remove_dir_all(&scratch);
+}
+
 /// The unanswered questions are named with their reasons, because a defaults
 /// screen that listed only what MCF chose would imply it had a basis for
 /// choosing (§6.5, C7).
