@@ -32,7 +32,12 @@ fn the_pre_tokenizer_table_lists_only_what_it_implements() {
         );
     }
     assert_eq!(pre_tokenizer("a pre-tokenizer nobody has written"), None);
-    for split in [Split::Gpt2, Split::Modern] {
+    for split in [
+        Split::Gpt2,
+        Split::Gpt2DigitsApart,
+        Split::ModernThreeDigits,
+        Split::ModernOneDigit,
+    ] {
         assert_eq!(
             pre_tokenizer(a_pre_tokenizer(split)),
             Some(split),

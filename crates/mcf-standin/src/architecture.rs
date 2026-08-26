@@ -69,29 +69,44 @@ pub fn rotation(family: &str) -> Rotation {
 /// therefore which merges can apply, and therefore the identifiers, silently
 /// (A7, A19).
 ///
+/// **The names are transcribed, not inferred.** MCF's first version of this
+/// table grouped `qwen2` with `llama-bpe` because their expressions look alike,
+/// and claimed `deepseek-llm` for the same group. Neither was true: qwen2 cuts
+/// digits one at a time, and deepseek's pre-tokenizer is six expressions over
+/// explicit character ranges and is not implemented here at all (F23). What a
+/// name maps to is a fact about somebody else's software, and the only way to
+/// know it is to read that software.
+///
 /// Unlike [`rotation`], this table is total in the other direction: everything
 /// it does not name is refused rather than defaulted, because here MCF has a
 /// choice between saying *no* and being quietly wrong.
 #[must_use]
 pub fn pre_tokenizer(named: &str) -> Option<Split> {
     match named {
-        // What the format meant before the field existed.
-        "gpt-2" | "gpt2" | "default" => Some(Split::Gpt2),
-        "llama-bpe" | "qwen2" | "deepseek-llm" | "smaug-bpe" => Some(Split::Modern),
+        "gpt-2" | "phi-2" | "jina-es" | "jina-de" | "jina-v2-es" | "jina-v2-de" | "jina-v1-en"
+        | "jina-v2-code" | "roberta-bpe" | "gigachat" | "a.x-4.0" | "mellum" | "modern-bert"
+        | "exaone4" | "mpt" | "olmo" | "jais" | "trillion" | "granite-docling" => Some(Split::Gpt2),
+        "smollm" | "starcoder" | "refact" | "command-r" | "codeshell" | "exaone" | "minerva-7b"
+        | "mellum2" => Some(Split::Gpt2DigitsApart),
+        "llama3" | "llama-v3" | "llama-bpe" | "falcon3" | "falcon-h1" | "pixtral" | "midm-2.0"
+        | "lfm2" | "jina-v5-nano" | "smaug-bpe" => Some(Split::ModernThreeDigits),
+        "qwen2" | "qwen35" | "deepseek-r1-qwen" | "kormo" | "f2llmv2" | "megrez" | "stablelm2"
+        | "hunyuan" | "solar-open" => Some(Split::ModernOneDigit),
+        // `default` is deliberately absent. It is not GPT-2's expression — it
+        // is four expressions including one that splits on punctuation — and a
+        // file that names it, or names none at all, is refused rather than run
+        // through something that resembles it (A7). So are the deepseek
+        // families, whose pre-tokenizers are their own.
         _ => None,
     }
 }
 
 /// The pre-tokenizer names this crate answers to, for a refusal that lists
 /// them and for tests that need one without spelling it.
-pub const PRE_TOKENIZERS: &[&str] = &[
-    "gpt-2",
-    "default",
-    "llama-bpe",
-    "qwen2",
-    "deepseek-llm",
-    "smaug-bpe",
-];
+///
+/// One name per expression rather than all of them: a refusal that printed
+/// thirty-eight names would be a refusal nobody reads to the end.
+pub const PRE_TOKENIZERS: &[&str] = &["gpt-2", "smollm", "llama-bpe", "qwen2"];
 
 /// A pre-tokenizer name of each shape, for callers that need one and should not
 /// be spelling a family into their own source.
@@ -99,7 +114,9 @@ pub const PRE_TOKENIZERS: &[&str] = &[
 pub fn a_pre_tokenizer(split: Split) -> &'static str {
     match split {
         Split::Gpt2 => "gpt-2",
-        Split::Modern => "llama-bpe",
+        Split::Gpt2DigitsApart => "smollm",
+        Split::ModernThreeDigits => "llama-bpe",
+        Split::ModernOneDigit => "qwen2",
     }
 }
 

@@ -37,7 +37,7 @@ fn the_alphabet_is_the_one_the_vocabularies_are_written_in() {
 #[test]
 fn the_modern_split_is_the_one_the_expression_describes() {
     fn split(text: &str) -> Vec<&str> {
-        pieces(text, Split::Modern)
+        pieces(text, Split::ModernThreeDigits)
     }
     // A leading space joins the word after it, not the blanks before it.
     assert_eq!(
@@ -73,7 +73,12 @@ fn every_piece_of_the_text_survives_the_split() {
         "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}",
         "",
     ] {
-        for split in [Split::Gpt2, Split::Modern] {
+        for split in [
+            Split::Gpt2,
+            Split::Gpt2DigitsApart,
+            Split::ModernThreeDigits,
+            Split::ModernOneDigit,
+        ] {
             assert_eq!(
                 pieces(text, split).concat(),
                 text,
@@ -123,6 +128,49 @@ fn merging_never_loses_or_reorders_the_piece() {
             merge(piece, &ranks).concat(),
             piece,
             "{piece:?} did not survive"
+        );
+    }
+}
+
+/// The four expressions cut digits differently, and that is not decoration.
+///
+/// One takes up to three at a time, one exactly one, GPT-2 the whole run with
+/// the space before it, and the fourth one at a time with no space. A
+/// tokenizer that used the wrong one puts a number in different pieces, so a
+/// different set of merges can apply to it. This is the defect F23 found in
+/// MCF's own first version, kept as the test that would have caught it.
+#[test]
+fn each_expression_cuts_digits_its_own_way() {
+    assert_eq!(
+        pieces(" 12345 x", Split::ModernThreeDigits),
+        [" ", "123", "45", " x"]
+    );
+    assert_eq!(
+        pieces(" 12345 x", Split::ModernOneDigit),
+        [" ", "1", "2", "3", "4", "5", " x"]
+    );
+    assert_eq!(pieces(" 12345 x", Split::Gpt2), [" 12345", " x"]);
+    assert_eq!(
+        pieces(" 12345 x", Split::Gpt2DigitsApart),
+        [" ", "1", "2", "3", "4", "5", " x"]
+    );
+    // The last two agree on digits and disagree elsewhere, so neither is the
+    // other under another name.
+    assert_ne!(
+        pieces("(hello)", Split::ModernOneDigit),
+        pieces("(hello)", Split::Gpt2DigitsApart)
+    );
+}
+
+/// The digits-apart form is GPT-2's expression everywhere a digit is not
+/// involved.
+#[test]
+fn the_digits_apart_form_is_gpt2_away_from_digits() {
+    for text in ["The capital of France", "it's (hello) world\n\n  ok"] {
+        assert_eq!(
+            pieces(text, Split::Gpt2DigitsApart),
+            pieces(text, Split::Gpt2),
+            "{text:?}"
         );
     }
 }

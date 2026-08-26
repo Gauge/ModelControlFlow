@@ -341,7 +341,7 @@ fn pairs(
         tokens,
         merges,
         Some(crate::architecture::a_pre_tokenizer(
-            crate::bpe::Split::Modern,
+            crate::bpe::Split::ModernOneDigit,
         )),
         types,
         add_bos,
@@ -474,7 +474,7 @@ fn what_a_byte_pair_vocabulary_must_carry_is_checked() {
         &["a"],
         &[],
         Some(crate::architecture::a_pre_tokenizer(
-            crate::bpe::Split::Modern,
+            crate::bpe::Split::ModernOneDigit,
         )),
         None,
         None,
@@ -499,5 +499,39 @@ fn what_a_byte_pair_vocabulary_must_carry_is_checked() {
             .iter()
             .any(|entry| entry.value.contains("nobody has written")),
         "the refusal does not name what it asked for"
+    );
+}
+
+/// The empty string is still the whole text, and a unigram vocabulary encodes
+/// it as the space it puts in front of everything.
+///
+/// This is a regression: control-token matching was added to `encode` and its
+/// walk skipped an empty remainder, which silently turned "encode nothing" from
+/// *one token* into *no tokens* for every `SentencePiece` vocabulary. It was
+/// found by a round-trip over a real model rather than by any test here, which
+/// is why it now has one (F23).
+#[test]
+fn the_empty_string_is_still_segmented() {
+    let vocabulary = vocabulary(&["<s>", "\u{2581}", "\u{2581}a"], &[0.0, -1.0, -2.0]);
+    assert_eq!(
+        vocabulary.encode("", false),
+        Ok(vec![1]),
+        "the empty string should encode as the space prefix alone"
+    );
+    // And a byte-pair vocabulary, which adds no prefix, still gets nothing.
+    let pairs = pairs(&["<s>", "a", "b", "\u{120}"], &["x y"], None, Some(false));
+    assert_eq!(pairs.encode("", false), Ok(vec![]));
+}
+
+/// A file that says it wants no space prefix does not get one.
+#[test]
+fn the_file_decides_whether_a_space_is_prefixed() {
+    let vocabulary = vocabulary(
+        &["<s>", "\u{2581}", "\u{2581}a", "a"],
+        &[0.0, -1.0, -2.0, -3.0],
+    );
+    assert!(
+        vocabulary.adds_a_space_prefix(),
+        "a unigram vocabulary that does not say should add the prefix"
     );
 }

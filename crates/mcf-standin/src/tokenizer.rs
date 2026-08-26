@@ -83,6 +83,14 @@ pub struct Vocabulary {
     /// template that produced it as pieces would be a prompt the model has
     /// never seen (F19's lesson, one layer up).
     specials: Vec<(String, usize)>,
+    /// Whether a unigram vocabulary wants the space `SentencePiece` puts in
+    /// front of every text.
+    ///
+    /// `SentencePiece` was trained on text with a leading `▁`, so adding one is
+    /// the default and a file that wants otherwise says so. It is a genuine
+    /// convention rather than a quirk: it is what makes the first word of a
+    /// text tokenize the same way as the same word in the middle of one.
+    space_prefix: bool,
     /// Whether the file says a beginning-of-text token belongs at the front.
     ///
     /// `None` where the file does not say, which is read as *yes* for the
@@ -247,6 +255,10 @@ impl Vocabulary {
         Ok(Self {
             scheme,
             specials,
+            space_prefix: file
+                .get("tokenizer.ggml.add_space_prefix")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
             add_beginning: file
                 .get("tokenizer.ggml.add_bos_token")
                 .and_then(Value::as_bool),
@@ -283,6 +295,17 @@ impl Vocabulary {
         &self.scheme
     }
 
+    /// Whether encoding puts a space in front of the text.
+    ///
+    /// A caller comparing text against what came back through this vocabulary
+    /// needs to know: `SentencePiece` is not a bijection, and the space it adds
+    /// is the reason. Saying so is better than a decoder that strips a leading
+    /// space and eats a real one (A1).
+    #[must_use]
+    pub fn adds_a_space_prefix(&self) -> bool {
+        self.space_prefix && matches!(self.scheme, Scheme::Unigram)
+    }
+
     /// Segments text into identifiers.
     ///
     /// `with_beginning` asks for the model's own convention rather than for a
@@ -307,7 +330,12 @@ impl Vocabulary {
         while at <= text.len() {
             let Some(rest) = text.get(at..) else { break };
             let Some((offset, length, identifier)) = self.next_special(rest) else {
-                if !rest.is_empty() {
+                // Empty text is still segmented when it is the *whole* text,
+                // because a unigram vocabulary encodes the empty string as the
+                // space it puts in front of everything. An empty gap between
+                // two adjacent control tokens is not the whole text and gets
+                // nothing, which is the difference between the two conditions.
+                if !rest.is_empty() || at == 0 {
                     identifiers.extend(self.segment(rest)?);
                 }
                 break;
@@ -418,7 +446,7 @@ impl Vocabulary {
     /// representation at all: no token spells it and the vocabulary has no
     /// byte fallback. Dropping it would be losing information silently (A1).
     fn unigram(&self, text: &str) -> Result<Vec<usize>> {
-        let prepared = prepare(text);
+        let prepared = prepare(text, self.space_prefix);
 
         // Every character is a symbol, in a chain that merges rather than a
         // lattice that is searched. See the note on this function for why the
@@ -698,12 +726,15 @@ fn strings(file: &File, key: &str) -> Vec<String> {
 /// silently, and in a way that reads as the model being poor rather than as MCF
 /// being wrong (A7, A19).
 fn pre_tokenizer(file: &File) -> Result<Split> {
+    // A file that does not say is refused rather than assumed. llama.cpp's own
+    // fallback for the absent field is a *fourth* expression — four
+    // sub-expressions, one of them splitting on punctuation — and not GPT-2's,
+    // so "it predates the field, so it must be GPT-2" is exactly the plausible
+    // guess A7 exists to stop.
     let named = file
         .get("tokenizer.ggml.pre")
         .and_then(Value::as_text)
-        // A file that does not say is GPT-2's own, which is what the format
-        // meant before the field existed.
-        .unwrap_or("default");
+        .unwrap_or("(the file does not say)");
     crate::architecture::pre_tokenizer(named).ok_or_else(|| {
         Failure::new(
             Category::EngineUnavailable,
@@ -784,8 +815,12 @@ fn take_best(queue: &mut Vec<Bigram>) -> Option<Bigram> {
 
 /// `SentencePiece`'s preparation: a leading space, and every space written as
 /// `▁`.
-fn prepare(text: &str) -> String {
-    let mut out = String::from(SPACE);
+fn prepare(text: &str, space_prefix: bool) -> String {
+    let mut out = if space_prefix {
+        String::from(SPACE)
+    } else {
+        String::new()
+    };
     for character in text.chars() {
         if character == ' ' {
             out.push(SPACE);

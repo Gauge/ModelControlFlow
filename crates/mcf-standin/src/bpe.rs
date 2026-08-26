@@ -32,17 +32,39 @@
 use std::collections::BTreeMap;
 
 /// How a pre-tokenizer splits text before anything is merged.
+///
+/// **Four, and they are genuinely four.** MCF's first attempt at this had two,
+/// because two of them look alike: they differ only in whether digits come in
+/// groups of up to three or one at a time. That is a different cut and
+/// therefore a different set of merges that can apply. Reading the reference
+/// implementation is what found it, and it is why these are transcribed rather
+/// than inferred (F23).
+///
+/// **Named for what they do rather than for who uses them.** Which family asks
+/// for which expression is a fact about model files, and B28 keeps every such
+/// fact in one module (DEC-053). What is left here is the expression itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Split {
     /// The original GPT-2 expression: contractions, then runs of letters, of
     /// digits, of symbols, each optionally preceded by one space.
     Gpt2,
-    /// The expression llama.cpp calls `llama-bpe` and `qwen2` — they are the
-    /// same expression — which differs from GPT-2's in three ways that matter:
-    /// digits come in groups of at most three, a run of symbols swallows the
-    /// newlines after it, and a run of whitespace ending in a newline is one
-    /// piece.
-    Modern,
+    /// GPT-2's, but every digit is cut out on its own first, so a number is
+    /// never one token and never carries the space before it.
+    Gpt2DigitsApart,
+    /// The later shape: a lead character that need not be a space, symbol runs
+    /// that swallow the newlines after them, a whitespace run ending in a
+    /// newline as one piece — and digits in groups of at most three.
+    ModernThreeDigits,
+    /// The same, with digits one at a time.
+    ///
+    /// This also stands in for `qwen35`, which differs from `qwen2` in one
+    /// respect MCF cannot currently express: one of them joins combining marks
+    /// to the letters they belong to (`[\p{L}\p{M}]` where the other has
+    /// `\p{L}`).
+    /// Rust's `is_alphabetic` — what this reads `\p{L}` as — already includes
+    /// the marks Unicode calls alphabetic, so the two agree on most text and
+    /// may differ on some scripts. Stated rather than silently assumed (A21).
+    ModernOneDigit,
 }
 
 /// Splits text into the pieces the merges are applied within.
@@ -53,21 +75,70 @@ pub enum Split {
 /// alternative matches rather than skipping ahead.
 #[must_use]
 pub fn pieces(text: &str, split: Split) -> Vec<&str> {
+    // One of these applies two expressions in sequence: every digit becomes its own
+    // piece, and GPT-2's expression is then applied to what is left between
+    // them. Doing that in one pass would be wrong — GPT-2's ` ?\p{N}+` would
+    // take ` 123` whole before the digit rule ever saw it.
+    if split == Split::Gpt2DigitsApart {
+        let mut out = Vec::new();
+        for run in digits_apart(text) {
+            if run.chars().next().is_some_and(char::is_numeric) {
+                out.push(run);
+            } else {
+                out.extend(scan(run, Split::Gpt2));
+            }
+        }
+        return out;
+    }
+    scan(text, split)
+}
+
+/// Cuts text so that every digit stands alone and everything else stays whole.
+fn digits_apart(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut at = 0;
+    while let Some(character) = text.get(at..).and_then(|tail| tail.chars().next()) {
+        let next = at.saturating_add(character.len_utf8());
+        if character.is_numeric() {
+            if let Some(before) = text.get(start..at)
+                && !before.is_empty()
+            {
+                out.push(before);
+            }
+            if let Some(digit) = text.get(at..next) {
+                out.push(digit);
+            }
+            start = next;
+        }
+        at = next;
+    }
+    if let Some(rest) = text.get(start..)
+        && !rest.is_empty()
+    {
+        out.push(rest);
+    }
+    out
+}
+
+/// One expression, applied left to right.
+fn scan(text: &str, split: Split) -> Vec<&str> {
     let mut out = Vec::new();
     let mut at = 0;
     while at < text.len() {
         let Some(rest) = text.get(at..) else { break };
         let taken = match split {
-            Split::Gpt2 => gpt2_piece(rest),
-            Split::Modern => modern_piece(rest),
+            Split::Gpt2 | Split::Gpt2DigitsApart => gpt2_piece(rest),
+            Split::ModernThreeDigits => modern_piece(rest, 3),
+            Split::ModernOneDigit => modern_piece(rest, 1),
         };
         let length = match taken {
             Some(length) if length > 0 => length,
-            // No alternative matched. Every real alternation ends in `\s+` or a
-            // catch-all, so this is unreachable for the two implemented here —
-            // and it advances rather than looping, because a tokenizer that
-            // hung on an unusual character would be a worse failure than one
-            // that emitted it alone.
+            // No alternative matched. Every expression here ends in a rule that
+            // takes whitespace, so this is reached only by a character none of
+            // them describes — and it advances rather than looping, because a
+            // tokenizer that hung on an unusual character would be a worse
+            // failure than one that emitted it alone.
             _ => rest.chars().next().map_or(1, char::len_utf8),
         };
         if let Some(piece) = rest.get(..length) {
@@ -95,8 +166,9 @@ fn gpt2_piece(rest: &str) -> Option<usize> {
     whitespace_run(rest)
 }
 
-/// The expression `llama-bpe` and `qwen2` share, alternative by alternative.
-fn modern_piece(rest: &str) -> Option<usize> {
+/// The later shape, alternative by alternative. `digits` is how many may be
+/// taken at once, which is the whole of the difference between its two forms.
+fn modern_piece(rest: &str, digits: usize) -> Option<usize> {
     // `(?:'[sS]|'[tT]|…)` — the same contractions, either case.
     if let Some(length) = contraction(rest, true) {
         return Some(length);
@@ -113,9 +185,9 @@ fn modern_piece(rest: &str) -> Option<usize> {
     ) {
         return Some(length);
     }
-    // `\p{N}{1,3}` — at most three digits, so that a long number is several
-    // pieces and the merges cannot span them.
-    if let Some(length) = led_run(rest, |_| false, char::is_numeric, 3) {
+    // `\p{N}{1,3}` or `\p{N}` depending on the expression — a long number is several
+    // pieces either way, and the merges cannot span them.
+    if let Some(length) = led_run(rest, |_| false, char::is_numeric, digits) {
         return Some(length);
     }
     // ` ?[^\s\p{L}\p{N}]+[\r\n]*`

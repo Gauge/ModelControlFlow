@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 26 |
+| **Version** | 27 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1797,7 +1797,104 @@ suffices for every defect; a defect subtler than a swapped rotation may be
 invisible at 0.6B and visible only to a numeric comparison. The threshold is a
 lower bound on what is needed, never an upper bound on what is enough (A21).
 
+## 23 · F23 — Four expressions where MCF had two, and what no test could have found (B-365, B-370, A7, A19, A21)
+
+**What prompted it.** SmolLM2 refused with `asked for: smollm`, and MCF's
+pre-tokenizer table had to grow by one. Rather than infer what `smollm` means
+from its name, the reference implementation was read — llama.cpp's
+`llama-vocab.cpp`, the `switch` on the pre-tokenizer type and the table that
+maps the string in `tokenizer.ggml.pre` onto it. That reading found three
+things wrong with what MCF had already shipped.
+
+**One: `qwen2` and `llama-bpe` are not the same expression.** MCF had them as
+one, on the strength of how similar they look. They differ in one place:
+llama3 takes digits in groups of up to three, `\p{N}{1,3}`, and qwen2 takes them
+one at a time, `\p{N}`. A different cut is a different set of merges that can
+apply, so a number tokenizes differently under the two.
+
+**Two: `deepseek-llm` was claimed and is not implemented.** MCF listed it in the
+same group. Its pre-tokenizer is six expressions, one of which is an explicit
+enumeration of several hundred letter ranges. It is now refused by name.
+
+**Three: `default` is not GPT-2's expression.** MCF read a file with no
+`tokenizer.ggml.pre` as GPT-2, reasoning that the field postdates the format.
+llama.cpp's fallback for that case is a *fourth* pattern — four expressions,
+one of which splits on punctuation. A file that does not say is now refused
+rather than run through something that resembles what it wants.
+
+**None of the three could have been found by running anything, and the first
+one demonstrates why.** Qwen3-0.6B tokenizes `What is 1234 plus 5678` into
+thirteen tokens with every digit separate — *both before and after* the fix.
+Its merge list contains no merge that joins two digits, so the grouping never
+had anything to group and the two cuts agree on this artifact. The defect is
+real, it is fixed, and no prompt against this model distinguishes the fixed
+version from the broken one. What a name maps to is a fact about somebody
+else's software; the only instrument that reads it is somebody reading it
+(A21: declared is not verified — and here, *not verifiable by observation*).
+
+**What the corpus did catch.** With `smollm` implemented, SmolLM2 runs — and
+the tier reported it as a failure, which is what it is for: the register said
+that entry refuses, it no longer does, and good news nobody notices is how a
+check stops being read.
+
+**And SmolLM2 corrects F22.** That finding put the floor for refereeing an
+engine "between 160M and 0.6B". SmolLM2-135M-Instruct at Q8_0 is *smaller* than
+Llama-160M-Chat at Q4_K and answers all three probe questions correctly —
+`Paris.`, `0 degrees Celsius.`, `cold.` — where the 160M model got every one of
+them wrong. Run with the rotary pairing swapped it gives `Paris.`,
+`10 degrees Celsius.`, `10.`: two of three visibly degraded.
+
+So the floor is not a parameter count. **It is whether that artifact, at that
+quantization, knows the answer to what is being asked** — and a well-trained
+135M model at Q8_0 knows more of it than a poorly-trained 160M model at Q4_K.
+F22's measurement stands; its generalization to a size does not.
+
+**A fourth defect, found by the round-trip and not by reading.** Every corpus
+vocabulary is now encoded and decoded over awkward text — digit runs,
+punctuation against letters, characters that are several bytes, runs of
+whitespace, the empty string. The empty string came back wrong for every
+unigram vocabulary: adding control-token matching to `encode` had introduced a
+walk that skipped an empty remainder, silently turning *encode nothing* from
+one token into no tokens. It has a test now.
+
+The round-trip also showed something that is **not** a defect and had to be
+told apart from one: `SentencePiece` puts a space in front of every text, so
+`decode(encode(t))` is `" " + t` and no decoder can tell that space from one
+the text really had. MCF now reads `tokenizer.ggml.add_space_prefix` where a
+file states it, and the check allows the convention for exactly the
+vocabularies that declare it rather than stripping a leading space and eating a
+real one.
+
+**What was not established.** That the four expressions are now right — only
+that they are transcribed from a reference that runs these models, and that
+three vocabularies round-trip. The transcription itself is unverified in the
+sense A21 means, and B-368's oracle is what would verify it: two
+implementations agreeing on identifiers for the same text is a check, and one
+implementation agreeing with itself is not.
+
 ## Changelog
+
+### Version 27 — four expressions where MCF had two
+
+F23. Implementing one more pre-tokenizer meant reading the reference rather than
+inferring from a name, and the reading found three defects already shipped:
+`qwen2` and `llama-bpe` are different expressions (digits singly against groups
+of three), `deepseek-llm` was claimed and is not implemented, and `default` is
+not GPT-2's expression but a fourth one.
+
+The first is the instructive one. Qwen3-0.6B tokenizes a numeric prompt
+identically before and after the fix, because its merge list never joins digits.
+No prompt against that model distinguishes the broken version from the fixed
+one. Some facts are about somebody else's software and are read, not measured.
+
+A fourth defect came from the round-trip now run over every corpus vocabulary:
+the empty string had stopped encoding as anything for unigram vocabularies, a
+regression from adding control-token matching.
+
+And SmolLM2-135M corrects F22's generalization: it is *smaller* than
+Llama-160M and answers correctly where that model does not, so the floor for
+refereeing an engine is not a parameter count but whether that artifact knows
+the answer being asked of it.
 
 ### Version 26 — where a model becomes able to referee an engine
 

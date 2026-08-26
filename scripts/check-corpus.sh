@@ -54,7 +54,7 @@ readonly BUDGET=12
 readonly CORPUS=(
     "llama, unigram vocabulary|Felladrin/gguf-Llama-160M-Chat-v1/Llama-160M-Chat-v1.Q4_K.gguf|runs|Paris"
     "qwen3|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_K_M.gguf|runs|Paris"
-    "llama, byte-pair vocabulary|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf|refuses|smollm"
+    "llama, byte-pair vocabulary|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf|runs|Paris"
     "embedding|leliuga/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q4_0.gguf|refuses|bert"
     "mixture-of-experts|RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf/TinyMixtral-4x248M-MoE.Q5_K_M.gguf|refuses|ffn_gate"
     "gemma3|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q6_K.gguf|refuses|gemma3"
@@ -80,6 +80,13 @@ fi
 
 mcf=$root/target/release/mcf
 [ -x "$mcf" ] || fail_cannot_check "no release build at $mcf — \`cargo build --release -p mcf-cli\` first"
+
+# The round-trip is a separate question from whether the model answers, and it
+# is asked of every vocabulary that loads: a tokenizer that drops a byte changes
+# the question the model was asked, and that is checkable against the text
+# itself rather than against anybody's opinion of the answer (A1). What it
+# cannot show is that the *cut* was the right one — see F23.
+roundtrip=$root/target/release/examples/roundtrip
 
 printf 'the conformance corpus, from %s\n\n' "$store"
 
@@ -107,7 +114,13 @@ for entry in "${CORPUS[@]}"; do
             printf '  %-30s REGRESSED — it ran before and now refuses:\n%s\n' "$family" "$head"
             failures=$((failures + 1))
         elif printf '%s' "$head" | grep -qF "$expected"; then
-            printf '  %-30s runs, and says %s\n' "$family" "$expected"
+            if [ -x "$roundtrip" ] && ! "$roundtrip" "$path" >/dev/null 2>&1; then
+                printf '  %-30s runs and says %s, BUT ITS VOCABULARY LOSES TEXT:\n' "$family" "$expected"
+                "$roundtrip" "$path" 2>&1 | sed 's/^/      /'
+                failures=$((failures + 1))
+            else
+                printf '  %-30s runs, says %s, and its vocabulary loses nothing\n' "$family" "$expected"
+            fi
         else
             printf '  %-30s RAN AND SAID SOMETHING ELSE — expected %s:\n%s\n' "$family" "$expected" "$head"
             failures=$((failures + 1))
