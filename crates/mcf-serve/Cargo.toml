@@ -12,3 +12,4 @@ workspace = true
 [dependencies]
 mcf-core = { path = "../mcf-core" }
 mcf-record = { path = "../mcf-record" }
+mcf-hub = { path = "../mcf-hub" }

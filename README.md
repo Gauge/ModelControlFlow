@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 15 |
+| **Version** | 16 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -49,8 +49,16 @@ held a real session with the hub before it was let in.
 [doc/vendored.md](doc/vendored.md) records every crate in the tree and what MCF
 verified about each.
 
-**No number about a model's speed or quality exists.** Serving is M2 and needs a
-daemon; measurement is M2 onwards and needs an engine.
+**There is a daemon now, and it cannot serve a model.** `mcf serve` starts the
+process D1 settled MCF is: it recovers what the disk says, answers what it is
+and what it is holding, stops when asked and says why. What it cannot do is run
+a model, because no inference engine is vendored — and it says that when asked
+rather than leaving it to be inferred. Its idle cost is measured rather than
+intended: over the minute §VII's budget names, a real daemon with nobody talking
+to it used **zero context switches and zero processor ticks**, and wrote nothing.
+
+**No number about a model's speed or quality exists.** That needs an engine,
+which is the next admission after the TLS stack.
 Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
 MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 [doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
@@ -182,6 +190,15 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 16 — there is a daemon, and its idle cost is a measurement
+
+M2's foundation, stated with the same care as its absence was. `mcf serve`
+starts the long-lived process, recovers what the disk says, and answers three
+questions — one of which is *what can you not do*. Its idle cost is the part
+worth reading: zero context switches and zero processor ticks over a minute,
+measured on a real process by the soak tier, rather than a claim about a design
+that has no timers in it.
 
 ### Version 15 — the first dependency, and what it was chosen for
 
