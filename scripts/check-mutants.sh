@@ -95,6 +95,10 @@ declare -a files=(
     "crates/mcf-core/src/self_cost.rs"
     "crates/mcf-standin/src/ops.rs"
     "crates/mcf-standin/src/dequantize.rs"
+    "crates/mcf-hub/src/fitment.rs"
+    "crates/mcf-core/src/provenance/upstream.rs"
+    "crates/mcf-helper/src/lib.rs"
+    "crates/mcf-record/src/journal/index.rs"
 )
 declare -a finds=(
     # A6: the reported spread is a value that was observed, at the right rank.
@@ -134,6 +138,21 @@ declare -a finds=(
     # D31: the four-bit bias. A block decoded without it is the right size and
     # the wrong values, which is the kind of wrongness that looks like a model.
     "out.push(scale * (f32::from(value & 0x0F) - 8.0));"
+    # F16: only the blocks that cache are counted. Counting every block
+    # overstates the KV cache by the ratio between them — fourfold on the
+    # reference model — which is a confident wrong number rather than no number.
+    "blocks: caching_blocks(list(\"layer_types\"), declared_blocks)?,"
+    # D37, F17: a hub that will not answer is not a decay. Reporting one as a
+    # change would report an absence as an event, which is what A7 forbids.
+    "                | Self::Replaced { .. }"
+    # §6.32: the governor written is one the machine offers, chosen from its own
+    # list. A helper that writes what it is told is a helper that writes
+    # anything.
+    ".find(|known| known.as_str() == wanted)"
+    # B-300, D20: the index is a pointer and the journal is the record. An index
+    # that describes a journal it does not cover answers questions about bytes
+    # that are not there.
+    "Some(last) if last.ends_at() > journal_bytes => ("
 )
 declare -a replaces=(
     ".get(rank)"
@@ -150,6 +169,10 @@ declare -a replaces=(
     "Bytes(kib.saturating_mul(1000))"
     "let at = pair;"
     "out.push(scale * f32::from(value & 0x0F));"
+    "blocks: declared_blocks,"
+    "                | Self::Unreachable { .. }"
+    ".find(|known| !known.is_empty())"
+    "Some(last) if last.ends_at() >= journal_bytes => ("
 )
 
 # The control: a mutation with no semantic effect at all — addition, the other
