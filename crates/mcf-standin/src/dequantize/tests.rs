@@ -243,3 +243,140 @@ fn a_scheme_this_crate_does_not_implement_says_which() {
         "the refusal does not say which scheme"
     );
 }
+
+/// A `Q4_K` super-block, decoded against the arithmetic its format defines,
+/// worked out here by hand rather than by running the decoder and writing down
+/// what it said.
+///
+/// The test that would prove nothing is the one that asks the decoder what it
+/// produces and then asserts it produces that. So the block below is built with
+/// scales and minimums chosen to be readable — sub-block *n* gets scale `n + 1`
+/// and minimum `n` — and every expected value is computed from the format's own
+/// sentence: `d × scale × q − dmin × minimum`.
+#[test]
+fn a_q4_k_super_block_decodes_to_the_arithmetic_its_format_states() {
+    // d = 2, dmin = 4, in half precision.
+    let mut raw = vec![0x00, 0x40, 0x00, 0x44];
+    // Twelve bytes of packed six-bit scales and minimums. The first four pairs
+    // are plain: scales in bytes 0..4, minimums in bytes 4..8, six bits each.
+    let mut packed = [0_u8; 12];
+    for sub in 0..4_usize {
+        packed[sub] = u8::try_from(sub + 1).unwrap_or(0);
+        packed[sub + 4] = u8::try_from(sub).unwrap_or(0);
+    }
+    // The last four pairs live in the low and high nibbles of bytes 8..12,
+    // with their top two bits in the top of bytes 0..8.
+    for sub in 4..8_usize {
+        let scale = u8::try_from(sub + 1).unwrap_or(0);
+        let minimum = u8::try_from(sub).unwrap_or(0);
+        packed[sub + 4] = (scale & 0x0F) | ((minimum & 0x0F) << 4);
+        packed[sub - 4] |= (scale >> 4) << 6;
+        packed[sub] |= (minimum >> 4) << 6;
+    }
+    raw.extend_from_slice(&packed);
+    // 128 bytes of values: low nibble `i % 16`, high nibble `15 - (i % 16)`.
+    for index in 0..128_usize {
+        let low = u8::try_from(index % 16).unwrap_or(0);
+        raw.push(low | ((15 - low) << 4));
+    }
+
+    let decoded = tensor(TensorKind::Q4_K, &raw, 256).expect("a Q4_K super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    for sub in 0..8_usize {
+        let scale = 2.0 * (small(sub) + 1.0);
+        let minimum = 4.0 * small(sub);
+        for position in 0..32_usize {
+            let index = sub.wrapping_div(2) * 32 + position;
+            let nibble = if sub % 2 == 0 {
+                small(index % 16)
+            } else {
+                small(15 - (index % 16))
+            };
+            let want = scale * nibble - minimum;
+            let got = decoded[sub * 32 + position];
+            assert!(
+                (got - want).abs() < 1e-3,
+                "sub-block {sub} value {position}: wanted {want}, got {got}"
+            );
+        }
+    }
+}
+
+/// A small index as a float, exactly. Everything here is under sixteen.
+fn small(value: usize) -> f32 {
+    f32::from(u8::try_from(value).unwrap_or(0))
+}
+
+/// A `Q6_K` super-block, the same way: six-bit values centred by subtracting
+/// thirty-two, against signed eight-bit scales.
+#[test]
+fn a_q6_k_super_block_centres_its_values_and_reads_its_scales_as_signed() {
+    let mut raw = vec![0_u8; 210];
+    // Every low nibble 0 and every high nibble 0, so the value is decided by
+    // the high plane alone: two bits per value, all set.
+    for byte in raw.iter_mut().take(128) {
+        *byte = 0;
+    }
+    for byte in raw.iter_mut().skip(128).take(64) {
+        *byte = 0xFF;
+    }
+    // Scales: the first eight +1, the second eight -1, which is the thing a
+    // reader that took them as unsigned would get wrong by 256.
+    for index in 0..8 {
+        raw[192 + index] = 1;
+        raw[200 + index] = 0xFF;
+    }
+    // d = 1.
+    raw[208] = 0x00;
+    raw[209] = 0x3C;
+
+    let decoded = tensor(TensorKind::Q6_K, &raw, 256).expect("a Q6_K super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    // Every stored value is 0b110000 = 48, which centres to +16.
+    for (index, value) in decoded.iter().enumerate() {
+        let want = if index < 128 { 16.0 } else { -16.0 };
+        assert!(
+            (value - want).abs() < 1e-3,
+            "value {index}: wanted {want}, got {value}"
+        );
+    }
+}
+
+/// Every K-scheme agrees with itself about how many values a super-block holds.
+///
+/// A decoder that produced 255 or 257 would be caught by the first real tensor
+/// it met and not before, because the caller truncates to what it asked for.
+#[test]
+fn every_k_scheme_fills_its_super_block_exactly() {
+    for kind in [
+        TensorKind::Q2_K,
+        TensorKind::Q3_K,
+        TensorKind::Q4_K,
+        TensorKind::Q5_K,
+        TensorKind::Q6_K,
+    ] {
+        let bytes = vec![0_u8; usize::try_from(kind.bytes_per_block()).unwrap_or(0)];
+        let decoded = tensor(kind, &bytes, 256).unwrap_or_else(|failure| {
+            panic!("{kind} did not decode a zero block: {failure}");
+        });
+        assert_eq!(decoded.len(), 256, "{kind} produced the wrong count");
+        assert_eq!(
+            usize::try_from(kind.block_size()).unwrap_or(0),
+            256,
+            "{kind} states a super-block that is not 256"
+        );
+    }
+}
+
+/// A scheme MCF still cannot read is refused by name rather than approximated.
+///
+/// The list shrinks as B-364 works through it, and what matters is that a file
+/// MCF cannot decode says which scheme it could not decode (A7, D31).
+#[test]
+fn a_scheme_that_is_not_implemented_is_named() {
+    let refused = tensor(TensorKind::Unknown(30), &[0; 64], 32)
+        .expect_err("a scheme with no decoder is refused");
+    assert!(refused.to_string().contains("engine"), "{refused}");
+}

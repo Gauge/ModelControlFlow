@@ -159,6 +159,12 @@ impl Tensor {
 /// unreadable tensor is still a file whose other tensors are legible (A4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+#[allow(
+    non_camel_case_types,
+    reason = "these are the names the format uses — Q4_K is what a file, a model \
+              card and every tool call it, and a reader whose type names differ \
+              from the format's would make every table a translation"
+)]
 pub enum TensorKind {
     /// 32-bit floating point, one element per element.
     F32,
@@ -170,6 +176,23 @@ pub enum TensorKind {
     Q4_1,
     /// The 8-bit scheme with one scale per block of 32.
     Q8_0,
+    /// The 2-bit super-block scheme: 256 values, sixteen sub-blocks with
+    /// 4-bit scales and minimums, one pair of half-precision multipliers.
+    Q2_K,
+    /// The 3-bit super-block scheme: 256 values, a high bit held apart from
+    /// the low two, and six-bit scales.
+    Q3_K,
+    /// The 4-bit super-block scheme: 256 values in eight sub-blocks, each with
+    /// a six-bit scale and a six-bit minimum against shared multipliers. This
+    /// is what most of a `Q4_K_M` file is made of.
+    Q4_K,
+    /// The 5-bit super-block scheme: `Q4_K` with a fifth bit per value held in
+    /// a separate plane.
+    Q5_K,
+    /// The 6-bit super-block scheme: 256 values, four low bits and two high
+    /// bits held apart, with eight-bit signed scales. `Q4_K_M` uses it for the
+    /// tensors it will not round further.
+    Q6_K,
     /// A type this reader does not know, carrying the number the file used.
     Unknown(u32),
 }
@@ -184,6 +207,11 @@ impl TensorKind {
             2 => Self::Q4_0,
             3 => Self::Q4_1,
             8 => Self::Q8_0,
+            10 => Self::Q2_K,
+            11 => Self::Q3_K,
+            12 => Self::Q4_K,
+            13 => Self::Q5_K,
+            14 => Self::Q6_K,
             other => Self::Unknown(other),
         }
     }
@@ -198,6 +226,9 @@ impl TensorKind {
         match self {
             Self::F32 | Self::F16 => 1,
             Self::Q4_0 | Self::Q4_1 | Self::Q8_0 => 32,
+            // The K-schemes share a super-block of 256, which is what makes
+            // their per-sub-block scales worth their bytes.
+            Self::Q2_K | Self::Q3_K | Self::Q4_K | Self::Q5_K | Self::Q6_K => 256,
             Self::Unknown(_) => 0,
         }
     }
@@ -214,6 +245,20 @@ impl TensorKind {
             Self::Q4_1 => 2 + 2 + 16,
             // A scale in half precision, then 32 signed bytes.
             Self::Q8_0 => 2 + 32,
+            // 16 packed 4-bit scale/minimum pairs, 64 bytes of 2-bit values,
+            // and the two half-precision multipliers.
+            Self::Q2_K => 16 + 64 + 2 + 2,
+            // A 32-byte high-bit plane, 64 bytes of low bits, 12 bytes of
+            // packed 6-bit scales, and one multiplier.
+            Self::Q3_K => 32 + 64 + 12 + 2,
+            // Two multipliers, 12 bytes of packed 6-bit scales and minimums,
+            // and 128 bytes of 4-bit values.
+            Self::Q4_K => 2 + 2 + 12 + 128,
+            // The same, with a 32-byte plane for the fifth bit.
+            Self::Q5_K => 2 + 2 + 12 + 32 + 128,
+            // 128 bytes of low nibbles, 64 of high pairs, 16 signed scales and
+            // one multiplier.
+            Self::Q6_K => 128 + 64 + 16 + 2,
             Self::Unknown(_) => 0,
         }
     }
@@ -230,6 +275,11 @@ impl core::fmt::Display for TensorKind {
         match self {
             Self::F32 => f.write_str("f32"),
             Self::F16 => f.write_str("f16"),
+            Self::Q2_K => f.write_str("Q2_K"),
+            Self::Q3_K => f.write_str("Q3_K"),
+            Self::Q4_K => f.write_str("Q4_K"),
+            Self::Q5_K => f.write_str("Q5_K"),
+            Self::Q6_K => f.write_str("Q6_K"),
             Self::Q4_0 => f.write_str("q4_0"),
             Self::Q4_1 => f.write_str("q4_1"),
             Self::Q8_0 => f.write_str("q8_0"),
