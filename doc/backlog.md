@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 101 |
+| **Version** | 102 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 199
-build items (48 done, 1 dropped, 9 in progress, 51 blocked on a decision, 91 open).** Every item cites
+build items (49 done, 1 dropped, 10 in progress, 51 blocked on a decision, 89 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -193,7 +193,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-050 | Three-state capability model: *declared*, *verified*, *unknown* — never confused, never defaulted | §3.18, §3.6 | The type system prevents a declared capability being read as a verified one | open |
+| B-050 | Three-state capability model: *declared*, *verified*, *unknown* — never confused, never defaulted | §3.18, §3.6 | The type system prevents a declared capability being read as a verified one | **done** — `mcf_core::capability::Capability<T>`: two separately optional halves, read as `declaration()` and `observation()`, with no operation between them and no `unwrap_or` to give an absence a value. The state is derived — unknown, declared, verified — and the fourth situation, *diverged*, is B-058's finding rather than a fourth kind of knowing. `is_established` is the whole of §3.18 in one method: only an observation may be acted on. `mcf_hub::inspect` now uses it instead of an enum of its own, which found a real loss — a card whose weights MCF could not read was being reported as *unknown*, discarding what the card said (A1). `checks/tests/a_declaration_is_not_an_observation.rs` holds the shape, because the failure mode is not somebody writing the wrong method but somebody adding a convenience that reads well and collapses the two |
 | B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | blocked (DEC-024) |
 | B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | blocked (DEC-024) |
 | B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | blocked (DEC-024) |
@@ -201,7 +201,7 @@ first and importance second.
 | B-055 | Probe: context length usable versus claimed | §X, §3.18 | Divergence between claimed and usable is reported as a finding | blocked (DEC-024) |
 | B-056 | Probe: stop-condition behaviour | §X | A model that will not stop is a recorded characteristic, not a hung request | blocked (DEC-024) |
 | B-057 | Probes: vision, embeddings, reasoning modes, multilingual — scoped and prioritized by DEC-024 rather than assumed | §X, §7.24 | Each in-scope modality has a probe; each out-of-scope one is recorded as declined | blocked (DEC-024) |
-| B-058 | Divergence reporting: declared-versus-verified disagreement is surfaced as a first-class finding, often the most useful thing MCF can say about a model | §3.18 | Divergences are listed per model and exportable | open |
+| B-058 | Divergence reporting: declared-versus-verified disagreement is surfaced as a first-class finding, often the most useful thing MCF can say about a model | §3.18 | Divergences are listed per model and exportable | open — the type is there: `Capability::divergence` returns both sides, and `inspect::deception` turns the architecture's into `hub.metadata.deceptive` with a scenario behind it (A13). What remains is *per model and exportable*, which needs more than one thing to diverge about — that arrives with M3's probes |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | open |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | blocked (DEC-024) |
 | B-061 | Reconfiguration policy enforcement: whatever DEC-025 decides, comparability across a configuration change is preserved or explicitly invalidated | §7.25, §3.4 | A configuration change either preserves comparability or marks prior results non-comparable | blocked (DEC-025) |
@@ -367,6 +367,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 102 — a declaration is not an observation
+
+B-050 done. §3.18 forbids MCF treating a model card's claims as facts, and the
+rule is now a type: two separately optional halves, read as `declaration()` and
+`observation()`, with no operation between them. There is no `unwrap_or`,
+because a capability with a default is a capability whose absence looks like a
+value — A7's substitution arriving through a method signature.
+
+Three states, derived rather than stored: unknown, declared, verified. The
+fourth situation is *diverged*, and it is B-058's finding rather than a fourth
+kind of knowing — a model whose card says one thing and whose weights say
+another is not a model with bad metadata, it is a model somebody should look at
+before measuring anything on it.
+
+Adopting it in `mcf_hub::inspect` found a real loss. The enum it replaced turned
+*a card MCF believed and weights it could not read* into **unknown**, throwing
+away what the card said — a small A1 violation that the type makes
+unrepresentable, because a declaration with no observation is exactly the state
+`Declared` exists for.
 
 ### Version 101 — the defaults, and the questions MCF cannot answer
 

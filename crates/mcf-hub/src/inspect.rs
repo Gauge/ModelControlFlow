@@ -34,6 +34,7 @@
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 
+use mcf_core::capability::Capability;
 use mcf_core::provenance::Licence;
 
 use crate::source::{Entry, Listing};
@@ -45,79 +46,50 @@ const WHERE: Subsystem = Subsystem::new("mcf-hub::inspect");
 /// `declared` is the architecture from the repository's own metadata — a model
 /// card, a config, the file name. `found` is what a reader of the weights
 /// says. They agree, or they do not, and the second is a finding about the
-/// repository rather than an error in MCF.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Architecture {
-    /// The repository declared one and the weights agree.
-    Agreed {
-        /// What both say.
-        architecture: String,
-    },
-    /// The repository declared one and the weights are something else.
-    ///
-    /// `hub.metadata.deceptive`, and the most useful thing MCF can say about
-    /// such a repository (A21's divergence, which is often the most useful
-    /// output there is).
-    Diverged {
-        /// What the repository said.
-        declared: String,
-        /// What the weights say.
-        found: String,
-    },
-    /// The repository declared nothing, and the weights say what they say.
-    ///
-    /// Not a failure: plenty of repositories carry no card at all, and A7 makes
-    /// the absence a state rather than a defect.
-    OnlyTheWeights {
-        /// What the weights say.
-        found: String,
-    },
-    /// Neither says anything MCF can read.
-    Unknown,
+/// What a repository says its model is, against what its weights say.
+///
+/// A [`Capability`] rather than an enum of its own: *declared*, *verified* and
+/// *diverged* are not special to architectures, and B-050 makes them a type so
+/// that a declaration cannot be read as an observation anywhere (§3.18, A21).
+///
+/// The four situations it can be in are the four that exist. A card and weights
+/// that agree is a verified architecture with a declaration behind it. Weights
+/// alone is verified with nothing declared — plenty of repositories carry no
+/// card, and A7 makes that a state rather than a defect. A card whose weights
+/// MCF has not read is *declared*, which is a thing MCF knows and must not
+/// discard. And a card that disagrees with the weights is the divergence
+/// [`deception`] turns into a failure.
+#[must_use]
+pub fn architecture(declared: Option<&str>, found: Option<&str>) -> Capability<String> {
+    let mut known = Capability::unknown();
+    if let Some(declared) = declared {
+        known = known.and_declared(declared.to_owned());
+    }
+    if let Some(found) = found {
+        known = known.and_verified(found.to_owned());
+    }
+    known
 }
 
-impl Architecture {
-    /// Compares a declaration with what a reader of the weights found.
-    #[must_use]
-    pub fn compare(declared: Option<&str>, found: Option<&str>) -> Self {
-        match (declared, found) {
-            (Some(declared), Some(found)) if declared == found => Self::Agreed {
-                architecture: found.to_owned(),
-            },
-            (Some(declared), Some(found)) => Self::Diverged {
-                declared: declared.to_owned(),
-                found: found.to_owned(),
-            },
-            (None, Some(found)) => Self::OnlyTheWeights {
-                found: found.to_owned(),
-            },
-            (Some(_) | None, None) => Self::Unknown,
-        }
-    }
-
-    /// The failure a divergence is, if this is one.
-    ///
-    /// Returned rather than raised: whether a deceptive card stops an
-    /// acquisition is the caller's decision (a user may want the weights
-    /// anyway, knowing), and B7 makes *a defined outcome* the commitment rather
-    /// than a refusal.
-    #[must_use]
-    pub fn divergence(&self) -> Option<Failure> {
-        match self {
-            Self::Diverged { declared, found } => Some(
-                Failure::new(
-                    Category::HubMetadataDeceptive,
-                    Attribution::Artifact,
-                    Disposition::Refused,
-                    WHERE,
-                    "the repository declares an architecture its weights are not",
-                )
-                .with_context("declared", declared.clone())
-                .with_context("found_in_the_weights", found.clone()),
-            ),
-            Self::Agreed { .. } | Self::OnlyTheWeights { .. } | Self::Unknown => None,
-        }
-    }
+/// The failure a divergence is, if this is one.
+///
+/// Returned rather than raised: whether a deceptive card stops an acquisition
+/// is the caller's decision (a user may want the weights anyway, knowing), and
+/// B7 makes *a defined outcome* the commitment rather than a refusal.
+#[must_use]
+pub fn deception(architecture: &Capability<String>) -> Option<Failure> {
+    let (declared, found) = architecture.divergence()?;
+    Some(
+        Failure::new(
+            Category::HubMetadataDeceptive,
+            Attribution::Artifact,
+            Disposition::Refused,
+            WHERE,
+            "the repository declares an architecture its weights are not",
+        )
+        .with_context("declared", declared.clone())
+        .with_context("found_in_the_weights", found.clone()),
+    )
 }
 
 /// Whether a listing says enough about itself to be acted on.

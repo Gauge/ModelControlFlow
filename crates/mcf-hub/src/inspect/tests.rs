@@ -2,9 +2,10 @@
 
 use mcf_core::provenance::Licence;
 
-use super::{Architecture, arrived_as_promised, ceiling_for, terms_are_legible};
+use super::{architecture, arrived_as_promised, ceiling_for, deception, terms_are_legible};
 use crate::reference::parse;
 use crate::source::{Entry, Listing};
+use mcf_core::capability::State;
 use mcf_core::failure::Category;
 
 fn listing(licence: Option<&str>, size: u64) -> Listing {
@@ -17,76 +18,64 @@ fn listing(licence: Option<&str>, size: u64) -> Listing {
     }
 }
 
-/// A card that agrees with the weights is an agreement, and not a verification
-/// of anything else about the model.
+/// A card that agrees with the weights is a verified architecture with a
+/// declaration behind it — and still not a verification of anything else about
+/// the model (§3.18).
 #[test]
 fn a_card_that_agrees_with_the_weights_agrees() {
-    assert_eq!(
-        Architecture::compare(Some("llama"), Some("llama")),
-        Architecture::Agreed {
-            architecture: "llama".to_owned()
-        }
-    );
+    let compared = architecture(Some("llama"), Some("llama"));
+    assert_eq!(compared.state(), State::Verified);
+    assert_eq!(compared.observation().map(String::as_str), Some("llama"));
+    assert_eq!(compared.declaration().map(String::as_str), Some("llama"));
+    assert!(deception(&compared).is_none());
     assert!(
-        Architecture::compare(Some("llama"), Some("llama"))
-            .divergence()
-            .is_none()
+        compared.to_string().contains("the declaration agrees"),
+        "{compared}"
     );
 }
 
-/// A card that disagrees with the weights is the finding, and it names both
-/// sides — which is what makes it actionable rather than an accusation.
+/// A card that disagrees with the weights is the finding, and the failure names
+/// both sides so that a reader knows which to distrust (B-058, A21).
 #[test]
 fn a_card_that_disagrees_with_the_weights_is_the_finding() {
-    let compared = Architecture::compare(Some("llama"), Some("mamba"));
-    let failure = compared.divergence().expect("this is a divergence");
+    let compared = architecture(Some("llama"), Some("mamba"));
+    assert_eq!(compared.state(), State::Diverged);
+    let failure = deception(&compared).expect("a divergence is a finding");
     assert_eq!(failure.category(), Category::HubMetadataDeceptive);
-
-    let context: Vec<String> = failure
-        .context()
-        .iter()
-        .map(|entry| format!("{}={}", entry.key, entry.value))
-        .collect();
-    assert!(
-        context.iter().any(|entry| entry == "declared=llama"),
-        "{context:?}"
-    );
-    assert!(
-        context
-            .iter()
-            .any(|entry| entry == "found_in_the_weights=mamba"),
-        "{context:?}"
-    );
+    assert_eq!(failure.context_value("declared"), Some("llama"));
+    assert_eq!(failure.context_value("found_in_the_weights"), Some("mamba"));
 }
 
-/// A repository with no card is not a deceptive one. Plenty carry none, and A7
-/// makes the absence a state rather than a defect.
+/// A repository with no card is not deceptive: the weights say what they say,
+/// and nothing declared them (A7).
 #[test]
 fn a_repository_with_no_card_is_not_deceptive() {
-    let compared = Architecture::compare(None, Some("llama"));
-    assert_eq!(
-        compared,
-        Architecture::OnlyTheWeights {
-            found: "llama".to_owned()
-        }
+    let compared = architecture(None, Some("llama"));
+    assert_eq!(compared.state(), State::Verified);
+    assert_eq!(compared.declaration(), None);
+    assert!(deception(&compared).is_none());
+    assert!(
+        compared.to_string().contains("nothing declared it"),
+        "{compared}"
     );
-    assert!(compared.divergence().is_none());
 }
 
-/// Weights MCF cannot read leave the question unanswered rather than answered
-/// badly — a card MCF cannot check is not thereby true.
+/// Weights MCF has not read leave a *declared* architecture rather than an
+/// unknown one: what the card said is a thing MCF knows and must not throw away
+/// (B-050, A1).
 #[test]
 fn weights_that_cannot_be_read_leave_the_question_open() {
-    assert_eq!(
-        Architecture::compare(Some("llama"), None),
-        Architecture::Unknown
-    );
-    assert_eq!(Architecture::compare(None, None), Architecture::Unknown);
+    let compared = architecture(Some("llama"), None);
+    assert_eq!(compared.state(), State::Declared);
+    assert_eq!(compared.declaration().map(String::as_str), Some("llama"));
     assert!(
-        Architecture::compare(Some("llama"), None)
-            .divergence()
-            .is_none()
+        !compared.is_established(),
+        "a declaration was treated as something to act on"
     );
+    assert!(deception(&compared).is_none());
+
+    let nothing = architecture(None, None);
+    assert_eq!(nothing.state(), State::Unknown);
 }
 
 /// A declared licence is surfaced; an absent one is a state to report, because
