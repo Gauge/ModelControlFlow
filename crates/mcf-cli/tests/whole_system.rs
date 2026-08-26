@@ -823,6 +823,12 @@ fn bytes_that_changed_on_this_disk_are_found_by_checking() {
     assert!(checked.status.success(), "{}", error_text(&checked));
     let said = text(&checked);
     assert!(said.contains("no longer match the digest"), "{said}");
+    // And the finding is in the record. A check that verified bytes and left no
+    // account could not answer *when was this last known to be fine*, which is
+    // the question D37 exists for.
+    let record = std::fs::read_to_string(machine.journal()).expect("a record");
+    assert!(record.contains("artifact_checked"), "{record}");
+    assert!(record.contains("changed"), "{record}");
     assert!(
         said.contains(&digest),
         "the reading does not say what was expected: {said}"

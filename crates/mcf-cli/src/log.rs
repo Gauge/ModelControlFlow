@@ -206,8 +206,9 @@ fn summarize(entry: &Entry) -> String {
                 .unwrap_or("its verification is not recorded")
         ),
         EntryKind::ArtifactChecked => format!(
-            "checked {} — {}",
+            "checked {} — the bytes {}; upstream: {}",
             text(body, "repository").unwrap_or_else(|| "an artifact".to_owned()),
+            text(body, "bytes").unwrap_or_else(|| "were not compared".to_owned()),
             text(body, "detail").unwrap_or_else(|| "no finding recorded".to_owned())
         ),
         EntryKind::ArtifactRemoved => format!(
