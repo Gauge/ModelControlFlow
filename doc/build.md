@@ -688,40 +688,6 @@ what a real artifact does here is B-019's, which needs fifteen gigabytes and
 somebody's decision to spend them. The other platforms D29 names each need a
 machine to run this on.
 
-## 11b · The conformance corpus
-
-```
-$ scripts/ci.sh --with-corpus           # or scripts/check-corpus.sh
-```
-
-The engine is developed against the smallest *trained* model of each family MCF
-covers or means to cover, one distinct quantization apiece, so that architecture
-and quantization coverage come from the same handful of files (D40, DEC-054).
-Six of them are 1.4 GB against the reference model's 16.5 GB — which is the
-point: the size that makes residency a real problem is the size that makes every
-engine iteration slow.
-
-**Each entry declares what MCF does with it today, and the check fails both
-ways.** A model that ran and now refuses is a regression. A model that refused
-and now runs is *also* reported, because the entry is then out of date and
-somebody should say which family MCF covers. A check that quietly accepted good
-news would be a check that stops being read.
-
-**A refusal is checked for what it says.** Today four of the six refuse, and
-each names a different missing thing — a `smollm` pre-tokenizer, a `bert`
-tokenizer scheme, a per-expert gate where MCF looked for `ffn_gate.weight`, and
-an architecture MCF has not been taught. That list is B-365's order of work,
-read off artifacts rather than predicted, and a refusal that stopped naming what
-it wanted would have lost the thing that made it useful.
-
-**Where the corpus is.** `MCF_CORPUS`, or the store MCF itself would use. It is
-scheduled rather than gating because a gate that needs 1.4 GB of models is a
-gate that fails on a fresh clone; `mcf pull` the artifacts named in
-[findings.md](findings.md) F21 to have it.
-
-**Nothing here is timed and nothing here may be** (B65). The figures in F21 and
-F22 are recorded as what the decision was about, not as properties of any model.
-
 ## 11a · The real hub
 
 ```
@@ -796,6 +762,40 @@ asking the filesystem that would hold it.
 free against the home partition's few. That matters beyond convenience: the
 drive an artifact was read from is a condition of every measurement taken
 against it (B-193), and the two drives here are not the same kind of device.
+
+## 11c · The conformance corpus
+
+```
+$ scripts/ci.sh --with-corpus           # or scripts/check-corpus.sh
+```
+
+The engine is developed against the smallest *trained* model of each family MCF
+covers or means to cover, one distinct quantization apiece, so that architecture
+and quantization coverage come from the same handful of files (D40, DEC-054).
+Six of them are 1.4 GB against the reference model's 16.5 GB — which is the
+point: the size that makes residency a real problem is the size that makes every
+engine iteration slow.
+
+**Each entry declares what MCF does with it today, and the check fails both
+ways.** A model that ran and now refuses is a regression. A model that refused
+and now runs is *also* reported, because the entry is then out of date and
+somebody should say which family MCF covers. A check that quietly accepted good
+news would be a check that stops being read.
+
+**A refusal is checked for what it says.** Today four of the six refuse, and
+each names a different missing thing — a `smollm` pre-tokenizer, a `bert`
+tokenizer scheme, a per-expert gate where MCF looked for `ffn_gate.weight`, and
+an architecture MCF has not been taught. That list is B-365's order of work,
+read off artifacts rather than predicted, and a refusal that stopped naming what
+it wanted would have lost the thing that made it useful.
+
+**Where the corpus is.** `MCF_CORPUS`, or the store MCF itself would use. It is
+scheduled rather than gating because a gate that needs 1.4 GB of models is a
+gate that fails on a fresh clone; `mcf pull` the artifacts named in
+[findings.md](findings.md) F21 to have it.
+
+**Nothing here is timed and nothing here may be** (B65). The figures in F21 and
+F22 are recorded as what the decision was about, not as properties of any model.
 
 ## 12 · A machine with something else on it
 
