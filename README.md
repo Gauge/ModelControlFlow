@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -20,7 +20,7 @@ pick by leaderboard positions measured on someone else's hardware with someone
 else's quantization against benchmarks that do not resemble their work. MCF
 replaces folklore with measurement taken here.
 
-**Status: M0 done, M1 in progress.** `mcf doctor` reports what this machine is,
+**Status: M0 done, M1 all but its reference model, M2 begun.** `mcf doctor` reports what this machine is,
 what MCF costs on it against its stated ceilings, and what MCF will and will not
 promise here, and writes the whole thing to an append-only record. `mcf licence`
 states the terms and carries the licence text a redistributor is obliged to
@@ -59,11 +59,45 @@ rather than leaving it to be inferred. Its idle cost is measured rather than
 intended: over the minute §VII's budget names, a real daemon with nobody talking
 to it used **zero context switches and zero processor ticks**, and wrote nothing.
 
+**What this machine holds can be checked, here and upstream.** `mcf check
+--here` re-reads every artifact against the digest recorded for it, catching the
+silent disk corruption that would otherwise arrive as a strange measurement
+rather than as a bad file. Without `--here` it also asks the repository each one
+came from whether it still says what it said: a withdrawn revision, a gate that
+closed, a relicensing, a file replaced under its own name. A finding is written
+beside the provenance and into the record and **invalidates nothing** — the
+artifact is here and its digest is what it was. What a decay really costs is
+somebody else's ability to reproduce.
+
+**And MCF says what it cannot tell apart.** A hub answers the same way for a
+repository that is private, one that was withdrawn and one that never existed
+([doc/findings.md](doc/findings.md) F17), so MCF reports what it observed and
+names the question it is not answering, rather than advising a credential that
+may not exist.
+
 **A model on this machine answers something.** `mcf run <model> --prompt <text>`
 drives MCF's own implementation of inference end to end — deliberately slow,
 written to be read — and the answer arrives with its mark, its sampler, its seed
 and a sentence saying what it cannot be. That is the behaviour half of §VI's bar
 and it is the half MCF can reach honestly today.
+
+**`mcf log` reads the record back**, one line an event with the field a reader
+wants first, and anything it could not read named rather than skipped. It goes
+through a derived index — 32 bytes an entry — because replaying a million-entry
+record costs 7.9 seconds and answering *the last twenty acquisitions* from the
+index costs 196 microseconds ([doc/findings.md](doc/findings.md) F14). The index
+can be deleted at any moment: the journal is the record, and the index is
+rebuilt from it.
+
+**One program has rights, and it is not the daemon.** `mcf-helper` performs
+three operations and exits — set the processor governor and say what it was,
+take or release a device's exclusive mode, read the processor's energy counter.
+Which three was measured rather than assumed
+([doc/findings.md](doc/findings.md) F15): four things MCF wants need no
+privilege at all, five more it declines to do to a machine because they change
+it for everybody using it. The daemon starts the helper as a process rather than
+calling into it, which is what keeps the daemon unprivileged rather than a
+promise that it is.
 
 **No number about a model's *speed* exists, and none can yet.** A stand-in is
 forbidden from reporting one (B65): a timing taken from it would measure the
@@ -201,6 +235,19 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 18 — what is here, and what it came from
+
+The summary had fallen behind the work. Added: `mcf check`, which asks whether
+what this machine holds is still what it should be — the bytes against the
+digest recorded for them, and the hub against what it published — and which
+invalidates nothing when it finds something. `mcf log`, which reads the record
+back through a derived index rather than by replaying a history. And
+`mcf-helper`, the one program with rights, whose three operations were measured
+rather than chosen.
+
+The status line moved too: M1 is finished except for its reference model, which
+is fifteen gigabytes and somebody's decision to spend them.
 
 ### Version 17 — something to ask a model
 
