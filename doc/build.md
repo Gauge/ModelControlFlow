@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 28 |
+| **Version** | 29 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -708,6 +708,16 @@ held, removes it, purges it, and reads the record for both events. A check that
 downloaded a 27 GiB model to prove a transfer works would be one nobody runs;
 one that downloaded nothing would prove nothing.
 
+**And it runs what it acquired, with the engine MCF wrote.** Everywhere else
+the stand-in runs a fixture the laboratory built — MCF checking its own
+arithmetic against its own file. Here it reads a 260-thousand-parameter model
+from a real publisher and produces text: *. It was a big, shiny blueb*. That is
+D31's claim against weights MCF did not write, and A19's reason for wanting it —
+nobody should believe numbers from software that cannot demonstrate it computes
+what it claims, and the first thing to demonstrate is that it computes anything
+at all on somebody else's bytes. The check asserts the answer carries its mark
+and its sentence about what it cannot be (B65).
+
 **And it plans for a repository nobody would download to test with**, which
 costs a listing and a `config.json` and no bytes at all. A transfer exercises
 the wire; it says nothing about the *variety* of what a hub publishes.
@@ -781,6 +791,13 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 29 — a real model, run by the engine MCF wrote
+
+The online check now runs what it acquires. The stand-in has only ever been
+exercised against a fixture the laboratory writes, which is MCF checking its own
+arithmetic against its own file; this reads a real publisher's weights end to
+end and asserts text comes out with its mark on it.
 
 ### Version 28 — a window that never comes
 

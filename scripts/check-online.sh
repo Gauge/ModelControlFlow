@@ -120,6 +120,29 @@ case "$listed" in
     *) fail "the model is held and the listing does not say where it came from" ;;
 esac
 
+# D31's claim, against weights MCF did not write. Everywhere else the stand-in
+# runs a fixture the laboratory built, which is MCF checking its own arithmetic
+# against its own file; this is a real model from a real publisher, read and run
+# end to end. A19: nobody should believe numbers from software that cannot
+# demonstrate it computes what it claims — and the first thing to demonstrate is
+# that it computes anything at all on somebody else's weights.
+printf '\n=== and running it, with the engine MCF wrote\n'
+answered=$("$mcf" run "$REPOSITORY:$FILE" --prompt "once upon a time" --limit 16 2>&1) \
+    || fail "the stand-in would not run a real model: $answered"
+printf '%s\n' "$answered" | head -3 | sed 's/^/  /'
+case "$answered" in
+    *MARKED*) ;;
+    *) fail "an answer from the stand-in arrived without its mark (B65, A5)" ;;
+esac
+case "$answered" in
+    *"can never be a speed"*) ;;
+    *) fail "an answer from the stand-in did not say what it cannot be (B65)" ;;
+esac
+# Something came out: the first line is the text, and an empty one would mean
+# the reader and the forward pass agreed on nothing.
+first=$(printf '%s' "$answered" | head -1)
+[ -n "$first" ] || fail "the model produced no text at all"
+
 printf '\n=== and removing it\n'
 removed=$("$mcf" rm "$REPOSITORY/$FILE" --because "the online check is done with it" --purge 2>&1) \
     || fail "removing it did not succeed"
@@ -153,5 +176,5 @@ published=$(printf '%s' "$planned" | grep -c '\.gguf — [0-9]* bytes')
 printf '  %s variants classified, nothing fetched\n' "$variants"
 
 printf '\nMCF acquired a real model from the real hub, verified it against the digest\n'
-printf 'the hub declared, listed it with its provenance, and removed it (B-029) —\n'
+printf 'the hub declared, listed it with its provenance, ran it, and removed it —\n'
 printf 'and planned for a repository whose shape found three defects (F16).\n'
