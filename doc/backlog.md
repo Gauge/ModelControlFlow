@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 96 |
+| **Version** | 97 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 199
-build items (47 done, 1 dropped, 9 in progress, 51 blocked on a decision, 92 open).** Every item cites
+build items (48 done, 1 dropped, 9 in progress, 51 blocked on a decision, 91 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -184,7 +184,7 @@ first and importance second.
 | B-036 | Local-only by default: the control plane binds locally; network exposure is an explicit, informed, revocable act, never a side effect | §6.12, §3.10 | Default configuration is unreachable from another host; exposure requires an explicit authorization that is recorded | **in progress** — local by construction rather than by configuration: the control plane is a Unix socket under `$XDG_RUNTIME_DIR`, and there is no bind address, no port and no flag, so exposure is not something a mistake can do because it is not something MCF can do. What remains is the *deliberate* half — what exposing it would take, and what records it — which needs §XI's remote surface and DEC-017 |
 | B-037 | Model residency policy: what stays loaded when nobody is looking, recorded as a measurement condition | §7.18, §3.4 | Residency state is part of every serving latency result | blocked (DEC-018) |
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is attributed, explained on demand and overridable | §3.15, §6.14 | `mcf explain <model>` returns the actual reasoning and the measurements behind each default | open |
-| B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | open |
+| B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
 | B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking half: `mcf stop --because <why>` reaches the daemon, the daemon answers, and it says what it was told rather than dying to a signal with no account (A26). Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
 | B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §VI | A cold machine reaches a first token in one command, and the daemon survives a deliberately hostile lab session unattended | open |
@@ -367,6 +367,27 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 97 — four gates, two of them absences
+
+B-039 done. §6.14 draws the line at *category rather than frequency* — untrusted
+execution, large irrecoverable resource use, network exposure and destruction
+are asked about every time, and everything else flows — and the four are now
+enumerable in code, each saying where MCF asks.
+
+Two are commands, and on a headless surface a command that names what it will do
+is a better record of consent than a prompt anybody would click through: `mcf
+rm` will not destroy without a stated reason and deletes nothing at all without
+`--purge`; `mcf pull` acquires only what was named, and a repository asked for
+without a file is answered rather than fetched.
+
+The other two are *absences*, and they are the ones the check earns its place
+on. MCF runs nothing it acquires and listens on nothing another machine could
+reach — the strongest statements in the file and the easiest to falsify by
+accident. A `TcpListener` added for a convenience now fails in
+`checks/tests/the_four_gates.rs` rather than in review, and the loopback
+listener the laboratory needs to test MCF's own client is declared with what it
+is for, the way every deletion and every spawn already is.
 
 ### Version 96 — the engine's numbers, and the test that did not decide it
 

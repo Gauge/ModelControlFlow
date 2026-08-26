@@ -19,6 +19,7 @@
 //! struct with nowhere to put a machine.
 
 pub mod attested;
+pub mod authorization;
 pub mod build_identity;
 pub mod capture;
 pub mod configuration;
