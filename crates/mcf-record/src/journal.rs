@@ -26,11 +26,13 @@
 
 mod anomaly;
 mod entry;
+pub mod index;
 mod replay;
 
 pub use anomaly::{Reading, TOLERANCE, between as clock_anomaly_between};
 pub use entry::{Entry, EntryId, EntryKind};
-pub use replay::{Loss, Replay};
+pub use index::{Built, Index, Located};
+pub use replay::{Loss, Placed, Placement, Replay};
 
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
@@ -319,7 +321,7 @@ pub fn default_path() -> Option<PathBuf> {
     Some(base.join("mcf").join("record.jsonl"))
 }
 
-pub use replay::replay;
+pub use replay::{replay, replay_from};
 
 #[cfg(test)]
 mod tests;
