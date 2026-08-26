@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1006,25 +1006,78 @@ decided the TLS provider: a candidate that cannot be built for
 check runnable in fewer places. For a C++ engine that question is open and
 serious; for a Rust one it is likely to be the same answer TLS got.
 
-### 12.3 What has *not* been measured, and is the deciding half
+### 12.3 The deciding half, measured in the exclusive window
 
-Two numbers are missing, and both need a build of several minutes on a quiet
-machine — which on this machine means the exclusive window, because a build that
-size run beside somebody else's measurements spoils them (B35):
+Both candidates were built. The numbers below were taken with `heavy` holding
+the machine, because a build this size run beside somebody else's measurements
+spoils them (B35, and section 12 of the build document).
 
-- **Whether either builds for musl at all**, statically, with what is installed.
-- **What each does to D24's 40 MiB footprint ceiling.** A vendored tree is what
-  a checkout costs; a linked binary is what a user gets, and the ceiling is
-  about the second. The TLS stack took the binary from 780 KiB to 3.3 MiB; an
-  engine is a different order of thing.
+| | llama.cpp | candle |
+|---|---|---|
+| Builds for `x86_64-unknown-linux-gnu` | **yes** | **yes** |
+| What it produces | `libllama.a` 9.9 MiB + `ggml` 2.9 MiB = **12.9 MiB** of static libraries | a 512³ matmul program: **1.6 MiB**, needing only `libc`, `libgcc_s` and the loader |
+| Builds for `x86_64-unknown-linux-musl` | not attempted: it is C++, and this machine has no musl C++ compiler | **no** — `onig_sys`, a C library, fails for want of `x86_64-linux-musl-gcc` |
+| Crates in the graph | one project | **143**, for `candle-core` *alone* |
 
-Until those exist this finding decides nothing, and says so. A7 applies to
-findings as much as to measurements: an unmeasured half reported as though it
-were measured is exactly the fabricated report C7 is against. The script is
-committed so that the second table can be filled by whoever has a quiet machine
-and ten minutes.
+### 12.4 The musl question stops separating them
+
+F9.5's lesson was that a candidate which cannot build for musl costs MCF a check
+it already makes. That is what chose the TLS provider, and the expectation going
+in was that it would choose the engine too — Rust over C++, for the same reason.
+
+It does not, and the reason is worth recording. `candle-core` depends on
+`tokenizers`, `tokenizers` depends on `onig`, and `onig` is Oniguruma — a C
+regular-expression library. So the pure-Rust candidate needs a C cross toolchain
+for the musl target exactly as the C++ one does. Neither keeps B-183's check
+runnable on a machine without one, and the difference that decided TLS is not
+available here.
+
+There is a second thing in that dependency worth noticing: `tokenizers` is
+capability MCF already has. D31 gave MCF its own GGUF reader and its own
+tokenizer so that the vendored engine would have something to be checked
+against, and admitting `candle-core` would bring a second tokenizer along with
+it — weight admitted for something already owned, which is what B15 asks a
+reason for.
+
+### 12.5 What this finding does and does not settle
+
+It does not choose. What it establishes is the ground a choice would be made on,
+and one expectation it removes:
+
+- **Both build here.** Neither is blocked on this machine's toolchain for the
+  ordinary artifact.
+- **Neither builds for musl** without a C cross toolchain, so the from-scratch
+  container either gains that prerequisite or ships without an engine — and *the
+  second option is a difference in what two artifacts can do*, which §3.4 makes
+  a condition of every measurement rather than a packaging detail.
+- **The footprint is affordable but not free.** 12.9 MiB of static libraries
+  against D24's 40 MiB ceiling is a third of it before a linker drops anything,
+  and MCF's own binary is 3.3 MiB today.
+- **The trade is one upstream against a hundred and forty-three.** That is a
+  judgement about what MCF can account for rather than a number, and
+  [vendored.md](vendored.md) §1 is where it would be argued.
+
+B-320 is where the choice is made, and it is left open on purpose: this is the
+largest single thing MCF will ship, and the register asks for a finding before
+an admission rather than after.
 
 ## Changelog
+
+### Version 15 — the engine's second half, and an expectation removed
+
+F12 completed in the exclusive window. Both candidates build for the ordinary
+target; llama.cpp produces 12.9 MiB of static libraries against D24's 40 MiB
+ceiling, and a minimal candle program is 1.6 MiB needing only the three
+libraries §3a allows.
+
+The result worth recording is the one that did not go as expected. F9.5 chose
+the TLS provider on musl: the C candidate could not build for the target
+B-183's container uses, and the Rust one could. The same test was expected to
+choose the engine — and it does not, because `candle-core` depends on
+`tokenizers`, which depends on Oniguruma, which is C. Neither candidate keeps
+that check runnable without a cross toolchain, so the engine decision turns on
+other things: one upstream against a hundred and forty-three, and a second
+tokenizer MCF already owns.
 
 ### Version 14 — what an engine would cost, half-measured on purpose
 

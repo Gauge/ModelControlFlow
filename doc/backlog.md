@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 95 |
+| **Version** | 96 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -130,7 +130,7 @@ first and importance second.
 | B-185 | Every tier publishes its age; a stale heavy tier fails a release rather than being assumed green | B38, §3.1 | A release with a stale mutation or soak tier is refused with the age stated | **done** — `scripts/check-tier-ages.sh [--release]`, and every `scripts/ci.sh` run reports the ages. Stale is *the source changed*, not *a clock advanced*: no clause states how old a soak result may be (A23), and what actually invalidates one is decidable — each tier stamps a digest of the manifests, the toolchain pin, the crates, the checks and the scripts. The stamps are machine-local, so a fresh checkout says it has run nothing rather than inheriting a result |
 | B-186 | Mutation score is measured and floored, budgeted like any other property | B38, B20, §3.5 | The score is asserted in CI and may not regress silently | **done** — `MUTATION_FLOOR_PERCENT` in `scripts/lib-tiers.sh`, at 100 %: a claim about the twelve mutants in the catalogue, each of which breaks something a rule rests on, rather than about every conceivable mutation. A score below the floor *or* below the last run's stamp (B-185) exits non-zero, and both refusals were checked against a copy of the tree with a deliberate survivor in it. The twelfth mutant is there because it survived: nothing checked that a resident reading is in bytes, and now something does |
 | B-193 | The storage an artifact is read from is a measurement condition; and a measurement whose cost is in another process is judged by that process's scheduling, not the measurer's | §3.4, D27, D30, B35 | The condition floor carries where the artifact was executed from, and a cold start on a slow filesystem is refused as unattributable rather than reported as over its ceiling | **done** — `artifact_storage` is the floor's eleventh question (`mcf_core::hardware::storage`), and `Attributability::Storage` is the second signal: a measurement whose work took a major page fault went to a device and is refused rather than asserted. `scripts/check-fault-signal.sh` runs in the gating tier and shows the signal moving — zero faults warm, thirty evicted, over the same thirty spawns ([findings.md](findings.md) F7) |
-| B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open — the measuring has started rather than the choosing. [findings.md](findings.md) F12 has the cheap half: llama.cpp is 35 MiB of one project's C++ under one licence and needs CMake and a C++ compiler; candle is 152 crates of Rust under many licences and needs neither. What is *not* measured is the deciding half — whether either builds for the musl target B-183's container uses, and what each does to D24's 40 MiB footprint ceiling — because both need several minutes of a quiet machine, and `prototypes/engine-cost/measure.sh` is committed so that whoever has one can fill the table in. The TLS admission is the template: measure, state the cost, then choose (F9.5, F9.6) |
+| B-320 | Fully-vendored stack: engines, kernels and math libraries shipped and pinned; every result renders the shipped stack's versions among its conditions; an engine MCF cannot vendor yields a classified outcome naming the reason | B64, D23, §3.12 | The from-scratch conformance run reaches a first token with no vendor runtime installed, and no figure renders without its engine | open — measured, not chosen. [findings.md](findings.md) F12 has both halves now: llama.cpp is one project's C++ producing 12.9 MiB of static libraries against D24's 40 MiB ceiling; candle is 143 crates producing a 1.6 MiB binary that needs only the three libraries §3a allows. Both build here. **Neither builds for musl** without a C cross toolchain — the pure-Rust candidate through `tokenizers` → Oniguruma — so the test that chose the TLS provider (F9.5) does not separate these, and the from-scratch container either gains that prerequisite or ships without an engine, which is a difference in what two artifacts can *do* and therefore a §3.4 condition. Left open deliberately: this is the largest single thing MCF will ship |
 | B-321 | Deferred-engine register: engines and runtimes avoided because they cannot be vendored, recorded with the reason and revisited on evidence that the performance gap changes which model a user should run | D23, §3.13, C6 | The list exists and is maintained rather than the omissions being silent | **done** — [vendored.md](vendored.md), which is also B-330's matrix: the same register seen from two sides, written before the first component is admitted so that it gates rather than describes |
 | B-192 | Self-contained build: the inference engine and every common-path tool are vendored or reimplemented, statically linked, no runtime and no toolchain required | §XVI, B36 | The artifact has no dynamic dependency a stock machine lacks | **done** — `crates/mcf-cli/tests/artifact.rs` reads the binary's own `DT_NEEDED` entries rather than asking `ldd`, and refuses a stranger, a baked-in search path or an interpreter that is not the platform's own; the list and its reasoning are [vendored.md](vendored.md) §3a. The release artifact needs `libc` and `libgcc_s`. The condition holds as components arrive: an engine that dragged in a maths library the user must obtain fails here. Vendoring the engine is B-320, and the container that proves it from scratch is B-183 |
 | B-183 | From-scratch conformance: a container with no toolchain, no runtime and no package manager runs the binary and reaches a first token | B36, §XVI, D29 | Asserted on every platform D29 calls characterized, and a platform that is only attempted says which capability it lacks rather than being skipped | **in progress** — `scripts/check-from-scratch.sh` behind `scripts/ci.sh --with-from-scratch`: a statically linked `x86_64-unknown-linux-musl` artifact in an image holding it and nothing else — no libc, no shell, no package manager, no `/etc`, no `/tmp` — running `--version`, `licence` and the whole of `doctor`, laboratory included. What it lacks it reports: the accelerator comes back *attempted, uncharacterized* because the vendor library is not there (D25, A5). The first token needs a model artifact (B-019), and the other platforms D29 names need a machine to run on |
@@ -367,6 +367,26 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 96 — the engine's numbers, and the test that did not decide it
+
+F12's second half, measured in the exclusive window. Both candidates build for
+the ordinary target: llama.cpp produces 12.9 MiB of static libraries — a third
+of D24's ceiling before the linker drops anything — and a minimal candle program
+is 1.6 MiB needing only the three libraries §3a allows.
+
+The finding worth having is the one that went the other way. F9.5 chose the TLS
+provider on the musl target: the C candidate could not build for it, the Rust
+one could, and an existing check stayed runnable everywhere. The same test was
+expected to choose the engine. It does not — `candle-core` depends on
+`tokenizers`, which depends on Oniguruma, which is C — so neither candidate
+keeps B-183's container runnable without a cross toolchain.
+
+That leaves the choice resting on things numbers do not settle: one upstream to
+account for against a hundred and forty-three, and a second tokenizer MCF
+already owns by D31. B-320 stays open on purpose. This is the largest single
+thing MCF will ship, the register asks for a finding before an admission, and
+the finding now exists.
 
 ### Version 95 — the engine question, opened with numbers rather than opinions
 
