@@ -1,10 +1,19 @@
 //! `mcf check`: is what this machine holds still what the hub says it is?
 //! (B-331, D37, §7.38).
 //!
-//! **What it does.** For every artifact this machine holds whose provenance
-//! names a repository, it asks that repository what it says now and compares
-//! with what was written down at acquisition. It fetches no weights — a listing
-//! and a model card — and it changes nothing about the artifact.
+//! **What it does, in two halves.** *The bytes here*: re-read the artifact and
+//! compare its digest with the one recorded when it arrived (B-301, §7.49) —
+//! which catches the silent disk corruption that would otherwise be discovered
+//! as a garbage measurement rather than as a bad file. *The upstream*: ask the
+//! repository it came from what it says now, and compare with what was written
+//! down at acquisition (B-331, D37). Neither fetches weights; the second
+//! fetches a listing and a model card, and `--here` does not touch the network
+//! at all.
+//!
+//! **Why the two belong in one command.** They are the same question — *is what
+//! I hold still what it should be* — asked of the two things that can change
+//! independently. Keeping them apart would mean an operator has to know which
+//! kind of rot they are looking for before they look.
 //!
 //! **When it runs: when somebody runs it.** D37 forbids the timer a watcher
 //! would need (B4, §3.13). MCF does not notice a decay overnight, and saying so
@@ -26,6 +35,8 @@
 
 use std::path::Path;
 
+use mcf_core::attested::Attested;
+use mcf_core::integrity;
 use mcf_core::provenance::{Decay, Observation, Origin, Provenance};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
@@ -39,8 +50,22 @@ use crate::Response;
 use crate::models;
 use crate::pull::{DEFAULT_HUB, Offered, credential, wire_for};
 
-/// Looks upstream at everything held, or at one artifact.
-pub(crate) fn run(only: Option<&str>, from: Option<&str>, offered: Offered<'_>) -> Response {
+/// How much of the question to ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reach {
+    /// Both halves: the bytes here and the repository they came from.
+    Everything,
+    /// The bytes on this disk, and no network at all.
+    HereOnly,
+}
+
+/// Checks what this machine holds: the bytes, and where they came from.
+pub(crate) fn run(
+    only: Option<&str>,
+    reach: Reach,
+    from: Option<&str>,
+    offered: Offered<'_>,
+) -> Response {
     let Some(root) = models::default_root() else {
         return Response {
             text: "mcf: there is nowhere to look — neither XDG_DATA_HOME nor HOME is set"
@@ -72,37 +97,61 @@ pub(crate) fn run(only: Option<&str>, from: Option<&str>, offered: Offered<'_>) 
         };
     }
 
-    let hub = match hub_for(from, offered) {
-        Ok(hub) => hub,
-        Err(response) => return response,
+    let hub = match reach {
+        Reach::HereOnly => None,
+        Reach::Everything => match hub_for(from, offered) {
+            Ok(hub) => Some(hub),
+            Err(response) => return response,
+        },
     };
 
     let at = Timestamp::now();
-    let mut lines = vec![format!("looking upstream at {} artifact(s)", wanted.len())];
+    let mut lines = vec![format!(
+        "checking {} artifact(s){}",
+        wanted.len(),
+        match reach {
+            Reach::HereOnly => " against what was recorded here, and nothing else",
+            Reach::Everything => " here and upstream",
+        }
+    )];
     let mut changes = 0_usize;
     let mut looked = 0_usize;
+    let mut corrupt = 0_usize;
 
     for held in wanted {
         let Ok(provenance) = &held.provenance else {
             lines.push(format!(
                 "  {} — nothing beside it says where it came from, so there is nothing to \
-                 check (A7)",
+                 check it against (A7)",
                 held.path.display()
             ));
             continue;
         };
-        let Some(observed) = decay::look(&hub, provenance, file_of(&held.path), at) else {
-            lines.push(format!(
-                "  {} — its origin is not a repository, so there is no upstream to look at",
-                held.path.display()
-            ));
+
+        // The bytes first, because it is the half that needs no network and the
+        // half a bad answer would come from: a measurement taken against a
+        // corrupted file is worse than one not taken (§7.49, B-301).
+        let (said, matched) = bytes_here(&held.path, provenance);
+        lines.extend(said);
+        if matched == Some(false) {
+            corrupt = corrupt.saturating_add(1);
+        }
+
+        let Some(hub) = &hub else {
+            continue;
+        };
+        let Some(observed) = decay::look(hub, provenance, file_of(&held.path), at) else {
+            lines.push(
+                "      its origin is not a repository, so there is no upstream to look at"
+                    .to_owned(),
+            );
             continue;
         };
         looked = looked.saturating_add(1);
         if observed.found.is_a_change() {
             changes = changes.saturating_add(1);
         }
-        lines.push(format!("  {} — {}", held.path.display(), observed.found));
+        lines.push(format!("      upstream: {}", observed.found));
 
         // Written down twice, and neither is a correction: beside the artifact,
         // where a reader of the file finds it, and in the record, where *what
@@ -116,21 +165,72 @@ pub(crate) fn run(only: Option<&str>, from: Option<&str>, offered: Offered<'_>) 
     }
 
     lines.push(String::new());
-    lines.push(match changes {
-        0 => format!(
-            "{looked} checked, nothing changed upstream. Nothing here was verified against the \
-             bytes on this disk — `mcf list` is where an artifact's own integrity is (B-301)."
-        ),
-        _ => format!(
-            "{changes} of {looked} changed upstream. Nothing is invalidated by that: the \
-             artifacts are here and their digests are what they were (D37). What a change \
-             costs is somebody else's ability to reproduce from the same reference."
-        ),
-    });
+    lines.extend(verdict(corrupt, hub.is_some(), looked, changes));
 
     Response {
         text: lines.join("\n"),
         served: true,
+    }
+}
+
+/// The two sentences a check ends with, which are about different things.
+///
+/// Kept apart deliberately: corruption is a fact about this disk and a decay is
+/// a fact about somebody else's server, and running them together would invite
+/// a reader to think one caused the other.
+fn verdict(corrupt: usize, asked_upstream: bool, looked: usize, changes: usize) -> Vec<String> {
+    let mut said = vec![match corrupt {
+        0 => "every artifact with a recorded digest still matches it.".to_owned(),
+        _ => format!(
+            "{corrupt} artifact(s) no longer match the digest recorded for them. That is a \
+             fact about this disk rather than about the hub, and a measurement taken against \
+             one of them is a measurement of the corruption (§7.49, §3.8)."
+        ),
+    }];
+    if asked_upstream {
+        said.push(match changes {
+            0 => format!("{looked} checked upstream, and nothing there has changed."),
+            _ => format!(
+                "{changes} of {looked} changed upstream. Nothing is invalidated by that: the \
+                 artifacts are here and their digests are what they were (D37). What a change \
+                 costs is somebody else's ability to reproduce from the same reference."
+            ),
+        });
+    }
+    said
+}
+
+/// Re-reads an artifact and compares it with the digest recorded for it.
+///
+/// The second half of the answer is `Some(false)` when the bytes have changed,
+/// `Some(true)` when they have not, and `None` when there is nothing to compare
+/// against — which is a third state rather than a pass (A7).
+fn bytes_here(path: &Path, provenance: &Provenance) -> (Vec<String>, Option<bool>) {
+    match provenance.integrity() {
+        Attested::Known(recorded) => match integrity::verify(path, recorded) {
+            Ok(()) => (
+                vec![format!(
+                    "  {} — the bytes here are the bytes that arrived",
+                    path.display()
+                )],
+                Some(true),
+            ),
+            Err(failure) => {
+                let mut said = vec![format!("  {} — {failure}", path.display())];
+                for entry in failure.context() {
+                    said.push(format!("      {}: {}", entry.key, entry.value));
+                }
+                (said, Some(false))
+            }
+        },
+        Attested::Unknown => (
+            vec![format!(
+                "  {} — no digest was recorded for it, so the bytes cannot be checked against \
+                 anything (A7)",
+                path.display()
+            )],
+            None,
+        ),
     }
 }
 

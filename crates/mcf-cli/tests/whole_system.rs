@@ -724,13 +724,24 @@ fn what_was_acquired_is_checked_against_what_the_hub_says_now() {
     let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
     assert!(pulled.status.success(), "{}", error_text(&pulled));
 
+    // The bytes here, with no network at all: the half of the question that is
+    // about this disk (B-301, §7.49).
+    let here = machine.run(&["check", "--here"]);
+    assert!(here.status.success(), "{}", error_text(&here));
+    let said = text(&here);
+    assert!(
+        said.contains("the bytes here are the bytes that arrived"),
+        "{said}"
+    );
+    assert!(said.contains("still matches it"), "{said}");
+
     // Nothing has changed, and *checked and unchanged* is a finding rather than
     // silence (A1).
     let checked = machine.run(&["check", "--from", &serving.base()]);
     assert!(checked.status.success(), "{}", error_text(&checked));
     let said = text(&checked);
     assert!(said.contains("nothing MCF compared has changed"), "{said}");
-    assert!(said.contains("nothing changed upstream"), "{said}");
+    assert!(said.contains("nothing there has changed"), "{said}");
 
     // The same repository, relicensed under the pin.
     let relicensed = a_hub_declaring(weights, &digest, "cc-by-nc-4.0");
@@ -760,6 +771,41 @@ fn what_was_acquired_is_checked_against_what_the_hub_says_now() {
     let record = std::fs::read_to_string(machine.journal()).expect("a record");
     assert!(record.contains("artifact_checked"), "{record}");
     assert!(record.contains("relicensed"), "{record}");
+}
+
+/// Corruption on this disk is found by re-reading, and is a different fact
+/// from anything the hub says (B-301, §7.49, §3.8).
+///
+/// The failure this exists to catch is the quiet one: bytes that rot between
+/// acquisition and a measurement taken months later, which without a check
+/// shows up as a strange result rather than as a bad file.
+#[test]
+fn bytes_that_changed_on_this_disk_are_found_by_checking() {
+    let machine = Machine::new("check-bytes");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+
+    // The disk rots under it. Built rather than caused (D26): what MCF observes
+    // is bytes that do not match, however they came to differ.
+    let held = machine.0.join("mcf/models/owner/model/model.gguf");
+    std::fs::write(&held, "GGUF the weights, altered").expect("the bytes change");
+
+    let checked = machine.run(&["check", "--here"]);
+    assert!(checked.status.success(), "{}", error_text(&checked));
+    let said = text(&checked);
+    assert!(said.contains("no longer match the digest"), "{said}");
+    assert!(
+        said.contains(&digest),
+        "the reading does not say what was expected: {said}"
+    );
+    assert!(
+        said.contains("fact about this disk"),
+        "the verdict does not say whose fault it is: {said}"
+    );
 }
 
 /// A hub that publishes the same file under a licence of its choosing.

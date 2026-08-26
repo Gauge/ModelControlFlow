@@ -68,10 +68,12 @@ enum Request<'a> {
         /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
     },
-    /// Look upstream at what this machine holds.
+    /// Check what this machine holds: the bytes, and where they came from.
     Check {
         /// One artifact, by any part of its path; every one when absent.
         only: Option<&'a str>,
+        /// How much of the question to ask.
+        reach: check::Reach,
         /// A hub other than the default.
         from: Option<&'a str>,
         /// Where MCF may read a credential from, if the operator named one.
@@ -499,6 +501,7 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
 /// else (B-024).
 fn check_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut only = None;
+    let mut reach = check::Reach::Everything;
     let mut from = None;
     let mut offered = pull::Offered::Nothing;
     let mut rest = arguments.iter();
@@ -531,6 +534,7 @@ fn check_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            "--here" => reach = check::Reach::HereOnly,
             other if other.starts_with("--") => return Err(other),
             other if only.is_none() => only = Some(other),
             other => return Err(other),
@@ -538,6 +542,7 @@ fn check_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     }
     Ok(Request::Check {
         only,
+        reach,
         from,
         offered,
     })
@@ -641,10 +646,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
                  \x20 mcf list                            what this machine is holding\n\
-                 \x20 mcf check [<model>]                 ask the hub whether what you hold\n\
-                 \x20           [--from <hub>]            is still what it published: a\n\
-                 \x20                                     withdrawn revision, a closed gate,\n\
-                 \x20                                     a relicensing, a replaced file\n\
+                 \x20 mcf check [<model>] [--here]        is what you hold still what it\n\
+                 \x20           [--from <hub>]            should be? the bytes against the\n\
+                 \x20                                     digest recorded for them, and the\n\
+                 \x20                                     hub against what it published\n\
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
                  \x20            [--purge]                this previews and removes nothing\n\
                  \x20 mcf export --to <path>              the record, as one portable file\n\
@@ -680,9 +685,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Check {
             only,
+            reach,
             from,
             offered,
-        } => check::run(*only, *from, *offered),
+        } => check::run(*only, *reach, *from, *offered),
         Request::Explain { model } => explain::run(model),
         Request::Run {
             model,
