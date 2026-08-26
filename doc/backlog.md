@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 116 |
+| **Version** | 117 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,18 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 117 — the online tier meets a repository with a shape
+
+F16's own conclusion was that the online check earns its place and does not go
+far enough: it acquires 1.2 MB from a repository of tiny models, which exercises
+the wire and says nothing about the *variety* of what a hub publishes. Every one
+of the three defects it found was in code with tests, and none of them was
+reachable from a tiny model.
+
+So the check now also plans for the reference repository, which fetches no bytes
+— a listing and a `config.json` — and asserts that every variant published comes
+back classified. A plan missing a row nobody mentioned is worse than no plan.
 
 ### Version 116 — three defects, found by pointing MCF at a real repository
 
