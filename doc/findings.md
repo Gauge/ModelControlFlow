@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 22 |
+| **Version** | 23 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1509,7 +1509,115 @@ artifacts multiply it by the number of platforms. That is an argument about
 which engine to admit rather than about whether the wall is real, and B-320 is
 where it gets made.
 
+## 19 · F19 — Two defects a real model found in an hour, and the tests that could not (B-364, B-365, A19, D38)
+
+**Why it was run.** The operator's machine holds 107 GB of models acquired
+through another tool, and three of them declare the one architecture MCF's
+engine implements. Running one is the cheapest possible test of everything
+B-364 had just built, and the strongest evidence available short of an oracle:
+either the text is coherent or it is not.
+
+**What was run.** `mcf run` against `Mistral-7B-Instruct-v0.3`, 291 tensors,
+225 of them `Q4_0` and one `Q6_K`, prompt *The capital of France is*.
+
+**What came back the first time.** `/******/obiubreérceronulusříoid`, from a
+prompt MCF said was 26 tokens long. Both halves of that were defects.
+
+### 19.1 The tokenizer used an algorithm no model is tokenized by
+
+MCF segmented text with a Viterbi search over the whole string, maximizing the
+sum of the vocabulary's scores. That is SentencePiece's *unigram* algorithm and
+it is not what these files are read with. Two things were wrong with it here:
+
+- **The scores are not log-probabilities.** In this vocabulary, `▁The` scores
+  −156, `▁capital` −5306, `T` −28479, and every byte-fallback token scores
+  **0.0**. They are ranks: for every token, score = −(identifier − 1027). A
+  search maximizing the sum therefore preferred byte tokens to every real word,
+  which is exactly what the 26 tokens were.
+- **The algorithm is a merge, not a search.** Local runtimes tokenize these
+  files by seeding a chain with single characters, then repeatedly merging the
+  adjacent pair whose combined spelling scores highest, ties to the left. MCF
+  now does the same. Where SentencePiece's own Viterbi would disagree with that
+  merge is a question for B-368's oracle rather than an assumption here.
+
+Byte fallback also emitted *one* byte of a multi-byte character rather than all
+of them, so a space that fell back arrived as a fragment and came back as a
+replacement mark. It emits every byte now, and decoding gathers consecutive byte
+tokens before reading them as UTF-8.
+
+**Fixed, the prompt is six tokens: `<s> ▁The ▁capital ▁of ▁France ▁is`.**
+
+### 19.2 `Q6_K` decoded every value correctly and put them in the wrong places
+
+With the tokenizer right, the model still produced noise. The single `Q6_K`
+tensor in that file is `output.weight` — the projection to logits — so a fault
+there turns a correct forward pass into random-looking tokens, which is what it
+did.
+
+The format writes the four values a byte-pair produces at **strides of 32**:
+
+```c
+y[l +  0] = d * sc[is + 0] * q1;
+y[l + 32] = d * sc[is + 2] * q2;
+y[l + 64] = d * sc[is + 4] * q3;
+y[l + 96] = d * sc[is + 6] * q4;
+```
+
+MCF wrote them consecutively. Every value was right and every value was in the
+wrong place. `Q2_K` and `Q3_K` had the same class of error in their sub-block
+walk — four shifts of the same thirty-two bytes, two runs of sixteen per shift —
+and were rewritten against the source at the same time.
+
+**Fixed, the same prompt answers `Paris, but the largest city is Marseille`**,
+and *Write one sentence about rain* answers *Rain is a natural phenomenon that
+occurs when water droplets fall from the clouds to the earth's*.
+
+### 19.3 The tests could not have caught either, and that is the finding
+
+Both decoders had tests. Both tests passed throughout.
+
+The `Q6_K` test built a block where **every value was the same** and asserted
+they were all there. They were — in the wrong order, which a list of identical
+values cannot show. A test that cannot distinguish a permutation from the
+identity is not testing placement, and placement was the whole of the defect.
+The replacement gives every position a distinct value and a distinct scale, and
+fails on the old code.
+
+The tokenizer's tests were worse in a subtler way: the laboratory's fixture
+vocabulary held **only whole words** — `▁yes`, `▁no`, `▁maybe`. No real
+vocabulary looks like that, because every token in one was *built* by merging,
+so the intermediate pieces are always present. The fixture could not be
+tokenized by the correct algorithm at all, and so it could only be tokenized by
+the wrong one. Both fixtures now carry the full ladder from `▁` and single
+letters up to each word.
+
+**The general lesson, stated so it can be applied to the next one.** A fixture
+MCF writes to test MCF is a fixture shaped by the same misunderstanding as the
+code. D26 already says a scenario should build the observable rather than the
+cause; this is its sibling for fixtures — *a fixture that cannot be wrong the
+way a real file is wrong hides the defect it was built to catch*. Real artifacts
+are how that is escaped, and B-368's oracle is how it is escaped systematically.
+
 ## Changelog
+
+### Version 23 — two defects a real model found in an hour
+
+F19. The operator pointed out that their machine already holds a hundred
+gigabytes of models, three of which declare the architecture MCF's engine
+implements. Running one took an hour and found two defects, neither of which
+any test could see.
+
+The tokenizer used SentencePiece's unigram search where these files are read by
+a merge algorithm — and in a vocabulary whose byte tokens score zero and whose
+words score minus thousands, that search spells every word out one byte at a
+time. And `Q6_K` decoded every value correctly into the wrong position, which
+in that file corrupts the projection to logits and nothing else.
+
+The third part is the one worth keeping: both had tests, and both tests were
+incapable of failing. A uniform block cannot show a permutation, and a fixture
+vocabulary of whole words with no intermediate pieces cannot be tokenized by the
+correct algorithm at all. A fixture MCF writes to test MCF is shaped by the same
+misunderstanding as the code.
 
 ### Version 22 — three findings point forward to the one that qualified them
 

@@ -42,6 +42,12 @@ pub const SPACE: char = '\u{2581}';
 pub struct Vocabulary {
     tokens: Vec<String>,
     scores: Vec<f32>,
+    /// Which tokens the file marks as raw bytes rather than pieces.
+    ///
+    /// GGUF carries a type per token, and byte tokens are type 6. A vocabulary
+    /// that does not carry the array falls back to the spelling — `<0x41>` —
+    /// which is what a byte token looks like in every vocabulary that has one.
+    byte_tokens: Vec<bool>,
     by_token: BTreeMap<String, usize>,
     /// The identifier of the beginning-of-text token, where the file names one.
     pub beginning: Option<usize>,
@@ -109,6 +115,28 @@ impl Vocabulary {
             ));
         }
 
+        // GGUF's own token types: 6 is BYTE. Where the array is absent the
+        // spelling decides, which is the same answer by another route.
+        let byte_tokens: Vec<bool> = match file
+            .get("tokenizer.ggml.token_type")
+            .and_then(Value::as_list)
+        {
+            Some(types) => tokens
+                .iter()
+                .enumerate()
+                .map(|(identifier, token)| {
+                    matches!(
+                        types.get(identifier).and_then(Value::as_integer),
+                        Some(BYTE_TOKEN)
+                    ) || spelled_as_a_byte(token)
+                })
+                .collect(),
+            None => tokens
+                .iter()
+                .map(|token| spelled_as_a_byte(token))
+                .collect(),
+        };
+
         let mut by_token = BTreeMap::new();
         for (identifier, token) in tokens.iter().enumerate() {
             // First wins. A vocabulary that spells one token twice is a file
@@ -118,6 +146,7 @@ impl Vocabulary {
         }
 
         Ok(Self {
+            byte_tokens,
             tokens,
             scores,
             by_token,
@@ -159,90 +188,149 @@ impl Vocabulary {
     /// byte fallback. Dropping it would be losing information silently (A1).
     pub fn encode(&self, text: &str, with_beginning: bool) -> Result<Vec<usize>> {
         let prepared = prepare(text);
-        let characters: Vec<char> = prepared.chars().collect();
-        let count = characters.len();
 
-        // best[i] is the best way to have reached character i.
-        let mut best: Vec<Option<Reached>> = vec![None; count + 1];
-        if let Some(slot) = best.get_mut(0) {
-            *slot = Some(Reached {
-                score: 0.0,
-                tokens: 0,
-                from: 0,
-                identifier: usize::MAX,
+        // Every character is a symbol, in a chain that merges rather than a
+        // lattice that is searched. See the note on this function for why the
+        // difference is the whole of it.
+        let mut symbols: Vec<Symbol> = Vec::new();
+        for (position, character) in prepared.char_indices() {
+            let previous = i64::try_from(symbols.len()).unwrap_or(0) - 1;
+            symbols.push(Symbol {
+                at: position,
+                length: character.len_utf8(),
+                previous,
+                next: i64::try_from(symbols.len()).unwrap_or(0) + 1,
             });
         }
-
-        for at in 0..count {
-            let Some(Some(reached)) = best.get(at).copied() else {
-                continue;
-            };
-            for end in (at + 1)..=count {
-                let piece: String = characters.get(at..end).unwrap_or(&[]).iter().collect();
-                let Some(identifier) = self.by_token.get(&piece).copied() else {
-                    continue;
-                };
-                let score = reached.score + self.scores.get(identifier).copied().unwrap_or(0.0);
-                let candidate = Reached {
-                    score,
-                    tokens: reached.tokens.saturating_add(1),
-                    from: at,
-                    identifier,
-                };
-                if let Some(slot) = best.get_mut(end) {
-                    *slot = Some(better(*slot, candidate));
-                }
-            }
-
-            // Byte fallback for the single character at this position, which is
-            // what makes the segmentation total.
-            let Some(character) = characters.get(at).copied() else {
-                continue;
-            };
-            let mut buffer = [0_u8; 4];
-            let encoded = character.encode_utf8(&mut buffer);
-            let end = at + 1;
-            for byte in encoded.as_bytes() {
-                let spelled = format!("<0x{byte:02X}>");
-                let Some(identifier) = self.by_token.get(&spelled).copied() else {
-                    continue;
-                };
-                let score = reached.score + self.scores.get(identifier).copied().unwrap_or(0.0);
-                let candidate = Reached {
-                    score,
-                    tokens: reached.tokens.saturating_add(1),
-                    from: at,
-                    identifier,
-                };
-                if let Some(slot) = best.get_mut(end) {
-                    *slot = Some(better(*slot, candidate));
-                }
-            }
+        if let Some(last) = symbols.last_mut() {
+            last.next = -1;
         }
 
-        let Some(Some(_)) = best.get(count) else {
-            return Err(malformed(
-                "the vocabulary cannot represent this text, and it has no byte fallback",
-                &prepared,
-            ));
-        };
+        // Every adjacent pair the vocabulary has a token for, best first.
+        let mut queue: Vec<Bigram> = Vec::new();
+        for index in 1..symbols.len() {
+            let right = i64::try_from(index).unwrap_or(0);
+            self.offer(&prepared, &symbols, right - 1, right, &mut queue);
+        }
 
-        // Walk the chain back, which is where the tokens actually come from.
+        while let Some(best) = take_best(&mut queue) {
+            let (Some(left), Some(right)) = (
+                symbols
+                    .get(usize::try_from(best.left).unwrap_or(0))
+                    .copied(),
+                symbols
+                    .get(usize::try_from(best.right).unwrap_or(0))
+                    .copied(),
+            ) else {
+                continue;
+            };
+            // A symbol that was already merged into another is gone, and a pair
+            // whose size no longer matches is a pair that has changed under
+            // this entry — both are skipped rather than reconciled.
+            if left.length == 0 || right.length == 0 || left.length + right.length != best.size {
+                continue;
+            }
+
+            let merged_next = right.next;
+            if let Some(slot) = symbols.get_mut(usize::try_from(best.left).unwrap_or(0)) {
+                slot.length += right.length;
+                slot.next = merged_next;
+            }
+            if let Some(slot) = symbols.get_mut(usize::try_from(best.right).unwrap_or(0)) {
+                slot.length = 0;
+            }
+            if merged_next >= 0
+                && let Some(slot) = symbols.get_mut(usize::try_from(merged_next).unwrap_or(0))
+            {
+                slot.previous = best.left;
+            }
+
+            let previous = symbols
+                .get(usize::try_from(best.left).unwrap_or(0))
+                .map_or(-1, |symbol| symbol.previous);
+            self.offer(&prepared, &symbols, previous, best.left, &mut queue);
+            self.offer(&prepared, &symbols, best.left, merged_next, &mut queue);
+        }
+
         let mut identifiers = Vec::new();
-        let mut at = count;
-        while at > 0 {
-            let Some(Some(reached)) = best.get(at).copied() else {
+        let mut walk = 0_i64;
+        while walk >= 0 {
+            let Some(symbol) = symbols.get(usize::try_from(walk).unwrap_or(0)).copied() else {
                 break;
             };
-            identifiers.push(reached.identifier);
-            at = reached.from;
+            let piece = prepared
+                .get(symbol.at..symbol.at.saturating_add(symbol.length))
+                .unwrap_or("");
+            match self.by_token.get(piece).copied() {
+                Some(identifier) => identifiers.push(identifier),
+                // A symbol that never became a token is emitted as the bytes it
+                // is made of — every byte, in order. This is the only place
+                // byte tokens are used at all: they are what a vocabulary says
+                // when it has nothing to say, not a candidate competing on
+                // score (F19).
+                None => {
+                    for byte in piece.as_bytes() {
+                        let spelled = format!("<0x{byte:02X}>");
+                        match self.by_token.get(&spelled).copied() {
+                            Some(identifier) => identifiers.push(identifier),
+                            None => {
+                                return Err(malformed(
+                                    "the vocabulary cannot represent this text, and it has no \
+                                     byte fallback",
+                                    piece,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            walk = symbol.next;
         }
-        identifiers.reverse();
 
         if with_beginning && let Some(beginning) = self.beginning {
             identifiers.insert(0, beginning);
         }
         Ok(identifiers)
+    }
+
+    /// Offers the pair of symbols at `left` and `right` to the queue, if the
+    /// vocabulary has a token for what they spell together.
+    fn offer(
+        &self,
+        text: &str,
+        symbols: &[Symbol],
+        left: i64,
+        right: i64,
+        queue: &mut Vec<Bigram>,
+    ) {
+        if left < 0 || right < 0 {
+            return;
+        }
+        let (Some(first), Some(second)) = (
+            symbols.get(usize::try_from(left).unwrap_or(0)),
+            symbols.get(usize::try_from(right).unwrap_or(0)),
+        ) else {
+            return;
+        };
+        let size = first.length.saturating_add(second.length);
+        let Some(piece) = text.get(first.at..first.at.saturating_add(size)) else {
+            return;
+        };
+        let Some(identifier) = self.by_token.get(piece).copied() else {
+            return;
+        };
+        queue.push(Bigram {
+            left,
+            right,
+            score: self.scores.get(identifier).copied().unwrap_or(0.0),
+            size,
+        });
+    }
+
+    /// Whether an identifier names a raw byte rather than a piece.
+    #[must_use]
+    fn is_byte(&self, identifier: usize) -> bool {
+        self.byte_tokens.get(identifier).copied().unwrap_or(false)
     }
 
     /// Turns identifiers back into text.
@@ -255,50 +343,124 @@ impl Vocabulary {
         use std::fmt::Write as _;
 
         let mut out = String::new();
+        // Consecutive byte tokens are one character between them, more often
+        // than not: a character outside the vocabulary is two to four bytes in
+        // UTF-8, and decoding them one at a time turns every one into a
+        // replacement mark (F19). They are gathered and decoded together.
+        let mut bytes: Vec<u8> = Vec::new();
+        let flush = |bytes: &mut Vec<u8>, out: &mut String| {
+            if bytes.is_empty() {
+                return;
+            }
+            match core::str::from_utf8(bytes) {
+                Ok(text) => out.push_str(text),
+                // Bytes that are not a character are what they are: rendering
+                // them as replacement marks says how many there were, which is
+                // more than dropping them says (A1).
+                Err(_) => {
+                    for _ in bytes.iter() {
+                        out.push('\u{FFFD}');
+                    }
+                }
+            }
+            bytes.clear();
+        };
+
         for identifier in identifiers {
             match self.token(*identifier) {
-                Some(token) => out.push_str(&undo(token)),
+                Some(token) if self.is_byte(*identifier) => {
+                    if let Some(byte) = byte_of(token) {
+                        bytes.push(byte);
+                        continue;
+                    }
+                    flush(&mut bytes, &mut out);
+                    out.push_str(&undo(token));
+                }
+                Some(token) => {
+                    flush(&mut bytes, &mut out);
+                    out.push_str(&undo(token));
+                }
                 // The write cannot fail: the target is a `String`.
                 None => {
+                    flush(&mut bytes, &mut out);
                     let _written = write!(out, "<id {identifier}>");
                 }
             }
         }
+        flush(&mut bytes, &mut out);
         out
     }
 }
 
-/// The best way found so far of reaching a position.
-#[derive(Debug, Clone, Copy)]
-struct Reached {
-    score: f32,
-    tokens: usize,
-    from: usize,
-    identifier: usize,
+/// The byte a `<0x41>`-shaped token stands for.
+fn byte_of(token: &str) -> Option<u8> {
+    let hex = token.strip_prefix("<0x")?.strip_suffix('>')?;
+    u8::from_str_radix(hex, 16).ok()
 }
 
-/// Which of two ways of reaching a position to keep.
+/// The type GGUF gives a token that stands for one raw byte.
+const BYTE_TOKEN: i64 = 6;
+
+/// Whether a token is spelled the way every byte token is spelled.
+fn spelled_as_a_byte(token: &str) -> bool {
+    token.len() == 6
+        && token.starts_with("<0x")
+        && token.ends_with('>')
+        && token
+            .get(3..5)
+            .is_some_and(|hex| hex.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// One run of characters in the text being tokenized.
 ///
-/// Higher score, then fewer tokens, then the lower identifier. The tie-breaks
-/// are what make a segmentation a function of the vocabulary rather than of the
-/// order the candidates happened to be considered in (§3.12).
-fn better(existing: Option<Reached>, candidate: Reached) -> Reached {
-    let Some(existing) = existing else {
-        return candidate;
-    };
-    // The scores are compared exactly and deliberately: two segmentations whose
-    // scores differ by one bit are two different segmentations, and a tolerance
-    // here would make which one is chosen depend on how the sum was
-    // accumulated. `float_cmp` is right about arithmetic in general and wrong
-    // about a comparison whose purpose is to be exact.
-    #[allow(clippy::float_cmp)]
-    let tied = candidate.score == existing.score;
-    let keep_candidate = candidate.score > existing.score
-        || (tied
-            && (candidate.tokens < existing.tokens
-                || (candidate.tokens == existing.tokens
-                    && candidate.identifier < existing.identifier)));
-    if keep_candidate { candidate } else { existing }
+/// A doubly-linked chain by index rather than by pointer: merging is *removing*
+/// a link, and an index survives the vector growing under it.
+#[derive(Debug, Clone, Copy)]
+struct Symbol {
+    /// Where it starts in the prepared text.
+    at: usize,
+    /// How many bytes it covers. Zero means it was merged into its neighbour
+    /// and is no longer in the chain.
+    length: usize,
+    previous: i64,
+    next: i64,
+}
+
+/// A pair of adjacent symbols the vocabulary has a token for.
+#[derive(Debug, Clone, Copy)]
+struct Bigram {
+    left: i64,
+    right: i64,
+    score: f32,
+    /// What the pair spelled when it was offered. A pair whose symbols have
+    /// changed size since is stale, and this is how that is noticed.
+    size: usize,
+}
+
+/// The best pending merge: highest score, and the leftmost of equals.
+///
+/// A linear scan rather than a heap. The queue is short, the engine is written
+/// to be read (D38), and the ordering is the part that has to be right: two
+/// implementations that break ties differently produce different tokens and
+/// therefore different answers from the same model.
+fn take_best(queue: &mut Vec<Bigram>) -> Option<Bigram> {
+    let mut best = 0;
+    for (index, bigram) in queue.iter().enumerate() {
+        let current = queue.get(best)?;
+        // `float_cmp`: the comparison is between two scores read from the same
+        // file, and a tolerance would make which merge happens first depend on
+        // arithmetic MCF did not do.
+        #[allow(clippy::float_cmp)]
+        let ties = bigram.score == current.score;
+        if bigram.score > current.score || (ties && bigram.left < current.left) {
+            best = index;
+        }
+    }
+    if queue.is_empty() {
+        None
+    } else {
+        Some(queue.swap_remove(best))
+    }
 }
 
 /// `SentencePiece`'s preparation: a leading space, and every space written as

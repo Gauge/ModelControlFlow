@@ -128,6 +128,9 @@ fn decode_block(kind: TensorKind, raw: &[u8], out: &mut Vec<f32>) -> Result<()> 
     Ok(())
 }
 
+/// How many values a K-scheme super-block holds.
+const SUPER: usize = 256;
+
 /// An index divided by a power of two, written so the workspace's denial of
 /// integer division does not have to be argued with at each use.
 ///
@@ -230,49 +233,65 @@ fn q5_k(raw: &[u8], out: &mut Vec<f32>) {
 /// Sixteen signed eight-bit scales against one multiplier, and the value is
 /// centred by subtracting 32 — which is how six bits hold a symmetric
 /// distribution with no minimum to go with the scale. `Q4_K_M` uses it for the
-/// tensors it will not round further.
+/// tensors it will not round further, including the projection to logits.
+///
+/// **The four values a byte-pair produces are 32 apart, not adjacent.** Getting
+/// that wrong is the defect [findings.md](../../../doc/findings.md) F19 records
+/// and the reason the first real model produced a plausible-looking tensor of
+/// entirely misplaced numbers: every value was decoded correctly and written
+/// somewhere else.
 fn q6_k(raw: &[u8], out: &mut Vec<f32>) {
-    let low_plane = raw.get(0..128).unwrap_or(&[]);
-    let high_plane = raw.get(128..192).unwrap_or(&[]);
-    let scales = raw.get(192..208).unwrap_or(&[]);
+    let low_plane = raw.get(0..128).unwrap_or_default();
+    let high_plane = raw.get(128..192).unwrap_or_default();
+    let scales = raw.get(192..208).unwrap_or_default();
     let d = from_half(u16::from_le_bytes([byte(raw, 208), byte(raw, 209)]));
 
-    for half in 0..2 {
+    let mut block = [0.0_f32; SUPER];
+    for half in 0..2_usize {
         let low = low_plane.get(half * 64..half * 64 + 64).unwrap_or_default();
         let high = high_plane
             .get(half * 32..half * 32 + 32)
             .unwrap_or_default();
-        for position in 0..32 {
+        for position in 0..32_usize {
             let at = |index: usize| u32::from(low.get(index).copied().unwrap_or(0));
             let bits = u32::from(high.get(position).copied().unwrap_or(0));
+            let which = nth(position, 16);
+            // Four values, each in its own quarter of the 128 this half covers,
+            // and each with its own scale two apart in the scale array.
             let quarters = [
-                ((at(position) & 0x0F) | ((bits & 3) << 4), 0_usize),
-                ((at(position + 32) & 0x0F) | (((bits >> 2) & 3) << 4), 2),
-                ((at(position) >> 4) | (((bits >> 4) & 3) << 4), 4),
-                ((at(position + 32) >> 4) | (((bits >> 6) & 3) << 4), 6),
+                ((at(position) & 0x0F) | ((bits & 3) << 4), 0_usize, 0_usize),
+                ((at(position + 32) & 0x0F) | (((bits >> 2) & 3) << 4), 32, 2),
+                ((at(position) >> 4) | (((bits >> 4) & 3) << 4), 64, 4),
+                ((at(position + 32) >> 4) | (((bits >> 6) & 3) << 4), 96, 6),
             ];
-            for (stored, group) in quarters {
-                let scale = signed(scales, half * 8 + group + nth(position, 16));
+            for (stored, offset, scale_at) in quarters {
+                let scale = signed(scales, half * 8 + which + scale_at);
                 let centred = i32::try_from(stored).unwrap_or(0) - 32;
-                out.push(d * f32::from(scale) * as_float(centred));
+                if let Some(slot) = block.get_mut(half * 128 + position + offset) {
+                    *slot = d * f32::from(scale) * as_float(centred);
+                }
             }
         }
     }
+    out.extend_from_slice(&block);
 }
 
 /// The 3-bit super-block scheme: two bits in one plane, the third in another.
 ///
-/// The high plane holds the third bit **inverted**, which is not a detail a
-/// reader can guess: a value whose high bit is set reads as the low two bits
-/// minus four.
+/// The high plane holds the third bit **inverted**: a value whose bit is clear
+/// reads as the low two bits minus four. Nobody would guess that, which is why
+/// it is read from the format rather than derived.
+///
+/// The walk is the same shape as `Q2_K`'s: two halves of 128, each covering
+/// four shifts of the same 32 bytes, sixteen values at a time.
 fn q3_k(raw: &[u8], out: &mut Vec<f32>) {
-    let high_plane = raw.get(0..32).unwrap_or(&[]);
-    let low_plane = raw.get(32..96).unwrap_or(&[]);
-    let packed = raw.get(96..108).unwrap_or(&[]);
+    let high_plane = raw.get(0..32).unwrap_or_default();
+    let low_plane = raw.get(32..96).unwrap_or_default();
+    let packed = raw.get(96..108).unwrap_or_default();
     let d = from_half(u16::from_le_bytes([byte(raw, 108), byte(raw, 109)]));
 
-    // Sixteen six-bit scales: four bits in the first eight bytes, two more in
-    // the last four, and centred by subtracting 32.
+    // Sixteen six-bit scales, four bits in the first eight bytes and two more
+    // in the last four, centred by subtracting 32.
     let mut scales = [0_i32; 16];
     for (index, slot) in scales.iter_mut().enumerate() {
         let at = |i: usize| u32::from(packed.get(i).copied().unwrap_or(0));
@@ -285,17 +304,23 @@ fn q3_k(raw: &[u8], out: &mut Vec<f32>) {
         *slot = i32::try_from(low | (high << 4)).unwrap_or(0) - 32;
     }
 
-    for group in 0..16 {
-        let shift = (group % 4) * 2;
-        let plane = nth(group, 4);
-        for position in 0..16 {
-            let at = plane * 16 + position;
-            let bits = (low_plane.get(at).copied().unwrap_or(0) >> shift) & 3;
-            let mask = 1_u8 << (group % 8);
-            let inverted = high_plane.get(at).copied().unwrap_or(0) & mask == 0;
-            let centred = i32::from(bits) - if inverted { 4 } else { 0 };
-            let scale = scales.get(group).copied().unwrap_or(0);
-            out.push(d * as_float(scale) * as_float(centred));
+    let mut scale_at = 0_usize;
+    let mut mask = 1_u8;
+    for half in 0..2_usize {
+        let low = low_plane.get(half * 32..half * 32 + 32).unwrap_or_default();
+        for shift in [0_u8, 2, 4, 6] {
+            for run in 0..2_usize {
+                let scale = scales.get(scale_at).copied().unwrap_or(0);
+                scale_at = scale_at.saturating_add(1);
+                for position in 0..16_usize {
+                    let at = run * 16 + position;
+                    let bits = (low.get(at).copied().unwrap_or(0) >> shift) & 3;
+                    let inverted = high_plane.get(half * 32 + at).copied().unwrap_or(0) & mask == 0;
+                    let centred = i32::from(bits) - if inverted { 4 } else { 0 };
+                    out.push(d * as_float(scale) * as_float(centred));
+                }
+            }
+            mask = mask.rotate_left(1);
         }
     }
 }
@@ -305,22 +330,30 @@ fn q3_k(raw: &[u8], out: &mut Vec<f32>) {
 /// Each sub-block carries a four-bit scale and a four-bit minimum in one byte,
 /// against two half-precision multipliers — the smallest scheme that still
 /// holds a distribution which is not centred on zero.
+///
+/// The walk is `Q3_K`'s without the third bit: two halves of 128, four shifts
+/// of the same 32 bytes, two runs of sixteen per shift.
 fn q2_k(raw: &[u8], out: &mut Vec<f32>) {
-    let scales = raw.get(0..16).unwrap_or(&[]);
-    let values = raw.get(16..80).unwrap_or(&[]);
+    let scales = raw.get(0..16).unwrap_or_default();
+    let values = raw.get(16..80).unwrap_or_default();
     let d = from_half(u16::from_le_bytes([byte(raw, 80), byte(raw, 81)]));
     let dmin = from_half(u16::from_le_bytes([byte(raw, 82), byte(raw, 83)]));
 
-    for group in 0..16 {
-        let packed = scales.get(group).copied().unwrap_or(0);
-        let scale = d * f32::from(packed & 0x0F);
-        let minimum = dmin * f32::from(packed >> 4);
-        let shift = (group % 4) * 2;
-        let plane = nth(group, 4);
-        for position in 0..16 {
-            let at = plane * 16 + position;
-            let bits = (values.get(at).copied().unwrap_or(0) >> shift) & 3;
-            out.push(scale * f32::from(bits) - minimum);
+    let mut scale_at = 0_usize;
+    for half in 0..2_usize {
+        let low = values.get(half * 32..half * 32 + 32).unwrap_or_default();
+        for shift in [0_u8, 2, 4, 6] {
+            for run in 0..2_usize {
+                let packed = scales.get(scale_at).copied().unwrap_or(0);
+                scale_at = scale_at.saturating_add(1);
+                let scale = d * f32::from(packed & 0x0F);
+                let minimum = dmin * f32::from(packed >> 4);
+                for position in 0..16_usize {
+                    let at = run * 16 + position;
+                    let bits = (low.get(at).copied().unwrap_or(0) >> shift) & 3;
+                    out.push(scale * f32::from(bits) - minimum);
+                }
+            }
         }
     }
 }

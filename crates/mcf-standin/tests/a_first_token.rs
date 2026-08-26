@@ -23,16 +23,59 @@ use mcf_standin::session::{Request, Stopped, generate};
 use mcf_standin::tokenizer::Vocabulary;
 use mcf_standin::{gguf, ops};
 
-/// The vocabulary this model speaks: three space-prefixed words and a
-/// beginning-of-text marker.
-const TOKENS: [&str; 4] = ["<s>", "\u{2581}yes", "\u{2581}no", "\u{2581}maybe"];
+/// The vocabulary this model speaks: three space-prefixed words, every piece
+/// they are built from, and a beginning-of-text marker.
+///
+/// The ladder matters. A real vocabulary reaches `▁yes` by merging `▁` with
+/// `y`, then with `e`, then with `s`, and one holding only the whole word
+/// cannot be tokenized at all by the algorithm the models actually use. This
+/// fixture held only whole words, which is part of why the tokenizer ran for
+/// months on an algorithm no model is tokenized by
+/// ([findings.md](../../../doc/findings.md) F19).
+const TOKENS: [&str; 20] = [
+    "<s>",
+    "\u{2581}",
+    "y",
+    "e",
+    "s",
+    "n",
+    "o",
+    "m",
+    "a",
+    "b",
+    "\u{2581}y",
+    "\u{2581}ye",
+    "\u{2581}yes",
+    "\u{2581}n",
+    "\u{2581}no",
+    "\u{2581}m",
+    "\u{2581}ma",
+    "\u{2581}may",
+    "\u{2581}mayb",
+    "\u{2581}maybe",
+];
 
-/// The width of everything: four tokens, four dimensions, one head, one block.
-const WIDTH: usize = 4;
+/// The width of everything: one dimension per token, one head, one block.
+const WIDTH: usize = TOKENS.len();
 
 /// Builds a GGUF holding both a vocabulary and the weights of a one-block model
 /// whose embedding table is one-hot — so the logits for a token are that
 /// token's own row, and greedy decoding repeats whatever it is given.
+fn scores() -> Vec<f32> {
+    TOKENS
+        .iter()
+        .map(|token| match token.chars().count() {
+            0 | 1 => -9.0,
+            length => -9.0 + f32::from(u8::try_from(length).unwrap_or(0)),
+        })
+        .collect()
+}
+
+/// The fixture's width, as a dimension is written.
+fn wide() -> u64 {
+    u64::try_from(WIDTH).unwrap_or(0)
+}
+
 fn a_model() -> Vec<u8> {
     let metadata = vec![
         text("general.architecture", "llama"),
@@ -44,7 +87,9 @@ fn a_model() -> Vec<u8> {
         integer("llama.context_length", 16),
         integer("tokenizer.ggml.bos_token_id", 0),
         token_list("tokenizer.ggml.tokens", &TOKENS),
-        score_list("tokenizer.ggml.scores", &[0.0, -1.0, -1.0, -1.0]),
+        // Longer pieces score better, so a merge that can reach a whole word
+        // does — the ordering a real vocabulary has.
+        score_list("tokenizer.ggml.scores", &scores()),
     ];
 
     let mut table = vec![0.0_f32; WIDTH * WIDTH];
@@ -57,19 +102,19 @@ fn a_model() -> Vec<u8> {
     let square = vec![0.0_f32; WIDTH * WIDTH];
     let ones = vec![1.0_f32; WIDTH];
     let mut tensors: Vec<(String, Vec<u64>, Vec<f32>)> = vec![
-        ("token_embd.weight".to_owned(), vec![4, 4], table),
-        ("output_norm.weight".to_owned(), vec![4], ones.clone()),
+        ("token_embd.weight".to_owned(), vec![wide(), wide()], table),
+        ("output_norm.weight".to_owned(), vec![wide()], ones.clone()),
     ];
     for (name, dimensions, values) in [
-        ("attn_norm.weight", vec![4_u64], ones.clone()),
-        ("attn_q.weight", vec![4, 4], square.clone()),
-        ("attn_k.weight", vec![4, 4], square.clone()),
-        ("attn_v.weight", vec![4, 4], square.clone()),
-        ("attn_output.weight", vec![4, 4], square.clone()),
-        ("ffn_norm.weight", vec![4], ones),
-        ("ffn_gate.weight", vec![4, 4], square.clone()),
-        ("ffn_up.weight", vec![4, 4], square.clone()),
-        ("ffn_down.weight", vec![4, 4], square),
+        ("attn_norm.weight", vec![wide()], ones.clone()),
+        ("attn_q.weight", vec![wide(), wide()], square.clone()),
+        ("attn_k.weight", vec![wide(), wide()], square.clone()),
+        ("attn_v.weight", vec![wide(), wide()], square.clone()),
+        ("attn_output.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_norm.weight", vec![wide()], ones),
+        ("ffn_gate.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_up.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_down.weight", vec![wide(), wide()], square),
     ] {
         tensors.push((format!("blk.0.{name}"), dimensions, values));
     }
@@ -153,7 +198,12 @@ fn text_goes_in_and_text_comes_out_marked() {
     let model = load(&file, &bytes).expect("the model loads");
 
     let prompt = vocabulary.encode("yes", true).expect("it segments");
-    assert_eq!(prompt, vec![0, 1], "<s> then the word");
+    // `<s>` and the whole word, whose identifier is wherever the ladder put it.
+    let yes = TOKENS
+        .iter()
+        .position(|token| *token == "\u{2581}yes")
+        .expect("the vocabulary spells the word");
+    assert_eq!(prompt, vec![0, yes], "<s> then the word");
 
     let marked = generate(
         &model,
@@ -179,7 +229,7 @@ fn text_goes_in_and_text_comes_out_marked() {
     assert_eq!(generated.stopped, Stopped::AtLimit);
 
     // A one-hot model answers a token with itself.
-    assert_eq!(generated.tokens, vec![1, 1, 1]);
+    assert_eq!(generated.tokens, vec![yes, yes, yes]);
     assert_eq!(vocabulary.decode(&generated.tokens), " yes yes yes");
 }
 
@@ -191,6 +241,12 @@ fn a_generation_stops_where_it_is_told_to() {
     let vocabulary = Vocabulary::read(&file).expect("reads");
     let model = load(&file, &bytes).expect("loads");
 
+    // The stop token is the word itself: a one-hot model answers a token with
+    // itself, so asking it for `no` and stopping on `no` stops immediately.
+    let no = TOKENS
+        .iter()
+        .position(|token| *token == "\u{2581}no")
+        .expect("the vocabulary spells the word");
     let marked = generate(
         &model,
         "stand-in, this test",
@@ -199,13 +255,13 @@ fn a_generation_stops_where_it_is_told_to() {
             limit: 8,
             settings: Settings::Greedy,
             seed: 0,
-            stop: vec![2],
+            stop: vec![no],
         },
     )
     .expect("runs");
 
     let generated = marked.value().observed();
-    assert_eq!(generated.stopped, Stopped::AtStopToken { token: 2 });
+    assert_eq!(generated.stopped, Stopped::AtStopToken { token: no });
     assert!(generated.tokens.is_empty());
     assert_eq!(vocabulary.decode(&generated.tokens), "");
 }

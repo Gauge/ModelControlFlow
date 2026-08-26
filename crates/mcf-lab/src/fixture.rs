@@ -22,10 +22,46 @@
 ///
 /// Space-prefixed the way a unigram vocabulary writes them, so that decoding
 /// produces text with the spaces where a reader expects them.
-pub const TOKENS: [&str; 4] = ["<s>", "\u{2581}yes", "\u{2581}no", "\u{2581}maybe"];
+///
+/// **Every intermediate piece is here, and that is the point.** A real
+/// vocabulary is built by merging: `▁yes` is reached from `▁` and `y` through
+/// `▁y` and `▁ye`, and a vocabulary holding only the whole word cannot be
+/// tokenized at all by the algorithm the models actually use. This fixture held
+/// only whole words, which is why it ran happily while the tokenizer used an
+/// algorithm no model is tokenized by ([findings.md](../../../doc/findings.md)
+/// F19). A fixture that cannot be wrong the way a real file is wrong is a
+/// fixture that hides defects (D26's habit, applied to a vocabulary).
+pub const TOKENS: [&str; 20] = [
+    // The special token, and the space every piece is prefixed with.
+    "<s>",
+    "\u{2581}",
+    // The letters the three words are built from.
+    "y",
+    "e",
+    "s",
+    "n",
+    "o",
+    "m",
+    "a",
+    "b",
+    // And the ladder up to each whole word, which is how a merge reaches one.
+    "\u{2581}y",
+    "\u{2581}ye",
+    "\u{2581}yes",
+    "\u{2581}n",
+    "\u{2581}no",
+    "\u{2581}m",
+    "\u{2581}ma",
+    "\u{2581}may",
+    "\u{2581}mayb",
+    "\u{2581}maybe",
+];
 
-/// The width of everything: four tokens, four dimensions, one head, one block.
-const WIDTH: usize = 4;
+/// The three whole words, for a caller that wants to name one.
+pub const WORDS: [&str; 3] = ["\u{2581}yes", "\u{2581}no", "\u{2581}maybe"];
+
+/// The width of everything: one dimension per token, one head, one block.
+const WIDTH: usize = TOKENS.len();
 
 /// A model MCF's own engine will run.
 ///
@@ -43,7 +79,10 @@ pub fn a_model_that_runs() -> Vec<u8> {
         integer("llama.context_length", 16),
         integer("tokenizer.ggml.bos_token_id", 0),
         token_list("tokenizer.ggml.tokens", &TOKENS),
-        score_list("tokenizer.ggml.scores", &[0.0, -1.0, -1.0, -1.0]),
+        // Longer pieces score better than the ones they are built from, so a
+        // merge that can reach a whole word does — which is the ordering a real
+        // vocabulary has and the reason a merge algorithm reaches it.
+        score_list("tokenizer.ggml.scores", &scores()),
     ];
 
     let mut table = vec![0.0_f32; WIDTH * WIDTH];
@@ -56,24 +95,45 @@ pub fn a_model_that_runs() -> Vec<u8> {
     let square = vec![0.0_f32; WIDTH * WIDTH];
     let ones = vec![1.0_f32; WIDTH];
     let mut tensors: Vec<(String, Vec<u64>, Vec<f32>)> = vec![
-        ("token_embd.weight".to_owned(), vec![4, 4], table),
-        ("output_norm.weight".to_owned(), vec![4], ones.clone()),
+        ("token_embd.weight".to_owned(), vec![wide(), wide()], table),
+        ("output_norm.weight".to_owned(), vec![wide()], ones.clone()),
     ];
     for (name, dimensions, values) in [
-        ("attn_norm.weight", vec![4_u64], ones.clone()),
-        ("attn_q.weight", vec![4, 4], square.clone()),
-        ("attn_k.weight", vec![4, 4], square.clone()),
-        ("attn_v.weight", vec![4, 4], square.clone()),
-        ("attn_output.weight", vec![4, 4], square.clone()),
-        ("ffn_norm.weight", vec![4], ones),
-        ("ffn_gate.weight", vec![4, 4], square.clone()),
-        ("ffn_up.weight", vec![4, 4], square.clone()),
-        ("ffn_down.weight", vec![4, 4], square),
+        ("attn_norm.weight", vec![wide()], ones.clone()),
+        ("attn_q.weight", vec![wide(), wide()], square.clone()),
+        ("attn_k.weight", vec![wide(), wide()], square.clone()),
+        ("attn_v.weight", vec![wide(), wide()], square.clone()),
+        ("attn_output.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_norm.weight", vec![wide()], ones),
+        ("ffn_gate.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_up.weight", vec![wide(), wide()], square.clone()),
+        ("ffn_down.weight", vec![wide(), wide()], square),
     ] {
         tensors.push((format!("blk.0.{name}"), dimensions, values));
     }
 
     write(&metadata, &tensors)
+}
+
+/// A score per token: worse for a letter than for a piece, and worse for a
+/// piece than for the word it builds towards.
+fn scores() -> Vec<f32> {
+    TOKENS
+        .iter()
+        .map(|token| match token.chars().count() {
+            0 | 1 => -9.0,
+            // Longer is better, by one per character. `f32::from` on a byte
+            // rather than a cast: the workspace keeps floating point out of
+            // shipped code except where a format demands it, and a fixture that
+            // writes a model file is one of those places.
+            length => -9.0 + f32::from(u8::try_from(length).unwrap_or(0)),
+        })
+        .collect()
+}
+
+/// The fixture's width, as a dimension is written.
+fn wide() -> u64 {
+    u64::try_from(WIDTH).unwrap_or(0)
 }
 
 fn text(key: &str, value: &str) -> (String, u32, Vec<u8>) {

@@ -23,7 +23,7 @@ fn an_explanation_separates_declared_read_and_chosen() {
 
     // The declarations are the fixture's own.
     assert!(said.contains("llama"), "{said}");
-    assert!(said.contains("4 tokens"), "{said}");
+    assert!(said.contains("20 tokens"), "{said}");
     // What MCF read is of the bytes in front of it.
     assert!(said.contains("sha256"), "{said}");
     assert!(said.contains("11 tensors"), "{said}");
