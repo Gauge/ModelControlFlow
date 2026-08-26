@@ -11,6 +11,7 @@
 //! scenario simulates what MCF observes, which is a reference that names
 //! nothing, rather than a hub that behaves badly.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use mcf_core::failure::Category;
@@ -21,6 +22,7 @@ use mcf_hub::wire::{Deadlines, Tcp as Wire};
 
 use crate::hub::{Behaviour, FakeHub, Repository};
 use crate::scenario::{Outcome, Scenario};
+use crate::serving::Serving;
 use crate::world::World;
 
 /// The card says one thing and the weights say another.
@@ -119,6 +121,14 @@ pub(super) const ANSWER_NEVER_COMES: Scenario = Scenario {
     run: answer_never_comes,
 };
 
+/// MCF has no way to speak to an encrypted hub.
+pub(super) const NO_WAY_TO_ENCRYPT: Scenario = Scenario {
+    id: "hub/no-way-to-encrypt",
+    produces: Category::ConfigUnsatisfiable,
+    summary: "an https hub is refused in as many words rather than attempted with a plain socket",
+    run: no_way_to_encrypt,
+};
+
 /// The hub answers a resumption by starting again.
 pub(super) const RESUMPTION_RESTARTED: Scenario = Scenario {
     id: "hub/resumption-restarted",
@@ -137,7 +147,10 @@ pub(super) const RESUMPTION_RESTARTED: Scenario = Scenario {
 fn resumption_restarted(world: &World) -> Outcome {
     let restarted = "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-5/6\r\n\
                      Content-Length: 6\r\n\r\nGGUFxx";
-    let Some((port, serving)) = answering_once(restarted) else {
+    let Some(serving) = Serving::answering(BTreeMap::from([(
+        "/owner/model/resolve/abc123/model.gguf".to_owned(),
+        restarted.to_owned(),
+    )])) else {
         return Outcome::Unexpected("no loopback port is available".to_owned());
     };
 
@@ -145,7 +158,7 @@ fn resumption_restarted(world: &World) -> Outcome {
     if let Err(error) = std::fs::write(&into, b"GGUF") {
         return Outcome::Unexpected(format!("could not write the partial file: {error}"));
     }
-    let Ok(base) = mcf_hub::http::Url::parse(&format!("http://127.0.0.1:{port}/")) else {
+    let Ok(base) = mcf_hub::http::Url::parse(&serving.base()) else {
         return Outcome::Unexpected("the loopback address is a URL".to_owned());
     };
     let hub = mcf_hub::client::Hub::at(base, Box::new(quick_wire()));
@@ -163,7 +176,6 @@ fn resumption_restarted(world: &World) -> Outcome {
     // The partial file must be untouched: a refused resumption that had already
     // appended would have destroyed what it refused to add to.
     let held = std::fs::read(&into).unwrap_or_default();
-    let _joined = serving.join();
     if held != b"GGUF" {
         return Outcome::Unexpected(format!(
             "the partial file was changed by a refused resumption: {} bytes",
@@ -171,32 +183,6 @@ fn resumption_restarted(world: &World) -> Outcome {
         ));
     }
     outcome
-}
-
-/// A listener that answers one request with this and then stops.
-fn answering_once(answer: &'static str) -> Option<(u16, std::thread::JoinHandle<()>)> {
-    use std::io::{Read as _, Write as _};
-    use std::net::TcpListener;
-
-    let listener = TcpListener::bind("127.0.0.1:0").ok()?;
-    let port = listener.local_addr().ok()?.port();
-    let serving = std::thread::spawn(move || {
-        if let Ok((mut held, _)) = listener.accept() {
-            let _deadline = held.set_read_timeout(Some(Duration::from_secs(5)));
-            let mut seen = Vec::new();
-            let mut byte = [0_u8; 1];
-            while held.read(&mut byte).unwrap_or(0) == 1 {
-                seen.push(byte[0]);
-                if seen.ends_with(b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let _written = held.write_all(answer.as_bytes());
-            let _flushed = held.flush();
-            let _closed = held.shutdown(std::net::Shutdown::Write);
-        }
-    });
-    Some((port, serving))
 }
 
 /// A wire with deadlines short enough to run a hundred times in §3.17's check.
@@ -218,55 +204,41 @@ fn quick_wire() -> Wire {
 /// what it exercises is that B7's *a hang is a defined outcome* is true of the
 /// real socket path rather than of a stand-in for it.
 fn answer_never_comes(_world: &World) -> Outcome {
-    use std::net::TcpListener;
-    use std::sync::mpsc;
-
-    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+    let Some(serving) = Serving::holding_open() else {
         return Outcome::Unexpected("no loopback port is available".to_owned());
     };
-    let Ok(address) = listener.local_addr() else {
-        return Outcome::Unexpected("the listener has no address".to_owned());
-    };
-    let port = address.port();
-
-    // The connection is held open until this scenario says otherwise, so the
-    // client's deadline is the only thing that ends the wait — which is the
-    // claim being made.
-    let (stop, wait) = mpsc::channel::<()>();
-    let holding = std::thread::spawn(move || {
-        if let Ok((held, _)) = listener.accept() {
-            let _told = wait.recv();
-            drop(held);
-        }
-    });
-
-    // Short deadlines on purpose: the scenario reproduces a hundred times over
-    // in §3.17's check, and what is being demonstrated is *that* a deadline
-    // ends the wait rather than how long MCF's is.
+    // A deadline short enough to run a hundred times over in §3.17's check: what
+    // is being demonstrated is *that* one ends the wait, not how long MCF's is.
     let wire = Wire {
         deadlines: Deadlines {
             connect: Duration::from_secs(5),
             idle: Duration::from_millis(20),
         },
     };
-    let Ok(url) = mcf_hub::http::Url::parse(&format!("http://127.0.0.1:{port}/model.gguf")) else {
+    let Ok(url) = mcf_hub::http::Url::parse(&format!("{}model.gguf", serving.base())) else {
         return Outcome::Unexpected("the loopback address is a URL".to_owned());
     };
 
     let mut nothing = Vec::new();
-    let outcome = match mcf_hub::wire::fetch(&wire, &Request::get(url), &mut nothing) {
+    match mcf_hub::wire::fetch(&wire, &Request::get(url), &mut nothing) {
         Err(failure) => Outcome::Produced(failure),
         Ok(_) => Outcome::Unexpected("a host that said nothing answered something".to_owned()),
-    };
-
-    // Let the held connection go, and wake the listener in case the client
-    // never reached it, so the scenario leaves no thread behind (A27, B58).
-    let _told = stop.send(());
-    if let Ok(waker) = std::net::TcpStream::connect(("127.0.0.1", port)) {
-        drop(waker);
     }
-    let _joined = holding.join();
-    outcome
+}
+
+/// MCF is asked for a hub it cannot reach at all.
+fn no_way_to_encrypt(_world: &World) -> Outcome {
+    // No listener: nothing is opened, which is the point. The refusal is
+    // decided from what MCF has rather than from what the far end says, so it
+    // arrives before a connection and long before a handshake.
+    let Ok(url) = mcf_hub::http::Url::parse("https://huggingface.co/owner/model") else {
+        return Outcome::Unexpected("that is a URL".to_owned());
+    };
+    let mut nothing = Vec::new();
+    match mcf_hub::wire::fetch(&quick_wire(), &Request::get(url), &mut nothing) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("MCF opened an encrypted connection it cannot".to_owned()),
+    }
 }
 
 /// What a hostile or broken source puts where a response goes.

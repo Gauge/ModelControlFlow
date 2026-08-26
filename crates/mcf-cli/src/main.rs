@@ -13,6 +13,7 @@
 mod doctor;
 mod licence;
 mod models;
+mod pull;
 
 use std::process::ExitCode;
 
@@ -51,6 +52,13 @@ enum Request<'a> {
         /// is a client of the same surface (B22), and a surface a script cannot
         /// read is one only a person can drive.
         as_json: bool,
+    },
+    /// Bring a model onto this machine.
+    Pull {
+        /// The reference, as the operator wrote it.
+        reference: &'a str,
+        /// A hub other than the default.
+        from: Option<&'a str>,
     },
     /// What this machine is holding.
     List,
@@ -137,6 +145,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 needs: "--to <path>",
             },
         },
+        ["pull", rest @ ..] => match pull_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "pull",
+                argument,
+            },
+        },
         ["list"] => Request::List,
         ["list", argument, ..] => Request::UnexpectedArgument {
             command: "list",
@@ -210,6 +225,39 @@ fn export(to: &std::path::Path) -> Response {
             text: format!("mcf: the record could not be exported\n  {failure}"),
             served: false,
         },
+    }
+}
+
+/// Reads `pull`'s own arguments.
+///
+/// Total: an option it does not have is named back, and a `--from` with
+/// nothing after it is a missing argument rather than a silent default.
+fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut reference = None;
+    let mut from = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--from" => match rest.next() {
+                Some(hub) => from = Some(*hub),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "pull",
+                        needs: "--from <hub>",
+                    });
+                }
+            },
+            other if other.starts_with("--") => return Err(other),
+            other if reference.is_none() => reference = Some(other),
+            other => return Err(other),
+        }
+    }
+    match reference {
+        Some(reference) => Ok(Request::Pull { reference, from }),
+        None => Ok(Request::MissingArgument {
+            command: "pull",
+            needs: "<owner/name[:file]>",
+        }),
     }
 }
 
@@ -287,6 +335,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  usage:\n\
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
+                 \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
+                 \x20          [--from <hub>]             provenance; without a file it\n\
+                 \x20                                     says what the repository has\n\
                  \x20 mcf list                            what this machine is holding\n\
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
                  \x20            [--purge]                this previews and removes nothing\n\
@@ -295,9 +346,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                     binary obliges you to (GPL-3.0-only)\n\
                  \x20 mcf --version                       what this binary is\n\
                  \n\
-                 Nothing here fetches yet: acquisition needs a network stack, and the\n\
-                 vendoring decision that requires has not been made (B-021, DEC-011).\n\
-                 Nothing here serves or measures a model."
+                 Acquisition reaches an http hub — a mirror, or the laboratory's own.\n\
+                 An encrypted one needs a TLS stack MCF has not vendored yet, and says\n\
+                 so rather than failing obscurely (B-322). Nothing here serves or\n\
+                 measures a model."
             ),
             served: true,
         },
@@ -313,6 +365,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 served: true,
             }
         }
+        Request::Pull { reference, from } => pull::run(reference, *from),
         Request::List => models::list(),
         Request::Remove {
             names,
@@ -389,7 +442,8 @@ mod tests {
         assert!(text.contains("mcf licence"), "{text}");
         assert!(text.contains("mcf list"), "{text}");
         assert!(text.contains("mcf rm"), "{text}");
-        for unbuilt in ["mcf pull", "mcf serve", "mcf bench", "mcf lab"] {
+        assert!(text.contains("mcf pull"), "{text}");
+        for unbuilt in ["mcf serve", "mcf bench", "mcf lab"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which M0 has not built"
