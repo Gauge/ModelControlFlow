@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 21 |
+| **Version** | 22 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -486,6 +486,17 @@ binary by 5.7 %, well past the 2 % tolerance and to 1.6 % of D24's ceiling. The
 tier refused it, which is what it is for; accepting it was a sentence in a commit
 message rather than a threshold quietly raised.
 
+The second instance is larger and the procedure did not change. The TLS stack
+B-322 admitted grew the core binary from 780 KiB to 3.3 MiB — 356 %, against a
+2 % tolerance, and 8.3 % of D24's ceiling. That is what reaching an encrypted
+hub costs, it was measured before it was bought
+([findings.md](findings.md) F9), and the tier refusing it is the tier working:
+a 356 % growth nobody had to acknowledge is exactly what B20 is written
+against. Two other figures moved with it and are recorded rather than accepted:
+resident memory by 5.7 % (7.8 MiB, well inside its ceiling), and the cold-start
+p99 from 875 µs to 1.7 ms — which the tier does not judge against a baseline,
+for the reason D27 gives, and which its ceiling still passes.
+
 **Not every figure is judged against its baseline, and the ones that are not say
 so.** A18 makes a regression detector a third thing whose thresholds are
 statistical judgments rather than assertions:
@@ -698,6 +709,15 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 22 — the second figure grown on purpose
+
+§9's paragraph on growing a figure deliberately gains its second instance, and
+it is a big one: the TLS stack grew the core binary by 356 %. The number is
+worth having in the build document rather than only in a commit message,
+because the pair now makes the point better than either did alone — 5.7 % for a
+licence text and 356 % for a network, both refused by the same detector, both
+accepted the same way, and neither by moving a threshold.
 
 ### Version 21 — the real hub, on purpose
 
