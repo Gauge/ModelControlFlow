@@ -37,7 +37,7 @@ use std::path::Path;
 
 use mcf_core::attested::Attested;
 use mcf_core::integrity;
-use mcf_core::provenance::{Decay, Observation, Origin, Provenance};
+use mcf_core::provenance::{Observation, Origin, Provenance};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
 use mcf_hub::decay;
@@ -293,13 +293,4 @@ fn record(
         ]),
     ))?;
     Ok(())
-}
-
-/// Whether a finding is one an operator should be told about loudly.
-///
-/// Kept beside the surface rather than on the type: `Decay::is_a_change` is
-/// about the *record*, and this is about a person reading a terminal.
-#[allow(dead_code, reason = "the window (M4) is the second reader of this")]
-pub(crate) const fn is_loud(found: &Decay) -> bool {
-    found.is_a_change()
 }
