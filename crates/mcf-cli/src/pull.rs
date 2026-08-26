@@ -176,9 +176,18 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     // the machine may have less memory than it had, and the file that arrived
     // may not be the size the listing promised. Both are re-read here rather
     // than assumed to have held.
-    let again = plan_for(hub, listing)
-        .ok()
-        .and_then(|plan| plan.into_iter().find(|line| line.contains(&entry.path)));
+    let again = match plan_for(hub, listing) {
+        Ok(plan) => plan
+            .into_iter()
+            .find(|line| line.contains(&entry.path))
+            .ok_or_else(|| {
+                format!(
+                    "the plan does not mention {}, which is a plan about another repository",
+                    entry.path
+                )
+            }),
+        Err(why) => Err(why),
+    };
     Response {
         text: render(
             &acquired,
@@ -186,7 +195,7 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
             &sidecar,
             &provenance,
             recorded.as_ref(),
-            again.as_deref(),
+            &again,
         ),
         served: true,
     }
@@ -590,7 +599,7 @@ fn render(
     sidecar: &Path,
     provenance: &Provenance,
     recorded: Result<&PathBuf, &Failure>,
-    plan_now: Option<&str>,
+    plan_now: &std::result::Result<String, String>,
 ) -> String {
     let verification = match &acquired.verification {
         Verification::Digest { digest } => format!("verified against the hub's digest: {digest}"),
@@ -638,17 +647,18 @@ fn render(
         ));
     }
     match plan_now {
-        Some(verdict) => {
+        Ok(verdict) => {
             lines.push(format!(
                 "  and now that it is here, at {PLANNING_CONTEXT} tokens of context:"
             ));
             lines.push(format!("  {}", verdict.trim_start()));
         }
-        None => lines.push(
-            "  whether it will run here is a question MCF cannot answer for this repository: \
-             that needs the model's own configuration and this machine's free memory (A7)"
-                .to_owned(),
-        ),
+        // The reason, the same as the offer gives before anything is fetched: a
+        // repository that publishes no configuration and one whose
+        // configuration MCF could not read are different facts (A2, F16).
+        Err(why) => lines.push(format!(
+            "  whether it will run here is a question MCF cannot answer: {why}"
+        )),
     }
     match recorded {
         Ok(path) => lines.push(format!("  recorded in {}", path.display())),
