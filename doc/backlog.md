@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 89 |
+| **Version** | 90 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
-build items (42 done, 1 dropped, 9 in progress, 52 blocked on a decision, 96 open).** Every item cites
+build items (42 done, 1 dropped, 10 in progress, 52 blocked on a decision, 95 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -161,7 +161,7 @@ first and importance second.
 | B-022 | Untrusted-input validation of every fetched byte: malformed configs, deceptive metadata, enormous files, path traversal in archives | §3.7 | The lab's hostile-hub fixtures are all rejected with a classified outcome and no state damage | **in progress** — `mcf_hub::inspect`: what a repository *claims* against what is true. A card declaring an architecture the weights are not is caught by reading the weights (A21's divergence, and only possible because D31 gave MCF a second reader); a transfer shorter than its listing is partial and one longer is the repository lying about a number MCF plans with; a repository declaring no terms is a state to report rather than one to fill in. Three scenarios drive the whole path through the simulated hub (A13). Archives are not read yet, so path traversal in one is not: that arrives with the formats that need it |
 | B-023 | License legibility: the license is surfaced before use, and a use it forbids is stated rather than discovered | §III, §3.7 | Every acquired artifact reports its license, or reports it as `Unknown` — never as a plausible default | **in progress** — `mcf_hub::licence`: the three states are distinct and none of them is a default. An identifier MCF recognizes, kept as the repository wrote it; terms that are present and unmatched, which is *not* a failure and *not* the same as absent; and nothing declared, which is `hub.metadata.absent`. `inspect::terms_are_legible` now returns the state rather than a string. Each recognized identifier carries the family its own name puts it in — permissive, copyleft, non-commercial, bespoke — and MCF says nothing further: whether a particular use is allowed is a legal judgement about a specific person, and a tool that guessed would be worse than one that stays quiet. What remains: the surface that prints it, which needs `mcf pull` (B-029); and the *forbidden use* half of the row, which for the one case MCF could face — publishing measurements about a model — is DEC-036 and open |
 | B-024 | Gated and authenticated repositories: credentials are the user's, held deliberately, never a silent prerequisite | §III, §3.10 | A gated model produces an actionable outcome naming exactly what is missing | **done** — `mcf_hub::credentials` and the surface that uses it. A secret redacts itself, an origin travels with it into the record, and an `Identity` says what MCF is to a hub — anonymous, offered, or an account it confirmed. The three refusals are written once so a real hub and a simulated one say the same sentence, each naming the repository, what MCF was, and the one thing to do next. *Held deliberately* is structural: nothing reads the environment, and `checks/tests/a_credential_is_never_picked_up.rs` holds that across the workspace. At the surface, `mcf pull --token-from <file>` and `--token-from-env <VARIABLE>` are the only ways in; a repository that needs one is told which, and MCF reports what it has *looked at and not used* rather than spending it. A credential is refused rather than downgraded over a connection that cannot keep it |
-| B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | open |
+| B-025 | Repository-code execution is possible but never implicit: per artifact, with the risk stated, the choice recorded in provenance, and contained so hostile code cannot corrupt MCF's records or state | §6.4, §3.7 | The lab runs deliberately hostile repository code and MCF's records and state are provably intact afterwards | **in progress** — MCF today executes *nothing* it acquires, which is stronger than what this item will eventually claim, and `checks/tests/nothing_acquired_is_ever_run.rs` holds it while it is true: every place shipped code starts a process is declared with what it starts and why that is not an artifact — MCF starting itself to time its own start, the compiler at build time, and `dlopen` of the vendor's management library, whose two candidate names are a constant a check pins. The other half is what a model file's *contents* are: a test reads a model whose metadata is a shell command, a path traversal and a format specifier, and asserts each comes back exactly as written — neither run, nor resolved, nor interpolated. What remains is containment for an engine that *can* run a repository's own code, which arrives with the engine (B-320) |
 | B-026 | Disk arbitration on acquisition: a download that would exhaust the disk is a decision, not a surprise | §3.11, §7.9 | The disk-exhaustion scenario ends with a classified refusal and no partial garbage | blocked (DEC-009) |
 | B-027 | Eviction and deletion: previewed, logged, reversible where reasonable, never automatic to reclaim space | §3.11 | No code path deletes an artifact without an explicit, recorded authorization | **done** — `mcf_hub::store`: four acts, each a type. `preview` says what would go, what it weighs and whether it could be undone — read from the device the kernel reports, not assumed. `Authorization::given` is somebody deciding, about that list of files at those sizes, for a stated reason. `remove` writes the record *first* and then **moves** the artifact to a shelf, deleting nothing. `purge` is the only function in MCF that destroys an artifact and it takes the authorization to do it. An authorization that no longer matches is refused with every difference named. `checks/tests/nothing_deletes_an_artifact.rs` holds the condition across the workspace: every deletion in shipped code is declared with what it destroys and why that is not an artifact. The surface an operator drives it from is `mcf rm`, which is B-029 |
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
@@ -367,6 +367,29 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 90 — MCF runs nothing it downloaded
+
+B-025 in progress, and the useful part is a check that is true *now* rather
+than a design for later. §6.4 will one day allow repository code to be run
+deliberately; today MCF runs none of it, and that is a stronger claim worth
+holding while it holds.
+
+Every place shipped code starts a process is declared with what it starts:
+three, and each of them is MCF's own business — MCF starting itself to time how
+long MCF takes to start, the compiler at build time recording what built this,
+and `dlopen` of the vendor's management library to read an accelerator. That
+third one is the interesting one, because loading a library is how bytes become
+code without anything looking like execution, so the check on it is not that it
+is absent but that what it opens is a constant: two library names, no path
+joined to anything, and a test that fails if the module learns to build a path
+at all.
+
+The other half is what a model file *contains*, which no source check can
+reach. A model whose metadata is a shell command, a path traversal and a format
+specifier is read with MCF's own reader, and every field comes back exactly as
+written — neither run, nor resolved, nor interpolated. That is what *data* has
+to mean for the largest untrusted input MCF will ever read.
 
 ### Version 89 — a real model, from the real hub
 
