@@ -29,13 +29,28 @@ fn an_unreachable_repository_is_not_a_change() {
 /// And it says so where a person will read it: the sentence names the ambiguity
 /// rather than implying the artifact is gone.
 #[test]
-fn an_unreachable_repository_names_the_ambiguity() {
+fn a_refused_repository_names_the_ambiguity() {
     let said = Decay::Unreachable {
         said: "hub.auth.required".to_owned(),
     }
     .to_string();
     assert!(said.contains("private"), "{said}");
     assert!(said.contains("never existed"), "{said}");
+}
+
+/// A hub nobody could reach is a fact about a network, and the sentence F17
+/// earned does not apply to it: *this could mean the repository is private*
+/// about a refused connection is a possibility the observation does not
+/// support (A7).
+#[test]
+fn a_hub_that_could_not_be_reached_does_not_borrow_that_sentence() {
+    let said = Decay::Unreachable {
+        said: "hub.unreachable".to_owned(),
+    }
+    .to_string();
+    assert!(!said.contains("private"), "{said}");
+    assert!(!said.contains("never existed"), "{said}");
+    assert!(said.contains("reaching the hub"), "{said}");
 }
 
 /// *Checked and unchanged* is a fact, distinct from *never checked* — which is

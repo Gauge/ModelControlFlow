@@ -100,13 +100,18 @@ pub enum Decay {
         /// The digest the hub declares now.
         now: String,
     },
-    /// The hub would not say anything about it.
+    /// MCF did not get an answer about it.
     ///
-    /// Withdrawn, made private, or never there: F17 measured that a hub answers
-    /// all three the same way, so this carries what was observed and names the
-    /// question it is not answering rather than guessing (D33's habit, D37).
+    /// Two quite different situations wear this one name, and the rendering
+    /// keeps them apart. A hub that **refused** — `hub.auth.*` — is the case
+    /// F17 measured: withdrawn, made private and never-there are one answer, so
+    /// MCF says what it observed and names the question it is not answering
+    /// (D33's habit, D37). A hub that could not be **reached** at all is a fact
+    /// about a network, and saying *this could mean the repository is private*
+    /// about a refused connection would be inventing a possibility the
+    /// observation does not support.
     Unreachable {
-        /// What the hub said, in MCF's own classification.
+        /// What was observed, in MCF's own classification.
         said: String,
     },
 }
@@ -157,11 +162,16 @@ impl fmt::Display for Decay {
                 f,
                 "{file} is published with a different digest: was {was}, now {now}"
             ),
-            Self::Unreachable { said } => write!(
+            Self::Unreachable { said } if said.starts_with("hub.auth") => write!(
                 f,
                 "the hub would not say: {said}. That is the same answer it gives for a \
                  repository that is private and one that never existed, so this is what was \
                  observed rather than what happened"
+            ),
+            Self::Unreachable { said } => write!(
+                f,
+                "MCF got no answer about it: {said}. That is a fact about reaching the hub \
+                 and says nothing about whether anything there has changed"
             ),
         }
     }

@@ -839,6 +839,38 @@ fn bytes_that_changed_on_this_disk_are_found_by_checking() {
     );
 }
 
+/// A hub nobody can reach is not a clean bill of health (A7, F17).
+///
+/// The failure this guards against is a run of unanswered questions reading as
+/// *nothing has changed* — which is what it said before, because an unreachable
+/// hub was counted among the checked and the sentence about privacy and
+/// withdrawal was borrowed for a refused connection.
+#[test]
+fn a_hub_that_cannot_be_reached_is_not_reported_as_unchanged() {
+    let machine = Machine::new("check-unreachable");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    drop(serving);
+
+    // Port 9 is discard: nothing listens on it, on any machine.
+    let checked = machine.run(&["check", "--from", "http://127.0.0.1:9/"]);
+    assert!(checked.status.success(), "{}", error_text(&checked));
+    let said = text(&checked);
+    assert!(said.contains("no answer"), "{said}");
+    assert!(
+        !said.contains("nothing there has changed."),
+        "an unreachable hub was reported as unchanged: {said}"
+    );
+    // And the sentence F17 earned is not borrowed for a refused connection.
+    assert!(
+        !said.contains("never existed"),
+        "a network failure claimed the repository might be private: {said}"
+    );
+}
+
 /// A hub that publishes the same file under a licence of its choosing.
 fn a_hub_declaring(weights: &str, digest: &str, licence: &str) -> mcf_lab::serving::Serving {
     use mcf_lab::serving::answer;
