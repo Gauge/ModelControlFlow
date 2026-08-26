@@ -37,7 +37,7 @@ use std::path::Path;
 
 use mcf_core::attested::Attested;
 use mcf_core::integrity;
-use mcf_core::provenance::{Observation, Origin, Provenance};
+use mcf_core::provenance::{Decay, Observation, Origin, Provenance};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
 use mcf_hub::decay;
@@ -130,6 +130,7 @@ pub(crate) fn run(
     )];
     let mut changes = 0_usize;
     let mut looked = 0_usize;
+    let mut unanswered = 0_usize;
     let mut corrupt = 0_usize;
 
     for held in wanted {
@@ -155,7 +156,15 @@ pub(crate) fn run(
             .as_ref()
             .and_then(|hub| upstream(hub, provenance, &held.path, at, &mut lines));
         if let Some(observed) = &observed {
-            looked = looked.saturating_add(1);
+            // *Asked and answered* rather than *asked*: a hub that refused or
+            // could not be reached told MCF nothing about the artifact, and
+            // counting it among the checked would let a run of failures read as
+            // a clean bill of health (A7, F17).
+            if matches!(observed.found, Decay::Unreachable { .. }) {
+                unanswered = unanswered.saturating_add(1);
+            } else {
+                looked = looked.saturating_add(1);
+            }
             if observed.found.is_a_change() {
                 changes = changes.saturating_add(1);
             }
@@ -176,7 +185,7 @@ pub(crate) fn run(
     }
 
     lines.push(String::new());
-    lines.extend(verdict(corrupt, hub.is_some(), looked, changes));
+    lines.extend(verdict(corrupt, hub.is_some(), looked, changes, unanswered));
 
     Response {
         text: lines.join("\n"),
@@ -189,7 +198,13 @@ pub(crate) fn run(
 /// Kept apart deliberately: corruption is a fact about this disk and a decay is
 /// a fact about somebody else's server, and running them together would invite
 /// a reader to think one caused the other.
-fn verdict(corrupt: usize, asked_upstream: bool, looked: usize, changes: usize) -> Vec<String> {
+fn verdict(
+    corrupt: usize,
+    asked_upstream: bool,
+    looked: usize,
+    changes: usize,
+    unanswered: usize,
+) -> Vec<String> {
     let mut said = vec![match corrupt {
         0 => "every artifact with a recorded digest still matches it.".to_owned(),
         _ => format!(
@@ -200,6 +215,10 @@ fn verdict(corrupt: usize, asked_upstream: bool, looked: usize, changes: usize) 
     }];
     if asked_upstream {
         said.push(match changes {
+            0 if looked == 0 => format!(
+                "nothing was checked upstream: {unanswered} repository question(s) got no \
+                 answer, which says nothing about whether anything there has changed."
+            ),
             0 => format!("{looked} checked upstream, and nothing there has changed."),
             _ => format!(
                 "{changes} of {looked} changed upstream. Nothing is invalidated by that: the \
@@ -207,6 +226,11 @@ fn verdict(corrupt: usize, asked_upstream: bool, looked: usize, changes: usize) 
                  costs is somebody else's ability to reproduce from the same reference."
             ),
         });
+        if unanswered > 0 && looked > 0 {
+            said.push(format!(
+                "{unanswered} more got no answer at all, and are neither checked nor changed."
+            ));
+        }
     }
     said
 }
