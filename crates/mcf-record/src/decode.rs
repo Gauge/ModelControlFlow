@@ -126,14 +126,14 @@ fn unreadable(what: &str, found: &Value) -> Failure {
 /// unreadable refuses the derivative too, because a chain with an invented link
 /// is worse than no chain (A1, §XII).
 pub fn provenance(value: &Value) -> Result<Provenance> {
-    let mut read = Provenance::acquired(
-        origin(value.get("origin").ok_or_else(|| missing("origin"))?)?,
-        timestamp(
-            value
-                .get("retrieved_at")
-                .ok_or_else(|| missing("retrieved_at"))?,
-        )?,
-    );
+    let origin = origin(value.get("origin").ok_or_else(|| missing("origin"))?)?;
+    // A retrieval time that is `null` is a link MCF never fetched, which is a
+    // state the type has (`known_of`) rather than a field to fill in — the
+    // upstream half of §XII's chain (A7).
+    let mut read = match known(value.get("retrieved_at")) {
+        Some(at) => Provenance::acquired(origin, timestamp(at)?),
+        None => Provenance::known_of(origin),
+    };
 
     if let Some(found) = known(value.get("integrity")) {
         read = read.with_integrity(checksum(found)?);

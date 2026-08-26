@@ -132,8 +132,9 @@ fn a_moment_comes_back_to_the_nanosecond() {
     let moment = Timestamp::from_utc_nanos(1_700_000_000_123_456_789, Attested::Known(east));
     let original = Provenance::acquired(Origin::Unattributed, moment);
     let read = provenance(&encode::provenance(&original)).expect("it reads back");
-    assert_eq!(read.retrieved_at().utc_nanos(), moment.utc_nanos());
-    assert_eq!(read.retrieved_at().offset(), Attested::Known(east));
+    let read_at = read.retrieved_at().known().copied().expect("a moment");
+    assert_eq!(read_at.utc_nanos(), moment.utc_nanos());
+    assert_eq!(read_at.offset(), Attested::Known(east));
 }
 
 /// A record missing something it must state is refused, naming the field.
@@ -141,22 +142,47 @@ fn a_moment_comes_back_to_the_nanosecond() {
 /// from one it read (A7, A21).
 #[test]
 fn a_record_missing_a_field_is_refused_and_says_which() {
-    let complete = encode::provenance(&a_chain());
-    for field in ["origin", "retrieved_at"] {
-        let Value::Map(mut entries) = complete.clone() else {
-            panic!("the encoder writes an object");
-        };
-        entries.remove(field);
-        let failure = provenance(&Value::Map(entries)).expect_err("a field is missing");
-        assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
-        assert!(
-            failure
-                .context()
-                .iter()
-                .any(|entry| entry.value.contains(field)),
-            "the refusal does not name {field}"
-        );
-    }
+    // The origin, which is the one field a provenance cannot be without: where
+    // these bytes came from is the whole of what it is for. Everything else has
+    // an honest absent state and is tested for it above.
+    let field = "origin";
+    let Value::Map(mut entries) = encode::provenance(&a_chain()) else {
+        panic!("the encoder writes an object");
+    };
+    entries.remove(field);
+    let failure = provenance(&Value::Map(entries)).expect_err("a field is missing");
+    assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
+    assert!(
+        failure
+            .context()
+            .iter()
+            .any(|entry| entry.value.contains(field)),
+        "the refusal does not name {field}"
+    );
+}
+
+/// A record with no retrieval time is a link MCF never fetched — the upstream
+/// half of §XII's chain — and it reads back as exactly that rather than being
+/// refused or given a moment it does not have (A7, B-019).
+#[test]
+fn a_link_nobody_fetched_reads_back_as_one() {
+    let never_fetched = Provenance::known_of(Origin::hub(
+        Repository::new("owner/original"),
+        Some(Revision::new("abc123")),
+    ));
+    let written = encode::provenance(&never_fetched);
+    assert_eq!(written.get("retrieved_at"), Some(&Value::Null));
+
+    let read = provenance(&written).expect("it reads back");
+    assert_eq!(read, never_fetched);
+    assert!(read.retrieved_at().known().is_none());
+
+    // And the whole chain: a derivative MCF did fetch, of weights it did not.
+    let chain = Provenance::acquired(Origin::Unattributed, at(5)).derived_from(never_fetched);
+    assert_eq!(
+        provenance(&encode::provenance(&chain)).expect("it reads back"),
+        chain
+    );
 }
 
 /// A chain whose upstream link is unreadable refuses the derivative too: a

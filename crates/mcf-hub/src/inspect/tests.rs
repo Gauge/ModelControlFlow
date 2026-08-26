@@ -13,6 +13,7 @@ fn listing(licence: Option<&str>, size: u64) -> Listing {
         revision: Some("main".to_owned()),
         entries: vec![Entry::new("model.gguf", size)],
         declared_licence: licence.map(str::to_owned),
+        lineage: None,
     }
 }
 

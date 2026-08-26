@@ -93,6 +93,28 @@ pub struct Listing {
     /// Declared, never verified: A21 keeps those apart, and B-023 is where the
     /// difference is surfaced to a user before they use an artifact.
     pub declared_licence: Option<String>,
+    /// What the repository says these weights were made from.
+    ///
+    /// §XII's hard case: a GGUF conversion of somebody else's weights, where
+    /// the interesting provenance is the *other* repository. A publisher who
+    /// says so is telling MCF something it could not otherwise know, and a
+    /// publisher who does not leaves this absent rather than unlinked-and-
+    /// assumed-original (A7, B-019).
+    pub lineage: Option<Lineage>,
+}
+
+/// What a repository says its weights were made from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lineage {
+    /// The repository the weights came from, as the publisher wrote it.
+    pub base: String,
+    /// What was done to them, in the publisher's own word — `quantized`,
+    /// `finetune`, `merge`, `adapter`.
+    ///
+    /// `None` where the publisher named a base and not a relation, which is a
+    /// thing they do: the link is still worth having, and inventing a
+    /// transformation for it would be MCF saying what happened (A7).
+    pub relation: Option<String>,
 }
 
 impl Listing {

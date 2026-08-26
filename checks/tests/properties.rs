@@ -319,6 +319,15 @@ fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
         },
         _ => Origin::Unattributed,
     };
+    // A link MCF never fetched is a state of its own (B-019), and a round trip
+    // that only ever saw acquired artifacts would not exercise it.
+    if rng.below(4) == 0 {
+        let mut never_fetched = Provenance::known_of(origin);
+        if depth > 0 {
+            never_fetched = never_fetched.derived_from(a_provenance(rng, depth - 1));
+        }
+        return never_fetched;
+    }
     let mut provenance = Provenance::acquired(
         origin,
         Timestamp::from_utc_nanos(

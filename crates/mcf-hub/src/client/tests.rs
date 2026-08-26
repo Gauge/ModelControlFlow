@@ -155,11 +155,14 @@ fn answer(body: &str) -> String {
     )
 }
 
-/// The card the hub sends, in its own shape.
+/// The card the hub sends, in its own shape — including the tags §XII's hard
+/// case lives in.
 fn card() -> String {
     answer(
         r#"{"id":"owner/model","sha":"50968a4468ef4233ed78cd7c3de230dd1d61a56b","gated":false,
-            "tags":["gguf","license:apache-2.0"],"cardData":{"license":"apache-2.0"}}"#,
+            "tags":["gguf","license:apache-2.0","base_model:somebody/original",
+            "base_model:quantized:somebody/original"],
+            "cardData":{"license":"apache-2.0"}}"#,
     )
 }
 
@@ -627,4 +630,49 @@ fn a_redirects_body_is_not_read() {
     assert_eq!(std::fs::read(&into).expect("readable"), b"GGUFxx");
     assert_eq!(fetched.bytes, 6, "the redirect's own body was counted");
     let _cleared = std::fs::remove_dir_all(&directory);
+}
+
+/// §XII's hard case, as the hub actually publishes it: the repository that
+/// made these weights says which weights it made them from, and what it did.
+#[test]
+fn the_lineage_a_publisher_states_is_read() {
+    let server = a_hub_with(&[]);
+    let listing = server.hub().list(&a_reference()).expect("a listing");
+    let lineage = listing.lineage.expect("the card names a base");
+
+    assert_eq!(lineage.base, "somebody/original");
+    assert_eq!(lineage.relation.as_deref(), Some("quantized"));
+}
+
+/// A repository that says nothing about where its weights came from leaves the
+/// link absent rather than unlinked-and-assumed-original (A7).
+#[test]
+fn a_repository_that_says_nothing_about_its_base_leaves_it_absent() {
+    let server = Server::answering(answers_with(&[(
+        "/api/models/owner/model",
+        answer(r#"{"sha":"50968a4468ef4233ed78cd7c3de230dd1d61a56b","tags":["gguf"]}"#),
+    )]));
+    let listing = server.hub().list(&a_reference()).expect("a listing");
+    assert_eq!(listing.lineage, None);
+}
+
+/// A base named without a relation is still a link: what the publisher said is
+/// kept, and what they did not say stays unsaid.
+#[test]
+fn a_base_with_no_relation_is_still_a_link() {
+    let server = Server::answering(answers_with(&[(
+        "/api/models/owner/model",
+        answer(
+            r#"{"sha":"50968a4468ef4233ed78cd7c3de230dd1d61a56b",
+                "tags":["base_model:somebody/original"]}"#,
+        ),
+    )]));
+    let lineage = server
+        .hub()
+        .list(&a_reference())
+        .expect("a listing")
+        .lineage
+        .expect("a base");
+    assert_eq!(lineage.base, "somebody/original");
+    assert_eq!(lineage.relation, None);
 }

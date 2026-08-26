@@ -94,6 +94,8 @@ pub struct Repository {
     pub files: BTreeMap<String, Vec<u8>>,
     /// The licence it declares, where it declares one.
     pub declared_licence: Option<String>,
+    /// What it says its weights were made from (§XII, B-019).
+    pub lineage: Option<mcf_hub::source::Lineage>,
     /// The revision it answers with.
     pub revision: Option<String>,
     /// Whether its listings carry a digest per file.
@@ -115,6 +117,7 @@ impl Repository {
         Self {
             files,
             declared_licence: Some("apache-2.0".to_owned()),
+            lineage: None,
             revision: Some("main".to_owned()),
             declares_digests: true,
             behaviour: Behaviour::WellFormed,
@@ -133,6 +136,17 @@ impl Repository {
     #[must_use]
     pub fn behaving(mut self, behaviour: Behaviour) -> Self {
         self.behaviour = behaviour;
+        self
+    }
+
+    /// The same, saying what its weights were made from — §XII's hard case,
+    /// where the provenance that matters is another repository's.
+    #[must_use]
+    pub fn derived_from(mut self, base: &str, relation: Option<&str>) -> Self {
+        self.lineage = Some(mcf_hub::source::Lineage {
+            base: base.to_owned(),
+            relation: relation.map(str::to_owned),
+        });
         self
     }
 
@@ -303,6 +317,7 @@ impl Source for FakeHub {
             revision: repository.revision.clone(),
             entries,
             declared_licence: repository.declared_licence.clone(),
+            lineage: repository.lineage.clone(),
         })
     }
 

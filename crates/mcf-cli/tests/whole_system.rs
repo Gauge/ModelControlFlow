@@ -774,6 +774,80 @@ fn a_repository_of_variants_is_planned_before_anything_is_downloaded() {
     );
 }
 
+/// §XII's hard case end to end: a requantization of somebody else's weights,
+/// where the provenance that matters is the other repository's (B-019).
+#[test]
+fn a_requantization_records_the_weights_it_was_made_from() {
+    use mcf_lab::serving::answer;
+    let machine = Machine::new("pull-chain");
+    let weights = "GGUF a requantization";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/somebody/model-GGUF".to_owned(),
+            answer(&format!(
+                r#"{{"sha":"{revision}","tags":["gguf","license:apache-2.0",
+                    "base_model:original/weights","base_model:quantized:original/weights"]}}"#
+            )),
+        ),
+        (
+            format!("/api/models/somebody/model-GGUF/tree/{revision}?recursive=true"),
+            answer(&format!(
+                r#"[{{"type":"file","size":{},"lfs":{{"oid":"{digest}","size":{}}},"path":"model.gguf"}}]"#,
+                weights.len(),
+                weights.len()
+            )),
+        ),
+        (
+            format!("/somebody/model-GGUF/resolve/{revision}/model.gguf"),
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{weights}",
+                weights.len()
+            ),
+        ),
+    ]))
+    .expect("a loopback port");
+
+    let pulled = machine.run(&[
+        "pull",
+        "somebody/model-GGUF:model.gguf",
+        "--from",
+        &serving.base(),
+    ]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    let said = text(&pulled);
+    assert!(said.contains("made from"), "{said}");
+    assert!(said.contains("original/weights"), "{said}");
+    assert!(said.contains("cannot vouch for"), "{said}");
+
+    // The chain is in the sidecar, and it traverses: this artifact, the
+    // transformation, and the weights it was made from.
+    let sidecar = machine
+        .0
+        .join("mcf/models/somebody/model-GGUF/model.gguf.mcf-provenance.json");
+    let written = std::fs::read_to_string(&sidecar).expect("a sidecar");
+    let value = json::parse(&written).expect("it is JSON");
+    let provenance = mcf_record::decode::provenance(&value).expect("it reads back");
+
+    assert_eq!(provenance.depth(), 2, "the chain does not reach the base");
+    let base = provenance.source().expect("a base");
+    assert!(
+        base.origin().to_string().contains("original/weights"),
+        "{:?}",
+        base.origin()
+    );
+    assert!(
+        base.retrieved_at().known().is_none(),
+        "MCF claimed to have fetched weights it never fetched"
+    );
+    assert_eq!(
+        provenance.transformations().len(),
+        1,
+        "the publisher's own word for what they did was not kept"
+    );
+}
+
 /// A repository that publishes no configuration cannot be planned for, and MCF
 /// says that rather than showing a plan it guessed (A7).
 #[test]

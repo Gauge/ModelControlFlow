@@ -74,7 +74,10 @@ fn an_amendment_adds_and_does_not_replace() {
     });
     assert!(checked.provenance().integrity().is_known());
     assert_eq!(checked.provenance().origin(), &Origin::Unattributed);
-    assert_eq!(checked.provenance().retrieved_at(), ACQUIRED);
+    assert_eq!(
+        checked.provenance().retrieved_at(),
+        &Attested::Known(ACQUIRED)
+    );
 }
 
 /// §XII's case: the derivative traces to its source weights through the

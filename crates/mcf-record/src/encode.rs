@@ -107,7 +107,10 @@ pub fn degraded<T>(value: &Degraded<T>, encode: impl FnOnce(&T) -> Value) -> Val
 pub fn provenance(provenance: &Provenance) -> Value {
     Value::map([
         ("origin", origin(provenance.origin())),
-        ("retrieved_at", timestamp(provenance.retrieved_at())),
+        (
+            "retrieved_at",
+            attested(provenance.retrieved_at(), |at| timestamp(*at)),
+        ),
         ("integrity", attested(provenance.integrity(), checksum)),
         ("licence", attested(provenance.licence(), licence)),
         (
