@@ -17,6 +17,16 @@
 //! is the mutation tier's whole job and it costs a suite run each. This checks
 //! only that the catalogue still describes the code it is about, which is the
 //! part that goes stale silently.
+//!
+//! **A subtlety this check learned the hard way.** The mutation tier runs the
+//! whole suite — including this file — against a *mutated copy* of the tree, so
+//! for one entry per run the original line is not there: the mutant is. As
+//! first written, this check failed inside that copy, which the runner read as
+//! *the suite kills the equivalent-mutant control*, and the tier refused to
+//! produce a score at all. So what is asserted is that each entry describes the
+//! file **either** as written **or** as mutated: exactly one of the two, which
+//! is true in a clean tree and true in a mutated one, and false when somebody
+//! moves the line.
 
 // Every item in this file is test code; see the note in checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used, clippy::indexing_slicing)]
@@ -50,8 +60,15 @@ fn every_declared_mutation_can_still_be_placed() {
         replaces.len()
     );
 
+    // The control mutation lands in a file the catalogue also names, so while
+    // the runner is testing *it* that entry's line is neither as written nor as
+    // its own mutant. Accepting it here is not a hole: the control has its own
+    // check below, and what this one is about is whether the catalogue still
+    // describes the code.
+    let control = scalar(&script, "CONTROL_REPLACE");
+
     let mut lost = Vec::new();
-    for (file, find) in files.iter().zip(&finds) {
+    for ((file, find), replace) in files.iter().zip(&finds).zip(&replaces) {
         let source = match std::fs::read_to_string(root.join(file)) {
             Ok(source) => source,
             Err(error) => {
@@ -59,10 +76,11 @@ fn every_declared_mutation_can_still_be_placed() {
                 continue;
             }
         };
-        match source.matches(find.as_str()).count() {
-            1 => {}
-            0 => lost.push(format!("{file}: no line matches `{find}`")),
-            many => lost.push(format!("{file}: {many} lines match `{find}`")),
+        if source.contains(control.as_str()) {
+            continue;
+        }
+        if let Err(why) = placeable(&source, find, replace) {
+            lost.push(format!("{file}: {why}"));
         }
     }
     assert_eq!(
@@ -87,13 +105,30 @@ fn the_equivalent_mutant_control_can_still_be_placed() {
     let script = std::fs::read_to_string(root.join(CATALOGUE)).expect("the catalogue is readable");
     let file = scalar(&script, "CONTROL_FILE");
     let find = scalar(&script, "CONTROL_FIND");
+    let replace = scalar(&script, "CONTROL_REPLACE");
     let source = std::fs::read_to_string(root.join(&file))
         .unwrap_or_else(|error| panic!("{file} is readable: {error}"));
-    assert_eq!(
-        source.matches(find.as_str()).count(),
-        1,
-        "the control mutation cannot be placed in {file}: `{find}`"
-    );
+    if let Err(why) = placeable(&source, &find, &replace) {
+        panic!("the control mutation cannot be placed in {file}: {why}");
+    }
+}
+
+/// Whether a mutation still describes the file it names.
+///
+/// True when the source holds the original line exactly once — a clean tree —
+/// **or** the mutated one exactly once, which is what the mutation runner's own
+/// copy looks like while it is being tested. Anything else means the catalogue
+/// and the code have parted company.
+fn placeable(source: &str, find: &str, replace: &str) -> Result<(), String> {
+    let as_written = source.matches(find).count();
+    let as_mutated = source.matches(replace).count();
+    match (as_written, as_mutated) {
+        (1, _) | (0, 1) => Ok(()),
+        (0, 0) => Err(format!(
+            "no line matches `{find}`, and none is mutated to `{replace}`"
+        )),
+        (many, _) => Err(format!("{many} lines match `{find}`")),
+    }
 }
 
 /// The strings of one `declare -a name=( … )` array, in order.

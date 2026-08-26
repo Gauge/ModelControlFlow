@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 128 |
+| **Version** | 129 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,27 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 129 — the check that broke the tier it was protecting
+
+The gating check added in v125 — every mutation in the catalogue can still be
+placed — broke the mutation tier on its first run, and the way it broke is worth
+recording.
+
+The tier runs the **whole suite** against a mutated copy of the tree. For the
+entry under test the original line is gone, so a check that reads the source and
+compares it with the catalogue fails there. The runner read that failure as *the
+suite killed the equivalent-mutant control*, concluded it could not tell a
+killed mutant from a broken copy, and refused to produce a score — which is
+exactly the right refusal and exactly the wrong cause.
+
+The check now asserts each entry describes its file **either as written or as
+mutated**, which is true in a clean tree, true inside the runner's copy, and
+false when somebody moves the line. Verified in all three states, including the
+control's own file, which the catalogue also names.
+
+A check that reads source is a check that runs inside the mutant. That is worth
+remembering before writing the next one.
 
 ### Version 128 — a column that ran into the next one
 
