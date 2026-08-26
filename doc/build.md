@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 27 |
+| **Version** | 28 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -759,7 +759,37 @@ Each tier states a deadline in minutes. It is a bound on a hung run rather than
 an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
+**A window that never comes is reported, not fatal.** A project on this machine
+can hold the window for twelve hours, and a run that asked for the mutation tier
+during one used to die at the first timeout: `errexit` ended it, the tiers after
+it never ran, nothing said which, and the output stopped mid-sentence. That is
+the silent partial A4 forbids, in MCF's own build script. Now a tier that cannot
+get the machine is named at the end under **asked for and could not run**, the
+remaining tiers are attempted, and the last line says both things:
+
+```
+ci: the gating tiers are green in 36s; 1 scheduled tier(s) could not get the machine
+```
+
+The tier's age is left exactly as stale as it was, which is what
+`scripts/check-tier-ages.sh --release` refuses on (B38, B-185) — so nothing is
+lost by not waiting, and nothing is claimed either.
+
+**How long to queue is `MCF_WINDOW_WAIT_SECONDS`** (default 1800). It is an
+environment variable rather than a flag because it is a property of the machine
+rather than of the run: on a machine nobody else uses it is irrelevant, and on
+this one an overnight run wants hours.
+
 ## Changelog
+
+### Version 28 — a window that never comes
+
+Section 12 gains what the machine taught it. A scheduled tier that cannot get
+the exclusive window is now reported rather than fatal: it used to end the whole
+run at the first timeout, so the tiers behind it never ran and nothing said so.
+The run now names what could not run, leaves those ages stale, and says both
+halves in its last line. `MCF_WINDOW_WAIT_SECONDS` decides how long a run is
+willing to queue.
 
 ### Version 27 — the online tier meets a repository with a shape
 
