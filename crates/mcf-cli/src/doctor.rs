@@ -491,6 +491,8 @@ impl core::fmt::Display for Report {
              \x20 code that will use them (A13, D26)."
         )?;
 
+        write!(f, "{}", where_models_go())?;
+
         writeln!(f, "\nWHAT MCF PROMISES HERE")?;
         for (held, promise) in self.promises() {
             writeln!(f, "  {} {promise}", if held { "✓" } else { "✗" })?;
@@ -626,6 +628,70 @@ impl Report {
     #[must_use]
     pub(crate) fn to_value(&self) -> Value {
         body(&self.machine, &self.cost, &self.laboratory)
+    }
+}
+
+/// Where models go on this machine, and how much room each place has.
+///
+/// §3.15 asks that a default be visible with its source, and this is the one an
+/// operator most often needs to change: a store is chosen by an environment
+/// variable, and a report that showed the models without showing where they
+/// live would leave them looking for a setting that is not there.
+fn where_models_go() -> String {
+    let mut lines = vec![String::new(), "WHERE MODELS GO".to_owned()];
+    for (position, store) in crate::models::stores().iter().enumerate() {
+        let room = match room_for(store) {
+            mcf_core::attested::Attested::Known(space) => {
+                format!("{} free of {}", space.available, space.total)
+            }
+            // A store on a filesystem this platform will not describe is one
+            // MCF says nothing about, rather than one it guesses at (A7).
+            mcf_core::attested::Attested::Unknown => {
+                "how much room it has is not something this platform will say".to_owned()
+            }
+        };
+        lines.push(format!(
+            "  {}{} — {room}",
+            store.display(),
+            if position == 0 {
+                " (new models go here)"
+            } else {
+                ""
+            }
+        ));
+    }
+    lines.push(format!(
+        "  {} says where; unset, models go where the platform keeps a user's data.",
+        crate::models::STORES
+    ));
+    lines.push("  `mcf pull --into <directory>` overrides it for one acquisition.".to_owned());
+    for ignored in crate::models::ignored_stores() {
+        lines.push(format!(
+            "  IGNORED: {} is not an absolute path, and MCF will not resolve a store against \
+             whatever directory it was started in (A7)",
+            ignored.display()
+        ));
+    }
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+/// How much room a store has, or would have.
+///
+/// A store that does not exist yet is not a store nothing can be said about:
+/// the filesystem that *would* hold it is right there, and an operator deciding
+/// where to put sixteen gigabytes wants that number before they create the
+/// directory, not after. So the nearest existing ancestor is asked.
+fn room_for(store: &std::path::Path) -> mcf_core::attested::Attested<mcf_core::hardware::Space> {
+    let mut asking = store;
+    loop {
+        if asking.exists() {
+            return mcf_core::hardware::space_on(asking);
+        }
+        match asking.parent() {
+            Some(parent) => asking = parent,
+            None => return mcf_core::attested::Attested::Unknown,
+        }
     }
 }
 

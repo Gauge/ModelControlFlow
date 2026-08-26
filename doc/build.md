@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 29 |
+| **Version** | 30 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -732,6 +732,37 @@ mentioned is worse than no plan (A1).
 network, and A6 would want conditions MCF cannot state for any number taken
 across it.
 
+## 11b · Where the models go
+
+MCF keeps its **record** where the platform says a user's data belongs —
+`$XDG_DATA_HOME/mcf`, falling back to `$HOME/.local/share/mcf`, refusing to
+invent a location when neither is set (A7). The record is small.
+
+**Models are a separate choice, because they are not small.** `MCF_MODELS` is an
+ordered list of absolute paths, separated the way every path list on this
+platform is separated. The first is where a new acquisition goes; all of them
+are searched for what is held:
+
+```
+$ export MCF_MODELS=/home/gauge/Content/mcf-data/models:/home/gauge/models
+$ mcf pull unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf
+$ mcf pull owner/other:model.gguf --into /home/gauge/models
+```
+
+An environment variable rather than a configuration file: §5 refuses MCF a
+configuration language, and a path list in a variable is the platform's idiom
+rather than a language. Where a machine wants it to persist, a shell profile is
+how a machine persists an environment variable.
+
+`mcf doctor` prints the stores in order, says which one new models go to, and
+gives the free space of each — including for a store that does not exist yet, by
+asking the filesystem that would hold it.
+
+**On this machine** the first store is on the content drive, which has 21 TB
+free against the home partition's few. That matters beyond convenience: the
+drive an artifact was read from is a condition of every measurement taken
+against it (B-193), and the two drives here are not the same kind of device.
+
 ## 12 · A machine with something else on it
 
 A machine that hosts several projects with heavy test workloads — as the one MCF
@@ -791,6 +822,14 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 30 — where the models go
+
+`MCF_MODELS` holds an ordered list of stores; the first takes new acquisitions
+and `--into` overrides for one. The record stays where the platform keeps a
+user's data, because the record is small and the models are not. Written down
+because the drive an artifact was read from is part of what a timing taken
+against it means (B-193).
 
 ### Version 29 — a real model, run by the engine MCF wrote
 

@@ -66,36 +66,14 @@ pub(crate) fn run(
     from: Option<&str>,
     offered: Offered<'_>,
 ) -> Response {
-    let Some(root) = models::default_root() else {
-        return Response {
-            text: "mcf: there is nowhere to look — neither XDG_DATA_HOME nor HOME is set"
-                .to_owned(),
-            served: false,
-        };
-    };
-    // A machine that has never acquired anything has no store, and that is not
-    // an unreadable one: `mcf list` has always said so and this said *the model
-    // store could not be read*, which is two answers to one situation (A6) and
-    // the wrong one of the two.
-    if !root.exists() {
-        return Response {
-            text: format!(
-                "no models: {} does not exist yet\n\
-                 \x20 nothing has been acquired on this machine, so there is nothing to check",
-                root.display()
-            ),
-            served: true,
-        };
+    let stores = models::stores();
+    if let Some(response) = nothing_to_check(&stores) {
+        return response;
     }
-    let holding = match store::held(&root) {
-        Ok(holding) => holding,
-        Err(failure) => {
-            return Response {
-                text: crate::say::refusal("the model store could not be read", &failure),
-                served: false,
-            };
-        }
-    };
+    let holding: Vec<Held> = models::held_everywhere()
+        .into_iter()
+        .flat_map(|(_, holding)| holding)
+        .collect();
 
     let wanted: Vec<&Held> = holding
         .iter()
@@ -105,7 +83,10 @@ pub(crate) fn run(
         return Response {
             text: match only {
                 Some(name) => format!("mcf: this machine holds nothing called {name}"),
-                None => format!("no models: {} holds nothing to check", root.display()),
+                None => format!(
+                    "no models: nothing is held in any of the {} store(s) MCF knows about",
+                    stores.len()
+                ),
             },
             served: only.is_none(),
         };
@@ -233,6 +214,43 @@ fn verdict(
         }
     }
     said
+}
+
+/// The two ways there is nothing to check before anything is read.
+///
+/// Kept apart from the check itself so that *nowhere to look* and *nothing
+/// there yet* stay two answers rather than one: the first is a machine that has
+/// not been told where models go, and the second is one that has and has not
+/// used it.
+fn nothing_to_check(stores: &[std::path::PathBuf]) -> Option<Response> {
+    if stores.is_empty() {
+        return Some(Response {
+            text: format!(
+                "mcf: there is nowhere to look — none of {}, XDG_DATA_HOME or HOME says where \
+                 models go",
+                models::STORES
+            ),
+            served: false,
+        });
+    }
+    // A machine that has never acquired anything has no store, and that is not
+    // an unreadable one: `mcf list` has always said so and this said *the model
+    // store could not be read*, which is two answers to one situation (A6) and
+    // the wrong one of the two.
+    if stores.iter().all(|root| !root.exists()) {
+        return Some(Response {
+            text: format!(
+                "no models: {} does not exist yet\n\
+                 \x20 nothing has been acquired on this machine, so there is nothing to check",
+                stores
+                    .first()
+                    .map(|root| root.display().to_string())
+                    .unwrap_or_default()
+            ),
+            served: true,
+        });
+    }
+    None
 }
 
 /// Asks the repository an artifact came from what it says now.

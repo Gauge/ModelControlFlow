@@ -17,9 +17,9 @@ fn a_model_is_found_by_path_or_by_name() {
 
     assert_eq!(
         resolve(file.to_str().unwrap_or_default()),
-        Some(file.clone())
+        Ok(Some(file.clone()))
     );
-    assert_eq!(resolve("nothing/at/all.gguf"), None);
+    assert_eq!(resolve("nothing/at/all.gguf"), Ok(None));
 
     let _cleared = std::fs::remove_dir_all(&scratch);
 }

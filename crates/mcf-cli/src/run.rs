@@ -42,14 +42,23 @@ pub(crate) const TOKENS: usize = 32;
 
 /// Runs a model and prints what it said.
 pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) -> Response {
-    let Some(path) = resolve(model) else {
-        return Response {
-            text: format!(
-                "mcf: there is no model at {model}\n  `mcf list` says what this machine is \
-                 holding; a path to a file works too"
-            ),
-            served: false,
-        };
+    let path = match resolve(model) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return Response {
+                text: format!(
+                    "mcf: there is no model at {model}\n  `mcf list` says what this machine is \
+                     holding; a path to a file works too"
+                ),
+                served: false,
+            };
+        }
+        Err(found) => {
+            return Response {
+                text: ambiguous(model, &found),
+                served: false,
+            };
+        }
     };
 
     let bytes = match std::fs::read(&path) {
@@ -126,17 +135,50 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
     })
 }
 
-/// Where a model is: a path, or something under the store.
-pub(crate) fn resolve(named: &str) -> Option<PathBuf> {
+/// Where a model is: a path, or something under one of the stores.
+///
+/// `Ok(None)` means nothing of that name is held anywhere. `Err` means it is
+/// held in **more than one** store, and MCF will not choose for the operator:
+/// two files under one name are two artifacts, possibly of different sizes and
+/// certainly with two provenances, and picking the first silently would make
+/// every measurement taken afterwards a measurement of whichever one MCF
+/// happened to reach (§3.15, A1).
+pub(crate) fn resolve(named: &str) -> Result<Option<PathBuf>, Vec<PathBuf>> {
     let given = Path::new(named);
     if given.is_file() {
-        return Some(given.to_path_buf());
+        return Ok(Some(given.to_path_buf()));
     }
-    let root = models::default_root()?;
     // `owner/name:file`, the way a reference is written, and `owner/name/file`,
     // the way it sits on the disk. Both are things somebody will type.
-    let under = root.join(named.replace(':', "/"));
-    under.is_file().then_some(under)
+    let relative = named.replace(':', "/");
+    let found: Vec<PathBuf> = models::stores()
+        .into_iter()
+        .map(|root| root.join(&relative))
+        .filter(|candidate| candidate.is_file())
+        .collect();
+    match found.len() {
+        0 => Ok(None),
+        1 => Ok(found.into_iter().next()),
+        _ => Err(found),
+    }
+}
+
+/// What a surface says when a name is held in more than one store.
+pub(crate) fn ambiguous(named: &str, found: &[PathBuf]) -> String {
+    let mut lines = vec![format!(
+        "mcf: {named} names {} files, in different stores:",
+        found.len()
+    )];
+    for path in found {
+        lines.push(format!("  {}", path.display()));
+    }
+    lines.push(
+        "  name one of those paths. MCF will not choose: they are two artifacts with two \
+         provenances, and a measurement against whichever one MCF reached first would be a \
+         measurement nobody could reproduce (§3.15)"
+            .to_owned(),
+    );
+    lines.join("\n")
 }
 
 /// What a reader is told, answer and conditions together.
