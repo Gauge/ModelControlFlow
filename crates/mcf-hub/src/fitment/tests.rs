@@ -248,3 +248,83 @@ fn the_cache_is_sized_by_the_key_value_heads() {
         "a four-fold grouping is a four-fold difference in the cache"
     );
 }
+
+/// A shape is read from the model's own configuration, in both the shapes
+/// configurations are written in.
+#[test]
+fn a_shape_is_read_from_a_configuration() {
+    let stated = mcf_record::json::parse(
+        r#"{"num_hidden_layers":28,"num_key_value_heads":8,"head_dim":128,"hidden_size":1024,
+            "num_attention_heads":16}"#,
+    )
+    .expect("JSON");
+    assert_eq!(
+        Shape::from_configuration(&stated, 2),
+        Some(Shape {
+            blocks: 28,
+            key_value_heads: 8,
+            head_dimension: 128,
+            bytes_per_element: 2,
+        })
+    );
+
+    // An older configuration states no head width, and it is the same number
+    // written another way.
+    let derived = mcf_record::json::parse(
+        r#"{"num_hidden_layers":32,"num_key_value_heads":8,"hidden_size":4096,
+            "num_attention_heads":32}"#,
+    )
+    .expect("JSON");
+    assert_eq!(
+        Shape::from_configuration(&derived, 2).map(|shape| shape.head_dimension),
+        Some(128)
+    );
+}
+
+/// A configuration that does not say is not guessed at: the grouping factor is
+/// exactly what a guess gets wrong, and an operator would be told a variant
+/// does not fit that does (A7).
+#[test]
+fn a_configuration_that_does_not_say_produces_no_shape() {
+    for incomplete in [
+        r#"{"num_key_value_heads":8,"head_dim":128}"#,
+        r#"{"num_hidden_layers":28,"head_dim":128}"#,
+        r#"{"num_hidden_layers":28,"num_key_value_heads":8}"#,
+        r#"{"num_hidden_layers":28,"num_key_value_heads":8,"hidden_size":1024}"#,
+        r#"{"num_hidden_layers":0,"num_key_value_heads":8,"head_dim":128}"#,
+        r#"{"num_hidden_layers":28,"num_key_value_heads":8,"hidden_size":1024,"num_attention_heads":0}"#,
+        r#"{"num_hidden_layers":"twenty-eight","num_key_value_heads":8,"head_dim":128}"#,
+        "{}",
+    ] {
+        let value = mcf_record::json::parse(incomplete).expect("JSON");
+        assert_eq!(
+            Shape::from_configuration(&value, 2),
+            None,
+            "a shape was invented from {incomplete}"
+        );
+    }
+}
+
+/// The grouping factor is read from the key/value heads and not from the
+/// attention heads, which is the mistake that overstates a cache fourfold.
+#[test]
+fn the_cache_is_sized_by_the_grouped_heads_not_the_query_heads() {
+    let value = mcf_record::json::parse(
+        r#"{"num_hidden_layers":32,"num_key_value_heads":8,"num_attention_heads":32,"head_dim":128}"#,
+    )
+    .expect("JSON");
+    let shape = Shape::from_configuration(&value, 2).expect("a shape");
+    let grouped = shape.bytes_per_token().expect("it multiplies out");
+
+    let ungrouped = Shape {
+        key_value_heads: 32,
+        ..shape
+    }
+    .bytes_per_token()
+    .expect("it multiplies out");
+    assert_eq!(
+        ungrouped,
+        grouped.saturating_mul(4),
+        "the two readings differ by the grouping factor, which is the point"
+    );
+}
