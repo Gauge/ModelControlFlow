@@ -294,11 +294,9 @@ fn record(
         ));
     };
     let mut journal = Journal::open(&path)?;
-    let sequence = journal.appended();
     journal.append(&Record::new(
         EntryKind::ArtifactAcquired,
         at,
-        sequence,
         Value::map([
             ("repository", Value::text(listing.reference.repository())),
             (

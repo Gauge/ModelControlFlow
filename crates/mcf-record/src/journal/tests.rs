@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use mcf_core::failure::Category;
 use mcf_core::time::Timestamp;
 
-use super::{Entry, EntryId, EntryKind, FORMAT_VERSION, Journal, default_path, replay};
+use super::{Entry, EntryKind, FORMAT_VERSION, Journal, Writer, default_path, replay};
 use crate::json::Value;
 
 const AT: Timestamp = Timestamp::from_utc_nanos(
@@ -41,11 +41,10 @@ impl Drop for Scratch {
     }
 }
 
-fn entry(sequence: u64) -> Entry {
+fn entry(_which: u64) -> Entry {
     Entry::new(
         EntryKind::MachineProfile,
         AT,
-        sequence,
         Value::map([("cores", Value::Integer(16))]),
     )
 }
@@ -183,12 +182,53 @@ fn an_unwritable_path_is_classified() {
     assert!(refused.context_value("os_error").is_some());
 }
 
-/// An entry carries its envelope, and the identifier reads as the moment it
-/// was recorded — which is what makes a journal legible without a tool.
+/// An entry carries its envelope, and the identifier reads as the kind, the
+/// moment and the writer — which is what makes a journal legible without a tool
+/// and what makes two writers' entries tell apart (DEC-037).
 #[test]
-fn an_identifier_names_its_kind_and_its_moment() {
-    let id = EntryId::new(EntryKind::MachineProfile, AT, 7);
-    assert_eq!(id.as_str(), "machine_profile_2025-08-24T18-04-11Z_0007");
+fn an_identifier_names_its_kind_its_moment_and_its_writer() {
+    let scratch = std::env::temp_dir().join(format!("mcf-id-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&scratch));
+    let mut journal = Journal::open(&scratch.join("record.jsonl"))
+        .expect("a journal opens")
+        .writing_as(Writer::stated("abcd1234"));
+    let written = journal
+        .append(&Entry::new(EntryKind::MachineProfile, AT, Value::Null))
+        .expect("it appends");
+    assert_eq!(
+        written.id.as_str(),
+        "machine_profile_2025-08-24T18-04-11Z_abcd1234_0000"
+    );
+    drop(std::fs::remove_dir_all(&scratch));
+}
+
+/// Two writers on one record never mint the same identifier, however close
+/// together they write — which is the whole of what F13 left broken.
+#[test]
+fn two_writers_never_mint_the_same_identifier() {
+    let scratch = std::env::temp_dir().join(format!("mcf-two-writers-{}", std::process::id()));
+    drop(std::fs::remove_dir_all(&scratch));
+    let path = scratch.join("record.jsonl");
+
+    let mut ids = std::collections::BTreeSet::new();
+    for _writer in 0..4 {
+        let mut journal = Journal::open(&path).expect("a journal opens");
+        for _entry in 0..8 {
+            // The same kind and the same moment for every one of them: the
+            // worst case, and the one two programs recording the same event
+            // actually produce.
+            let written = journal
+                .append(&Entry::new(EntryKind::SelfCost, AT, Value::Null))
+                .expect("it appends");
+            assert!(
+                ids.insert(written.id.as_str().to_owned()),
+                "two entries were given one identifier: {}",
+                written.id.as_str()
+            );
+        }
+    }
+    assert_eq!(ids.len(), 32);
+    drop(std::fs::remove_dir_all(&scratch));
 }
 
 /// Kinds round-trip and an unknown one is `None`, never a fallback (§7.30).

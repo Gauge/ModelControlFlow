@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 106 |
+| **Version** | 107 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -76,7 +76,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-048 | What rights a contribution carries | §7.48 | §XIV | M9 | **resolved** — D21: dedicated, stated up front, no withdrawal |
 | DEC-035 | Which host platforms MCF runs on, and the containment mechanism A14 requires there | §7.35 | **§I, A14** | M0 | **resolved** — D29: all platforms, Linux first; three states as D25 gives a device; per-platform artifacts, since the target triple is already a §3.4 condition |
 | DEC-039 | Which operations actually require elevation, on which platforms | §7.39 | §XVII | M0 | open |
-| DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | **narrowed** — [findings.md](findings.md) F13 measured what the platform gives with no coordination at all: eight processes appending whole lines to one journal, at 400 B, 8 KiB and 128 KiB, on tmpfs and btrfs — sixteen thousand lines, none torn, none interleaved, and the load tier now asserts it. So the question is not *how do we coordinate writes* but *who mints an identifier*: each writer counts its own appends, so two processes can produce the same `EntryId`. A single writer answers it and costs a running daemon for every command; a writer-scoped identifier answers it and costs a change to something C5 makes stable for life |
+| DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | **decided** — D34: everybody writes, nobody arbitrates, and an identifier carries the writer that minted it. [findings.md](findings.md) F13 measured that concurrent appends of whole lines do not tear — eight processes, sixteen thousand lines, two filesystems, none torn — so the question was never coordination. It was naming: each writer counted its own appends from zero, so two programs recording the same kind of event in the same second produced one identifier for two events. A writer token — the process, the moment the writer was made, and a count of the writers made in that process — makes that impossible without any coordination at all. A write that fails is classified and returned, never retried silently and never dropped. The single-writer alternative is priced in D34: a running daemon for every command, to buy an ordering the record already has |
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §III, §3.6 | M1 | open |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
@@ -187,7 +187,7 @@ first and importance second.
 | B-038 | Visible defaults: quantization, context length, runtime and placement are chosen without prompting, and every choice is visible with its source | §3.15, §6.14 | Every default is enumerable with its origin; changing one is recorded | **in progress** — `mcf explain <model>` shows three columns and says which each line is: what the *file declares* (A21 — read, never believed), what *MCF read from the bytes* (the size, the digest, the tensor types, the provenance beside it), and what *MCF would choose* (engine, sampler, seed, budget, planning context, placement) with where each is written down so a reader can go and disagree. It ends with the questions MCF has no basis to answer — which quantization, how fast, what it is good at — each with the reason and the milestone that earns it, because a defaults screen listing only what MCF chose would imply a basis for choosing (§6.5, C7). What remains is the half that needs an engine: quantization and placement are not chosen because there is nothing to choose between, and *changing* a default is not yet a thing that can be done or recorded |
 | B-039 | Authorization gates by category, not frequency: untrusted execution, large irrecoverable resource use, network exposure and destruction are asked every time; everything else flows | §6.14 | The four gated categories are enumerable in code and each has a test asserting it prompts | **done** — `mcf_core::authorization`: the four, enumerable, each saying where MCF asks or that no path exists to ask about yet. Two are commands — `mcf rm` will not destroy without a stated reason and deletes nothing without `--purge`; `mcf pull` acquires only what was named, and a repository asked for without a file is answered rather than fetched. Two are absences, and those are the ones worth checking: MCF runs nothing it acquires, and listens on nothing another machine could reach. `checks/tests/the_four_gates.rs` holds all four against the tree — including the absences, so a `TcpListener` added for a convenience fails there rather than in review, and every loopback listener the laboratory needs is declared with what it is for |
 | B-210 | `mcf stop`: refuse new work, interrupt a lab preserving its partial result, drain and terminate runtimes on a stated deadline, release every held resource including privileged state, record what was stopped, and report what could not be released | [PR6](proposals.md#pr6--the-stop-control), §3.1, A26, A22 | A held accelerator, locked pages and a changed governor are all released; anything that could not be is named rather than claimed | **in progress** — the asking and the account. `mcf stop --because <why>` reaches the daemon, the daemon answers, and the reason goes into the record as `daemon_stopped` rather than being lost with the process (A26): a stop is now a thing that leaves a trace, which a signal never is. Everything the item is really about — draining work, releasing an accelerator, restoring a governor — waits for MCF to hold any of those, which is B-032 and the engine |
-| B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | blocked (DEC-037) — half of the condition is met early: the load tier exercises concurrent writers on one record and asserts the replay reports no loss (F13). What waits on the decision is *ownership* — whether there is one writer at all — and the identifier collision F13 found |
+| B-332 | Record write ownership: a single writer, a defined outcome for a write that loses, and no silent drop | DEC-037, §7.37, §3.1 | Concurrent writers are exercised by the lab; a losing write is classified, never discarded | **done** — and *not* a single writer: D34 settled that nothing arbitrates, because F13 measured that nothing needs to. What the item was really protecting is met in full. `mcf_record::journal::Writer` gives every handle a token no other handle has, and only a journal can mint an identifier — an entry that has not been appended does not have one, which is the condition expressed as a type rather than as a rule. The load tier now asserts uniqueness across four concurrent writers and two thousand entries as well as the absence of a torn line. A write that loses is `record.unwritable` returned to its caller; nothing retries silently, and the one place that cannot propagate — the daemon recording its own start — reports the failure to the operator and carries on (A4). `let _ = journal.append(..)` does not compile under the workspace's lints, so *no silent drop* is a property of the build rather than of review |
 | B-040 | `mcf serve` / `mcf run`: the M2 product — having a model and using a model are one command apart | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — `mcf run <model> --prompt <text>` drives MCF's own engine end to end: model file, vocabulary, forward pass, sampler, tokens, text. It is the behaviour half and says so — the answer arrives with its mark, its sampler, its seed and a sentence saying it can never be a speed (B65, D31, A5). The conditions are printed beside the answer rather than under it (§3.4). What remains is the half that needs an engine: a *timed* answer, and `serve` handing a model to a client rather than a command loading one per run |
 
 ### M3 — Configure by measurement
@@ -368,6 +368,27 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 107 — everybody writes, and says who they are
+
+DEC-037 decided and B-332 done, in the shape the evidence pointed at rather than
+the one the item was written in. The item said *a single writer*; F13 had
+already measured that concurrent appends of whole lines do not tear, so the
+alarming half of §7.37 was not real. What was real was the identifier: every
+writer counted its own appends from zero, so two programs recording the same
+kind of event in the same second minted one identifier for two events.
+
+An identifier now carries a token for the writer that minted it, and only a
+journal can mint one — an entry that has not been appended has none, and the
+type says so. The load tier asserts uniqueness across four concurrent writers
+alongside the absence of a torn line.
+
+One defect fell out on the way: a replay was *recomputing* each identifier from
+the envelope with a sequence number of zero, so `mcf log` showed identifiers the
+record does not contain. An identifier is now read back exactly as written (A1).
+
+D34 in the intent document has the reasoning, and §7.37 joins the answered table
+where its number stays citable.
 
 ### Version 106 — the index that earned its bytes, and the database that did not
 

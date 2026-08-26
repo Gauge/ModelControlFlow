@@ -77,7 +77,7 @@ fn a_pairing_survives_a_round_trip_through_the_journal() {
             i64::try_from(n).unwrap_or(i64::MAX)
         });
         journal
-            .append(&Entry::new(EntryKind::Trials, AT, 0, body))
+            .append(&Entry::new(EntryKind::Trials, AT, body))
             .expect("the trials append");
     }
 

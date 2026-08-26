@@ -117,20 +117,33 @@ impl fmt::Display for EntryKind {
 
 /// An entry's identifier.
 ///
-/// Built from the kind, the moment and a sequence number, so that it is
-/// meaningful to a reader, sorts into the order things happened, and stays
-/// unique when two events land in the same nanosecond. C5 makes it stable for
-/// life once written.
+/// Built from the kind, the moment, **the writer** and that writer's own count,
+/// so that it is meaningful to a reader, sorts into the order things happened,
+/// and names exactly one entry on a machine where more than one program writes
+/// to the record (DEC-037, B-332).
+///
+/// **Why the writer is in it.** [findings.md](../../../../doc/findings.md) F13
+/// measured that concurrent appends do not tear, which left one thing broken:
+/// every writer counted its own appends from zero, so two programs writing in
+/// the same second produced the same identifier for two different events. A
+/// record whose identifiers name two things is a record nothing can cite.
+///
+/// **Who mints it.** Only [`Writer`], which only a [`crate::journal::Journal`]
+/// holds. An entry that has not been written has no identifier, and the type
+/// says so — see [`Entry::id`].
+///
+/// C5 makes an identifier stable for life *once written*: what is in this file
+/// is what it has always been, and this changes what a later entry gets rather
+/// than what an earlier one had.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntryId(String);
 
 impl EntryId {
     /// Composes an identifier.
-    #[must_use]
-    pub fn new(kind: EntryKind, at: Timestamp, sequence: u64) -> Self {
+    fn mint(kind: EntryKind, at: Timestamp, writer: &Writer, sequence: u64) -> Self {
         let civil = at.civil_utc();
         Self(format!(
-            "{}_{:04}-{:02}-{:02}T{:02}-{:02}-{:02}Z_{sequence:04}",
+            "{}_{:04}-{:02}-{:02}T{:02}-{:02}-{:02}Z_{}_{sequence:04}",
             kind.as_str(),
             civil.year,
             civil.month,
@@ -138,10 +151,77 @@ impl EntryId {
             civil.hour,
             civil.minute,
             civil.second,
+            writer.as_str(),
         ))
     }
 
+    /// An identifier as it was found in a record.
+    ///
+    /// Read back exactly as written and never recomputed: an identifier is what
+    /// the file says it is, and a reader that rebuilt one from the envelope
+    /// would quietly show something the record does not contain (A1).
+    #[must_use]
+    pub fn as_written(text: &str) -> Self {
+        Self(text.to_owned())
+    }
+
     /// The identifier, as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Who is writing, distinctly from everybody else writing to the same record.
+///
+/// **The problem it solves.** MCF has no coordinator between the programs that
+/// write to a record, and F13 measured that it does not need one to keep the
+/// file readable. What it does need is for two writers never to mint the same
+/// identifier, and the cheapest thing that guarantees that is for each writer
+/// to carry something no other writer has.
+///
+/// **What it is made of, and why that is enough.** The process's identifier,
+/// the moment this writer was made, and a count of the writers made in this
+/// process. Two live processes cannot share a process identifier; a later
+/// process that inherits a recycled one was made at a different nanosecond; and
+/// two writers inside one process differ by the count. No clock is trusted for
+/// *ordering* here — only for distinctness — so a clock that steps backwards
+/// costs nothing (D9).
+///
+/// **It is not a name for a person or a machine.** A25 keeps the record free of
+/// anything about the user, and this is a token of the shape `a3f19c04`: it
+/// says *some writer*, distinguishes it from *some other writer*, and carries
+/// nothing else.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Writer(String);
+
+/// How many writers this process has made.
+static WRITERS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+impl Writer {
+    /// Makes a writer distinct from every other one.
+    #[must_use]
+    pub fn distinct() -> Self {
+        let counted = WRITERS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        let mut digest = mcf_core::digest::Sha256::new();
+        digest.update(&std::process::id().to_le_bytes());
+        digest.update(&Timestamp::now().utc_nanos().to_le_bytes());
+        digest.update(&counted.to_le_bytes());
+        Self(digest.finish().hex().chars().take(8).collect())
+    }
+
+    /// A writer with a stated token, for a laboratory that needs a record it
+    /// can reproduce byte for byte (§3.17, B27).
+    ///
+    /// Nothing in MCF's own paths calls this: a scenario that wants the same
+    /// identifiers every run says which writer it is, and everything else takes
+    /// what [`Writer::distinct`] gives it.
+    #[must_use]
+    pub fn stated(token: &str) -> Self {
+        Self(token.to_owned())
+    }
+
+    /// The token, as it appears in an identifier.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -157,7 +237,12 @@ impl fmt::Display for EntryId {
 /// One recorded event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
-    id: EntryId,
+    /// `None` until a journal writes it.
+    ///
+    /// An identifier is minted by the writer that appends the entry, so an
+    /// entry nobody has written does not have one — which is the whole of
+    /// DEC-037's answer expressed as a type rather than as a convention.
+    id: Option<EntryId>,
     kind: EntryKind,
     recorded_at: Timestamp,
     body: Value,
@@ -168,21 +253,52 @@ impl Entry {
     ///
     /// There is no constructor that omits the moment or the kind, and none
     /// that takes a body alone: an entry nobody can classify or place in time
-    /// is a line, not a record.
+    /// is a line, not a record. There is also none that takes an identifier:
+    /// the writer that appends it mints that (DEC-037).
     #[must_use]
-    pub fn new(kind: EntryKind, recorded_at: Timestamp, sequence: u64, body: Value) -> Self {
+    pub fn new(kind: EntryKind, recorded_at: Timestamp, body: Value) -> Self {
         Self {
-            id: EntryId::new(kind, recorded_at, sequence),
+            id: None,
             kind,
             recorded_at,
             body,
         }
     }
 
-    /// Its identifier.
+    /// An entry as a record already holds it.
+    ///
+    /// For a replay, which reads the identifier the writer minted rather than
+    /// making one up (A1).
     #[must_use]
-    pub const fn id(&self) -> &EntryId {
-        &self.id
+    pub fn recorded(id: EntryId, kind: EntryKind, recorded_at: Timestamp, body: Value) -> Self {
+        Self {
+            id: Some(id),
+            kind,
+            recorded_at,
+            body,
+        }
+    }
+
+    /// Its identifier, if it has been written.
+    ///
+    /// `None` means nobody has appended it yet, which is a real state and not a
+    /// missing value: identifiers come from writers (A7's habit — the answer to
+    /// *what is its identifier* before it is written is *there is not one*).
+    #[must_use]
+    pub const fn id(&self) -> Option<&EntryId> {
+        self.id.as_ref()
+    }
+
+    /// The same entry, with the identifier its writer gave it.
+    #[must_use]
+    pub(crate) fn stamped(mut self, id: EntryId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// The identifier a writer would give this entry.
+    pub(crate) fn identify(&self, writer: &Writer, sequence: u64) -> EntryId {
+        EntryId::mint(self.kind, self.recorded_at, writer, sequence)
     }
 
     /// What kind of event it was.
@@ -213,7 +329,15 @@ impl Entry {
     #[must_use]
     pub fn to_value(&self) -> Value {
         Value::map([
-            ("id", Value::text(self.id.as_str())),
+            (
+                "id",
+                match &self.id {
+                    Some(id) => Value::text(id.as_str()),
+                    // Only reachable for an entry nobody has written: the
+                    // journal stamps every entry before it renders one.
+                    None => Value::Null,
+                },
+            ),
             ("kind", Value::text(self.kind.as_str())),
             ("recorded_at", Value::text(self.recorded_at.to_string())),
             (

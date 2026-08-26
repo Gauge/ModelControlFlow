@@ -42,7 +42,6 @@ impl Place {
                         EntryKind::Failure
                     },
                     Timestamp::now(),
-                    sequence.try_into().unwrap_or(0),
                     Value::map([(
                         "sequence",
                         Value::Integer(i64::try_from(sequence).unwrap_or(-1)),

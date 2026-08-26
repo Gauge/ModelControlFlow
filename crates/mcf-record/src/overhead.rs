@@ -66,7 +66,6 @@ pub fn record_write_cost(
             let entry = Entry::new(
                 EntryKind::SelfCost,
                 Timestamp::from_utc_nanos(0, mcf_core::attested::Attested::Unknown),
-                sequence,
                 Value::map([(
                     "probe",
                     Value::Integer(i64::try_from(sequence).unwrap_or(i64::MAX)),

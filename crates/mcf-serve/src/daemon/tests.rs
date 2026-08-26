@@ -147,12 +147,11 @@ fn a_restart_recovers_what_the_record_holds() {
     {
         let mut journal =
             mcf_record::journal::Journal::open(&places.journal).expect("a journal opens");
-        for sequence in 0..3 {
+        for _entry in 0..3 {
             journal
                 .append(&mcf_record::journal::Entry::new(
                     mcf_record::journal::EntryKind::MachineProfile,
                     mcf_core::time::Timestamp::now(),
-                    sequence,
                     Value::map([("nothing", Value::Bool(true))]),
                 ))
                 .expect("it appends");
@@ -226,7 +225,6 @@ fn a_damaged_record_is_recovered_and_reported() {
             .append(&mcf_record::journal::Entry::new(
                 mcf_record::journal::EntryKind::MachineProfile,
                 mcf_core::time::Timestamp::now(),
-                0,
                 Value::map([("nothing", Value::Bool(true))]),
             ))
             .expect("it appends");
