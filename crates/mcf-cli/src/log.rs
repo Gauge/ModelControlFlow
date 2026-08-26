@@ -1,4 +1,4 @@
-//! `mcf log`: what happened on this machine, read back (B-333, §3.3, A22, B62).
+//! `mcf log`: what happened on this machine, read back (B-363, §3.3, A22, B62).
 //!
 //! **The record has been write-only until now.** MCF has written to it since
 //! M0 — machine profiles, self-cost figures, failures, acquisitions, removals,
