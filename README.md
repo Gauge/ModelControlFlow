@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, and the format every document holds to |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -20,17 +20,32 @@ pick by leaderboard positions measured on someone else's hardware with someone
 else's quantization against benchmarks that do not resemble their work. MCF
 replaces folklore with measurement taken here.
 
-**Status: M0 in progress.** `mcf doctor` reports what this machine is, what MCF
-costs on it against its stated ceilings, and what MCF will and will not promise
-here, and writes the whole thing to an append-only record. `mcf licence` states
-the terms and carries the licence text a redistributor is obliged to convey;
-`mcf export` writes the record as one portable file. MCF has its own
+**Status: M0 done, M1 in progress.** `mcf doctor` reports what this machine is,
+what MCF costs on it against its stated ceilings, and what MCF will and will not
+promise here, and writes the whole thing to an append-only record. `mcf licence`
+states the terms and carries the licence text a redistributor is obliged to
+convey; `mcf export` writes the record as one portable file. MCF has its own
 implementation of inference — deliberately slow, written to be read, and unable
 to report a speed (D31) — which runs a model end to end from a file it is given.
 
-**Nothing acquires or serves a model yet**, and no number about a model's speed
-or quality exists. Acquisition is M1 and needs a network stack MCF has not
-admitted; serving is M2 and needs a daemon.
+**Models can now enter, live on and leave this machine.** `mcf pull` asks a hub
+what a repository publishes and, given a file, acquires it: resumed where the
+source allows, verified against the digest the hub declared, with its provenance
+written beside it and the acquisition written to the record. Asked for a
+repository and no file, it says which of the published variants would run here
+and downloads nothing — the question an operator is usually asking. `mcf list`
+says what is held and where each thing came from, keeping *nothing says* and
+*something says and MCF cannot read it* apart. `mcf rm` previews, and removes
+only against a stated reason; nothing is deleted without `--purge`.
+
+**What it cannot do yet is reach an encrypted hub.** MCF has vendored no TLS
+stack, so `mcf pull` against `https://` is refused in as many words rather than
+attempted and failed obscurely; `--from` reaches an `http` mirror, which is what
+the tests use. [doc/findings.md](doc/findings.md) F9 measured what admitting a
+stack costs and B-322 is where it is decided.
+
+**No number about a model's speed or quality exists.** Serving is M2 and needs a
+daemon; measurement is M2 onwards and needs an engine.
 Start with [doc/document-of-intent.md](doc/document-of-intent.md) to know what
 MCF is for, [doc/rules.md](doc/rules.md) before writing anything,
 [doc/roadmap.md](doc/roadmap.md) to see what gets built next, and
@@ -162,6 +177,21 @@ written `<like-this>`; a surface that must show something it does not know shows
 | M9 — The exchange | [M9-exchange.md](doc/mockup/M9-exchange.md) |
 
 ## Changelog
+
+### Version 14 — models can arrive now
+
+The status paragraph said *nothing acquires a model yet*, and that stopped being
+true. `mcf pull`, `mcf list` and `mcf rm` are here: a model enters this machine
+verified against the digest its hub declared, lives here with its provenance
+beside it, and leaves against a stated reason. Asked for a repository and no
+file, `pull` says which of the variants published there would run on this
+machine and downloads none of them.
+
+What the paragraph now says it cannot do is reach an encrypted hub, and *why* —
+no TLS stack is vendored, the cost of admitting one is measured in F9, and the
+refusal says so rather than failing obscurely. A status line that named the
+capability without naming the boundary would be the fabricated report C7 is
+written against.
 
 ### Version 13 — the gating command, and a shared machine
 

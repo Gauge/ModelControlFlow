@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 18 |
+| **Version** | 19 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -248,6 +248,19 @@ hundred lines, so it was bought with tests instead (A19).
 `crates/mcf-record/src/json.rs` is the result, and its refusals are the
 interesting part: a fraction is refused rather than rounded, a duplicate key
 rather than resolved, an unpaired surrogate rather than replaced.
+
+**The second candidate is measured and undecided, which is a different state
+from refused.** MCF cannot reach an encrypted hub, and §III requires that models
+enter this machine. [findings.md](findings.md) F9 measured what crossing that
+boundary costs rather than arguing about it: the hub speaks HTTP/1.1 and serves
+ranges, so the protocol is MCF's own and written; what MCF lacks is TLS, which
+is not something anybody here is going to write. The honest price is sixteen
+crates a Linux build compiles — and about ninety megabytes of source in this
+repository, because cargo resolves a vendored tree's whole lock graph before
+compiling any of it and the platform's share cannot be trimmed out (F9.4).
+B-322 is where that is decided; [vendored.md](vendored.md) is where the row goes
+when it is. Until then `mcf pull` says *no TLS stack is vendored* in as many
+words, which is what a boundary should sound like.
 
 **What the artifact requires of a *machine* is a separate question, and it is
 checked too.** B36 refuses to make a missing prerequisite the user's errand, and
@@ -651,6 +664,16 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 19 — the second candidate
+
+§6 gains the TLS question. The first candidate was refused and the reasoning is
+the template; this one is *measured and undecided*, which is a third state worth
+keeping distinct from both. What MCF lacks to reach a hub is not a protocol —
+that is written and tested — but cryptography nobody here should hand-write, and
+the price is about ninety megabytes of vendored source rather than the fifteen a
+Linux build compiles. Recorded here so the number is in the build document
+before it is in a diff.
 
 ### Version 18 — the machine is shared
 
