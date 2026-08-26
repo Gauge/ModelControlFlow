@@ -9,10 +9,12 @@
 //!
 //! Everything here is a reading of *this* process on *this* machine, taken now.
 //! What the platform does not publish is [`Attested::Unknown`] rather than
-//! estimated (A7), and what needs a daemon to measure is absent rather than
-//! approximated: idle CPU, timer wakeups and memory growth over thirty
-//! simulated days are D24 figures about a long-lived process, and there is no
-//! long-lived process until M2.
+//! estimated (A7), and what needs a *running daemon* is not here: idle CPU,
+//! timer wakeups and memory growth over thirty simulated days are D24 figures
+//! about a long-lived process, and this module is what a short-lived one can
+//! read about itself. The daemon exists (B-030); the tiers that measure it
+//! start one of their own rather than asking a report to start a process while
+//! it is describing the machine (B-031, B-035).
 //!
 //! B-011 turns these into assertions that fail a build; B-012 characterizes the
 //! cost of the observation itself. This module is what both read from.

@@ -463,10 +463,13 @@ impl core::fmt::Display for Report {
         }
         writeln!(
             f,
-            "\n  Not measurable here, and named rather than left out:\n\
+            "\n  Not measured here, and named rather than left out:\n\
              \x20   idle CPU, timer wakeups while idle, memory growth over 30 simulated days,\n\
-             \x20   added request-to-first-token latency — all D24 figures about a daemon,\n\
-             \x20   and there is no daemon until M2 (B-030, B-031, B-035)."
+             \x20   added request-to-first-token latency — all D24 figures about a *running*\n\
+             \x20   daemon. One exists (`mcf serve`) and `mcf doctor` does not start it: a\n\
+             \x20   report that started a daemon to measure one would be changing the machine\n\
+             \x20   it is describing. `scripts/ci.sh --with-soak` and `--with-budget` measure\n\
+             \x20   them against a daemon of their own (B-031, B-035)."
         )?;
 
         // A6: the conditions travel with the figures, on the surface and not
@@ -662,6 +665,15 @@ mod tests {
         ] {
             assert!(rendered.contains(absent), "{rendered} omits {absent:?}");
         }
+        // And it says *why* it did not measure them, which changed when the
+        // daemon arrived: they need a running one, and a report that started a
+        // daemon would be changing the machine it is describing. The old
+        // sentence said there was no daemon, weeks after there was (D7, A19).
+        assert!(
+            !rendered.contains("no daemon"),
+            "the report still says MCF has no daemon: {rendered}"
+        );
+        assert!(rendered.contains("mcf serve"), "{rendered}");
     }
 
     /// The laboratory runs as part of the report, and what it demonstrated is
