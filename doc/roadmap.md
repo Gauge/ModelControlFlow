@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 18 |
+| **Version** | 19 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -112,7 +112,12 @@ as a static binary that runs offline with no models present.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
-**Explicitly not in M0:** any model, any inference, any network fetch, any UI.
+**Explicitly not in M0, as written — and one of the four changed.** No model, no
+inference, no network fetch, no UI. D31 moved inference in: MCF's own stand-in
+(B-360) is an M0 item because the vendored engine needs something to be checked
+against and A19 will not take a benchmark's word for its own arithmetic. The
+other three stand — the network is M1's (B-322) and the window is M4's — and the
+stand-in changed nothing about them: it reads a file MCF was given.
 
 **Exit criteria**
 - The full suite runs green offline, on a laptop, with no accelerator (B-015)
@@ -546,6 +551,13 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 19 — what M0 turned out to be
+
+M0's scope line still said *no inference*, and M0 has an inference engine in it:
+D31 put the stand-in there because a vendored engine needs something to be
+checked against. The line now says which of its four exclusions changed and why,
+rather than being quietly wrong about the milestone it describes.
 
 ### Version 18 — the voids M0 and M1 have actually closed
 
