@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 117 |
+| **Version** | 118 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -51,7 +51,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | **resolved** — D27: three kinds of figure; p99 over ≥100 trials for events; an unattributable run is neither a pass nor a failure |
 | DEC-051 | How an event-class budget is ever asserted on a machine somebody is using, and what a scheduled tier does on a CI runner that is never quiet | §7.51 | **B-011**, B38 | M0 | **resolved** — D30: attributability is a property of a *reading*, measured as the scheduling delay across it. [findings.md](findings.md) F3 has the evidence and the defect the first implementation had |
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | **resolved** — D33: offline is the ordinary case (everything but acquisition runs in a container with no network at all), and what MCF says when a network is needed and missing is what it *observed* rather than which layer is absent. [findings.md](findings.md) F10 measured why: a name that will not resolve reports no error kind at all, whether the cause is no network, no resolver or no such name. The distinction §V asks about is one an operator draws with `--from`, not one MCF probes for |
-| DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
+| DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open — **argued in full**: [PR9](proposals.md#pr9--what-serving-looks-like) answers the three questions together, because each answer constrains the other two. MCF's own line-delimited protocol over the socket it already has, with the conditions in the terminating line, because the shape everybody expects has nowhere to put the engine build, the seed or the degradation mark — and a surface that cannot carry the mark strips it (A5, B65). A runtime that dies mid-token is a partial answer with a classified failure and a daemon still standing, never a silent retry (A4, B2, §3.1). One model resident at a time, because two makes every latency figure depend on what else was loaded (§3.4). The proposal recommends acceptance and recommends *not building it* before B-320 admits an engine: a supervision contract with nothing to supervise is a claim (A19) |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half, and the disk half is now built rather than decided: B-026 refuses a download that would not fit, with the arithmetic, and classifies a filesystem that fills anyway (F11). What remains is genuinely M2's: several clients at once, and two resident models |
 | DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open |
 | DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
@@ -368,6 +368,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 118 — the serving surface, argued rather than assumed
+
+DEC-001 is M2's gate and it has been a single line since it was written. It is
+now argued in full as [PR9](proposals.md#pr9--what-serving-looks-like), because
+its three questions — the API surface, what happens when a runtime dies, and
+whether two models may be resident — are one question wearing three hats.
+
+The argument that decides the surface is not ergonomics but accountability: the
+industry-standard shape has no field for the engine build, the seed, or *this
+came from a stand-in and is marked degraded*, and a surface that cannot carry
+the mark is one that strips it. So the proposal extends the protocol `mcf
+status` already speaks and puts the conditions in the terminating line, leaving
+a compatible adapter as a later and explicitly lossy decision.
+
+The decision stays open: a proposal is where a recommendation waits for the
+person whose project it is.
 
 ### Version 117 — the online tier meets a repository with a shape
 

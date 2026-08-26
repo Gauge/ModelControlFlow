@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 7 |
+| **Version** | 8 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -40,6 +40,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR6 | [The stop control](#pr6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 | PR7 | [Longitudinal regression detection](#pr7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
 | PR8 | [The stand-in engine](#pr8--the-stand-in-engine) | **Accepted** — B-360, B-361, B-362 | M0 · M2 |
+| PR9 | [What serving looks like](#pr9--what-serving-looks-like) | Accept — DEC-001's three questions, answered together | M2 |
 
 ---
 
@@ -876,7 +877,157 @@ environment.
 
 ---
 
+---
+
+## PR9 — What serving looks like
+
+**One line.** MCF's own line-delimited protocol over the socket it already has,
+where every answer carries the conditions that produced it — because the
+industry-standard shape has nowhere to put them.
+
+**Why this is a proposal rather than a decision.** DEC-001 is M2's gate and it
+asks three things at once: the API surface, the supervision contract when a
+runtime dies, and whether two models may be resident together. They are one
+question wearing three hats — each answer constrains the other two — so they are
+argued together here. Nothing below is built; B-032, B-033 and B-034 are where it
+would be, and every one of them also needs an engine (B-320).
+
+### The claim it enables
+
+**That a served answer is as accountable as a measured one.** §3.4 makes a
+number without its conditions meaningless, B-073 asks that no view render one
+without them, and D19 makes the seed a condition. A serving surface is where
+that discipline is most likely to be dropped, because the shape everybody
+expects — an OpenAI-compatible `POST /v1/chat/completions` — has no field for
+*this came from MCF's stand-in and is marked degraded*, no field for the engine
+build that produced it, and no field for the seed. A surface that cannot carry
+the mark is a surface that strips it, and B65 and A5 both forbid exactly that.
+
+### How it works
+
+**The protocol is the one `mcf status` already speaks**: one JSON object a line,
+over the Unix domain socket in `$XDG_RUNTIME_DIR` (B-036), request in, answers
+out. It is extended rather than replaced, so `mcf run` becomes a client of the
+daemon and the command an operator types is the same one a script sends.
+
+A generation is **one request and many answer lines**, which is what makes a
+first-token latency a thing that can be observed at all (B-035, D24):
+
+```
+→ {"v":1,"ask":"generate","model":"owner/model:model.gguf","prompt":"...",
+   "limit":128,"seed":7,"sampler":"greedy"}
+← {"v":1,"token":"Hel","at":0}
+← {"v":1,"token":"lo","at":1}
+← {"v":1,"done":{"tokens":2,"stopped":"stop_token",
+   "conditions":{"engine":"mcf-standin 0.1.0-m0","seed":7,"sampler":"greedy",
+   "model_sha256":"…","context":4096},
+   "degraded":"engine.unavailable — no vendored engine runs this artifact"}}
+```
+
+Three properties of that shape are load-bearing:
+
+- **The conditions are in the terminating line, not in a header nobody reads.**
+  A client that ignores them still has them in the record, because the daemon
+  writes the same object it sent (D20).
+- **The mark travels with the answer.** `degraded` is absent when nothing is
+  degraded and present when something is, which is `Degraded<T>` on the wire
+  (B-008): there is no rendering of the answer that does not carry it.
+- **A request names its seed and sampler or takes the daemon's stated defaults**,
+  which `mcf explain` already prints with their source (§3.15, B-038). Nothing is
+  chosen invisibly.
+
+**An OpenAI-compatible surface is a separate, later question, and a lossy one.**
+It would make every existing client work, which is a real benefit and the reason
+it will keep being asked for. What it cannot do is carry the three fields above.
+The honest form is an explicit adapter that **refuses to serve a degraded
+result** rather than serving it stripped — which is a decision to take when
+somebody has a client to point at it, not now.
+
+### The supervision contract
+
+**A runtime that dies mid-token is a partial answer, a classified failure, and a
+daemon that is still up.** In the exchange above, the tokens already sent were
+sent: A4 makes nine of ten completions nine data points, and a generation that
+died after forty tokens produced forty tokens. So the terminating line becomes:
+
+```
+← {"v":1,"done":{"tokens":40,"stopped":"engine_died",
+   "failure":{"category":"engine.crashed","attribution":"engine",
+   "disposition":"partial","detail":"…","context":{…}},"conditions":{…}}}
+```
+
+- **Nothing is retried.** A retried generation is a *different* generation —
+  different timing, possibly different tokens — and B2's rule about a retried
+  write applies unchanged: silently retrying would put an event in the record
+  that did not happen the way it is written.
+- **The daemon does not die with its child** (§3.1, §7.1). The engine is a
+  supervised subprocess (D32, B-032); the manager holds no state the child's
+  death corrupts, which is the same property B-030 already asserts against
+  `SIGKILL`.
+- **The failure is recorded, not just returned.** A client that hangs up before
+  the terminating line still leaves the account behind (A26).
+
+### Simultaneous residency
+
+**One model resident at a time, and switching is recorded.**
+
+The argument is §3.4 rather than memory. Two models resident makes every latency
+figure depend on what *else* was loaded, and that is a condition MCF would then
+have to capture, state and compare across — for a capability nobody has asked
+for yet (§3.13's refusal of generality). One at a time keeps the condition set
+small and honest, and a request naming a model that is not resident is answered
+after a load whose cost is *stated in the answer's conditions* rather than
+hidden in its latency.
+
+What this does **not** settle is DEC-018 — whether the one resident model stays
+resident when nobody is looking — which is a different question about idle cost
+(§3.13, B-031) and stays open.
+
+### What it costs
+
+- **A protocol MCF owns is a protocol MCF must keep** (§7.30, C5). The version
+  field is there from the first line for that reason, and the surface is small:
+  four requests today (`status`, `holding`, `stop`, `generate`).
+- **No existing client works with it** until somebody writes an adapter. That is
+  the real price, and it is paid in the currency §II cares least about.
+- **Streaming makes the daemon's one-connection-at-a-time shape visible**: a long
+  generation holds the socket. DEC-012 (several clients at once) is where that is
+  answered, and until it is, MCF's honest position is one client at a time with
+  the bound stated (B7).
+
+### Recommendation
+
+**Accept.** It answers DEC-001's three questions in a way that keeps A5, A22 and
+§3.4 intact, it extends a protocol that exists rather than inventing one, and
+every part of it is testable without an engine except the parts that are about
+an engine. It should not be *built* before B-320 admits one: a supervision
+contract with nothing to supervise is a claim, and A19 is against claims.
+
+
 ## Changelog
+
+### Version 8 — what serving looks like
+
+PR9 added, recommended for acceptance. DEC-001 is M2's gate and asks three
+things at once — the API surface, the supervision contract when a runtime dies,
+and simultaneous residency — which are one question wearing three hats, so they
+are argued together.
+
+The argument that decides the surface is not ergonomics. The shape everybody
+expects has nowhere to put the conditions that produced an answer: no field for
+the engine build, none for the seed, and none for *this came from a stand-in and
+is marked degraded*. A surface that cannot carry the mark is a surface that
+strips it, which A5 and B65 both forbid — so MCF's own line-delimited protocol
+over the socket it already has, with the conditions in the terminating line, and
+an OpenAI-compatible adapter left as a later and explicitly lossy decision.
+
+The other two follow from rules already written: a runtime that dies mid-token
+is a partial answer with a classified failure and a daemon still standing (A4,
+§3.1), never a silent retry (B2); and one model resident at a time, because two
+makes every latency figure depend on what else was loaded (§3.4).
+
+It should not be built before an engine exists to supervise: a supervision
+contract with nothing to supervise is a claim, and A19 is against claims.
 
 ### Version 7 — the stand-in engine
 
