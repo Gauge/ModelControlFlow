@@ -40,7 +40,7 @@ use mcf_hub::http::Url;
 use mcf_hub::reference::{self, Reference};
 use mcf_hub::source::{Entry, Listing, Source as _};
 use mcf_hub::store;
-use mcf_hub::wire::Tcp;
+use mcf_hub::wire::{Tcp, Tls, Wire};
 use mcf_record::journal::{Entry as Record, EntryKind, Journal};
 use mcf_record::json::Value;
 
@@ -84,9 +84,13 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> 
         };
     };
 
+    let wire = match wire_for(&base) {
+        Ok(wire) => wire,
+        Err(failure) => return refused("nothing was acquired", &failure),
+    };
     let hub = match credential(offered, &environment) {
-        Ok(None) => Hub::at(base, Box::new(Tcp::default())),
-        Ok(Some(credential)) => Hub::at(base, Box::new(Tcp::default())).offering(credential),
+        Ok(None) => Hub::at(base, wire),
+        Ok(Some(credential)) => Hub::at(base, wire).offering(credential),
         Err(text) => {
             return Response {
                 text,
@@ -319,6 +323,20 @@ fn record(
         ]),
     ))?;
     Ok(path)
+}
+
+/// How MCF reaches this hub.
+///
+/// TLS where the hub is encrypted, a plain socket where it is not. Chosen from
+/// the URL rather than configured, because *which one* is not a preference: a
+/// wire that cannot keep a secret refuses to carry one, and an `https` request
+/// over a plain socket is refused before it is opened (B-024, B-322).
+fn wire_for(base: &Url) -> Result<Box<dyn Wire>, mcf_core::failure::Failure> {
+    if base.scheme() == "https" {
+        Ok(Box::new(Tls::new()?))
+    } else {
+        Ok(Box::new(Tcp::default()))
+    }
 }
 
 /// The one place in this surface that reads the environment.

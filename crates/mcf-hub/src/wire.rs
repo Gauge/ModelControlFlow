@@ -174,6 +174,142 @@ impl Wire for Tcp {
     }
 }
 
+/// A TLS 1.3 connection (B-322).
+///
+/// The one thing MCF vendors rather than writes, and the reason is in
+/// [findings.md](../../../doc/findings.md) F9: nobody here is going to write a
+/// TLS implementation, and A19 forbids claiming what is not tested. What is
+/// vendored is the smallest tree that does it — fourteen crates, no C, and a
+/// provider that builds for every target MCF builds, which F9.5 and F9.6 chose
+/// by measurement rather than by default.
+///
+/// **The certificate authorities are the ones compiled in.** `webpki-roots` is
+/// a pinned set rather than the machine's store: §3.12 makes what MCF built
+/// with a condition of what it did, and a trust store that differs between two
+/// machines is two different verifications wearing one name. It also means the
+/// set expires — a root store is a thing to re-pin, which
+/// [vendored.md](../../../doc/vendored.md) records as a row rather than
+/// leaving to be discovered.
+pub struct Tls {
+    /// How long it waits.
+    pub deadlines: Deadlines,
+    configuration: std::sync::Arc<rustls::ClientConfig>,
+}
+
+impl core::fmt::Debug for Tls {
+    /// The deadlines and how many roots MCF ships. The configuration itself is
+    /// summarized rather than printed: it is a certificate store, and a `Debug`
+    /// that emitted it would bury whatever a reader was actually looking at.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tls")
+            .field("deadlines", &self.deadlines)
+            .field("roots", &webpki_roots::TLS_SERVER_ROOTS.len())
+            .field("configuration", &"<the vendored provider's>")
+            .finish()
+    }
+}
+
+impl Tls {
+    /// A wire that speaks TLS, with the roots MCF ships.
+    ///
+    /// # Errors
+    ///
+    /// `transfer.tls` when the vendored provider will not make a configuration,
+    /// which is a build that is wrong rather than a network that is — and a
+    /// thing to say rather than to panic about (A2).
+    pub fn new() -> Result<Self> {
+        Self::with(Deadlines::default())
+    }
+
+    /// The same, waiting for as long as this says.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn with(deadlines: Deadlines) -> Result<Self> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let configuration = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+            rustls_graviola::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|error| {
+            Failure::new(
+                Category::TransferTls,
+                Attribution::Mcf,
+                Disposition::Refused,
+                WHERE,
+                "the vendored TLS provider would not agree on protocol versions",
+            )
+            .with_context("reason", error.to_string())
+        })?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+        Ok(Self {
+            deadlines,
+            configuration: std::sync::Arc::new(configuration),
+        })
+    }
+}
+
+impl Wire for Tls {
+    fn describe(&self) -> String {
+        format!(
+            "TLS over TCP, rustls with the graviola provider and {} compiled-in roots",
+            webpki_roots::TLS_SERVER_ROOTS.len()
+        )
+    }
+
+    fn carries_secrets(&self) -> bool {
+        true
+    }
+
+    fn dial(&self, host: &str, port: u16) -> Result<Box<dyn Duplex>> {
+        let name = rustls::pki_types::ServerName::try_from(host.to_owned()).map_err(|error| {
+            Failure::new(
+                Category::TransferTls,
+                Attribution::User,
+                Disposition::Refused,
+                WHERE,
+                "that is not a name a certificate can be checked against",
+            )
+            .with_context("host", host.to_owned())
+            .with_context("reason", error.to_string())
+        })?;
+        let mut session =
+            rustls::ClientConnection::new(std::sync::Arc::clone(&self.configuration), name)
+                .map_err(|error| tls_failed("a TLS session could not be started", host, &error))?;
+
+        let plain = Tcp {
+            deadlines: self.deadlines,
+        };
+        let mut socket = plain.dial(host, port)?;
+
+        // The handshake happens here rather than on the first read, so that a
+        // certificate MCF will not accept is an outcome of *dialling* — which
+        // is where a caller looks for it, and what keeps a TLS failure from
+        // arriving wearing a transfer's clothes (A2).
+        session
+            .complete_io(&mut socket)
+            .map_err(|error| tls_failed("the TLS handshake did not complete", host, &error))?;
+
+        Ok(Box::new(rustls::StreamOwned::new(session, socket)))
+    }
+}
+
+fn tls_failed(what: &str, host: &str, error: &dyn core::fmt::Display) -> Failure {
+    Failure::new(
+        Category::TransferTls,
+        Attribution::Machine,
+        Disposition::Refused,
+        WHERE,
+        what.to_owned(),
+    )
+    .with_context("host", host.to_owned())
+    .with_context("reason", error.to_string())
+}
+
 /// What a completed exchange produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Exchanged {

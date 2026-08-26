@@ -8,7 +8,8 @@
 use mcf_hub::reference;
 use mcf_hub::source::{Entry, Listing};
 
-use super::{DEFAULT_HUB, Offered, PLANNING_CONTEXT, credential, licence_of, offer, run};
+use super::{DEFAULT_HUB, Offered, PLANNING_CONTEXT, credential, licence_of, offer, run, wire_for};
+use mcf_hub::http::Url;
 
 fn a_listing() -> Listing {
     Listing {
@@ -78,20 +79,26 @@ fn a_reference_that_is_not_one_is_refused() {
     );
 }
 
-/// The default hub is the real one, and reaching it needs TLS MCF has not
-/// vendored — said in as many words rather than attempted and failed obscurely
-/// (B-322, F9).
+/// The default hub is the real one and MCF reaches it over TLS; a plain socket
+/// is what an `http` mirror gets. Chosen from the URL rather than configured,
+/// because a wire that cannot keep a secret must not be handed one (B-024,
+/// B-322).
 #[test]
-fn the_encrypted_hub_is_refused_in_as_many_words() {
+fn the_wire_is_chosen_by_the_scheme() {
     assert!(DEFAULT_HUB.starts_with("https://"), "{DEFAULT_HUB}");
-    let response = run("owner/model", None, Offered::Nothing);
-    assert!(!response.served);
+    let encrypted = wire_for(&Url::parse(DEFAULT_HUB).expect("a URL")).expect("a wire");
+    assert!(encrypted.carries_secrets(), "{}", encrypted.describe());
     assert!(
-        response.text.contains("no TLS stack is vendored"),
+        encrypted.describe().contains("TLS"),
         "{}",
-        response.text
+        encrypted.describe()
     );
-    assert!(response.text.contains("B-322"), "{}", response.text);
+
+    let plain = wire_for(&Url::parse("http://127.0.0.1:8080/").expect("a URL")).expect("a wire");
+    assert!(
+        !plain.carries_secrets(),
+        "a plain socket claimed it could keep a secret"
+    );
 }
 
 /// And a hub that is not a URL is refused before anything is opened.

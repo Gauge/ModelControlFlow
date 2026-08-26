@@ -1,0 +1,228 @@
+//! Verification that long-term key data is zeroed.
+//!
+//! Some of this is subject to whims of the compiler, and
+//! hand-written drop impls, so we test it here.
+//!
+//! Is this test sound? Well, it's a deliberate use-after-drop,
+//! so no.
+//!
+//! To make this work deterministically, we depend on two things:
+//!  1. The test checks for zeroisation after dropping
+//!     a value but before deallocating it. See the function
+//!     `check_zeroed_on_drop_bounded` for details.
+//!  2. The types whose zeroization is being tested must be
+//!     _completely_ filled with zero bytes upon drop, including
+//!     any padding bytes. If you have a type like this:
+//!     ```
+//!     #[repr(C)]
+//!     struct Key {
+//!         a: u8,
+//!         // Note: 7 bytes of padding here, due to the "repr(C)"
+//!         b: u64,
+//!     }
+//!     ```
+//!     its drop function can't just do a field-wise zeroing
+//!     ```
+//!     self.a = 0;
+//!     self.b = 0;
+//!     ```
+//!     because this test will check that the padding bytes between
+//!     `a` and `b` have been zeroised too.
+//!     Similarly, if the object is an enum wrapping different sized
+//!     types, like this:
+//!     ```
+//!     enum Key {
+//!         Key128([u8; 16]),
+//!         Key256([u8; 32]),
+//!     }
+//!     ```
+//!     this test will check that all `mem::size_of<Key>` bytes have
+//!     been zeroised upon drop, even if the value was a `Key::Key128`
+//!     that only initialized half of that space.
+
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+use core::mem::size_of;
+use core::ops::Deref;
+use core::pin::Pin;
+use core::ptr;
+use std::alloc::{Layout, dealloc};
+
+#[test]
+fn rsa() {
+    use graviola::signing::rsa;
+    let rsa_priv =
+        rsa::SigningKey::from_pkcs1_der(include_bytes!("../src/high/rsa/rsa8192.der")).unwrap();
+    let pub_key_size = size_of::<rsa::VerifyingKey>();
+    check_zeroed_on_drop_bounded(Box::pin(rsa_priv), Bounds::SkipPrefix(pub_key_size));
+}
+
+#[test]
+fn ecdsa_p256() {
+    use graviola::signing::ecdsa::*;
+    let ecdsa =
+        SigningKey::<P256>::from_pkcs8_der(include_bytes!("../src/high/ecdsa/secp256r1.pkcs8.der"))
+            .unwrap();
+    check_zeroed_on_drop(Box::pin(ecdsa));
+}
+
+#[test]
+fn ecdsa_p384() {
+    use graviola::signing::ecdsa::*;
+    let ecdsa =
+        SigningKey::<P384>::from_pkcs8_der(include_bytes!("../src/high/ecdsa/secp384r1.pkcs8.der"))
+            .unwrap();
+    check_zeroed_on_drop(Box::pin(ecdsa));
+}
+
+#[test]
+fn ed25519() {
+    use graviola::signing::eddsa::*;
+    let ed25519 = Ed25519SigningKey::from_pkcs8_der(include_bytes!(
+        "../src/high/asn1/testdata/ed25519-p8v2.bin"
+    ))
+    .unwrap();
+    check_zeroed_on_drop(Box::pin(ed25519));
+}
+
+#[test]
+fn ecdh_x25519() {
+    use graviola::key_agreement::x25519::PrivateKey;
+    let x25519 = PrivateKey::new_random().unwrap();
+    check_zeroed_on_drop(Box::pin(x25519));
+}
+
+#[test]
+fn ecdh_static_x25519() {
+    use graviola::key_agreement::x25519::StaticPrivateKey;
+    let x25519 = StaticPrivateKey::from_array(&[0xffu8; 32]);
+    check_zeroed_on_drop(Box::pin(x25519));
+}
+
+#[test]
+fn ecdh_p256() {
+    use graviola::key_agreement::p256::PrivateKey;
+    let p256 = PrivateKey::new_random().unwrap();
+    check_zeroed_on_drop(Box::pin(p256));
+}
+
+#[test]
+fn ecdh_p384() {
+    use graviola::key_agreement::p384::PrivateKey;
+    let p384 = PrivateKey::new_random().unwrap();
+    check_zeroed_on_drop(Box::pin(p384));
+}
+
+#[test]
+fn aes_gcm() {
+    use graviola::aead::AesGcm;
+
+    let aes128 = AesGcm::new(&[0xffu8; 16]);
+    check_zeroed_on_drop(Box::pin(aes128));
+
+    let aes256 = AesGcm::new(&[0xffu8; 32]);
+    check_zeroed_on_drop(Box::pin(aes256));
+}
+
+#[test]
+fn chacha20_poly1305() {
+    use graviola::aead::ChaCha20Poly1305;
+
+    let chacha = ChaCha20Poly1305::new([0xffu8; 32]);
+    check_zeroed_on_drop(Box::pin(chacha));
+}
+
+#[test]
+fn xchacha20_poly1305() {
+    use graviola::aead::XChaCha20Poly1305;
+
+    let xchacha = XChaCha20Poly1305::new([0xffu8; 32]);
+    check_zeroed_on_drop(Box::pin(xchacha));
+}
+
+fn check_zeroed_on_drop<T: Unpin>(value: Pin<Box<T>>) {
+    check_zeroed_on_drop_bounded(value, Bounds::All)
+}
+
+fn check_zeroed_on_drop_bounded<T: Unpin>(value: Pin<Box<T>>, bounds: Bounds) {
+    let ptr = value.deref() as *const T as *const u8;
+    let len = size_of::<T>();
+    assert_ne!(len, 0);
+    println!("this value is {len} bytes in length");
+    let before_drop = read_into_vec(ptr, len);
+
+    // Drop `value` and then read its contents to verify they've been zeroed.
+    //
+    // Note that we can't just do `drop(value)` and then read the memory where
+    // `value` used to be, because of a race condition: if any code in this or
+    // any other thread does a heap allocation between the freeing of `value`
+    // and the read, that allocation might reuse the same memory where `value`
+    // used to live, and those bytes could be overwritten before the read begins.
+    //
+    // Instead, we unwrap `value`'s `Pin<Box>` to get a raw pointer, call
+    // `drop_in_place` on that raw pointer to invoke the object's `Drop`
+    // implementation, then make a copy of the memory where `value` used to live,
+    // and then finally deallocate the raw pointer to free the memory.
+
+    // SAFETY: After unpinning `value`, we do not do anything that might move it before dropping it.
+    let addr = Box::into_raw(unsafe { Pin::into_inner_unchecked(value) });
+
+    // SAFETY: We obtained `addr` by unwrapping a valid `Box<T>`, so it is aligned and non-null.
+    unsafe {
+        ptr::drop_in_place(addr);
+    }
+    let after_drop = read_into_vec(ptr, len);
+    // SAFETY: We obtained `addr` by unwrapping a valid `Box<T>`, so it is allocated and `T-`aligned.
+    unsafe {
+        dealloc(addr as *mut u8, Layout::new::<T>());
+    }
+
+    for i in bounds.start()..bounds.end(len) {
+        if after_drop[i] != 0x00 {
+            println!("before_drop: {before_drop:02x?}");
+            println!("after_drop: {after_drop:02x?}");
+            panic!(
+                "byte {i} (0x{:x?}) was not cleared after drop",
+                after_drop[i]
+            );
+        }
+    }
+}
+
+fn read_into_vec(ptr: *const u8, len: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(len);
+
+    for i in 0..len {
+        // Safety: none
+        let byte = unsafe { ptr::read_volatile(ptr.add(i)) };
+        out.push(byte);
+    }
+    out
+}
+
+enum Bounds {
+    All,
+    SkipPrefix(usize),
+}
+
+impl Bounds {
+    fn start(&self) -> usize {
+        match self {
+            Bounds::All => HEAP_FREELIST_ZONE.0,
+            Bounds::SkipPrefix(prefix) => {
+                assert!(HEAP_FREELIST_ZONE.0 <= *prefix);
+                *prefix
+            }
+        }
+    }
+
+    fn end(&self, len: usize) -> usize {
+        len - HEAP_FREELIST_ZONE.1
+    }
+}
+
+/// Bytes written by the heap to (probably) keep the freed chunk
+/// in the freelist.
+///
+/// These values from observation; likely very fragile.
+const HEAP_FREELIST_ZONE: (usize, usize) = (16, 0);

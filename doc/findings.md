@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -787,6 +787,62 @@ it is the reason B-322's remaining step is a deliberate admission rather than
 another commit: everything else the transport needs is written and tested, and
 what is left is one struct and a decision about ninety megabytes.
 
+### 9.5 The obvious provider costs a claim MCF already makes
+
+`rustls`'s usual cryptography is `ring`, which is C and assembly. Building the
+`tls-ring` shape for `x86_64-unknown-linux-musl` — the target
+`scripts/check-from-scratch.sh` uses to put MCF in a container with *nothing*
+in it — fails on this machine:
+
+```
+error occurred in cc-rs: failed to find tool "x86_64-linux-musl-gcc"
+```
+
+So admitting `ring` does not merely add a C compiler to the build (9.3): it adds
+a **cross** C toolchain, without which B-183's from-scratch check cannot run at
+all. The check already distinguishes *could not be checked* from *passed*
+(exit 2), so nothing would be silently lost — but a claim that can only be
+tested where a particular toolchain is installed is a claim that gets tested
+less.
+
+### 9.6 A provider MCF can build anywhere, and what it costs
+
+`rustls-graviola` is a provider written in Rust and inline assembly, by
+`rustls`'s own author. Measured against the same questions:
+
+| | `ring` | `rustls-graviola` |
+|---|---|---|
+| Crates compiled here | 16 | **14** |
+| Vendored tree, filtered to what compiles | 22.9 MiB | **13.0 MiB** |
+| C or assembly *source files* in the tree | 93 | **0** |
+| Builds for `x86_64-unknown-linux-musl` | no, without a cross toolchain | **yes** |
+| A TLS 1.3 session to the real hub | — | **yes**: `HTTP/1.1 200 OK`, 9937 bytes, `TLSv1_3` |
+
+The last row is the one that matters and it was run rather than assumed: a
+sixty-line program using `rustls` over a plain socket, against
+`huggingface.co`, returning the same listing 9.1 fetched with `curl`.
+
+**And the tree can be filtered after all.** 9.4 said a vendored tree cannot be
+*trimmed*, and that is true of deletion — cargo resolves the whole lock graph.
+It is not true of **stubbing**: a crate that no target MCF builds ever compiles
+can keep its manifest, its licence files and an empty `lib.rs`, with a checksum
+file that lists no files. Both the glibc and musl builds then succeed
+`--offline --locked`. That is what `scripts/vendor.sh` does, and it is why the
+number above is 13 MiB rather than 95.
+
+**What this costs, stated rather than discovered.** `graviola` is young — the
+mature choices are `ring` and `aws-lc-rs`, and both are C. MCF is choosing a
+newer implementation to keep a check it already makes runnable on any machine,
+and the exchange is worth stating: a weakness here is a weakness in what MCF
+verifies a hub with. Two things bound it. The provider is one line behind
+[`mcf_hub::wire::Wire`], so swapping it is a change to one struct rather than to
+the acquisition path. And the digest MCF checks the bytes against arrives with
+the listing rather than with the file, so a source that substitutes weights has
+to substitute both — which does not make TLS optional, and does mean TLS is not
+the only thing standing there.
+
+[`mcf_hub::wire::Wire`]: ../crates/mcf-hub/src/wire.rs
+
 **Verdict: the transport is TLS-shaped.** The evidence says vendor the
 cryptography and own the protocol — the same shape D32 settled for inference,
 for the same reason: delegate what specialists maintain, own the wrapper that
@@ -799,6 +855,25 @@ Admitting a component is [vendored.md](vendored.md)'s business and B-322 is
 where it happens. This finding is the stated reason B15 requires.
 
 ## Changelog
+
+### Version 11 — the provider that keeps the checks runnable
+
+F9.5 and F9.6 added, and they change the answer 9.4 pointed at. `rustls`'s usual
+cryptography is C, and it cannot be built for the musl target B-183's
+from-scratch check uses without a cross toolchain nobody has here — so admitting
+it would make an existing check runnable in fewer places. A pure-Rust provider
+by rustls's own author builds for both targets, compiles fourteen crates rather
+than sixteen, and holds a real TLS 1.3 session with the hub, which was run
+rather than assumed.
+
+And the ninety megabytes turn out to be avoidable: 9.4 was right that a vendored
+tree cannot be *deleted* down to the platform and wrong that it cannot be
+filtered. A crate nothing compiles can keep its manifest, its licence and an
+empty `lib.rs`. Thirteen megabytes, no C, both targets, offline and locked.
+
+The cost that remains is maturity, and it is stated rather than discovered: MCF
+is choosing a young implementation, and it sits behind one trait so that
+choosing differently later is one struct.
 
 ### Version 10 — what a vendored tree actually costs
 

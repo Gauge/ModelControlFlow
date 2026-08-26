@@ -18,7 +18,7 @@ use mcf_core::failure::Category;
 use mcf_hub::http::Request;
 use mcf_hub::reference::Reference;
 use mcf_hub::source::{Entry, Source as _};
-use mcf_hub::wire::{Deadlines, Tcp as Wire};
+use mcf_hub::wire::{Deadlines, Tcp as Wire, Wire as _};
 
 use crate::hub::{Behaviour, FakeHub, Repository};
 use crate::scenario::{Outcome, Scenario};
@@ -121,13 +121,45 @@ pub(super) const ANSWER_NEVER_COMES: Scenario = Scenario {
     run: answer_never_comes,
 };
 
-/// MCF has no way to speak to an encrypted hub.
+/// MCF is asked to send a credential over a wire that cannot keep one.
 pub(super) const NO_WAY_TO_ENCRYPT: Scenario = Scenario {
     id: "hub/no-way-to-encrypt",
     produces: Category::ConfigUnsatisfiable,
-    summary: "an https hub is refused in as many words rather than attempted with a plain socket",
+    summary: "an https hub over a plain socket is refused in as many words, before it is opened",
     run: no_way_to_encrypt,
 };
+
+/// The host on the other end does not speak TLS.
+pub(super) const NOT_A_TLS_HOST: Scenario = Scenario {
+    id: "hub/not-a-tls-host",
+    produces: Category::TransferTls,
+    summary: "a host that answers a handshake with something else is a TLS failure, said as one",
+    run: not_a_tls_host,
+};
+
+/// A handshake with something that is not a TLS server.
+///
+/// The observation is *the far end did not speak TLS*, which is what a plain
+/// HTTP server on 443, a captive portal and a middlebox all look like from
+/// here; which of them it was stays out of it (D26). What matters is that MCF
+/// reports it as a TLS failure at the moment of dialling rather than as a
+/// transfer that went wrong later.
+fn not_a_tls_host(_world: &World) -> Outcome {
+    let Some(serving) = Serving::blurting("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n") else {
+        return Outcome::Unexpected("no loopback port is available".to_owned());
+    };
+    let Ok(wire) = mcf_hub::wire::Tls::with(Deadlines {
+        connect: Duration::from_secs(5),
+        idle: Duration::from_millis(500),
+    }) else {
+        return Outcome::Unexpected("the vendored provider would not configure".to_owned());
+    };
+
+    match wire.dial("127.0.0.1", serving.port()) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a plain HTTP server completed a TLS handshake".to_owned()),
+    }
+}
 
 /// The hub answers a resumption by starting again.
 pub(super) const RESUMPTION_RESTARTED: Scenario = Scenario {

@@ -965,18 +965,6 @@ fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
     );
 }
 
-/// An encrypted hub is refused in as many words rather than attempted and
-/// failed obscurely (B-322, F9).
-#[test]
-fn the_default_hub_needs_a_tls_stack_and_says_so() {
-    let machine = Machine::new("pull-https");
-    let refused = machine.run(&["pull", "owner/model"]);
-    assert!(!refused.status.success());
-    let said = error_text(&refused);
-    assert!(said.contains("no TLS stack is vendored"), "{said}");
-    assert!(said.contains("B-322"), "{said}");
-}
-
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;

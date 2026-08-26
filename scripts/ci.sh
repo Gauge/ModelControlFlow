@@ -152,6 +152,11 @@ if [ "$fault_signal" -eq 1 ]; then
     exit 1
 fi
 
+step "the vendored tree's terms (B-330)"
+# Cheap — it reads manifests — and it gates, because a dependency arriving under
+# terms nobody looked at is the failure doc/vendored.md exists to prevent.
+"$root/scripts/check-vendored-terms.sh"
+
 step "documentation builds"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline >/dev/null
 
