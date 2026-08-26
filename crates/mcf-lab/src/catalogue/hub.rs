@@ -11,8 +11,12 @@
 //! scenario simulates what MCF observes, which is a reference that names
 //! nothing, rather than a hub that behaves badly.
 
+use std::time::Duration;
+
 use mcf_core::failure::Category;
+use mcf_hub::http::Request;
 use mcf_hub::source::Source as _;
+use mcf_hub::wire::{Deadlines, Tcp as Wire};
 
 use crate::hub::{Behaviour, FakeHub, Repository};
 use crate::scenario::{Outcome, Scenario};
@@ -105,6 +109,74 @@ pub(super) const ANSWER_CUT_SHORT: Scenario = Scenario {
     summary: "an answer that ends mid-header is an interruption rather than a malformed source",
     run: answer_cut_short,
 };
+
+/// The host accepts a connection and then says nothing.
+pub(super) const ANSWER_NEVER_COMES: Scenario = Scenario {
+    id: "hub/answer-never-comes",
+    produces: Category::TransferStalled,
+    summary: "a host that accepts a connection and says nothing ends at MCF's deadline, not never",
+    run: answer_never_comes,
+};
+
+/// A host that takes the connection and never answers.
+///
+/// The observation is *silence after an accept*, which is what a hung server, a
+/// dropped route and a middlebox holding a connection open all look like from
+/// here; the cause stays out of it (D26). The listener is on the loopback
+/// address and answers nothing, so the scenario needs no network and no hub —
+/// what it exercises is that B7's *a hang is a defined outcome* is true of the
+/// real socket path rather than of a stand-in for it.
+fn answer_never_comes(_world: &World) -> Outcome {
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+
+    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+        return Outcome::Unexpected("no loopback port is available".to_owned());
+    };
+    let Ok(address) = listener.local_addr() else {
+        return Outcome::Unexpected("the listener has no address".to_owned());
+    };
+    let port = address.port();
+
+    // The connection is held open until this scenario says otherwise, so the
+    // client's deadline is the only thing that ends the wait — which is the
+    // claim being made.
+    let (stop, wait) = mpsc::channel::<()>();
+    let holding = std::thread::spawn(move || {
+        if let Ok((held, _)) = listener.accept() {
+            let _told = wait.recv();
+            drop(held);
+        }
+    });
+
+    let wire = Wire {
+        deadlines: Deadlines {
+            connect: Duration::from_secs(5),
+            // Short on purpose: the scenario reproduces a hundred times over in
+            // §3.17's check, and what is being demonstrated is *that* a
+            // deadline ends the wait rather than how long MCF's is.
+            idle: Duration::from_millis(20),
+        },
+    };
+    let Ok(url) = mcf_hub::http::Url::parse(&format!("http://127.0.0.1:{port}/model.gguf")) else {
+        return Outcome::Unexpected("the loopback address is a URL".to_owned());
+    };
+
+    let mut nothing = Vec::new();
+    let outcome = match mcf_hub::wire::fetch(&wire, &Request::get(url), &mut nothing) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a host that said nothing answered something".to_owned()),
+    };
+
+    // Let the held connection go, and wake the listener in case the client
+    // never reached it, so the scenario leaves no thread behind (A27, B58).
+    let _told = stop.send(());
+    if let Ok(waker) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+        drop(waker);
+    }
+    let _joined = holding.join();
+    outcome
+}
 
 /// What a hostile or broken source puts where a response goes.
 ///

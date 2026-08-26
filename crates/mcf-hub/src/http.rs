@@ -254,6 +254,30 @@ impl Request {
         &self.url
     }
 
+    /// The same request, sent somewhere a redirect named.
+    ///
+    /// The credential is kept only when the caller says so, which
+    /// [`crate::http::next`] decides by comparing origins. Written as a
+    /// constructor rather than a mutation so that *dropping the token* is a
+    /// visible act in the one place redirects are followed, rather than a field
+    /// somebody forgets to clear.
+    ///
+    /// The range is kept: a redirect is the same transfer, and a resumption
+    /// that lost its offset on the way to a CDN would start again from zero and
+    /// report progress that did not happen.
+    #[must_use]
+    pub fn redirected(&self, to: Url, carrying_the_credential: bool) -> Self {
+        Self {
+            url: to,
+            from: self.from,
+            credential: if carrying_the_credential {
+                self.credential.clone()
+            } else {
+                None
+            },
+        }
+    }
+
     /// Whether it carries a credential.
     #[must_use]
     pub const fn is_authenticated(&self) -> bool {
