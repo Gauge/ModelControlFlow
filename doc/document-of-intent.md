@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 39 |
+| **Version** | 40 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1177,6 +1177,53 @@ to. Or a decision that MCF may make an unrequested request — which would be a
 change to §3.2 rather than to this entry.
 
 [findings.md]: findings.md
+
+### D36 — A whole-system test drives the shipped binary across every boundary MCF ships, and mocks nothing on MCF's side *(answers §7.22)*
+
+§7.22 asked four questions. Each now has an answer that is demonstrated rather
+than asserted, because the things they were about exist.
+
+**Does it drive a real surface?** Yes, and *real* means the protocol is real
+rather than the peer being genuine. `mcf pull` in this tier speaks HTTP/1.1 over
+a loopback socket to a server that is a server — the laboratory's hub is written
+to answer, stall, truncate, redirect and lie (B-028) — because §3.7 makes the
+hub untrusted input, and a mock cannot be hostile in the ways that matter. MCF's
+own control plane is a Unix socket (B-036) and the tier drives it the way an
+operator does: as a separate client process. TLS is the one part a local fixture
+does not cover, and the scheduled online tier speaks it to the real hub rather
+than the claim going untested (A19).
+
+**A real engine, or a simulated one?** The real one MCF ships. Today that is the
+stand-in (D31) and `mcf run` goes end to end through it; when B-320 admits an
+engine, this tier drives that. A simulated engine exists only to produce a
+failure that is hard to cause on purpose — a runtime that dies mid-token —
+which is D26's rule, *build the observable rather than its cause*. A
+whole-system test whose engine is a stub is a test of the wrapper against a
+fiction.
+
+**Does it cross a process boundary?** Always, and into the *shipped binary*
+rather than a library entry point: a test that calls `main`'s innards has not
+crossed anything. Today that boundary is the daemon, which this tier starts,
+talks to, kills at eight moments of its life and starts again (B-030). When
+B-032 supervises an engine, the child is the second.
+
+**Restart and recovery with persisted state?** Required of every scenario that
+has state, because the disk *is* the state: MCF keeps nothing across a restart
+that is not written down (D20, A9). What one process leaves, the next must
+recover — and where it cannot, it must say what it lost (B62).
+
+**Where the boundary stops.** §3.5 and B19 draw the outer edge, and it is what
+keeps this tier gating rather than scheduled: no network beyond loopback, no
+accelerator, no large model, nothing that needs an operator's credential, and
+nothing whose cost pushes the gating tier past the seconds B38 requires. A
+claim that can only be tested outside those bounds belongs to a **scheduled**
+tier that says so — the online tier, the load tier, the soak tier — rather than
+being tested nowhere or being smuggled in behind a mock.
+
+**What this closes.** The suite can now claim to test the behaviours that exist
+only between components — supervision, recovery, contention, degradation — for
+every component MCF actually has. The gap that remains is not in the boundary
+but in the parts: an engine to supervise, and a remote surface to expose.
 
 ### D35 — Three privileged operations, one of them a read, and a list of things MCF declines to do to a machine *(answers §7.39)*
 
@@ -3685,17 +3732,20 @@ Until this is answered, §VIII is an assertion rather than a discipline, and
 §6.16's low confidence rating stands. It is the highest-leverage void attached
 to §VIII, in the same way §7.16 is for §VII.
 
-### 7.22 What "full system" testing means for a daemon
+### 7.22 What "full system" testing means for a daemon *(answered by D36)*
 
-§3.5 requires whole-system coverage, but the end-to-end boundary is undrawn.
+§3.5 requires whole-system coverage, but the end-to-end boundary was undrawn.
 Does a full-system test drive the real HTTP surface? Start a real inference
 engine, or a simulated one? Cross a process boundary into a supervised child?
 Exercise restart and recovery with persisted state?
 
-The answers determine whether the suite can honestly claim to test the
-behaviours that only exist between components — supervision, recovery,
-contention, degradation — which are precisely the ones §I is about, and which
-unit tests structurally cannot reach.
+**Answered by D36**, and demonstrated rather than asserted: a real protocol
+against a peer written to be hostile, the real engine MCF ships, the shipped
+binary across every process boundary MCF has, and recovery from the disk in
+every scenario that has state. What a whole-system test may *not* do is what
+keeps the tier gating — no network beyond loopback, no accelerator, no large
+model — and a claim that cannot be tested inside those bounds belongs to a
+scheduled tier that says so.
 
 ### 7.23 The agentic suite: contents, statistics, and honesty over time — **blocking §IX**
 
@@ -4122,6 +4172,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.11 | Offline and degraded-network operation | §3.2, §V | **D33** — offline is the ordinary case; MCF reports what it observed, never which layer is missing; measured in [findings.md](findings.md) F10 |
 | §7.37 | Who writes to the record | §3.1, D6 | **D34** — everybody writes; the identifier carries the writer; measured in [findings.md](findings.md) F13 |
 | §7.39 | Which operations require elevation | §6.32, §XVII | **D35** — three privileged operations, one of them a read; five declined; measured in [findings.md](findings.md) F15 |
+| §7.22 | Where the end-to-end boundary falls | §3.5, D10 | **D36** — the shipped binary across every boundary MCF ships; nothing on MCF's side is mocked |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -4156,6 +4207,25 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 40 — where a whole-system test stops
+
+D36 added, closing §7.22. The void asked four questions about the end-to-end
+boundary and could not be answered when it was written, because three of the
+four things it asked about did not exist. They do now — a daemon, a control
+plane, a hub the laboratory can make hostile, and an engine, even if it is the
+stand-in — so each answer is demonstrated by a test rather than asserted by a
+paragraph.
+
+The rule the four answers share: **nothing on MCF's side is mocked**. The
+binary is the shipped one, the boundary is a real process boundary, the protocol
+is real even when the peer is a fixture, and the engine is the one MCF ships. A
+simulated component exists only to produce a failure that is hard to cause on
+purpose, which is D26's rule rather than a convenience.
+
+The outer edge matters as much: no network beyond loopback, no accelerator, no
+large model. That is what keeps the tier gating, and a claim that cannot be
+tested inside it belongs to a scheduled tier that says so rather than to a mock.
 
 ### Version 39 — three privileged operations, and five MCF declines
 
