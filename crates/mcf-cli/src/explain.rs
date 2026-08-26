@@ -32,14 +32,23 @@ use crate::run;
 
 /// Explains a model: what it says, what MCF read, what MCF would choose.
 pub(crate) fn run(model: &str) -> Response {
-    let Some(path) = run::resolve(model) else {
-        return Response {
-            text: format!(
-                "mcf: there is no model at {model}\n  `mcf list` says what this machine is \
-                 holding; a path to a file works too"
-            ),
-            served: false,
-        };
+    let path = match run::resolve(model) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return Response {
+                text: format!(
+                    "mcf: there is no model at {model}\n  `mcf list` says what this machine is \
+                     holding; a path to a file works too"
+                ),
+                served: false,
+            };
+        }
+        Err(found) => {
+            return Response {
+                text: run::ambiguous(model, &found),
+                served: false,
+            };
+        }
     };
 
     let bytes = match std::fs::read(&path) {

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 8 |
+| **Version** | 9 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -40,7 +40,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR6 | [The stop control](#pr6--the-stop-control) | **Accepted** — registered as B-210 | M2 |
 | PR7 | [Longitudinal regression detection](#pr7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
 | PR8 | [The stand-in engine](#pr8--the-stand-in-engine) | **Accepted** — B-360, B-361, B-362 | M0 · M2 |
-| PR9 | [What serving looks like](#pr9--what-serving-looks-like) | Accept — DEC-001's three questions, answered together | M2 |
+| PR9 | [What serving looks like](#pr9--what-serving-looks-like) | **Accepted** — DEC-001 decided; B-032, B-033, B-034 build it | M2 |
 
 ---
 
@@ -1000,11 +1000,25 @@ resident when nobody is looking — which is a different question about idle cos
 **Accept.** It answers DEC-001's three questions in a way that keeps A5, A22 and
 §3.4 intact, it extends a protocol that exists rather than inventing one, and
 every part of it is testable without an engine except the parts that are about
-an engine. It should not be *built* before B-320 admits one: a supervision
-contract with nothing to supervise is a claim, and A19 is against claims.
+an engine. It should not be *built* before there is an engine to supervise: a
+supervision contract with nothing to supervise is a claim, and A19 is against
+claims.
+
+**Accepted by the operator.** DEC-001 is decided and this is its substance. The
+one thing that changed under it since it was written: D38 makes MCF's own engine
+the thing being served, so *the engine to supervise* arrives with B-360's
+coverage rather than with a vendored one — and the degradation mark the protocol
+carries in its terminating line stops being a hypothetical, because every answer
+from MCF's own engine has one.
 
 
 ## Changelog
+
+### Version 9 — PR9 accepted
+
+The operator accepted it as proposed. DEC-001 is decided; B-032, B-033 and
+B-034 build it when there is an engine to serve with, which D38 now says is
+MCF's own.
 
 ### Version 8 — what serving looks like
 

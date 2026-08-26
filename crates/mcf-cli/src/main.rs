@@ -65,6 +65,8 @@ enum Request<'a> {
         reference: &'a str,
         /// A hub other than the default.
         from: Option<&'a str>,
+        /// Which store to put it in, where the operator named one.
+        into: Option<&'a str>,
         /// Where MCF may read a credential from, if the operator named one.
         offered: pull::Offered<'a>,
     },
@@ -445,6 +447,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
 fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut reference = None;
     let mut from = None;
+    let mut into = None;
     let mut offered = pull::Offered::Nothing;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
@@ -455,6 +458,15 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     return Ok(Request::MissingArgument {
                         command: "pull",
                         needs: "--from <hub>",
+                    });
+                }
+            },
+            "--into" => match rest.next() {
+                Some(path) => into = Some(*path),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "pull",
+                        needs: "--into <directory>",
                     });
                 }
             },
@@ -485,6 +497,7 @@ fn pull_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
         Some(reference) => Ok(Request::Pull {
             reference,
             from,
+            into,
             offered,
         }),
         None => Ok(Request::MissingArgument {
@@ -627,10 +640,12 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
                  \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
-                 \x20          [--from <hub>]             provenance; without a file it\n\
-                 \x20          [--token-from <file>]      says which variants would run\n\
-                 \x20          [--token-from-env <VAR>]   here. MCF reads a credential\n\
-                 \x20                                     only where you name one\n\
+                 \x20          [--into <directory>]       provenance; without a file it\n\
+                 \x20          [--from <hub>]             says which variants would run\n\
+                 \x20          [--token-from <file>]      here. MCF reads a credential\n\
+                 \x20          [--token-from-env <VAR>]   only where you name one, and\n\
+                 \x20                                     puts models where MCF_MODELS\n\
+                 \x20                                     says unless --into names one\n\
                  \x20 mcf serve                           start the daemon: it stays up,\n\
                  \x20                                     recovers what is on the disk and\n\
                  \x20                                     costs nothing while idle\n\
@@ -687,8 +702,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Pull {
             reference,
             from,
+            into,
             offered,
-        } => pull::run(reference, *from, *offered),
+        } => pull::run(reference, *from, *into, *offered),
         Request::Serve => serve::run(),
         Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Check {

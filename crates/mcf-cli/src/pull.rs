@@ -67,7 +67,12 @@ pub(crate) enum Offered<'a> {
 }
 
 /// Acquires a model, or says what would be acquired.
-pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> Response {
+pub(crate) fn run(
+    asked_for: &str,
+    from: Option<&str>,
+    into: Option<&str>,
+    offered: Offered<'_>,
+) -> Response {
     let reference = match reference::parse(asked_for) {
         Ok(reference) => reference,
         Err(failure) => return refused("that is not a reference MCF can resolve", &failure),
@@ -76,12 +81,39 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> 
         Ok(base) => base,
         Err(failure) => return refused("that is not a hub MCF can reach", &failure),
     };
-    let Some(root) = models::default_root() else {
-        return Response {
-            text: "mcf: there is nowhere to keep a model — neither XDG_DATA_HOME nor HOME is set"
-                .to_owned(),
-            served: false,
-        };
+    // Where it goes: what the operator named for this acquisition, or the first
+    // store MCF knows about. A named store is not required to be one MCF
+    // already knows — naming a path *is* choosing one, and refusing an
+    // unfamiliar one would make the operator edit a variable to say something
+    // they just said (§3.15).
+    let root = match into {
+        Some(named) => {
+            let named = std::path::Path::new(named);
+            if !named.is_absolute() {
+                return Response {
+                    text: format!(
+                        "mcf: --into needs an absolute path, and {} is not one\n  MCF will not \
+                         resolve a store against whatever directory it was started in (A7)",
+                        named.display()
+                    ),
+                    served: false,
+                };
+            }
+            named.to_path_buf()
+        }
+        None => match models::default_root() {
+            Some(root) => root,
+            None => {
+                return Response {
+                    text: format!(
+                        "mcf: there is nowhere to keep a model — none of {}, XDG_DATA_HOME or \
+                         HOME says where models go, and --into names no store either",
+                        models::STORES
+                    ),
+                    served: false,
+                };
+            }
+        },
     };
 
     let wire = match wire_for(&base) {

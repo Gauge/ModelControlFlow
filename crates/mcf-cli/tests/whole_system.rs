@@ -839,6 +839,128 @@ fn bytes_that_changed_on_this_disk_are_found_by_checking() {
     );
 }
 
+/// Models go where the operator says, and every surface looks in all of them
+/// (B-369).
+///
+/// The reason this is not a configuration file: §5 refuses MCF a configuration
+/// language, and a list of paths in a variable is the platform's own idiom. The
+/// reason it is a *list* rather than one path: somebody with a fast small disk
+/// and a slow large one has two places models belong, and which one a given
+/// model goes in is a decision at acquisition time rather than a setting.
+#[test]
+fn models_go_where_the_operator_says_and_every_surface_looks_there() {
+    let machine = Machine::new("stores");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    let first = machine.0.join("store-one");
+    let second = machine.0.join("store-two");
+    std::fs::create_dir_all(&first).expect("a store");
+    std::fs::create_dir_all(&second).expect("a second store");
+    let listed = format!("{}:{}", first.display(), second.display());
+
+    // Without --into, the first store is where a new acquisition goes.
+    let pulled = machine
+        .command(&["pull", "owner/model:model.gguf", "--from", &serving.base()])
+        .env("MCF_MODELS", &listed)
+        .output()
+        .expect("the binary runs");
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    assert!(
+        first.join("owner/model/model.gguf").is_file(),
+        "the model did not go in the first store"
+    );
+
+    // With --into, it goes where the operator named — including somewhere MCF
+    // was never told about.
+    let elsewhere = machine.0.join("somewhere-else");
+    let pulled = machine
+        .command(&[
+            "pull",
+            "owner/model:model.gguf",
+            "--from",
+            &serving.base(),
+            "--into",
+            elsewhere.to_str().unwrap_or_default(),
+        ])
+        .env("MCF_MODELS", &listed)
+        .output()
+        .expect("the binary runs");
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+    assert!(
+        elsewhere.join("owner/model/model.gguf").is_file(),
+        "--into was ignored: {}",
+        text(&pulled)
+    );
+
+    // A relative path is refused rather than resolved against whatever
+    // directory MCF was started in (A7).
+    let refused = machine
+        .command(&[
+            "pull",
+            "owner/model:model.gguf",
+            "--from",
+            &serving.base(),
+            "--into",
+            "somewhere/relative",
+        ])
+        .env("MCF_MODELS", &listed)
+        .output()
+        .expect("the binary runs");
+    assert!(!refused.status.success());
+    assert!(
+        error_text(&refused).contains("absolute"),
+        "{}",
+        error_text(&refused)
+    );
+
+    // And a listing covers every store rather than the first.
+    std::fs::create_dir_all(second.join("other/model")).expect("a second model");
+    std::fs::write(second.join("other/model/model.gguf"), weights).expect("a file");
+    let listing = machine
+        .command(&["list"])
+        .env("MCF_MODELS", &listed)
+        .output()
+        .expect("the binary runs");
+    let said = text(&listing);
+    assert!(said.contains("store-one"), "{said}");
+    assert!(said.contains("store-two"), "{said}");
+    assert!(said.contains("other/model/model.gguf"), "{said}");
+}
+
+/// A name held in two stores is refused rather than resolved for the operator.
+///
+/// Two files under one name are two artifacts with two provenances, and a
+/// measurement taken against whichever MCF reached first is one nobody could
+/// reproduce (§3.15, A1).
+#[test]
+fn a_model_held_in_two_stores_is_ambiguous_rather_than_first_wins() {
+    let machine = Machine::new("stores-ambiguous");
+    let first = machine.0.join("store-one");
+    let second = machine.0.join("store-two");
+    for store in [&first, &second] {
+        std::fs::create_dir_all(store.join("owner/model")).expect("a store");
+        std::fs::write(
+            store.join("owner/model/model.gguf"),
+            mcf_lab::fixture::a_model_that_runs(),
+        )
+        .expect("a model");
+    }
+    let listed = format!("{}:{}", first.display(), second.display());
+
+    let refused = machine
+        .command(&["run", "owner/model:model.gguf", "--prompt", "yes"])
+        .env("MCF_MODELS", &listed)
+        .output()
+        .expect("the binary runs");
+    assert!(!refused.status.success(), "{}", text(&refused));
+    let said = error_text(&refused);
+    assert!(said.contains("names 2 files"), "{said}");
+    assert!(said.contains("store-one"), "{said}");
+    assert!(said.contains("store-two"), "{said}");
+}
+
 /// A hub nobody can reach is not a clean bill of health (A7, F17).
 ///
 /// The failure this guards against is a run of unanswered questions reading as

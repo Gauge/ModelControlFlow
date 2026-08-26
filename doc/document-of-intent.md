@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 41 |
+| **Version** | 42 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1178,6 +1178,116 @@ change to §3.2 rather than to this entry.
 
 [findings.md]: findings.md
 
+### D38 — MCF's own engine is the one that runs everything, and still cannot report a speed *(amends D31, on the operator's instruction)*
+
+**MCF's own implementation of inference is a first-class goal rather than a
+by-product.** It runs **every model MCF can acquire** — every architecture,
+every quantization, every format — and it is judged on whether it runs them
+correctly, not on how fast it does.
+
+**What this changes about D31.** That decision put a second implementation in
+MCF for *validity*: A19 forbids believing numbers from software that cannot
+demonstrate it computes what it claims, and for inference the only demonstration
+available is a second implementation that agrees. Coverage was explicitly the
+by-product and explicitly not the justification. The operator has asked for the
+by-product to become the goal. The validity argument is untouched and still
+holds; what changes is that *breadth is now something MCF owes* rather than
+something it happens to get.
+
+**What does not change, and matters more now than it did.** A result from this
+engine can **never be a timing** (B65). The prohibition is enforced by type —
+the handle a run produces cannot be converted into a performance figure — and
+the reason is unchanged: a throughput number from an unoptimized implementation
+measures the implementation, says nothing about the model or the machine, and
+publishing one would be worse than publishing nothing. An engine that runs
+*everything* is more likely to be mistaken for a benchmark, not less, so the
+type-level refusal is load-bearing rather than decorative.
+
+**Threads and the compiler's vectorizer are permitted; hand-written kernels are
+not.** D31 forbade SIMD, fusion and threading, and the reason given was that
+there is no point optimizing something that can never report a speed. That
+reason survives for *kernels* and fails for *viability*: a 27-billion-parameter
+model on one thread is on the order of a minute a token, which is not an engine
+that runs the model — it is an engine that theoretically would. So:
+
+- **Permitted:** work split across the processors the machine has, and whatever
+  the compiler's own vectorizer does with ordinary Rust.
+- **Refused:** hand-written per-architecture kernels, intrinsics, assembly,
+  fusion, and anything whose correctness depends on a particular processor.
+  That is D32's treadmill, and it is the thing MCF declines to own.
+- **Required:** **bit-identical output whatever the thread count**. Floating
+  point addition is not associative, so a reduction whose order depends on
+  scheduling is a reduction that gives different answers on a busy machine.
+  Partitioning is fixed by index rather than by availability, reductions
+  combine in a fixed order, and a property asserts the same input gives the same
+  bytes at one thread and at many. §3.12 puts reproducibility above convenience,
+  and this is the smallest place that rule can be broken without anybody
+  noticing.
+
+**What MCF's engine is for, stated once.** It is the **baseline**: the thing
+that runs on a machine with nothing installed, that answers behaviour questions
+about any model, and that a faster engine is checked against. It is not the
+thing MCF measures speed with, and the surfaces say so beside every answer.
+
+### D39 — An engine MCF can set up in an environment it controls is admissible *(amends D23, on the operator's instruction)*
+
+**A component no longer has to be shippable inside the artifact to be
+admissible. It has to be something MCF can install, build and pin *itself*, in
+an environment MCF controls, without making any of it the user's errand.**
+
+**What this changes about D23.** That decision had three tiers — vendored,
+platform-provided, declined — and deferred the middle one entirely, on the
+ground that a runtime MCF did not ship is a runtime MCF did not pin. That ground
+does not apply to a runtime MCF **provisions**: MCF chooses the version, drives
+the installation, records exactly what it got, and can do it again. So a fourth
+tier is admitted between the first two:
+
+**Tier 1b — Provisioned.** MCF fetches, builds or installs the component into an
+environment it controls, at a version and digest it pins, and records that
+environment as a condition of every measurement taken through it. The user is
+asked for nothing beyond permission and disk. What this opens up is everything
+whose difficulty was *setup* rather than *terms*: engines that need a C++
+toolchain, a Python environment, a vendor's accelerator runtime, or a build step
+per model.
+
+**The four conditions a provisioned component must meet**, which are what
+"controlled" has to mean if it is to mean anything:
+
+1. **Pinned and recorded.** Version, source and digest of everything installed,
+   in the record, as a condition of the results (§3.4). "Whatever `pip` resolved
+   today" is not a condition anybody can reproduce.
+2. **Reproducible on demand.** The same provisioning run produces the same
+   environment, or MCF says what differed. A setup nobody can repeat makes every
+   measurement through it a one-off.
+3. **Contained and reversible.** It lives where MCF put it, it does not modify
+   the machine outside that place, and removing it is one command that leaves no
+   residue (A27). A provisioning step that changes a shared machine is an
+   environment change, which §3.25 bounds and §6.32 keeps out of ambient
+   privilege.
+4. **Never the baseline.** MCF's own engine (D38) runs with nothing installed.
+   A provisioned engine is an accelerated path *on top of* that, and its absence
+   is stated and continued past rather than turned into an errand (§3.2, B36).
+   The self-contained artifact claim is unaffected: what is shipped is still
+   only what is vendored.
+
+**Redistribution is not what provisioning does, and the distinction is the whole
+of the licence argument.** MCF vendoring a proprietary runtime would be MCF
+redistributing it. MCF fetching it onto the user's machine, from the vendor,
+under the vendor's own terms, at the user's instruction, is the user obtaining
+it — the same act as installing it by hand, with the tedium removed. **This is a
+legal judgement and MCF is not qualified to make it finally**: before any such
+component ships in a release, the arrangement gets a real review (the same
+condition D22 and D28 already put on the licence itself), and the register
+records the finding.
+
+**What it buys beyond speed, and this is the part worth the weight.** The
+reference implementations for these models — the ones the weights were produced
+against — are provisionable. That makes them available as an **oracle**: where
+MCF's own engine and a reference implementation disagree about the same model
+with the same seed, one of them is wrong, and MCF can say so with evidence. A19
+asks exactly this and until now the only available answer was "a second
+implementation MCF also wrote".
+
 ### D37 — Decay is checked when somebody asks, recorded against the provenance, and never retroactive *(answers §7.38)*
 
 A pinned artifact can go bad upstream four ways — the revision withdrawn or
@@ -1433,7 +1543,13 @@ stands on measured ground.
 [findings.md]: findings.md
 [vendored.md]: vendored.md
 
-### D31 — MCF writes a stand-in engine, and a stand-in cannot produce a timing *(accepts PR8)*
+### D31 — MCF writes a stand-in engine, and a stand-in cannot produce a timing *(accepts PR8; amended by D38)*
+
+> **Amended by D38.** What follows is why MCF wrote its own implementation and
+> is unchanged as reasoning. What changed is its *ambition*: coverage was a
+> by-product here and is a goal there, and the prohibition on threading is
+> lifted for viability while the prohibition on a timing is not lifted at all.
+
 
 **MCF ships a second implementation of inference: its own, deliberately slow,
 written to be read.** A model no vendored engine will run still runs on it,
@@ -4192,6 +4308,30 @@ distribution, and the point of recording it here is that it must be *made* befor
 - The compatibility matrix of every candidate engine, and how obligations are
   surfaced to a user who redistributes.
 
+### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
+
+D39 admits a component MCF *provisions* rather than ships, and states four
+conditions any answer must satisfy: pinned and recorded, reproducible, contained
+and reversible, and never the baseline. It does not say by what mechanism.
+
+The candidates differ in what they cost and what they guarantee. A **container**
+MCF builds is the strongest containment and the heaviest requirement — it needs
+a container runtime on the user's machine, and accelerator access through one is
+its own arrangement per platform. A **prefix MCF manages** — a directory it
+installs into, with the environment pointed at it — needs nothing installed and
+contains much less: an installer that writes outside its prefix has written
+outside its prefix, and MCF finds out afterwards.
+
+Riding on it: **how much of somebody else's installation process MCF is prepared
+to execute at all.** A build script from a pinned source is one thing; a package
+manager resolving a dependency graph at install time is another, and the second
+is not reproducible in the sense condition 1 requires unless the resolution is
+itself pinned. §6.4 already refuses implicit execution of code MCF acquires, and
+a provisioning step is exactly that with the operator's permission attached — so
+what the permission covers, and what it is asked for, is part of this question.
+
+Registered as DEC-052.
+
 ### Retired voids
 
 Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
@@ -4255,6 +4395,36 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 42 — the engine is ours, and setup is a thing MCF may do
+
+Two amendments, both on the operator's instruction, and they fit together.
+
+**D38** promotes MCF's own implementation of inference from a stand-in to the
+engine that runs everything. Coverage was a by-product of the validity argument
+in D31; it is now a goal in its own right — every architecture, every
+quantization, every format MCF can acquire, correct rather than fast. The
+prohibition on producing a *timing* is untouched and matters more than before: an
+engine that runs everything is easier to mistake for a benchmark. What is lifted
+is the prohibition on threading, and only because a 27-billion-parameter model on
+one thread is a minute a token, which is not an engine that runs the model. The
+price is stated where it is paid: bit-identical output whatever the thread
+count, or the reproducibility §3.12 puts above convenience is gone in the one
+place nobody would look.
+
+**D39** admits a fourth tier of component: one MCF *provisions* — installs,
+builds and pins itself, in an environment it controls — rather than ships. D23
+deferred the platform-provided tier because a runtime MCF did not ship is one it
+did not pin; that argument does not reach a runtime MCF sets up, chooses the
+version of, and records. It opens engines whose difficulty was setup rather than
+terms, and it opens something better: the reference implementations these models
+were produced against become available as an *oracle* to check MCF's own engine
+against, which is what A19 has been asking for since it was written.
+
+Four conditions make "controlled" mean something — pinned and recorded,
+reproducible, contained and reversible, and never the baseline — and the
+redistribution question gets a real review before anything ships rather than an
+assertion here.
 
 ### Version 41 — a pin that goes bad underneath you
 
