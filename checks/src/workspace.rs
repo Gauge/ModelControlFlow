@@ -88,9 +88,14 @@ pub const MEMBERS: &[Member] = &[
     Member {
         name: "mcf-cli",
         path: "crates/mcf-cli",
+        // `mcf-standin` because `mcf run` drives MCF's own engine: D31 put it
+        // there so that a model no vendored engine will run still runs, marked,
+        // and a surface that could not reach it would be a capability only a
+        // test could use (A22).
         depends_on: &[
             "mcf-core",
             "mcf-record",
+            "mcf-standin",
             "mcf-lab",
             "mcf-hub",
             "mcf-serve",
