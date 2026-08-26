@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 84 |
+| **Version** | 85 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -167,7 +167,7 @@ first and importance second.
 | B-028 | Fake hub: a complete, deterministic simulated Hugging Face — well-formed, malformed, gated, hostile, truncated, mutating | §3.17, §7.21 | Every M1 test runs against it with no network | **in progress** — `mcf_lab::hub`: a source that answers the four questions `mcf_hub::source::Source` asks, with a declared behaviour per repository — well-formed, needs credentials, gated, throttled, truncating, serving different bytes. It simulates what MCF observes and never the cause (D26), and a truncated transfer *writes* the partial file, because the artifact on the disk is what a fetcher has to notice. Three hub categories have scenarios through it (A13). Deceptive metadata and hostile archives are declared and not yet served: they need the fetch path they would be fed to (B-021, B-022) |
 | B-322 | The transport: a TLS stack vendored and pinned, and an HTTP/1.1 client MCF writes — redirects followed without carrying a credential across hosts, ranges resumed, the declared digest and revision read from the response | §III, §XVI, B15, B36, [findings.md](findings.md) F9 | `mcf pull` reaches the real hub over TLS; the artifact still demands nothing of a machine beyond `libc`, `libgcc_s` and the loader; the redirect and resume behaviours are driven by the laboratory's hub rather than by the network | **in progress** — the half MCF writes is written. `mcf_hub::http` turns a request into bytes and bytes into an answer and touches no socket, which is what makes the behaviours that matter testable without a network: a redirect answers *where to go and whether the credential goes with it*, and it does not go to another origin — the hub's own redirect is to a signed CDN URL, and a client that forwarded the token would hand it to a host the network named. Every claim a response makes is checked before it is believed, every input reaches a classified outcome, and the header block has a stated ceiling rather than *whatever arrives*. It is a fuzz target, and the tier immediately found a source contradicting itself in two numbers a fetcher acts on. `mcf_hub::wire` is the socket behind a boundary the cryptography slots into: deadlines everywhere, because a host that accepts a connection and says nothing is where a hang comes from; a body streamed rather than held, because a model is larger than this machine's memory; a redirect that keeps its range and drops its credential; and a refusal — not a downgrade — when a credential is offered over a wire that cannot keep it. Eleven tests drive it over real loopback sockets, and a scenario holds B7's *a hang is a defined outcome* against a host that never answers. `mcf_hub::client` is the hub itself as a `Source`: two cheap questions before a byte of weights moves — the card for the revision to pin and the terms, the tree for every file, its size and the SHA-256 the hub declares — then a download that follows the redirect to wherever it is served from. It is pointed at a *base* rather than at Hugging Face, so nineteen tests drive the whole path against a server the suite is holding on the loopback address, and an operator on a network that cannot reach the hub has somewhere to point MCF. What remains is TLS itself, and it is one struct and one decision: [findings.md](findings.md) F9.4 measured that a vendored tree cannot be trimmed to the platform — cargo resolves the whole lock graph before it compiles any of it — so admitting a stack means about ninety megabytes of third-party source in this repository rather than the fifteen a Linux build compiles. The stated reason B15 wants is F9; the register row is [vendored.md](vendored.md)'s; the size is the thing to weigh, and it is left as a deliberate admission rather than folded into a commit about something else |
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | open |
-| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — `mcf_hub::fitment`: the arithmetic half, and it is exact. Weights plus the cache at the requested context plus a stated runtime overhead against ninety per cent of what the machine has, with three verdicts — and *fits without context headroom* answers with the longest context that would, which is a configuration an operator can take. Every input is untrusted, so an overflow refuses the whole plan rather than dropping a row from it (A1, §3.7). What remains: the metadata has to arrive from the hub, which is B-021's transport, and the re-check against reality on acquisition |
+| B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — the plan is made from what the hub publishes and nothing else. `Shape::from_configuration` reads the model's own `config.json` — every field or no shape at all, because the grouping factor is exactly what a guess gets wrong and an operator would be told a variant does not fit that does. `mcf pull` on a repository with no file named answers the question actually being asked: which of these will run here, at a stated context, with what is left over or what is short. A whole-system test plans a repository of variants in three cheap questions and downloads no weights at all. What remains: the re-check against reality on acquisition, and a repository that publishes no configuration is honestly unplannable rather than planned badly |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
 | B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — all three commands exist and the offline half of the condition is met: a whole-system test acquires a model from a hub on the loopback address, lists it with where it came from, and removes it, each as a separate process against a real record. `pull` without a file offers what the repository publishes with the sizes and the terms and acquires nothing — choosing a quantization for somebody is choosing what they will measure. With one it verifies against the digest the hub declared, writes the provenance beside the artifact and the acquisition in the journal, and says plainly when a hub declared no digest to check against (A21). What remains is *online against the real one*, which is TLS and B-322 |
 
@@ -367,6 +367,30 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 85 — which of these will run here
+
+B-213's own product, from the hub's own metadata: `mcf pull` on a repository
+with no file named now answers the question an operator is actually asking.
+Not *what is published* — that was already there — but which of the twenty
+quantizations will run on this machine, at a stated context, with how much left
+over or how much short.
+
+Three cheap questions and no weights: the card, the tree, and the model's own
+`config.json`. A whole-system test asserts exactly that — a plan is made and
+nothing ending in `.gguf` is ever requested.
+
+The shape is read whole or not at all. A configuration that does not say how
+many key/value heads a model has produces no shape, because the grouping factor
+is precisely what a guess gets wrong: eight heads planned as thirty-two
+overstates the cache fourfold, and the operator is told a variant does not fit
+that does. There is a test that reads the same model both ways and asserts the
+two answers differ by exactly the grouping factor, so the mistake cannot be
+made quietly.
+
+And a repository that publishes no configuration is reported as unplannable
+rather than planned badly. A missing plan and a plan that found nothing are
+different answers (A7).
 
 ### Version 84 — a model enters this machine
 

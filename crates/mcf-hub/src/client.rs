@@ -198,6 +198,38 @@ impl Hub {
         }
     }
 
+    /// The model's own configuration, where the repository publishes one.
+    ///
+    /// `config.json` is small, so this is a third cheap question rather than a
+    /// download: it is what [`crate::fitment`] needs to say whether a variant
+    /// will run here *before* twenty gigabytes are fetched (B-213, PR3).
+    ///
+    /// `Ok(None)` when the repository publishes none — a GGUF-only repository
+    /// often does — which is a state to report rather than a shape to guess
+    /// (A7).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::list`], for anything that is not a plain absence.
+    pub fn configuration(&self, listing: &Listing) -> Result<Option<Value>> {
+        if listing.entry("config.json").is_none() {
+            return Ok(None);
+        }
+        let revision = listing
+            .revision
+            .clone()
+            .unwrap_or_else(|| "main".to_owned());
+        let target = format!(
+            "/{}/resolve/{revision}/config.json",
+            listing.reference.repository()
+        );
+        match self.read_metadata(&listing.reference, &target) {
+            Ok((_, body)) => read_json(&body).map(Some),
+            Err(failure) if failure.category() == Category::HubRefNotFound => Ok(None),
+            Err(failure) => Err(failure),
+        }
+    }
+
     /// Where a file lives, at a stated revision.
     fn resolve_url(&self, reference: &Reference, revision: &str, path: &str) -> Result<Url> {
         self.url(&format!(

@@ -718,6 +718,78 @@ fn acquiring_something_already_held_does_not_fetch_it_again() {
     );
 }
 
+/// The question an operator is actually asking when they name a repository and
+/// no file: which of these will run here (PR3, B-213).
+#[test]
+fn a_repository_of_variants_is_planned_before_anything_is_downloaded() {
+    use mcf_lab::serving::answer;
+    let machine = Machine::new("pull-plan");
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    let configuration = r#"{"num_hidden_layers":28,"num_key_value_heads":8,"head_dim":128}"#;
+    let serving = mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/owner/model".to_owned(),
+            answer(&format!(
+                r#"{{"sha":"{revision}","cardData":{{"license":"apache-2.0"}}}}"#
+            )),
+        ),
+        (
+            format!("/api/models/owner/model/tree/{revision}?recursive=true"),
+            answer(&format!(
+                r#"[{{"type":"file","size":{},"path":"config.json"}},
+                    {{"type":"file","size":8000,"path":"small.gguf"}},
+                    {{"type":"file","size":900000000000000,"path":"enormous.gguf"}}]"#,
+                configuration.len()
+            )),
+        ),
+        (
+            format!("/owner/model/resolve/{revision}/config.json"),
+            answer(configuration),
+        ),
+    ]))
+    .expect("a loopback port");
+
+    let offered = machine.run(&["pull", "owner/model", "--from", &serving.base()]);
+    assert!(offered.status.success(), "{}", error_text(&offered));
+    let offered = text(&offered);
+
+    assert!(offered.contains("4096 tokens of context"), "{offered}");
+    let small = offered
+        .lines()
+        .find(|line| line.contains("small.gguf") && line.contains("fits"))
+        .unwrap_or_default();
+    assert!(small.contains("fits"), "{offered}");
+    let enormous = offered
+        .lines()
+        .find(|line| line.contains("enormous.gguf") && line.contains("NOT fit"))
+        .unwrap_or_default();
+    assert!(enormous.contains("more than this machine has"), "{offered}");
+
+    // The plan cost three cheap questions and no weights.
+    let asked = serving.asked();
+    assert_eq!(asked.len(), 3, "{asked:?}");
+    assert!(
+        !asked.iter().any(|request| request.contains(".gguf")),
+        "a plan downloaded weights: {asked:?}"
+    );
+}
+
+/// A repository that publishes no configuration cannot be planned for, and MCF
+/// says that rather than showing a plan it guessed (A7).
+#[test]
+fn a_repository_with_no_configuration_is_said_to_be_unplannable() {
+    let machine = Machine::new("pull-no-plan");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    let offered = text(&machine.run(&["pull", "owner/model", "--from", &serving.base()]));
+    assert!(
+        offered.contains("cannot say which of these would run here"),
+        "{offered}"
+    );
+}
+
 /// A hub that publishes no digest leaves the artifact *held* rather than
 /// verified, and the surface says so in as many words (A21).
 #[test]

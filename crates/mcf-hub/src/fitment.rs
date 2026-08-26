@@ -27,6 +27,8 @@
 //!
 //! [PR3]: ../../../doc/proposals.md#pr3--pre-acquisition-planning
 
+use mcf_record::json::Value;
+
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::measurement::Bytes;
 
@@ -70,6 +72,45 @@ pub struct Shape {
 }
 
 impl Shape {
+    /// The shape a model's own `config.json` states.
+    ///
+    /// Every field is read; none is defaulted. A model whose configuration does
+    /// not say how many key/value heads it has is one MCF will not plan for,
+    /// because the grouping factor is exactly what a guess would get wrong —
+    /// eight heads planned as thirty-two overstates the cache fourfold, and the
+    /// operator would be told a variant does not fit that does (A7).
+    ///
+    /// `head_dim` where the configuration states one; otherwise the width
+    /// divided by the attention heads, which is the same number written another
+    /// way and the shape older configurations use.
+    ///
+    /// The cache element is a *parameter of the run* rather than a fact about
+    /// the model — two bytes for the half-precision caches engines use by
+    /// default — so it is passed in rather than read.
+    #[must_use]
+    pub fn from_configuration(configuration: &Value, bytes_per_element: u64) -> Option<Self> {
+        let field = |name: &str| {
+            configuration
+                .get(name)
+                .and_then(Value::as_integer)
+                .and_then(|value| u64::try_from(value).ok())
+                .filter(|value| *value > 0)
+        };
+        let head_dimension = match field("head_dim") {
+            Some(stated) => stated,
+            // `checked_div` rather than `/`: a configuration claiming zero
+            // attention heads is a configuration, not a division by zero
+            // (§3.7).
+            None => field("hidden_size")?.checked_div(field("num_attention_heads")?)?,
+        };
+        Some(Self {
+            blocks: field("num_hidden_layers")?,
+            key_value_heads: field("num_key_value_heads")?,
+            head_dimension,
+            bytes_per_element,
+        })
+    }
+
     /// How many bytes one token of context costs, keys and values together.
     ///
     /// `None` when the arithmetic overflows, which is a shape from a hostile or

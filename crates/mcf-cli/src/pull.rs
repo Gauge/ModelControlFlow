@@ -24,11 +24,15 @@
 
 use std::path::{Path, PathBuf};
 
+use mcf_core::attested::Attested;
 use mcf_core::failure::Failure;
+use mcf_core::hardware::Machine;
+use mcf_core::measurement::Bytes;
 use mcf_core::provenance::{Checksum, Origin, Provenance, Repository, Revision};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
 use mcf_hub::fetch::{Acquired, Verification, acquire};
+use mcf_hub::fitment::{self, Requirement, Shape, Verdict};
 use mcf_hub::http::Url;
 use mcf_hub::reference::{self, Reference};
 use mcf_hub::source::{Entry, Listing, Source as _};
@@ -68,8 +72,12 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>) -> Response {
     };
 
     let Some(wanted) = reference.file.clone() else {
+        // The plan is what an operator is really asking for when they name a
+        // repository and no file: not *what is published* but *which of these
+        // will run here* (PR3, B-213).
+        let planned = plan_for(&hub, &listing);
         return Response {
-            text: offer(&listing),
+            text: offer(&listing, planned.as_deref()),
             served: true,
         };
     };
@@ -78,7 +86,7 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>) -> Response {
             text: format!(
                 "mcf: {} publishes no file called {wanted}\n{}",
                 listing.reference.repository(),
-                offer(&listing)
+                offer(&listing, None)
             ),
             served: false,
         };
@@ -232,12 +240,87 @@ fn record(
     Ok(path)
 }
 
+/// How much context a plan is made at when nobody has said.
+///
+/// Four thousand and ninety-six tokens: the length most engines default to, and
+/// a number stated here rather than buried, because the answer *this fits*
+/// means nothing without the context it fits at (A6, §3.4).
+pub(crate) const PLANNING_CONTEXT: u64 = 4096;
+
+/// How many bytes one cached element takes.
+///
+/// Two, for the half-precision caches engines use by default. A parameter of
+/// the run rather than a fact about the model, and the reason [`Shape`] takes
+/// it rather than reading it.
+const CACHE_ELEMENT: u64 = 2;
+
+/// Which of the variants a repository publishes will run on this machine.
+///
+/// `None` when the plan cannot be made: no configuration published, a shape MCF
+/// will not guess at, or a machine that will not say how much memory it has.
+/// Each of those is a *reason there is no plan* rather than a plan with holes
+/// in it (A7), and [`offer`] says which.
+fn plan_for(hub: &Hub, listing: &Listing) -> Option<Vec<String>> {
+    let configuration = hub.configuration(listing).ok().flatten()?;
+    let shape = Shape::from_configuration(&configuration, CACHE_ELEMENT)?;
+    let available = match Machine::read().memory.available {
+        Attested::Known(available) => available,
+        Attested::Unknown => return None,
+    };
+
+    let requirements: Vec<Requirement> = listing
+        .entries
+        .iter()
+        // Case-insensitively, because a repository's file names are its own:
+        // `.GGUF` is the same format and a plan that skipped it would leave a
+        // variant out of the list without saying so (A1).
+        .filter(|entry| {
+            std::path::Path::new(&entry.path)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+        })
+        .map(|entry| Requirement {
+            name: entry.path.clone(),
+            weights: Bytes(entry.size),
+            shape,
+        })
+        .collect();
+    if requirements.is_empty() {
+        return None;
+    }
+
+    let verdicts = fitment::plan(&requirements, PLANNING_CONTEXT, available).ok()?;
+    Some(
+        verdicts
+            .iter()
+            .map(|(name, verdict)| match verdict {
+                Verdict::Fits { needs, headroom } => format!(
+                    "  {name} — fits: needs {} of {} usable, {} left",
+                    needs.0, available.0, headroom.0
+                ),
+                Verdict::FitsWithoutContextHeadroom {
+                    needs,
+                    longest_context,
+                } => format!(
+                    "  {name} — fits at a shorter context: {} at {PLANNING_CONTEXT} tokens is \
+                     more than this machine has; {longest_context} tokens would fit",
+                    needs.0
+                ),
+                Verdict::DoesNotFit { needs, short_by } => format!(
+                    "  {name} — does NOT fit: needs {}, which is {} more than this machine has",
+                    needs.0, short_by.0
+                ),
+            })
+            .collect(),
+    )
+}
+
 /// What a repository publishes, when nobody has said which file they want.
 ///
 /// Choosing for an operator would be choosing what they measure. What MCF can
 /// do is put the choice in front of them with the sizes, which is the question
 /// they are actually asking.
-fn offer(listing: &Listing) -> String {
+fn offer(listing: &Listing, planned: Option<&[String]>) -> String {
     let mut lines = vec![format!(
         "{} publishes {} file(s) at {}",
         listing.reference.repository(),
@@ -264,6 +347,20 @@ fn offer(listing: &Listing) -> String {
                 None => " (the hub declares no digest for this one)",
             }
         ));
+    }
+    match planned {
+        Some(plan) => {
+            lines.push(format!(
+                "\nat {PLANNING_CONTEXT} tokens of context, on this machine:"
+            ));
+            lines.extend(plan.iter().cloned());
+        }
+        None => lines.push(
+            "\nMCF cannot say which of these would run here: that needs the model's own \
+             configuration\nand this machine's free memory, and one of them could not be read \
+             (A7)"
+                .to_owned(),
+        ),
     }
     lines.push(format!(
         "\nnothing was acquired: name the file you want, as\n  mcf pull {}:<file>",

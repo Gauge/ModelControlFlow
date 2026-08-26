@@ -8,7 +8,7 @@
 use mcf_hub::reference;
 use mcf_hub::source::{Entry, Listing};
 
-use super::{DEFAULT_HUB, licence_of, offer, run};
+use super::{DEFAULT_HUB, PLANNING_CONTEXT, licence_of, offer, run};
 
 fn a_listing() -> Listing {
     Listing {
@@ -27,7 +27,7 @@ fn a_listing() -> Listing {
 /// actually asking (§3.13, A7).
 #[test]
 fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
-    let offered = offer(&a_listing());
+    let offered = offer(&a_listing(), None);
     assert!(offered.contains("Q4_K_M.gguf"), "{offered}");
     assert!(offered.contains("396705472"), "{offered}");
     assert!(offered.contains("50968a44"), "{offered}");
@@ -39,7 +39,7 @@ fn without_a_file_it_offers_the_choice_and_acquires_nothing() {
 /// nobody can check is a condition of every measurement taken on it (A21).
 #[test]
 fn a_file_with_no_declared_digest_is_pointed_out() {
-    let offered = offer(&a_listing());
+    let offered = offer(&a_listing(), None);
     let undeclared = offered
         .lines()
         .find(|line| line.contains("Q8_0.gguf"))
@@ -56,7 +56,7 @@ fn a_file_with_no_declared_digest_is_pointed_out() {
 /// §III asks and B-023 built.
 #[test]
 fn the_terms_are_offered_with_the_files() {
-    let offered = offer(&a_listing());
+    let offered = offer(&a_listing(), None);
     assert!(offered.contains("apache-2.0"), "{offered}");
     assert!(offered.contains("permissive"), "{offered}");
     assert_eq!(
@@ -99,4 +99,30 @@ fn a_hub_that_is_not_a_url_is_refused() {
     let response = run("owner/model", Some("not-a-hub"));
     assert!(!response.served);
     assert!(response.text.contains("not a hub"), "{}", response.text);
+}
+
+/// A plan is offered at a stated context, because *this fits* means nothing
+/// without the length it fits at (A6, §3.4).
+#[test]
+fn a_plan_is_offered_at_a_stated_context() {
+    let plan = vec!["  Q4_K_M.gguf — fits: needs 1 of 2 usable, 1 left".to_owned()];
+    let offered = offer(&a_listing(), Some(&plan));
+    assert!(
+        offered.contains(&format!("at {PLANNING_CONTEXT} tokens of context")),
+        "{offered}"
+    );
+    assert!(offered.contains("fits: needs"), "{offered}");
+}
+
+/// And where no plan can be made, the surface says so rather than showing an
+/// empty one — a missing plan and a plan that found nothing are different
+/// answers (A7).
+#[test]
+fn no_plan_is_said_rather_than_shown_empty() {
+    let offered = offer(&a_listing(), None);
+    assert!(
+        offered.contains("cannot say which of these would run here"),
+        "{offered}"
+    );
+    assert!(offered.contains("configuration"), "{offered}");
 }
