@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -44,8 +44,8 @@ thing to erode it.
 
 | M | Product | The user can now… | Primary intents | Closes |
 |---|---|---|---|---|
-| **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16✓, §7.10✓, §7.19✓, §7.21, §7.22, §7.8, §7.50 |
-| **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11✓ |
+| **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16✓, §7.10✓, §7.19✓, §7.21✓, §7.22✓, §7.8✓, §7.50✓, §7.39✓ |
+| **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11✓, §7.38✓ |
 | **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9, §7.18 |
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
@@ -546,6 +546,13 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 18 — the voids M0 and M1 have actually closed
+
+The milestone map still showed §7.21, §7.22, §7.8, §7.50 and §7.39 open against
+M0 and only §7.11 against M1. All of them are answered — by D26, D36, D25, D27
+and D35 for M0, and D37 for M1 — so the table says so. A map that lags the
+decisions it summarizes is a map somebody plans against wrongly.
 
 ### Version 17 — M0 has no gating decisions left
 
