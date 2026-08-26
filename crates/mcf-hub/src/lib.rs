@@ -23,3 +23,4 @@ pub mod licence;
 pub mod reference;
 pub mod source;
 pub mod store;
+pub mod wire;
