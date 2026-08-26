@@ -53,6 +53,17 @@ const DECLARED: &[Spawns] = &[
                `the_library_mcf_loads_is_a_constant` below holds the distinction",
     },
     Spawns {
+        file: "crates/mcf-helper/src/lib.rs",
+        sites: 1,
+        what: "the accelerator vendor's own management tool, by name and with fixed \
+               arguments, to take or release a device's exclusive compute mode (D35's \
+               second privileged operation). The mode belongs to the vendor and there is \
+               no file to write; a helper that spoke a proprietary driver's protocol \
+               itself would be a helper nobody can audit. The tool's name is a literal, \
+               the device index is refused unless it is digits, and the whole call is \
+               refused before it is made when this process is not root",
+    },
+    Spawns {
         file: "crates/mcf-core/build.rs",
         sites: 2,
         what: "the compiler, at build time, to record which one built this — §3.4 makes \

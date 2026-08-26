@@ -51,6 +51,17 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-helper",
+        path: "crates/mcf-helper",
+        // The privileged helper (B-190, D35, §6.32). It links `mcf-core` and
+        // nothing else, on purpose: *auditable* is half of what §6.32 asks for,
+        // and a program that runs with rights the daemon does not have should
+        // be readable in one sitting. Nothing depends on it — the daemon starts
+        // it as a process rather than calling into it, which is the whole point
+        // of the split.
+        depends_on: &["mcf-core"],
+    },
+    Member {
         name: "mcf-hub",
         path: "crates/mcf-hub",
         depends_on: &["mcf-core", "mcf-record"],
@@ -74,6 +85,7 @@ pub const MEMBERS: &[Member] = &[
         // classifying something.
         depends_on: &[
             "mcf-core",
+            "mcf-helper",
             "mcf-hub",
             "mcf-record",
             "mcf-serve",
@@ -128,6 +140,10 @@ pub const MEMBERS: &[Member] = &[
         // reader. Nothing this crate builds ships.
         depends_on: &[
             "mcf-core",
+            // `mcf-helper` so that `the_daemon_holds_no_privilege` can compare
+            // the helper's surface against D35 in both directions. Nothing in
+            // the checks ships (§6.32's audit is about what an operator runs).
+            "mcf-helper",
             "mcf-hub",
             "mcf-lab",
             "mcf-record",

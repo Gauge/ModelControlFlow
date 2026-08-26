@@ -1,0 +1,22 @@
+[package]
+name = "mcf-helper"
+description = "The privileged helper: one named operation from a short list, performed and then gone (B-190, D35, §6.32)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "mcf_helper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mcf-helper"
+path = "src/main.rs"
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }

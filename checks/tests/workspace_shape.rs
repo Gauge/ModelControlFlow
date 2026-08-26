@@ -8,9 +8,10 @@
 use mcf_checks::workspace::{MEMBERS, Member, declared_mcf_dependencies, read, read_member, root};
 
 /// Every declared member is a member of the workspace, and no member is
-/// declared that the workspace does not have. B-001 names seven crates plus
-/// the checks; a manifest that grows an eighth silently has changed the
-/// architecture without saying so.
+/// declared that the workspace does not have. B-001 named seven crates plus the
+/// checks, and the register has admitted two more since — `mcf-standin` (D31)
+/// and `mcf-helper` (D35); a manifest that grows another silently has changed
+/// the architecture without saying so.
 #[test]
 fn the_workspace_members_are_exactly_the_declared_ones() {
     let manifest = read("Cargo.toml").expect("the workspace manifest is readable");
