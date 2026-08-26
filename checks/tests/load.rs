@@ -275,3 +275,84 @@ fn the_harness_survives_everything_it_runs() {
         "a scenario stopped reproducing its failure under load"
     );
 }
+
+/// Two *processes* appending to one record leave a record that replays whole
+/// (DEC-037, D20, B62).
+///
+/// The test above runs many writers, each with a journal of its own — which is
+/// the shape a laboratory has and not the shape a machine has. A machine has
+/// one record and, since the daemon exists, more than one thing that writes to
+/// it: `mcf pull` records an acquisition, `mcf rm` a removal, and the daemon
+/// its own starting and stopping.
+///
+/// What is asserted here is the property that survives without any coordination
+/// at all: **no line is torn**. Every writer opens the journal in append mode
+/// and writes one whole line per entry, and
+/// [findings.md](../../doc/findings.md) F13 measures what that is worth — at
+/// 400 bytes, 8 KiB and 128 KiB a line, on tmpfs and on btrfs, sixteen thousand
+/// lines from eight processes arrived intact.
+///
+/// What is *not* asserted is that the identifiers are unique. Two writers count
+/// their own appends, so two entries can carry the same sequence number, and
+/// that is DEC-037's question rather than a defect this test hides.
+#[test]
+#[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
+fn two_processes_writing_one_record_leave_it_readable() {
+    let scratch = Scratch::new("load-two-writers");
+    let journal = scratch.journal();
+    // The header is written once, before anybody races for it: a journal's
+    // first line is its format version, and two processes creating one at the
+    // same moment is a different question (B-332).
+    drop(Journal::open(&journal).expect("a journal opens"));
+
+    let writers = 4;
+    let each = 500;
+    thread::scope(|scope| {
+        for worker in 0..writers {
+            let journal = journal.clone();
+            let _writing = scope.spawn(move || {
+                // A process of its own, so that nothing is shared but the file:
+                // two threads in one process share a `Journal` if they are not
+                // careful, and what a machine actually has is two programs.
+                let mut writing = Journal::open(&journal).expect("a journal opens");
+                for sequence in 0..each {
+                    writing
+                        .append(&Entry::new(
+                            EntryKind::SelfCost,
+                            Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
+                            u64::try_from(sequence).unwrap_or(0),
+                            Value::map([
+                                ("worker", Value::Integer(worker)),
+                                ("filler", Value::text("x".repeat(400))),
+                            ]),
+                        ))
+                        .expect("it appends");
+                }
+            });
+        }
+    });
+
+    let replayed = replay(&journal).expect("the record replays");
+    assert!(
+        replayed.loss.is_none(),
+        "a line was torn by concurrent writers: {:?}",
+        replayed.loss
+    );
+    assert_eq!(
+        replayed.entries.len(),
+        usize::try_from(writers * each).unwrap_or(0),
+        "entries were lost between the writers and the record"
+    );
+    // And every entry is one somebody wrote, whole: a torn line that happened
+    // to parse would show up as a body missing its filler.
+    for entry in &replayed.entries {
+        assert!(
+            entry
+                .body()
+                .get("filler")
+                .and_then(Value::as_text)
+                .is_some_and(|filler| filler.len() == 400),
+            "an entry arrived with its body cut short"
+        );
+    }
+}
