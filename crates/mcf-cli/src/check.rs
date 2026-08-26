@@ -151,26 +151,23 @@ pub(crate) fn run(
             corrupt = corrupt.saturating_add(1);
         }
 
-        let Some(hub) = &hub else {
-            continue;
-        };
-        let Some(observed) = decay::look(hub, provenance, file_of(&held.path), at) else {
-            lines.push(
-                "      its origin is not a repository, so there is no upstream to look at"
-                    .to_owned(),
-            );
-            continue;
-        };
-        looked = looked.saturating_add(1);
-        if observed.found.is_a_change() {
-            changes = changes.saturating_add(1);
+        let observed = hub
+            .as_ref()
+            .and_then(|hub| upstream(hub, provenance, &held.path, at, &mut lines));
+        if let Some(observed) = &observed {
+            looked = looked.saturating_add(1);
+            if observed.found.is_a_change() {
+                changes = changes.saturating_add(1);
+            }
         }
-        lines.push(format!("      upstream: {}", observed.found));
 
-        // Written down twice, and neither is a correction: beside the artifact,
-        // where a reader of the file finds it, and in the record, where *what
-        // happened on this machine* lives (D20, D37).
-        match record(&held.path, provenance, &observed, at) {
+        // Written down whatever was found, including *nothing was wrong*: a
+        // check that left no account could not answer *when was this last known
+        // to be fine*, which is the question D37 exists for. An upstream
+        // finding is also appended beside the artifact, where a reader of the
+        // file finds it; the bytes half is an event rather than a property of
+        // the provenance, so it lives only in the record (D20).
+        match record(&held.path, provenance, matched, observed.as_ref(), at) {
             Ok(()) => {}
             Err(failure) => lines.push(format!(
                 "    the finding could not be written down: {failure}"
@@ -212,6 +209,28 @@ fn verdict(corrupt: usize, asked_upstream: bool, looked: usize, changes: usize) 
         });
     }
     said
+}
+
+/// Asks the repository an artifact came from what it says now.
+///
+/// `None` when there is no upstream to ask about, which is a state rather than
+/// a failure: an artifact converted on this machine has an origin and no
+/// repository (A7). Either way the reader is told which.
+fn upstream(
+    hub: &Hub,
+    provenance: &Provenance,
+    path: &Path,
+    at: Timestamp,
+    lines: &mut Vec<String>,
+) -> Option<Observation> {
+    let Some(observed) = decay::look(hub, provenance, file_of(path), at) else {
+        lines.push(
+            "      its origin is not a repository, so there is no upstream to look at".to_owned(),
+        );
+        return None;
+    };
+    lines.push(format!("      upstream: {}", observed.found));
+    Some(observed)
 }
 
 /// Re-reads an artifact and compares it with the digest recorded for it.
@@ -276,14 +295,24 @@ fn file_of(path: &Path) -> Option<&str> {
     path.file_name().and_then(std::ffi::OsStr::to_str)
 }
 
-/// Writes the finding beside the artifact and into the record.
+/// Writes what was found into the record, and an upstream finding beside the
+/// artifact as well.
+///
+/// `matched` is the bytes half: `Some(true)` when the artifact still matches
+/// the digest recorded for it, `Some(false)` when it does not, and `None` when
+/// nothing was recorded to compare against — three states rather than a pass
+/// and a fail (A7). `observed` is the upstream half, absent when nobody asked
+/// for it.
 fn record(
     path: &Path,
     provenance: &Provenance,
-    observed: &Observation,
+    matched: Option<bool>,
+    observed: Option<&Observation>,
     at: Timestamp,
 ) -> mcf_core::failure::Result<()> {
-    store::record_provenance(path, &provenance.clone().observed(observed.clone()))?;
+    if let Some(observed) = observed {
+        store::record_provenance(path, &provenance.clone().observed(observed.clone()))?;
+    }
 
     let Some(journal) = mcf_record::journal::default_path() else {
         return Ok(());
@@ -301,9 +330,35 @@ fn record(
                     _ => Value::Null,
                 },
             ),
-            ("found", Value::text(observed.found.as_str())),
-            ("detail", Value::text(observed.found.to_string())),
-            ("is_a_change", Value::Bool(observed.found.is_a_change())),
+            (
+                "bytes",
+                Value::text(match matched {
+                    Some(true) => "matched",
+                    Some(false) => "changed",
+                    None => "no digest was recorded to compare against",
+                }),
+            ),
+            (
+                "upstream",
+                match observed {
+                    Some(observed) => Value::text(observed.found.as_str()),
+                    None => Value::Null,
+                },
+            ),
+            (
+                "detail",
+                match observed {
+                    Some(observed) => Value::text(observed.found.to_string()),
+                    None => Value::text("the upstream was not asked"),
+                },
+            ),
+            (
+                "is_a_change",
+                Value::Bool(
+                    matched == Some(false)
+                        || observed.is_some_and(|observed| observed.found.is_a_change()),
+                ),
+            ),
         ]),
     ))?;
     Ok(())
