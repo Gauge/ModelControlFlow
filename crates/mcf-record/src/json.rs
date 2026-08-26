@@ -15,12 +15,25 @@
 //! would buy is correctness, and correctness here is a testable property of
 //! about three hundred lines — so it is bought with tests instead (A19).
 //!
-//! **What it claims.** RFC 8259 JSON, without the parts a record does not
-//! need: numbers are integers, because every quantity MCF records is integral
-//! by construction ([`Quantity`] requires `Ord`, which is why no floating point
-//! reaches a record at all). Anything it cannot represent it refuses rather
-//! than approximating — a record that silently rounded would be a record that
+//! **What it claims.** RFC 8259 JSON. Every quantity MCF *writes* is an
+//! integer, because [`Quantity`] requires `Ord` and no floating point reaches a
+//! record at all — and anything it cannot represent it refuses rather than
+//! approximating, since a record that silently rounded would be a record that
 //! lied.
+//!
+//! **Reading is a wider job than writing, and that is not a contradiction.**
+//! This reader is also how MCF reads documents it did not write — a
+//! repository's `config.json`, which is untrusted input (§3.7) and legitimately
+//! contains fractions and exponents. A reader that refused them would refuse
+//! real models: the reference model's own configuration carries `1e-06`, and
+//! MCF could not plan for it ([findings.md](../../../doc/findings.md) F16).
+//!
+//! So a number this format does not carry is read as [`Value::ForeignNumber`],
+//! **kept exactly as it was written** — not rounded, not converted, and not
+//! usable as a quantity. Nothing MCF encodes ever produces one, and
+//! `checks/tests/no_float_reaches_the_record.rs` holds that: the record stays
+//! integral because nothing writes anything else into it, rather than because
+//! the reader cannot spell it.
 //!
 //! [`Quantity`]: mcf_core::measurement::Quantity
 
@@ -41,6 +54,18 @@ pub enum Value {
     Bool(bool),
     /// An integer.
     Integer(i64),
+    /// A number this format does not carry, exactly as it was written.
+    ///
+    /// A fraction or an exponent, from a document MCF did not write. It is text
+    /// rather than a float on purpose: A1 forbids losing what was there, A6
+    /// forbids a quantity that cannot be ordered, and a value nobody can do
+    /// arithmetic on cannot become a measurement by accident. [`Value::as_integer`]
+    /// is `None` for it, which is what makes a caller notice.
+    ///
+    /// **MCF never writes one.** Every encoder in this workspace produces
+    /// integers, text, lists and maps; this variant exists so that reading
+    /// somebody else's JSON does not require a second parser (§3.7, F16).
+    ForeignNumber(String),
     /// A string.
     Text(String),
     /// An array.
@@ -123,6 +148,10 @@ impl Value {
             Self::Bool(true) => out.push_str("true"),
             Self::Bool(false) => out.push_str("false"),
             Self::Integer(value) => out.push_str(&value.to_string()),
+            // As it was written, byte for byte: this variant exists to carry a
+            // number this format does not have, and rewriting it would be the
+            // rounding the format refuses (A1).
+            Self::ForeignNumber(written) => out.push_str(written),
             Self::Text(value) => write_string(value, out),
             Self::List(values) => {
                 out.push('[');
@@ -281,14 +310,13 @@ fn parse_integer(bytes: &[u8], at: &mut usize) -> Result<Value, ParseError> {
             expected: "an integer",
         });
     }
-    // A fractional or exponent part is refused rather than rounded. Nothing
-    // MCF writes has one, so a line that does was not written by MCF, and
-    // reading it as an approximation would be inventing a value (A7).
+    // A fraction or an exponent is a number this format does not carry. It is
+    // kept as written rather than rounded (A7, A1): a document MCF did not
+    // write may legitimately contain one, and the reference model's own
+    // configuration does — `1e-06`, which used to make the whole file
+    // unreadable and every plan for that model impossible (F16).
     if matches!(peek(bytes, *at), Some(b'.' | b'e' | b'E')) {
-        return Err(ParseError {
-            at: *at,
-            expected: "an integer, and this is not one",
-        });
+        return foreign_number(bytes, at, start);
     }
     let text = core::str::from_utf8(bytes.get(start..*at).unwrap_or_default()).map_err(|_| {
         ParseError {
@@ -302,6 +330,51 @@ fn parse_integer(bytes: &[u8], at: &mut usize) -> Result<Value, ParseError> {
             at: start,
             expected: "an integer that fits",
         })
+}
+
+/// The rest of a number this format does not carry, kept as written.
+///
+/// The grammar is RFC 8259's: an optional fraction, then an optional exponent.
+/// It is read strictly — `1e`, `1.` and `1e+` are refused — because a number
+/// MCF cannot make sense of should be a refusal rather than a string that looks
+/// like one (§3.7).
+fn foreign_number(bytes: &[u8], at: &mut usize, start: usize) -> Result<Value, ParseError> {
+    if peek(bytes, *at) == Some(b'.') {
+        *at += 1;
+        let fraction_start = *at;
+        while matches!(peek(bytes, *at), Some(b'0'..=b'9')) {
+            *at += 1;
+        }
+        if *at == fraction_start {
+            return Err(ParseError {
+                at: *at,
+                expected: "a digit after the decimal point",
+            });
+        }
+    }
+    if matches!(peek(bytes, *at), Some(b'e' | b'E')) {
+        *at += 1;
+        if matches!(peek(bytes, *at), Some(b'+' | b'-')) {
+            *at += 1;
+        }
+        let exponent_start = *at;
+        while matches!(peek(bytes, *at), Some(b'0'..=b'9')) {
+            *at += 1;
+        }
+        if *at == exponent_start {
+            return Err(ParseError {
+                at: *at,
+                expected: "a digit in the exponent",
+            });
+        }
+    }
+    let text = core::str::from_utf8(bytes.get(start..*at).unwrap_or_default()).map_err(|_| {
+        ParseError {
+            at: start,
+            expected: "a number",
+        }
+    })?;
+    Ok(Value::ForeignNumber(text.to_owned()))
 }
 
 fn parse_string(bytes: &[u8], at: &mut usize) -> Result<String, ParseError> {

@@ -116,7 +116,7 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> 
         // will run here* (PR3, B-213).
         let planned = plan_for(&hub, &listing);
         return Response {
-            text: offer(&listing, planned.as_deref()),
+            text: offer(&listing, &planned),
             served: true,
         };
     };
@@ -125,7 +125,10 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> 
             text: format!(
                 "mcf: {} publishes no file called {wanted}\n{}",
                 listing.reference.repository(),
-                offer(&listing, None)
+                offer(
+                    &listing,
+                    &Err("no plan was made: the file named is not one of these".to_owned())
+                )
             ),
             served: false,
         };
@@ -174,6 +177,7 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     // may not be the size the listing promised. Both are re-read here rather
     // than assumed to have held.
     let again = plan_for(hub, listing)
+        .ok()
         .and_then(|plan| plan.into_iter().find(|line| line.contains(&entry.path)));
     Response {
         text: render(
@@ -447,16 +451,36 @@ const CACHE_ELEMENT: u64 = 2;
 
 /// Which of the variants a repository publishes will run on this machine.
 ///
-/// `None` when the plan cannot be made: no configuration published, a shape MCF
-/// will not guess at, or a machine that will not say how much memory it has.
-/// Each of those is a *reason there is no plan* rather than a plan with holes
-/// in it (A7), and [`offer`] says which.
-fn plan_for(hub: &Hub, listing: &Listing) -> Option<Vec<String>> {
-    let configuration = hub.configuration(listing).ok().flatten()?;
-    let shape = Shape::from_configuration(&configuration, CACHE_ELEMENT)?;
+/// `Err` carries *why there is no plan*, in a sentence an operator can act on.
+/// A7 asks that an unknown stay unknown; A2 asks that the reason not be
+/// swallowed. Before this said which, a repository whose configuration MCF
+/// could not parse and one that publishes none read identically — and the first
+/// is a defect in MCF while the second is a fact about the repository
+/// ([findings.md](../../../doc/findings.md) F16).
+fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Vec<String>, String> {
+    let configuration = match hub.configuration(listing) {
+        Ok(Some(configuration)) => configuration,
+        Ok(None) => {
+            return Err(
+                "this repository publishes no configuration, and a plan needs one".to_owned(),
+            );
+        }
+        Err(failure) => {
+            return Err(format!("its configuration could not be read — {failure}"));
+        }
+    };
+    let Some(shape) = Shape::from_configuration(&configuration, CACHE_ELEMENT) else {
+        return Err(
+            "its configuration does not say how many blocks, key/value heads and head \
+             dimensions the model has, and MCF will not guess at a shape (A7)"
+                .to_owned(),
+        );
+    };
     let available = match Machine::read().memory.available {
         Attested::Known(available) => available,
-        Attested::Unknown => return None,
+        Attested::Unknown => {
+            return Err("this machine will not say how much memory is free".to_owned());
+        }
     };
 
     let requirements: Vec<Requirement> = listing
@@ -477,33 +501,32 @@ fn plan_for(hub: &Hub, listing: &Listing) -> Option<Vec<String>> {
         })
         .collect();
     if requirements.is_empty() {
-        return None;
+        return Err("this repository publishes nothing in a format MCF reads".to_owned());
     }
 
-    let verdicts = fitment::plan(&requirements, PLANNING_CONTEXT, available).ok()?;
-    Some(
-        verdicts
-            .iter()
-            .map(|(name, verdict)| match verdict {
-                Verdict::Fits { needs, headroom } => format!(
-                    "  {name} — fits: needs {} of {} usable, {} left",
-                    needs.0, available.0, headroom.0
-                ),
-                Verdict::FitsWithoutContextHeadroom {
-                    needs,
-                    longest_context,
-                } => format!(
-                    "  {name} — fits at a shorter context: {} at {PLANNING_CONTEXT} tokens is \
-                     more than this machine has; {longest_context} tokens would fit",
-                    needs.0
-                ),
-                Verdict::DoesNotFit { needs, short_by } => format!(
-                    "  {name} — does NOT fit: needs {}, which is {} more than this machine has",
-                    needs.0, short_by.0
-                ),
-            })
-            .collect(),
-    )
+    let verdicts = fitment::plan(&requirements, PLANNING_CONTEXT, available)
+        .map_err(|failure| format!("the arithmetic would not add up — {failure}"))?;
+    Ok(verdicts
+        .iter()
+        .map(|(name, verdict)| match verdict {
+            Verdict::Fits { needs, headroom } => format!(
+                "  {name} — fits: needs {} of {} usable, {} left",
+                needs.0, available.0, headroom.0
+            ),
+            Verdict::FitsWithoutContextHeadroom {
+                needs,
+                longest_context,
+            } => format!(
+                "  {name} — fits at a shorter context: {} at {PLANNING_CONTEXT} tokens is \
+                 more than this machine has; {longest_context} tokens would fit",
+                needs.0
+            ),
+            Verdict::DoesNotFit { needs, short_by } => format!(
+                "  {name} — does NOT fit: needs {}, which is {} more than this machine has",
+                needs.0, short_by.0
+            ),
+        })
+        .collect())
 }
 
 /// What a repository publishes, when nobody has said which file they want.
@@ -511,7 +534,7 @@ fn plan_for(hub: &Hub, listing: &Listing) -> Option<Vec<String>> {
 /// Choosing for an operator would be choosing what they measure. What MCF can
 /// do is put the choice in front of them with the sizes, which is the question
 /// they are actually asking.
-fn offer(listing: &Listing, planned: Option<&[String]>) -> String {
+fn offer(listing: &Listing, planned: &std::result::Result<Vec<String>, String>) -> String {
     let mut lines = vec![format!(
         "{} publishes {} file(s) at {}",
         listing.reference.repository(),
@@ -540,18 +563,18 @@ fn offer(listing: &Listing, planned: Option<&[String]>) -> String {
         ));
     }
     match planned {
-        Some(plan) => {
+        Ok(plan) => {
             lines.push(format!(
                 "\nat {PLANNING_CONTEXT} tokens of context, on this machine:"
             ));
             lines.extend(plan.iter().cloned());
         }
-        None => lines.push(
-            "\nMCF cannot say which of these would run here: that needs the model's own \
-             configuration\nand this machine's free memory, and one of them could not be read \
-             (A7)"
-                .to_owned(),
-        ),
+        // The reason, not just the absence: a repository that publishes no
+        // configuration and one whose configuration MCF could not read are
+        // different facts, and only the second is MCF's fault (A2, A7).
+        Err(why) => lines.push(format!(
+            "\nMCF cannot say which of these would run here: {why}"
+        )),
     }
     lines.push(format!(
         "\nnothing was acquired: name the file you want, as\n  mcf pull {}:<file>",

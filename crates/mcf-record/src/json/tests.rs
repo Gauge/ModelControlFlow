@@ -148,14 +148,38 @@ fn what_cannot_be_read_says_where_it_stopped() {
     }
 }
 
-/// A fraction is refused rather than rounded. Nothing MCF writes has one, so a
-/// line that does was not written by MCF, and reading it as an approximation
-/// would invent a value (A7).
+/// A fraction is kept as written rather than rounded, and it is not a quantity.
+///
+/// Nothing MCF writes has one. What has one is a document MCF did not write —
+/// the reference model's own configuration carries `1e-06` — and refusing the
+/// whole file over it meant MCF could not plan for that model at all
+/// ([findings.md](../../../../doc/findings.md) F16). So it is read, kept byte
+/// for byte, and is `None` to every caller that wanted a number (A1, A7).
 #[test]
-fn a_fraction_is_refused_rather_than_rounded() {
-    assert!(parse("1.5").is_err());
-    assert!(parse("1e3").is_err());
-    assert!(parse("[1.0]").is_err());
+fn a_number_this_format_does_not_carry_is_kept_as_written() {
+    for written in ["1.5", "1e3", "1E+3", "-2.25e-06", "0.0"] {
+        let value = parse(written).expect("a number this format does not carry");
+        assert_eq!(value, Value::ForeignNumber(written.to_owned()), "{written}");
+        assert_eq!(value.as_integer(), None, "{written} read as a quantity");
+        assert_eq!(
+            value.to_line(),
+            written,
+            "{written} was not kept as written"
+        );
+    }
+    assert_eq!(
+        parse("[1.0]").expect("a list of them"),
+        Value::List(vec![Value::ForeignNumber("1.0".to_owned())])
+    );
+}
+
+/// A number that is not one is still refused: what is accepted is RFC 8259's
+/// grammar, not anything with a digit in it (§3.7).
+#[test]
+fn something_that_only_looks_like_a_number_is_refused() {
+    for written in ["1.", "1e", "1e+", "1.2.3", ".5", "1ee3"] {
+        assert!(parse(written).is_err(), "{written} was read as a number");
+    }
 }
 
 /// An integer too large for the type is refused rather than saturated, for the

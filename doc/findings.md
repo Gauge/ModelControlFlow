@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 18 |
+| **Version** | 19 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1287,7 +1287,125 @@ without systemd, a container with no `/sys` write access at all, and macOS and
 Windows are each their own answer, which is why DEC-039's answer has a column
 per platform (D35) rather than a single list.
 
+## 16 · F16 — Three defects the real reference model found, and none of them was the one expected (B-213, B-019, §3.7)
+
+**Why it was run.** The operator asked which choices were still theirs, and one
+of them was which quantization of the reference model to pin. MCF is supposed to
+answer that without downloading anything (B-213, PR3), so instead of guessing at
+file sizes the planner was pointed at the real repository.
+
+**What was run.** `mcf pull unsloth/Qwen3.8-27B-GGUF` — the listing and the
+plan, no bytes fetched — against the real hub, on the machine MCF is developed
+on. Conditions: 61 GB of usable host memory, planning context 4096 tokens.
+
+### 16.1 The plan could not be made at all, and the reason was a number
+
+MCF said it could not plan and that *one of them could not be read*. The
+repository publishes a `config.json` MCF's own reader refused, and the offending
+text was:
+
+```
+"rms_norm_eps": 1e-06
+```
+
+MCF's JSON reader deliberately refused fractions and exponents. The reasoning
+was sound and is still in the module: every quantity MCF *records* is integral
+because A6's `Quantity` is `Ord`, and a record that silently rounded would be a
+record that lied. What the reasoning missed is that **the same reader reads
+documents MCF did not write**, and §3.7 makes those untrusted input rather than
+MCF's own format. A reader that refuses valid JSON refuses real models.
+
+The fix keeps both properties apart. A number this format does not carry is read
+as `ForeignNumber`, **kept byte for byte**, and is not a quantity to anybody who
+asks — `as_integer` is `None`. Nothing outside the reader constructs one, which
+is what `checks/tests/no_float_reaches_the_record.rs` now holds. The record
+stays integral because nothing writes anything else into it, rather than because
+the reader cannot spell it.
+
+### 16.2 The configuration was not where MCF looked
+
+With the file readable, the shape still came back empty: this is a multimodal
+repository, so one `config.json` describes several models and the transformer's
+fields are under `text_config` while the top level holds the composition. MCF
+now looks at the top level and then there — not a guess, but the place the field
+is written.
+
+### 16.3 Counting every block would have overstated the cache fourfold
+
+The third is the one that would have produced a *wrong number* rather than no
+number, which makes it the worst of the three. The configuration lists its layer
+types:
+
+| | |
+|---|---|
+| Blocks | 64 |
+| Of which full attention | **16** |
+| Of which linear attention | 48 |
+| Key/value heads | 4 |
+| Head dimension | 256 |
+
+Only the full-attention blocks hold a key/value cache. Counting all 64 gives 256
+KiB per token against the true 64 KiB — 1 GiB of cache at 4096 tokens where the
+real figure is 256 MiB. On a 16 GB accelerator that is the difference between a
+variant fitting and not.
+
+MCF now counts the blocks the configuration says cache, and refuses to plan for
+a configuration that lists layer types of which *none* caches, because that is a
+shape MCF does not understand rather than a model that costs nothing.
+
+### 16.4 What the plan says, now that it can be made
+
+All 33 files classified, no bytes fetched. At 4096 tokens on 59.5 GB of usable
+host memory every variant fits, which is the honest answer for **host** memory
+and not the interesting one: the machine's accelerator holds 16 GB, and the
+figures MCF computes make the comparison possible for whoever is choosing.
+
+| Variant | File | Needs at 4096 tokens |
+|---|---|---|
+| `UD-IQ4_XS` | 14.25 GB | 15.06 GB |
+| `UD-Q4_K_S` | 15.36 GB | 16.16 GB |
+| `UD-Q4_K_M` | 16.46 GB | 17.27 GB |
+| `Q8_0` | 29.05 GB | 29.85 GB |
+| `BF16` (two parts) | 54.66 GB | — |
+
+*Needs* is weights plus 256 MB of cache plus D24's stated 512 MB of runtime
+overhead. Against 16 GB of accelerator memory, `UD-IQ4_XS` is the largest that
+leaves room to work in; `UD-Q4_K_M` does not fit at all once the cache is
+counted.
+
+### 16.5 What this says about the method
+
+Three defects, all in code with tests, all found by pointing it at one real
+repository for the first time. Two of them produced *no answer*, which A7 made
+safe; the third would have produced a **confident wrong one**, which is the
+failure this project is organized against.
+
+That is B-029's online tier earning its place — it acquires from the real hub on
+a schedule — and an argument for extending it: the online check acquires a
+1.2 MB model from a tiny-model repository, which exercises the transfer and not
+the *variety* of what a hub publishes. A repository with a nested configuration,
+a hybrid attention scheme and an exponent in its metadata is not an edge case;
+it is the reference model.
+
 ## Changelog
+
+### Version 19 — three defects, found by pointing MCF at one real repository
+
+F16. Deciding which quantization of the reference model to pin is the operator's
+call, and MCF is supposed to inform it without downloading anything. Pointing
+the planner at the real repository for the first time found three defects in
+code that had tests.
+
+MCF's JSON reader refused the configuration outright over `1e-06`, because it
+was written to keep floating point out of the record — correct property, wrong
+mechanism, since the same reader reads documents MCF did not write. The
+transformer's fields were under `text_config`, where a multimodal repository
+puts them. And counting every block rather than the sixteen that actually cache
+would have overstated the KV cache fourfold — the one defect that would have
+produced a confident wrong number instead of no number.
+
+All three are fixed, all three have tests, and the plan now classifies all 33
+variants without fetching a byte.
 
 ### Version 18 — what a machine lets an ordinary user do
 
