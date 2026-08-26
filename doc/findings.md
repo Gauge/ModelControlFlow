@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 12 |
+| **Version** | 13 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -38,6 +38,7 @@ forward as one.
 | 8 | [F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)](#8--f8--how-far-a-kernel-mcf-could-maintain-is-from-a-specialists-dec-004) |
 | 9 | [F9 — What a network costs, and what the hub actually does (B-021)](#9--f9--what-a-network-costs-and-what-the-hub-actually-does-b-021) |
 | 10 | [F10 — What a machine says when a network is missing (DEC-011, D33)](#10--f10--what-a-machine-says-when-a-network-is-missing-dec-011-d33) |
+| 11 | [F11 — A disk fills at the flush, not at the write (B-026)](#11--f11--a-disk-fills-at-the-flush-not-at-the-write-b-026)  |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -918,7 +919,59 @@ distinction an operator draws by pointing `--from` at a mirror, which is a
 request MCF was asked to make; it is not one MCF asserts by probing, which would
 be traffic nobody asked for.
 
+## 11 · F11 — A disk fills at the flush, not at the write (B-026)
+
+**What was run.** Two writes to `/dev/full` on 2026-08-25 — a device every Linux
+machine has that accepts everything and stores nothing, answering every write
+with `ENOSPC`. One direct, one through a buffered writer.
+
+| Written | What came back |
+|---|---|
+| `write_all` straight to the device | `ErrorKind::StorageFull`, errno 28, at the write |
+| `write_all` through a `BufWriter` | **`Ok(())`** |
+| the `flush` that followed it | `ErrorKind::StorageFull`, errno 28 |
+
+**The middle row is the finding.** A small write into a buffer succeeds, because
+nothing has reached the filesystem yet. A fetcher that checked its writes and
+ignored its flush would have been told the truth and then discarded it — and
+would go on to verify a digest over bytes that are not on the disk, rename a
+file that was never written, and record an acquisition that did not happen.
+
+MCF's transfer path flushes and classifies both, and `hub/no-room-on-the-disk`
+is the scenario that holds it: the laboratory writes a transfer to `/dev/full`
+and the outcome is `resource.disk.exhausted` rather than a success or a general
+write failure.
+
+**The other half of §3.11 is the number before the transfer.** A file that will
+not fit is refused *before* a byte moves, with the arithmetic in the refusal —
+what it needs, what is available, what it is short by, and which filesystem. The
+platform has that number and the standard library does not expose it, so
+`mcf_core::hardware::space` is the second module in the workspace to take the
+`unsafe_code` opt-out: one `statvfs` call, a status checked before any field is
+read, and `Unknown` wherever it fails, because *MCF could not look* and *there
+is no room* are opposite answers (A7). The reading is checked against `df` — a
+different program by other people (A12) — within a hundredth of the filesystem's
+size, which is what two readings of a number in motion are worth.
+
+**What it does not buy.** Certainty. The room is what the kernel said at the
+moment it was asked, and another process can take it a moment later. That is why
+both halves exist: the check turns the common case from a surprise into a
+refusal, and the classification catches the case the check cannot.
+
 ## Changelog
+
+### Version 13 — a disk fills at the flush
+
+F11 added with B-026. Writing to a full filesystem through a buffered writer
+*succeeds*: the buffer takes the bytes and the failure arrives at the flush. A
+fetcher that checked its writes and ignored its flush would verify a digest over
+bytes that never reached the disk and record an acquisition that did not happen.
+
+Both halves of §3.11 are built on it. A file that will not fit is refused before
+a byte moves, with the arithmetic in the refusal rather than a verdict — which
+needed the second `unsafe_code` opt-out in the workspace, one `statvfs` call,
+checked against `df`. And a filesystem that fills anyway is classified rather
+than reported as a general write failure, with `/dev/full` as the scenario.
 
 ### Version 12 — what a machine says when there is no network
 

@@ -31,6 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
+use mcf_core::attested::Attested;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::integrity::checksum_of;
 
@@ -93,6 +94,12 @@ pub struct Acquired {
 ///
 /// # Errors
 ///
+/// `resource.disk.exhausted` when the filesystem the artifact would land on has
+/// less room than the hub says the file needs — refused *before* the transfer,
+/// because §3.11 makes a full disk a decision rather than a surprise and
+/// finding out at ninety per cent is the surprise. Where MCF cannot read the
+/// room, it says nothing and proceeds: an unknown is not a refusal (A7), and
+/// the write itself classifies exhaustion if it happens anyway.
 /// `artifact.incomplete` when the transfer never finished within [`ATTEMPTS`],
 /// naming how far it got; `artifact.corrupt` when what arrived does not match
 /// the digest the hub declared — which is either damage or a file that changed
@@ -123,6 +130,8 @@ pub fn acquire(
             });
         }
     }
+
+    there_is_room_for(entry, into)?;
 
     let partial = partial_path(into);
     let mut attempts = 0;
@@ -259,6 +268,57 @@ fn finish(
         attempts,
         resumed,
     })
+}
+
+/// Whether the filesystem this would land on has room for it.
+///
+/// The hub's declared size against what the kernel says is available, both
+/// stated in the refusal so that an operator can see the arithmetic rather than
+/// be told a verdict (A6). What is *already* on the disk under the partial name
+/// counts as room, because a resumed transfer needs only the rest of it.
+///
+/// # Errors
+///
+/// `resource.disk.exhausted`, naming both numbers and the filesystem. Nothing
+/// when MCF cannot read the room: `Unknown` is not `no` (A7).
+fn there_is_room_for(entry: &Entry, into: &Path) -> Result<()> {
+    let directory = into.parent().unwrap_or_else(|| Path::new("."));
+    let Attested::Known(space) = mcf_core::hardware::space_on(directory) else {
+        return Ok(());
+    };
+    let already = size_of(&partial_path(into)).unwrap_or(0);
+    let wanted = entry.size.saturating_sub(already);
+    if wanted <= space.available.0 {
+        return Ok(());
+    }
+
+    Err(Failure::new(
+        Category::ResourceDiskExhausted,
+        Attribution::User,
+        Disposition::Refused,
+        WHERE,
+        "the filesystem this would be written to has less room than the file needs",
+    )
+    .with_context("file", entry.path.clone())
+    .with_context("needs_bytes", wanted.to_string())
+    .with_context("available_bytes", space.available.0.to_string())
+    .with_context(
+        "short_by_bytes",
+        wanted.saturating_sub(space.available.0).to_string(),
+    )
+    .with_context("where", directory.display().to_string())
+    .with_context(
+        "storage",
+        match mcf_core::hardware::storage_of(directory) {
+            Attested::Known(storage) => storage.to_string(),
+            Attested::Unknown => "a filesystem MCF could not name".to_owned(),
+        },
+    )
+    .with_context(
+        "what_to_do",
+        "this is refused before the transfer rather than discovered during it (§3.11): free \
+         the room, or acquire somewhere else",
+    ))
 }
 
 /// Where a transfer accumulates before it has earned the artifact's name.
