@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 105 |
+| **Version** | 106 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -141,10 +141,10 @@ first and importance second.
 | B-270 | Summaries cannot be persisted, only projected from trials; every trial carries its arm, interleave position and session | B56, D16, §3.27 | A stored mean does not compile; paired analysis is possible from the record alone | **done** — `mcf_core::trial`: a `Trial` cannot be built without its arm, position and session; there is no mean anywhere in MCF to store, and a check keeps it that way; a pairing is reconstructed from a journal round trip in `mcf-record`'s own suite |
 | B-271 | Interior detail is declared per laboratory and off by default; thinning is recorded as a condition | B56, D16, §3.4 | A downsampled series carries its thinning factor and cannot be read as full resolution | **done** — `mcf_core::trial::Series`: no constructor omits the thinning, no accessor returns the points without it, and factors compose so a re-thinned series cannot claim the resolution of its last step. Per-laboratory declaration arrives with the laboratories (M6) |
 | B-272 | The identity type excludes hardware by construction; grouping is a query-time view | B57, D17, §XIV | The same configuration on two machines is one identity with two condition sets | **done** — `mcf_core::configuration`: six fields, none of which can hold a machine, checked by a vocabulary sweep as well as by the compiler; sampling in thousandths so identity is an exact equality; realized placement moved to the condition floor, which grows to nine |
-| B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | open |
+| B-300 | Journal-and-index: trials append to a journal, the database is derived and rebuildable, crash-safe write settings enabled, and a failed replay reports the exact extent of the loss | B62, D20, §3.1 | A scenario corrupts the database at every lifecycle stage and the record rebuilds or states what it could not recover | **done** — `mcf_record::journal::index`, 32 bytes an entry: kind, moment, line, byte offset, byte length, and no body, because a copy of a body is a second place for a fact to live. It is append-only for the same reason the journal is — a torn tail is found by arithmetic and dropped — and it is never durable, deliberately: the journal pays for a barrier per entry because it *is* the record, and a rebuild reproduces the index exactly. Every way an index file can be wrong ends in a rebuild that says why, never in a failure and never in a wrong answer, and a journal shorter than the index describes throws the index away. It never covers past a loss, so B62's report is made again at every open rather than being indexed around. `mcf log` and the daemon's start read through it, and every entry a surface prints is read back out of the journal at the offset the index gave. The numbers that earned it are [findings.md](findings.md) F14: 7.89 s to replay a million entries against 72 ms to open the index and 196 µs to answer *the last twenty acquisitions*. `checks/tests/the_record_recovers_from_every_stage.rs` is the lifecycle half of the condition |
 | B-302 | Export: one command, one portable file, sharing the serialization §XIV and PR2 need | D20, §XIV, [PR2](proposals.md#pr2--the-repro-bundle) | One mechanism serves export, contribution and repro bundles | **done** — `mcf export --to <path>` and `mcf_record::export`: one format, three kinds differing only in what is *selected*; entries carried verbatim so a digest does not depend on the version that wrote it; a damaged bundle is refused rather than read as a smaller one |
 | B-301 | Re-verify artifact checksums before a long measurement run, not only at acquisition | §7.49, §3.6, §3.8 | Silent disk corruption is caught before it produces a garbage result rather than after | **done** — `mcf_core::integrity` streams a re-verification and names both digests when they differ; `mcf_core::digest` is SHA-256 written out and checked against the published vectors including the million-character one. Three laboratory scenarios: corrupted, missing, unreadable |
-| B-042 | Record store is a single SQLite database, schema-versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The schema carries a version; a truncated write is a classified failure and the database reopens; the file is portable between machines | open |
+| B-042 | Record store is a single portable file, versioned from the first write, corruption-resistant and recoverable | D6, §3.3, §3.1 | The file carries a format version; a truncated write is a classified failure and the record reopens; the file is portable between machines | **done** — and not as it was written. The item said *a single SQLite database*; [findings.md](findings.md) F14 measured what that would buy and what it would cost, and D6 was amended: the record is one append-only file, and what queries it is derived from it (B-300). Every clause of the condition holds of what is there — `mcf_record::journal` writes a header naming `FORMAT_VERSION` before the first entry and refuses a file written by a version it does not read; a torn write is `record.replay.incomplete` with the line, the offset and the bytes unread, and the record reopens; and the file is line-delimited JSON, which is portable in the strongest sense available — a machine with no MCF on it can still read the evidence |
 | B-161 | Content store and record store are distinct types with no path between them, so no export can carry content that was never written | A25, §6.8, §6.27 | The type system prevents writing prompt or completion content to the record store | **done** — `mcf_record::content`: two stores in two places, neither module naming the other's types, no conversion either way, and a `Debug` that reports a length rather than a body |
 | B-330 | `LICENSE` in the repository, and the per-engine compatibility matrix every vendored component is checked against before it is admitted | DEC-047, D22, D23, D28 | No component ships without a recorded compatibility finding; the licence is stated in the artifact and surfaced to a redistributor | **done** — `LICENSE` is the verbatim GPL-3.0 text and a check asserts it stays so; [vendored.md](vendored.md) is the matrix and refuses a vendored component with no row. `mcf licence [--full]` is the second half: the whole text is compiled into the binary, because a redistributor has a binary rather than a repository and §4 obliges them to convey a copy. What it says about vendored components and what the register records are checked against each other |
 | B-361 | A timing-class result cannot be constructed from a stand-in engine handle, in the way a simulated duration cannot become a performance number | B65, D31, A11, B31 | The compiler refuses it; a check refuses a conversion added later | **done** — `mcf_core::engine`: `timing` is defined on `Run<Vendored>` alone, `Timing` has no constructor of its own, and no conversion exists between the two runs. Four source checks and a `const` assertion; verified by giving the stand-in a timing and watching them fail |
@@ -368,6 +368,28 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 106 — the index that earned its bytes, and the database that did not
+
+B-300 and B-042 are one question wearing two hats. D6 said the record is a
+SQLite database; D20, written later, said the record is an append-only journal
+with a derived index over it. Both cannot be the first thing MCF reaches for.
+
+It was settled by measurement rather than by preference. A replay costs 8 µs an
+entry — 7.89 s and 381 MiB at a million entries, paid at every daemon start —
+and the queries a record actually gets are answered in 196 µs from 32 bytes an
+entry. SQLite answers them in the same order of time and would cost 9.2 MiB of
+C, 52 seconds of compile, and B-183's static musl container, which cannot be
+built here at all for want of a C cross toolchain — the same wall F12 found for
+both engine candidates. [findings.md](findings.md) F14 has both halves;
+`prototypes/record-index/measure.sh` and
+`cargo test -p mcf-record --test how_the_record_grows` re-take them.
+
+So D6 is amended, the index is MCF's own, and what it holds is where an entry
+is rather than what it says. B-042's condition is met by the journal it was
+written about a different mechanism for: a format version before the first
+entry, a truncated write that is a classified failure the record reopens after,
+and a file a machine with no MCF on it can still read.
 
 ### Version 105 — one way to say a refusal
 

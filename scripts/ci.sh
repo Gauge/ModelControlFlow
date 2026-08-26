@@ -207,6 +207,13 @@ if [ "$with_budget" = true ]; then
     # D30 refuses a reading taken while something else had the processor.
     exclusively "performance budget" 20 \
         cargo test --release --locked --offline -p mcf-cli --test budget -- --ignored --nocapture
+    # What the record costs as it grows (B-300, F14). It asserts only that the
+    # index and the journal agree; the figures are read by a person deciding
+    # whether the index still earns its bytes, which is why it prints them and
+    # gates on none of them (A18).
+    exclusively "how the record grows" 10 \
+        cargo test --release --locked --offline -p mcf-record --test how_the_record_grows \
+        -- --ignored --nocapture
     tier_stamp "$root" performance
 fi
 

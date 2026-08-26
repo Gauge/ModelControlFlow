@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1118,7 +1118,110 @@ and costs a change to something C5 makes stable for life. DEC-037 is where that
 is chosen, and this is the evidence it should be chosen against rather than
 guessed at.
 
+## 14 · F14 — What a query over the record costs, and what an SQL engine would cost to ship (B-300, B-042, D6, D20)
+
+**Why it was run.** D6 says the record is a SQLite database. D20, written later,
+says the record is an append-only journal with a **derived, rebuildable** index
+over it. Both can be true — one of them is the record and the other is the index
+— but which is which decides whether MCF vendors 266,000 lines of C, and that is
+not a question to settle by preference.
+
+**What was run.** Two halves, one inside MCF and one outside it.
+
+- `cargo test -p mcf-record --release --test how_the_record_grows -- --ignored`
+  writes journals of 1,000 to 1,000,000 entries and times what MCF does with
+  them.
+- `prototypes/record-index/measure.sh` builds the same-sized table in SQLite,
+  times two queries against it, and then measures the amalgamation as a *thing
+  to ship*: source, terms, compile, and what it does to the musl artifact
+  B-183's container runs.
+
+Conditions: Linux 7.1.9, btrfs on NVMe, release profile, one machine, no
+exclusive window — these are cost figures about MCF's own code and a candidate
+dependency, not measurements MCF publishes (B35).
+
+### 14.1 What a replay costs, and what an index costs instead
+
+| Entries | Journal | Index | Full replay | Build the index | Open a current index | Last 20 of a kind |
+|---|---|---|---|---|---|---|
+| 1,000 | 0.4 MiB | 32 KiB | 6.4 ms | 10.7 ms | 128 µs | 183 µs |
+| 10,000 | 3.8 MiB | 0.3 MiB | 98.7 ms | 103.9 ms | 812 µs | 318 µs |
+| 100,000 | 38 MiB | 3 MiB | 777 ms | 988 ms | 9.1 ms | 230 µs |
+| 1,000,000 | 381 MiB | 30 MiB | 7.89 s | 10.39 s | 72 ms | 196 µs |
+
+A durable append costs **8.2 µs** and a whole entry is **400 bytes** on disk.
+Replay is linear at about **8 µs an entry** — a parse and a `Value` per line.
+
+Two numbers decide the shape. **7.89 s** is what a daemon start would pay to
+count a million-entry record, at every start, and 381 MiB is what it would hold
+to do it. **72 ms** is what opening the index costs instead, and **196 µs** is
+what *the last twenty acquisitions* costs at any size, because the answer is
+twenty seeks rather than a history.
+
+A million entries is not hypothetical: M5 writes an entry per trial, and D16
+keeps every trial rather than a summary.
+
+### 14.2 What SQLite would buy, and what it would cost
+
+Against the same million rows, through the `sqlite3` binary, including process
+start each time:
+
+| | |
+|---|---|
+| Build the table (WAL, one index) | 2.18 s |
+| `count(*)` of one kind | 25 ms |
+| Last 20 of one kind, by time | 16 ms |
+| The database on disk | 151 MiB, beside the journal it was derived from |
+
+And as a thing to ship:
+
+| | |
+|---|---|
+| Source | 265,952 lines, 9.2 MiB, one file |
+| Terms | public domain |
+| Host object | 1.4 MiB, compiled in **51.6 s** by GCC 16.2.1 |
+| Static musl artifact | **cannot be built here** — no C cross toolchain, the same wall F12 found for both engine candidates |
+
+### 14.3 What this settles
+
+**The index does not need to be a database, and D6's SQLite is weight MCF
+cannot currently pay.** The queries a record actually gets — *the last twenty of
+a kind*, *everything since a moment*, *how many of these are there* — are
+answered in tens of microseconds by 32 bytes an entry, which is the same order
+as SQLite answers them in and needs no C compiler, no cross toolchain and no
+second copy of every body. The one thing SQLite would add that the index does
+not have is *arbitrary* query — a `WHERE` over the bodies — and nothing in MCF
+asks for one yet.
+
+The cost side is not close. Admitting SQLite would put 9.2 MiB of C in the tree,
+add 52 s to a cold build, and — on this machine, today — break B-183's
+from-scratch container, which runs a **static musl** artifact with nothing
+installed. F12 found the same wall for both engine candidates: the musl question
+is turning into MCF's real constraint on vendoring, and it is a constraint about
+a claim MCF makes rather than about a preference.
+
+**What it does not settle.** SQLite is not refused for ever: if a query nobody
+can answer with an offset table turns up, or the musl toolchain arrives with the
+engine B-320 admits, this is a cost to pay rather than a rule to keep. What
+changes today is D6's *the record is a SQLite database*, which becomes D20's
+shape stated once: the journal is the record, and the index over it is derived,
+32 bytes an entry, and free to delete.
+
 ## Changelog
+
+### Version 17 — the index earns its bytes, and SQLite does not
+
+F14. D6 named SQLite the record and D20 later made the record a journal with a
+derived index over it; the question of which is which was decided by measuring
+both. A replay costs 8 µs an entry — 7.89 s at a million, at every daemon start
+— and the derived index answers the same questions in 196 µs from 32 bytes an
+entry. SQLite answers them in the same order of time and costs 9.2 MiB of C, 52
+seconds of compile, and B-183's static musl container, which cannot be built
+here at all for want of a C cross toolchain.
+
+D6 is amended rather than dropped: the journal is the record, the index over it
+is derived, and SQLite is a cost to pay if a query arrives that an offset table
+cannot answer.
 
 ### Version 16 — two writers, one record
 

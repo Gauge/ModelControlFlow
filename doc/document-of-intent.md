@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 36 |
+| **Version** | 37 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -520,28 +520,62 @@ laboratory reproduction buy the same good, and the lab buys it deterministically
 cheaply, and before release rather than after. The cost is real and is recorded
 in §6.15 and §6.16.
 
-### D6 — The record is a SQLite database *(follows from §XIV)*
+### D6 — The record is one portable file, and what is queryable over it is derived *(follows from §XIV; amended by [findings.md](findings.md) F14)*
 
-The record — measurements, capability verdicts, failure records, provenance,
-lab results — lives in a single embedded SQLite database on the user's machine.
+The record — measurements, capability verdicts, failure records, provenance, lab
+results — lives in **a single append-only file on the user's machine**, and
+anything built to query it is **derived from that file and rebuildable from it**.
+
+**§XIV says "SQLite" in as many words, and this departs from it deliberately.**
+The founding statement asks for results *collected in a local SQLite database
+that can be shared*, and the three properties in that sentence — durable,
+queryable, portable, shareable — are what MCF owes. The engine named in it is a
+mechanism, and F14 measured that the mechanism costs a claim MCF makes elsewhere
+(§XVI's self-contained artifact) while buying nothing the record asks for. Where
+the letter and the substance of §XIV part company, this document says so out
+loud rather than quietly satisfying neither.
 
 **Why it follows.** §XIV requires the record be portable, and a single file is
-the most portable artifact there is. §II requires it be queryable, and the
-alternative to a query language is a query language written badly. §VII permits
-it: an embedded engine with no server, no daemon of its own and no idle cost.
-D4 makes it cheap, since the binding is a C-ABI library Rust drives without
-tax. §3.3's "structured and machine-readable first" is satisfied by
-construction rather than by discipline.
+the most portable artifact there is. §II requires it be queryable, and §VII
+permits nothing that costs the machine while nobody is looking. Those are the
+three constraints; what satisfies them is a measured question rather than a
+preference.
 
-**What the decision drags with it, recorded rather than discovered later:** a
-schema is a public interface the moment it is shared (§7.30), migrations become
-a correctness problem the moment measurements must survive them (§7.13), and a
-single file is a single point of corruption — which is a §3.1 obligation, not a
-footnote.
+**What this decision originally said, and why it changed.** It named SQLite: an
+embedded engine, no server, no idle cost, a C-ABI library Rust drives without
+tax. D20 then settled durability the other way round — the journal is the record
+and the index over it is derived — and the two statements could not both be the
+first thing MCF reaches for. F14 measured which should be:
+
+- The queries a record actually gets are answered in **196 µs** from **32 bytes
+  an entry**, at any size of record. SQLite answers the same questions in the
+  same order of time.
+- SQLite would cost **9.2 MiB of C**, 52 seconds of compile, and — on the
+  machine that measured it — **the static musl artifact B-183's container
+  runs**, for want of a C cross toolchain.
+
+So the shape stands and the mechanism does not: MCF keeps the single portable
+file and derives its index itself. §3.3's *structured and machine-readable
+first* is satisfied by the file being line-delimited and machine-first, rather
+than by a query engine.
+
+**What the change gives back.** A schema is no longer a public interface the
+moment it is shared (§7.30) and a migration is no longer a correctness problem
+for other people's measurements (§7.13): the derived thing can be deleted and
+rebuilt on any machine, by any later version, from the file that is the record.
+What remains is what always remained — a single file is a single point of
+corruption, which is a §3.1 obligation rather than a footnote, and D20 discharges
+it with an append-only shape and a loss report that names its extent.
+
+**What MCF gives up.** *Arbitrary* query — a `WHERE` over the bodies of entries —
+which an index of offsets cannot answer and a SQL engine can. Nothing in MCF
+asks for one today. If something does, F14 is the cost to pay rather than a rule
+to keep: the record is a file either way, and a database over it would be one
+more derived thing.
 
 **The content store is not this store.** §6.8 requires prompt and completion
 content live separately from the system record. That separation is what makes
-§XIV safe: the shareable database contains no user content *because content was
+§XIV safe: the shareable record contains no user content *because content was
 never in it*, not because an export filter removed it. §6.27 turns on this.
 
 ### D7 — MCF is meant to be used by people other than its author *(answers §7.15)*
@@ -3679,8 +3713,8 @@ lab measures something other than what it claims (§6.37).
 
 ### 7.30 Schema versioning across contributed databases
 
-D6 makes the record a SQLite database and §XIV makes it shareable, which turns
-its schema into a public interface. §7.13's comparability problem becomes
+D6 makes the record one portable file and §XIV makes it shareable, which turns
+the shape of what is written into a public interface. §7.13's comparability problem becomes
 somebody else's problem: a contribution written by MCF 0.4 must be readable —
 and honestly interpretable — by whatever reads it later, and a measurement whose
 method changed between versions is not comparable with one taken after (§3.4).
@@ -3732,7 +3766,7 @@ mercy of the answer.
 The candidate answer is *keep the raw samples* — they are small relative to
 weights, §II is built on re-analysis, and §3.4's uncertainty requirement is
 weaker than it sounds if the underlying distribution is discarded. Recorded here
-rather than assumed, because it decides the schema (D6) and therefore must be
+rather than assumed, because it decides what an entry holds (D6) and therefore must be
 settled before the first row is written.
 
 ### 7.36 Whether model licences constrain publishing measurements
@@ -3746,7 +3780,7 @@ before M9 is built rather than after.
 
 ### 7.37 Who writes to the record, and how concurrency is arbitrated
 
-D6 chose an embedded single-file database before §7.9 and §7.12 decided who
+D6 chose a single-file record before §7.9 and §7.12 decided who
 writes to it. A serving path, a laboratory, a supervisor recording failures and
 several attached clients are potential writers, and the failure modes of an
 embedded store under concurrent writers are sharp and specific.
@@ -4014,6 +4048,27 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 37 — the record is a file, and the query over it is ours
+
+D6 is amended rather than replaced. It named SQLite; D20, written later, made
+the record an append-only journal with a derived index over it. Both could not
+be the first thing MCF reaches for, and [findings.md](findings.md) F14 measured
+which should be: the queries a record actually gets are answered in 196 µs from
+32 bytes an entry, which is the same order of time SQLite takes, and the engine
+would cost 9.2 MiB of C, 52 seconds of compile, and the static musl artifact
+B-183's from-scratch container runs — for want of a C cross toolchain, the same
+wall F12 found for both engine candidates.
+
+What survives unchanged is everything §XIV and §II need: one portable file, a
+queryable record, and no idle cost. What is given up is arbitrary query over the
+bodies of entries, which nothing in MCF asks for; F14 states the price of buying
+it back if something does.
+
+Two open voids get smaller as a side effect. §7.30's schema-as-public-interface
+and §7.13's migration problem both assumed a database somebody else has to read:
+a derived index is deleted and rebuilt from the record, by any later version, on
+any machine.
 
 ### Version 36 — offline is the ordinary case
 
@@ -4419,7 +4474,7 @@ collected, because data gathered under unstated terms cannot be retroactively
 given terms, and a withdrawal right may be a promise §3.20's irreversibility
 makes unkeepable.
 
-§7.49: what protects the record from loss. D6 notes that a single file is a
+§7.49: what protects the record from loss. D6 notes that one file is a
 single point of corruption and calls it a §3.1 obligation, and nothing
 discharged it. The record is the science — months of measurements whose
 conditions are gone, so none of it is reconstructible by re-running. A lost
