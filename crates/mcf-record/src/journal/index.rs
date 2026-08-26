@@ -497,7 +497,7 @@ const HEADER: usize = 8 + 4 + 32 + 2 + KIND_NAMES;
 /// whose list differs rebuilds rather than misreading a number as a kind. The
 /// dictionary is fixed-width for the same reason the records are: a file whose
 /// length is arithmetic is a file a torn write cannot hide in.
-const KIND_NAMES: usize = 8 * NAME;
+const KIND_NAMES: usize = EntryKind::ALL.len() * NAME;
 const NAME: usize = 32;
 
 fn header(fingerprint: &[u8; 32]) -> Vec<u8> {

@@ -88,6 +88,16 @@ pub struct Listing {
     pub revision: Option<String>,
     /// Every file, in the order the source listed them.
     pub entries: Vec<Entry>,
+    /// How the repository is gated, in the hub's own word, where it is gated
+    /// at all.
+    ///
+    /// `None` means the source said nothing about a gate, which is not the same
+    /// as *ungated* — a source that does not publish the field cannot be read
+    /// as publishing `false` (A7). B-331 compares it over time: a repository
+    /// that is gated now and was not when MCF acquired from it is one of the
+    /// four decays §7.38 names, and the only one a hub announces before it
+    /// bites ([findings.md](../../../doc/findings.md) F17).
+    pub gated: Option<String>,
     /// The licence the repository declares, where it declares one.
     ///
     /// Declared, never verified: A21 keeps those apart, and B-023 is where the

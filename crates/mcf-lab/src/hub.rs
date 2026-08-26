@@ -90,6 +90,12 @@ pub enum Behaviour {
 /// One repository this hub publishes.
 #[derive(Debug, Clone)]
 pub struct Repository {
+    /// How this repository is gated, in the hub's own word, where it is.
+    ///
+    /// A laboratory needs it to reproduce the one decay a hub announces before
+    /// it bites: a repository that is gated now and was not when MCF acquired
+    /// from it (B-331, F17).
+    pub gated: Option<String>,
     /// Its files, and the bytes each holds.
     pub files: BTreeMap<String, Vec<u8>>,
     /// The licence it declares, where it declares one.
@@ -116,6 +122,7 @@ impl Repository {
         files.insert(path.to_owned(), bytes.to_vec());
         Self {
             files,
+            gated: None,
             declared_licence: Some("apache-2.0".to_owned()),
             lineage: None,
             revision: Some("main".to_owned()),
@@ -316,6 +323,7 @@ impl Source for FakeHub {
             reference: reference.clone(),
             revision: repository.revision.clone(),
             entries,
+            gated: repository.gated.clone(),
             declared_licence: repository.declared_licence.clone(),
             lineage: repository.lineage.clone(),
         })

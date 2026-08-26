@@ -16,6 +16,7 @@
 
 pub mod client;
 pub mod credentials;
+pub mod decay;
 pub mod fetch;
 pub mod fitment;
 pub mod http;

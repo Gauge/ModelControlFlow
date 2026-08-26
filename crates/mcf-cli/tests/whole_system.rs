@@ -706,6 +706,85 @@ fn a_model_is_acquired_listed_and_removed() {
     assert!(record.contains("artifact_removed"), "{record}");
 }
 
+/// Looking upstream at something already acquired, and finding it changed
+/// (B-331, D37, §7.38).
+///
+/// Two hubs and one artifact: the first is where it came from, the second says
+/// something different about the same repository. That is exactly what a
+/// relicensing looks like from here — a changed field beside a success, with
+/// nothing refusing (F17) — and the only way to find it is to compare against
+/// what was written down at acquisition.
+#[test]
+fn what_was_acquired_is_checked_against_what_the_hub_says_now() {
+    let machine = Machine::new("check");
+    let weights = "GGUF the weights";
+    let digest = mcf_core::digest::sha256(weights.as_bytes()).hex();
+    let serving = a_hub_serving(weights, &digest);
+
+    let pulled = machine.run(&["pull", "owner/model:model.gguf", "--from", &serving.base()]);
+    assert!(pulled.status.success(), "{}", error_text(&pulled));
+
+    // Nothing has changed, and *checked and unchanged* is a finding rather than
+    // silence (A1).
+    let checked = machine.run(&["check", "--from", &serving.base()]);
+    assert!(checked.status.success(), "{}", error_text(&checked));
+    let said = text(&checked);
+    assert!(said.contains("nothing MCF compared has changed"), "{said}");
+    assert!(said.contains("nothing changed upstream"), "{said}");
+
+    // The same repository, relicensed under the pin.
+    let relicensed = a_hub_declaring(weights, &digest, "cc-by-nc-4.0");
+    let after = machine.run(&["check", "--from", &relicensed.base()]);
+    assert!(after.status.success(), "{}", error_text(&after));
+    let said = text(&after);
+    assert!(
+        said.contains("was apache-2.0 and is now cc-by-nc-4.0"),
+        "{said}"
+    );
+    // And nothing is withdrawn by it: the artifact is still here, still listed.
+    assert!(said.contains("Nothing is invalidated"), "{said}");
+    let listed = text(&machine.run(&["list"]));
+    assert!(listed.contains("model.gguf"), "{listed}");
+
+    // The finding is written down twice, and neither is a correction: beside
+    // the artifact and in the record (D37, D20).
+    let sidecar = machine
+        .0
+        .join("mcf/models/owner/model/model.gguf.mcf-provenance.json");
+    let beside = std::fs::read_to_string(&sidecar).expect("the provenance is beside it");
+    assert!(beside.contains("relicensed"), "{beside}");
+    assert!(
+        beside.contains("apache-2.0"),
+        "the provenance lost what was true at acquisition: {beside}"
+    );
+    let record = std::fs::read_to_string(machine.journal()).expect("a record");
+    assert!(record.contains("artifact_checked"), "{record}");
+    assert!(record.contains("relicensed"), "{record}");
+}
+
+/// A hub that publishes the same file under a licence of its choosing.
+fn a_hub_declaring(weights: &str, digest: &str, licence: &str) -> mcf_lab::serving::Serving {
+    use mcf_lab::serving::answer;
+    let revision = "50968a4468ef4233ed78cd7c3de230dd1d61a56b";
+    mcf_lab::serving::Serving::answering(std::collections::BTreeMap::from([
+        (
+            "/api/models/owner/model".to_owned(),
+            answer(&format!(
+                r#"{{"sha":"{revision}","tags":["gguf","license:{licence}"],"cardData":{{"license":"{licence}"}}}}"#
+            )),
+        ),
+        (
+            format!("/api/models/owner/model/tree/{revision}?recursive=true"),
+            answer(&format!(
+                r#"[{{"type":"file","size":{},"lfs":{{"oid":"{digest}","size":{}}},"path":"model.gguf"}}]"#,
+                weights.len(),
+                weights.len()
+            )),
+        ),
+    ]))
+    .expect("a loopback port")
+}
+
 /// A second acquisition of a verified artifact costs nothing: the bytes are
 /// already here and they are still what they should be.
 #[test]
