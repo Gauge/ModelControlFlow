@@ -76,6 +76,7 @@ impl Source for StandIn {
             revision: Some("main".to_owned()),
             entries: vec![self.entry()],
             declared_licence: Some("apache-2.0".to_owned()),
+            lineage: None,
         })
     }
 

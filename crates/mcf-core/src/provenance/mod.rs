@@ -52,7 +52,15 @@ use crate::time::Timestamp;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Provenance {
     origin: Origin,
-    retrieved_at: Timestamp,
+    /// When MCF obtained these bytes, where it did.
+    ///
+    /// `Unknown` for a link in the chain MCF never fetched — the upstream
+    /// weights a third-party requantization was made from are a real artifact
+    /// with a real origin, and *when somebody else got them* is not a thing MCF
+    /// can know (A7, §XII). It was a plain `Timestamp` until B-019 tried to
+    /// write §XII's chain down and found that the type could only say something
+    /// false.
+    retrieved_at: Attested<Timestamp>,
     integrity: Attested<Checksum>,
     licence: Attested<Licence>,
     /// Oldest first, so reading the vector is reading the history forwards.
@@ -71,7 +79,27 @@ impl Provenance {
     pub fn acquired(origin: Origin, retrieved_at: Timestamp) -> Self {
         Self {
             origin,
-            retrieved_at,
+            retrieved_at: Attested::Known(retrieved_at),
+            integrity: Attested::Unknown,
+            licence: Attested::Unknown,
+            transformations: Vec::new(),
+            derived_from: None,
+        }
+    }
+
+    /// The provenance of an artifact MCF knows *of* and never fetched.
+    ///
+    /// The upstream half of §XII's hard case: a GGUF conversion names the
+    /// weights it was made from, and those weights are a repository MCF can
+    /// record without ever having retrieved them. Everything is unknown except
+    /// where they are, which is the whole of what a publisher's own metadata
+    /// says — and filling in a retrieval time would be MCF claiming to have
+    /// been somewhere it has not (A7, A21).
+    #[must_use]
+    pub fn known_of(origin: Origin) -> Self {
+        Self {
+            origin,
+            retrieved_at: Attested::Unknown,
             integrity: Attested::Unknown,
             licence: Attested::Unknown,
             transformations: Vec::new(),
@@ -130,8 +158,8 @@ impl Provenance {
 
     /// When MCF obtained them.
     #[must_use]
-    pub const fn retrieved_at(&self) -> Timestamp {
-        self.retrieved_at
+    pub const fn retrieved_at(&self) -> &Attested<Timestamp> {
+        &self.retrieved_at
     }
 
     /// The checksum, if one has been verified.

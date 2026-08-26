@@ -42,7 +42,7 @@ use mcf_record::json::{self, Value};
 use crate::credentials::{self, Credential, Identity};
 use crate::http::{Request, Response, Url};
 use crate::reference::Reference;
-use crate::source::{Entry, Fetched, Listing, Source};
+use crate::source::{Entry, Fetched, Lineage, Listing, Source};
 use crate::wire::{self, Wire};
 
 const WHERE: Subsystem = Subsystem::new("mcf-hub::client");
@@ -374,6 +374,7 @@ impl Source for Hub {
             revision,
             entries,
             declared_licence: declared_licence(&card),
+            lineage: lineage(&card),
         })
     }
 
@@ -453,6 +454,40 @@ fn declared_licence(card: &Value) -> Option<String> {
                 .find_map(|tag| tag.strip_prefix("license:"))
         })
         .map(str::to_owned)
+}
+
+/// What the repository says these weights were made from.
+///
+/// The hub publishes it as a tag: `base_model:owner/name` for the link, and
+/// `base_model:quantized:owner/name` — or `finetune`, `merge`, `adapter` — when
+/// the publisher says what was done. Both are read, and the relation is left
+/// absent when only the plain form is there: a link nobody described is still a
+/// link (A7, §XII).
+fn lineage(card: &Value) -> Option<Lineage> {
+    let tags: Vec<&str> = card
+        .get("tags")
+        .and_then(Value::as_list)?
+        .iter()
+        .filter_map(Value::as_text)
+        .filter_map(|tag| tag.strip_prefix("base_model:"))
+        .collect();
+
+    let mut base = None;
+    let mut relation = None;
+    for tag in tags {
+        match tag.split_once(':') {
+            // `base_model:quantized:owner/name`: the publisher's own word for
+            // what they did, and where they did it from.
+            Some((what, from)) if from.contains('/') => {
+                relation = Some(what.to_owned());
+                base = Some(from.to_owned());
+            }
+            // `base_model:owner/name`: the link with nothing said about it.
+            _ if tag.contains('/') => base = base.or_else(|| Some(tag.to_owned())),
+            _ => {}
+        }
+    }
+    base.map(|base| Lineage { base, relation })
 }
 
 fn read_json(bytes: &[u8]) -> Result<Value> {

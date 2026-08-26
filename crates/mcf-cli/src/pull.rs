@@ -28,7 +28,9 @@ use mcf_core::attested::Attested;
 use mcf_core::failure::Failure;
 use mcf_core::hardware::Machine;
 use mcf_core::measurement::Bytes;
-use mcf_core::provenance::{Checksum, Origin, Provenance, Repository, Revision};
+use mcf_core::provenance::{
+    Checksum, Origin, Provenance, Repository, Revision, Transformation, TransformationKind,
+};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
 use mcf_hub::credentials::{self, Credential, Origin as Held, Secret};
@@ -202,7 +204,53 @@ fn provenance_of(listing: &Listing, acquired: &Acquired, at: Timestamp) -> Prove
     {
         provenance = provenance.with_licence(licence);
     }
+    if let Some(lineage) = &listing.lineage {
+        // §XII's hard case, written down: what these bytes were made from, what
+        // was done to them, and by whom — as far as the publisher said, and no
+        // further. The tool and the moment are the publisher's pipeline, which
+        // is not MCF's to interrogate, so they stay unknown rather than being
+        // filled with this machine's clock (A7, B-019).
+        provenance = provenance
+            .transformed(Transformation::new(
+                kind_of(lineage.relation.as_deref()),
+                match &lineage.relation {
+                    Some(relation) => Attested::Known(format!(
+                        "the publisher calls it {relation}, from {}",
+                        lineage.base
+                    )),
+                    None => Attested::Known(format!(
+                        "the publisher names {} as the base and does not say what was done",
+                        lineage.base
+                    )),
+                },
+                Attested::Unknown,
+                Attested::Unknown,
+            ))
+            .derived_from(Provenance::known_of(Origin::hub(
+                Repository::new(lineage.base.clone()),
+                // Which revision of the upstream this was made from is a thing
+                // the publisher does not say, and MCF will not guess at: an
+                // unpinned base is exactly the break in the chain §XII is
+                // about.
+                None,
+            )));
+    }
     provenance
+}
+
+/// What the publisher's own word maps to.
+///
+/// `Other` keeps the word where MCF has no kind for it, which is A7's habit
+/// applied to somebody else's vocabulary: a relation filed under the nearest
+/// known kind would make the record say something nobody claimed.
+fn kind_of(relation: Option<&str>) -> TransformationKind {
+    match relation {
+        Some("quantized") => TransformationKind::Quantization,
+        Some("finetune" | "merge" | "adapter") | None => {
+            TransformationKind::Other(relation.unwrap_or("derived from").to_owned())
+        }
+        Some(other) => TransformationKind::Other(other.to_owned()),
+    }
 }
 
 /// Writes the acquisition to the journal.
@@ -515,6 +563,15 @@ fn render(
         ),
         format!("  provenance beside it: {}", sidecar.display()),
     ];
+    if let Some(source) = provenance.source() {
+        lines.push(format!(
+            "  made from {}, which MCF has not fetched and cannot vouch for",
+            source.origin()
+        ));
+        for transformation in provenance.transformations() {
+            lines.push(format!("    {transformation}"));
+        }
+    }
     if acquired.attempts > 1 {
         lines.push(format!(
             "  it took {} transfers{}",

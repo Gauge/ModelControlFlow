@@ -19,6 +19,7 @@ fn a_listing() -> Listing {
             Entry::new("Q8_0.gguf", 700_000_000),
         ],
         declared_licence: Some("apache-2.0".to_owned()),
+        lineage: None,
     }
 }
 

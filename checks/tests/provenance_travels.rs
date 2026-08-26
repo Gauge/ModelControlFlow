@@ -59,14 +59,15 @@ fn nothing_manufactures_or_replaces_a_provenance() {
 /// Every field of `Provenance` that MCF has to *read* is `Attested`, so an
 /// unread one has no representation other than `Unknown` (A7).
 ///
-/// The origin and the retrieval time are exempt and named here: MCF always
-/// knows what it was asked for and when it acted, and `Origin::Unattributed`
-/// already carries the not-known case for the first.
+/// The origin is exempt and named here: `Origin::Unattributed` already carries
+/// the not-known case for it. The retrieval time stopped being exempt with
+/// B-019 — a link in the chain MCF never fetched has no retrieval time, and the
+/// type said otherwise until §XII's requantization was written down.
 #[test]
 fn every_readable_field_is_attested() {
     let body = block(&provenance_source("mod.rs"), "pub struct Provenance {");
 
-    let exempt = ["origin", "retrieved_at", "transformations", "derived_from"];
+    let exempt = ["origin", "transformations", "derived_from"];
     let mut checked = 0;
     for line in body.lines() {
         let line = line.trim();
