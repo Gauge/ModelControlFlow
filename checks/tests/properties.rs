@@ -24,11 +24,12 @@ use mcf_core::build_identity::BuildIdentity;
 use mcf_core::digest::{Sha256, sha256};
 use mcf_core::measurement::{ConditionValue, Conditions, Count, Floor, Measurement, Percentile};
 use mcf_core::provenance::{
-    Checksum, Licence, Origin, Provenance, Repository, Revision, ToolIdentity, Transformation,
-    TransformationKind,
+    Checksum, Decay, Licence, Observation, Origin, Provenance, Repository, Revision, ToolIdentity,
+    Transformation, TransformationKind,
 };
 use mcf_core::time::{Timestamp, UtcOffset};
 use mcf_core::trial::{Series, Thinning};
+use mcf_record::journal::index::{self, Built, Index};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::{self, Value};
 use mcf_record::{decode, encode};
@@ -303,6 +304,38 @@ fn a_provenance_of_any_shape_survives_the_record() {
     assert_held(&verdict);
 }
 
+/// What MCF later found upstream, appended rather than written over (D37,
+/// B-331).
+///
+/// Every finding shape, because each carries different fields and a round trip
+/// that only ever saw *unchanged* would not exercise them.
+fn an_observation(rng: &mut Rng) -> Observation {
+    let found = match rng.below(6) {
+        0 => Decay::Unchanged,
+        1 => Decay::RevisionGone {
+            revision: rng.text(12),
+        },
+        2 => Decay::Relicensed {
+            was: rng.text(10),
+            now: rng.text(10),
+        },
+        3 => Decay::Gated { how: rng.text(8) },
+        4 => Decay::Replaced {
+            file: rng.text(10),
+            was: rng.text(64),
+            now: rng.text(64),
+        },
+        _ => Decay::Unreachable { said: rng.text(20) },
+    };
+    Observation::new(
+        Timestamp::from_utc_nanos(
+            i128::from(rng.integer_between(0, 2_000_000_000_000_000_000)),
+            Attested::Unknown,
+        ),
+        found,
+    )
+}
+
 /// A provenance with an arbitrary chain under it.
 fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
     let origin = match rng.below(3) {
@@ -355,6 +388,9 @@ fn a_provenance(rng: &mut Rng, depth: usize) -> Provenance {
         0 => {}
         1 => provenance = provenance.with_licence(Licence::Stated),
         _ => provenance = provenance.with_licence(Licence::spdx(rng.text(10))),
+    }
+    for _ in 0..rng.index(3) {
+        provenance = provenance.observed(an_observation(rng));
     }
     for _ in 0..rng.index(3) {
         let kind = match rng.below(4) {
@@ -441,6 +477,87 @@ fn every_entry_survives_the_journal() {
                 written.len(),
                 read.len()
             ));
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// The index is a pointer and the journal is the record (D20, B-300), so for
+/// any journal the index must agree with a replay about what is in it — the
+/// same entries, in the same order, at offsets that read back to the same
+/// bytes.
+///
+/// This is the invariant the whole of B-300 rests on. The unit tests write six
+/// entries of two kinds; a record has whatever somebody's machine put in it,
+/// and an index that agreed on those and not on these would be a faster way to
+/// be wrong.
+#[test]
+fn the_index_agrees_with_a_replay_about_every_journal() {
+    let verdict = check(FILESYSTEM_CASES, |rng| {
+        let scratch = Scratch::new("property-index");
+        let count = rng.index(8) + 1;
+        {
+            let mut journal =
+                Journal::open(&scratch.journal()).map_err(|failure| failure.to_string())?;
+            for _which in 0..count {
+                let kind = *rng.pick(&EntryKind::ALL).unwrap_or(&EntryKind::Failure);
+                journal
+                    .append(&Entry::new(
+                        kind,
+                        Timestamp::from_utc_nanos(
+                            i128::from(rng.integer_between(0, 2_000_000_000_000_000_000)),
+                            Attested::Unknown,
+                        ),
+                        value(rng, 2),
+                    ))
+                    .map_err(|failure| failure.to_string())?;
+            }
+        }
+
+        let replayed = replay(&scratch.journal()).map_err(|failure| failure.to_string())?;
+        // Opened twice on purpose: the first builds it, the second reads what
+        // the first wrote. Both must agree with the journal, and the second
+        // must say it *loaded* — an index that rebuilt itself every time would
+        // still be correct and would have thrown away the only reason it
+        // exists, so a property that did not assert this would pass on an
+        // index that was never read back at all.
+        for attempt in 0..2 {
+            let index = Index::over(&scratch.journal(), &index::default_path(&scratch.journal()))
+                .map_err(|failure| failure.to_string())?;
+            if attempt == 1 && !matches!(index.built(), Built::Loaded { .. }) {
+                return Err(format!(
+                    "the second open did not read what the first wrote: {}",
+                    index.built()
+                ));
+            }
+            if index.entries().len() != replayed.entries.len() {
+                return Err(format!(
+                    "attempt {attempt}: the index has {} entries and the journal {}",
+                    index.entries().len(),
+                    replayed.entries.len()
+                ));
+            }
+            for (located, entry) in index.entries().iter().zip(&replayed.entries) {
+                if located.kind() != entry.kind() {
+                    return Err(format!(
+                        "attempt {attempt}: the index says {} and the journal {}",
+                        located.kind(),
+                        entry.kind()
+                    ));
+                }
+                let read = index.read(located).map_err(|failure| failure.to_string())?;
+                if read.body() != entry.body() {
+                    return Err(format!(
+                        "attempt {attempt}: the offset the index gave holds a different entry"
+                    ));
+                }
+                if read.id() != entry.id() {
+                    return Err(format!(
+                        "attempt {attempt}: the entry at that offset has another identifier"
+                    ));
+                }
+            }
         }
         Ok(())
     });
