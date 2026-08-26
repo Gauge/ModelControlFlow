@@ -120,14 +120,41 @@ step() { printf '\n=== %s\n' "$1"; }
 #
 # `--minutes` is per tier and generous: it is a deadline that ends a hung run,
 # not an estimate of how long the tier takes.
+#
+# **A window that never comes is not a failed tier, and not a passed one.** The
+# machine MCF is developed on is shared, and a project can hold the window for
+# twelve hours ([build.md](../doc/build.md) section 12). Before this, the first
+# tier to time out ended the whole run under `errexit` — so the tiers after it
+# never ran, nothing said which, and the output stopped mid-sentence. That is
+# the silent partial A4 forbids, in MCF's own build script. Now it is recorded
+# and named at the end, and the tier's age is left stale, which is what
+# `check-tier-ages.sh --release` refuses on (B38, B-185).
+#
+# How long to wait is `MCF_WINDOW_WAIT_SECONDS`, because how long is worth
+# waiting is a property of the machine rather than of the tier: on a machine
+# nobody else uses it is irrelevant, and on this one an overnight run wants
+# hours.
+readonly WINDOW_WAIT_SECONDS="${MCF_WINDOW_WAIT_SECONDS:-1800}"
+readonly EX_TEMPFAIL=75
+declare -a no_window=()
+
 exclusively() {
     local what="$1" minutes="$2"
     shift 2
-    if command -v heavy >/dev/null 2>&1; then
-        heavy run --for "mcf: $what" --minutes "$minutes" -- "$@"
-    else
+    if ! command -v heavy >/dev/null 2>&1; then
         "$@"
+        return
     fi
+    local status=0
+    heavy run --for "mcf: $what" --minutes "$minutes" --wait "$WINDOW_WAIT_SECONDS" -- "$@" ||
+        status=$?
+    if [ "$status" -eq "$EX_TEMPFAIL" ]; then
+        printf '  %s did not run: the exclusive window was not free within %ss\n' \
+            "$what" "$WINDOW_WAIT_SECONDS"
+        no_window+=("$what")
+        return 0
+    fi
+    return "$status"
 }
 
 started=$SECONDS
@@ -279,4 +306,23 @@ if [ "$not_run" = false ]; then
     printf '  nothing: every tier ran in this invocation\n'
 fi
 
-printf '\nci: green — the gating tiers took %ds\n' "$gating_seconds"
+if [ "${#no_window[@]}" -gt 0 ]; then
+    printf '\n=== asked for and could not run\n'
+    for what in "${no_window[@]}"; do
+        printf '  %s — the exclusive window was not free within %ss\n' "$what" "$WINDOW_WAIT_SECONDS"
+    done
+    printf '  Somebody else has the machine. These tiers are as stale as they were,\n'
+    printf '  which `scripts/check-tier-ages.sh --release` refuses on (B38, B-185).\n'
+    printf '  `heavy status` says who holds it; MCF_WINDOW_WAIT_SECONDS says how long\n'
+    printf '  this run is willing to queue.\n'
+fi
+
+# The last line is the one people read, so it says both things or neither: a
+# run that could not get the machine is not the same as one where everything
+# asked for ran, and "green" on its own would be read as the second (A4).
+if [ "${#no_window[@]}" -gt 0 ]; then
+    printf '\nci: the gating tiers are green in %ds; %d scheduled tier(s) could not get the machine\n' \
+        "$gating_seconds" "${#no_window[@]}"
+else
+    printf '\nci: green — the gating tiers took %ds\n' "$gating_seconds"
+fi
