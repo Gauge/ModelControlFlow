@@ -112,15 +112,30 @@ impl Wire for Tcp {
 
     fn dial(&self, host: &str, port: u16) -> Result<Box<dyn Duplex>> {
         let mut addresses = (host, port).to_socket_addrs().map_err(|error| {
+            // What MCF observed is that this machine could not turn a name into
+            // an address. Which of the three causes it was — no resolver, no
+            // network, no such name — is not visible from here: the platform
+            // reports one thing for all of them (F10), and A7 forbids picking
+            // the likely one. D33 is why that is stated rather than guessed.
             Failure::new(
                 Category::HubUnreachable,
                 Attribution::Machine,
                 Disposition::Refused,
                 WHERE,
-                "the host could not be resolved",
+                "this machine could not turn that name into an address",
             )
             .with_context("host", format!("{host}:{port}"))
             .with_context("reason", error.to_string())
+            .with_context(
+                "what_this_does_not_say",
+                "whether there is no network, no resolver, or no such name: one observation, \
+                 three causes, and MCF does not choose between them (A7, D33)",
+            )
+            .with_context(
+                "what_to_do",
+                "everything but acquisition works with no network at all; where a mirror is \
+                 reachable, --from points at one",
+            )
         })?;
         let address = addresses.next().ok_or_else(|| {
             Failure::new(
@@ -135,24 +150,39 @@ impl Wire for Tcp {
 
         let stream =
             TcpStream::connect_timeout(&address, self.deadlines.connect).map_err(|error| {
-                let timed_out = error.kind() == std::io::ErrorKind::TimedOut;
+                // Three observations, kept apart, because they are three
+                // different things for an operator to do something about (D33,
+                // F10). Refused means something is there and said no; a route
+                // that does not exist means this machine cannot get there at
+                // all; and silence means MCF's own deadline ended the wait
+                // rather than the far end.
+                let (category, detail, says) = match error.kind() {
+                    std::io::ErrorKind::TimedOut => (
+                        Category::TransferStalled,
+                        "nothing answered within the deadline MCF set",
+                        "a path may exist and nothing on it answered in time; this is MCF's                          deadline rather than the network's",
+                    ),
+                    std::io::ErrorKind::ConnectionRefused => (
+                        Category::HubUnreachable,
+                        "something is at that address and refused the connection",
+                        "there is a working path to that host: what refused is the host, or                          something answering for it",
+                    ),
+                    _ => (
+                        Category::HubUnreachable,
+                        "this machine has no way to reach that address",
+                        "the platform reports no route rather than a refusal, which is what                          a machine with no network looks like from here",
+                    ),
+                };
                 Failure::new(
-                    if timed_out {
-                        Category::TransferStalled
-                    } else {
-                        Category::HubUnreachable
-                    },
+                    category,
                     Attribution::Machine,
                     Disposition::Refused,
                     WHERE,
-                    if timed_out {
-                        "the host did not accept a connection in time"
-                    } else {
-                        "the host refused a connection"
-                    },
+                    detail,
                 )
                 .with_context("host", format!("{host}:{port}"))
                 .with_context("waited", format!("{:?}", self.deadlines.connect))
+                .with_context("what_this_says", says.to_owned())
                 .with_context("reason", error.to_string())
             })?;
         for set in [

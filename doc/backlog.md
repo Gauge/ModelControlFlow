@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 90 |
+| **Version** | 91 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
+**249 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 199
 build items (42 done, 1 dropped, 10 in progress, 52 blocked on a decision, 95 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -50,7 +50,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
 | DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | **resolved** — D27: three kinds of figure; p99 over ≥100 trials for events; an unattributable run is neither a pass nor a failure |
 | DEC-051 | How an event-class budget is ever asserted on a machine somebody is using, and what a scheduled tier does on a CI runner that is never quiet | §7.51 | **B-011**, B38 | M0 | **resolved** — D30: attributability is a property of a *reading*, measured as the scheduling delay across it. [findings.md](findings.md) F3 has the evidence and the defect the first implementation had |
-| DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | open |
+| DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | **resolved** — D33: offline is the ordinary case (everything but acquisition runs in a container with no network at all), and what MCF says when a network is needed and missing is what it *observed* rather than which layer is absent. [findings.md](findings.md) F10 measured why: a name that will not resolve reports no error kind at all, whether the cause is no network, no resolver or no such name. The distinction §V asks about is one an operator draws with `--from`, not one MCF probes for |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | open |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half: a lab owns the machine |
 | DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open |
@@ -326,7 +326,7 @@ first and importance second.
 | B-144 | State migration across MCF versions, with comparability of historical measurements handled per DEC-013 | §7.13 | An upgrade either preserves comparability or invalidates the affected history explicitly | blocked (DEC-013) |
 | B-145 | Record retention, inspection and purge per DEC-005, including behaviour when the record's disk budget is exhausted | §7.5, §3.10 | The user can see and purge what MCF holds; budget exhaustion is a classified, loud outcome | blocked (DEC-005) |
 | B-146 | Content-versus-system separation enforced structurally: suite fixture data and user traffic are different categories with different retention, not the same store with a flag | §6.8 | The separation is structural and cannot be defeated by configuration | open |
-| B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | blocked (DEC-011) |
+| B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | open — unblocked by D33, and half-built with it: everything but acquisition already runs in a container with no network (B-183), and a request that needs one reports which of three things it observed rather than guessing at a layer. What remains is the *labelling* across M2–M7's surfaces, which need those surfaces to exist |
 | B-148 | Long-run endurance scenario: days of simulated operation with faults, restarts, thermal excursions and upgrades | §I, §3.17 | MCF remains coherent, queryable and restartable throughout, with no unclassified outcome | open |
 | B-260 | Longitudinal regression detection: compare like with like, detect against historical spread rather than a threshold, correlate with the diff of everything that changed, report as a labelled hypothesis and never as a cause | [PR7](proposals.md#pr7--longitudinal-regression-detection), §6.7, A18 | A drop exceeding historical spread is surfaced with what changed alongside it; improvements are reported the same way | blocked (DEC-045, DEC-007) |
 | B-261 | Machine-change detection: a profile diff against the last known state, with affected history marked rather than silently carried forward | §7.45, DEC-045, §3.4 | A driver update marks prior results non-comparable rather than leaving them to be misread | blocked (DEC-045) |
@@ -367,6 +367,33 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 91 — offline, decided by what a machine actually says
+
+DEC-011 resolved as D33, and it is the first decision this project has closed
+by asking the operating system a question rather than by argument.
+
+The half that needed no experiment: everything except acquisition already runs
+with no network at all, and B-183's container has been demonstrating it on every
+scheduled run — `doctor`, the laboratory, `list`, `rm`, `export`, `licence`.
+§3.2 had suggested *most of it, loudly labelled*; nobody had stated it.
+
+The half that did: [findings.md](findings.md) F10 asked what a platform tells a
+program when a name will not resolve, and the answer is nothing — no error kind,
+no errno, the same report whether the machine has no network, no resolver, or
+asked for a name that does not exist. So MCF reports the observation and names
+the question it is *not* answering, rather than saying *you are offline*, which
+is wrong exactly when somebody has a mirror they could have used.
+
+The three failures that are distinguishable are now kept apart, because they are
+three different things to act on: refused (something answered), no route (this
+machine cannot get there), silence (MCF's own deadline ended the wait). Two of
+the three are asserted in the gating tier without a network at all.
+
+And §V's wrinkle — no internet is not no local network — is answered by
+declining to assert it. Telling them apart means making a request nobody asked
+for, and §3.2 refuses unrequested traffic for better reasons than a nicer error
+message. B-147 is unblocked.
 
 ### Version 90 — MCF runs nothing it downloaded
 

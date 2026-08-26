@@ -359,6 +359,57 @@ fn a_host_that_refuses_a_connection_is_unreachable() {
     assert_eq!(failure.category(), Category::HubUnreachable);
 }
 
+/// A name this machine cannot resolve is *that*, and not a guess about why.
+///
+/// One observation with three causes — no resolver, no network, no such name —
+/// and the platform reports the same thing for all of them (F10). What MCF says
+/// is what it saw, and it says out loud which question it is not answering
+/// (A7, D33). `.invalid` is reserved by RFC 2606 precisely so that it never
+/// resolves, on a network or off one.
+#[test]
+fn a_name_that_will_not_resolve_says_so_without_guessing_why() {
+    let url = Url::parse("http://this-name-does-not-exist.invalid/x").expect("a URL");
+    let mut body = Vec::new();
+    let failure = fetch(&wire(), &Request::get(url), &mut body).expect_err("no such name");
+
+    assert_eq!(failure.category(), Category::HubUnreachable);
+    assert!(
+        failure
+            .context_value("what_this_does_not_say")
+            .is_some_and(|said| said.contains("three causes")),
+        "the refusal does not say which question it is leaving open"
+    );
+    assert!(
+        failure.context_value("what_to_do").is_some_and(
+            |said| said.contains("without a network") || said.contains("with no network")
+        ),
+        "the refusal does not say what still works"
+    );
+}
+
+/// Refused is not unreachable: something answered, which means there is a path.
+/// An operator told *no route* when the host merely said no would look at the
+/// wrong thing (D33).
+#[test]
+fn a_refusal_is_distinguished_from_no_route() {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .expect("a loopback port")
+        .local_addr()
+        .expect("an address")
+        .port();
+    let url = Url::parse(&format!("http://127.0.0.1:{port}/x")).expect("a URL");
+    let mut body = Vec::new();
+    let failure = fetch(&wire(), &Request::get(url), &mut body).expect_err("nothing is there");
+
+    assert_eq!(failure.category(), Category::HubUnreachable);
+    assert!(
+        failure
+            .context_value("what_this_says")
+            .is_some_and(|said| said.contains("working path")),
+        "a refusal was reported as though there were no way to reach the host"
+    );
+}
+
 /// A wire says what it is, because it is part of the conditions of anything
 /// acquired through it (§3.4).
 #[test]

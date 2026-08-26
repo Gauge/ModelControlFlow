@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -37,6 +37,7 @@ forward as one.
 | 7 | [F7 — A major page fault is the signal F5 was missing (B-193)](#7--f7--a-major-page-fault-is-the-signal-f5-was-missing-b-193) |
 | 8 | [F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)](#8--f8--how-far-a-kernel-mcf-could-maintain-is-from-a-specialists-dec-004) |
 | 9 | [F9 — What a network costs, and what the hub actually does (B-021)](#9--f9--what-a-network-costs-and-what-the-hub-actually-does-b-021) |
+| 10 | [F10 — What a machine says when a network is missing (DEC-011, D33)](#10--f10--what-a-machine-says-when-a-network-is-missing-dec-011-d33) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -854,7 +855,84 @@ the laboratory has to be able to simulate.
 Admitting a component is [vendored.md](vendored.md)'s business and B-322 is
 where it happens. This finding is the stated reason B15 requires.
 
+## 10 · F10 — What a machine says when a network is missing (DEC-011, D33)
+
+**What was run.** A sixty-line program on 2026-08-25: resolve a name that
+exists, resolve one that cannot, and connect to three addresses that answer in
+three different ways. What is being measured is not the network — it is *what
+the platform tells a program*, which is all MCF ever has.
+
+**Conditions.** The machine of F1, on a working network, Rust 1.98.0. Nothing
+timed is a measurement of anything but the platform's own paths.
+
+| Asked | What came back | How long |
+|---|---|---|
+| Resolve a real name | an address | 60 ms |
+| Resolve `this-name-does-not-exist.invalid` | `ErrorKind::Uncategorized`, no errno, *failed to lookup address information* | 0.5 ms |
+| Connect to a closed port here | `ErrorKind::ConnectionRefused`, errno 111 | 0.2 ms |
+| Connect to `203.0.113.1` (TEST-NET-3) | `ErrorKind::TimedOut`, no errno | the deadline |
+| Connect to `10.255.255.1` | `ErrorKind::TimedOut`, no errno | the deadline |
+
+### 10.1 A failed lookup is one observation with three causes
+
+The row that decides DEC-011 is the second. A name that will not resolve
+produces `Uncategorized` — **no error kind at all** — whether the cause is a
+machine with no network, a machine with no resolver, or a name that does not
+exist. The platform does not distinguish them and neither, therefore, can MCF.
+
+That is not a gap to be filled by inference. MCF could *guess* by trying
+something else — a second resolver, a known-good address, a ping — and each of
+those is a network request nobody asked for, which §3.2 refuses and §3.13's idle
+discipline refuses again. So the honest report is the observation: *this machine
+could not turn that name into an address*, with the three causes named as what
+the sentence does **not** say (A7).
+
+### 10.2 Refused, no route, and silence are three different things
+
+The other rows are worth keeping apart, because they are three different things
+for a person to do something about. A refusal means something is there and said
+no — there is a working path. No route means this machine cannot get there at
+all, which is what an unplugged machine looks like from inside a program.
+Silence means MCF's own deadline ended the wait rather than the far end, which
+is a statement about MCF's patience and not about the network.
+
+`mcf_hub::wire::Tcp` now says which of the three it saw, and the gating tier
+holds two of them without a network: `.invalid` never resolves (RFC 2606), and
+a closed loopback port is always refused.
+
+### 10.3 What already works with nothing
+
+The other half of §7.11's question needed no new experiment, because B-183's
+from-scratch check answers it every time it runs: `--version`, `licence` and the
+whole of `doctor` — the hardware profile, the self-cost measurement over a
+hundred process spawns, and the laboratory reproducing every failure MCF claims
+to handle — run in a container with **no network interface, no libc, no shell
+and no `/etc`**. `list` and `rm` read and move local files and need nothing
+either. The only command that needs a network is the one that fetches, which is
+the answer §3.2 suggested and nobody had stated.
+
+**Verdict: D33.** Offline is the ordinary case rather than a degraded one, and
+what MCF says when a network is needed and missing is what it observed —
+never which layer is absent. *No internet* versus *no local network* is a
+distinction an operator draws by pointing `--from` at a mirror, which is a
+request MCF was asked to make; it is not one MCF asserts by probing, which would
+be traffic nobody asked for.
+
 ## Changelog
+
+### Version 12 — what a machine says when there is no network
+
+F10 added, and it closes §7.11 as D33. The measurement that decides it is small
+and slightly surprising: a name that will not resolve produces no error kind at
+all — `Uncategorized`, no errno — whether the machine has no network, no
+resolver, or asked for a name that does not exist. One observation, three
+causes, and no way to tell them apart without making a request nobody asked for.
+
+So MCF reports what it saw and names the question it is not answering. The other
+three cases *are* distinguishable and are now kept apart, because refused, no
+route and silence are three different things for a person to act on. And the
+other half of the void needed no experiment: the from-scratch container already
+runs everything except acquisition with no network at all.
 
 ### Version 11 — the provider that keeps the checks runnable
 

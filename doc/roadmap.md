@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 14 |
+| **Version** | 15 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -45,7 +45,7 @@ thing to erode it.
 | M | Product | The user can now… | Primary intents | Closes |
 |---|---|---|---|---|
 | **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16✓, §7.10✓, §7.19✓, §7.21, §7.22, §7.8, §7.50 |
-| **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11 |
+| **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11✓ |
 | **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9, §7.18 |
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
@@ -154,7 +154,9 @@ deliberation.
   is a third-party requantization, so §XII's first real artifact is also §3.6's
   hard provenance case rather than its easy one
 
-**Gated on:** DEC-011, DEC-009 (partial — the disk arbitration half).
+**Gated on:** DEC-009 (partial — the disk arbitration half). DEC-011 is closed:
+D33 states that offline is the ordinary case and that MCF reports what it
+observed rather than which layer of a network is missing.
 
 **Exit criteria**
 - Every hostile-hub fixture ends in a classified outcome with no state damage
@@ -465,7 +467,7 @@ much of MCF's confidence is therefore earned.
   and upgrades (B-148)
 - §7.14 answered with evidence (B-149)
 
-**Gated on:** DEC-020, DEC-013, DEC-005, DEC-014, DEC-015, DEC-011, DEC-021.
+**Gated on:** DEC-020, DEC-013, DEC-005, DEC-014, DEC-015, DEC-021. (DEC-011 closed as D33.)
 
 **Exit criteria**
 - The fidelity gap between simulation and real hardware is quantified and published
@@ -544,6 +546,13 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 15 — M1's gating decision is closed
+
+DEC-011 answered as D33: offline is the ordinary case, and what MCF says when a
+network is needed and missing is what it observed rather than which layer is
+absent. M1 is now gated only on the disk-arbitration half of DEC-009, and M8's
+list is one shorter for the same reason.
 
 ### Version 14 — the author closes two gates
 
