@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 13 |
+| **Version** | 14 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -39,6 +39,7 @@ forward as one.
 | 9 | [F9 — What a network costs, and what the hub actually does (B-021)](#9--f9--what-a-network-costs-and-what-the-hub-actually-does-b-021) |
 | 10 | [F10 — What a machine says when a network is missing (DEC-011, D33)](#10--f10--what-a-machine-says-when-a-network-is-missing-dec-011-d33) |
 | 11 | [F11 — A disk fills at the flush, not at the write (B-026)](#11--f11--a-disk-fills-at-the-flush-not-at-the-write-b-026)  |
+| 12 | [F12 — What an engine would cost, as far as it has been measured (B-320)](#12--f12--what-an-engine-would-cost-as-far-as-it-has-been-measured-b-320) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -958,7 +959,86 @@ moment it was asked, and another process can take it a moment later. That is why
 both halves exist: the check turns the common case from a surprise into a
 refusal, and the classification catches the case the check cannot.
 
+## 12 · F12 — What an engine would cost, as far as it has been measured (B-320)
+
+**What was run.** `prototypes/engine-cost/measure.sh` on 2026-08-25: fetch the
+two candidates §XVI's vendoring constraint leaves standing, and measure what
+each would be as a *thing to ship* — how much source, under what terms, needing
+which toolchain.
+
+**Why the question is not "which is fastest".** D32 settled that MCF delegates
+inference; [vendored.md](vendored.md) asks for a compatibility finding before
+anything ships; and B15 admits weight against a stated cost. Speed is what an
+engine is *for* and is measurable later, on this machine, by the suite MCF is
+building. What has to be known first is whether admitting one breaks something
+MCF already promises.
+
+### 12.1 What is measured
+
+| | llama.cpp | candle |
+|---|---|---|
+| What it is | C++ and CMake, one upstream | Rust, no C++ toolchain |
+| Licence | MIT | MIT or Apache-2.0 across 152 crates |
+| Revision looked at | `d222767c7a651655` | crates.io as it stood on the day |
+| Source MCF would ship | **35 MiB** — `ggml`, `src`, `common`, `include`, `vendor` | **119 MiB unfiltered**; the stubbing F9.6 uses would cut it, by how much is unmeasured |
+| Lines of C or C++ | **464,000** | 94 C or assembly files inside otherwise-Rust crates |
+| Third parties to account for | **one** | **152** |
+| Build needs | CMake ≥ 3.14 and a C++ compiler | `cargo`, and a C compiler for a few crates |
+
+The whole llama.cpp checkout is 167 MiB, of which `models/` and `docs/` are 110;
+those are not what a vendored engine would carry, and quoting the headline
+number would overstate the cost the way F9.2's 91 MiB did.
+
+### 12.2 The shape of the trade, stated before it is made
+
+**One upstream against a hundred and fifty.** llama.cpp is 464,000 lines of C++
+from one project, under one licence, at one revision — a great deal of code and
+a single thing to account for. candle is a hundred and fifty-two crates, each
+its own project with its own terms and its own release cadence, and
+[vendored.md](vendored.md) §2 would grow a row for every one. Neither is
+obviously the smaller obligation: one is more code to read and less bookkeeping,
+the other the reverse.
+
+**The toolchain is where F9.5's lesson applies again.** This machine has `cmake`
+and `g++` and **no musl cross toolchain**, which is exactly the condition that
+decided the TLS provider: a candidate that cannot be built for
+`x86_64-unknown-linux-musl` does not fail a test, it makes B-183's from-scratch
+check runnable in fewer places. For a C++ engine that question is open and
+serious; for a Rust one it is likely to be the same answer TLS got.
+
+### 12.3 What has *not* been measured, and is the deciding half
+
+Two numbers are missing, and both need a build of several minutes on a quiet
+machine — which on this machine means the exclusive window, because a build that
+size run beside somebody else's measurements spoils them (B35):
+
+- **Whether either builds for musl at all**, statically, with what is installed.
+- **What each does to D24's 40 MiB footprint ceiling.** A vendored tree is what
+  a checkout costs; a linked binary is what a user gets, and the ceiling is
+  about the second. The TLS stack took the binary from 780 KiB to 3.3 MiB; an
+  engine is a different order of thing.
+
+Until those exist this finding decides nothing, and says so. A7 applies to
+findings as much as to measurements: an unmeasured half reported as though it
+were measured is exactly the fabricated report C7 is against. The script is
+committed so that the second table can be filled by whoever has a quiet machine
+and ten minutes.
+
 ## Changelog
+
+### Version 14 — what an engine would cost, half-measured on purpose
+
+F12 added, and it is the first finding here that reports an *unfinished*
+measurement. The cheap half is done: llama.cpp is 35 MiB of one project's C++
+under one licence, candle is 152 crates of Rust under many, and this machine has
+no musl cross toolchain — the condition that decided the TLS provider in F9.5.
+
+The deciding half needs builds of several minutes on a quiet machine, and the
+machine is shared. Rather than guess at the two numbers that matter — whether
+either builds for musl, and what each does to D24's 40 MiB ceiling — the finding
+says it does not know them, and the script that would fill them in is committed
+beside it. A finding that reported an unmeasured half as measured would be the
+thing this file exists to prevent.
 
 ### Version 13 — a disk fills at the flush
 
