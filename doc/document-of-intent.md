@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 37 |
+| **Version** | 38 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -1177,6 +1177,53 @@ to. Or a decision that MCF may make an unrequested request — which would be a
 change to §3.2 rather than to this entry.
 
 [findings.md]: findings.md
+
+### D34 — Every program writes to the record directly, and carries a token so its identifiers name one thing *(answers §7.37)*
+
+**There is no owner of the record and no arbitration.** Any MCF program appends
+to the journal itself: `mcf pull` records an acquisition, `mcf rm` a removal,
+the daemon its own starting and stopping, a laboratory its trials. Nothing
+funnels through a single writer, and nothing takes a lock.
+
+**Why that is safe, measured rather than assumed.**
+[findings.md](findings.md) F13 ran eight processes appending to one journal at
+400 bytes, 8 KiB and 128 KiB a line, on two filesystems: sixteen thousand lines,
+none torn, none interleaved. The journal opens with `O_APPEND` and writes one
+whole line per entry, and the kernel takes the offset and the write together.
+`checks/tests/load.rs` holds it on every scheduled load run.
+
+**What the measurement left broken, and what fixes it.** Each writer counted its
+own appends from zero, so two programs recording the same kind of event in the
+same second minted the same identifier for two different events — a record whose
+identifiers name two things is a record nothing can cite. So an identifier now
+carries **who wrote it**: a token made from the writing process, the moment the
+writer was made, and a count of the writers made in that process. Two live
+processes cannot share a process identifier, a recycled one was made at a
+different nanosecond, and two writers inside one program differ by the count.
+No clock is trusted for ordering — only for distinctness — so a clock that steps
+backwards costs nothing (D9).
+
+**Who may mint one.** Only a journal, and only while writing. An entry that has
+not been appended has no identifier, and the type says so rather than a
+convention saying it — which is the same construction §3.16 asks for everywhere
+else.
+
+**What happens to a write that fails.** It is classified and returned, never
+retried silently and never dropped: a retried write that succeeds is a different
+event from one that succeeded first time. Where the caller is a lifecycle event
+that must not die of a full disk — the daemon recording that it started — the
+failure is reported to the operator and the process carries on (A4), which is a
+loud partial rather than a silent one.
+
+**The alternative, priced.** A single writer would mean a running daemon for
+every command, which contradicts §VI's one-command ergonomics and A22's complete
+headless surface, and would put a process between an operator and their own
+record. It buys ordering MCF does not need: entries carry the moment they
+happened, and the journal's order is the order the kernel appended them in.
+
+**What stays open.** A record on a network filesystem, where `O_APPEND` is the
+classic thing NFS does not honour. Nothing here was measured on one, and MCF has
+not been asked about that configuration.
 
 ### D32 — MCF delegates inference and owns the wrapper *(answers §7.4)*
 
@@ -3778,17 +3825,17 @@ carry a per-artifact publication flag alongside its per-artifact use flag, is
 unresearched. It constrains what a contribution can ever contain, so it is asked
 before M9 is built rather than after.
 
-### 7.37 Who writes to the record, and how concurrency is arbitrated
+### 7.37 Who writes to the record, and how concurrency is arbitrated *(answered by D34)*
 
-D6 chose a single-file record before §7.9 and §7.12 decided who
-writes to it. A serving path, a laboratory, a supervisor recording failures and
-several attached clients are potential writers, and the failure modes of an
-embedded store under concurrent writers are sharp and specific.
+D6 chose a single-file record before §7.9 and §7.12 decided who writes to it. A
+serving path, a laboratory, a supervisor recording failures and several attached
+clients are potential writers, and the failure modes of a store under concurrent
+writers are sharp and specific.
 
-D8 removes much of the contention by making laboratories exclusive, which leaves
-the ordinary case: a serving daemon and its clients. Whether writes funnel
-through one owner, and what happens to a record write that loses, is unstated —
-and §3.1 forbids the silent answer.
+**Answered by D34**, and by measurement rather than by argument: concurrent
+appends of whole lines do not tear ([findings.md](findings.md) F13), so nothing
+arbitrates. What needed fixing was the identifier, which now carries the writer
+that minted it. The number stays citable; the question is closed.
 
 ### 7.38 What happens when a pinned artifact decays
 
@@ -4014,6 +4061,7 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 | §7.50 | Which statistic a budget names | §VII, D24, B20 | **D27** — three kinds of figure; p99 for events; an unattributable run is not a pass |
 | §7.4 | Engine ownership | §VI, §VII, §IV | **D32** — delegate the kernels, own the wrapper; measured in [findings.md](findings.md) F8 |
 | §7.11 | Offline and degraded-network operation | §3.2, §V | **D33** — offline is the ordinary case; MCF reports what it observed, never which layer is missing; measured in [findings.md](findings.md) F10 |
+| §7.37 | Who writes to the record | §3.1, D6 | **D34** — everybody writes; the identifier carries the writer; measured in [findings.md](findings.md) F13 |
 
 §7 shrinks over time. If it does not, we are building on undeclared assumptions.
 
@@ -4048,6 +4096,23 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 38 — everybody writes to the record, and says who they are
+
+D34 added, closing §7.37. The void asked who owns the record and how concurrent
+writes are arbitrated; F13 had already measured that the alarming half does not
+happen — eight processes appending whole lines to one journal, sixteen thousand
+lines, none torn — so what remained was not coordination but naming.
+
+Each writer counted its own appends from zero, so two programs recording the
+same kind of event in the same second minted one identifier for two events. An
+identifier now carries a token for the writer that made it, and only a journal
+can mint one: an entry that has not been written has no identifier, and the type
+says so.
+
+The alternative is priced in the decision. A single writer would mean a running
+daemon for every command — a process between an operator and their own record —
+to buy an ordering the record already has.
 
 ### Version 37 — the record is a file, and the query over it is ours
 

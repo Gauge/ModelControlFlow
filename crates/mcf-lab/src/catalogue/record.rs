@@ -11,7 +11,7 @@
 
 use mcf_core::failure::Category;
 use mcf_core::time::Timestamp;
-use mcf_record::journal::{Entry, EntryKind, FORMAT_VERSION, Journal, replay};
+use mcf_record::journal::{Entry, EntryKind, FORMAT_VERSION, Journal, Writer, replay};
 use mcf_record::json::Value;
 
 use crate::scenario::{Outcome, Scenario};
@@ -68,7 +68,6 @@ fn entry(sequence: u64) -> Entry {
     Entry::new(
         EntryKind::MachineProfile,
         AT,
-        sequence,
         Value::map([(
             "scenario",
             Value::Integer(i64::try_from(sequence).unwrap_or(0)),
@@ -80,7 +79,10 @@ fn entry(sequence: u64) -> Entry {
 fn a_journal_of(world: &World, count: u64) -> Result<String, Outcome> {
     let path = world.path("record.jsonl");
     let mut journal = match Journal::open(&path) {
-        Ok(journal) => journal,
+        // Stated, so that the same scenario writes the same bytes every run
+        // (§3.17): an identifier names its writer, and a distinct writer is a
+        // different record every time (DEC-037).
+        Ok(journal) => journal.writing_as(Writer::stated("labbed01")),
         Err(failure) => {
             return Err(Outcome::Unexpected(format!(
                 "could not build one: {failure}"

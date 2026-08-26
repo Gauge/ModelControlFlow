@@ -12,7 +12,7 @@
 
 use mcf_core::failure::Category;
 use mcf_record::export::{FORMAT_VERSION, Kind, read, write};
-use mcf_record::journal::{Entry, EntryKind, Journal};
+use mcf_record::journal::{Entry, EntryKind, Journal, Writer};
 use mcf_record::json::Value;
 
 use crate::scenario::{Outcome, Scenario};
@@ -37,8 +37,12 @@ pub(super) const UNREADABLE_BUNDLE: Scenario = Scenario {
 fn a_bundle_of(world: &World, entries: u64) -> Result<std::path::PathBuf, Outcome> {
     let journal = world.path("record.jsonl");
     {
+        // A stated writer, because §3.17 wants a scenario to reproduce byte
+        // for byte and an identifier carries who wrote it (DEC-037). Everything
+        // outside a laboratory takes a distinct writer it did not choose.
         let mut open = Journal::open(&journal)
-            .map_err(|failure| Outcome::Unexpected(format!("no journal: {failure}")))?;
+            .map_err(|failure| Outcome::Unexpected(format!("no journal: {failure}")))?
+            .writing_as(Writer::stated("labbed01"));
         for sequence in 0..entries {
             open.append(&Entry::new(
                 EntryKind::MachineProfile,
@@ -46,7 +50,6 @@ fn a_bundle_of(world: &World, entries: u64) -> Result<std::path::PathBuf, Outcom
                     1_756_058_651_442_000_000,
                     mcf_core::attested::Attested::Unknown,
                 ),
-                sequence,
                 Value::map([("n", Value::Integer(i64::try_from(sequence).unwrap_or(0)))]),
             ))
             .map_err(|failure| Outcome::Unexpected(format!("no entry: {failure}")))?;

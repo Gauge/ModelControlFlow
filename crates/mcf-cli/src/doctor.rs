@@ -349,16 +349,18 @@ fn write(body: &Value, at: Timestamp) -> Recorded {
         Ok(journal) => journal,
         Err(failure) => return Recorded::Refused(failure),
     };
-    let entry = Entry::new(EntryKind::MachineProfile, at, 0, body.clone());
-    let id = entry.id().to_string();
+    let entry = Entry::new(EntryKind::MachineProfile, at, body.clone());
     match journal.append(&entry) {
         // D9: a clock anomaly noticed while writing is an *event*, not a
         // correction. The entry was written and the anomaly was written beside
         // it, and the report says so rather than only that the record was
         // written.
+        // The identifier comes back from the write rather than off the entry:
+        // a writer mints it, so an entry nobody has appended has none
+        // (DEC-037).
         Ok(appended) => Recorded::Written {
             path,
-            id,
+            id: appended.id.as_str().to_owned(),
             anomaly: appended.anomaly,
         },
         Err(failure) => Recorded::Refused(failure),

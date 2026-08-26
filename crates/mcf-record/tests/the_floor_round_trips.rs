@@ -57,7 +57,6 @@ fn a_captured_floor_survives_the_journal_unchanged() {
             .append(&Entry::new(
                 EntryKind::MachineProfile,
                 AT,
-                0,
                 Value::map([("conditions", encode::conditions(&captured))]),
             ))
             .expect("the entry appends");
@@ -94,7 +93,6 @@ fn a_floor_full_of_unknowns_survives_as_unknowns() {
             .append(&Entry::new(
                 EntryKind::MachineProfile,
                 AT,
-                0,
                 Value::map([("conditions", encode::conditions(&captured))]),
             ))
             .expect("the entry appends");

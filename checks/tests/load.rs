@@ -154,7 +154,6 @@ fn every_concurrent_record_replays_complete() {
                                     1_700_000_000_000_000_000,
                                     Attested::Unknown,
                                 ),
-                                u64::try_from(sequence).unwrap_or(0),
                                 Value::map([
                                     (
                                         "worker",
@@ -206,7 +205,7 @@ fn every_concurrent_export_reads_back() {
                 let scratch = Scratch::new("load-export");
                 {
                     let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
-                    for sequence in 0..200 {
+                    for _entry in 0..200 {
                         journal
                             .append(&Entry::new(
                                 EntryKind::Trials,
@@ -214,7 +213,6 @@ fn every_concurrent_export_reads_back() {
                                     1_700_000_000_000_000_000,
                                     Attested::Unknown,
                                 ),
-                                sequence,
                                 Value::map([(
                                     "worker",
                                     Value::Integer(i64::try_from(worker).unwrap_or(-1)),
@@ -292,9 +290,11 @@ fn the_harness_survives_everything_it_runs() {
 /// 400 bytes, 8 KiB and 128 KiB a line, on tmpfs and on btrfs, sixteen thousand
 /// lines from eight processes arrived intact.
 ///
-/// What is *not* asserted is that the identifiers are unique. Two writers count
-/// their own appends, so two entries can carry the same sequence number, and
-/// that is DEC-037's question rather than a defect this test hides.
+/// **And that the identifiers are unique**, which is the other half DEC-037
+/// settled: every writer carries a token no other writer has, so two programs
+/// recording the same kind of event in the same second still name two things
+/// (B-332). Before that, each writer counted its own appends from zero and two
+/// entries could carry one identifier — a record nothing could cite.
 #[test]
 #[ignore = "the load tier is scheduled: scripts/ci.sh --with-load (B38)"]
 fn two_processes_writing_one_record_leave_it_readable() {
@@ -315,12 +315,11 @@ fn two_processes_writing_one_record_leave_it_readable() {
                 // two threads in one process share a `Journal` if they are not
                 // careful, and what a machine actually has is two programs.
                 let mut writing = Journal::open(&journal).expect("a journal opens");
-                for sequence in 0..each {
+                for _entry in 0..each {
                     writing
                         .append(&Entry::new(
                             EntryKind::SelfCost,
                             Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-                            u64::try_from(sequence).unwrap_or(0),
                             Value::map([
                                 ("worker", Value::Integer(worker)),
                                 ("filler", Value::text("x".repeat(400))),
@@ -343,6 +342,19 @@ fn two_processes_writing_one_record_leave_it_readable() {
         usize::try_from(writers * each).unwrap_or(0),
         "entries were lost between the writers and the record"
     );
+    // Every identifier names one entry (DEC-037, B-332).
+    let mut identifiers = std::collections::BTreeSet::new();
+    for entry in &replayed.entries {
+        let id = entry
+            .id()
+            .map(|id| id.as_str().to_owned())
+            .expect("an entry read from a record has the identifier its writer gave it");
+        assert!(
+            identifiers.insert(id.clone()),
+            "two entries from concurrent writers were given one identifier: {id}"
+        );
+    }
+
     // And every entry is one somebody wrote, whole: a torn line that happened
     // to parse would show up as a body missing its filler.
     for entry in &replayed.entries {

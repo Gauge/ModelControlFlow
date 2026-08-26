@@ -186,12 +186,11 @@ fn the_journal_replay_survives_a_damaged_file() {
         {
             let mut journal =
                 Journal::open(&scratch.journal()).map_err(|failure| failure.to_string())?;
-            for sequence in 0..=rng.index(4) {
+            for _entry in 0..=rng.index(4) {
                 journal
                     .append(&Entry::new(
                         EntryKind::SelfCost,
                         Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-                        sequence as u64,
                         Value::map([("n", Value::Integer(rng.integer_between(0, 1_000)))]),
                     ))
                     .map_err(|failure| failure.to_string())?;
@@ -588,12 +587,11 @@ fn the_bundle_reader_never_accepts_what_it_cannot_account_for() {
         {
             let mut journal =
                 Journal::open(&scratch.journal()).map_err(|failure| failure.to_string())?;
-            for sequence in 0..=rng.index(4) {
+            for _entry in 0..=rng.index(4) {
                 journal
                     .append(&Entry::new(
                         EntryKind::Trials,
                         Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-                        sequence as u64,
                         Value::map([("n", Value::Integer(rng.integer_between(0, 1_000)))]),
                     ))
                     .map_err(|failure| failure.to_string())?;

@@ -112,12 +112,11 @@ fn error_text(output: &Output) -> String {
 /// to the journal format reaches both sides at once.
 fn seed_record(machine: &Machine, entries: usize) {
     let mut journal = Journal::open(&machine.journal()).expect("a journal opens");
-    for sequence in 0..entries {
+    for _entry in 0..entries {
         journal
             .append(&Entry::new(
                 EntryKind::SelfCost,
                 Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-                sequence as u64,
                 Value::map([("seeded", Value::Bool(true))]),
             ))
             .expect("the entry appends");

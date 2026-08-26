@@ -120,12 +120,11 @@ fn one_real_entry(root: &std::path::Path) -> (String, String, std::time::Duratio
 
     let trials = 100;
     let started = Instant::now();
-    for sequence in 0..trials {
+    for _trial in 0..trials {
         journal
             .append(&Entry::new(
                 EntryKind::ArtifactAcquired,
                 Timestamp::now(),
-                sequence,
                 body.clone(),
             ))
             .expect("it appends");

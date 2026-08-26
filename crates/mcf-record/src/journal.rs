@@ -30,7 +30,7 @@ pub mod index;
 mod replay;
 
 pub use anomaly::{Reading, TOLERANCE, between as clock_anomaly_between};
-pub use entry::{Entry, EntryId, EntryKind};
+pub use entry::{Entry, EntryId, EntryKind, Writer};
 pub use index::{Built, Index, Located};
 pub use replay::{Loss, Placed, Placement, Replay};
 
@@ -74,11 +74,24 @@ pub struct Journal {
     /// Set while an anomaly is being recorded, so that recording one cannot
     /// detect another and recur.
     recording_anomaly: bool,
+    /// Who this handle is, for the identifiers it mints (DEC-037, B-332).
+    ///
+    /// Per *handle* rather than per process: two programs writing one record is
+    /// the case F13 measured, and two handles inside one program is the case a
+    /// laboratory has. Both must mint different identifiers, and a token made
+    /// when the handle is made covers both.
+    writer: Writer,
 }
 
 /// What an append did.
 #[derive(Debug)]
 pub struct Appended {
+    /// The identifier the writer minted for the entry.
+    ///
+    /// Returned rather than read off the entry the caller passed in, because
+    /// the caller's entry does not have one: an identifier belongs to a write
+    /// (DEC-037).
+    pub id: EntryId,
     /// A clock anomaly noticed between this append and the one before it.
     ///
     /// `None` is the ordinary case. When it is `Some`, the entry was still
@@ -130,6 +143,7 @@ impl Journal {
             appended: 0,
             last_read: None,
             recording_anomaly: false,
+            writer: Writer::distinct(),
         };
         if fresh {
             journal.write_line(&header())?;
@@ -143,6 +157,24 @@ impl Journal {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Which writer this handle mints identifiers as.
+    #[must_use]
+    pub const fn writer(&self) -> &Writer {
+        &self.writer
+    }
+
+    /// The same journal, writing as a stated writer.
+    ///
+    /// For a scenario that needs the same record byte for byte on every run
+    /// (§3.17). Nothing in MCF's own paths calls it: a token somebody chose is
+    /// only distinct if they chose it carefully, and the guarantee DEC-037
+    /// rests on is that nobody has to.
+    #[must_use]
+    pub fn writing_as(mut self, writer: Writer) -> Self {
+        self.writer = writer;
+        self
     }
 
     /// How many entries this handle has appended.
@@ -178,7 +210,16 @@ impl Journal {
         };
         self.last_read = Some(now);
 
-        self.write_line(&entry.to_value())?;
+        let stamped = entry
+            .clone()
+            .stamped(entry.identify(&self.writer, self.appended));
+        let id = match stamped.id() {
+            Some(id) => id.clone(),
+            // Unreachable: it was just stamped. Saying so beats an `expect`,
+            // which the workspace denies for the reason this branch exists.
+            None => EntryId::as_written(""),
+        };
+        self.write_line(&stamped.to_value())?;
         self.appended = self.appended.saturating_add(1);
 
         // A2: the anomaly is persisted, not only returned. A caller that
@@ -189,14 +230,13 @@ impl Journal {
             let recorded = self.append(&Entry::new(
                 EntryKind::Failure,
                 entry.recorded_at(),
-                self.appended,
                 crate::encode::failure(failure),
             ));
             self.recording_anomaly = false;
             recorded?;
         }
 
-        Ok(Appended { anomaly })
+        Ok(Appended { id, anomaly })
     }
 
     fn write_line(&mut self, value: &Value) -> Result<()> {

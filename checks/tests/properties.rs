@@ -406,7 +406,7 @@ fn every_entry_survives_the_journal() {
         let scratch = Scratch::new("property-journal");
         let count = rng.index(6) + 1;
         let entries: Vec<Entry> = (0..count)
-            .map(|sequence| {
+            .map(|_which| {
                 let kind = *rng.pick(&EntryKind::ALL).unwrap_or(&EntryKind::Failure);
                 Entry::new(
                     kind,
@@ -414,7 +414,6 @@ fn every_entry_survives_the_journal() {
                         i128::from(rng.integer_between(0, 2_000_000_000_000_000_000)),
                         Attested::Unknown,
                     ),
-                    u64::try_from(sequence).unwrap_or(0),
                     value(rng, 2),
                 )
             })
@@ -465,7 +464,6 @@ fn a_journal_torn_anywhere_reports_exactly_what_it_lost() {
                     .append(&Entry::new(
                         EntryKind::SelfCost,
                         Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-                        u64::try_from(sequence).unwrap_or(0),
                         Value::map([("n", Value::Integer(i64::try_from(sequence).unwrap_or(0)))]),
                     ))
                     .map_err(|failure| failure.to_string())?;

@@ -497,11 +497,9 @@ pub fn remove(
 
     // Before anything moves. A record written afterwards is one a crash can
     // lose along with the artifact it describes (A1).
-    let sequence = journal.appended();
     journal.append(&Entry::new(
         EntryKind::ArtifactRemoved,
         at,
-        sequence,
         record_of(plan, authorization),
     ))?;
 

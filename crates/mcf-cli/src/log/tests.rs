@@ -9,7 +9,6 @@ fn an_entry(kind: EntryKind, body: Value) -> Entry {
     Entry::new(
         kind,
         Timestamp::from_utc_nanos(0, mcf_core::attested::Attested::Unknown),
-        0,
         body,
     )
 }

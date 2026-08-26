@@ -28,7 +28,7 @@
 //! and what `mcf export` sends.
 
 use mcf_record::journal::index::{self, Index};
-use mcf_record::journal::{Entry, EntryKind};
+use mcf_record::journal::{Entry, EntryId, EntryKind};
 use mcf_record::json::Value;
 
 use crate::Response;
@@ -112,7 +112,11 @@ pub(crate) fn run(kind: Option<&str>, last: Option<usize>, full: bool) -> Respon
             Ok(entry) => lines.push(if full {
                 entry.to_value().to_line()
             } else {
-                format!("{}  {}", entry.id(), summarize(&entry))
+                format!(
+                    "{}  {}",
+                    entry.id().map_or("(unidentified)", EntryId::as_str),
+                    summarize(&entry)
+                )
             }),
             Err(failure) => lines.push(format!(
                 "line {}: THIS ENTRY COULD NOT BE READ: {failure}",

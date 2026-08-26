@@ -355,14 +355,14 @@ fn read_entry(value: &Value) -> Option<Entry> {
     let kind = EntryKind::parse(value.get("kind")?.as_text()?)?;
     let nanos = value.get("recorded_at_utc_nanos")?.as_integer()?;
     let body = value.get("body")?.clone();
-    value.get("id")?.as_text()?;
+    let id = super::EntryId::as_written(value.get("id")?.as_text()?);
 
     // The offset is not read back from the text rendering: D9 stores it
     // alongside the moment, and a replay that inferred one from a formatted
     // string would be inventing a condition (A7). Entries written by this
     // version carry `unknown`, and that is what comes back.
     let recorded_at = Timestamp::from_utc_nanos(i128::from(nanos), read_offset(value));
-    Some(Entry::new(kind, recorded_at, 0, body))
+    Some(Entry::recorded(id, kind, recorded_at, body))
 }
 
 fn read_offset(value: &Value) -> Attested<UtcOffset> {

@@ -39,7 +39,6 @@ impl Scratch {
                 .append(&Entry::new(
                     EntryKind::MachineProfile,
                     AT,
-                    sequence,
                     Value::map([("n", Value::Integer(i64::try_from(sequence).unwrap_or(0)))]),
                 ))
                 .expect("an entry appends");

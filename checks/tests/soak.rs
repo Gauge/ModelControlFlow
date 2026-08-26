@@ -247,7 +247,6 @@ fn entry(sequence: u64) -> Entry {
     Entry::new(
         EntryKind::SelfCost,
         mcf_core::time::Timestamp::from_utc_nanos(1_700_000_000_000_000_000, Attested::Unknown),
-        sequence,
         Value::map([(
             "cycle",
             Value::Integer(i64::try_from(sequence).unwrap_or(-1)),

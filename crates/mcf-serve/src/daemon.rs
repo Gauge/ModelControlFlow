@@ -188,8 +188,7 @@ impl Daemon {
             );
             return;
         };
-        let sequence = journal.appended();
-        if let Err(failure) = journal.append(&Entry::new(kind, at, sequence, body)) {
+        if let Err(failure) = journal.append(&Entry::new(kind, at, body)) {
             eprintln!("mcf: {kind} could not be recorded: {failure}");
         }
     }
