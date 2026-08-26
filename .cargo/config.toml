@@ -8,3 +8,4 @@ replace-with = "vendored"
 
 [source.vendored]
 directory = "vendor"
+

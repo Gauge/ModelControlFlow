@@ -128,6 +128,13 @@ started=$SECONDS
 step "formatting"
 cargo fmt --all -- --check
 
+# Paths do not travel into the artifact (B-001, §3.12, §XIV). A vendored crate
+# is a path source, so without this rustc writes this machine's directory into
+# every panic location it compiles — and two checkouts at different paths stop
+# producing the same bytes, which is what `check-reproducible-build.sh` found
+# the day the first dependency was admitted.
+export RUSTFLAGS="${RUSTFLAGS:-}${RUSTFLAGS:+ }--remap-path-prefix=$root=."
+
 step "lints (deny warnings)"
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 
