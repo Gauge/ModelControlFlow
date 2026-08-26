@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 17 |
+| **Version** | 18 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1207,7 +1207,103 @@ changes today is D6's *the record is a SQLite database*, which becomes D20's
 shape stated once: the journal is the record, and the index over it is derived,
 32 bytes an entry, and free to delete.
 
+## 15 · F15 — What actually needs elevation, asked of a machine (DEC-039, §7.39, §6.32)
+
+**Why it was run.** §6.32 requires MCF's privileged surface be an enumerable,
+auditable, short list, and §7.39 records that the list does not exist. It cannot
+be written from documentation: what an ordinary user may do differs by kernel,
+distribution, hardware and how the machine was set up. B-190's helper and
+B-180's containment scenario are both blocked on the list, so it was asked.
+
+**What was run.** `prototypes/elevation/measure.sh`, which **changes nothing**:
+every row is a read, or a permission test of the kind `open(O_WRONLY)` performs,
+or an operation on the probe's own process. A measurement that reconfigured a
+shared machine to find out what it could reconfigure would be the ambient
+authority §6.32 exists to refuse.
+
+Conditions: Linux 7.1.9 (Fedora 44), uid 1000 in groups `wheel` and `ollama`,
+cgroup v2 under a systemd user slice, one NVIDIA and one AMD device present.
+**One machine.** Everything below is a fact about this configuration and a
+hypothesis about any other, which is the whole reason DEC-039 asks *on which
+platforms*.
+
+### 15.1 What the machine said
+
+| Operation | As this user | What wants it |
+|---|---|---|
+| Pin a process to cores | **permitted** | §6.39's ladder, B-193 |
+| Bound this process's memory (`memory.high`) | **permitted** | §6.39, D8 |
+| Read per-process accelerator occupancy | **permitted** | PR5, B-216 |
+| Read temperature (thermal zone, hwmon) | **permitted** | §3.4's floor, B-013 |
+| Raise priority (`nice -5`) | **refused** | §6.39's ladder |
+| Real-time scheduling (`SCHED_FIFO`) | needs elevation | §6.39's ladder |
+| Set the CPU frequency governor | needs elevation | §6.39, §3.25 |
+| Disable SMT, offline a core | needs elevation | §6.39's upper rungs |
+| Drop the page cache | needs elevation | a cold-start measurement |
+| Set IRQ affinity | needs elevation | quieting a machine |
+| Hardware performance counters | user-space events only (`perf_event_paranoid` = 2) | B-012 |
+| **Read processor energy (RAPL)** | **needs elevation** | **D11 — energy is first-class** |
+| Change accelerator compute or persistence mode | root, per the vendor's own tool | D8's exclusive lab |
+| Lock memory | **8 MiB** (`RLIMIT_MEMLOCK`) | pinning weights |
+
+**The one that costs something.** D11 makes energy a first-class quantity, and
+`intel-rapl`'s `energy_uj` is not readable by an ordinary user on this
+distribution — a deliberate change made after the counters were shown to leak
+information about what a machine is doing. So *energy per token* is not a figure
+MCF can take here without a privileged reader, and D11's claim needs either a
+helper, a vendor counter that is readable (the accelerator's own power draw is,
+through `nvidia-smi`), or an honest absence.
+
+**Two that cost less than expected.** Core pinning and a memory bound need no
+privilege at all: cgroup v2 delegates `cpu`, `io`, `memory` and `pids` to the
+user's own slice, so MCF can ask for less of a machine without asking anybody.
+And per-process accelerator occupancy is readable, so PR5's contention snapshot
+— *what was I competing with* — does not need elevation.
+
+### 15.2 The method has a lesson of its own
+
+The first version of the probe reported that raising priority was **permitted**,
+because `nice -n -5 true` exits zero. It does so having failed: the shell's
+`nice` reports the exit status of the command it ran, not whether the priority
+was applied. Asking the child what its priority actually *became* reverses the
+answer.
+
+That is A21 at the level of a shell script — a declaration is not an
+observation — and it is the reason this file exists: a list of privileged
+operations written from what the tools *said* would have been wrong on its first
+row.
+
+### 15.3 What this settles
+
+It gives DEC-039 the list §6.32 asks for, on one platform, split by what it
+costs. Four operations MCF wants need nothing. Two — a governor and real-time
+scheduling — are the ladder's upper rungs and need a helper or must be dropped.
+One — reading energy — is a *read* that needs elevation, which is the awkward
+case §7.39 anticipated: a helper that must exist for a counter rather than for
+an action.
+
+**What it does not settle.** Every other platform. A Debian machine, a machine
+without systemd, a container with no `/sys` write access at all, and macOS and
+Windows are each their own answer, which is why DEC-039's answer has a column
+per platform (D35) rather than a single list.
+
 ## Changelog
+
+### Version 18 — what a machine lets an ordinary user do
+
+F15. §6.32 wants the privileged surface enumerated and §7.39 records that nobody
+had enumerated it; documentation cannot, because the answer differs by machine.
+So it was asked, without changing anything: pinning cores, bounding memory,
+reading temperatures and reading per-process accelerator occupancy need no
+privilege; a governor, real-time scheduling, dropping caches and IRQ affinity
+do; and reading processor energy — which D11 makes first-class — needs
+elevation on this distribution, which is the awkward case §7.39 anticipated.
+
+The probe's own first answer was wrong in the instructive way: `nice -n -5 true`
+exits zero having failed, because the shell reports the command's status rather
+than whether the priority was applied. Asking the child what it actually ran at
+reverses the row. A declaration is not an observation, at the level of a shell
+script.
 
 ### Version 17 — the index earns its bytes, and SQLite does not
 
