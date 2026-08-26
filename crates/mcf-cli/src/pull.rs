@@ -31,6 +31,7 @@ use mcf_core::measurement::Bytes;
 use mcf_core::provenance::{Checksum, Origin, Provenance, Repository, Revision};
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
+use mcf_hub::credentials::{self, Credential, Origin as Held, Secret};
 use mcf_hub::fetch::{Acquired, Verification, acquire};
 use mcf_hub::fitment::{self, Requirement, Shape, Verdict};
 use mcf_hub::http::Url;
@@ -47,8 +48,24 @@ use crate::models;
 /// Where MCF looks for models when nobody says otherwise.
 pub(crate) const DEFAULT_HUB: &str = "https://huggingface.co/";
 
+/// Where a credential came from, as the operator said.
+///
+/// There is no fourth option and no default. B-024's whole claim is that MCF
+/// never picks one up on its own: an operator either hands one over or names
+/// exactly where MCF may read it from, and either way what happened is in the
+/// provenance of the acquisition (§3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Offered<'a> {
+    /// None, which is how most of the hub is read.
+    Nothing,
+    /// This file holds one.
+    File(&'a str),
+    /// This environment variable holds one, and the operator said so.
+    Variable(&'a str),
+}
+
 /// Acquires a model, or says what would be acquired.
-pub(crate) fn run(asked_for: &str, from: Option<&str>) -> Response {
+pub(crate) fn run(asked_for: &str, from: Option<&str>, offered: Offered<'_>) -> Response {
     let reference = match reference::parse(asked_for) {
         Ok(reference) => reference,
         Err(failure) => return refused("that is not a reference MCF can resolve", &failure),
@@ -65,10 +82,26 @@ pub(crate) fn run(asked_for: &str, from: Option<&str>) -> Response {
         };
     };
 
-    let hub = Hub::at(base, Box::new(Tcp::default()));
+    let hub = match credential(offered, &environment) {
+        Ok(None) => Hub::at(base, Box::new(Tcp::default())),
+        Ok(Some(credential)) => Hub::at(base, Box::new(Tcp::default())).offering(credential),
+        Err(text) => {
+            return Response {
+                text,
+                served: false,
+            };
+        }
+    };
     let listing = match hub.list(&reference) {
         Ok(listing) => listing,
-        Err(failure) => return refused("nothing was acquired", &failure),
+        Err(failure) => {
+            let mut response = refused("nothing was acquired", &failure);
+            if failure.category() == mcf_core::failure::Category::HubAuthRequired {
+                response.text.push('\n');
+                response.text.push_str(&what_is_lying_around(&environment));
+            }
+            return response;
+        }
     };
 
     let Some(wanted) = reference.file.clone() else {
@@ -238,6 +271,86 @@ fn record(
         ]),
     ))?;
     Ok(path)
+}
+
+/// The one place in this surface that reads the environment.
+///
+/// A function rather than a call at each site, so that everything below is
+/// *handed* a way to look and the reading happens where a reader can see it —
+/// the same discipline `mcf_hub::credentials` keeps, for the same reason
+/// (B-024).
+fn environment(variable: &str) -> Option<String> {
+    std::env::var(variable).ok()
+}
+
+/// The credential the operator named, read from where they said it was.
+///
+/// Reading a file or an environment variable *because somebody named it* is not
+/// the silent pickup B-024 forbids: what makes it deliberate is that the name
+/// came from the command line, and what makes it accountable is that the origin
+/// travels with the credential into the record (§3.4).
+fn credential(
+    offered: Offered<'_>,
+    look_up: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<Credential>, String> {
+    let (token, origin) = match offered {
+        Offered::Nothing => return Ok(None),
+        Offered::File(path) => {
+            let read = std::fs::read_to_string(path).map_err(|error| {
+                format!("mcf: the credential file could not be read\n  {path}: {error}")
+            })?;
+            (
+                read.trim().to_owned(),
+                Held::File {
+                    path: PathBuf::from(path),
+                },
+            )
+        }
+        Offered::Variable(name) => (
+            look_up(name)
+                .ok_or_else(|| {
+                    format!(
+                        "mcf: {name} is not set, so there is no credential to offer\n  MCF reads \
+                         an environment variable only when it is named, and this one holds nothing"
+                    )
+                })?
+                .trim()
+                .to_owned(),
+            Held::Environment {
+                variable: name.to_owned(),
+            },
+        ),
+    };
+    if token.is_empty() {
+        return Err(format!(
+            "mcf: {origin} holds nothing\n  an empty credential is not a credential, and \
+             offering one would produce a refusal nobody could explain"
+        ));
+    }
+    Ok(Some(Credential::new(Secret::new(token), origin)))
+}
+
+/// What credentials are sitting on this machine, unused.
+///
+/// Shown only when the hub has just said it needs one. MCF has looked and used
+/// nothing: the whole point of B-024 is that finding a token is not permission
+/// to spend it, and the operator is told the name to pass rather than having
+/// the decision made for them.
+fn what_is_lying_around(look_up: &dyn Fn(&str) -> Option<String>) -> String {
+    let seen = credentials::sightings(look_up, None, &|_| None);
+    if seen.is_empty() {
+        return "  MCF looked for a credential on this machine and found none.\n  Offer one with \
+                --token-from <file> or --token-from-env <VARIABLE>."
+            .to_owned();
+    }
+    let mut lines = vec!["  MCF has looked, and used nothing:".to_owned()];
+    for sighting in &seen {
+        lines.push(format!("    {}", sighting.describe()));
+        if let Held::Environment { variable } = &sighting.origin {
+            lines.push(format!("    offer it with --token-from-env {variable}"));
+        }
+    }
+    lines.join("\n")
 }
 
 /// How much context a plan is made at when nobody has said.

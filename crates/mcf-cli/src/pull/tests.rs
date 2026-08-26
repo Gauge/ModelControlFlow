@@ -8,7 +8,7 @@
 use mcf_hub::reference;
 use mcf_hub::source::{Entry, Listing};
 
-use super::{DEFAULT_HUB, PLANNING_CONTEXT, licence_of, offer, run};
+use super::{DEFAULT_HUB, Offered, PLANNING_CONTEXT, credential, licence_of, offer, run};
 
 fn a_listing() -> Listing {
     Listing {
@@ -68,7 +68,7 @@ fn the_terms_are_offered_with_the_files() {
 /// A string that is not a reference is refused by name rather than attempted.
 #[test]
 fn a_reference_that_is_not_one_is_refused() {
-    let response = run("not a reference at all", None);
+    let response = run("not a reference at all", None, Offered::Nothing);
     assert!(!response.served);
     assert!(
         response.text.contains("not a reference"),
@@ -83,7 +83,7 @@ fn a_reference_that_is_not_one_is_refused() {
 #[test]
 fn the_encrypted_hub_is_refused_in_as_many_words() {
     assert!(DEFAULT_HUB.starts_with("https://"), "{DEFAULT_HUB}");
-    let response = run("owner/model", None);
+    let response = run("owner/model", None, Offered::Nothing);
     assert!(!response.served);
     assert!(
         response.text.contains("no TLS stack is vendored"),
@@ -96,7 +96,7 @@ fn the_encrypted_hub_is_refused_in_as_many_words() {
 /// And a hub that is not a URL is refused before anything is opened.
 #[test]
 fn a_hub_that_is_not_a_url_is_refused() {
-    let response = run("owner/model", Some("not-a-hub"));
+    let response = run("owner/model", Some("not-a-hub"), Offered::Nothing);
     assert!(!response.served);
     assert!(response.text.contains("not a hub"), "{}", response.text);
 }
@@ -125,4 +125,96 @@ fn no_plan_is_said_rather_than_shown_empty() {
         "{offered}"
     );
     assert!(offered.contains("configuration"), "{offered}");
+}
+
+/// Nothing is ever read from the environment unless a test says what is there:
+/// these look through a lookup of their own, which is the same discipline the
+/// surface itself keeps.
+fn nothing_set(_variable: &str) -> Option<String> {
+    None
+}
+
+/// Nothing offered is nothing held: the ordinary case, and the one B-024 makes
+/// the default.
+#[test]
+fn nothing_offered_is_nothing_held() {
+    assert_eq!(
+        credential(Offered::Nothing, &nothing_set).expect("no credential"),
+        None
+    );
+}
+
+/// A credential read from a file the operator named carries where it came
+/// from, and never the token itself into a message (§3.4, B-024).
+#[test]
+fn a_credential_from_a_named_file_carries_its_origin() {
+    let path = std::env::temp_dir().join(format!("mcf-pull-token-{}", std::process::id()));
+    std::fs::write(&path, "hf_from_a_file\n").expect("a token file");
+
+    let held = credential(
+        Offered::File(path.to_str().unwrap_or_default()),
+        &nothing_set,
+    )
+    .expect("it reads")
+    .expect("one is there");
+    assert_eq!(
+        held.secret().reveal(),
+        "hf_from_a_file",
+        "the newline came with it"
+    );
+    assert!(held.describe().contains(&path.display().to_string()));
+    assert!(!held.describe().contains("hf_from_a_file"));
+
+    let _cleared = std::fs::remove_file(&path);
+}
+
+/// A file that is not there is said rather than treated as no credential: an
+/// operator who names one means it, and silently proceeding anonymously would
+/// produce a refusal they cannot explain.
+#[test]
+fn a_credential_file_that_is_not_there_is_reported() {
+    let missing =
+        credential(Offered::File("/nowhere/at/all/token"), &nothing_set).expect_err("not there");
+    assert!(missing.contains("could not be read"), "{missing}");
+}
+
+/// An empty one is not a credential.
+#[test]
+fn an_empty_credential_is_refused_before_it_is_offered() {
+    let path = std::env::temp_dir().join(format!("mcf-pull-blank-{}", std::process::id()));
+    std::fs::write(&path, "   \n").expect("a blank file");
+    let blank = credential(
+        Offered::File(path.to_str().unwrap_or_default()),
+        &nothing_set,
+    )
+    .expect_err("nothing in it");
+    assert!(blank.contains("holds nothing"), "{blank}");
+    let _cleared = std::fs::remove_file(&path);
+}
+
+/// A variable MCF was told to read is read, and one it was not told about is
+/// not looked at — which is the whole of B-024 at this surface.
+#[test]
+fn an_environment_variable_is_read_only_when_it_is_named() {
+    let named = "A_VARIABLE_THE_OPERATOR_NAMED";
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let look_up = |variable: &str| {
+        asked.borrow_mut().push(variable.to_owned());
+        (variable == named).then(|| "hf_from_the_environment".to_owned())
+    };
+
+    let held = credential(Offered::Variable(named), &look_up)
+        .expect("it reads")
+        .expect("one is there");
+    assert_eq!(held.secret().reveal(), "hf_from_the_environment");
+    assert!(held.describe().contains(named));
+    assert!(!held.describe().contains("hf_from_the_environment"));
+    assert_eq!(
+        asked.borrow().as_slice(),
+        [named.to_owned()],
+        "MCF looked at something nobody named"
+    );
+
+    let absent = credential(Offered::Variable("SOMETHING_ELSE"), &look_up).expect_err("not set");
+    assert!(absent.contains("is not set"), "{absent}");
 }
