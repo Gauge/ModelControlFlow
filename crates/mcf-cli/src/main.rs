@@ -13,6 +13,7 @@
 mod doctor;
 mod explain;
 mod licence;
+mod log;
 mod models;
 mod pull;
 mod run;
@@ -67,6 +68,15 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Read the record back.
+    Log {
+        /// Only entries of this kind.
+        kind: Option<&'a str>,
+        /// How many of the most recent to show.
+        last: Option<usize>,
+        /// The record's own JSON rather than a summary.
+        full: bool,
+    },
     /// Say what a model declares and what MCF would do with it.
     Explain {
         /// The model: a path, or something `mcf list` names.
@@ -187,6 +197,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "serve",
             argument,
         },
+        ["log", rest @ ..] => match log_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "log",
+                argument,
+            },
+        },
         ["explain", model] => Request::Explain { model },
         ["explain"] => Request::MissingArgument {
             command: "explain",
@@ -294,6 +311,42 @@ fn export(to: &std::path::Path) -> Response {
             served: false,
         },
     }
+}
+
+/// Reads `log`'s own arguments.
+///
+/// Total: an option it does not have is named back, and a count that is not a
+/// number is a refusal rather than a default quietly substituted (A7).
+fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut kind = None;
+    let mut last = None;
+    let mut full = false;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--kind" => match rest.next() {
+                Some(named) => kind = Some(*named),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "log",
+                        needs: "--kind <kind>",
+                    });
+                }
+            },
+            "--last" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(count) => last = Some(count),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "log",
+                        needs: "--last <n>, a number",
+                    });
+                }
+            },
+            "--full" => full = true,
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Log { kind, last, full })
 }
 
 /// Reads `run`'s own arguments.
@@ -501,6 +554,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
+                 \x20         [--last <n>] [--full]       read back out of the record\n\
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
                  \x20                                     what MCF would choose, and what\n\
                  \x20                                     it cannot tell you\n\
@@ -540,6 +595,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             offered,
         } => pull::run(reference, *from, *offered),
         Request::Serve => serve::run(),
+        Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Explain { model } => explain::run(model),
         Request::Run {
             model,
@@ -630,6 +686,7 @@ mod tests {
         assert!(text.contains("mcf status"), "{text}");
         assert!(text.contains("mcf run"), "{text}");
         assert!(text.contains("mcf explain"), "{text}");
+        assert!(text.contains("mcf log"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         for unbuilt in ["mcf bench", "mcf lab"] {
             assert!(
