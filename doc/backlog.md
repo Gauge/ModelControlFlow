@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 126 |
+| **Version** | 127 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -368,6 +368,23 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 127 — the report knew about a daemon that had arrived
+
+Same sweep, one more stale sentence. `mcf doctor` listed four D24 figures as
+*not measurable here* because *there is no daemon until M2* — and there is one,
+and two of those figures have since been measured against it (zero wakeups over
+a minute, 10.4 µs of added latency at p99).
+
+The reason it does not measure them is real and is now the reason given: they
+are figures about a *running* daemon, and a report that started one to measure
+it would be changing the machine it is describing. The tiers that measure them
+start a daemon of their own.
+
+A test asserts the old sentence cannot come back, in the same shape as the one
+guarding the usage text: what MCF says it cannot do is read by somebody deciding
+whether to try (D7), so a stale *cannot* is a defect rather than an
+infelicity.
 
 ### Version 126 — reading the surfaces as a stranger would
 
