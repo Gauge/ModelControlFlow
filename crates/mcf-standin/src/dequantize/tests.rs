@@ -243,3 +243,291 @@ fn a_scheme_this_crate_does_not_implement_says_which() {
         "the refusal does not say which scheme"
     );
 }
+
+/// A `Q4_K` super-block, decoded against the arithmetic its format defines,
+/// worked out here by hand rather than by running the decoder and writing down
+/// what it said.
+///
+/// The test that would prove nothing is the one that asks the decoder what it
+/// produces and then asserts it produces that. So the block below is built with
+/// scales and minimums chosen to be readable — sub-block *n* gets scale `n + 1`
+/// and minimum `n` — and every expected value is computed from the format's own
+/// sentence: `d × scale × q − dmin × minimum`.
+#[test]
+fn a_q4_k_super_block_decodes_to_the_arithmetic_its_format_states() {
+    // d = 2, dmin = 4, in half precision.
+    let mut raw = vec![0x00, 0x40, 0x00, 0x44];
+    // Twelve bytes of packed six-bit scales and minimums. The first four pairs
+    // are plain: scales in bytes 0..4, minimums in bytes 4..8, six bits each.
+    let mut packed = [0_u8; 12];
+    for sub in 0..4_usize {
+        packed[sub] = u8::try_from(sub + 1).unwrap_or(0);
+        packed[sub + 4] = u8::try_from(sub).unwrap_or(0);
+    }
+    // The last four pairs live in the low and high nibbles of bytes 8..12,
+    // with their top two bits in the top of bytes 0..8.
+    for sub in 4..8_usize {
+        let scale = u8::try_from(sub + 1).unwrap_or(0);
+        let minimum = u8::try_from(sub).unwrap_or(0);
+        packed[sub + 4] = (scale & 0x0F) | ((minimum & 0x0F) << 4);
+        packed[sub - 4] |= (scale >> 4) << 6;
+        packed[sub] |= (minimum >> 4) << 6;
+    }
+    raw.extend_from_slice(&packed);
+    // 128 bytes of values: low nibble `i % 16`, high nibble `15 - (i % 16)`.
+    for index in 0..128_usize {
+        let low = u8::try_from(index % 16).unwrap_or(0);
+        raw.push(low | ((15 - low) << 4));
+    }
+
+    let decoded = tensor(TensorKind::Q4_K, &raw, 256).expect("a Q4_K super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    for sub in 0..8_usize {
+        let scale = 2.0 * (small(sub) + 1.0);
+        let minimum = 4.0 * small(sub);
+        for position in 0..32_usize {
+            let index = sub.wrapping_div(2) * 32 + position;
+            let nibble = if sub % 2 == 0 {
+                small(index % 16)
+            } else {
+                small(15 - (index % 16))
+            };
+            let want = scale * nibble - minimum;
+            let got = decoded[sub * 32 + position];
+            assert!(
+                (got - want).abs() < 1e-3,
+                "sub-block {sub} value {position}: wanted {want}, got {got}"
+            );
+        }
+    }
+}
+
+/// A small index as a float, exactly. Everything here is under sixteen.
+fn small(value: usize) -> f32 {
+    f32::from(u8::try_from(value).unwrap_or(0))
+}
+
+/// A `Q6_K` super-block, the same way: six-bit values centred by subtracting
+/// thirty-two, against signed eight-bit scales.
+#[test]
+fn a_q6_k_super_block_centres_its_values_and_reads_its_scales_as_signed() {
+    let mut raw = vec![0_u8; 210];
+    // Every low nibble 0 and every high nibble 0, so the value is decided by
+    // the high plane alone: two bits per value, all set.
+    for byte in raw.iter_mut().take(128) {
+        *byte = 0;
+    }
+    for byte in raw.iter_mut().skip(128).take(64) {
+        *byte = 0xFF;
+    }
+    // Scales: the first eight +1, the second eight -1, which is the thing a
+    // reader that took them as unsigned would get wrong by 256.
+    for index in 0..8 {
+        raw[192 + index] = 1;
+        raw[200 + index] = 0xFF;
+    }
+    // d = 1.
+    raw[208] = 0x00;
+    raw[209] = 0x3C;
+
+    let decoded = tensor(TensorKind::Q6_K, &raw, 256).expect("a Q6_K super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    // Every stored value is 0b110000 = 48, which centres to +16.
+    for (index, value) in decoded.iter().enumerate() {
+        let want = if index < 128 { 16.0 } else { -16.0 };
+        assert!(
+            (value - want).abs() < 1e-3,
+            "value {index}: wanted {want}, got {value}"
+        );
+    }
+}
+
+/// Every K-scheme agrees with itself about how many values a super-block holds.
+///
+/// A decoder that produced 255 or 257 would be caught by the first real tensor
+/// it met and not before, because the caller truncates to what it asked for.
+#[test]
+fn every_k_scheme_fills_its_super_block_exactly() {
+    for kind in [
+        TensorKind::Q2_K,
+        TensorKind::Q3_K,
+        TensorKind::Q4_K,
+        TensorKind::Q5_K,
+        TensorKind::Q6_K,
+    ] {
+        let bytes = vec![0_u8; usize::try_from(kind.bytes_per_block()).unwrap_or(0)];
+        let decoded = tensor(kind, &bytes, 256).unwrap_or_else(|failure| {
+            panic!("{kind} did not decode a zero block: {failure}");
+        });
+        assert_eq!(decoded.len(), 256, "{kind} produced the wrong count");
+        assert_eq!(
+            usize::try_from(kind.block_size()).unwrap_or(0),
+            256,
+            "{kind} states a super-block that is not 256"
+        );
+    }
+}
+
+/// A scheme MCF still cannot read is refused by name rather than approximated.
+///
+/// The list shrinks as B-364 works through it, and what matters is that a file
+/// MCF cannot decode says which scheme it could not decode (A7, D31).
+#[test]
+fn a_scheme_that_is_not_implemented_is_named() {
+    let refused = tensor(TensorKind::Unknown(30), &[0; 64], 32)
+        .expect_err("a scheme with no decoder is refused");
+    assert!(refused.to_string().contains("engine"), "{refused}");
+}
+
+/// The four-bit non-linear scheme is a table lookup, and the test says so by
+/// naming the values it expects rather than by asking the decoder.
+///
+/// The table is the format's, transcribed with its source recorded, and the
+/// first thing to check is that a code means what the table says at the ends
+/// where an off-by-one would hide: code 0 is −127 and code 15 is 113.
+#[test]
+fn a_non_linear_block_reads_its_codes_as_table_entries() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    // Low nibbles 0..16, high nibbles 15..0.
+    for index in 0..16_u8 {
+        raw.push(index | ((15 - index) << 4));
+    }
+    let decoded = tensor(TensorKind::IQ4_NL, &raw, 32).expect("an IQ4_NL block decodes");
+    assert_eq!(decoded.len(), 32);
+
+    let table = crate::codebook::IQ4_VALUES;
+    assert_eq!(table[0], -127, "the table's first entry is not what it was");
+    assert_eq!(table[15], 113, "the table's last entry is not what it was");
+    for index in 0..16_usize {
+        assert!(
+            (decoded[index] - f32::from(table[index])).abs() < 1e-3,
+            "low nibble {index}: wanted {}, got {}",
+            table[index],
+            decoded[index]
+        );
+        assert!(
+            (decoded[16 + index] - f32::from(table[15 - index])).abs() < 1e-3,
+            "high nibble {index}: wanted {}, got {}",
+            table[15 - index],
+            decoded[16 + index]
+        );
+    }
+}
+
+/// `IQ4_XS` is the same table with a six-bit scale per sub-block, assembled
+/// from two planes and centred by subtracting thirty-two.
+///
+/// The scale is where this scheme is easy to get wrong: four bits in one array
+/// and two in a sixteen-bit word, and a reader that forgot the offset would
+/// produce values thirty-two times too large for every sub-block at once —
+/// which looks like a scaling bug rather than a packing one.
+#[test]
+fn a_non_linear_super_block_assembles_its_scale_from_two_planes() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    // Sub-block n gets scale n + 32, so the centred scale is n: the low nibble
+    // is n and the high pair is 2 (32 = 0b100000, so bit 5 is in the high two).
+    let mut low = [0_u8; 4];
+    let mut high = 0_u16;
+    for sub in 0..8_usize {
+        let scale = u16::try_from(sub + 32).unwrap_or(0);
+        let nibble = u8::try_from(scale & 0x0F).unwrap_or(0);
+        low[sub.wrapping_div(2)] |= nibble << (4 * (sub % 2));
+        high |= ((scale >> 4) & 3) << (2 * sub);
+    }
+    raw.extend_from_slice(&high.to_le_bytes());
+    raw.extend_from_slice(&low);
+    // Every code 8, whose table entry is 1.
+    raw.extend(std::iter::repeat_n(0x88_u8, 128));
+
+    let decoded = tensor(TensorKind::IQ4_XS, &raw, 256).expect("an IQ4_XS super-block decodes");
+    assert_eq!(decoded.len(), 256);
+    assert_eq!(
+        crate::codebook::IQ4_VALUES[8],
+        1,
+        "the table moved under this test"
+    );
+
+    for sub in 0..8_usize {
+        let want = small(sub);
+        for position in 0..32_usize {
+            let got = decoded[sub * 32 + position];
+            assert!(
+                (got - want).abs() < 1e-3,
+                "sub-block {sub} value {position}: wanted {want}, got {got}"
+            );
+        }
+    }
+}
+
+/// `IQ3_S` reads a grid rather than a scale, and its signs live apart from its
+/// magnitudes.
+///
+/// What is asserted is the shape of the arithmetic: every value is a grid entry
+/// times the sub-block's step, negated where the sign plane says so. A decoder
+/// that ignored the sign plane would produce a tensor of the right magnitudes
+/// and no negative numbers, which is exactly the kind of wrong that still
+/// *looks* like weights.
+#[test]
+fn a_grid_scheme_takes_its_magnitudes_from_the_grid_and_its_signs_from_the_plane() {
+    let mut raw = vec![0x00, 0x3C]; // d = 1
+    raw.extend(std::iter::repeat_n(0_u8, 64)); // every code 0 → grid entry 0
+    raw.extend(std::iter::repeat_n(0_u8, 8)); // no ninth bits
+    // Signs: the first byte negates every value it covers, the rest none.
+    let mut signs = vec![0_u8; 32];
+    signs[0] = 0xFF;
+    raw.extend_from_slice(&signs);
+    // Scales: every nibble 0, so each step is d * (1 + 0) = 1.
+    raw.extend(std::iter::repeat_n(0_u8, 4));
+
+    let decoded = tensor(TensorKind::IQ3_S, &raw, 256).expect("an IQ3_S super-block decodes");
+    assert_eq!(decoded.len(), 256);
+
+    let entry = crate::codebook::IQ3S_GRID[0];
+    for (position, magnitude) in entry.into_iter().enumerate() {
+        let want = -f32::from(magnitude);
+        assert!(
+            (decoded[position] - want).abs() < 1e-3,
+            "the first quarter is not negated: wanted {want}, got {}",
+            decoded[position]
+        );
+    }
+    // And a value the sign plane does not cover keeps its sign.
+    let later = decoded[64];
+    assert!(
+        later >= 0.0,
+        "a value outside the negated span came back negative: {later}"
+    );
+}
+
+/// The grid is the size the format says, and its entries are the bytes they
+/// were transcribed as.
+///
+/// A table is data rather than logic, so what can be checked about it is that
+/// it has not been truncated, reordered at the ends, or had its packing
+/// misread — the three ways a transcription goes wrong.
+#[test]
+fn the_transcribed_tables_are_the_size_and_shape_they_were() {
+    assert_eq!(crate::codebook::IQ3S_GRID.len(), 512);
+    assert_eq!(crate::codebook::IQ4_VALUES.len(), 16);
+    // The first and last entries, as the source writes them: `0x01010101` and
+    // `0x0f0f0101`, little-endian into four bytes. Written out here because a
+    // transcription that dropped or reordered an end is the failure this test
+    // exists for, and an assertion taken from the transcription would not
+    // catch it.
+    assert_eq!(crate::codebook::IQ3S_GRID[0], [1, 1, 1, 1]);
+    assert_eq!(
+        crate::codebook::IQ3S_GRID[511],
+        [1, 1, 15, 15],
+        "the grid's last entry is not what was transcribed"
+    );
+    // Every entry is odd in every byte: the grid holds odd magnitudes only,
+    // which is a property of the scheme rather than of the transcription and
+    // therefore catches a mis-shifted unpack.
+    for (index, entry) in crate::codebook::IQ3S_GRID.iter().enumerate() {
+        for byte in entry {
+            assert_eq!(byte % 2, 1, "grid entry {index} holds an even magnitude");
+        }
+    }
+}

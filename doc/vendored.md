@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — what MCF ships, what it declined to ship, and why |
-| **Version** | 4 |
+| **Version** | 5 |
 | **Status** | Living |
 | **Authority** | Governed by [rules.md](rules.md); the licence is D28, the tiers are D23, the stand-in is D31 |
 | **Registers to** | B-192, B-320, B-321, B-330 in [backlog.md](backlog.md) |
@@ -23,6 +23,7 @@ something.
 |---|---|
 | 1 | [What a finding is](#1--what-a-finding-is) |
 | 2 | [Vendored](#2--vendored) |
+| 2b | [Data, not code](#2b--data-not-code) |
 | 3 | [Deferred](#3--deferred) |
 | 3a | [What the artifact requires of a machine](#3a--what-the-artifact-requires-of-a-machine) |
 | 4 | [Candidates, not yet assessed](#4--candidates-not-yet-assessed) |
@@ -151,6 +152,34 @@ what MCF writes itself: a stand-in engine, so that coverage is true and the
 vendored engine has something to be checked against, and B65 settles that a
 stand-in can never report a speed.
 
+## 2b · Data, not code
+
+One component in the tree is neither a crate nor a library: a pair of **tables**
+that a quantization scheme indexes into.
+
+| What | Where it came from | Terms | Finding |
+|---|---|---|---|
+| `IQ4_VALUES` — sixteen values a four-bit non-linear code stands for | `ggml/src/ggml-common.h` in `ggml-org/llama.cpp` | MIT (Copyright 2023-2026 The ggml authors) | Compatible with GPL-3.0-only (D22, D28): MIT permits inclusion in a copyleft work with its notice preserved. Transcribed rather than linked, because sixteen numbers are not a dependency |
+| `IQ3S_GRID` — five hundred and twelve four-value groups | the same file | the same | as above |
+
+**Why they are here at all.** A non-linear quantization does not *compute* its
+values from a scale: it looks them up in the table the quantizer used. There is
+nothing to derive and nothing to check against arithmetic, because the table
+**is** the arithmetic. A table MCF invented would decode 128 of the reference
+model's tensors into confident nonsense — which is the failure mode A19 exists
+to prevent, arriving through a constant rather than through a kernel.
+
+**What is checked about them**, since correctness cannot be:
+`crates/mcf-standin/src/dequantize/tests.rs` asserts the size, both ends, and a
+property of the scheme rather than of the transcription — every magnitude in the
+grid is odd, which catches a mis-shifted unpack that a spot check of the middle
+would not.
+
+**What would change this.** A scheme whose codebook MCF does not hold stays
+`engine.unavailable` naming the scheme (A7, D31). The tables are pinned to the
+revision they were read from, and B-368's oracle is what will eventually check
+the decoding rather than the transcription.
+
 ## 3 · Deferred
 
 Recorded rather than silent (B-321, C6), so that an omission is a decision
@@ -220,6 +249,15 @@ is a check of the tree that is actually vendored, at the revision that is
 actually pinned, and it is what turns a row in §4 into a row in §2.
 
 ## Changelog
+
+### Version 5 — two tables that are data rather than code
+
+The non-linear quantization schemes index into fixed codebooks, and a codebook
+cannot be derived — it *is* the arithmetic. Two of them are now in the tree,
+transcribed from `ggml-common.h` under MIT with the compatibility finding B-330
+requires, because 128 of the reference model's 866 tensors are in schemes that
+need them and a table MCF invented would decode all of them into confident
+nonsense.
 
 ### Version 4 — the first admission
 

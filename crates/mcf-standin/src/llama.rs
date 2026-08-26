@@ -37,7 +37,22 @@ use crate::ops;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
-/// The architecture this module runs.
+/// The architectures this module runs.
+///
+/// A list rather than one name, and a list rather than *whatever loads*: the
+/// families here are the ones somebody has checked have the structure this
+/// module implements — RMS normalization, rotary positions, grouped attention
+/// and a gated feed-forward — under whatever names their files use. A family
+/// that merely *loads* is not a family that runs correctly, and producing
+/// fluent nonsense from a structure MCF guessed at is the failure a second
+/// implementation exists to catch rather than to cause (A19, D38).
+pub const FAMILIES: &[&str] = &[
+    // The architecture the format was designed around, and the one every
+    // structural decision here was read from.
+    "llama",
+];
+
+/// The architecture this module was written against, named for a message.
 pub const ARCHITECTURE: &str = "llama";
 
 /// What the file says the model is.
@@ -131,21 +146,33 @@ impl Cache {
 /// this crate does not decode.
 pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     let architecture = file.architecture().unwrap_or("unstated");
-    if architecture != ARCHITECTURE {
+    if !FAMILIES.contains(&architecture) {
         return Err(Failure::new(
             Category::ArtifactFormatUnsupported,
             Attribution::Artifact,
             Disposition::Refused,
             WHERE,
-            "the stand-in engine implements one architecture, and this file is another",
+            "MCF's engine has not been taught this architecture",
         )
         .with_context("declared", architecture.to_owned())
-        .with_context("implemented", ARCHITECTURE.to_owned()));
+        .with_context("implemented", FAMILIES.join(", "))
+        .with_context(
+            "what_to_do",
+            "B-365 is the register item that grows this list, and it grows by somebody              reading the architecture rather than by MCF guessing that one shaped like              another will do (A19)",
+        ));
     }
 
-    let shape = read_shape(file)?;
-    let epsilon = float(file, "llama.attention.layer_norm_rms_epsilon").unwrap_or(1e-5);
-    let rope_theta = float(file, "llama.rope.freq_base").unwrap_or(10_000.0);
+    let shape = read_shape(file, architecture)?;
+    // Every quantity is read under the file's own architecture prefix, which is
+    // how GGUF names them: a `qwen3` file states `qwen3.block_count`, and a
+    // reader that looked for `llama.block_count` would find nothing and call it
+    // a file that does not say (A7 misapplied).
+    let epsilon = float(
+        file,
+        &format!("{architecture}.attention.layer_norm_rms_epsilon"),
+    )
+    .unwrap_or(1e-5);
+    let rope_theta = float(file, &format!("{architecture}.rope.freq_base")).unwrap_or(10_000.0);
 
     let mut tensors = BTreeMap::new();
     for (name, elements) in manifest(&shape) {
@@ -182,20 +209,21 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
 /// divide — an embedding width that is not a whole number of heads is a model
 /// nobody can run, and the arithmetic that discovered it is the honest place to
 /// say so.
-fn read_shape(file: &File) -> Result<Shape> {
+fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
+    let key = |name: &str| format!("{architecture}.{name}");
     let shape = Shape {
-        blocks: count(file, "llama.block_count")?,
-        embedding: count(file, "llama.embedding_length")?,
-        heads: count(file, "llama.attention.head_count")?,
-        key_value_heads: match number(file, "llama.attention.head_count_kv") {
+        blocks: count(file, &key("block_count"))?,
+        embedding: count(file, &key("embedding_length"))?,
+        heads: count(file, &key("attention.head_count"))?,
+        key_value_heads: match number(file, &key("attention.head_count_kv")) {
             Some(value) => usize::try_from(value).unwrap_or(0),
             // The one field with a defined fallback, and it is the model's own
             // convention rather than a guess: a file that omits it is a model
             // without grouped attention, where the two counts are equal.
-            None => count(file, "llama.attention.head_count")?,
+            None => count(file, &key("attention.head_count"))?,
         },
-        feed_forward: count(file, "llama.feed_forward_length")?,
-        context: count(file, "llama.context_length")?,
+        feed_forward: count(file, &key("feed_forward_length"))?,
+        context: count(file, &key("context_length"))?,
         vocabulary: file
             .get("tokenizer.ggml.tokens")
             .and_then(Value::as_list)
