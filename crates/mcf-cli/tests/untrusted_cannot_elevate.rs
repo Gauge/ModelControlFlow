@@ -100,6 +100,11 @@ impl Watched {
         command.output().expect("the binary runs")
     }
 
+    /// Where a sentinel lives, for a test that starts one deliberately.
+    fn sentinel_path(&self, name: &str) -> PathBuf {
+        self.root.join("bin").join(name)
+    }
+
     fn models(&self) -> PathBuf {
         self.root.join("mcf/models")
     }
@@ -247,6 +252,27 @@ fn a_reference_that_climbs_out_reaches_no_privileged_program() {
     );
 }
 
+/// Runs a freshly-written executable, retrying `ETXTBSY`.
+///
+/// Not a defect in MCF and not a flake to paper over: a program that writes an
+/// executable and runs it is racing every other thread in its own process,
+/// because a `fork` between the write and the close hands the child a writable
+/// descriptor and `exec` refuses it. The tests here run in parallel and write
+/// sentinels, so they hit it. Retrying is the fix that does not serialize the
+/// suite.
+fn started(program: &Path, arguments: &[&str]) -> std::process::Output {
+    for _ in 0..50 {
+        match Command::new(program).args(arguments).output() {
+            Ok(outcome) => return outcome,
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => panic!("the sentinel would not run: {error}"),
+        }
+    }
+    panic!("the sentinel was busy for half a second")
+}
+
 /// The sentinels work.
 ///
 /// A test whose evidence is *nothing happened* is worthless if nothing could
@@ -256,11 +282,8 @@ fn a_reference_that_climbs_out_reaches_no_privileged_program() {
 #[test]
 fn the_witness_catches_a_privileged_program_that_is_started() {
     let watched = Watched::new("witness");
-    let sentinel = watched.root.join("bin/sudo");
-    let outcome = Command::new(&sentinel)
-        .args(["mcf-helper", "governor", "performance"])
-        .output()
-        .expect("the sentinel runs");
+    let sentinel = watched.sentinel_path("sudo");
+    let outcome = started(&sentinel, &["mcf-helper", "governor", "performance"]);
     assert!(outcome.status.success());
 
     let started = watched.started();
@@ -270,5 +293,3 @@ fn the_witness_catches_a_privileged_program_that_is_started() {
         "the witness lost the arguments: {started}"
     );
 }
-
-fn _unused(_: &Path) {}

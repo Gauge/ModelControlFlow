@@ -57,6 +57,13 @@ pub enum EntryKind {
     /// this machine and when. An artifact that is later moved by hand keeps the
     /// first and cannot change the second.
     ArtifactAcquired,
+    /// MCF looked upstream at something it holds, and what it found (B-331,
+    /// D37).
+    ///
+    /// Written whether or not anything had changed: *checked and unchanged* is
+    /// a fact about a moment, and a record that only kept the bad news could
+    /// not answer *when was this last known to be fine* (A1, A7).
+    ArtifactChecked,
     /// An artifact left this machine, and who said it could (B-027, §3.11).
     ///
     /// A kind of its own rather than a failure or a note, because it is the one
@@ -69,7 +76,7 @@ pub enum EntryKind {
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -77,6 +84,7 @@ impl EntryKind {
         Self::DaemonStarted,
         Self::DaemonStopped,
         Self::ArtifactAcquired,
+        Self::ArtifactChecked,
         Self::ArtifactRemoved,
     ];
 
@@ -94,6 +102,7 @@ impl EntryKind {
             Self::DaemonStarted => "daemon_started",
             Self::DaemonStopped => "daemon_stopped",
             Self::ArtifactAcquired => "artifact_acquired",
+            Self::ArtifactChecked => "artifact_checked",
             Self::ArtifactRemoved => "artifact_removed",
         }
     }

@@ -25,6 +25,7 @@ fn a_listing() -> Listing {
             Entry::new("Q4_K_M.gguf", 396_705_472).declaring("a".repeat(64)),
             Entry::new("Q8_0.gguf", 700_000_000),
         ],
+        gated: None,
         declared_licence: Some("apache-2.0".to_owned()),
         lineage: None,
     }

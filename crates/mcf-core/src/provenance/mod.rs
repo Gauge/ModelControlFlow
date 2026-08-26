@@ -38,12 +38,14 @@ mod checksum;
 mod licence;
 mod origin;
 mod transformation;
+mod upstream;
 
 pub use artifact::{Artifact, ArtifactName};
 pub use checksum::{Checksum, DigestAlgorithm};
 pub use licence::Licence;
 pub use origin::{Origin, Repository, Revision};
 pub use transformation::{ToolIdentity, Transformation, TransformationKind};
+pub use upstream::{Decay, Observation};
 
 use crate::attested::Attested;
 use crate::time::Timestamp;
@@ -65,6 +67,12 @@ pub struct Provenance {
     licence: Attested<Licence>,
     /// Oldest first, so reading the vector is reading the history forwards.
     transformations: Vec<Transformation>,
+    /// What MCF later found where this came from (B-331, D37).
+    ///
+    /// Appended, never written over: a provenance records what was true at
+    /// acquisition, and a hub changing afterwards does not make that untrue
+    /// (§3.6). Oldest first, like the transformations.
+    observed: Vec<Observation>,
     derived_from: Option<Box<Provenance>>,
 }
 
@@ -83,6 +91,7 @@ impl Provenance {
             integrity: Attested::Unknown,
             licence: Attested::Unknown,
             transformations: Vec::new(),
+            observed: Vec::new(),
             derived_from: None,
         }
     }
@@ -103,6 +112,7 @@ impl Provenance {
             integrity: Attested::Unknown,
             licence: Attested::Unknown,
             transformations: Vec::new(),
+            observed: Vec::new(),
             derived_from: None,
         }
     }
@@ -178,6 +188,34 @@ impl Provenance {
     #[must_use]
     pub fn transformations(&self) -> &[Transformation] {
         &self.transformations
+    }
+
+    /// Records what MCF found upstream when it looked (B-331, D37).
+    ///
+    /// Appended rather than replacing anything: the provenance says what was
+    /// true at acquisition and a later look does not change that. An artifact
+    /// checked three times has three observations, in the order they were made,
+    /// and *checked and unchanged* is one of them rather than an absence (A1).
+    #[must_use]
+    pub fn observed(mut self, observation: Observation) -> Self {
+        self.observed.push(observation);
+        self
+    }
+
+    /// What MCF has found upstream since, oldest first.
+    #[must_use]
+    pub fn observations(&self) -> &[Observation] {
+        &self.observed
+    }
+
+    /// The last look upstream, if anybody has looked.
+    ///
+    /// `None` means *nobody has checked*, which is not the same as *nothing has
+    /// changed* — the distinction A7 exists for, and the reason
+    /// [`Decay::Unchanged`] is a value rather than an empty list.
+    #[must_use]
+    pub fn last_observation(&self) -> Option<&Observation> {
+        self.observed.last()
     }
 
     /// The provenance of the artifact these bytes were derived from.

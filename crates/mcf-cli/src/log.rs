@@ -205,6 +205,11 @@ fn summarize(entry: &Entry) -> String {
                 .and_then(Value::as_text)
                 .unwrap_or("its verification is not recorded")
         ),
+        EntryKind::ArtifactChecked => format!(
+            "checked {} — {}",
+            text(body, "repository").unwrap_or_else(|| "an artifact".to_owned()),
+            text(body, "detail").unwrap_or_else(|| "no finding recorded".to_owned())
+        ),
         EntryKind::ArtifactRemoved => format!(
             "removed {} file(s), because: {}",
             body.get("removed")

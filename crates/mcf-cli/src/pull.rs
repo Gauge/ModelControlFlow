@@ -347,7 +347,7 @@ fn record(
 /// the URL rather than configured, because *which one* is not a preference: a
 /// wire that cannot keep a secret refuses to carry one, and an `https` request
 /// over a plain socket is refused before it is opened (B-024, B-322).
-fn wire_for(base: &Url) -> Result<Box<dyn Wire>, mcf_core::failure::Failure> {
+pub(crate) fn wire_for(base: &Url) -> Result<Box<dyn Wire>, mcf_core::failure::Failure> {
     if base.scheme() == "https" {
         Ok(Box::new(Tls::new()?))
     } else {
@@ -371,7 +371,7 @@ fn environment(variable: &str) -> Option<String> {
 /// the silent pickup B-024 forbids: what makes it deliberate is that the name
 /// came from the command line, and what makes it accountable is that the origin
 /// travels with the credential into the record (§3.4).
-fn credential(
+pub(crate) fn credential(
     offered: Offered<'_>,
     look_up: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Option<Credential>, String> {

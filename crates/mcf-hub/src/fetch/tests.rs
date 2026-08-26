@@ -80,6 +80,7 @@ impl Source for StandIn {
             reference: reference.clone(),
             revision: Some("main".to_owned()),
             entries: vec![self.entry()],
+            gated: None,
             declared_licence: Some("apache-2.0".to_owned()),
             lineage: None,
         })

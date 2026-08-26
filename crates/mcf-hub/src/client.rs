@@ -373,6 +373,7 @@ impl Source for Hub {
             },
             revision,
             entries,
+            gated: card.get("gated").and_then(gate_of),
             declared_licence: declared_licence(&card),
             lineage: lineage(&card),
         })
@@ -438,6 +439,27 @@ fn read_tree(tree: &Value) -> Result<Vec<Entry>> {
 /// otherwise — the hub publishes both and a repository sometimes has only the
 /// second. `None` when neither is there, which `inspect::terms_are_legible`
 /// turns into `hub.metadata.absent` (B-023).
+/// How a repository says it is gated, in its own word.
+///
+/// The hub writes `false` when it is not gated and a word — `"auto"`,
+/// `"manual"` — when it is, so a boolean and a string mean different things in
+/// one field. `false` reads as *not gated*; anything else is kept as written
+/// (F17).
+fn gate_of(value: &Value) -> Option<String> {
+    match value {
+        Value::Bool(true) => Some("gated".to_owned()),
+        Value::Text(how) => Some(how.clone()),
+        // `false` is *not gated*, and anything else is a shape MCF does not
+        // read as a gate rather than one it guesses at (A7).
+        Value::Bool(false)
+        | Value::Null
+        | Value::ForeignNumber(_)
+        | Value::Integer(_)
+        | Value::List(_)
+        | Value::Map(_) => None,
+    }
+}
+
 fn declared_licence(card: &Value) -> Option<String> {
     if let Some(stated) = card
         .get("cardData")

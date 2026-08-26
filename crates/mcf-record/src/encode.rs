@@ -26,7 +26,8 @@ use mcf_core::failure::Failure;
 use mcf_core::hardware::{Accelerator, Characterization, Machine};
 use mcf_core::measurement::{ConditionValue, Conditions, Measurement, Quantity};
 use mcf_core::provenance::{
-    Checksum, Licence, Origin, Provenance, ToolIdentity, Transformation, TransformationKind,
+    Checksum, Decay, Licence, Observation, Origin, Provenance, ToolIdentity, Transformation,
+    TransformationKind,
 };
 use mcf_core::time::Timestamp;
 use mcf_core::trial::{Series, Trial, Trials};
@@ -124,6 +125,10 @@ pub fn provenance(provenance: &Provenance) -> Value {
             ),
         ),
         (
+            "observed",
+            Value::List(provenance.observations().iter().map(observation).collect()),
+        ),
+        (
             "derived_from",
             match provenance.source() {
                 Some(source) => self::provenance(source),
@@ -131,6 +136,38 @@ pub fn provenance(provenance: &Provenance) -> Value {
             },
         ),
     ])
+}
+
+/// What MCF found upstream when it looked (B-331, D37).
+///
+/// The finding's own fields are written beside its name rather than folded into
+/// a sentence: a reader that wanted *which licence it was before* should not
+/// have to parse English out of a record (§3.3).
+#[must_use]
+pub fn observation(observed: &Observation) -> Value {
+    let mut fields = vec![
+        ("looked_at", timestamp(observed.looked_at)),
+        ("found", Value::text(observed.found.as_str())),
+    ];
+    match &observed.found {
+        Decay::RevisionGone { revision } => fields.push(("revision", Value::text(revision))),
+        Decay::Relicensed { was, now } => {
+            fields.push(("was", Value::text(was)));
+            fields.push(("now", Value::text(now)));
+        }
+        Decay::Gated { how } => fields.push(("how", Value::text(how))),
+        Decay::Replaced { file, was, now } => {
+            fields.push(("file", Value::text(file)));
+            fields.push(("was", Value::text(was)));
+            fields.push(("now", Value::text(now)));
+        }
+        Decay::Unreachable { said } => fields.push(("said", Value::text(said))),
+        // `Unchanged` has no fields to write, and `Decay` is non-exhaustive: a
+        // finding a later version adds is written by its name rather than being
+        // dropped (§7.30, A1).
+        Decay::Unchanged | _ => {}
+    }
+    Value::map(fields)
 }
 
 /// Where bytes came from.

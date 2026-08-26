@@ -67,10 +67,20 @@ fn nothing_manufactures_or_replaces_a_provenance() {
 fn every_readable_field_is_attested() {
     let body = block(&provenance_source("mod.rs"), "pub struct Provenance {");
 
-    let exempt = ["origin", "transformations", "derived_from"];
+    // `origin` is exempt because `Origin::Unattributed` already carries the
+    // not-known case; the two lists and the chain are exempt because an empty
+    // one *is* the absence — nobody transformed it, nobody has looked upstream,
+    // it derives from nothing — and `Provenance::last_observation` is where
+    // *nobody has checked* is told from *nothing has changed* (A7, D37).
+    let exempt = ["origin", "transformations", "observed", "derived_from"];
     let mut checked = 0;
     for line in body.lines() {
         let line = line.trim();
+        // A doc comment is prose, and prose has colons in it. Before this the
+        // check read one as a field and failed on a sentence.
+        if line.starts_with("//") {
+            continue;
+        }
         let Some((name, kind)) = line.trim_end_matches(',').split_once(": ") else {
             continue;
         };

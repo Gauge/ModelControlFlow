@@ -31,8 +31,8 @@ use mcf_core::attested::Attested;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
 use mcf_core::provenance::{
-    Checksum, DigestAlgorithm, Licence, Origin, Provenance, Repository, Revision, ToolIdentity,
-    Transformation, TransformationKind,
+    Checksum, Decay, DigestAlgorithm, Licence, Observation, Origin, Provenance, Repository,
+    Revision, ToolIdentity, Transformation, TransformationKind,
 };
 use mcf_core::time::{Timestamp, UtcOffset};
 
@@ -150,10 +150,66 @@ pub fn provenance(value: &Value) -> Result<Provenance> {
             read = read.transformed(transformation(entry)?);
         }
     }
+    if let Some(list) = value.get("observed") {
+        let entries = list.as_list().ok_or_else(|| unreadable("observed", list))?;
+        for entry in entries {
+            read = read.observed(observation(entry)?);
+        }
+    }
     if let Some(found) = known(value.get("derived_from")) {
         read = read.derived_from(self::provenance(found)?);
     }
     Ok(read)
+}
+
+/// What MCF found upstream when it looked (B-331, D37).
+///
+/// A finding this version does not know is `record.schema.unknown` rather than
+/// a shrug: an observation read as *unchanged* when it said something else
+/// would be a record that lies in the safe-sounding direction (§7.30, A7).
+fn observation(value: &Value) -> Result<Observation> {
+    let looked_at = timestamp(value.get("looked_at").ok_or_else(|| missing("looked_at"))?)?;
+    let name = value
+        .get("found")
+        .and_then(Value::as_text)
+        .ok_or_else(|| missing("found"))?;
+    let text = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_text)
+            .map(str::to_owned)
+            .ok_or_else(|| missing(key))
+    };
+    let found = match name {
+        "unchanged" => Decay::Unchanged,
+        "revision_gone" => Decay::RevisionGone {
+            revision: text("revision")?,
+        },
+        "relicensed" => Decay::Relicensed {
+            was: text("was")?,
+            now: text("now")?,
+        },
+        "gated" => Decay::Gated { how: text("how")? },
+        "replaced" => Decay::Replaced {
+            file: text("file")?,
+            was: text("was")?,
+            now: text("now")?,
+        },
+        "unreachable" => Decay::Unreachable {
+            said: text("said")?,
+        },
+        other => {
+            return Err(Failure::new(
+                Category::RecordSchemaUnknown,
+                Attribution::Mcf,
+                Disposition::Refused,
+                WHERE,
+                "the record names a finding this build does not know",
+            )
+            .with_context("found", other.to_owned()));
+        }
+    };
+    Ok(Observation::new(looked_at, found))
 }
 
 /// A field that is present and is not `null`.
