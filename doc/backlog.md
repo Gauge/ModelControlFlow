@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 88 |
+| **Version** | 89 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **249 items: 50 decisions (31 open, 1 drafted, 2 narrowed, 16 resolved) and 199
-build items (41 done, 1 dropped, 10 in progress, 52 blocked on a decision, 96 open).** Every item cites
+build items (42 done, 1 dropped, 9 in progress, 52 blocked on a decision, 96 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -169,7 +169,7 @@ first and importance second.
 | B-019 | Acquire and pin the reference model as M1's first real artifact — the third-party requantization chain (`unsloth/Qwen3.8-27B-GGUF` → `Qwen/Qwen3.8-27B`) is the hard provenance case, not the easy one | §XII, §3.6 | The derivative traces to its source weights through the publisher's pipeline, with every field either recorded or `Unknown`; the revision is pinned at acquisition | **in progress** — the chain is built and traverses. A publisher names the weights they worked from in the hub's own tags, and `mcf pull` writes that down: the artifact, what the publisher says was done to it in their word, and the upstream repository as a link MCF has *not* fetched. Writing it found a defect in the type — `Provenance::retrieved_at` was a plain `Timestamp`, so an upstream link could only claim a moment MCF was never there for. It is `Attested` now, `known_of` is the constructor for a link nobody fetched, and the check that exempted the field no longer does. What remains is the reference model itself, which needs the real hub and therefore B-322 |
 | B-213 | Pre-acquisition fitment across every variant a repository publishes: weights plus KV cache at the requested context against available memory, computed from metadata before a byte is fetched | [PR3](proposals.md#pr3--pre-acquisition-planning), §III, §6.3 | Twenty quantizations are classified fits / fits-without-context-headroom / does-not-fit without downloading any of them; the plan is re-checked against reality on acquisition and divergence is a finding | **in progress** — the plan is made from what the hub publishes and nothing else. `Shape::from_configuration` reads the model's own `config.json` — every field or no shape at all, because the grouping factor is exactly what a guess gets wrong and an operator would be told a variant does not fit that does. `mcf pull` on a repository with no file named answers the question actually being asked: which of these will run here, at a stated context, with what is left over or what is short. A whole-system test plans a repository of variants in three cheap questions and downloads no weights at all. What remains: the re-check against reality on acquisition, and a repository that publishes no configuration is honestly unplannable rather than planned badly |
 | B-331 | Upstream decay: detect that a pinned artifact has been withdrawn, gated, relicensed or repointed, and record it against the provenance without invalidating the local copy | DEC-038, §7.38, §3.6 | A decayed pin is a recorded finding; measurements from the local weights stay valid and the broken chain is visible | blocked (DEC-038) |
-| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **in progress** — all three commands exist and the offline half of the condition is met: a whole-system test acquires a model from a hub on the loopback address, lists it with where it came from, and removes it, each as a separate process against a real record. `pull` without a file offers what the repository publishes with the sizes and the terms and acquires nothing — choosing a quantization for somebody is choosing what they will measure. With one it verifies against the digest the hub declared, writes the provenance beside the artifact and the acquisition in the journal, and says plainly when a hub declared no digest to check against (A21). What remains is *online against the real one*, which is TLS and B-322 |
+| B-029 | `mcf pull` / `mcf list` / `mcf rm`: the M1 product — models enter, live on and leave this machine with provenance intact | §III | A model is acquired, listed with full provenance, and removed deliberately, offline against the fake hub and online against the real one | **done** — both halves. Offline: a whole-system test acquires a model from a hub on the loopback address, lists it with where it came from, and removes it, each as a separate process against a real record. Online: `scripts/check-online.sh` does the same against Hugging Face over TLS — a real 1.2 MiB GGUF, verified against the LFS digest the hub declared with the listing, followed through the redirect to the CDN, listed with its provenance, purged, and both events read back out of the record. `pull` without a file offers what the repository publishes with the sizes and the terms and acquires nothing; with one it says plainly when a hub declared no digest to check against (A21) |
 
 ### M2 — Serve
 
@@ -367,6 +367,27 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 89 — a real model, from the real hub
+
+B-029 done, and the second half of its condition is the one worth reporting:
+*online against the real one*. `scripts/check-online.sh` acquires a 1.2 MiB GGUF
+from Hugging Face over TLS — a real redirect to a CDN, a real LFS digest
+declared with the listing and checked against the bytes that arrived — then
+lists it with its provenance, purges it, and reads both events back out of the
+record. It ran, and it passed, on the first machine that had a network.
+
+Scheduled rather than gating, for the reason the fuzz tier is: a gate that needs
+a network is a gate that fails on a train. What it acquires is small and really
+a model, because a check that pulled 27 GiB would be one nobody runs and one
+that pulled nothing would prove nothing.
+
+Reproducibility needed defending on the way here. The first vendored dependency
+put this machine's directory into every panic location rustc compiled, and two
+checkouts at different paths stopped producing the same bytes.
+`--remap-path-prefix` is the fix, it is part of the build MCF documents rather
+than a flag the check adds to itself, and it also stops a panic message naming
+somebody's home directory into whatever a panic is reported to (§XIV).
 
 ### Version 88 — the first dependency, admitted the way the rules ask
 

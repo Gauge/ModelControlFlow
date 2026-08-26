@@ -41,6 +41,9 @@
 #                           container that holds it and nothing else.
 #   --with-reproducibility  (B-001) rebuilds the workspace twice under the
 #                           release profile and compares the bytes.
+#   --with-online           (B-029) acquires a real model from the real hub
+#                           over TLS, verifies it, lists it and removes it.
+#                           The only thing here that needs a network.
 #   --all                   all of the above. Minutes, not seconds.
 #
 # None of them is optional; all of them are scheduled rather than gating,
@@ -71,6 +74,7 @@ with_load=false
 with_soak=false
 with_mutation=false
 with_from_scratch=false
+with_online=false
 for argument in "$@"; do
     case "$argument" in
         --with-reproducibility) with_reproducibility=true ;;
@@ -80,6 +84,7 @@ for argument in "$@"; do
         --with-soak) with_soak=true ;;
         --with-mutation) with_mutation=true ;;
         --with-from-scratch) with_from_scratch=true ;;
+        --with-online) with_online=true ;;
         --all)
             with_reproducibility=true
             with_budget=true
@@ -88,12 +93,14 @@ for argument in "$@"; do
             with_soak=true
             with_mutation=true
             with_from_scratch=true
+            with_online=true
             ;;
         *)
             printf 'ci: no such option: %s\n' "$argument" >&2
             printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
             printf '[--with-budget] [--with-mutation]\n' >&2
-            printf '                     [--with-from-scratch] [--with-reproducibility] | --all\n' >&2
+            printf '                     [--with-from-scratch] [--with-reproducibility] ' >&2
+            printf '[--with-online] | --all\n' >&2
             exit 2
             ;;
     esac
@@ -213,6 +220,18 @@ if [ "$with_mutation" = true ]; then
         "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
 fi
 
+if [ "$with_online" = true ]; then
+    step "the real hub (B-029)"
+    # No exclusive window: nothing here is timed, and what it waits for is
+    # somebody else's server rather than this machine's processor.
+    online=0
+    "$root/scripts/check-online.sh" || online=$?
+    if [ "$online" -eq 1 ]; then
+        printf 'ci: MCF did not acquire a model from the real hub\n' >&2
+        exit 1
+    fi
+fi
+
 if [ "$with_from_scratch" = true ]; then
     step "from-scratch conformance (B-183)"
     exclusively "from-scratch conformance" 15 "$root/scripts/check-from-scratch.sh"
@@ -247,6 +266,7 @@ report_absent "$with_soak" "soak (B-191)                 — scripts/ci.sh --wit
 report_absent "$with_budget" "performance budget (B-011)   — scripts/ci.sh --with-budget"
 report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh --with-mutation"
 report_absent "$with_from_scratch" "from-scratch conformance     — scripts/ci.sh --with-from-scratch"
+report_absent "$with_online" "the real hub (B-029)         — scripts/ci.sh --with-online"
 report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"
 if [ "$not_run" = false ]; then
     printf '  nothing: every tier ran in this invocation\n'

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 20 |
+| **Version** | 21 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -33,6 +33,7 @@ with B-014.
 | 9 | [The tiers](#9--the-tiers) |
 | 10 | [Ages, and what a release refuses](#10--ages-and-what-a-release-refuses) |
 | 11 | [A machine with nothing on it](#11--a-machine-with-nothing-on-it) |
+| 11a | [The real hub](#11a--the-real-hub) |
 | 12 | [A machine with something else on it](#12--a-machine-with-something-else-on-it) |
 | — | [Changelog](#changelog) |
 
@@ -635,6 +636,30 @@ that genuinely lacks something.
 acquisition work (B-019, B-020). B-183's condition is not met until that exists,
 and the script says so on every run rather than implying otherwise.
 
+## 11a · The real hub
+
+```
+$ scripts/ci.sh --with-online           # or scripts/check-online.sh
+```
+
+Everything else about acquisition runs against a hub the laboratory holds on the
+loopback address, because B19 requires M1's suite to run with no network. That
+is right, and it leaves one thing unchecked: whether the hub MCF was written
+against behaves the way MCF believes.
+[findings.md](findings.md) F9 answered that once by hand; this is the repeatable
+form, and it is scheduled rather than gating for the same reason the fuzz tier
+is — a gate that needs a network is a gate that fails on a train.
+
+It acquires a 1.2 MiB GGUF from a repository of deliberately tiny models: real
+weights, a real LFS digest, a real redirect to a CDN. Then it lists what is
+held, removes it, purges it, and reads the record for both events. A check that
+downloaded a 27 GiB model to prove a transfer works would be one nobody runs;
+one that downloaded nothing would prove nothing.
+
+**Nothing here is timed.** The hub is somebody else's machine on somebody else's
+network, and A6 would want conditions MCF cannot state for any number taken
+across it.
+
 ## 12 · A machine with something else on it
 
 A machine that hosts several projects with heavy test workloads — as the one MCF
@@ -673,6 +698,14 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 21 — the real hub, on purpose
+
+Section 11a added with B-029's online half. Everything about acquisition is tested
+against a hub the laboratory holds, which is what B19 asks and what leaves one
+thing open: whether the real hub behaves the way MCF believes. F9 answered that
+by hand once; `--with-online` is the repeatable form, acquiring a 1.2 MiB model
+that is really a model, from the hub that really serves it.
 
 ### Version 20 — the first dependency
 
