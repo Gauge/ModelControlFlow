@@ -18,6 +18,15 @@
 # A check that downloaded a 27 GiB model to prove a transfer works would be a
 # check nobody runs, and a check that downloaded nothing would prove nothing.
 #
+# **And what it plans for is large and awkward, at no cost.** A transfer
+# exercises the wire; it says nothing about the *variety* of what a hub
+# publishes. [findings.md](../doc/findings.md) F16 found three defects in the
+# planner the first time it was pointed at the reference repository — a
+# configuration MCF could not parse, a configuration MCF was not looking in the
+# right place for, and a cache overstated fourfold — every one of them in code
+# with tests. So the plan is made for that repository too, which fetches no
+# bytes at all: a listing and a `config.json`.
+#
 # **It is not a measurement.** Nothing timed is reported: the hub is somebody
 # else's machine on somebody else's network, and A6 would want conditions MCF
 # cannot state for any number taken here.
@@ -36,6 +45,11 @@ readonly EXIT_CANNOT_CHECK=2
 # acquires is a decision somebody made and can see.
 readonly REPOSITORY=ggml-org/tiny-llamas
 readonly FILE=stories260K.gguf
+
+# The reference model (§XII), planned for and never fetched. It is here because
+# it is *awkward* rather than because it is the reference: a multimodal
+# configuration, a hybrid attention scheme, and an exponent in its metadata.
+readonly AWKWARD=unsloth/Qwen3.8-27B-GGUF
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
@@ -119,5 +133,25 @@ grep -q artifact_acquired "$record" || fail "the acquisition is not in the recor
 grep -q artifact_removed "$record" || fail "the removal is not in the record"
 printf '  %s lines, both events present\n' "$(wc -l <"$record")"
 
+printf '\n=== planning for a repository nobody would download to test with\n'
+planned=$("$mcf" pull "$AWKWARD" 2>&1) || fail "listing $AWKWARD did not succeed"
+printf '%s\n' "$planned" | grep -E 'publishes|licence|at [0-9]+ tokens' | sed 's/^/  /'
+case "$planned" in
+    *"cannot say which of these would run here"*)
+        fail "the plan for $AWKWARD could not be made: $(printf '%s' "$planned" | tail -3)" ;;
+esac
+case "$planned" in
+    *"at 4096 tokens of context"*) ;;
+    *) fail "no plan was produced for $AWKWARD" ;;
+esac
+# Every variant classified, none fetched: the count is the check. A plan missing
+# a row nobody mentioned is worse than no plan (A1).
+variants=$(printf '%s' "$planned" | grep -c ' — fits\| — does NOT fit\| — fits at a shorter context')
+published=$(printf '%s' "$planned" | grep -c '\.gguf — [0-9]* bytes')
+[ "$variants" -eq "$published" ] ||
+    fail "$published models are published and $variants were classified"
+printf '  %s variants classified, nothing fetched\n' "$variants"
+
 printf '\nMCF acquired a real model from the real hub, verified it against the digest\n'
-printf 'the hub declared, listed it with its provenance, and removed it (B-029).\n'
+printf 'the hub declared, listed it with its provenance, and removed it (B-029) —\n'
+printf 'and planned for a repository whose shape found three defects (F16).\n'

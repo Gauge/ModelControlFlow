@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 26 |
+| **Version** | 27 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -708,6 +708,16 @@ held, removes it, purges it, and reads the record for both events. A check that
 downloaded a 27 GiB model to prove a transfer works would be one nobody runs;
 one that downloaded nothing would prove nothing.
 
+**And it plans for a repository nobody would download to test with**, which
+costs a listing and a `config.json` and no bytes at all. A transfer exercises
+the wire; it says nothing about the *variety* of what a hub publishes.
+[findings.md](findings.md) F16 found three defects the first time the planner
+met the reference repository — a configuration MCF could not parse, one MCF was
+not looking in the right place for, and a key/value cache overstated fourfold —
+all in code that had tests. The check now asserts that every variant the
+repository publishes is classified, because a plan missing a row nobody
+mentioned is worse than no plan (A1).
+
 **Nothing here is timed.** The hub is somebody else's machine on somebody else's
 network, and A6 would want conditions MCF cannot state for any number taken
 across it.
@@ -750,6 +760,13 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 27 — the online tier meets a repository with a shape
+
+Section 11a gains the half a transfer cannot cover: the online check now plans
+for the reference repository as well as acquiring from a tiny one. It fetches no
+bytes to do it, and it asserts that every variant published is classified —
+which is exactly what was silently untrue until F16.
 
 ### Version 26 — a first token on a machine with nothing on it
 
