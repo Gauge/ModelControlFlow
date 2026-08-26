@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 16 |
+| **Version** | 17 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -108,7 +108,7 @@ as a static binary that runs offline with no models present.
   and the suite never depends on it (B-018) — §6.22, built in at M0 because a
   special case is far cheaper to prevent than to find
 
-**Gated on:** DEC-022. ~~DEC-039~~ closed by D35, on F15's measurement of what a machine actually makes you ask for; ~~DEC-004~~ closed by D32, on F8's measurement; ~~DEC-051~~ by D30. ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27; ~~DEC-047's licence half~~ by D28; ~~DEC-035~~ by D29. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
+**Gated on:** nothing — M0's decisions are closed. ~~DEC-022~~ closed by D36, on the tests that now exist for each of §7.22's four questions; ~~DEC-039~~ closed by D35, on F15's measurement of what a machine actually makes you ask for; ~~DEC-004~~ closed by D32, on F8's measurement; ~~DEC-051~~ by D30. ~~DEC-008~~ closed by D25; ~~DEC-021~~ by D26; ~~DEC-050~~ by D27; ~~DEC-047's licence half~~ by D28; ~~DEC-035~~ by D29. ~~DEC-016~~ closed by D24; ~~DEC-010~~ closed by [taxonomy.md](taxonomy.md); ~~DEC-033/034/046~~ closed by D16–D19; ~~DEC-049~~ by D20.
 
 **Note on the remainder:** all of them are questions a working prototype answers better than an argument does. D4's prototype has now run ([findings.md](findings.md) F1): it closed §7.19 and left DEC-008 and DEC-050 better informed rather than closed. ~~DEC-033~~ closed by D16; ~~DEC-034~~ and ~~DEC-046~~ closed by D17-D19.
 
@@ -546,6 +546,14 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 17 — M0 has no gating decisions left
+
+DEC-022 is decided (D36), and it was M0's last. Both of the milestone's open
+gates closed the same way — by measuring or demonstrating rather than deciding
+in the abstract: D35 asked a machine what it makes you ask for, and D36 drew the
+end-to-end boundary from the tests that now exist for each of §7.22's four
+questions.
 
 ### Version 16 — M0's second gate closes
 

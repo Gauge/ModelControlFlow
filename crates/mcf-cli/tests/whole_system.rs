@@ -8,13 +8,22 @@
 //! is a process's, and the second run of a command genuinely does not share
 //! memory with the first.
 //!
-//! **Where the boundary falls is undecided, and this tier says so.** §7.22 asks
-//! whether a full-system test drives a real HTTP surface, starts an engine,
-//! crosses into a supervised child, and exercises recovery with persisted
-//! state; DEC-022 is open. Three of those four have nothing to test at M0 —
-//! there is no daemon, no serving surface and no engine — and the fourth is
-//! what this file covers. When DEC-022 closes, this tier grows the rest;
-//! claiming them now would be an untested claim (A19).
+//! **Where the boundary falls is decided, and this tier is where it is drawn.**
+//! D36 answers §7.22's four questions, and every answer is demonstrated below
+//! rather than asserted: a real protocol against a peer the laboratory can make
+//! hostile (`mcf pull` over loopback HTTP), the real engine MCF ships (`mcf
+//! run` through the stand-in, D31), the shipped binary across every process
+//! boundary MCF has (the daemon, started, asked, killed at eight moments and
+//! started again), and recovery from the disk in every scenario that has state.
+//!
+//! **Nothing on MCF's side is mocked.** That is the rule the four answers
+//! share. A simulated component appears only to produce a failure that is hard
+//! to cause on purpose (D26), never to stand in for one that works.
+//!
+//! **The outer edge is what keeps this tier gating**: no network beyond
+//! loopback, no accelerator, no large model, no credential. A claim that cannot
+//! be tested inside those bounds belongs to a scheduled tier that says so — the
+//! online tier speaks TLS to the real hub — rather than to a mock here (A19).
 //!
 //! **The whole tier gates, and that is a measured decision rather than an
 //! assumed one.** B38 requires the gating tier stay fast, and the expensive

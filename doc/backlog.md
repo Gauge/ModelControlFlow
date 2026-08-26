@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 111 |
+| **Version** | 112 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -46,7 +46,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-019 | Whether the adversarial prototype confirms or amends D4 | §7.19 | **D4** | M0 | **resolved** — confirms. [findings.md](findings.md) F1: four death modes classified with the manager unaffected, five of five accelerator questions answered over the C ABI, every measurable D24 figure under its ceiling |
 | DEC-004 | Engine ownership: perform inference, or delegate it | §7.4 | **§VI, §VII** | M0 | **resolved** — D32: delegate the kernels, own the wrapper. [findings.md](findings.md) F8 measured the slope: MCF's best safe portable Rust is 25–50× one core of a *generic* tuned BLAS on the same machine, and the careful tiling step came out slower than the one-line reorder |
 | DEC-021 | What the laboratory must simulate, what it declines to, and whether simulated time is structural | §7.21 | **§VIII** | M0 | **resolved** — D26: the taxonomy, bound to what MCF's code claims rather than to the whole table; observed rather than caused; the clock is structural |
-| DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | open |
+| DEC-022 | Where the end-to-end boundary falls for a daemon | §7.22 | **§3.5** | M0 | **decided** — D36: the shipped binary across every boundary MCF ships, and nothing on MCF's side mocked. All four of §7.22's questions are now answered by tests that exist rather than by a paragraph: a real protocol against a peer the laboratory can make hostile, the real engine MCF ships (the stand-in today, B-320's tomorrow), the shipped binary across every process boundary MCF has, and recovery from the disk wherever there is state. A simulated component appears only to produce a failure that is hard to cause on purpose (D26). The outer edge — no network beyond loopback, no accelerator, no large model — is what keeps the tier gating, and a claim that cannot be tested inside it belongs to a scheduled tier that says so |
 | DEC-008 | Which hardware is characterized versus attempted-and-uncharacterized | §7.8 | §IV | M0 | **resolved** — D25: characterized means MCF can read the device's live state, per run; the boundary is a capability of the observer, never a vendor list |
 | DEC-050 | Which statistic each of D24's sixteen budget figures names | §7.50 | **B-011**, B20 | M0 | **resolved** — D27: three kinds of figure; p99 over ≥100 trials for events; an unattributable run is neither a pass nor a failure |
 | DEC-051 | How an event-class budget is ever asserted on a machine somebody is using, and what a scheduled tier does on a CI runner that is never quiet | §7.51 | **B-011**, B38 | M0 | **resolved** — D30: attributability is a property of a *reading*, measured as the scheduling delay across it. [findings.md](findings.md) F3 has the evidence and the defect the first implementation had |
@@ -368,6 +368,22 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 112 — the boundary, drawn where the parts now are
+
+DEC-022 decided. §7.22 asked four questions about what whole-system testing
+means for a daemon, and when it was written three of the four things it asked
+about did not exist. They do now, so each answer is demonstrated by a test
+rather than argued: `mcf pull` over loopback HTTP against a hub the laboratory
+can make hostile, `mcf run` end to end through the engine MCF ships, the daemon
+started and killed at eight moments of its life, and recovery read back off the
+disk.
+
+The rule they share is the useful part: **nothing on MCF's side is mocked**. A
+simulated component appears only to produce a failure that is hard to cause on
+purpose, which is D26's rule rather than a convenience.
+
+M0 has no open gating decisions left.
 
 ### Version 111 — what a machine actually makes you ask for
 
