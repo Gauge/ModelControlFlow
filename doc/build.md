@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 25 |
+| **Version** | 26 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -674,9 +674,19 @@ uncharacterized (missing memory, thermal)* because the vendor library is not
 there to load, which is D25 and A5 behaving exactly as written on a machine
 that genuinely lacks something.
 
-**It does not reach a first token**, which needs a model artifact and is M1's
-acquisition work (B-019, B-020). B-183's condition is not met until that exists,
-and the script says so on every run rather than implying otherwise.
+**And it reaches a first token**, which is B-183's condition. The container has
+no toolchain to build a model with and no network to fetch one over, so the
+machine that has a toolchain writes one out — `cargo run -p mcf-lab --example
+write-fixture` — and the image is handed the bytes. MCF's own stand-in (D31)
+reads it and produces text: the whole path, file to vocabulary to forward pass
+to sampler to tokens, with nothing installed.
+
+**What that token is and is not.** It is what B36 claims — MCF needs nothing
+from the machine — demonstrated rather than argued. It is not a real model and
+it can never be a speed (B65): the fixture has four tokens and one block, and
+what a real artifact does here is B-019's, which needs fifteen gigabytes and
+somebody's decision to spend them. The other platforms D29 names each need a
+machine to run this on.
 
 ## 11a · The real hub
 
@@ -740,6 +750,17 @@ an estimate: a window nobody gives back is the failure the tool exists to
 prevent.
 
 ## Changelog
+
+### Version 26 — a first token on a machine with nothing on it
+
+Section 11 gains the row it has been missing: the from-scratch container now
+runs `mcf run` and gets text out. The model is a four-token fixture the
+laboratory writes out on the host, because the container has neither a toolchain
+to build one nor a network to fetch one — which is the point of the exercise.
+
+That is B-183's condition met on this platform, with both caveats stated where
+the figure is: the fixture is not a model, and a stand-in's answer is never a
+speed.
 
 ### Version 25 — a ninth crate, and the only one with rights
 
