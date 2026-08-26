@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 21 |
+| **Version** | 22 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1033,6 +1033,12 @@ for the musl target exactly as the C++ one does. Neither keeps B-183's check
 runnable on a machine without one, and the difference that decided TLS is not
 available here.
 
+**Read F18 after this.** *On a machine without one* is doing more work in that
+sentence than it looked like at the time: the toolchain is packaged for this
+machine and costs about nine megabytes. What F12 measured is unchanged; what it
+concluded — that neither candidate keeps the check runnable — holds only where a
+toolchain cannot be had, which turns out not to be here.
+
 There is a second thing in that dependency worth noticing: `tokenizers` is
 capability MCF already has. D31 gave MCF its own GGUF reader and its own
 tokenizer so that the vendored engine would have something to be checked
@@ -1194,9 +1200,11 @@ not have is *arbitrary* query — a `WHERE` over the bodies — and nothing in M
 asks for one yet.
 
 The cost side is not close. Admitting SQLite would put 9.2 MiB of C in the tree,
-add 52 s to a cold build, and — on this machine, today — break B-183's
-from-scratch container, which runs a **static musl** artifact with nothing
-installed. F12 found the same wall for both engine candidates: the musl question
+add 52 s to a cold build, and — on this machine, as it was configured when this
+was measured — break B-183's from-scratch container, which runs a **static musl**
+artifact with nothing installed. (F18 later found the missing toolchain is
+packaged; the source size and the compile time are unaffected, and they are the
+larger half of this.) F12 found the same wall for both engine candidates: the musl question
 is turning into MCF's real constraint on vendoring, and it is a constraint about
 a claim MCF makes rather than about a preference.
 
@@ -1245,6 +1253,10 @@ platforms*.
 | **Read processor energy (RAPL)** | **needs elevation** | **D11 — energy is first-class** |
 | Change accelerator compute or persistence mode | root, per the vendor's own tool | D8's exclusive lab |
 | Lock memory | **8 MiB** (`RLIMIT_MEMLOCK`) | pinning weights |
+
+**One row here was an absence rather than a fact** — *no C cross compiler on
+this machine* — and F18 priced it: the toolchain is packaged. Nothing else in
+this table changes.
 
 **The one that costs something.** D11 makes energy a first-class quantity, and
 `intel-rapl`'s `energy_uj` is not readable by an ordinary user on this
@@ -1498,6 +1510,15 @@ which engine to admit rather than about whether the wall is real, and B-320 is
 where it gets made.
 
 ## Changelog
+
+### Version 22 — three findings point forward to the one that qualified them
+
+F12, F14 and F15 each recorded that this machine has no C toolchain targeting
+musl, and F18 later found it packaged. A reader landing on any of the three
+would take the absence for a fact about the world, so each now says where to
+read next. Nothing measured is changed — a finding is what was observed when it
+was observed — and what each *concluded* is bounded to the condition it was
+observed under.
 
 ### Version 21 — the wall was a package nobody priced
 
