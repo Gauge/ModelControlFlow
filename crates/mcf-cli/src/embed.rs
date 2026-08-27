@@ -51,6 +51,15 @@ pub(crate) fn run(model: &str, text: &str) -> Response {
         }
     };
 
+    // The directory first, from a bounded read — the same early look `mcf run`
+    // takes, for the same reason (B-372).
+    if let Err(failure) = examine_for_embedding(&path) {
+        return Response {
+            text: refused(&path, &failure),
+            served: false,
+        };
+    }
+
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -71,6 +80,36 @@ pub(crate) fn run(model: &str, text: &str) -> Response {
             served: false,
         },
     }
+}
+
+/// The bounded early look: the memory ceiling applies to every model the
+/// stand-in dequantizes, whichever kind it is. The architecture check is
+/// deliberately *not* borrowed from `mcf run` — this surface accepts what
+/// `bert::load` accepts, and load says so itself.
+fn examine_for_embedding(path: &std::path::Path) -> Result<(), Failure> {
+    use std::io::Read as _;
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        if std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .is_err()
+        {
+            // The whole-file read that follows will say what is wrong, with
+            // the path attached where this helper has less to say.
+            return Ok(());
+        }
+        match gguf::parse(&prefix) {
+            Ok(file) => return crate::run::fits_in_memory(&file),
+            Err(failure) => {
+                if take >= held {
+                    return Err(failure);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Reads the model, embeds, and keeps the mark.
