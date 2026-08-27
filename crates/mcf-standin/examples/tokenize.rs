@@ -5,13 +5,21 @@
 //! seeing the tokens rather than inferring them from the answer.
 //!
 //!   cargo run -p mcf-standin --example tokenize -- <model.gguf> "some text"
+//!   cargo run -p mcf-standin --example tokenize -- <model.gguf> "some text" --ids
+//!
+//! `--ids` prints nothing but the identifiers, space-separated, on one line —
+//! which is what a comparison against another implementation reads (B-368).
+//! Identifiers are integers and two tokenizers either agree about them or do
+//! not; there is no tolerance to argue about, which makes this the one part of
+//! an engine that can be checked against a reference exactly.
 
 fn main() -> std::process::ExitCode {
     let mut arguments = std::env::args().skip(1);
     let (Some(path), Some(text)) = (arguments.next(), arguments.next()) else {
-        eprintln!("usage: tokenize <model.gguf> \"some text\"");
+        eprintln!("usage: tokenize <model.gguf> \"some text\" [--ids]");
         return std::process::ExitCode::FAILURE;
     };
+    let only_ids = arguments.any(|argument| argument == "--ids");
 
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -34,6 +42,26 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+
+    if only_ids {
+        return match vocabulary.encode(&text, true) {
+            Ok(tokens) => {
+                println!(
+                    "{}",
+                    tokens
+                        .iter()
+                        .map(usize::to_string)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+                std::process::ExitCode::SUCCESS
+            }
+            Err(failure) => {
+                eprintln!("{failure}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
 
     println!(
         "tokenizer model: {:?}",

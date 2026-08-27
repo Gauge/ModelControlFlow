@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 31 |
+| **Version** | 32 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -797,6 +797,52 @@ gate that fails on a fresh clone; `mcf pull` the artifacts named in
 **Nothing here is timed and nothing here may be** (B65). The figures in F21 and
 F22 are recorded as what the decision was about, not as properties of any model.
 
+## 11d · Against a reference implementation
+
+```
+$ scripts/ci.sh --with-oracle           # or scripts/check-oracle.sh
+```
+
+**Why this exists, in one measurement.** [findings.md](findings.md) F25 removed
+the expert router from MCF's mixture-of-experts entirely and the model produced
+`Paris. It is located on the River Seine in`; the correct implementation
+produced `Paris, France is Paris, Paris is Paris is`. The broken engine read
+*better* than the right one. Four findings now say the same thing from different
+directions (F20, F22, F24, F25): **output quality is not evidence about
+implementation correctness, in either direction.** Every family MCF's engine
+covers was transcribed from somebody else's source and is unverified in A21's
+exact sense. This is what verifies it.
+
+**It starts with the tokenizer because that part can be exact.** Identifiers are
+integers. Two tokenizers either agree about them or do not — no tolerance, no
+floating-point arithmetic in the way. It is also the part F23 found three
+defects in, every one of them by reading rather than running, and every one of
+them still unverified by anything but that reading.
+
+**Logits and generated text are deliberately not compared yet.** A correct
+implementation can flip an argmax on a near-tie through nothing worse than a
+different summation order, so a disagreement there is a finding to investigate
+rather than a verdict, and a tier that failed on it is a tier people learn to
+ignore. That comparison wants a tolerance nobody has measured, and measuring it
+is its own piece of work.
+
+**The reference is a development instrument and is not vendored.** Nothing in it
+ships, nothing in it is on the path of any MCF command, and MCF's own engine
+runs with none of it present — D39's fourth condition. What MCF may *provision*
+for itself is DEC-052 and is not settled; until it is, this check asks for a
+build that is already there, names the pinned commit it was written against, and
+says so when the build is at a different one.
+
+```
+$ git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp
+$ git checkout 925e1179947ea0c0ebfb0032df18af3a729822be
+$ cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
+$ cmake --build build -j --target llama-tokenize llama-cli
+```
+
+`MCF_ORACLE` names the checkout; the corpus comes from `MCF_CORPUS` or MCF's own
+store. Scheduled rather than gating, because it needs both.
+
 ## 12 · A machine with something else on it
 
 A machine that hosts several projects with heavy test workloads — as the one MCF
@@ -930,6 +976,13 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 32 — against a reference implementation
+
+`--with-oracle` added (B-368). MCF's tokenizer against llama.cpp's, at a pinned
+commit, over texts chosen for where tokenizers differ. Identifiers are integers,
+so the comparison is exact and a disagreement is a defect rather than a
+judgement — which is what four findings in a row have been asking for.
 
 ### Version 31 — the conformance corpus
 

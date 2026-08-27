@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 147 |
+| **Version** | 148 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -160,7 +160,7 @@ first and importance second.
 | B-371 | Embedding models: the bert family, its `bert` (`WordPiece`) vocabulary, and the surface that asks one for a vector | DEC-055, D38, §VI | An embedding model in the corpus produces a vector of the width its file declares; the same text twice produces the same vector; a model MCF cannot embed is refused by name | blocked on DEC-055's surface. The engine work is real and not a variation on what exists: a whole-sequence forward pass rather than a token at a time, `LayerNorm` with biases rather than `RMSNorm`, biases on every projection, an ungated feed-forward, learned positions, and mean pooling. Deliberately sequenced **after** B-368: F25 established that output quality is no evidence of correctness, and this is the family least like the ones MCF has checked |
 | B-366 | Threads without changing the answer: work split across processors, partitioned by index and reduced in a fixed order, so a result does not depend on how busy the machine was | D38, §3.12, D19 | The same input produces the same bytes at one thread and at many, asserted as a property over generated inputs | open — floating-point addition is not associative, which makes this the one place reproducibility can be lost without anybody noticing |
 | B-367 | Provisioned environments: MCF installs, builds and pins a component itself, records exactly what it got, can do it again, and can remove it without residue | D39, §3.4, A27, §6.32 | A provisioned engine is reproducible from its record; removing it leaves the machine as it was found; nothing outside the environment MCF made is touched | open — D39's four conditions are the specification. The container runtime is one candidate for *controlled*, a managed prefix is another, and which is a decision (DEC-052) |
-| B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is the finding | D39, D38, A19, §3.12 | Two implementations are compared on identifiers and on logits for the same artifact and prompt; a disagreement is reported with where it first appears | open, and now the highest-value item in M2. Four findings say why: F20 (a wrong rotation produces English), F22 (measured), F24 (three unobservable habits, one of them fluent when wrong), and F25 — where **deleting the expert router entirely produced better-reading output than the correct implementation**. Output quality is not evidence about correctness in either direction, so every family added past this point is transcribed and unverified (A21) |
+| B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is the finding | D39, D38, A19, §3.12 | Two implementations are compared on the same artifact and the same text; a disagreement is reported with where it first appears | in progress — `scripts/check-oracle.sh` and `ci.sh --with-oracle` compare **identifiers**, which is the part that can be exact: integers, no tolerance, no floating-point in the way, and the part F23 found three defects in by reading alone. The reference is llama.cpp at a pinned commit, built as a development instrument and vendored nowhere (D39's fourth condition). Logits and generated text are deliberately not compared yet: a correct implementation can flip an argmax on a near-tie through summation order, so that wants a measured tolerance first |
 | B-369 | Several model stores, chosen at acquisition time: where the large files go is the operator's choice, independent of where MCF is installed, and every surface looks in all of them | §3.15, §5, A7, A6 | Models land where the operator says; a listing covers every store; a name held in two is refused rather than resolved | **done** — `MCF_MODELS`, an ordered list of absolute paths in the platform's own idiom, because §5 refuses MCF a configuration language and a list in a variable is not one. The first is where a new acquisition goes and all of them are searched for what is held; `mcf pull --into <directory>` overrides for one acquisition and may name a store MCF was never told about, since naming a path *is* choosing one. A relative path is dropped and **named** rather than resolved against whatever directory MCF was started in. A name held in two stores is refused with both paths, because two files under one name are two artifacts with two provenances and a measurement against whichever MCF reached first is one nobody could reproduce. `mcf doctor` shows the stores in order, which one new models go to, and how much room each has — asking the filesystem that *would* hold a store that does not exist yet, since that is the number somebody deciding where to put sixteen gigabytes actually wants |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
@@ -380,6 +380,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 148 — an oracle, starting where it can be exact
+
+B-368 in progress. MCF's tokenizer against llama.cpp's at a pinned commit, over
+texts chosen for where tokenizers differ. Identifiers are integers, so a
+disagreement is a defect rather than a judgement — which is what F20, F22, F24
+and F25 have each asked for in turn.
+
+Logits are not compared yet, on purpose: a correct implementation can flip an
+argmax on a near-tie through summation order alone, so that comparison needs a
+measured tolerance before it can be a verdict.
 
 ### Version 147 — the embedding family is a different kind of model
 
