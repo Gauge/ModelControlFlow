@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 43 |
+| **Version** | 45 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -67,6 +67,8 @@ forward as one.
 | 37 | [F37 — The first probe found two defects and then refused to answer (B-051, B-052, D42, §3.18, F25, F26)](#37--f37--the-first-probe-found-two-defects-and-then-refused-to-answer-b-051-b-052-d42-318-f25-f26) |
 | 38 | [F38 — The probe's answer was upside down, and the decisive column was the broken one (B-052, B-374, D42, §3.18, F25, F37)](#38--f38--the-probes-answer-was-upside-down-and-the-decisive-column-was-the-broken-one-b-052-b-374-d42-318-f25-f37) |
 | 39 | [F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)](#39--f39--the-engine-that-can-be-probed-and-three-ways-the-instrument-stood-in-for-the-model-b-032-b-055-b-376-d39-d42-f36-f38) |
+| 40 | [F40 — MCF's engine agrees with the reference for seven hundred positions (B-368, B-373, B-377, D39, A19, F27, F32, F39)](#40--f40--mcfs-engine-agrees-with-the-reference-for-seven-hundred-positions-and-the-rule-that-would-have-called-it-broken-was-the-wrong-rule-b-368-b-373-b-377-d39-a19-f27-f32-f39) |
+| 41 | [F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)](#41--f41--the-check-could-not-fail-and-the-mutation-that-showed-it-was-not-the-first-one-tried-b-003-b-368-b-377-a13-f40) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3016,7 +3018,217 @@ or something else — and B-373's oracle is the instrument for asking. No timing
 here is a measurement: none of it was taken in the exclusive window (B35), and
 the twentyfold figure is an order of magnitude rather than a number.
 
+## 40 · F40 — MCF's engine agrees with the reference for seven hundred positions, and the rule that would have called it broken was the wrong rule (B-368, B-373, B-377, D39, A19, F27, F32, F39)
+
+**The question.** F39 found that MCF's engine and the provisioned one produce
+the same verdict and different text: the same model, the same identifiers,
+greedy from the same seed, generations that agree for a few tokens and then
+part. Two explanations, opposite consequences. Either two near-tied tokens are
+picked differently and the trajectories diverge from there — which is nobody's
+defect — or the distributions genuinely differ, and every result MCF has ever
+measured through its own engine is suspect.
+
+**What the oracle could already say, and where it stopped.** `margins
+--against` reports the margin at the step where MCF's text stops being a prefix
+of the reference's, which is F32's fix for F27's rule. On SmolLM2 the two part
+at **step 4 with a margin of 0.105** — a near-tie, well under the 0.40
+threshold. That is the benign answer, and it is only an answer about step 4.
+
+**The oracle has only ever compared ten tokens.** `GENERATE_TOKENS=10`. Past
+the parting step nothing is comparable, because the two engines are writing
+different sentences — so *whether agreement decays with position* had never
+been asked, and position is exactly where a rotary encoding or a cache would go
+wrong.
+
+**So MCF was made to read the reference's tokens instead of its own.** Teacher
+forcing: at every position MCF sees exactly the reference's prefix and is asked
+what comes next. That is comparable all the way down, however far the free
+generations have drifted apart.
+
+| | SmolLM2-135M | gemma-3-270m |
+|---|---|---|
+| positions compared | 250 | 700 |
+| disagreements | 3 (1.2%) | 25 (3.6%) |
+| worst rank MCF gave the reference's token | 1 | 3 |
+| largest margin at a disagreement | 0.113 | 6.590 *(see below)* |
+
+**The sliding window holds when the cache is grown a token at a time.** F28
+already crossed this boundary and established the mask against the reference —
+with a **682-token prompt**, including one built so that only an engine masking
+the sliding blocks and not the global ones recalls a fact placed outside the
+window. What it did not exercise is the other path to the same state: a cache
+filled *one position at a time by generation* rather than in a single pass over
+a prompt. This does that, and compares 700 positions rather than the eight
+generated tokens F28 compared. Across the boundary:
+
+```
+positions   0-255   disagreed 17 of 247   (6.9%)   worst rank 3
+positions 256-511   disagreed  8 of 256   (3.1%)   worst rank 1
+positions 512-700   disagreed  0 of 189   (0.0%)   worst rank 0
+```
+
+**One hundred and eighty-nine consecutive agreements past the window.**
+Agreement does not decay with position; on this model it improves.
+
+**The one alarming number was the instrument again.** Position 385 showed a
+disagreement at a margin of **6.59** — an order of magnitude past the largest
+real defect this project has recorded (0.775, F27). MCF's chosen token there
+was **106**, which is gemma's `<end_of_turn>`. The reference had been run with
+`ignore_eos` so that it would produce seven hundred tokens, so it was forbidden
+to stop and took its best remaining token while MCF took the stop. The margin
+was measuring a flag in the experiment. **That is the third time in three
+findings that the most decisive number was the one the instrument made** (F37,
+F38, F39), and the only reason it did not become a defect report is that the
+token was looked up rather than the number believed.
+
+**Two disagreements were left, and they split the two rules apart.** At
+positions 45 and 160 MCF preferred a different token with margins of 0.490 and
+0.704 — both over the oracle's 0.40 threshold, both in the range where F27 and
+F32 found real defects. The distribution comparison, which is the oracle's
+other and better instrument (B-373), says otherwise:
+
+| | position 45 | position 160 |
+|---|---|---|
+| top-20 sets in common | 19 of 20 | 19 of 20 |
+| KL(reference ‖ MCF) | **0.028** | **0.068** |
+| threshold for *distributions differ* | 0.20 | 0.20 |
+| largest single log-probability gap | 0.362 | 0.565 |
+
+The two engines hold the same twenty tokens with nearly the same probabilities
+and order the top two differently. At position 160 the reference itself has its
+top two **0.06 apart** — its own near-tie — where MCF has them 0.70 apart the
+other way.
+
+**The finding about method: the margin rule does not transfer, and the KL rule
+does.** The 0.40 threshold was measured on *one parting step per file*, across
+sixteen files (F27, F33). Applied at every position of a seven-hundred-step
+comparison it is a different test with a different rate of false alarm, and it
+raised two. The distribution rule, on the same two positions, says agreement
+with room to spare. Nothing about the gating threshold changes — it is still
+right for the quantity it was calibrated on — but **the per-position test must
+use the distribution rule, and B-373's case for preferring logits over texts
+is stronger than when it was written.**
+
+**What was established.** MCF's engine agrees with the reference across 250 and
+700 positions of two different architectures, one of them with sliding-window
+attention exercised past its own window for the first time. Every disagreement
+is an order-swap between tokens both engines hold at nearly the same
+probability. The divergence F39 asked about is near-tie amplification, and
+B-377 closes on that.
+
+**What was not established.** Whether a long *prompt* and a long *generation*
+could ever disagree here — F28 covered the first path and this the second, and
+neither has been shown to be the harder one. Nothing about a large model: both are under 300M,
+and a defect that only appears at 27B would not show here. Nothing about
+quantizations other than Q8_0 and Q6_K — F33 measured the arithmetic gap
+widening at Q2_K, and this test has not been run there, where a 0.56
+log-probability gap might be ordinary or might not. Nothing about a *prompt*
+longer than the window: this exercises long generation, and a long prompt fills
+the same cache by a different path. And no timing: the seven-hundred-position
+comparison took five minutes and thirty-seven seconds of a shared machine
+outside the exclusive window, which makes it a duration and not a measurement
+(B35).
+
+## 41 · F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)
+
+**What was added.** F40's teacher-forced comparison, made durable as a section
+of the oracle tier: MCF is made to read the reference's own tokens, and what is
+asserted is the *rank* MCF gave the reference's token at each position. A
+top-two order swap is arithmetic; a reference token MCF ranks tenth is not.
+Off by default at `MCF_ORACLE_FORCED=1`, because it costs minutes per model.
+
+It passed on the first run — 354 of 377 positions on gemma-3-270m, the
+reference's token never worse than MCF's rank 3 — and the number meant nothing.
+
+**The negative control returned identical figures with the mechanism broken.**
+B-003's rule is that a check has to be shown to fail. The sliding window was
+deliberately given an off-by-one and the section reported *the same numbers to
+the digit*: 354 of 377, worst rank 3. Not a near miss — no difference at all.
+
+**The reason is that the check never reached the mechanism.** gemma-3-270m
+attends over a window of 512 tokens and stops at its own end of turn after
+**377**. A window of 512 is never reached in 377 tokens, so nothing about the
+sliding window was being exercised, and the check was asserting a property of
+the first 377 positions while its comment claimed the window. (F28's long-prompt
+comparison does cross the boundary and always did; what was empty here was this
+section's own claim to cross it by generating.)
+
+This is why F40 used `ignore_eos`, and F40's own artifact is why the tier had
+not: a reference forbidden to stop takes its best remaining token where MCF
+takes the model's end of turn, and that produced the largest apparent defect in
+this document. The two are not in tension once the artifact is *named* rather
+than avoided — the flag is set, and the positions where MCF chose the stop
+token are set aside by that name and counted in the output (A1). On this model
+that is exactly one position in seven hundred.
+
+**Then the mutation was still too weak.** With the run reaching 700 positions,
+the off-by-one *still* changed nothing. That is not a failure of the check but
+a fact about the model: the extra key is at the far edge of the window and
+carries a negligible attention weight. A boundary error of one token in this
+mechanism is, on this model, unobservable.
+
+**The structural break is caught, enormously.**
+
+```
+                              agreed        worst rank of the reference's token   verdict
+clean                         675 of 699    3                                     passes
+sliding window off by one     675 of 699    3                                     passes  ← not caught
+sliding window disabled       462 of 700    618                                   fails, exit 1
+```
+
+Rank **3** against rank **618**. The threshold sits at 8, in a gap of two
+orders of magnitude — which is the widest separation between noise and defect
+anything in this document has measured, and a good deal wider than the margin
+rule's 0.320-to-0.449 (F32, F33).
+
+**What this check does and does not cover, stated rather than implied.** It
+catches a sliding-window mechanism that is absent, wrong in shape, or applied
+to the wrong blocks. It does **not** catch a boundary off by one, and that is
+now known by measurement rather than assumed either way — which sharpens F28,
+where an off-by-one was reasoned about as *a defect with room to hide* and a
+history was built to deny it that room. On this model it hides regardless: the
+key at the window's edge carries too little weight to change the answer. A21 applies to MCF's
+own instruments as much as to a model's metadata: what a check has been shown
+to catch is what it verifies, and the rest is declared.
+
+**What was not established.** Whether the off-by-one is unobservable on other
+models, or only on this one — a longer window, or a model that leans harder on
+its oldest visible token, might make it plain. Nothing about models without
+sliding-window attention, where this section still compares 700 positions but
+tests no windowing at all. And the run costs five to six minutes per model on a
+shared machine, which is why it is off by default and why nothing here is a
+timing (B35).
+
 ## Changelog
+
+### Version 45 — the check could not fail
+
+F41. F40's comparison made durable as an oracle section, and then shown to be
+worthless as first written: the negative control returned identical numbers
+with the sliding window broken, because the reference stops at 377 tokens and
+the window is 512. The check had never reached the mechanism it named.
+
+Fixed by taking the length and naming the artifact rather than avoiding it —
+positions where MCF takes the model's end of turn are set aside by that name
+and counted. The second mutation was still too weak to see; the third, a
+structural break, separates by two orders of magnitude. What the check catches
+and what it does not are now both written down.
+
+### Version 44 — the engine agrees for seven hundred positions
+
+F40. B-377 closed. MCF was made to read the reference's own tokens rather than
+its own, which is the only way to compare two engines after their greedy
+generations have parted. Agreement does not decay with position, and
+gemma-3-270m's sliding-window attention is correct past its own 512-token
+window — 189 consecutive agreements — which nothing had ever tested because
+nothing had ever generated that far.
+
+Two lessons about method. The one alarming number was `ignore_eos` in the
+experiment rather than anything in MCF, found by looking up the token instead
+of believing the margin. And the oracle's two rules part company on a
+per-position test: the margin threshold was calibrated on one parting step per
+file and raises false alarms when applied at every position, where the
+distribution rule says agreement with room to spare.
 
 ### Version 43 — the engine that can be probed
 
