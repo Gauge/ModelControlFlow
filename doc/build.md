@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 37 |
+| **Version** | 38 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -840,6 +840,17 @@ files rather than a cleverer rule.
 `cargo run -p mcf-standin --example margins -- <model> "<text>"` is the
 instrument, and is worth running by hand whenever a divergence appears.
 
+**Distributions are compared too, and this is the verdict that does not
+narrow** (B-373, F34). The provisioned `llama-server` returns the reference's
+top twenty log-probabilities at every step; `margins --logprobs-of` prints
+MCF's log-softmax for the same tokens at the same step; the two are compared
+at step 0 for every prompt and at the parting step when both engines reached
+it through the same token ids. The statistic is the KL divergence of the
+reference from MCF over those twenty, floor 0.20 — a clean engine's maximum
+across sixteen files is 0.113, a swapped rotation's median is 0.32. The two
+gap statistics are printed beside it on a failure. `MCF_ORACLE_SECTIONS=
+distributions` runs only this section, which is how its floor was measured.
+
 **Embeddings are compared too, at their own measured floor.** An embedding
 model's vectors cannot equal the reference's — MCF multiplies dequantized
 floats where the reference multiplies in quantized arithmetic — and F29
@@ -1045,6 +1056,11 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 38 — distributions against distributions
+
+The oracle compares the reference's top-twenty log-probabilities against MCF's
+at the same step (F34). `MCF_ORACLE_SECTIONS` selects sections for measuring.
 
 ### Version 37 — the threshold at 0.40
 

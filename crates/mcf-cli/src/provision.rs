@@ -82,7 +82,16 @@ pub(crate) const COMPONENTS: &[Component] = &[Component {
         "-DLLAMA_BUILD_TESTS=OFF",
         "-DLLAMA_BUILD_EXAMPLES=ON",
     ],
-    targets: &["llama-tokenize", "llama-completion", "llama-embedding"],
+    // The server is the one reference tool that exposes the model's
+    // distribution — `n_probs` on its completion endpoint — which is what a
+    // comparison of logits rather than texts needs (B-373). Nothing else in
+    // the reference prints a logit.
+    targets: &[
+        "llama-tokenize",
+        "llama-completion",
+        "llama-embedding",
+        "llama-server",
+    ],
 }];
 
 /// Where a component lands when the operator does not say.
