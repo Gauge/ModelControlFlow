@@ -73,6 +73,16 @@ pub struct Shape {
     /// twice as wide as MCF would have assumed. A shape MCF assumed is a model
     /// MCF would have run confidently and wrongly (A21, F19's lesson).
     pub stated_head_dimension: Option<usize>,
+    /// How many experts each feed-forward block holds, where it holds any.
+    ///
+    /// Zero is the ordinary case — one dense feed-forward per block. A file
+    /// that states a count carries its feed-forward as a *stack* of that many,
+    /// with a router choosing between them per token, and MCF reads which shape
+    /// it is from this number rather than from the family: the artifact in the
+    /// corpus declares `llama` and is a mixture of four.
+    pub experts: usize,
+    /// How many of those experts each token is actually routed to.
+    pub experts_used: usize,
 }
 
 impl Shape {
@@ -260,12 +270,31 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
         stated_head_dimension: number(file, &key("attention.key_length"))
             .and_then(|value| usize::try_from(value).ok())
             .filter(|width| *width > 0),
+        experts: number(file, &key("expert_count"))
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0),
+        experts_used: number(file, &key("expert_used_count"))
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0),
         vocabulary: file
             .get("tokenizer.ggml.tokens")
             .and_then(Value::as_list)
             .map(<[Value]>::len)
             .ok_or_else(|| missing("tokenizer.ggml.tokens"))?,
     };
+
+    // A file that says it has experts and does not say how many are used is a
+    // file MCF cannot run: the count is not derivable, every value gives a
+    // different model, and picking one would be a hidden choice (§3.15, A7).
+    if shape.experts > 0 && shape.experts_used == 0 {
+        return Err(missing(&key("expert_used_count")));
+    }
+    if shape.experts_used > shape.experts {
+        return Err(malformed(
+            "the file routes each token to more experts than it has",
+            &format!("{} used of {}", shape.experts_used, shape.experts),
+        ));
+    }
 
     if shape.heads == 0 || !shape.embedding.is_multiple_of(shape.heads) {
         return Err(malformed(
@@ -302,6 +331,28 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
         ),
         ("output_norm.weight".to_owned(), shape.embedding),
     ];
+    // A feed-forward is either one of each or a stack of `experts` of each with
+    // a router in front. Which it is comes from the file's own count, so a file
+    // of any family that declares experts is read as having them (§3.18).
+    let stack = gate.saturating_mul(shape.experts);
+    let feed_forward: Vec<(&str, usize)> = if shape.experts > 0 {
+        vec![
+            (
+                "ffn_gate_inp.weight",
+                shape.embedding.saturating_mul(shape.experts),
+            ),
+            ("ffn_gate_exps.weight", stack),
+            ("ffn_up_exps.weight", stack),
+            ("ffn_down_exps.weight", stack),
+        ]
+    } else {
+        vec![
+            ("ffn_gate.weight", gate),
+            ("ffn_up.weight", gate),
+            ("ffn_down.weight", gate),
+        ]
+    };
+
     for block in 0..shape.blocks {
         for (suffix, elements) in [
             ("attn_norm.weight", shape.embedding),
@@ -310,11 +361,11 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
             ("attn_v.weight", kv_width.saturating_mul(shape.embedding)),
             ("attn_output.weight", query),
             ("ffn_norm.weight", shape.embedding),
-            ("ffn_gate.weight", gate),
-            ("ffn_up.weight", gate),
-            ("ffn_down.weight", gate),
         ] {
             wanted.push((format!("blk.{block}.{suffix}"), elements));
+        }
+        for (suffix, elements) in &feed_forward {
+            wanted.push((format!("blk.{block}.{suffix}"), *elements));
         }
     }
     wanted
@@ -584,22 +635,31 @@ impl Loaded {
     ///
     /// As [`Loaded::attention`]: a tensor the model names and does not have.
     fn feed_forward(&self, block: usize, hidden: &[f32]) -> Result<Vec<f32>> {
-        let width = self.shape.embedding;
         let normalized = ops::rms_norm(
             hidden,
             self.tensor(&format!("blk.{block}.ffn_norm.weight"))?,
             self.epsilon,
         );
+        if self.shape.experts > 0 {
+            return self.experts(block, &normalized);
+        }
+        self.dense(block, &normalized)
+    }
+
+    /// One feed-forward: gate, up, activate, down.
+    fn dense(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
+        let width = self.shape.embedding;
+        let inner = self.shape.feed_forward;
         let gate = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_gate.weight"))?,
-            &normalized,
-            self.shape.feed_forward,
+            normalized,
+            inner,
             width,
         );
         let up = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_up.weight"))?,
-            &normalized,
-            self.shape.feed_forward,
+            normalized,
+            inner,
             width,
         );
         let activated = ops::gated(&gate, &up, self.habits.activation);
@@ -607,8 +667,105 @@ impl Loaded {
             self.tensor(&format!("blk.{block}.ffn_down.weight"))?,
             &activated,
             width,
-            self.shape.feed_forward,
+            inner,
         ))
+    }
+
+    /// A stack of feed-forwards, a router in front, and the two or three the
+    /// router picked, added up in proportion.
+    ///
+    /// **The routing is the whole of what is new here.** Each expert is an
+    /// ordinary feed-forward and MCF runs it with the same three matrix
+    /// multiplies; what a mixture adds is a choice, and the choice is made the
+    /// same way every time: score every expert, take the highest few, weigh
+    /// their outputs by scores that have been renormalized to sum to one.
+    ///
+    /// **Renormalizing is not optional and not a detail.** The scores come from
+    /// a softmax over *all* the experts, so the few that were chosen sum to
+    /// less than one — how much less depends on how confident the router was.
+    /// Using them unnormalized scales the whole block's output by that
+    /// confidence, which is a plausible-looking thing to do and not what these
+    /// models were trained with.
+    fn experts(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
+        let width = self.shape.embedding;
+        let inner = self.shape.feed_forward;
+        let experts = self.shape.experts;
+        // Both counts were checked when the shape was read, so this is the
+        // file's own number rather than a repair of it.
+        let used = self.shape.experts_used.min(experts);
+
+        let mut scores = ops::matmul_vec(
+            self.tensor(&format!("blk.{block}.ffn_gate_inp.weight"))?,
+            normalized,
+            experts,
+            width,
+        );
+        ops::softmax(&mut scores);
+
+        // The highest `used` scores, and their experts. A linear selection
+        // rather than a sort: the count is small, and what matters is that ties
+        // go to the lower index every time, so that two runs of one model make
+        // the same choice (§3.12).
+        let mut chosen: Vec<usize> = Vec::with_capacity(used);
+        for _ in 0..used {
+            let mut best: Option<usize> = None;
+            for expert in 0..experts {
+                if chosen.contains(&expert) {
+                    continue;
+                }
+                let score = scores.get(expert).copied().unwrap_or(f32::NEG_INFINITY);
+                let standing = best
+                    .and_then(|index| scores.get(index).copied())
+                    .unwrap_or(f32::NEG_INFINITY);
+                if score > standing {
+                    best = Some(expert);
+                }
+            }
+            match best {
+                Some(expert) => chosen.push(expert),
+                None => break,
+            }
+        }
+
+        let total: f32 = chosen
+            .iter()
+            .filter_map(|expert| scores.get(*expert).copied())
+            .sum();
+        // Clamped rather than guarded, at the smallest number a half-precision
+        // float can hold — the same floor the reference uses, and the reason is
+        // that a router which scored every expert at zero must not turn the
+        // block's output into infinities.
+        let total = total.max(6.103_515_6e-5);
+
+        let gates = self.tensor(&format!("blk.{block}.ffn_gate_exps.weight"))?;
+        let ups = self.tensor(&format!("blk.{block}.ffn_up_exps.weight"))?;
+        let downs = self.tensor(&format!("blk.{block}.ffn_down_exps.weight"))?;
+        let per_expert = inner.saturating_mul(width);
+
+        let mut out = vec![0.0_f32; width];
+        for expert in chosen {
+            let at = expert.saturating_mul(per_expert);
+            let end = at.saturating_add(per_expert);
+            let (Some(gate_weights), Some(up_weights), Some(down_weights)) =
+                (gates.get(at..end), ups.get(at..end), downs.get(at..end))
+            else {
+                return Err(malformed(
+                    "an expert is outside the stack the file said it holds",
+                    &format!("block {block}, expert {expert} of {experts}"),
+                ));
+            };
+
+            let gate = ops::matmul_vec(gate_weights, normalized, inner, width);
+            let up = ops::matmul_vec(up_weights, normalized, inner, width);
+            let activated = ops::gated(&gate, &up, self.habits.activation);
+            let produced = ops::matmul_vec(down_weights, &activated, width, inner);
+
+            let weight = scores.get(expert).copied().unwrap_or(0.0) / total;
+            for (slot, value) in out.iter_mut().zip(produced.iter()) {
+                *slot = weight.mul_add(*value, *slot);
+            }
+        }
+        Ok(out)
     }
 
     fn tensor(&self, name: &str) -> Result<&[f32]> {

@@ -56,7 +56,7 @@ readonly CORPUS=(
     "qwen3|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_K_M.gguf|runs|Paris"
     "llama, byte-pair vocabulary|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf|runs|Paris"
     "embedding|leliuga/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q4_0.gguf|refuses|bert"
-    "mixture-of-experts|RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf/TinyMixtral-4x248M-MoE.Q5_K_M.gguf|refuses|ffn_gate"
+    "mixture-of-experts|RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf/TinyMixtral-4x248M-MoE.Q5_K_M.gguf|runs|Paris"
     "gemma3|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q6_K.gguf|runs|Paris"
 )
 

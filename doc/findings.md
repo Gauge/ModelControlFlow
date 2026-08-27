@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 28 |
+| **Version** | 29 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1937,7 +1937,83 @@ inverse root of the head width except at 27B, where it is the inverse root of
 the embedding over the heads. On this artifact those coincide with what MCF
 already computes.
 
+## 25 · F25 — The broken engine read better than the correct one (B-365, B-368, A19, D38)
+
+**What was added.** A mixture of experts, read from llama.cpp's
+`build_moe_ffn`, and run against the corpus artifact `TinyMixtral-4x248M-MoE` at
+Q5_K_M — twelve blocks, four experts per block, two used per token.
+
+Notably the file declares `general.architecture = llama`. Whether a block holds
+one feed-forward or a stack of them is not a property of the family: it is
+`llama.expert_count`, which the file states, so MCF reads the shape from the
+count and not from the name (§3.18). Nothing about "mixtral" appears anywhere in
+the engine.
+
+**What a mixture adds is a choice.** Each expert is an ordinary feed-forward run
+with the same three matrix multiplies. The new part is: score every expert
+through a small router, softmax the scores, take the highest two, renormalize
+those two so they sum to one, and add their outputs in proportion.
+
+**Two pieces of that were removed in turn, and here is the result that matters.**
+The prompts are `The capital of France is` and `The opposite of hot is`.
+
+| version | what came out |
+|---|---|
+| as written | `Paris, France is Paris, Paris is Paris is` · `hot. The hot is hot, the hot is` |
+| the router ignored — experts 0 and 1 every time | `Paris. It is located on the River Seine in` · `hot.` |
+| the two weights not renormalized | `France France France France France France` · `hot` |
+
+**The broken version reads better than the correct one.** Ignoring the router
+entirely — never scoring an expert, always taking the first two — produces
+`Paris. It is located on the River Seine in`, which is a fluent, accurate,
+well-formed sentence. The implementation transcribed from the reference produces
+a stammer. Anybody tuning this by reading the output would have deleted the
+router and called it an improvement.
+
+That is the same phenomenon as F20's rotation, F22's measurement and F24's three
+habits, and it is now at its limit: it is not merely that a wrong engine can
+look right, it is that **a wrong engine can look better than a right one**, on
+the same artifact and the same prompt. Output quality is not evidence about
+implementation correctness in either direction. This finding is the case for
+B-368 and there is no longer a stronger one to be made.
+
+**What is actually known about this implementation.** That it was transcribed
+from the reference rather than inferred; that both the routing and the
+renormalization are live, because removing either changes the output; that the
+shape is read from the file's own counts and refuses a file that states experts
+without stating how many are used. That is not the same as knowing it is right,
+and the difference is exactly what an oracle would close (A21).
+
+**Why the artifact is a poor witness, stated because it bears on the above.**
+`TinyMixtral-4x248M-MoE` is a merge of four small models rather than a mixture
+trained as one, so its own quality is low and its stammer is a plausible thing
+for it to do unassisted. A better mixture would make the correct column read
+better — and would not change the argument, because the broken column would
+still have read fluently.
+
+**What was not established.** The weight scale some mixtures apply
+(`expert_weights_scale`), which this file does not declare and MCF therefore
+does not apply; expert biases and grouped routing, which belong to other
+families; and whether two of four is representative of routing at a realistic
+width. Nothing here is a speed (B65).
+
 ## Changelog
+
+### Version 29 — the broken engine read better than the correct one
+
+F25. A mixture of experts runs, read from the reference. The shape comes from
+the file's own `expert_count` rather than from the family name — the artifact
+declares `llama` and is a mixture of four.
+
+Removing the router entirely, so that every token goes to experts 0 and 1,
+produces `Paris. It is located on the River Seine in`. The implementation
+transcribed from the reference produces `Paris, France is Paris, Paris is Paris
+is`. The broken version reads better.
+
+F20, F22 and F24 each showed that a wrong engine can look right. This shows a
+wrong engine looking *better* than a right one, on the same artifact and prompt.
+Output quality is not evidence about correctness in either direction, and this
+is the strongest case for B-368 that can be made.
 
 ### Version 28 — a third architecture, and three habits that fail three ways
 
