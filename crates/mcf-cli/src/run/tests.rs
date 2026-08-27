@@ -4,7 +4,7 @@
 //! against a model built for the purpose; what is here is the surface's part —
 //! finding the model, keeping the mark, and refusing legibly.
 
-use super::{TOKENS, resolve, run};
+use super::{TOKENS, examined, resolve, run};
 
 /// A path is a model, and so is something under the store — both spellings,
 /// because both are things somebody will type.
@@ -66,4 +66,67 @@ fn a_file_that_is_not_a_model_is_refused_legibly() {
 #[test]
 fn the_budget_is_in_tokens_and_is_stated() {
     assert_eq!(TOKENS, 32);
+}
+
+/// A model too large to dequantize is refused from its directory alone, with
+/// both numbers named (B-372).
+///
+/// The fixture is a *header*: a llama-family directory declaring one tensor of
+/// 2^61 elements, which dequantized is 2^63 bytes and larger than any machine
+/// that exists. No tensor data is behind it and none is needed — the point of
+/// the check is that the answer comes from arithmetic on the directory, not
+/// from an attempt to read what cannot fit.
+#[test]
+fn a_model_too_large_to_dequantize_is_refused_from_the_header() {
+    let mut out = b"GGUF".to_vec();
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&1_u64.to_le_bytes()); // one tensor
+    out.extend_from_slice(&1_u64.to_le_bytes()); // one metadata pair
+
+    // general.architecture = "llama": a family MCF covers, so the refusal
+    // under test is the memory ceiling and not the architecture check.
+    let key = b"general.architecture";
+    out.extend_from_slice(&(key.len() as u64).to_le_bytes());
+    out.extend_from_slice(key);
+    out.extend_from_slice(&8_u32.to_le_bytes());
+    let value = b"llama";
+    out.extend_from_slice(&(value.len() as u64).to_le_bytes());
+    out.extend_from_slice(value);
+
+    // One F32 tensor of 2^61 elements.
+    let name = b"token_embd.weight";
+    out.extend_from_slice(&(name.len() as u64).to_le_bytes());
+    out.extend_from_slice(name);
+    out.extend_from_slice(&1_u32.to_le_bytes()); // one dimension
+    out.extend_from_slice(&(1_u64 << 61).to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes()); // F32
+    out.extend_from_slice(&0_u64.to_le_bytes()); // offset
+
+    let scratch = std::env::temp_dir().join(format!("mcf-ceiling-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let path = scratch.join("too-large.gguf");
+    std::fs::write(&path, &out).expect("written");
+
+    let failure = examined(&path).expect_err("2^63 bytes fits nowhere");
+    let _cleared = std::fs::remove_dir_all(&scratch);
+    assert_eq!(
+        failure.category(),
+        mcf_core::failure::Category::ResourceMemoryExhausted,
+        "the refusal is the memory ceiling: {failure}"
+    );
+    let contexts: Vec<String> = failure
+        .context()
+        .iter()
+        .map(|entry| format!("{}={}", entry.key, entry.value))
+        .collect();
+    assert!(
+        contexts
+            .iter()
+            .any(|entry| entry.starts_with("dequantized=")),
+        "the refusal names what the model needs: {contexts:?}"
+    );
+    assert!(
+        contexts.iter().any(|entry| entry.starts_with("available=")),
+        "the refusal names what the machine has: {contexts:?}"
+    );
 }

@@ -80,6 +80,70 @@ impl Model {
         self.tensors.iter().find(|tensor| tensor.name == name)
     }
 
+    /// What every tensor would weigh dequantized to `f32`, in bytes.
+    ///
+    /// The stand-in engine dequantizes on load (D38's legibility trade), so
+    /// this is what *running* the file costs in memory before a single token —
+    /// and it is arithmetic on the directory alone, so a surface can refuse a
+    /// file that cannot fit without reading any tensor data (B-372). `None`
+    /// when a tensor's extent is not computable, because a lower bound wearing
+    /// the name of a total is what A7 forbids.
+    #[must_use]
+    pub fn dequantized_bytes(&self) -> Option<u64> {
+        let mut total: u64 = 0;
+        for tensor in &self.tensors {
+            total = total.checked_add(tensor.elements()?.checked_mul(4)?)?;
+        }
+        Some(total)
+    }
+
+    /// Refuses this file where its dequantized weight exceeds what is free.
+    ///
+    /// Pure arithmetic on the directory against a number the caller observed:
+    /// the machine's memory is read at the surface, so that this is the same
+    /// judgement everywhere and testable without a machine of any particular
+    /// size (§3.15). A directory whose extent is not computable passes — an
+    /// unknown is not a refusal (A7) — and the loader will refuse it for the
+    /// tensor it cannot read.
+    ///
+    /// # Errors
+    ///
+    /// `resource.memory.exhausted`, naming both numbers (B-372).
+    pub fn fits_dequantized(&self, available: u64) -> Result<()> {
+        let Some(needs) = self.dequantized_bytes() else {
+            return Ok(());
+        };
+        if needs <= available {
+            return Ok(());
+        }
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "display figures in gigabytes, two significant digits"
+        )]
+        Err(Failure::new(
+            Category::ResourceMemoryExhausted,
+            Attribution::Machine,
+            Disposition::Refused,
+            WHERE,
+            "dequantized for the stand-in engine, this model is larger than the memory this \
+             machine has free",
+        )
+        .with_context(
+            "dequantized",
+            format!("{needs} bytes ({:.1} GB)", needs as f64 / 1e9),
+        )
+        .with_context(
+            "available",
+            format!("{available} bytes ({:.1} GB)", available as f64 / 1e9),
+        )
+        .with_context(
+            "what_to_do",
+            "this is D38's dequantize-on-load ceiling, not a property of the model: a \
+             vendored or provisioned engine (B-320, B-367) runs the same file in its \
+             quantized form",
+        ))
+    }
+
     /// How many bytes of tensor data the directory accounts for.
     ///
     /// The end of the furthest tensor, which is what a caller needs in order to

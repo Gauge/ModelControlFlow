@@ -24,6 +24,7 @@ mod exchange;
 mod hub;
 mod platform;
 mod record;
+mod resource;
 mod serve;
 mod store;
 mod time;
@@ -37,6 +38,7 @@ pub const CATALOGUE: &[Scenario] = &[
     artifact::FORMAT_MALFORMED,
     artifact::PROVENANCE_INCOMPLETE,
     engine::NO_VENDORED_ENGINE,
+    resource::MODEL_LARGER_THAN_MEMORY,
     hub::REFERENCE_IS_NOT_ONE,
     hub::NEEDS_CREDENTIALS,
     hub::CREDENTIAL_REFUSED,

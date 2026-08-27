@@ -22,8 +22,10 @@
 
 use std::path::{Path, PathBuf};
 
+use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
-use mcf_core::failure::Failure;
+use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+use mcf_core::hardware::Machine;
 use mcf_standin::gguf;
 use mcf_standin::llama::load;
 use mcf_standin::sample::Settings;
@@ -61,6 +63,16 @@ pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) ->
         }
     };
 
+    // The directory first, from a bounded read: whether this model can run
+    // here at all is answerable from the header, and answering it after
+    // reading sixteen gigabytes is a seventy-second refusal (B-372).
+    if let Err(failure) = examined(&path) {
+        return Response {
+            text: refused(&path, &failure),
+            served: false,
+        };
+    }
+
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -95,9 +107,72 @@ struct Said {
     engine: String,
 }
 
+/// Reads a file's directory from a bounded prefix and refuses early what can
+/// be refused early: an architecture MCF has not been taught, and a model that
+/// cannot fit dequantized (B-372).
+///
+/// `gguf::parse` was written to read the directory of a file it does not hold
+/// all of — B-213's pre-acquisition fitment needs exactly that — so this reads
+/// sixteen mebibytes, and two hundred and fifty-six only if the metadata alone
+/// outgrows that. The growth rule needs no knowledge of which failure means
+/// "truncated": a prefix that failed to parse is only retried *larger*, and a
+/// whole file that failed to parse is what failing honestly looks like.
+pub(crate) fn examined(path: &Path) -> Result<(), Failure> {
+    use std::io::Read as _;
+
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        let opened =
+            std::fs::File::open(path).and_then(|handle| handle.take(take).read_to_end(&mut prefix));
+        if let Err(error) = opened {
+            return Err(Failure::new(
+                Category::ArtifactMissing,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-cli::run"),
+                "the model file could not be read",
+            )
+            .with_context("path", path.display().to_string())
+            .with_context("os_error", error.to_string()));
+        }
+        match gguf::parse(&prefix) {
+            Ok(file) => {
+                mcf_standin::llama::covers(&file)?;
+                return fits_in_memory(&file);
+            }
+            Err(failure) => {
+                if take >= held {
+                    return Err(failure);
+                }
+                // The directory may simply be longer than this prefix; try the
+                // next size up rather than deciding anything from a partial
+                // read.
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a file the stand-in cannot hold, before a tensor is read (B-372).
+///
+/// The observation lives here and the arithmetic in the library: this reads
+/// what the machine says is free, and [`gguf::Model::fits_dequantized`] is the
+/// same judgement wherever it is asked. Where the machine's memory is unknown,
+/// MCF proceeds — refusing on an unknown would turn A7's honesty about not
+/// knowing into a limit nobody measured.
+pub(crate) fn fits_in_memory(file: &gguf::Model) -> Result<(), Failure> {
+    match Machine::read().memory.available {
+        Attested::Known(available) => file.fits_dequantized(available.0),
+        Attested::Unknown => Ok(()),
+    }
+}
+
 /// Reads the model, runs it, and keeps the mark.
 fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, Failure> {
     let file = gguf::parse(bytes)?;
+    fits_in_memory(&file)?;
     // Asked before the vocabulary, because when both are unsupported the
     // architecture is what the operator needs to hear: a vocabulary MCF cannot
     // read is one component of a model it might otherwise run, and an
