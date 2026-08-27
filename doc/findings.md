@@ -2396,6 +2396,16 @@ requires it, and the shared build was removed *through MCF* — `mcf provision
 --remove … --because "built shared: its RUNPATH names /work/build/bin …"` —
 so the record says why a build that worked was thrown away (A27).
 
+**The fourth run is the one that stands.** Self-contained: no `RUNPATH` in the
+binary at all, `llama-tokenize` runs bare from the host and agrees with the
+corpus, the prefix is 95 MB where the shared build was 656, the oracle tier
+finds the provisioned prefix on its own and reports 57 of 57 comparisons in
+agreement through it, and podman's store is still 195,424 KB. B-367's three
+conditions, each exercised rather than asserted: reproducible from its record
+(the recipe, the digest, the commit and the package set are all in the
+prefix and the journal), removable without residue (done once, through MCF,
+with the reason recorded), nothing outside the environment touched.
+
 **Four findings from one command in one evening, none of them about the
 component.** A store that follows the wrong variable, a guard that mistrusts a
 mount, a path baked in from the wrong side of a boundary, and — implicit in all
