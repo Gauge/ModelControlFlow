@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 31 |
+| **Version** | 32 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2159,7 +2159,54 @@ exercised by nothing here and only the rotary base was measured. Nothing about
 the embedding family, still refused. Nothing about sampling other than greedy.
 And nothing here is a speed (B65).
 
+## 28 · F28 — The mask, past the boundary (B-368, F27, A21)
+
+**The hole this closes.** F27 fixed gemma3's sliding-window rotary base and
+*implemented* the window's mask, then said plainly that at ten tokens the mask
+is exercised by nothing. A defect in a boundary nobody crosses is invisible, and
+the mask MCF now applies had never once masked anything.
+
+**Two prompts, both past the boundary, chosen for different failure shapes.**
+Gemma3's window is 512 positions; five blocks in six see only that far back.
+
+- **682 tokens of one sentence repeated**, then eight generated. The blandest
+  possible history: if the mask boundary were off by one, the sliding blocks
+  would attend to a slightly different set of near-identical keys — a defect
+  with room to hide. Both implementations produce `The quick brown fox jumps
+  over the`, token for token.
+- **A distinctive fact, then 550 tokens of filler, then a cue** — `My name is
+  Konstantin Aurelio Blackwood… [filler] …My name is`. The name sits *outside*
+  every sliding block's window and inside the global blocks' view, so the two
+  kinds of block must disagree about what the history holds, and only an engine
+  that masks the sliding ones and not the global ones recalls it. Both
+  implementations produce `Konstantin Aurelio Blackwood. I live`, token for
+  token.
+
+Both tokenizations were verified identical before comparing (682 and 621
+identifiers), so the generations compare the forward pass and nothing else.
+
+**What this establishes.** MCF's window mask — a key at `p0` visible from `p1`
+only while `p1 − p0` is under the window — agrees with the reference's at 682
+positions, on a boundary that is actually crossed, in both a history where the
+masked keys resemble the kept ones and a history where they do not. The
+comparison is available on demand as `MCF_ORACLE_LONG=1 scripts/check-oracle.sh`
+and is off by default: the stand-in pays one forward pass per prompt token, and
+a tier that costs minutes by default stops being run.
+
+**What was not established.** One window size, one pattern (five sliding to one
+global), one model. A file whose window differs from 512 or whose pattern the
+file states explicitly exercises arithmetic this did not. Nothing here is a
+speed (B65).
+
 ## Changelog
+
+### Version 32 — the mask, past the boundary
+
+F28. The sliding-window mask F27 implemented but could not exercise is now
+compared past the boundary: 682 tokens of repetition, and a distinctive name
+parked outside the sliding blocks' view with a cue after the filler. Both agree
+with the reference token for token. The long comparison is gated behind
+`MCF_ORACLE_LONG=1` because the stand-in pays a forward pass per prompt token.
 
 ### Version 31 — what a coin-flip looks like, and what a defect looks like
 

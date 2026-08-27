@@ -170,6 +170,14 @@ for model in "${models[@]}"; do
     done
 done
 
+# ── the long context, on request ────────────────────────────────────────────
+#
+# `MCF_ORACLE_LONG=1` adds a comparison whose prompt is longer than the models'
+# sliding windows, so that the window *mask* is exercised rather than only the
+# rotary base (F28 closed that hole in F27). It is off by default because the
+# stand-in pays one forward pass per prompt token: ~700 passes is minutes, and
+# a tier that costs minutes by default is a tier that stops being run.
+
 # ── the forward pass ────────────────────────────────────────────────────────
 
 completion_reference="$oracle/build/bin/llama-completion"
@@ -185,7 +193,13 @@ else
         name=$(basename "$model")
         "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
 
-        for prompt in "${GENERATE_FROM[@]}"; do
+        prompts=("${GENERATE_FROM[@]}")
+        if [ "${MCF_ORACLE_LONG:-0}" = "1" ]; then
+            filler=$(printf 'Water flows down the hill and into the sea where the waves roll on. %.0s' \
+                $(seq 1 40))
+            prompts+=("My name is Konstantin Aurelio Blackwood and I live in a lighthouse in Norway. ${filler}My name is")
+        fi
+        for prompt in "${prompts[@]}"; do
             flatten() { sed -e 's/[[:space:]]\+/ /g' | tr -d '\n' | sed 's/^ *//; s/ *$//'; }
             mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" 2>&1 |
                 sed -n '/── what produced it/q;p' | flatten || true)
