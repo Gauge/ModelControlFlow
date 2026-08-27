@@ -66,6 +66,11 @@ pub enum Request {
         limit: usize,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
+        /// Which engine, where the client says: `stand-in` for MCF's own,
+        /// `provisioned` for the one MCF built. Absent means the daemon's
+        /// stated rule: the provisioned engine where there is exactly one,
+        /// MCF's own otherwise — and the account says which (§3.15).
+        engine: Option<String>,
     },
 }
 
@@ -85,6 +90,7 @@ impl Request {
                 prompt,
                 limit,
                 seed,
+                engine,
             } => Value::map([
                 ("ask", Value::text("generate")),
                 ("model", Value::text(model.clone())),
@@ -96,6 +102,13 @@ impl Request {
                 (
                     "seed",
                     Value::Integer(i64::try_from(*seed).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "engine",
+                    match engine {
+                        Some(engine) => Value::text(engine.clone()),
+                        None => Value::Null,
+                    },
                 ),
             ]),
         };
@@ -175,6 +188,10 @@ impl Request {
                         .and_then(Value::as_integer)
                         .and_then(|seed| u64::try_from(seed).ok())
                         .unwrap_or(0),
+                    engine: value
+                        .get("engine")
+                        .and_then(Value::as_text)
+                        .map(str::to_owned),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

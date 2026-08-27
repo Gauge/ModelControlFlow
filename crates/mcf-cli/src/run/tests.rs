@@ -28,7 +28,7 @@ fn a_model_is_found_by_path_or_by_name() {
 /// that would list one.
 #[test]
 fn a_model_that_is_not_there_is_said() {
-    let response = run("owner/model:absent.gguf", "hello", None, 0);
+    let response = run("owner/model:absent.gguf", "hello", None, 0, None);
     assert!(!response.served);
     assert!(
         response.text.contains("there is no model"),
@@ -48,7 +48,7 @@ fn a_file_that_is_not_a_model_is_refused_legibly() {
     let file = scratch.join("model.gguf");
     std::fs::write(&file, b"ONNX and not much else").expect("a file");
 
-    let response = run(file.to_str().unwrap_or_default(), "hello", None, 0);
+    let response = run(file.to_str().unwrap_or_default(), "hello", None, 0, None);
     assert!(!response.served);
     assert!(response.text.contains("did not run"), "{}", response.text);
     assert!(

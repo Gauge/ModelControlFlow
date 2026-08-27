@@ -109,6 +109,8 @@ enum Request<'a> {
         limit: Option<usize>,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
+        /// Which engine, where the operator says (B-032).
+        engine: Option<&'a str>,
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
@@ -471,6 +473,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut prompt = None;
     let mut limit = None;
     let mut seed = 0_u64;
+    let mut engine = None;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -489,6 +492,15 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     return Ok(Request::MissingArgument {
                         command: "run",
                         needs: "--limit <tokens>, a number",
+                    });
+                }
+            },
+            "--engine" => match rest.next() {
+                Some(named) => engine = Some(*named),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs: "--engine <stand-in|provisioned>",
                     });
                 }
             },
@@ -513,6 +525,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             prompt,
             limit,
             seed,
+            engine,
         }),
         (None, _) => Ok(Request::MissingArgument {
             command: "run",
@@ -810,7 +823,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             prompt,
             limit,
             seed,
-        } => run::run(model, prompt, *limit, *seed),
+            engine,
+        } => run::run(model, prompt, *limit, *seed, *engine),
         Request::Provision { name, into } => provision::run(name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {

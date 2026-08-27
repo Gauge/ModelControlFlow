@@ -58,16 +58,30 @@ impl Resident {
 
 /// Serves one generation, writing the stream, and returns the account that
 /// was sent as the terminating line.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's worth of conditions, each of which the account names"
+)]
 pub(crate) fn serve_generation(
     store: &Path,
+    mcf_home: &Path,
     resident: &std::sync::Mutex<Option<Resident>>,
     named: &str,
     prompt: &str,
     limit: usize,
     seed: u64,
+    engine: Option<&str>,
     writer: &mut &UnixStream,
 ) -> Value {
-    let account = match attempt(store, resident, named, prompt, limit, seed, writer) {
+    let chosen = choose_engine(mcf_home, engine);
+    let account = match chosen {
+        Ok(Chosen::Provisioned(llama)) => {
+            through_provisioned(store, &llama, named, prompt, limit, seed, writer)
+        }
+        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, limit, seed, writer),
+        Err(failure) => Err(failure),
+    };
+    let account = match account {
         Ok(account) => account,
         Err(failure) => Value::map([
             ("tokens", Value::Integer(0)),
@@ -79,6 +93,112 @@ pub(crate) fn serve_generation(
     let _written = writeln!(writer, "{}", Streamed::Done(account.clone()).to_line());
     let _flushed = writer.flush();
     account
+}
+
+/// Which engine serves a request (B-032, §3.15).
+enum Chosen {
+    StandIn,
+    Provisioned(crate::adapters::ProvisionedLlama),
+}
+
+/// The stated rule: what the client asked for; else the provisioned engine
+/// where there is exactly one; else MCF's own. Two provisioned pins is refused
+/// rather than chosen between, because which of two builds served an answer is
+/// a condition the operator has to have decided.
+fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure> {
+    use crate::adapters::provisioned_llama;
+    match asked {
+        Some("stand-in") => return Ok(Chosen::StandIn),
+        Some("provisioned") | None => {}
+        Some(other) => {
+            return Err(crate::control::refused(
+                "an engine MCF does not have: stand-in or provisioned",
+                other,
+            ));
+        }
+    }
+    match crate::adapters::only_one(provisioned_llama(mcf_home))? {
+        Some(llama) => Ok(Chosen::Provisioned(llama)),
+        None => match asked {
+            Some(_) => Err(Failure::new(
+                mcf_core::failure::Category::EngineUnavailable,
+                mcf_core::failure::Attribution::Machine,
+                mcf_core::failure::Disposition::Refused,
+                mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+                "no provisioned engine is here: `mcf provision llama.cpp` builds one (B-367)",
+            )),
+            None => Ok(Chosen::StandIn),
+        },
+    }
+}
+
+/// One generation through the provisioned engine, as a supervised subprocess
+/// (B-032, B-033). Text arrives in chunks rather than tokens — the completion
+/// tool prints text — and each chunk is one line of the stream.
+fn through_provisioned(
+    store: &Path,
+    llama: &crate::adapters::ProvisionedLlama,
+    named: &str,
+    prompt: &str,
+    limit: usize,
+    seed: u64,
+    writer: &mut &UnixStream,
+) -> Result<Value, Failure> {
+    let given = Path::new(named);
+    let path = if given.is_file() {
+        given.to_path_buf()
+    } else {
+        store.join(named.replace(':', "/"))
+    };
+    let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
+    let held = metadata.len();
+
+    let mut command = llama.generate(&path, prompt, limit, seed);
+    let mut at = 0_usize;
+    let mut text = String::new();
+    let ended = crate::adapters::supervise(&mut command, &mut |chunk| {
+        let piece = String::from_utf8_lossy(chunk).into_owned();
+        text.push_str(&piece);
+        let line = Streamed::Token { at, text: piece }.to_line();
+        let _written = writeln!(writer, "{line}");
+        let _flushed = writer.flush();
+        at = at.saturating_add(1);
+    });
+
+    let engine_name = format!(
+        "provisioned llama.cpp @{} from {}",
+        llama.commit.get(..12).unwrap_or(&llama.commit),
+        llama.prefix.display()
+    );
+    let mut conditions = conditions(named, Some((&path, held)), seed, limit);
+    if let Value::Map(fields) = &mut conditions {
+        fields.insert("engine".to_owned(), Value::text(engine_name));
+        fields.insert("loaded".to_owned(), Value::text("per_request_subprocess"));
+    }
+
+    match ended {
+        Ok(_) => Ok(Value::map([
+            (
+                "tokens",
+                Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
+            ),
+            ("stopped", Value::text("engine_finished")),
+            ("text", Value::text(text)),
+            ("conditions", conditions),
+        ])),
+        // The engine died. What it produced was produced (A4); the failure is
+        // the account, and the daemon is still here (§3.1).
+        Err(failure) => Ok(Value::map([
+            (
+                "tokens",
+                Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
+            ),
+            ("stopped", Value::text("engine_died")),
+            ("text", Value::text(text)),
+            ("failure", mcf_record::encode::failure(&failure)),
+            ("conditions", conditions),
+        ])),
+    }
 }
 
 /// The conditions every account carries, whether it succeeded or not.

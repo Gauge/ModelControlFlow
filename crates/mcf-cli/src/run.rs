@@ -43,7 +43,13 @@ use crate::models;
 pub(crate) const TOKENS: usize = 32;
 
 /// Runs a model and prints what it said.
-pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) -> Response {
+pub(crate) fn run(
+    model: &str,
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&str>,
+) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -63,23 +69,16 @@ pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) ->
         }
     };
 
-    // The directory first, from a bounded read: whether this model can run
-    // here at all is answerable from the header, and answering it after
-    // reading sixteen gigabytes is a seventy-second refusal (B-372).
-    if let Err(failure) = examined(&path) {
-        return Response {
-            text: refused(&path, &failure),
-            served: false,
-        };
-    }
-
     // A daemon that is listening serves the generation; this process runs it
     // only when nothing is (B-034, PR9). Which one did is part of the account,
     // because it is a condition: the same file through the same engine in
     // another process is another process's memory, cache and clock.
-    if let Some(socket) = crate::serve::socket_path()
-        && let Ok(connection) = std::os::unix::net::UnixStream::connect(&socket)
-    {
+    let listening = crate::serve::socket_path().and_then(|socket| {
+        std::os::unix::net::UnixStream::connect(&socket)
+            .ok()
+            .map(|c| (socket, c))
+    });
+    if let Some((socket, connection)) = listening {
         return served(
             connection,
             &socket,
@@ -87,7 +86,30 @@ pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) ->
             prompt,
             limit.unwrap_or(TOKENS),
             seed,
+            engine,
         );
+    }
+    if engine.is_some_and(|engine| engine != "stand-in") {
+        return Response {
+            text: format!(
+                "mcf: the {} engine runs through the daemon, and none is listening\n  `mcf serve` \
+                 starts one; without it this process runs MCF's own engine (D39)",
+                engine.unwrap_or_default()
+            ),
+            served: false,
+        };
+    }
+
+    // The directory first, from a bounded read: whether this model can run on
+    // MCF's own engine is answerable from the header, and answering it after
+    // reading sixteen gigabytes is a seventy-second refusal (B-372). Only here,
+    // where MCF's own engine is the one that will run: a daemon decides for
+    // itself, and a provisioned engine covers what it covers (B-032).
+    if let Err(failure) = examined(&path) {
+        return Response {
+            text: refused(&path, &failure),
+            served: false,
+        };
     }
 
     let bytes = match std::fs::read(&path) {
@@ -133,6 +155,7 @@ fn served(
     prompt: &str,
     limit: usize,
     seed: u64,
+    engine: Option<&str>,
 ) -> Response {
     use std::io::{BufRead as _, BufReader, Write as _};
 
@@ -151,6 +174,7 @@ fn served(
         prompt: prompt.to_owned(),
         limit,
         seed,
+        engine: engine.map(str::to_owned),
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())
@@ -201,7 +225,15 @@ fn served(
         };
     };
 
-    if let Some(failure) = account.get("failure") {
+    // A failure with tokens before it is an engine that died mid-answer: what
+    // arrived is kept and printed above, and the account says how it ended
+    // (A4, B-033). A failure with none is a refusal.
+    if let Some(failure) = account.get("failure")
+        && account
+            .get("tokens")
+            .and_then(mcf_record::json::Value::as_integer)
+            == Some(0)
+    {
         return Response {
             text: format!(
                 "mcf: {} did not run\n  the daemon at {} refused it:\n  {}",
@@ -225,6 +257,11 @@ fn served(
             |v| v.as_text().map_or_else(|| v.to_line(), str::to_owned),
         )
     };
+    let degraded = account
+        .get("degraded")
+        .and_then(mcf_record::json::Value::as_text);
+    let died = account.get("failure").map(mcf_record::json::Value::to_line);
+    let served = died.is_none();
     Response {
         text: format!(
             "\n── what produced it ─────────────────────────────────────────\n\
@@ -234,8 +271,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             \x20 MARKED   {}\n\
-             \x20 This is a behaviour answer and can never be a speed (B65, D31).",
+             {}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -245,12 +281,23 @@ fn served(
             condition("engine"),
             socket.display(),
             condition("loaded"),
-            account
-                .get("degraded")
-                .and_then(mcf_record::json::Value::as_text)
-                .unwrap_or("nothing"),
+            match degraded {
+                Some(mark) => format!(
+                    "\x20 MARKED   {mark}\n\x20 This is a behaviour answer and can never be a speed \
+                     (B65, D31)."
+                ),
+                None => "\x20 a real engine: nothing here is marked degraded, and a timing taken \
+                         under stated conditions would be a measurement (D39)"
+                    .to_owned(),
+            },
+            match died {
+                Some(failure) => format!(
+                    "\n\x20 THE ENGINE DIED mid-answer; what arrived is above (A4):\n\x20 {failure}"
+                ),
+                None => String::new(),
+            },
         ),
-        served: true,
+        served,
     }
 }
 

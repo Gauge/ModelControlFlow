@@ -317,10 +317,11 @@ impl Daemon {
                     prompt,
                     limit,
                     seed,
+                    engine,
                 }) => {
                     // A generation is one request and many lines, so it has
                     // its own path: nothing about it fits in one `Answer`.
-                    self.generate(&model, &prompt, limit, seed, &mut writer);
+                    self.generate(&model, &prompt, limit, seed, engine.as_deref(), &mut writer);
                     return None;
                 }
                 Ok(request) => {
@@ -357,16 +358,24 @@ impl Daemon {
         prompt: &str,
         limit: usize,
         seed: u64,
+        engine: Option<&str>,
         writer: &mut &UnixStream,
     ) {
         let at = Timestamp::now();
+        let mcf_home = self
+            .places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
         let account = crate::generation::serve_generation(
             &self.places.models,
+            &mcf_home,
             &self.resident,
             named,
             prompt,
             limit,
             seed,
+            engine,
             writer,
         );
         self.note(EntryKind::Generated, at, account);
