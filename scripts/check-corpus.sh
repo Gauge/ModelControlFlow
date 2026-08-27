@@ -70,6 +70,10 @@ readonly CORPUS=(
     "IQ3_S, IQ4_NL|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-IQ3_XS.gguf|runs|Paris"
     "IQ3_S, IQ4_NL, Q5_0|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-IQ3_M.gguf|runs|Paris"
     "IQ4_XS|Felladrin/gguf-Llama-160M-Chat-v1/Llama-160M-Chat-v1.IQ4_XS.gguf|runs|Paris"
+    "Q5_1|QuantFactory/SmolLM2-360M-Instruct-GGUF/SmolLM2-360M-Instruct.Q5_1.gguf|runs|Paris"
+    "Q4_1|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q4_1.gguf|runs|Paris"
+    "Q3_K, IQ4_NL, Q5_0 (as Q2_K)|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q2_K.gguf|runs|Paris"
+    "Q2_K, Q3_K|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf|runs|Paris"
 )
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

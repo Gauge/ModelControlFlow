@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 36 |
+| **Version** | 37 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2491,7 +2491,65 @@ the first half and bit `j + 16` for the second, which the reference does in one
 shift and MCF spells out — with tests that put a bit on values 0 and 16 and
 nowhere else.
 
+## 33 · F33 — The last schemes, and the widest noise (B-364, B-368, F32, A21)
+
+**What was acquired.** Four more witnesses, chosen by what their directories
+hold rather than what their names say: `SmolLM2-360M Q5_1` (Q5_1 ×224),
+`gemma-3-270m Q4_1` (Q4_1 ×126), `gemma-3-270m Q2_K` (no Q2_K at all: Q3_K,
+IQ4_NL and Q5_0 — the second "Q2_K" of a small model to fall back), and
+`Qwen3-0.6B Q2_K`, the first file with true Q2_K tensors (×112, beside Q3_K
+×84). With these, every scheme a corpus file carries — Q2_K, Q3_K, Q4_0,
+Q4_1, Q4_K, Q5_0, Q5_1, Q5_K, Q6_K, Q8_0, IQ4_NL, IQ4_XS, IQ3_S — is decoded by
+a path a real file exercises and the oracle compares.
+
+**All four cohere, and the oracle flagged one — at 0.320.** Sixteen files, 138
+comparisons, one over the threshold: `Qwen3-0.6B Q2_K` on *The opposite of hot
+is* parts at step 3 — `The correct statement` against `The problem is` — with
+a margin of 0.320, above the 0.30 that F32 set. Both texts begin `cold.` and
+the first token's margin is 3.9. Of the file's other two prompts, one agrees
+outright and one parts at step 0 — `the city of Paris` against `Paris` — at
+0.196, inside the noise range.
+
+Is that a defect? The evidence says no, and it is worth setting out because the
+number is close. The Q2_K decoder is structurally the same as the Q3_K decoder
+F32 verified, with the one difference that its low plane really is sixty-four
+bytes indexed by half. A broken decoder produced gibberish on every prompt
+(F32); this file produces coherent, correct text on all three and parts once,
+late, on a plausible alternative. And Q2_K is where the arithmetic gap between
+the two implementations is *widest*: the reference multiplies two-bit weights
+against eight-bit-quantized activations, MCF multiplies dequantized floats, and
+a two-bit weight carries the least information to agree about. The largest
+noise margin observed until now, 0.237, was on a Q3_K file. That the coarsest
+scheme produces the widest noise is what one would predict.
+
+**So the threshold moves to 0.40**, between this noise (0.320) and the smallest
+defect (0.449). The gap it lives in has narrowed again — F27 had 0.159 to
+0.775, F32 had 0.237 to 0.449, this has 0.320 to 0.449 — and every file added
+narrows it further, because noise and defects are measured in the same unit.
+That is the limit of a comparison of *texts*: it reads a distribution through
+one sample. The next instrument compares logits (B-373), where a defect is a
+different vector and noise is the same vector to within arithmetic, and the two
+do not share a scale.
+
+A second witness was sought and did not exist: `SmolLM2-360M Q2_K` carries
+Q3_K and IQ4_NL and no Q2_K either, and agrees with the reference on one prompt
+and parts on two at 0.059 and 0.029 — noise, and a fourth "Q2_K" file that is
+not one. `Qwen3-0.6B Q2_K` stands alone as the true witness.
+
+**What was not established.** That the Q2_K decoder is right — only that it is
+structurally the verified decoder's twin, coheres on three prompts, and parts
+once at a margin the coarsest scheme would be expected to produce. A21 applies:
+stated as evidence, not as a verdict, until the logits comparison exists.
+
 ## Changelog
+
+### Version 37 — the last schemes, and the widest noise
+
+F33. Four more witnesses close B-364's list: every scheme a corpus file carries
+is exercised and compared. The first true Q2_K file parts from the reference
+once at 0.320 — evidence says noise, on the coarsest scheme, and the reasoning
+is set out — so the threshold moves to 0.40 and the gap it lives in is stated
+as the thin thing it has become. A logits comparison is the next instrument.
 
 ### Version 36 — a defect the oracle let through
 

@@ -32,11 +32,14 @@
 # finds the step at which MCF's text stops being a prefix of the reference's
 # and reports the margin there.
 #
-# Measured: the four noise divergences sat at 0.040, 0.098, 0.105 and 0.159 at
-# their own divergence step, with the reference choosing exactly MCF's
-# runner-up. The two real defects sat at 0.449 (F32) and 0.775 (F27). The
-# threshold sits between the largest noise and the smallest defect, nearer the
-# noise, and it is provisional in the direction it has always been: a defect
+# Measured across sixteen files: noise divergences part at margins from 0.017
+# to 0.320 — the largest on a Q2_K file, where the reference multiplies
+# two-bit weights against eight-bit activations and MCF multiplies floats, so
+# the arithmetic gap is widest (F33). The two real defects parted at 0.449
+# (F32) and 0.775 (F27). The threshold sits between the largest noise and the
+# smallest defect, and the gap it sits in is now 0.320 to 0.449: thin, stated,
+# and the reason a comparison of logits rather than texts is on the register
+# (B-373). It is provisional in the direction it has always been: a defect
 # that happens to diverge at a genuine near-tie still passes.
 #
 # **The reference is a development instrument and is not vendored.** Nothing
@@ -69,7 +72,7 @@ readonly REFERENCE_COMMIT=925e1179947ea0c0ebfb0032df18af3a729822be
 # The margin below which a different choice is explained by arithmetic rather
 # than by a defect. See the note above for the fifteen measurements this sits
 # between; it is deliberately nearer the noise than the defect.
-readonly CLOSE_ENOUGH=0.30
+readonly CLOSE_ENOUGH=0.40
 
 # What to generate from, and how far. Ten tokens is enough for a divergence to
 # show and short enough that five models finish in a minute.
