@@ -1899,3 +1899,109 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
     assert!(stopped.status.success(), "{}", error_text(&stopped));
     assert!(serving.0.wait().expect("the daemon exits").success());
 }
+
+/// The daemon killed mid-generation, with a model resident: the client keeps
+/// what it received and says the account never came (A4, A7); the next daemon
+/// recovers and the record opens (B-030's stage that did not exist until the
+/// daemon served, and M2's second exit criterion at the surface as it now is).
+#[test]
+fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that_opens() {
+    use std::io::Read as _;
+
+    let machine = Machine::new("killed-mid-stream");
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    std::fs::write(
+        models.join("a-model-that-runs.gguf"),
+        mcf_lab::fixture::a_model_that_runs(),
+    )
+    .expect("a model file");
+
+    let mut daemon = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the daemon starts");
+    {
+        use std::io::BufRead as _;
+        let stdout = daemon.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up"), "{line}");
+    }
+
+    // A generation long enough that the kill lands inside it: a million tokens
+    // of a one-block model is seconds of streaming, and the kill goes the
+    // moment the first bytes of it reach this process.
+    let mut client = machine
+        .command(&[
+            "run",
+            "lab/fixture:a-model-that-runs.gguf",
+            "--prompt",
+            "yes",
+            "--limit",
+            "1000000",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the client starts");
+    let mut stdout = client.stdout.take().expect("piped");
+    let mut first = [0_u8; 1];
+    let _got = stdout.read(&mut first);
+    let _killed = daemon.kill();
+    let _reaped = daemon.wait();
+
+    let mut rest = Vec::new();
+    let _read = stdout.read_to_end(&mut rest);
+    let mut err = String::new();
+    let _read = client
+        .stderr
+        .take()
+        .expect("piped")
+        .read_to_string(&mut err);
+    let status = client.wait().expect("the client exits");
+    assert!(
+        !status.success(),
+        "a stream without its account is not served"
+    );
+    assert!(
+        err.contains("the stream ended before its account"),
+        "the client did not say what happened:\n{err}"
+    );
+    assert!(
+        err.contains("token(s) were received"),
+        "what was received is counted, not dropped (A4):\n{err}"
+    );
+
+    // What the daemon left behind opens, whole or with a loss it reports.
+    if machine.journal().exists() {
+        let _replayed = replay(&machine.journal()).expect("the record opens after the kill");
+    }
+
+    // And the next daemon takes the socket over and answers.
+    let mut next = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("a second daemon spawns");
+    let mut answered = false;
+    for _ in 0..200 {
+        if machine.run(&["status"]).status.success() {
+            answered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(answered, "no daemon answered after the kill");
+    let stopped = machine.run(&["stop", "--because", "the kill test is done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(next.wait().expect("the daemon exits").success());
+}
