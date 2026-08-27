@@ -2369,10 +2369,40 @@ distinct details, and a reader of the record would need the log to tell them
 apart. Whether provisioning deserves categories of its own is a question for
 when there is a second component.
 
-**What was not established.** The successful run — this finding is written
-between the second failure and the third attempt, which is queued behind
-another project's use of the machine. What it produces is recorded below when
-it lands.
+**The third run succeeded, and found the fourth thing.** Image pulled by
+digest, packages resolved and recorded exactly — gcc-c++ 16.2.1-2.fc44,
+cmake 4.3.0-1.fc44, git 2.55.0-1.fc44, make 4.4.1-12.fc44, glibc 2.43-8.fc44 —
+the checkout verified against the pin, three targets built, 656 MB in the
+prefix, `mcf-provenance.json` beside the build, a `component_provisioned`
+entry in the record, and the container store byte-identical to before (195,424
+KB) with nothing created under MCF's data home. Run from the host against the
+corpus's embedding model, the provisioned `llama-tokenize` produced identifier
+for identifier what the hand-built one did.
+
+*With an incantation.* Without `LD_LIBRARY_PATH` it loaded nothing:
+
+```
+error while loading shared libraries: libllama-common.so.0: cannot open shared object file
+RUNPATH: [/work/build/bin:]
+```
+
+The build was shared, and a shared build bakes the library path *at build time*
+into every binary — `/work/build/bin`, which is where the build directory was
+inside the container and nowhere on the host. The hand-built oracle had never
+shown this because its RUNPATH was a real host path. The artifact was correct,
+complete, recorded, and unusable where it landed. The recipe now builds
+self-contained (`-DBUILD_SHARED_LIBS=OFF`), the test that holds every recipe
+requires it, and the shared build was removed *through MCF* — `mcf provision
+--remove … --because "built shared: its RUNPATH names /work/build/bin …"` —
+so the record says why a build that worked was thrown away (A27).
+
+**Four findings from one command in one evening, none of them about the
+component.** A store that follows the wrong variable, a guard that mistrusts a
+mount, a path baked in from the wrong side of a boundary, and — implicit in all
+three — that a provisioning which *succeeds* can still hand back something that
+does not run. D39's four conditions say what a controlled environment must
+guarantee; these are what it took to make one do so on one machine with one
+component, and each is now either code or a test.
 
 ## Changelog
 

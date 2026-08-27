@@ -72,6 +72,12 @@ pub(crate) const COMPONENTS: &[Component] = &[Component {
         // measurements, and `-march=native` would make it a condition nobody
         // can restate on another machine (§3.4).
         "-DGGML_NATIVE=OFF",
+        // Self-contained, because the artifact outlives the container that
+        // built it. A shared build bakes the *container's* library path into
+        // every binary — `/work/build/bin`, a directory that exists nowhere on
+        // the host — so the first provisioned oracle loaded nothing without an
+        // incantation (F31). What is provisioned must run where it lands.
+        "-DBUILD_SHARED_LIBS=OFF",
         "-DLLAMA_CURL=OFF",
         "-DLLAMA_BUILD_TESTS=OFF",
         "-DLLAMA_BUILD_EXAMPLES=ON",

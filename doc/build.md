@@ -898,6 +898,12 @@ directory goes: a recorded intention beside a still-present prefix beats a
 removed prefix nobody wrote down. The base image stays — it is shared with
 everything else on the machine that uses it.
 
+**What is built is self-contained.** A shared build bakes the *container's*
+library path into every binary — `/work/build/bin`, a directory that exists
+nowhere on the host — and the first provisioned oracle loaded nothing without
+`LD_LIBRARY_PATH` (F31). The recipe builds static, and the test that holds
+every recipe requires it: what is provisioned runs where it lands.
+
 **A machine without `podman` is refused by name**, with the platform package
 to install. MCF will not fall back to the host's tools: F30 measured what that
 route does.

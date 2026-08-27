@@ -49,6 +49,13 @@ fn the_script_is_the_recipe_and_only_the_recipe() {
             "{}: the build must not tune to this machine",
             component.name
         );
+        // And self-containment: a shared build carries the container's own
+        // library path, which exists nowhere on the host (F31).
+        assert!(
+            script.contains("-DBUILD_SHARED_LIBS=OFF"),
+            "{}: the artifact must run where it lands, without the container",
+            component.name
+        );
     }
 }
 
