@@ -425,23 +425,69 @@ fn a_multi_byte_character_survives_the_round_trip() {
     }
 }
 
-/// A control token is one token and not a merge of its characters. A chat
-/// template that produced `<|im_start|>` as pieces would be a prompt the model
-/// has never seen.
+/// A user-defined token is matched whole, whatever its length.
+///
+/// The length is the point. MCF had a guard that skipped anything under three
+/// bytes, on the reasoning that a short token would match inside ordinary
+/// words. Gemma's vocabulary carries a token spelled as two literal spaces, and
+/// that guard made MCF disagree with every other implementation about any text
+/// containing a double space (F26).
 #[test]
-fn a_control_token_is_matched_whole() {
+fn a_user_defined_token_is_matched_whole_however_short() {
     let vocabulary = pairs(
-        &["<s>", "a", "b", "\u{120}", "<|im_start|>", "<", "|"],
+        &["<s>", "a", "b", "\u{120}", "<|marker|>", "  ", "<"],
         &["x y"],
-        // 1 is NORMAL, 3 is CONTROL.
-        Some(&[3, 1, 1, 1, 3, 1, 1]),
+        // 1 is NORMAL, 4 is USER_DEFINED.
+        Some(&[3, 1, 1, 1, 4, 4, 1]),
         None,
     );
-    assert_eq!(
-        vocabulary.encode("a<|im_start|>b", false),
-        Ok(vec![1, 4, 2])
+    assert_eq!(vocabulary.encode("a<|marker|>b", false), Ok(vec![1, 4, 2]));
+    // Two bytes, and matched — which the old guard would not have done.
+    assert_eq!(vocabulary.encode("a  b", false), Ok(vec![1, 5, 2]));
+}
+
+/// A control token in ordinary text stays text.
+///
+/// A vocabulary marks `<|im_start|>` as control, and matching it in a prompt
+/// would let anybody who typed those characters produce the token a chat
+/// template uses to start a turn. The reference implementation's default is the
+/// same, and a surface that applies a template will have to ask for the other
+/// behaviour rather than get it by accident.
+#[test]
+fn a_control_token_in_ordinary_text_stays_text() {
+    // Every character of `<|im_start|>` is a token, so that the vocabulary can
+    // spell it out — otherwise this test would pass by refusing rather than by
+    // leaving the control token alone (F19's lesson about tests that cannot
+    // fail the way they claim to).
+    let vocabulary = pairs(
+        &[
+            "<s>",
+            "a",
+            "b",
+            "\u{120}",
+            "<|im_start|>",
+            "<",
+            "|",
+            "i",
+            "m",
+            "_",
+            "s",
+            "t",
+            "r",
+            ">",
+        ],
+        &["x y"],
+        // 3 is CONTROL: present in the vocabulary, not matched in text.
+        Some(&[3, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+        None,
     );
-    assert_eq!(vocabulary.decode(&[1, 4, 2]), "a<|im_start|>b");
+    let identifiers = vocabulary
+        .encode("a<|im_start|>b", false)
+        .expect("segmented");
+    assert!(
+        !identifiers.contains(&4),
+        "a control token was produced from ordinary text: {identifiers:?}"
+    );
 }
 
 /// A file that says it wants no beginning-of-text token does not get one.

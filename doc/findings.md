@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 29 |
+| **Version** | 30 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1997,7 +1997,107 @@ does not apply; expert biases and grouped routing, which belong to other
 families; and whether two of four is representative of routing at a realistic
 width. Nothing here is a speed (B65).
 
+## 26 · F26 — The oracle found a defect on its first run, and it was an invention of MCF's own (B-368, A19, A21, §3.12)
+
+**What was built.** llama.cpp at commit `925e1179`, built from source as a
+development instrument — vendored nowhere, on no MCF command's path, and absent
+from every artifact MCF ships (D39's fourth condition). The build queued behind
+another project's run on the shared machine rather than taking the window from
+it.
+
+**What is compared, and why only this.** Token identifiers. They are integers:
+two tokenizers either agree about a list of them or do not, with no tolerance to
+argue about and no floating-point arithmetic in the way. Logits are deliberately
+not compared yet — a correct implementation can flip an argmax on a near-tie
+through nothing worse than a different summation order, so a disagreement there
+is a finding to investigate rather than a verdict.
+
+Six texts across five corpus vocabularies: a plain sentence, digit runs,
+punctuation against letters with contractions, characters outside ASCII, a tab
+and a double space, and a single letter.
+
+**The result: 29 of 30 agreed exactly, and the thirtieth was a defect.**
+
+```
+gemma-3-270m-it   on  "tabs\tand  spaces"
+    MCF:        2 39218 255968 624 236743 9952
+    reference:  2 39218 255968 624 138 35220
+```
+
+The two agree for four tokens and part at the double space. Token 138 in that
+vocabulary is `'  '` — two literal spaces, marked **user-defined**. MCF was
+segmenting it into `▁` and `▁spaces`; the reference matches it whole.
+
+**The cause was a guard MCF invented.** MCF matches user-defined tokens in the
+raw text before segmenting, and the code that did it skipped any token shorter
+than three bytes, on the reasoning that *a one-character token would match
+inside ordinary words*. That reasoning is plausible and is not what any
+implementation does. The reference matches every user-defined token whatever its
+length, sorted longest-first so a longer token claims its text before a shorter
+one can — the sorting MCF already did, with a guard on top that nobody else has.
+
+Gemma's vocabulary carries 163 user-defined tokens, many of them runs of
+whitespace. Any text containing a double space tokenized differently in MCF than
+in every other implementation of the same file.
+
+**A second thing the reference settled, which MCF had guessed at.** MCF matched
+*control* tokens in ordinary text too — `<|im_start|>` typed into a prompt became
+the token a chat template uses to start a turn. The reference's default is to
+leave control tokens as text and match only user-defined ones, and that is both
+the compatible answer and the safer one: a prompt is text somebody typed, and it
+should not be able to produce a marker by spelling it. MCF now does the same, and
+a surface that applies a chat template will have to ask for the other behaviour
+rather than receive it by accident.
+
+**Why this finding matters more than the defect in it.** The defect is small.
+What it demonstrates is the thing four previous findings argued for and could
+not supply: F20, F22, F24 and F25 each established that output is no evidence
+about correctness, and each ended by saying an oracle would settle it. This is
+the first check MCF has that can say *wrong* about an engine without a human
+judging a sentence — and the first time it ran, on five models it had been
+producing plausible text with all day, it found something.
+
+Note also what found it: not the plain sentence, and not the model failing to
+say `Paris`. Gemma answers `Paris.` and `cold.` correctly with the defect
+present. It was the tab-and-double-space string, which exists in that list
+precisely because whitespace is where tokenizers differ.
+
+**What is now known that was not.** MCF's four pre-tokenizer expressions, its
+byte-level alphabet, its merge ordering and tie-breaking, its unigram
+segmentation, its byte fallback, its space prefix and its beginning-of-text
+handling agree with the reference on thirty comparisons across five vocabularies
+of two schemes. F23 recorded three transcription defects found by reading and
+said plainly that the transcription itself was unverified. That part is now
+verified — for these vocabularies and these texts, which is what a check
+establishes and not more (A21).
+
+**What was not established.** Nothing about the forward pass: the arithmetic
+that F20, F24 and F25 were about is untouched by this, and remains transcribed
+and unchecked. Nothing about the embedding family, whose vocabulary MCF still
+refuses and which was reported as not compared rather than counted as agreeing
+(A4). And nothing about texts unlike these six.
+
 ## Changelog
+
+### Version 30 — the oracle found a defect on its first run
+
+F26. llama.cpp at a pinned commit, built as a development instrument, compared
+against MCF on token identifiers — the one part of an engine that can be checked
+exactly, because identifiers are integers.
+
+Twenty-nine of thirty comparisons agreed. The thirtieth was a real defect, and
+an invention of MCF's own: a guard that skipped user-defined tokens shorter than
+three bytes, on the plausible reasoning that a short token would match inside
+ordinary words. No implementation does that, and gemma's vocabulary carries a
+token spelled as two literal spaces.
+
+The reference also settled something MCF had guessed: control tokens are left as
+text and only user-defined ones are matched, which is both the compatible answer
+and the safer one — a prompt should not be able to produce a chat marker by
+spelling it.
+
+What found the defect was the tab-and-double-space string, not the sentence.
+Gemma answers `Paris.` correctly with the defect present.
 
 ### Version 29 — the broken engine read better than the correct one
 

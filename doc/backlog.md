@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 148 |
+| **Version** | 149 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -380,6 +380,17 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 149 — the oracle found a defect on its first run
+
+B-368 delivers its first result: 29 of 30 tokenizer comparisons agreed and the
+thirtieth was a real defect in MCF — a length guard on user-defined tokens that
+MCF invented and no implementation has (F26). Control tokens are no longer
+matched in ordinary text, which is the reference's default and the safer
+reading of a prompt.
+
+F23's transcriptions are now verified for these vocabularies and texts, which is
+what a check establishes and not more.
 
 ### Version 148 — an oracle, starting where it can be exact
 

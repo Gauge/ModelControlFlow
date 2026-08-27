@@ -76,12 +76,21 @@ impl Scheme {
 pub struct Vocabulary {
     /// Which of the two segmentations this vocabulary is for.
     scheme: Scheme,
-    /// The tokens the file marks as control or user-defined, longest first.
+    /// The tokens the file marks **user-defined**, longest first.
     ///
-    /// These are matched in the text literally, before anything is segmented:
-    /// `<|im_start|>` is one token and not a merge of seven, and a chat
-    /// template that produced it as pieces would be a prompt the model has
-    /// never seen (F19's lesson, one layer up).
+    /// These are matched in the text literally, before anything is segmented,
+    /// and they are not an exotic case: gemma's vocabulary carries a token
+    /// spelled as two literal spaces, and a tokenizer that segments it instead
+    /// disagrees with every other implementation about any text containing a
+    /// double space (F26).
+    ///
+    /// **Control tokens are deliberately not here.** A vocabulary marks
+    /// `<|im_start|>` as control, and matching it in ordinary text would let
+    /// somebody who typed those characters into a prompt produce the token a
+    /// chat template uses to start a turn. The reference implementation's
+    /// default is the same — it parses user-defined tokens and leaves control
+    /// tokens as text — and a surface that applies a chat template will need to
+    /// ask for the other behaviour explicitly rather than get it by accident.
     specials: Vec<(String, usize)>,
     /// Whether a unigram vocabulary wants the space `SentencePiece` puts in
     /// front of every text.
@@ -224,9 +233,9 @@ impl Vocabulary {
             by_token.entry(token.clone()).or_insert(identifier);
         }
 
-        // Types 3 and 4 are GGUF's CONTROL and USER_DEFINED. Longest first, so
-        // that a token which is a prefix of another cannot claim the text the
-        // longer one wanted.
+        // Type 4 is GGUF's USER_DEFINED. Longest first, so that a token which
+        // is a prefix of another cannot claim the text the longer one wanted —
+        // which is what the reference does too, and for the same reason.
         let mut specials: Vec<(String, usize)> = match file
             .get("tokenizer.ggml.token_type")
             .and_then(Value::as_list)
@@ -237,7 +246,7 @@ impl Vocabulary {
                 .filter(|(identifier, _)| {
                     matches!(
                         types.get(*identifier).and_then(Value::as_integer),
-                        Some(CONTROL_TOKEN | USER_DEFINED_TOKEN)
+                        Some(USER_DEFINED_TOKEN)
                     )
                 })
                 .map(|(identifier, token)| (token.clone(), identifier))
@@ -363,9 +372,11 @@ impl Vocabulary {
     fn next_special(&self, text: &str) -> Option<(usize, usize, usize)> {
         let mut best: Option<(usize, usize, usize)> = None;
         for (token, identifier) in &self.specials {
-            // A one-character special would match inside ordinary words, so
-            // only tokens spelled the way markers are spelled are looked for.
-            if token.len() < 3 {
+            // No length guard. MCF had one — "a one-character token would match
+            // inside ordinary words" — and it was an invention: the reference
+            // matches every user-defined token whatever its length, and gemma's
+            // two-space token is two bytes long (F26).
+            if token.is_empty() {
                 continue;
             }
             if let Some(offset) = text.find(token.as_str()) {
@@ -698,9 +709,6 @@ fn byte_of(token: &str) -> Option<u8> {
 
 /// The type GGUF gives a token that stands for one raw byte.
 const BYTE_TOKEN: i64 = 6;
-
-/// The type GGUF gives a token the model was trained to read as a marker.
-const CONTROL_TOKEN: i64 = 3;
 
 /// The type GGUF gives a token added to the vocabulary after training.
 const USER_DEFINED_TOKEN: i64 = 4;

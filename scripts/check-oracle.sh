@@ -125,8 +125,12 @@ for model in "${models[@]}"; do
         # `--ids` on the reference prints one identifier per line; `--no-bos` is
         # not passed because MCF adds the beginning token the file asks for and
         # the comparison must be of the same thing.
+        # The reference prints `[785, 6722, 315, 9625, 374]`. Only the brackets
+        # and commas are removed — stripping the spaces too would run every
+        # identifier into one number, which is a comparison that fails on
+        # everything and looks like a total disagreement.
         theirs=$("$tokenize_reference" -m "$model" -p "$rendered" --ids 2>/dev/null |
-            tr -d '[]," ' | tr '\n' ' ' | tr -s ' ' | sed 's/^ *//; s/ *$//' || true)
+            tr -d '[],"' | tr '\n' ' ' | tr -s ' ' | sed 's/^ *//; s/ *$//' || true)
 
         compared=$((compared + 1))
         if [ "$mine" = "$theirs" ]; then
