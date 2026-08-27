@@ -316,6 +316,37 @@ impl Daemon {
         let read = BufReader::new(std::io::Read::take(connection, ceiling)).read_line(&mut line);
         let mut writer = connection;
 
+        // A request that filled the ceiling without ending is a request MCF
+        // did not receive, and it has to be *told so*. Before this, the daemon
+        // read its 64 kibibytes, failed to parse the fragment, and closed while
+        // the client was still writing — so the client saw a connection reset
+        // and no reason at all, which is the silent failure A2 forbids. The
+        // probe that found it reported *a line of the stream was unreadable*,
+        // which was true and useless (B-055, F42).
+        if line.len() >= REQUEST_CEILING && !line.ends_with('\n') {
+            let failure = Failure::new(
+                Category::ConfigInvalid,
+                Attribution::User,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::daemon"),
+                "a request longer than this build will read in one line",
+            )
+            .with_context("ceiling_bytes", REQUEST_CEILING.to_string())
+            .with_context(
+                "what_to_do",
+                "a turn of token identifiers this long exceeds what the control protocol \
+                 carries; ask for fewer, or a build with a larger ceiling",
+            );
+            let answer = Answer::refused(&failure);
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+            // The client is still writing, and closing now would lose the
+            // answer to a reset. Its own write timeout ends this; MCF reads
+            // nothing further into memory.
+            let _shutdown = writer.shutdown(std::net::Shutdown::Read);
+            return None;
+        }
+
         let answer = match read {
             Err(_) | Ok(0) => return None,
             Ok(_) => match Request::read(line.trim_end()) {

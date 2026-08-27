@@ -382,11 +382,32 @@ pub fn interpret(answer: &str) -> Result<Completed, Failure> {
     // reader can mistake for a completion — no `stop_type`, no content — and
     // reading it as *the engine did not say why it stopped* would attribute
     // the server's problem to the model (A2).
+    //
+    // It is *not* `engine.protocol.malformed` either. That was the first
+    // classification and it was wrong: an engine that answers "this request is
+    // 2048 tokens and the context is 2048" has been understood perfectly, and
+    // calling its answer unparseable blames the engine for a request that was
+    // out of bounds. A refusal MCF asked for is a refusal, attributed to the
+    // request (F42). Malformed is kept for an answer that genuinely cannot be
+    // read.
     if let Some(said) = value.get("error") {
-        return Err(
-            malformed("the provisioned server refused the request rather than generating")
-                .with_context("error", said.to_line()),
-        );
+        let message = said
+            .get("message")
+            .and_then(Value::as_text)
+            .unwrap_or("the engine did not say")
+            .to_owned();
+        return Err(Failure::new(
+            Category::ConfigInvalid,
+            Attribution::User,
+            Disposition::Refused,
+            Subsystem::new("mcf-serve::served"),
+            "the provisioned server refused the request, in its own words",
+        )
+        .with_context("engine_said", message)
+        .with_context(
+            "engine_said_in_full",
+            said.to_line().chars().take(400).collect::<String>(),
+        ));
     }
 
     let number = |name: &str| -> usize {

@@ -35,10 +35,17 @@ pub const VERSION: i64 = 1;
 
 /// How long a request may be.
 ///
-/// Sixty-four kibibytes. A control request is a verb and a name; anything
-/// larger is a client that is broken or trying something, and §3.7 makes the
-/// bound a stated number rather than *whatever arrives*.
-pub const REQUEST_CEILING: usize = 64 * 1024;
+/// Four mebibytes. It was sixty-four kibibytes, on the reasoning that *a
+/// control request is a verb and a name* — true when it was written and false
+/// since B-374, which made a request able to carry a turn of **token
+/// identifiers**. A context of a hundred and thirty thousand of them, written
+/// as decimal numbers with commas, is around nine hundred kilobytes, and the
+/// old bound stopped a legitimate request at four thousand tokens.
+///
+/// It is still a stated number and not *whatever arrives*, which is what §3.7
+/// asks for. What changed is the largest thing a request can honestly be, not
+/// the principle that there is a largest.
+pub const REQUEST_CEILING: usize = 4 * 1024 * 1024;
 
 /// What a client is asking for.
 #[derive(Debug, Clone, PartialEq, Eq)]

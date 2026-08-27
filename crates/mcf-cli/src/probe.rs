@@ -132,14 +132,13 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
     };
     let probed = probes::chat_template(&path, &bytes, TRIALS, BUDGET, &engine, &mut trial);
 
-    let mut lines = vec![
-        format!("probed {}", path.display()),
-        String::new(),
+    let mut lines = vec![format!("probed {}", path.display()), String::new()];
+    lines.extend([
         format!("  {}", probed.method.name),
         format!("    asks     {}", probed.method.asks),
         format!("    decides  {}", probed.method.decides),
         String::new(),
-    ];
+    ]);
     match &probed.outcome {
         Outcome::Observed(addressed) => lines.extend(observed(addressed)),
         Outcome::Inconclusive { because } => {
@@ -158,6 +157,8 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
     ));
     lines.push(format!("  under: {}", probed.conditions));
     lines.push(String::new());
+
+    lines.extend(context_lines(&socket, &path, &bytes, &engine, asked));
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
          this model is an act somebody takes, and it is recorded (D42, D43)."
@@ -171,6 +172,83 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
 }
 
 /// What a decided probe says.
+/// The usable context against the declared one (B-055).
+///
+/// Its own section rather than its own command: the two probes ask different
+/// questions of one model, and D42's framework is one result each, both
+/// carrying their own conditions.
+fn context_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+    engine: &str,
+    asked: &str,
+) -> Vec<String> {
+    let Ok(file) = mcf_serve::probes::gguf_of(bytes) else {
+        return Vec::new();
+    };
+    let Some(declared) = mcf_serve::probes::declared_context(&file) else {
+        return Vec::new();
+    };
+    let Some(filler) = mcf_serve::probes::a_filler_token(&file) else {
+        return Vec::new();
+    };
+
+    let mut ask =
+        |length: usize| mcf_serve::probes::accepts(socket, path, filler, length, Some(asked));
+    let probed = probes::usable_context(path, declared, engine, &mut ask);
+
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!("    asks     {}", probed.method.asks),
+        format!("    decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(context) => {
+            lines.push(format!("    declared {} token(s)", context.declared));
+            lines.push(format!(
+                "    accepted {} token(s) of prompt, with one left to generate",
+                context.accepted
+            ));
+            lines.push(String::new());
+            // The declared context is the whole budget, not the prompt's share
+            // of it, so a prompt one shorter is agreement rather than a
+            // divergence — reporting that off-by-one would be reporting
+            // arithmetic (B-055, F42).
+            if context.accepted.saturating_add(1) >= context.declared {
+                lines.push(
+                    "    agrees   the file's claim holds: every token it declares but one is taken as prompt, and the one left over is the answer"
+                        .to_owned(),
+                );
+            } else {
+                lines.push(format!(
+                    "    DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt (§3.8, A21)",
+                    context.declared, context.accepted
+                ));
+                if let Some(because) = &context.because {
+                    lines.push(format!("    the engine's own words: {because}"));
+                }
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!("    INCONCLUSIVE — {because}"));
+            lines.push(
+                "    which licenses nothing: MCF configures no differently than before, and                  this is not a negative result (D42, §3.18)"
+                    .to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
 fn observed(addressed: &Addressed) -> Vec<String> {
     let mut lines = vec!["    answered, then ended at the model's own stop token:".to_owned()];
     for (name, ended) in &addressed.stopped {

@@ -317,7 +317,7 @@ pub fn chat_template(
     engine: &str,
     generate: &mut dyn FnMut(&[usize], usize) -> Trial,
 ) -> Probed<Addressed> {
-    let conditions = conditions(model, engine);
+    let conditions = conditions(&CHAT_TEMPLATE, model, engine);
     let Ok(file) = gguf::parse(bytes) else {
         return Probed::inconclusive(
             CHAT_TEMPLATE,
@@ -566,13 +566,20 @@ pub const QUESTIONS: [&str; 5] = [
 pub const QUESTION: &str = QUESTIONS[0];
 
 /// The conditions a probe result holds under (D42, §3.4).
-fn conditions(model: &Path, engine: &str) -> Conditions {
+/// The conditions a probe's result carries.
+///
+/// The method is a parameter and not `CHAT_TEMPLATE`. It was the constant once,
+/// and the second probe's result then said it was the first probe's — a
+/// condition naming the wrong experiment, which is the exact provenance
+/// failure B-059 exists to prevent and would have been believed because it is
+/// printed in the same place as the true ones (§3.4, A21).
+fn conditions(method: &Method, model: &Path, engine: &str) -> Conditions {
     Conditions::new(
         mcf_core::build_identity::BuildIdentity::current(),
         Floor {
             mcf_configuration: mcf_core::attested::Attested::Known(ConditionValue::text(format!(
                 "probe: {}, engine: {engine}, model: {}",
-                CHAT_TEMPLATE.name,
+                method.name,
                 model.display()
             ))),
             ..Floor::nothing_known()
@@ -731,3 +738,301 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// What the engine did with a prompt of a stated length.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Accepted {
+    /// It read this many of the identifiers it was sent.
+    ///
+    /// Equal to what was sent is the ordinary case. *Fewer* is silent
+    /// truncation, which is the failure this probe exists to catch: a prompt
+    /// quietly shortened is a measurement of a different prompt (§3.8, D46).
+    Read(usize),
+    /// It refused, in its own words.
+    Refused(String),
+    /// Something else, and why.
+    CouldNotTell(String),
+}
+
+/// The context length the file declares, against the longest prompt the engine
+/// will actually take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Context {
+    /// What the file says.
+    pub declared: usize,
+    /// The longest prompt accepted whole, with one token left to generate.
+    pub accepted: usize,
+    /// What the engine said where it refused, kept because a refusal for an
+    /// unrelated reason would otherwise be reported as a short context (A1).
+    pub because: Option<String>,
+}
+
+/// The method.
+pub const USABLE_CONTEXT: Method = Method {
+    name: "usable-context",
+    asks: "for a prompt of the length the file declares, and then — only if that is refused — \
+           for the longest one the engine will take whole, by halving. What is compared is \
+           integers: how many identifiers were sent against how many were read",
+    decides: "how long a prompt MCF may give this model on this machine through this engine — \
+              and nothing else: a probe writes the verified half of a capability and never a \
+              default (D42)",
+};
+
+/// The usable context, by asking.
+///
+/// The declared length is asked for first, so the ordinary case — a file whose
+/// claim holds — costs one trial rather than fifteen. Only a refusal starts
+/// the search, and the search is a halving between the largest length known to
+/// work and the smallest known to fail.
+///
+/// One token is left for the model to produce, because a context is the whole
+/// budget and not the prompt's share of it: `llama.cpp` refuses a prompt of
+/// exactly the declared length for that reason, and reporting *the declared
+/// context is wrong by one* would be reporting arithmetic as a divergence.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one search, written as the search: ask the claim, then halve. Splitting it would \
+              put the question in one function and the answer in another"
+)]
+#[must_use]
+pub fn usable_context(
+    model: &Path,
+    declared: usize,
+    engine: &str,
+    ask: &mut dyn FnMut(usize) -> Accepted,
+) -> Probed<Context> {
+    let conditions = conditions(&USABLE_CONTEXT, model, engine);
+    let inconclusive = |because: String, trials: usize, spent: usize| {
+        Probed::inconclusive(USABLE_CONTEXT, because, trials, spent, conditions.clone())
+    };
+    if declared < 2 {
+        return inconclusive(
+            "the file declares no context length worth asking about".to_owned(),
+            0,
+            0,
+        );
+    }
+
+    let mut trials = 0_usize;
+    let mut spent = 0_usize;
+    let mut because: Option<String> = None;
+    // Whole is the length asked for; read is what came back. They differ only
+    // under truncation, and that difference is the finding.
+    let mut works = 0_usize;
+
+    let mut attempt = |length: usize,
+                       trials: &mut usize,
+                       spent: &mut usize,
+                       because: &mut Option<String>|
+     -> Option<bool> {
+        *trials = trials.saturating_add(1);
+        *spent = spent.saturating_add(length);
+        match ask(length) {
+            Accepted::Read(read) if read == length => Some(true),
+            Accepted::Read(read) => {
+                *because = Some(format!(
+                    "the engine read {read} of the {length} identifiers it was sent and said \
+                     nothing about the difference — a prompt shortened in silence is a \
+                     measurement of a different prompt (§3.8, A2)"
+                ));
+                Some(false)
+            }
+            Accepted::Refused(said) => {
+                *because = Some(said);
+                Some(false)
+            }
+            Accepted::CouldNotTell(said) => {
+                *because = Some(said);
+                None
+            }
+        }
+    };
+
+    // The claim itself, first.
+    let full = declared.saturating_sub(1);
+    match attempt(full, &mut trials, &mut spent, &mut because) {
+        Some(true) => {
+            return Probed {
+                method: USABLE_CONTEXT,
+                outcome: Outcome::Observed(Context {
+                    declared,
+                    accepted: full,
+                    because: None,
+                }),
+                trials,
+                tokens: spent,
+                conditions,
+            };
+        }
+        Some(false) => {}
+        None => {
+            return inconclusive(
+                because.unwrap_or_else(|| "the engine did not answer".to_owned()),
+                trials,
+                spent,
+            );
+        }
+    }
+
+    // It refused, so find where it stops refusing.
+    let mut fails = full;
+    while fails.saturating_sub(works) > 1 {
+        let middle = works.saturating_add(fails.saturating_sub(works).wrapping_div(2));
+        match attempt(middle, &mut trials, &mut spent, &mut because) {
+            Some(true) => works = middle,
+            Some(false) => fails = middle,
+            None => {
+                return inconclusive(
+                    because.unwrap_or_else(|| "the engine did not answer".to_owned()),
+                    trials,
+                    spent,
+                );
+            }
+        }
+    }
+
+    if works == 0 {
+        return inconclusive(
+            format!(
+                "the engine would not take a prompt of any length up to the {declared} this file \
+                 declares, which is a fact about the engine or the machine rather than about the \
+                 model. It said: {}",
+                because.unwrap_or_else(|| "nothing".to_owned())
+            ),
+            trials,
+            spent,
+        );
+    }
+    Probed {
+        method: USABLE_CONTEXT,
+        outcome: Outcome::Observed(Context {
+            declared,
+            accepted: works,
+            because,
+        }),
+        trials,
+        tokens: spent,
+        conditions,
+    }
+}
+
+/// One length, asked of a running daemon.
+///
+/// The prompt is one identifier repeated. What is being asked is how many the
+/// engine will take, and a filler that means something would invite the reply
+/// that the answer depends on what was said — it does not, and the identifiers
+/// are counted rather than read.
+#[must_use]
+pub fn accepts(
+    socket: &Path,
+    model: &Path,
+    filler: usize,
+    length: usize,
+    engine: Option<&str>,
+) -> Accepted {
+    use std::io::{BufRead as _, BufReader, Write as _};
+
+    let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
+        return Accepted::CouldNotTell("nothing is listening on the control socket".to_owned());
+    };
+    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
+    let request = crate::control::Request::Generate {
+        model: model.display().to_string(),
+        prompt: String::new(),
+        limit: 1,
+        seed: 0,
+        tokens: Some(vec![filler; length]),
+        engine: engine.map(str::to_owned),
+    };
+    if writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .is_err()
+    {
+        return Accepted::CouldNotTell("the request could not be sent".to_owned());
+    }
+
+    let reader = BufReader::new(&connection);
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            return Accepted::CouldNotTell("the stream ended before its account".to_owned());
+        };
+        match crate::control::Streamed::read(line.trim_end()) {
+            Ok(crate::control::Streamed::Token { .. }) => {}
+            Ok(crate::control::Streamed::Done(account)) => {
+                if let Some(failure) = account.get("failure") {
+                    // The engine's own sentence, not the whole classified
+                    // record: a reader wants to know that the context was
+                    // exceeded, and the record is on the journal either way.
+                    return Accepted::Refused(
+                        failure
+                            .get("context")
+                            .and_then(|context| context.get("engine_said"))
+                            .and_then(mcf_record::json::Value::as_text)
+                            .map_or_else(|| failure.to_line(), str::to_owned),
+                    );
+                }
+                return match account
+                    .get("conditions")
+                    .and_then(|conditions| conditions.get("identifiers_read"))
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|read| usize::try_from(read).ok())
+                {
+                    Some(read) => Accepted::Read(read),
+                    // MCF's own engine does not report this, and guessing that
+                    // it read everything would be inventing the observation
+                    // the probe is for (A7).
+                    None => Accepted::CouldNotTell(
+                        "this engine does not say how many identifiers it read, so a prompt \
+                         taken whole cannot be told from one quietly shortened (B-376)"
+                            .to_owned(),
+                    ),
+                };
+            }
+            Err(_) => {
+                return Accepted::CouldNotTell("a line of the stream was unreadable".to_owned());
+            }
+        }
+    }
+    Accepted::CouldNotTell("the stream ended before its account".to_owned())
+}
+
+/// The model file, for a caller that has the bytes and needs the fields.
+///
+/// # Errors
+///
+/// Whatever reading the file reports.
+pub fn gguf_of(bytes: &[u8]) -> Result<gguf::Model, mcf_core::Failure> {
+    gguf::parse(bytes)
+}
+
+/// The context length the file declares, whatever family wrote it.
+///
+/// The key is prefixed by the architecture the file states, which is a field
+/// GGUF exists to carry and not a family MCF recognises (DEC-053).
+#[must_use]
+pub fn declared_context(file: &gguf::Model) -> Option<usize> {
+    let architecture = match file.get("general.architecture") {
+        Some(gguf::Value::Text(named)) => named.clone(),
+        _ => return None,
+    };
+    match file.get(&format!("{architecture}.context_length")) {
+        Some(gguf::Value::Integer(found)) => usize::try_from(*found).ok(),
+        _ => None,
+    }
+}
+
+/// One identifier to repeat, for a question that is about length.
+///
+/// The lowest ordinary token in the vocabulary: not a marker, not a byte
+/// fallback, and present in every file MCF reads. What it *means* is beside
+/// the point — the engine is being asked how many identifiers it will take,
+/// and it counts them.
+#[must_use]
+pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
+    let vocabulary = Vocabulary::read(file).ok()?;
+    (0..vocabulary.len()).find(|at| {
+        vocabulary
+            .token(*at)
+            .is_some_and(|spelled| spelled.chars().count() > 1 && !spelled.starts_with('<'))
+    })
+}

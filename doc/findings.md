@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 45 |
+| **Version** | 46 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -69,6 +69,7 @@ forward as one.
 | 39 | [F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)](#39--f39--the-engine-that-can-be-probed-and-three-ways-the-instrument-stood-in-for-the-model-b-032-b-055-b-376-d39-d42-f36-f38) |
 | 40 | [F40 — MCF's engine agrees with the reference for seven hundred positions (B-368, B-373, B-377, D39, A19, F27, F32, F39)](#40--f40--mcfs-engine-agrees-with-the-reference-for-seven-hundred-positions-and-the-rule-that-would-have-called-it-broken-was-the-wrong-rule-b-368-b-373-b-377-d39-a19-f27-f32-f39) |
 | 41 | [F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)](#41--f41--the-check-could-not-fail-and-the-mutation-that-showed-it-was-not-the-first-one-tried-b-003-b-368-b-377-a13-f40) |
+| 42 | [F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)](#42--f42--the-context-both-models-declare-is-the-context-they-have-and-the-probe-that-asked-broke-the-protocol-asking-b-055-b-058-b-059-b-376-d42-37-38-a2-a21) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3199,7 +3200,117 @@ tests no windowing at all. And the run costs five to six minutes per model on a
 shared machine, which is why it is off by default and why nothing here is a
 timing (B35).
 
+## 42 · F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)
+
+**What was built.** The second probe: the context length a file declares
+against the longest prompt the engine will actually take. It is reachable only
+because of B-376 — MCF's own engine pays a forward pass per prompt token, so a
+32768-token question through it is hours, and through the server it is thirty
+seconds.
+
+**What can be observed here without judgement.** Not *does the model still
+understand the context*, which is a judgement and is not built. The exact
+observation is an integer comparison: MCF sends N identifiers and the engine
+reports how many it read. Equal is agreement; fewer is a prompt silently
+shortened, which is a measurement of a different prompt (§3.8, D46).
+
+**The claim holds on both models, and the shape of the claim is worth stating.**
+
+| | declared | accepted as prompt |
+|---|---|---|
+| SmolLM2-135M | 8192 | 8191 |
+| gemma-3-270m | 32768 | 32767 |
+
+The off-by-one is not a divergence and is not reported as one: **a declared
+context is the whole budget, not the prompt's share of it.** A prompt of
+exactly 8192 is refused because nothing is left to answer with. Reporting that
+as a defect would be reporting arithmetic, and the probe leaves one token for
+the reply and says so.
+
+**The claim is asked directly, so agreement costs one trial.** A halving search
+runs only when the claim fails. On the corpus that is one question and no
+search — 8191 tokens spent rather than fifteen trials' worth.
+
+**The divergence branch was exercised deliberately, because a check that has
+only ever agreed has shown nothing** (B-003). The engine was given a 2048-token
+context against a file declaring 8192:
+
+```
+declared 8192 token(s)
+accepted 2047 token(s) of prompt, with one left to generate
+DIVERGENCE the file declares 8192 tokens and this engine on this machine takes 2047
+the engine's own words: request (2048 tokens) exceeds the available context size (2048 tokens)
+```
+
+Found exactly, in fourteen trials.
+
+**Asking the question broke the control protocol, which is the finding.**
+`REQUEST_CEILING` was sixty-four kibibytes, on the stated reasoning that *a
+control request is a verb and a name*. That was true when it was written and
+stopped being true at B-374, which made a request able to carry a turn of token
+identifiers. Thirty-two thousand of them written as decimal numbers is a
+quarter of a megabyte, so a **legitimate request was cut off at about four
+thousand tokens**.
+
+Worse than the bound was what happened at it. The daemon read its sixty-four
+kibibytes, failed to parse the fragment, and closed while the client was still
+writing — so the client saw a connection reset and **no reason at all**. The
+probe reported *a line of the stream was unreadable*, which was true and
+useless. That is the silent failure A2 forbids, in the one place §3.7 says to
+be careful.
+
+Both halves are fixed. The ceiling is four mebibytes, derived from the largest
+thing a request can honestly be — a turn of identifiers for a very long
+context — and is still a stated number rather than *whatever arrives*, which is
+what §3.7 actually asks for. And a request that fills the ceiling without
+ending is now **refused with the ceiling named**, before the connection closes.
+
+**A taxonomy error the divergence made visible.** MCF classified the server's
+`400 exceeds the available context size` as `engine.protocol.malformed`,
+attributed to the machine. The server's answer was perfectly well formed; it
+refused a request that was out of bounds and said exactly why. Calling that
+answer unparseable blames the engine for the request. It is `config.invalid`,
+refused, attributed to the request — and `malformed` is kept for an answer that
+genuinely cannot be read. The wrong category was written by the same hand that
+wrote the scenario for it (F39) and survived until a real refusal arrived.
+
+**A condition that named the wrong experiment.** The probe framework built its
+conditions with `CHAT_TEMPLATE.name` hard-coded, so the context probe's result
+carried `probe: chat-template` — a provenance field, printed beside the true
+ones, stating the wrong experiment. It is the exact failure B-059 exists to
+prevent, and it existed for as long as there was only one probe to be wrong
+about. The method is a parameter now.
+
+**What was not established.** Whether a context that is *accepted* is a context
+that is *usable* — a model may take 32767 tokens and attend to none of them,
+and that question needs an observation this probe does not make. Nothing about
+memory: both models are small enough that their declared context fits, and a
+27B model at 32768 may not, which is the case where this probe earns its keep
+and has not been run. Nothing about MCF's own engine, which cannot answer here
+at all: it does not report how many identifiers it read, so the probe returns
+*could not tell* rather than assuming it read them all (A7). And no timing —
+thirty seconds on a shared machine is a duration, not a measurement (B35).
+
 ## Changelog
+
+### Version 46 — the context is what it says, and asking broke the protocol
+
+F42. The second probe: declared context against the longest prompt the engine
+takes. Both models' claims hold. The off-by-one is not a divergence — a
+declared context is the whole budget, not the prompt's share — and the probe
+leaves a token for the answer and says so.
+
+Asking broke the control protocol. The 64-kibibyte request ceiling predated a
+request being able to carry token identifiers, so a legitimate question was cut
+off at about four thousand tokens, and the daemon closed on the fragment while
+the client was still writing — a connection reset and no reason. Both halves
+fixed: a ceiling derived from what a request can honestly be, and a refusal
+that names it.
+
+Two smaller errors the work made visible: a well-formed refusal from the engine
+was being classified as an unparseable answer, and the probe framework stamped
+every result with the first probe's name, which is the provenance failure
+B-059 exists to prevent.
 
 ### Version 45 — the check could not fail
 

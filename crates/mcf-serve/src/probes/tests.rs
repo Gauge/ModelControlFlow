@@ -346,3 +346,107 @@ fn speaking_then_stopping_is_what_counts() {
         "and the silence is kept, not discarded"
     );
 }
+
+use super::{Accepted, Context, usable_context};
+
+/// A file whose claim holds costs one trial, not fifteen. The search exists
+/// for the case where the claim does not hold, and running it anyway would
+/// spend a context's worth of forward passes to learn nothing.
+#[test]
+fn a_context_that_holds_is_one_question() {
+    let mut asked = Vec::new();
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| {
+            asked.push(length);
+            Accepted::Read(length)
+        },
+    );
+    let observed = probed
+        .outcome
+        .observed()
+        .expect("the engine took what the file declares");
+    assert_eq!(
+        observed,
+        &Context {
+            declared: 8192,
+            accepted: 8191,
+            because: None,
+        }
+    );
+    assert_eq!(asked, vec![8191], "one trial, at the declared length");
+}
+
+/// Where the claim does not hold, the boundary is found exactly.
+#[test]
+fn the_boundary_is_found_where_it_is() {
+    let ceiling = 2047;
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| {
+            if length <= ceiling {
+                Accepted::Read(length)
+            } else {
+                Accepted::Refused("exceeds the available context size".to_owned())
+            }
+        },
+    );
+    let observed = probed.outcome.observed().expect("a boundary was found");
+    assert_eq!(observed.accepted, ceiling, "the largest length that worked");
+    assert_eq!(observed.declared, 8192);
+    assert!(
+        observed
+            .because
+            .as_deref()
+            .is_some_and(|said| said.contains("context size")),
+        "the engine's own reason travels with the divergence (A1)"
+    );
+    assert!(
+        probed.trials <= 14,
+        "a halving, not a walk: {}",
+        probed.trials
+    );
+}
+
+/// A prompt read shorter than it was sent is the failure this probe is for,
+/// and it must not be mistaken for a shorter context that was honestly
+/// reported.
+#[test]
+fn silent_truncation_is_caught_and_named() {
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| Accepted::Read(length.min(1000)),
+    );
+    let observed = probed.outcome.observed().expect("a boundary was found");
+    assert_eq!(observed.accepted, 1000);
+    assert!(
+        observed
+            .because
+            .as_deref()
+            .is_some_and(|said| said.contains("silence")),
+        "a prompt quietly shortened has to be named as that: {:?}",
+        observed.because
+    );
+}
+
+/// An engine that cannot say how much it read leaves the question open. It is
+/// not *the context is short* and not *the context is fine* (A7, D42).
+#[test]
+fn an_engine_that_cannot_say_leaves_it_unknown() {
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |_length| Accepted::CouldNotTell("this engine does not say".to_owned()),
+    );
+    assert!(
+        probed.outcome.observed().is_none(),
+        "nothing was observed, so nothing may be reported as observed"
+    );
+}
