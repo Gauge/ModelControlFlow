@@ -92,6 +92,29 @@ readonly GENERATE_TOKENS=10
 # the observed agreement and far above what any defect leaves standing.
 readonly EMBED_FLOOR=0.999
 
+# The distribution floor: the KL divergence of the reference from MCF over the
+# reference's top-20 tokens at a step, above which the two are not the same
+# distribution to within arithmetic. Measured (F34): a clean engine's maximum
+# across sixteen files is 0.113; a swapped rotation's median is 0.32 and a
+# broken Q3_K decoder's is in the tens. Under twice the clean maximum, a third
+# of the subtle defect's median.
+readonly LOGPROB_FLOOR=${MCF_LOGPROB_FLOOR:-0.20}
+
+# Which sections run. Every one by default; `MCF_ORACLE_SECTIONS=distributions`
+# runs only the distribution comparison, which is how its floor was measured
+# without paying the ten minutes of text comparison each time (F34). A
+# measuring convenience, not a tier setting: the tier is the whole file.
+readonly SECTIONS=${MCF_ORACLE_SECTIONS:-all}
+runs() { [ "$SECTIONS" = "all" ] || [ "$SECTIONS" = "$1" ]; }
+
+# Runs of whitespace become one space, newlines included — `sed` works a line
+# at a time and never sees a newline as whitespace, so the newline is folded
+# to a space *first*. The instrument that finds where two texts part applies
+# the same rule, and the two must agree or a paragraph break reads as a
+# divergence (F32). Defined once, up here: it was inside the generation loop
+# once, and a run of the distributions alone found it missing (F34).
+flatten() { tr '\n' ' ' | sed -e 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//'; }
+
 readonly TEXTS=(
     'The capital of France is'
     'In 2024 there were 365 days and 1234567 seconds'
@@ -162,6 +185,7 @@ disagreements=0
 skipped=0
 
 for model in "${models[@]}"; do
+    runs tokenizer || break
     name=$(basename "$model")
     # A model whose vocabulary MCF refuses is not a disagreement — it is a
     # refusal, which the corpus tier already checks. Saying so and moving on is
@@ -210,7 +234,9 @@ completion_reference="$oracle/build/bin/llama-completion"
 margins="$root/target/release/examples/margins"
 mcf="$root/target/release/mcf"
 
-if [ ! -x "$completion_reference" ] || [ ! -x "$margins" ] || [ ! -x "$mcf" ]; then
+if ! runs generation; then
+    :
+elif [ ! -x "$completion_reference" ] || [ ! -x "$margins" ] || [ ! -x "$mcf" ]; then
     printf '\n  the forward pass was not compared: needs llama-completion, MCF'"'"'s margins\n'
     printf '  example and the mcf binary\n'
 else
@@ -226,12 +252,6 @@ else
             prompts+=("My name is Konstantin Aurelio Blackwood and I live in a lighthouse in Norway. ${filler}My name is")
         fi
         for prompt in "${prompts[@]}"; do
-            # Runs of whitespace become one space, newlines included — `sed`
-            # works a line at a time and never sees a newline as whitespace, so
-            # the newline is folded to a space *first*. The instrument that
-            # finds where two texts part applies the same rule, and the two
-            # must agree or a paragraph break reads as a divergence (F32).
-            flatten() { tr '\n' ' ' | sed -e 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//'; }
             mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" 2>&1 |
                 sed -n '/── what produced it/q;p' | flatten || true)
             theirs=$("$completion_reference" -m "$model" -p "$prompt" -n "$GENERATE_TOKENS" \
@@ -286,10 +306,142 @@ else
     done
 fi
 
+# ── the distributions (B-373) ───────────────────────────────────────────────
+#
+# The comparison of texts above reads a distribution through one sample, and
+# its threshold has narrowed three findings in a row (F27, F32, F33) because
+# noise and defects are measured in the same unit — MCF's own margin. This
+# compares the distributions themselves: the reference's top-N log-probabilities
+# at a step, from `llama-server`'s `n_probs`, against MCF's log-softmax for the
+# same tokens at the same step. A defect is a different vector; noise is the
+# same vector to within arithmetic; and the two do not share a scale.
+#
+# It is measured at step 0 for every prompt — agreement or not — so the noise
+# floor comes from every comparison rather than only from the divergences, and
+# again at the parting step when the texts differ.
+
+server_reference="$oracle/build/bin/llama-server"
+if runs distributions && [ -x "$server_reference" ] && [ -x "$margins" ] && command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    printf '\n'
+    port=18765
+    for model in "${models[@]}"; do
+        name=$(basename "$model")
+        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+
+        # One server per model, on loopback, killed before the next.
+        port=$((port + 1))
+        "$server_reference" -m "$model" --host 127.0.0.1 --port "$port" -ngl 0 --no-warmup \
+            --log-disable >/dev/null 2>&1 &
+        server_pid=$!
+        ready=0
+        for _ in $(seq 1 100); do
+            if curl -s "http://127.0.0.1:$port/health" 2>/dev/null | grep -q '"ok"'; then
+                ready=1
+                break
+            fi
+            sleep 0.2
+        done
+        if [ "$ready" -ne 1 ]; then
+            printf '  %-40s the reference server did not come up; distributions not compared\n' "$name"
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            continue
+        fi
+
+        for prompt in "${GENERATE_FROM[@]}"; do
+            # The reference's generation with its top-20 at every step.
+            response=$(curl -s "http://127.0.0.1:$port/completion" -H 'Content-Type: application/json' \
+                -d "$(jq -cn --arg p "$prompt" --argjson n "$GENERATE_TOKENS" \
+                    '{prompt: $p, n_predict: $n, temperature: 0, seed: 0, n_probs: 20, cache_prompt: false, return_tokens: true}')" \
+                2>/dev/null || true)
+            [ -n "$response" ] || continue
+            theirs=$(printf '%s' "$response" | jq -r '.content' | flatten)
+
+            # Which step to compare: 0 always; the parting step too when they differ.
+            steps_to_compare="0"
+            verdict=$("$margins" "$model" "$prompt" "$GENERATE_TOKENS" --against "$theirs" 2>/dev/null || true)
+            case "$verdict" in
+            "diverged at "*)
+                parted=${verdict#diverged at }
+                parted=${parted%% *}
+                [ "$parted" != "0" ] && steps_to_compare="0 $parted"
+                ;;
+            esac
+
+            for step in $steps_to_compare; do
+                # The reference's top tokens at this step, and their log-probabilities.
+                ref_ids=$(printf '%s' "$response" | jq -r ".completion_probabilities[$step].top_logprobs | map(.id) | join(\",\")" 2>/dev/null || true)
+                [ -n "$ref_ids" ] && [ "$ref_ids" != "null" ] || continue
+                # At step 0 the instrument prints step 0; at a parting step it
+                # needs the reference text to find that step — without it the
+                # first measurement compared MCF's step 0 against the
+                # reference's step 9 and reported gaps of twenty (F34).
+                if [ "$step" = "0" ]; then
+                    mine_json=$("$margins" "$model" "$prompt" 1 --logprobs-of "$ref_ids" 2>/dev/null || true)
+                else
+                    mine_json=$("$margins" "$model" "$prompt" "$GENERATE_TOKENS" --against "$theirs" \
+                        --logprobs-of "$ref_ids" 2>/dev/null || true)
+                fi
+                case "$mine_json" in '{"step"'*) ;; *) continue ;; esac
+
+                # A distribution at step N is comparable only if both sides
+                # reached step N through the same tokens. Text agreement does
+                # not guarantee it — two tokenizations of one string — so the
+                # reference's generated tokens are checked against MCF's chosen
+                # ones up to the step, and a mismatch is said rather than
+                # scored (F34).
+                if [ "$step" != "0" ]; then
+                    ref_prefix=$(printf '%s' "$response" | jq -c --argjson s "$step" '.tokens[:$s]' 2>/dev/null || echo '[]')
+                    mine_prefix=$(printf '%s' "$mine_json" | jq -c '.chosen_before' 2>/dev/null || echo '[]')
+                    if [ "$ref_prefix" != "$mine_prefix" ]; then
+                        printf '  %-40s parts on %s at step %s through different tokens; distributions not comparable there\n' \
+                            "$name" "$prompt" "$step"
+                        continue
+                    fi
+                fi
+
+                # Three views of the same two distributions over the
+                # reference's top tokens: the largest gap anywhere in the top
+                # twenty, the largest gap in the top five, and the divergence
+                # of the reference from MCF over the top twenty (renormalized).
+                # Which one the verdict uses was decided by measuring all three
+                # against a clean engine and two known defects (F34).
+                stats=$(printf '%s' "$response" | jq -r --argjson mine "$mine_json" --argjson s "$step" '
+                    [ .completion_probabilities[$s].top_logprobs[]
+                      | select(($mine.logprobs[(.id|tostring)]) != null)
+                      | {r: .logprob, m: $mine.logprobs[(.id|tostring)]} ] as $pairs
+                    | ($pairs | map((.r - .m) | fabs) | max // 0) as $max20
+                    | ($pairs[:5] | map((.r - .m) | fabs) | max // 0) as $max5
+                    | ($pairs | map(.r | exp) | add) as $zr
+                    | ($pairs | map(.m | exp) | add) as $zm
+                    | ($pairs | map( ((.r | exp) / $zr) * ((.r - ($zr|log)) - (.m - ($zm|log))) ) | add // 0) as $kl
+                    | "\($max20) \($max5) \($kl)"' 2>/dev/null || true)
+                [ -n "$stats" ] || continue
+                read -r gap20 gap5 divergence <<<"$stats"
+                distance=$divergence
+                printf '  %-40s distributions on %s at step %s: top20 %.3f top5 %.3f kl %.4f\n' \
+                    "$name" "$prompt" "$step" "$gap20" "$gap5" "$divergence" >&2
+                compared=$((compared + 1))
+                if awk -v d="$distance" -v f="$LOGPROB_FLOOR" 'BEGIN { exit !(d <= f) }'; then
+                    continue
+                fi
+                disagreements=$((disagreements + 1))
+                printf '  %-40s DISTRIBUTIONS DIFFER on %s at step %s\n' "$name" "$prompt" "$step"
+                printf '      KL of the reference from MCF over its top twenty: %s, over %s\n' \
+                    "$distance" "$LOGPROB_FLOOR"
+                printf '      (largest log-probability gaps: %s over the top twenty, %s over the top five)\n' \
+                    "$gap20" "$gap5"
+            done
+        done
+        kill "$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+    done
+fi
+
 # ── the embedding path ──────────────────────────────────────────────────────
 
 embedding_reference="$oracle/build/bin/llama-embedding"
-if [ -x "$embedding_reference" ] && [ -x "$mcf" ]; then
+if runs embeddings && [ -x "$embedding_reference" ] && [ -x "$mcf" ]; then
     printf '\n'
     for model in "${models[@]}"; do
         name=$(basename "$model")
@@ -332,9 +484,9 @@ if [ "$skipped" -gt 0 ]; then
 fi
 if [ "$disagreements" -gt 0 ]; then
     printf 'the oracle: %d of %d comparisons disagreed\n' "$disagreements" "$compared" >&2
-    printf 'each of these is either a list of identifiers, where there is no tolerance to\n' >&2
-    printf 'argue about, or a generation that parted while every choice still had room to\n' >&2
-    printf 'spare — which is not what a near-tie looks like (F27)\n' >&2
+    printf 'each of these is a list of identifiers, where there is no tolerance to argue\n' >&2
+    printf 'about; a generation that parted with room to spare (F27, F32); or two\n' >&2
+    printf 'distributions further apart than arithmetic puts them (F34)\n' >&2
     exit "$EXIT_FAILED"
 fi
 printf 'the oracle: MCF and the reference agree on all %d comparisons, or differ only\n' "$compared"

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 37 |
+| **Version** | 38 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2541,7 +2541,73 @@ structurally the verified decoder's twin, coheres on three prompts, and parts
 once at a margin the coarsest scheme would be expected to produce. A21 applies:
 stated as evidence, not as a verdict, until the logits comparison exists.
 
+## 34 · F34 — Distributions against distributions (B-373, B-368, F27, F32, F33, A19)
+
+**Why.** Three findings in a row moved the text comparison's threshold inside a
+gap that closed with every file — 0.159–0.775, then 0.237–0.449, then
+0.320–0.449 — because a text samples a distribution once, and the margin that
+excuses a divergence is *MCF's own confidence*, which is the thing under test.
+The instrument that does not narrow compares the distributions themselves.
+
+**The instrument.** The reference exposes its distribution through one tool:
+`llama-server`, whose completion endpoint returns, for every generated token,
+the top-N tokens with their log-probabilities (`n_probs`). The recipe gained
+that target and the oracle was re-provisioned. For each model and prompt the
+tier starts one server on loopback, asks for ten greedy tokens with the top
+twenty at each step, and has MCF's `margins --logprobs-of` print its own
+log-softmax for exactly those twenty tokens at the same step. At step 0 the
+two contexts are the same tokens by construction (the tokenizer section
+already holds that); at the step where the texts part, they are compared only
+if both engines reached it through identical token ids — text agreement is not
+token agreement, and the first version of this compared MCF's step 0 against
+the reference's step 9 and reported gaps of twenty.
+
+**Three statistics were measured before one was chosen**, on a clean engine and
+on two engines with known defects, over sixteen files and three prompts:
+
+| engine | largest gap, top 20 | largest gap, top 5 | KL over the top 20 |
+|---|---|---|---|
+| clean (n = 56) | median 0.35, max **1.85** | median 0.21, max **1.12** | median 0.002, max **0.113** |
+| rotation swapped (n = 63) | median 2.75, min 1.09 | median 2.03, min 0.34 | median 0.32, p90 2.6, min 0.002 |
+| Q3_K plane bug, Q3_K files | ≥ 12.5 | ≥ 12.5 | min 1.59, median 7.53, n=15 |
+
+**What the numbers say, and what they do not.** On every statistic the
+rotation defect's *smallest* value sits inside the clean range: at a step where
+the model barely attends to position — the second token of a five-token prompt
+on a 135M model — a wrong rotation changes the distribution by less than
+quantized-against-float arithmetic does. No statistic separates a subtle
+defect at every position, because at some positions there is nothing to
+separate. What the tier judges is every prompt of every file, and there the
+separation is wide: with the floor at a KL of 0.20 — under twice the clean
+maximum — the rotation mutant crosses it on the majority of its 63 comparisons
+and the clean engine on none of its 56.
+
+KL was chosen over the two gap statistics for the size of that separation
+(the clean maximum is one-third of the defect's median; for the top-five gap it
+is one-half) and because it is the quantity the register item named: a defect
+is a different vector, noise is the same vector to within arithmetic, and a
+divergence between distributions is what measures that. The gap statistics are
+still printed beside it, so a reader of a failure sees all three.
+
+**Where the noise is.** The clean engine's largest KL, 0.113, is gemma-3-270m
+at Q6_K; the next are the mixture of experts at Q5_K_M and gemma at "Q2_K".
+The coarse schemes and the small, wide-vocabulary model are where two
+implementations' arithmetic differs most, which is what F33 predicted from the
+text comparison. The floor is calibrated on this corpus; a file whose noise
+sits above 0.113 would be a new measurement, not a defect, and would say so by
+which file and which prompt.
+
 ## Changelog
+
+### Version 38 — distributions against distributions
+
+F34. The oracle compares the reference's top-twenty log-probabilities against
+MCF's log-softmax for the same tokens, at the same step, through the same
+token ids. Three statistics measured on a clean engine and two known defects;
+KL over the top twenty chosen for the width of its separation — clean maximum
+0.113 against a subtle defect's median of 0.32 — and the floor set at 0.20.
+The instrument's own first failure, comparing step 0 against step 9, is
+recorded with it.
 
 ### Version 37 — the last schemes, and the widest noise
 

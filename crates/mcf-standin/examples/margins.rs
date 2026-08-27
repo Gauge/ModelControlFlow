@@ -22,6 +22,14 @@
 //! diverged at step 0 with a margin of 0.45 and was excused by a 0.02 five
 //! tokens later (F32). One line is printed: `diverged at <step> margin <m>`,
 //! or `agreed` when the whole generation is a prefix of the reference.
+//!
+//! `--logprobs-of 12,345,6789` prints, at the parting step (or at step 0 when
+//! there is no `--against`), one JSON line holding MCF's log-softmax for those
+//! tokens and for its own top eight: `{"step":N,"margin":M,"logprobs":{"12":
+//! -0.031,…}}`. That is what a comparison of *distributions* reads — the
+//! reference's top tokens scored by MCF, so that the two can be put side by
+//! side in one unit that does not depend on how confident either model is
+//! (B-373).
 
 #[allow(
     clippy::too_many_lines,
@@ -37,13 +45,22 @@ fn main() -> std::process::ExitCode {
     };
     let mut steps: usize = 10;
     let mut against: Option<String> = None;
+    let mut logprobs_of: Vec<usize> = Vec::new();
     while let Some(argument) = arguments.next() {
         if argument == "--against" {
             against = arguments.next();
+        } else if argument == "--logprobs-of" {
+            logprobs_of = arguments
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|id| id.trim().parse().ok())
+                .collect();
         } else if let Ok(count) = argument.parse() {
             steps = count;
         }
     }
+    let wants_logprobs = !logprobs_of.is_empty();
 
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -95,11 +112,12 @@ fn main() -> std::process::ExitCode {
         position += 1;
     }
 
-    if against.is_none() {
+    if against.is_none() && !wants_logprobs {
         println!("step  margin      chosen                    runner-up");
     }
     let reference = against.unwrap_or_default();
     let mut produced = String::new();
+    let mut chosen: Vec<usize> = Vec::new();
     for step in 0..steps {
         let mut ranked: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
         // Highest first, and the lower identifier on a tie — the same order the
@@ -115,7 +133,22 @@ fn main() -> std::process::ExitCode {
             break;
         };
         let margin = best.1 - second.1;
-        if reference.is_empty() {
+        // The distribution at this step, where it was asked for: at the
+        // parting step under `--against`, at step 0 otherwise.
+        let parts_here = if reference.is_empty() {
+            step == 0
+        } else {
+            produced.push_str(&vocabulary.decode(&[best.0]));
+            !flatten(&reference).starts_with(&flatten(&produced))
+        };
+        if wants_logprobs && parts_here {
+            print_logprobs(step, margin, &logits, &ranked, &logprobs_of, &chosen);
+            return std::process::ExitCode::SUCCESS;
+        }
+        chosen.push(best.0);
+        if wants_logprobs {
+            // Keep going to the parting step; nothing else is printed.
+        } else if reference.is_empty() {
             println!(
                 "{step:>4}  {:>9.5}  {:>8} {:<16?} {:>8} {:?}",
                 margin,
@@ -124,17 +157,12 @@ fn main() -> std::process::ExitCode {
                 second.0,
                 vocabulary.decode(&[second.0])
             );
-        } else {
-            produced.push_str(&vocabulary.decode(&[best.0]));
+        } else if parts_here {
             // Whitespace is flattened on both sides the way the oracle's text
             // comparison flattens it, so a newline against a space is not a
             // divergence here that the text comparison would not see.
-            let mine = flatten(&produced);
-            let theirs = flatten(&reference);
-            if !theirs.starts_with(&mine) {
-                println!("diverged at {step} margin {margin:.5}");
-                return std::process::ExitCode::SUCCESS;
-            }
+            println!("diverged at {step} margin {margin:.5}");
+            return std::process::ExitCode::SUCCESS;
         }
 
         logits = match model.forward(best.0, position, &mut cache) {
@@ -146,10 +174,52 @@ fn main() -> std::process::ExitCode {
         };
         position += 1;
     }
-    if !reference.is_empty() {
+    if wants_logprobs {
+        println!("{{\"agreed\":true}}");
+    } else if !reference.is_empty() {
         println!("agreed");
     }
     std::process::ExitCode::SUCCESS
+}
+
+/// One JSON line: the step, the margin, and MCF's log-softmax for the tokens
+/// asked about and for its own top eight.
+fn print_logprobs(
+    step: usize,
+    margin: f32,
+    logits: &[f32],
+    ranked: &[(usize, f32)],
+    asked: &[usize],
+    chosen_before: &[usize],
+) {
+    // log-softmax, computed the stable way: subtract the maximum first.
+    let largest = ranked.first().map_or(0.0, |(_, value)| *value);
+    let mut total = 0.0_f32;
+    for value in logits {
+        total += (value - largest).exp();
+    }
+    let normalizer = largest + total.ln();
+    let mut wanted: Vec<usize> = asked.to_vec();
+    for (id, _) in ranked.iter().take(8) {
+        if !wanted.contains(id) {
+            wanted.push(*id);
+        }
+    }
+    let mut fields: Vec<String> = Vec::new();
+    for id in wanted {
+        if let Some(logit) = logits.get(id) {
+            fields.push(format!("\"{id}\":{}", logit - normalizer));
+        }
+    }
+    // The tokens MCF chose before this step: a distribution at step N is only
+    // comparable with another's at step N if both reached it through the same
+    // tokens, and text agreement does not guarantee that (F34).
+    let before: Vec<String> = chosen_before.iter().map(usize::to_string).collect();
+    println!(
+        "{{\"step\":{step},\"margin\":{margin},\"chosen_before\":[{}],\"logprobs\":{{{}}}}}",
+        before.join(","),
+        fields.join(",")
+    );
 }
 
 /// Runs of whitespace as one space, ends trimmed — the oracle's own rule.
