@@ -25,17 +25,19 @@
 # different winner. That is not a defect in either and never will be.
 #
 # What separates the two is the *margin* between the best and second-best logit
-# at the step where they part. Measured over fifteen comparisons: the four
-# divergences that were float noise happened at margins of 0.040, 0.098, 0.105
-# and 0.159, in every case with the reference choosing exactly MCF's runner-up.
-# The one real defect found — a sliding-window rotary base MCF was not applying
-# — diverged at a margin of 0.775.
+# **at the step where they part** — and only there. F27's first rule took the
+# smallest margin anywhere in the generation, and F32 found what that lets
+# through: a broken Q3_K decoder diverged at its first token with a margin of
+# 0.449 and was excused by a 0.021 five tokens later. Now `margins --against`
+# finds the step at which MCF's text stops being a prefix of the reference's
+# and reports the margin there.
 #
-# So the rule below is: if the texts differ *and* every step had a comfortable
-# margin, something is wrong. If any step was close, the divergence is
-# explainable and is reported rather than failed. The threshold sits between the
-# largest observed noise and the smallest observed defect, and it is provisional
-# — a defect can hide under a near-tie, and only more comparisons narrow it.
+# Measured: the four noise divergences sat at 0.040, 0.098, 0.105 and 0.159 at
+# their own divergence step, with the reference choosing exactly MCF's
+# runner-up. The two real defects sat at 0.449 (F32) and 0.775 (F27). The
+# threshold sits between the largest noise and the smallest defect, nearer the
+# noise, and it is provisional in the direction it has always been: a defect
+# that happens to diverge at a genuine near-tie still passes.
 #
 # **The reference is a development instrument and is not vendored.** Nothing
 # here ships, nothing here is on the path of any MCF command, and MCF's own
@@ -67,7 +69,7 @@ readonly REFERENCE_COMMIT=925e1179947ea0c0ebfb0032df18af3a729822be
 # The margin below which a different choice is explained by arithmetic rather
 # than by a defect. See the note above for the fifteen measurements this sits
 # between; it is deliberately nearer the noise than the defect.
-readonly CLOSE_ENOUGH=0.50
+readonly CLOSE_ENOUGH=0.30
 
 # What to generate from, and how far. Ten tokens is enough for a divergence to
 # show and short enough that five models finish in a minute.
@@ -221,7 +223,12 @@ else
             prompts+=("My name is Konstantin Aurelio Blackwood and I live in a lighthouse in Norway. ${filler}My name is")
         fi
         for prompt in "${prompts[@]}"; do
-            flatten() { sed -e 's/[[:space:]]\+/ /g' | tr -d '\n' | sed 's/^ *//; s/ *$//'; }
+            # Runs of whitespace become one space, newlines included — `sed`
+            # works a line at a time and never sees a newline as whitespace, so
+            # the newline is folded to a space *first*. The instrument that
+            # finds where two texts part applies the same rule, and the two
+            # must agree or a paragraph break reads as a divergence (F32).
+            flatten() { tr '\n' ' ' | sed -e 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//'; }
             mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" 2>&1 |
                 sed -n '/── what produced it/q;p' | flatten || true)
             theirs=$("$completion_reference" -m "$model" -p "$prompt" -n "$GENERATE_TOKENS" \
@@ -244,20 +251,32 @@ else
             # otherwise end the whole run at the first model whose margins
             # cannot be taken, and a check that stops before its summary is a
             # check that cannot report (A4).
-            closest=$("$margins" "$model" "$prompt" "$GENERATE_TOKENS" 2>/dev/null |
-                awk 'NR > 1 && $2 != "" { if (min == "" || $2 < min) min = $2 } END { print min + 0 }' ||
+            verdict=$("$margins" "$model" "$prompt" "$GENERATE_TOKENS" --against "$theirs" 2>/dev/null ||
                 true)
-            [ -n "$closest" ] || closest=0
+            case "$verdict" in
+            "diverged at "*)
+                closest=${verdict##* margin }
+                where=${verdict#diverged at }
+                where=${where%% *}
+                ;;
+            *)
+                # The texts differed and the instrument found no divergence —
+                # which means the difference is past the tokens generated, or
+                # in something the flattening hid. Said, not failed.
+                printf '  %-40s differs on %s beyond what was compared\n' "$name" "$prompt"
+                continue
+                ;;
+            esac
             if awk -v m="$closest" -v t="$CLOSE_ENOUGH" 'BEGIN { exit !(m < t) }'; then
                 printf '  %-40s differs on %s\n' "$name" "$prompt"
-                printf '      explained: the closest choice had a margin of %s, under %s\n' \
-                    "$closest" "$CLOSE_ENOUGH"
+                printf '      explained: at step %s, where they part, the margin was %s, under %s\n' \
+                    "$where" "$closest" "$CLOSE_ENOUGH"
                 continue
             fi
             disagreements=$((disagreements + 1))
             printf '  %-40s DIFFERS on %s WITH ROOM TO SPARE\n' "$name" "$prompt"
-            printf '      closest margin %s, over %s — this is not a near-tie\n' \
-                "$closest" "$CLOSE_ENOUGH"
+            printf '      at step %s, where they part, the margin was %s, over %s — not a near-tie\n' \
+                "$where" "$closest" "$CLOSE_ENOUGH"
             printf '      MCF:       %s\n' "$mine"
             printf '      reference: %s\n' "$theirs"
         done

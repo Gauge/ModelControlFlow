@@ -238,6 +238,11 @@ pub enum TensorKind {
     Q4_0,
     /// The 4-bit scheme with a scale and a minimum per block of 32.
     Q4_1,
+    /// Thirty-two five-bit offsets from sixteen: four low bits in nibbles and
+    /// the fifth bit gathered into one word, against one half-precision scale.
+    Q5_0,
+    /// `Q5_0` with a minimum as well as a scale.
+    Q5_1,
     /// The 8-bit scheme with one scale per block of 32.
     Q8_0,
     /// The 2-bit super-block scheme: 256 values, sixteen sub-blocks with
@@ -280,6 +285,8 @@ impl TensorKind {
             1 => Self::F16,
             2 => Self::Q4_0,
             3 => Self::Q4_1,
+            6 => Self::Q5_0,
+            7 => Self::Q5_1,
             8 => Self::Q8_0,
             10 => Self::Q2_K,
             11 => Self::Q3_K,
@@ -305,7 +312,7 @@ impl TensorKind {
             // `IQ4_NL` is here rather than beside the other non-linear scheme:
             // it shares the four-bit table with `IQ4_XS` and the block of 32
             // with `Q4_0`, and the block size is what this function is about.
-            Self::Q4_0 | Self::Q4_1 | Self::Q8_0 | Self::IQ4_NL => 32,
+            Self::Q4_0 | Self::Q4_1 | Self::Q5_0 | Self::Q5_1 | Self::Q8_0 | Self::IQ4_NL => 32,
             // The K-schemes share a super-block of 256, which is what makes
             // their per-sub-block scales worth their bytes.
             Self::Q2_K
@@ -338,6 +345,10 @@ impl TensorKind {
             Self::Q4_0 | Self::IQ4_NL => 2 + 16,
             // A scale and a minimum, then 32 four-bit values.
             Self::Q4_1 => 2 + 2 + 16,
+            // A scale, four bytes holding the fifth bit of every value, then
+            // the nibbles; `Q5_1` carries a minimum before the fifth bits.
+            Self::Q5_0 => 2 + 4 + 16,
+            Self::Q5_1 => 2 + 2 + 4 + 16,
             // A scale in half precision, then 32 signed bytes.
             Self::Q8_0 => 2 + 32,
             // 16 packed 4-bit scale/minimum pairs, 64 bytes of 2-bit values,
@@ -386,6 +397,8 @@ impl core::fmt::Display for TensorKind {
             Self::IQ3_S => f.write_str("IQ3_S"),
             Self::Q4_0 => f.write_str("q4_0"),
             Self::Q4_1 => f.write_str("q4_1"),
+            Self::Q5_0 => f.write_str("q5_0"),
+            Self::Q5_1 => f.write_str("q5_1"),
             Self::Q8_0 => f.write_str("q8_0"),
             Self::Unknown(number) => write!(f, "unknown type {number}"),
         }

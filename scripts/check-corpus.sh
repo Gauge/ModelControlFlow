@@ -62,6 +62,14 @@ readonly CORPUS=(
     "embedding|leliuga/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q4_0.gguf|embeds|\"width\":384"
     "mixture-of-experts|RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf/TinyMixtral-4x248M-MoE.Q5_K_M.gguf|runs|Paris"
     "gemma3|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q6_K.gguf|runs|Paris"
+    # Scheme witnesses (B-364, F32): the same families again, in the variants
+    # that carry the schemes no other file does. What each carries is in its
+    # directory, not its name — the "Q2_K" holds Q3_K tensors.
+    "Q3_K, IQ4_NL (as Q2_K)|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q2_K.gguf|runs|Paris"
+    "Q3_K, IQ4_NL|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q3_K_S.gguf|runs|Paris"
+    "IQ3_S, IQ4_NL|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-IQ3_XS.gguf|runs|Paris"
+    "IQ3_S, IQ4_NL, Q5_0|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-IQ3_M.gguf|runs|Paris"
+    "IQ4_XS|Felladrin/gguf-Llama-160M-Chat-v1/Llama-160M-Chat-v1.IQ4_XS.gguf|runs|Paris"
 )
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

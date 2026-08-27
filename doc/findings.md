@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 35 |
+| **Version** | 36 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2414,7 +2414,94 @@ does not run. D39's four conditions say what a controlled environment must
 guarantee; these are what it took to make one do so on one machine with one
 component, and each is now either code or a test.
 
+## 32 · F32 — A defect the oracle let through, and the hole it came through (B-364, B-368, F27, A19, A21)
+
+**What prompted it.** B-364 listed quantization schemes MCF decodes that no
+acquired file had ever carried. Five small variants of two corpus models were
+acquired to change that — 88 to 113 MB each — and their directories read for
+what they actually hold:
+
+| file | tensor types carried |
+|---|---|
+| Llama-160M IQ4_XS | IQ4_XS ×84, Q8_0, F32 |
+| SmolLM2 IQ3_XS | IQ3_S ×30, IQ4_NL ×180, Q8_0, F32 |
+| SmolLM2 IQ3_M | IQ3_S ×27, IQ4_NL ×120, Q5_0 ×60, Q4_K, Q8_0, F32 |
+| SmolLM2 Q2_K | **Q3_K** ×30, IQ4_NL ×180, Q8_0, F32 |
+| SmolLM2 Q3_K_S | Q3_K ×30, IQ4_NL ×180, Q8_0, F32 |
+
+Two things a file name does not say: a "Q2_K" of a 135M model carries no Q2_K
+tensor at all — the quantizer falls back to Q3_K at this size — and the IQ3
+variants are mostly IQ4_NL. The scheme a file exercises is read from its
+directory, not its name (§3.18, again).
+
+**Q3_K was wrong, and it read as gibberish.** `asionally himself He
+intoosaicunken's.` where the reference says `Paris. Paris is the political,
+cultural`. The reference indexes the 32-byte high-bit plane with the value's
+position alone, the same bytes serving both halves of the block, the advancing
+mask bit telling them apart; MCF indexed it with `half × 32 + position`, ran
+off the end for the second half, and `get` handed back zero for every one of
+those, which reads as "inverted". F19 had rewritten this decoder against the
+reference and given it a test; the test decoded a block and checked the values
+were all there, and they were — a plane read off its end is a plane of zeros,
+which a test on a zeroed fixture cannot see. One index, and a real file, was
+what it took.
+
+**The oracle passed it, through the hole F27 named.** Its rule was: a
+divergence is explained if *any* step in the generation had a margin under
+0.50. The broken decoder diverged at step 0 with a margin of 0.449 — and was
+excused by a 0.021 at step 4, five tokens into text that was already wrong.
+Margins across the broken generation: `0.449 1.94 1.33 1.06 0.021 0.226 2.12
+0.104`. Against a healthy file's: `0.573 0.248 0.640 3.38 0.105 0.466 1.75
+2.93`. No summary of those two rows separates them. What separates them is
+*where* they part.
+
+The rule is now: the margin **at the step where MCF's text stops being a
+prefix of the reference's**, and nowhere else. `margins --against` finds that
+step. Re-measured under it across eleven files, the noise divergences part at
+margins from 0.017 to 0.237; the F27 defect parted at 0.775 and this one at
+0.449. The threshold moves from 0.50 to 0.30 — above every noise margin
+observed, below both defects, nearer the noise — and the remaining hole is
+stated in the same words as before: a defect that happens to diverge at a
+genuine near-tie still passes. The gap it lives in has narrowed from
+0.159–0.775 to 0.237–0.449, which is what more files do to a threshold.
+
+The instrument found one thing about the comparison itself on its first run:
+the shell had been folding newlines away where the instrument folded them to
+spaces, so a paragraph break read as a divergence one step early. Both now
+apply one rule — runs of whitespace are one space — and the rule is written
+once in each place with the other named.
+
+**Where this leaves the oracle.** Eleven files, 102 comparisons, all in
+agreement or parting under 0.30; with the plane bug reintroduced, the tier
+fails on the first prompt of the first Q3_K file — `at step 0, where they
+part, the margin was 0.44906, over 0.30 — not a near-tie`. The five witness
+files join the corpus tier under the schemes they actually carry.
+
+**The old test could not have found the plane bug**, and the new one fails on
+the old code: every plane bit set, every low bit zero, scales that multiply by
+one. Correct decoding is 256 zeros; the old decoder produced −4 for the second
+half, because a plane read off its end is a plane of zeros. F19's test had
+decoded a zeroed fixture, where a plane of real zeros and a plane read off its
+end look the same.
+
+**And a scheme nobody had implemented.** IQ3_M refused: `blk.0.attn_v.weight`
+in `unknown type 6`, which is Q5_0. Q5_0 and Q5_1 are now decoded from the
+reference — the fifth bit of value `j` sits at bit `j` of the block's word for
+the first half and bit `j + 16` for the second, which the reference does in one
+shift and MCF spells out — with tests that put a bit on values 0 and 16 and
+nowhere else.
+
 ## Changelog
+
+### Version 36 — a defect the oracle let through
+
+F32. Five small variants acquired to exercise the schemes no file had carried,
+and the first thing they found was that MCF's Q3_K decoder read its high-bit
+plane off the end — gibberish where the reference says Paris — and the second
+was that the oracle had excused it: the broken engine parted from the reference
+at step 0 with a margin of 0.449 and was explained by a 0.021 five tokens later.
+The rule now takes the margin at the step where they part and nowhere else;
+the threshold sits at 0.30. Q5_0 and Q5_1 are decoded, which IQ3_M needed.
 
 ### Version 35 — what the first automated provisioning found in two tries
 
