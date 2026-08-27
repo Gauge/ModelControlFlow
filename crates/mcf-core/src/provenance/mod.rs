@@ -37,6 +37,7 @@ mod artifact;
 mod checksum;
 mod licence;
 mod origin;
+mod pin;
 mod transformation;
 mod upstream;
 
@@ -44,6 +45,7 @@ pub use artifact::{Artifact, ArtifactName};
 pub use checksum::{Checksum, DigestAlgorithm};
 pub use licence::Licence;
 pub use origin::{Origin, Repository, Revision};
+pub use pin::checked_out;
 pub use transformation::{ToolIdentity, Transformation, TransformationKind};
 pub use upstream::{Decay, Observation};
 

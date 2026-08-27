@@ -104,12 +104,24 @@ fail_cannot_check() {
     exit "$EXIT_CANNOT_CHECK"
 }
 
-oracle=${MCF_ORACLE:-/home/gauge/Content/mcf-oracle/llama.cpp}
+# The reference comes from `mcf provision llama.cpp` (B-367): a prefix under
+# MCF's data home holding the source at the pinned commit, the build, and the
+# provenance of both. `MCF_ORACLE` names a checkout elsewhere for a machine
+# that built one by hand — which F30 measured as the route that silently picks
+# up whatever the PATH resolves, so the provisioned one is looked for first.
+data=${XDG_DATA_HOME:-${HOME:-}/.local/share}
+provisioned="$data/mcf/provisioned/llama.cpp@${REFERENCE_COMMIT:0:12}"
+if [ -f "$provisioned/mcf-provenance.json" ]; then
+    oracle="$provisioned"
+    source_dir="$provisioned/source"
+else
+    oracle=${MCF_ORACLE:-}
+    source_dir="$oracle"
+fi
 tokenize_reference="$oracle/build/bin/llama-tokenize"
-[ -x "$tokenize_reference" ] || fail_cannot_check "no reference build at $tokenize_reference
-  git clone $REFERENCE_REPOSITORY && git checkout $REFERENCE_COMMIT
-  cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF && cmake --build build -j
-  or set MCF_ORACLE to a build that is already there"
+[ -n "$oracle" ] && [ -x "$tokenize_reference" ] || fail_cannot_check "no reference build
+  \`mcf provision llama.cpp\` builds one at the pinned commit (B-367), or set MCF_ORACLE
+  to a checkout that already holds a build"
 
 tokenize_mcf="$root/target/release/examples/tokenize"
 [ -x "$tokenize_mcf" ] || fail_cannot_check "no MCF build at $tokenize_mcf
@@ -117,7 +129,7 @@ tokenize_mcf="$root/target/release/examples/tokenize"
 
 # Which commit the reference build is, said rather than assumed: a build
 # directory outlives the checkout that made it.
-if built_at=$(git -c "safe.directory=$oracle" -C "$oracle" rev-parse HEAD 2>/dev/null); then
+if built_at=$(git -c "safe.directory=$source_dir" -C "$source_dir" rev-parse HEAD 2>/dev/null); then
     if [ "$built_at" != "$REFERENCE_COMMIT" ]; then
         printf 'the reference is at %s, and this check is written against %s\n' \
             "$built_at" "$REFERENCE_COMMIT"

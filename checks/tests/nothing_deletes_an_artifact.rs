@@ -37,6 +37,13 @@ struct Deletes {
 /// Every deletion in MCF's non-test code.
 const DECLARED: &[Deletes] = &[
     Deletes {
+        file: "crates/mcf-cli/src/provision.rs",
+        calls: 1,
+        what: "a provisioned component's prefix, in `remove`, which carries a reason and is \
+               recorded before the directory goes — a component MCF built, never an artifact \
+               it acquired (B-367, A27)",
+    },
+    Deletes {
         file: "crates/mcf-hub/src/store.rs",
         calls: 1,
         what: "an artifact on the shelf, in `purge`, which is the one place MCF destroys one \

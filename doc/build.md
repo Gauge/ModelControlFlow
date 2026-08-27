@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 34 |
+| **Version** | 35 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -851,14 +851,56 @@ build that is already there, names the pinned commit it was written against, and
 says so when the build is at a different one.
 
 ```
-$ git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp
-$ git checkout 925e1179947ea0c0ebfb0032df18af3a729822be
-$ cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
-$ cmake --build build -j --target llama-tokenize llama-cli
+$ mcf provision llama.cpp
 ```
 
-`MCF_ORACLE` names the checkout; the corpus comes from `MCF_CORPUS` or MCF's own
-store. Scheduled rather than gating, because it needs both.
+That is the whole of it (B-367): a rootless container from an image pinned by
+digest, the source cloned at the pinned commit, the build landing in a prefix
+under MCF's data home — `mcf/provisioned/llama.cpp@925e1179947e/` — with the
+exact package versions and the script that ran written beside it, and the
+provisioning recorded. The tier looks there first. `MCF_ORACLE` still names a
+checkout built by hand, which F30 measured as the route that silently picks up
+whatever the PATH resolves; it is a fallback, not a peer. The corpus comes from
+`MCF_CORPUS` or MCF's own store. Scheduled rather than gating, because it needs
+both.
+
+## 11e · Provisioning a component
+
+```
+$ mcf provision --list
+$ mcf provision llama.cpp [--into <root>]
+$ mcf provision --remove llama.cpp --because "<why>" [--into <root>]
+```
+
+**What may be provisioned is a table in MCF's source**, not a language (§5):
+one entry today, the reference implementation. Each entry pins an image by
+digest, a source by commit, a package list, a configure line and a target list,
+and the tests hold every entry to that.
+
+**What a run does.** Writes the recipe as a script into the prefix — what ran
+is part of what is recorded — then one `podman run --rm` over the pinned image
+with the prefix bind-mounted: install the packages, record their versions,
+clone, check out the pin, verify the checkout landed on it, configure, build.
+Success writes `mcf-provenance.json` beside the build and a
+`component_provisioned` entry to the record; failure names the exit status and
+the log, and the prefix is safe to remove and the run safe to repeat.
+
+**Where things live, and why two places.** The *prefix* goes under MCF's data
+home — on this machine the large drive — or wherever `--into` says. Podman's
+*image store* does not follow: rootless podman keeps it under `XDG_DATA_HOME`,
+and the first provisioning ever run failed pulling the image because that
+drive's filesystem will not do what an overlay store needs (F31). MCF hands the
+child the platform default for the store and the operator's choice for the
+output. The store is podman's and shared; the prefix is MCF's and removable.
+
+**Removal carries its reason** (§3.11, A27) and is recorded before the
+directory goes: a recorded intention beside a still-present prefix beats a
+removed prefix nobody wrote down. The base image stays — it is shared with
+everything else on the machine that uses it.
+
+**A machine without `podman` is refused by name**, with the platform package
+to install. MCF will not fall back to the host's tools: F30 measured what that
+route does.
 
 ## 12 · A machine with something else on it
 
@@ -993,6 +1035,14 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 35 — provisioning is a command
+
+`mcf provision` (B-367): the oracle is built by MCF itself, in a container from
+a pinned image at a pinned commit, into a removable prefix, and recorded. The
+oracle tier looks at the provisioned prefix first. F31 records the one thing
+the first run found: podman's image store must not follow MCF's data home onto
+a filesystem that cannot hold it.
 
 ### Version 34 — the sixth family, and its own verb
 

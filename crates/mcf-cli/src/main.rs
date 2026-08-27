@@ -17,6 +17,7 @@ mod explain;
 mod licence;
 mod log;
 mod models;
+mod provision;
 mod pull;
 mod run;
 mod say;
@@ -108,6 +109,27 @@ enum Request<'a> {
         limit: Option<usize>,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
+    },
+    /// Install, build and pin a component in a controlled environment.
+    Provision {
+        /// Which component, from the table MCF carries.
+        name: &'a str,
+        /// A prefix root other than the default.
+        into: Option<&'a str>,
+    },
+    /// Say what can be provisioned and what is.
+    ProvisionList {
+        /// A prefix root other than the default.
+        into: Option<&'a str>,
+    },
+    /// Remove a provisioned component, with the reason.
+    ProvisionRemove {
+        /// Which component.
+        name: &'a str,
+        /// Why it is going.
+        because: Option<&'a str>,
+        /// A prefix root other than the default.
+        into: Option<&'a str>,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -246,6 +268,44 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["explain", _, argument, ..] => Request::UnexpectedArgument {
             command: "explain",
+            argument,
+        },
+        ["provision", "--list"] => Request::ProvisionList { into: None },
+        ["provision", "--list", "--into", into] => Request::ProvisionList { into: Some(into) },
+        ["provision", "--remove", name] => Request::ProvisionRemove {
+            name,
+            because: None,
+            into: None,
+        },
+        ["provision", "--remove", name, "--because", because] => Request::ProvisionRemove {
+            name,
+            because: Some(because),
+            into: None,
+        },
+        [
+            "provision",
+            "--remove",
+            name,
+            "--because",
+            because,
+            "--into",
+            into,
+        ] => Request::ProvisionRemove {
+            name,
+            because: Some(because),
+            into: Some(into),
+        },
+        ["provision", name] => Request::Provision { name, into: None },
+        ["provision", name, "--into", into] => Request::Provision {
+            name,
+            into: Some(into),
+        },
+        ["provision"] => Request::MissingArgument {
+            command: "provision",
+            needs: "<component>, or --list",
+        },
+        ["provision", _, argument, ..] => Request::UnexpectedArgument {
+            command: "provision",
             argument,
         },
         ["embed", model, "--text", text] => Request::Embed { model, text },
@@ -677,6 +737,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf provision <component>           build a pinned component in a\n\
+                 \x20     [--list] [--remove <c>          container, everything recorded,\n\
+                 \x20      --because <why>] [--into <dir>] removable without residue (B-367)\n\
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
@@ -748,6 +811,13 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             limit,
             seed,
         } => run::run(model, prompt, *limit, *seed),
+        Request::Provision { name, into } => provision::run(name, *into),
+        Request::ProvisionList { into } => provision::list(*into),
+        Request::ProvisionRemove {
+            name,
+            because,
+            into,
+        } => provision::remove(name, *because, *into),
         Request::Embed { model, text } => embed::run(model, text),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),

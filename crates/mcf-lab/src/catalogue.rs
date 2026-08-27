@@ -58,6 +58,7 @@ pub const CATALOGUE: &[Scenario] = &[
     environment::KILLED_AFTER_CHANGING,
     environment::LEDGER_UNWRITABLE,
     exchange::TRUNCATED_BUNDLE,
+    exchange::PIN_DIVERGED,
     exchange::UNREADABLE_BUNDLE,
     platform::PRIVILEGE_DENIED,
     platform::MECHANISM_UNAVAILABLE,

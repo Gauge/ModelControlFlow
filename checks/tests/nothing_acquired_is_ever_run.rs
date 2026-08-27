@@ -10,8 +10,17 @@
 //!
 //! What a check can hold is the act, not the intent. Every place MCF's shipped
 //! code starts a process is declared below with what it starts and why that is
-//! not an artifact. There is one, and it is MCF starting *itself* to measure
-//! how long MCF takes to start.
+//! not an artifact.
+//!
+//! **Provisioning is where the boundary is drawn, not crossed** (B-367, §6.4).
+//! `mcf provision` starts `podman`, a platform binary, and inside the container
+//! it starts, source MCF cloned at a pinned commit is compiled and — during the
+//! build — run. That *is* repository code executing, and it is what §6.4
+//! permits: deliberately (the operator named the component), per artifact (one
+//! pin, declared in MCF's own table), with the choice recorded
+//! (`component_provisioned`). Nothing from the container reaches the host's
+//! own process, and nothing MCF *acquires as a model* is ever started by any
+//! path here.
 //!
 //! **What this does not prove.** That an artifact's *content* cannot become
 //! code some other way — a library MCF loads, a format that names a plugin. It
@@ -35,6 +44,14 @@ struct Spawns {
 
 /// Every place MCF's shipped code starts a process.
 const DECLARED: &[Spawns] = &[
+    Spawns {
+        file: "crates/mcf-cli/src/provision.rs",
+        sites: 1,
+        what: "podman, from the platform's own path, running an image pinned by digest and a \
+               script MCF wrote into the prefix a moment before. What executes inside the \
+               container is source at a commit MCF's own table names, chosen by the operator \
+               and recorded — §6.4's permitted case, not an acquired model (B-367)",
+    },
     Spawns {
         file: "crates/mcf-core/src/self_cost.rs",
         sites: 1,

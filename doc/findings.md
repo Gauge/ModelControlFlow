@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 34 |
+| **Version** | 35 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2316,7 +2316,74 @@ to the container and was not exercised. And `podman` itself is now a condition:
 a machine without it falls back to nothing, because route A is what falling
 back looks like.
 
+## 31 · F31 — What the first automated provisioning found in two tries (B-367, DEC-052, A27, §3.15)
+
+**What was built.** `mcf provision <component>`: F30's manual run turned into a
+command. A table of components in MCF's source — one entry, the reference
+implementation — each pinning an image by digest, a source by commit, a package
+list, a configure line and targets. One `podman run --rm` over the pinned
+image with a prefix bind-mounted; the recipe written into the prefix as a
+script before it runs; the package versions, the landed commit and the log
+written into the prefix by the run; `mcf-provenance.json` beside the build and
+a `component_provisioned` entry in the record on success. Removal carries a
+reason and is recorded before the directory goes.
+
+**The first run failed in 30 seconds, and the failure was MCF's.** Exit 126:
+
+```
+Error: cannot chown /home/gauge/Content/mcf-data/containers/storage/overlay/…/merged
+to 0:0: … read-only file system
+```
+
+Rootless podman keeps its *image store* under `$XDG_DATA_HOME/containers`.
+MCF's data home on this machine is the large content drive — the operator's
+instruction, and the right place for a prefix — and podman inherited it. That
+drive's filesystem presents every file as root-owned and will not perform the
+ownership changes an overlay store needs. 196 MB of image were pulled into a
+store that could not hold them before the run stopped. F30's manual run had
+not hit this only because it ran with the data home unset.
+
+The division that holds: the *prefix* is MCF's and goes where the operator
+says; the *store* is podman's, shared with everything else on the machine,
+and goes where the platform puts it. `mcf provision` now hands its child the
+platform default for the store and the operator's choice for the output. The
+misplaced store was removed by hand, and that is the last time it will need
+to be.
+
+**The second run failed after the clone, and the failure was git's guard.**
+Exit 128: `fatal: detected dubious ownership in repository at '/work/source'`.
+The same filesystem, seen from inside the container, presents the freshly
+cloned repository as owned by somebody else, and git refuses to operate in a
+repository it thinks it does not own. The clone had succeeded and the package
+versions were already recorded; the checkout was what refused. The exception
+is now passed per invocation — `git -c safe.directory=/work/source` — scoped
+to one directory for the life of one command, which is exactly as far as it
+should reach.
+
+**Both failures did what A2 asks.** Each named its exit status and its log,
+said the prefix was safe to remove and the run safe to repeat, and left the
+record untouched — nothing was written as provisioned that was not. What
+neither could do was *say* which of the four D39 conditions was in play, and
+that is worth noticing: the platform-mechanism category carried both with
+distinct details, and a reader of the record would need the log to tell them
+apart. Whether provisioning deserves categories of its own is a question for
+when there is a second component.
+
+**What was not established.** The successful run — this finding is written
+between the second failure and the third attempt, which is queued behind
+another project's use of the machine. What it produces is recorded below when
+it lands.
+
 ## Changelog
+
+### Version 35 — what the first automated provisioning found in two tries
+
+F31. `mcf provision` exists, and its first two runs each found something real.
+Rootless podman put its image store under MCF's data home — the content drive,
+whose filesystem cannot hold an overlay store — so the store and the prefix now
+go to different places on purpose. Then git refused the cloned repository as
+foreign-owned from inside the container. Both failures named their exit status
+and log and touched nothing in the record.
 
 ### Version 34 — two ways to provision, measured
 
