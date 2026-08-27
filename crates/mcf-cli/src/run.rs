@@ -174,6 +174,7 @@ fn served(
         prompt: prompt.to_owned(),
         limit,
         seed,
+        tokens: None,
         engine: engine.map(str::to_owned),
     };
     if let Err(error) =

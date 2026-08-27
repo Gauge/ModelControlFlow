@@ -91,6 +91,15 @@ impl Scheme {
     }
 }
 
+/// One piece of an addressed turn: a marker the model owns, or ordinary text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Piece {
+    /// A token that must already be in the vocabulary, spelled exactly.
+    Marker(String),
+    /// Anything else, segmented the ordinary way.
+    Text(String),
+}
+
 /// A vocabulary, as a model file carries it.
 #[derive(Debug, Clone)]
 pub struct Vocabulary {
@@ -350,6 +359,39 @@ impl Vocabulary {
     #[must_use]
     pub fn adds_a_space_prefix(&self) -> bool {
         self.space_prefix && matches!(self.scheme, Scheme::Unigram)
+    }
+
+    /// One piece of an addressed turn.
+    ///
+    /// The distinction is the whole safety property of D46: a `Marker` is
+    /// looked up in the vocabulary and must already be one of its tokens,
+    /// while `Text` goes through ordinary segmentation, which cannot produce a
+    /// control token (F26). So nothing a person types can become a marker, and
+    /// every marker MCF emits came from the model's own file.
+    #[must_use]
+    pub fn addressed(&self, pieces: &[Piece]) -> Option<Vec<usize>> {
+        let mut identifiers = Vec::new();
+        if self.add_beginning.unwrap_or(true)
+            && let Some(beginning) = self.beginning
+        {
+            identifiers.push(beginning);
+        }
+        for piece in pieces {
+            match piece {
+                Piece::Marker(marker) => identifiers.push(self.by_token.get(marker).copied()?),
+                Piece::Text(text) => identifiers.extend(self.encode(text, false).ok()?),
+            }
+        }
+        Some(identifiers)
+    }
+
+    /// Whether this vocabulary has a token spelled exactly so.
+    ///
+    /// What makes a marker usable: it must *be* a token, not a spelling that
+    /// segments into several (F37).
+    #[must_use]
+    pub fn has_token(&self, spelled: &str) -> bool {
+        self.by_token.contains_key(spelled)
     }
 
     /// Segments text into identifiers.

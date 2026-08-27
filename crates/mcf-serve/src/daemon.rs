@@ -317,11 +317,20 @@ impl Daemon {
                     prompt,
                     limit,
                     seed,
+                    tokens,
                     engine,
                 }) => {
                     // A generation is one request and many lines, so it has
                     // its own path: nothing about it fits in one `Answer`.
-                    self.generate(&model, &prompt, limit, seed, engine.as_deref(), &mut writer);
+                    self.generate(
+                        &model,
+                        &prompt,
+                        limit,
+                        seed,
+                        tokens.as_deref(),
+                        engine.as_deref(),
+                        &mut writer,
+                    );
                     return None;
                 }
                 Ok(request) => {
@@ -352,12 +361,17 @@ impl Daemon {
     /// client was sent (D20): a client that ignores the conditions still leaves
     /// them behind, and one that hangs up mid-stream leaves the account of what
     /// it got (A4, A26).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one request's conditions, each named in the account"
+    )]
     fn generate(
         &self,
         named: &str,
         prompt: &str,
         limit: usize,
         seed: u64,
+        tokens: Option<&[usize]>,
         engine: Option<&str>,
         writer: &mut &UnixStream,
     ) {
@@ -375,6 +389,7 @@ impl Daemon {
             prompt,
             limit,
             seed,
+            tokens,
             engine,
             writer,
         );

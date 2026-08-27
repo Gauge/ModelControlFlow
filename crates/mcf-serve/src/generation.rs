@@ -70,6 +70,7 @@ pub(crate) fn serve_generation(
     prompt: &str,
     limit: usize,
     seed: u64,
+    tokens: Option<&[usize]>,
     engine: Option<&str>,
     writer: &mut &UnixStream,
 ) -> Value {
@@ -78,7 +79,7 @@ pub(crate) fn serve_generation(
         Ok(Chosen::Provisioned(llama)) => {
             through_provisioned(store, &llama, named, prompt, limit, seed, writer)
         }
-        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, limit, seed, writer),
+        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, tokens, limit, seed, writer),
         Err(failure) => Err(failure),
     };
     let account = match account {
@@ -247,11 +248,16 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
               would put the guard that holds the model in one place and what it guards in \
               another"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's conditions, each named in the account"
+)]
 fn attempt(
     store: &Path,
     resident: &std::sync::Mutex<Option<Resident>>,
     named: &str,
     prompt: &str,
+    tokens: Option<&[usize]>,
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
@@ -311,7 +317,13 @@ fn attempt(
     let since = resident.since.clone();
     let dequantized = resident.dequantized_bytes;
 
-    let prompt_tokens = vocabulary.encode(prompt, true)?;
+    // Identifiers the caller assembled take precedence over text: a chat turn
+    // is built from the model's own markers and re-segmenting its text would
+    // not give the same tokens back (D46).
+    let prompt_tokens = match tokens {
+        Some(tokens) => tokens.to_vec(),
+        None => vocabulary.encode(prompt, true)?,
+    };
     let build = BuildIdentity::current().version.to_owned();
 
     let mut at = 0_usize;

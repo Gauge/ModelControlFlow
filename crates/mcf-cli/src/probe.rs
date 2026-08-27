@@ -31,7 +31,7 @@ const TRIALS: usize = 5;
 /// Enough for a short answer and its end-of-turn token, short enough that a
 /// model which will not stop is found out quickly. Stated rather than tuned:
 /// a probe that could not decide within it says so (D42's third state).
-const BUDGET: usize = 40;
+const BUDGET: usize = 320;
 
 /// Probes a model.
 pub(crate) fn run(model: &str) -> Response {
@@ -91,8 +91,19 @@ pub(crate) fn run(model: &str) -> Response {
     // probe asks for the stand-in by name and the conditions say so — which is
     // D42's point that a probe result belongs to an engine and not to a model.
     let engine = format!("MCF's own stand-in, through the daemon at {build}");
-    let mut trial = |prompt: &str, budget: usize| {
-        probes::trial(&socket, &path, prompt, budget, Some("stand-in"))
+    let mut trial = |identifiers: &[usize], budget: usize| {
+        probes::trial(
+            &socket,
+            &path,
+            // Empty on purpose: the turn travels as identifiers, and the
+            // probe varies the question between trials. A prompt here would
+            // be recorded as the thing asked and would be wrong for four
+            // trials in five (A1).
+            "",
+            Some(identifiers),
+            budget,
+            Some("stand-in"),
+        )
     };
     let probed = probes::chat_template(&path, &bytes, TRIALS, BUDGET, &engine, &mut trial);
 
@@ -136,11 +147,27 @@ pub(crate) fn run(model: &str) -> Response {
 
 /// What a decided probe says.
 fn observed(addressed: &Addressed) -> Vec<String> {
-    let mut lines = vec!["    ended at the model's own stop token:".to_owned()];
+    let mut lines = vec!["    answered, then ended at the model's own stop token:".to_owned()];
     for (name, ended) in &addressed.stopped {
         let mark = if *name == addressed.best { " ←" } else { "" };
+        // The silence is printed beside the count rather than under it: a
+        // reader has to be able to see that "0 of 5" means the model kept
+        // talking and "0 of 5, silent 5" means it would not start (F38).
+        let quiet = addressed
+            .silent
+            .iter()
+            .find(|(other, _)| other == name)
+            .map_or(0, |(_, times)| *times);
+        let note = if quiet > 0 {
+            format!(
+                "   (ended without saying anything {quiet} of {})",
+                addressed.of
+            )
+        } else {
+            String::new()
+        };
         lines.push(format!(
-            "      {name:<18} {ended} of {}{mark}",
+            "      {name:<18} {ended} of {}{mark}{note}",
             addressed.of
         ));
     }
@@ -149,14 +176,24 @@ fn observed(addressed: &Addressed) -> Vec<String> {
 
     // The divergence (B-058): what the file said against what the model did.
     let raw_is_best = addressed.best == "raw";
+    let best_count = addressed
+        .stopped
+        .iter()
+        .find(|(name, _)| *name == addressed.best)
+        .map_or(0, |(_, ended)| *ended);
     lines.push(match (addressed.declared_a_template, raw_is_best) {
-        (true, true) => "    DIVERGENCE the file declares a chat template, and this model ended \
-                         its turns just as often addressed raw — the declaration is not wrong, \
-                         but it is not doing the work here (A21)"
-            .to_owned(),
+        (true, true) => format!(
+            "    DIVERGENCE the file declares a chat template, and the model ended its turn \
+             {best_count} of {} times addressed *raw* while the addressing built from that \
+             template ended none. That is a disagreement between the file and the model worth \
+             a person's attention — and it is not a licence to address this model raw: what \
+             this probe measures is whether a turn ends, which may be measuring something \
+             else here (A21, D42)",
+            addressed.of
+        ),
         (true, false) => format!(
-            "    agrees   the file declares a chat template and the model answers to {}, which \
-             is what MCF would now address it as — `mcf run` sends raw text today (§3.8)",
+            "    agrees   the file declares a chat template and the model ends its turns under \
+             {}, which is what MCF would address it as — `mcf run` sends raw text today (§3.8)",
             addressed.best
         ),
         (false, false) => format!(

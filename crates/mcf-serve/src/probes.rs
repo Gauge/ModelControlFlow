@@ -24,58 +24,59 @@ use std::path::Path;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::Vocabulary;
+use mcf_standin::tokenizer::{Piece, Vocabulary};
 
 /// One way of putting a question to a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressing {
     /// What to call it in a result.
-    pub name: &'static str,
+    pub name: String,
     /// What goes before the question.
-    pub before: String,
+    pub pieces_before: Vec<Piece>,
     /// What goes after it, up to where the model should begin.
-    pub after: String,
+    pub pieces_after: Vec<Piece>,
 }
 
 impl Addressing {
-    /// The question, wrapped.
+    /// The question, wrapped, as identifiers.
+    ///
+    /// `None` where a marker is not a token of this vocabulary — which cannot
+    /// happen for a candidate that was built from it, and is checked anyway
+    /// because the alternative is sending something else and calling it this
+    /// (F37).
     #[must_use]
-    pub fn wrap(&self, question: &str) -> String {
-        format!("{}{question}{}", self.before, self.after)
+    pub fn wrap(&self, vocabulary: &Vocabulary, question: &str) -> Option<Vec<usize>> {
+        let mut pieces = self.pieces_before.clone();
+        pieces.push(Piece::Text(question.to_owned()));
+        pieces.extend(self.pieces_after.iter().cloned());
+        vocabulary.addressed(&pieces)
+    }
+
+    /// The turn as text, for a reader — never for sending.
+    #[must_use]
+    pub fn shown(&self, question: &str) -> String {
+        let show = |pieces: &[Piece]| -> String {
+            pieces
+                .iter()
+                .map(|piece| match piece {
+                    Piece::Marker(marker) => marker.clone(),
+                    Piece::Text(text) => text.clone(),
+                })
+                .collect()
+        };
+        format!(
+            "{}{question}{}",
+            show(&self.pieces_before),
+            show(&self.pieces_after)
+        )
     }
 }
 
-/// Whether an addressing's markers survive as the tokens they are.
+/// The bracketed markers in a piece of text, in order of first appearance.
 ///
-/// **The check exists because the probe was wrong without it.** MCF refuses to
-/// parse control tokens out of prompt text — a prompt should not be able to
-/// produce a chat marker by spelling one (F26) — so `<|im_start|>` written into
-/// a prompt reaches the model as eight ordinary tokens rather than as the
-/// marker. A probe that sent that and read the result would be reporting on an
-/// addressing it never actually applied, which is the shape of mistake F25
-/// warns about: an answer that is an artifact of the instrument.
-///
-/// So each marker is tokenized and must come back as *one* token spelling
-/// itself. Where it does not, the addressing is untestable **as text**, and
-/// the probe says so instead of scoring it.
-fn markers_survive(vocabulary: &Vocabulary, addressing: &Addressing) -> bool {
-    for text in [addressing.before.as_str(), addressing.after.as_str()] {
-        for marker in markers_in(text) {
-            let Ok(identifiers) = vocabulary.encode(&marker, false) else {
-                return false;
-            };
-            if identifiers.len() != 1 {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// The bracketed markers in a piece of addressing, and nothing else.
-///
-/// `<|im_start|>assistant\n` holds one marker and a word: the word is meant to
-/// be ordinary text and the marker is not, so they are checked apart.
+/// Used on a template, where they appear as string literals among the logic:
+/// finding them is reading, and none of the logic around them is evaluated
+/// (D46).
 fn markers_in(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let characters: Vec<char> = text.chars().collect();
@@ -110,63 +111,160 @@ fn markers_in(text: &str) -> Vec<String> {
     found
 }
 
-/// Every addressing this model's own vocabulary can express, likeliest first.
+/// Every addressing this model can be given, likeliest first (D46).
 ///
-/// Read from the vocabulary rather than from a family name: a model that has
-/// `<|im_start|>` as a token is a model that can be addressed that way,
-/// whoever published it and whatever its architecture says (§3.18, DEC-053).
+/// **The candidates come from the model's own file.** Its template is text:
+/// the marker strings it emits and the order it emits them in are readable
+/// without evaluating one conditional, which is reading a declaration rather
+/// than running a program (§3.18, §3.7). A built-in list of known shapes is a
+/// *fallback* only — for a file with no template, or one nothing could be read
+/// from — so a family nobody has seen yet needs no change here as long as it
+/// ships a template naming its markers and a vocabulary holding them.
+///
 /// `raw` is always last and always present, because it is what MCF does today
-/// and the probe has to be able to say that it is worse.
+/// and the probe has to be able to say that it is better.
 #[must_use]
-pub fn addressings(file: &gguf::Model) -> Vec<Addressing> {
-    let has = |token: &str| {
-        file.get("tokenizer.ggml.tokens")
-            .and_then(gguf::Value::as_list)
-            .is_some_and(|tokens| {
-                tokens
-                    .iter()
-                    .filter_map(gguf::Value::as_text)
-                    .any(|candidate| candidate == token)
-            })
-    };
-    let mut found = Vec::new();
-    if has("<|im_start|>") && has("<|im_end|>") {
-        found.push(Addressing {
-            name: "chatml",
-            before: "<|im_start|>user\n".to_owned(),
-            after: "<|im_end|>\n<|im_start|>assistant\n".to_owned(),
-        });
-    }
-    if has("<start_of_turn>") && has("<end_of_turn>") {
-        found.push(Addressing {
-            name: "turns",
-            before: "<start_of_turn>user\n".to_owned(),
-            after: "<end_of_turn>\n<start_of_turn>model\n".to_owned(),
-        });
-    }
-    if has("[INST]") && has("[/INST]") {
-        found.push(Addressing {
-            name: "instruction-tags",
-            before: "[INST] ".to_owned(),
-            after: " [/INST]".to_owned(),
-        });
+pub fn addressings(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing> {
+    let mut found = from_template(file, vocabulary);
+    if found.is_empty() {
+        found = known_shapes(vocabulary);
     }
     found.push(Addressing {
-        name: "raw",
-        before: String::new(),
-        after: String::new(),
+        name: "raw".to_owned(),
+        pieces_before: Vec::new(),
+        pieces_after: Vec::new(),
     });
     found
+}
+
+/// What the file's own template says, read as data.
+fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing> {
+    let Some(template) = file
+        .get("tokenizer.chat_template")
+        .and_then(gguf::Value::as_text)
+    else {
+        return Vec::new();
+    };
+
+    // Markers the template mentions that are really tokens of this model.
+    // Both halves matter: a template naming a marker the vocabulary lacks is a
+    // divergence (Llama-160M's names ChatML markers it does not have), and a
+    // spelling that segments into several tokens cannot be sent as a marker.
+    let mut markers: Vec<String> = Vec::new();
+    for marker in markers_in(template) {
+        if vocabulary.has_token(&marker) && !markers.contains(&marker) {
+            markers.push(marker);
+        }
+    }
+    // The closer is the model's *own* end-of-turn token, which the file states
+    // outright — not "the second marker the template mentions", which picked
+    // `<start_of_image>` out of gemma's template and would have addressed it
+    // with a marker for pictures (F38).
+    let Some(close) = vocabulary
+        .ending
+        .and_then(|ending| vocabulary.token(ending))
+        .map(str::to_owned)
+        .filter(|ending| markers.contains(ending))
+    else {
+        return Vec::new();
+    };
+    let Some(open) = markers.iter().find(|marker| **marker != close).cloned() else {
+        return Vec::new();
+    };
+    let (open, close) = (&open, &close);
+
+    // Which word names the answering side. Taken from the template rather than
+    // assumed, and where it names more than one every one is a candidate —
+    // the model decides between them (D46's third layer).
+    let mut roles: Vec<&str> = ["assistant", "model"]
+        .into_iter()
+        .filter(|role| template.contains(role))
+        .collect();
+    if roles.is_empty() {
+        roles.push("assistant");
+    }
+
+    roles
+        .into_iter()
+        .map(|role| Addressing {
+            name: format!("{}…{} as {role}", trim(open), trim(close)),
+            pieces_before: vec![
+                Piece::Marker(open.clone()),
+                Piece::Text("user\n".to_owned()),
+            ],
+            pieces_after: vec![
+                Piece::Marker(close.clone()),
+                Piece::Text("\n".to_owned()),
+                Piece::Marker(open.clone()),
+                Piece::Text(format!("{role}\n")),
+            ],
+        })
+        .collect()
+}
+
+/// The shapes MCF knows without being told, for a file that says nothing.
+fn known_shapes(vocabulary: &Vocabulary) -> Vec<Addressing> {
+    let turn = |open: &str, close: &str, role: &str| Addressing {
+        name: format!("{}…{} as {role}", trim(open), trim(close)),
+        pieces_before: vec![
+            Piece::Marker(open.to_owned()),
+            Piece::Text("user\n".to_owned()),
+        ],
+        pieces_after: vec![
+            Piece::Marker(close.to_owned()),
+            Piece::Text("\n".to_owned()),
+            Piece::Marker(open.to_owned()),
+            Piece::Text(format!("{role}\n")),
+        ],
+    };
+    let mut found = Vec::new();
+    for (open, close, role) in [
+        ("<|im_start|>", "<|im_end|>", "assistant"),
+        ("<start_of_turn>", "<end_of_turn>", "model"),
+    ] {
+        if vocabulary.has_token(open) && vocabulary.has_token(close) {
+            found.push(turn(open, close, role));
+        }
+    }
+    if vocabulary.has_token("[INST]") && vocabulary.has_token("[/INST]") {
+        found.push(Addressing {
+            name: "[INST]…[/INST]".to_owned(),
+            pieces_before: vec![
+                Piece::Marker("[INST]".to_owned()),
+                Piece::Text(" ".to_owned()),
+            ],
+            pieces_after: vec![
+                Piece::Text(" ".to_owned()),
+                Piece::Marker("[/INST]".to_owned()),
+            ],
+        });
+    }
+    found
+}
+
+/// A marker without its brackets, for a name a person reads.
+fn trim(marker: &str) -> &str {
+    marker
+        .trim_start_matches(['<', '|', '['])
+        .trim_end_matches(['>', '|', ']'])
 }
 
 /// What the chat-template probe observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressed {
-    /// The addressing that made the model stop most often.
+    /// The addressing under which the model most often answered and *then*
+    /// ended its turn.
     pub best: String,
     /// Every candidate, and how many of its trials ended at the model's own
-    /// end-of-turn token rather than at the budget.
+    /// end-of-turn token having first said something.
     pub stopped: Vec<(String, usize)>,
+    /// Every candidate, and how many of its trials ended at that same token
+    /// having said *nothing at all*.
+    ///
+    /// Kept rather than folded into the failures because it is a different
+    /// fact: the model recognised the stop token and declined the turn. A1 —
+    /// and the reason F38 was found at all.
+    pub silent: Vec<(String, usize)>,
     /// How many trials each candidate had.
     pub of: usize,
     /// What the file *declared*, for the divergence (B-058) — never used to
@@ -177,9 +275,10 @@ pub struct Addressed {
 /// The method, written where the result can carry it.
 pub const CHAT_TEMPLATE: Method = Method {
     name: "chat-template",
-    asks: "the same question through each addressing the model's vocabulary can express, \
-           and counts which ones end at the model's own end-of-turn token rather than at \
-           the token budget",
+    asks: "a set of short questions through each addressing the model's vocabulary can \
+           express, and counts which ones the model answers under and then ends its turn at \
+           its own end-of-turn token — an addressing it ends the turn under having said \
+           nothing has refused to speak, not finished (F38)",
     decides: "how MCF should address this model — and nothing else: a probe writes the \
               verified half of a capability and never a default (D42)",
 };
@@ -208,7 +307,7 @@ pub fn chat_template(
     trials: usize,
     budget: usize,
     engine: &str,
-    generate: &mut dyn FnMut(&str, usize) -> Trial,
+    generate: &mut dyn FnMut(&[usize], usize) -> Trial,
 ) -> Probed<Addressed> {
     let conditions = conditions(model, engine);
     let Ok(file) = gguf::parse(bytes) else {
@@ -230,41 +329,66 @@ pub fn chat_template(
             conditions,
         );
     };
-    let all_candidates = addressings(&file);
-    let untestable: Vec<&str> = all_candidates
-        .iter()
-        .filter(|addressing| !markers_survive(&vocabulary, addressing))
-        .map(|addressing| addressing.name)
-        .collect();
-    // A comparison that can only run one side is not a comparison. If the file
-    // declares a template and the addressing that would honour it cannot be
-    // expressed, saying "raw is best" would be reporting the instrument's
-    // limit as the model's behaviour (F25, F37).
-    if !untestable.is_empty() {
+    // Every candidate is built from this vocabulary's own tokens, so each one
+    // can be sent as itself. The check that it *can* is still made when the
+    // turn is assembled, because the alternative is sending something else and
+    // calling it this (F37).
+    let candidates = addressings(&file, &vocabulary);
+    let only_raw = candidates.len() == 1;
+    if only_raw && declared_a_template {
         return Probed::inconclusive(
             CHAT_TEMPLATE,
-            format!(
-                "{} cannot be applied: its markers are control tokens, and MCF does not parse \
-                 control tokens out of prompt text (F26) — so they would reach the model spelled \
-                 out rather than as themselves. Addressing has to be built from token \
-                 identifiers before this probe can compare anything (B-374)",
-                untestable.join(" and ")
-            ),
+            "the file declares a chat template, and no addressing could be built from it that \
+             this model's vocabulary can express — so there is nothing to compare raw against, \
+             and calling raw best would report the instrument's limit as the model's behaviour \
+             (F25, F37)",
             0,
             0,
             conditions,
         );
     }
-    let candidates = all_candidates;
 
     let mut stopped: Vec<(String, usize)> = Vec::new();
+    let mut silent: Vec<(String, usize)> = Vec::new();
     let mut spent = 0_usize;
     let mut ran = 0_usize;
     for addressing in &candidates {
         let mut ended = 0_usize;
-        for _ in 0..trials {
-            match generate(&addressing.wrap(QUESTION), budget) {
-                Trial::Stopped => {
+        let mut said_nothing = 0_usize;
+        for trial in 0..trials {
+            // A different question each trial. MCF samples greedily from a
+            // fixed seed, so five trials of one question are one trial
+            // written down five times — the repetition looked like evidence
+            // and was arithmetic (F38, A19). Five questions are five
+            // observations of the same thing: does this addressing get an
+            // answer out of this model.
+            let question = QUESTIONS
+                .get(trial % QUESTIONS.len())
+                .copied()
+                .unwrap_or(QUESTION);
+            let Some(identifiers) = addressing.wrap(&vocabulary, question) else {
+                return Probed::inconclusive(
+                    CHAT_TEMPLATE,
+                    format!(
+                        "the {} addressing could not be assembled from this vocabulary's tokens",
+                        addressing.name
+                    ),
+                    ran,
+                    spent,
+                    conditions,
+                );
+            };
+            match generate(&identifiers, budget) {
+                // Stopping counts only if the model spoke first. Ending a
+                // turn having said nothing is a refusal to speak, and the
+                // whole of F38 is that the two are opposite observations
+                // wearing the same stop token.
+                Trial::Stopped { after: 0 } => {
+                    ran = ran.saturating_add(1);
+                    spent = spent.saturating_add(budget);
+                    said_nothing = said_nothing.saturating_add(1);
+                }
+                Trial::Stopped { .. } => {
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
                     ended = ended.saturating_add(1);
@@ -287,18 +411,42 @@ pub fn chat_template(
                 }
             }
         }
-        stopped.push((addressing.name.to_owned(), ended));
+        stopped.push((addressing.name.clone(), ended));
+        silent.push((addressing.name.clone(), said_nothing));
     }
 
-    // The best is the one that stopped most; a tie goes to the earlier
-    // candidate, which is the likelier one, and `raw` is last — so a model
-    // that stops equally often either way is *not* reported as needing a
-    // wrapping it does not need.
+    // The best is the one that answered-then-stopped most, earliest first —
+    // `max_by_key` answers with the *last* maximum, which handed every tie to
+    // `raw`. `max_by_key` is not used here for that reason.
+    // (the comment below is kept for the second half of the same lesson)
+    // The best is the one that stopped most, earliest first — `max_by_key`
+    // answers with the *last* maximum, which handed every tie to `raw`.
+    let most = stopped.iter().map(|(_, ended)| *ended).max().unwrap_or(0);
     let best = stopped
         .iter()
-        .max_by_key(|(_, ended)| *ended)
+        .find(|(_, ended)| *ended == most)
         .map(|(name, _)| name.clone());
-    let all_zero = stopped.iter().all(|(_, ended)| *ended == 0);
+    let all_zero = most == 0;
+
+    // Every addressing doing equally well means this observation cannot tell
+    // them apart — which is *could not decide*, not *raw is fine*. Preferring
+    // a wrapping on a tie would be MCF choosing where it has no evidence, and
+    // preferring raw would be reading its own default back as a finding
+    // (D42, §3.15).
+    let ties = stopped.iter().filter(|(_, ended)| *ended == most).count();
+    if ties > 1 && !all_zero {
+        return Probed::inconclusive(
+            CHAT_TEMPLATE,
+            format!(
+                "{ties} addressings ended the model's turn equally often ({most} of {trials}), \
+                 so ending a turn does not tell them apart on this model — a sharper question \
+                 than *did it stop* is needed to choose between them"
+            ),
+            ran,
+            spent,
+            conditions,
+        );
+    }
     let outcome = match (best, all_zero) {
         // Nothing stopped anywhere: the budget may simply be too small to
         // reach a turn's end. That is *could not tell*, not *no addressing
@@ -306,10 +454,30 @@ pub fn chat_template(
         (_, true) => {
             return Probed::inconclusive(
                 CHAT_TEMPLATE,
-                format!(
-                    "no addressing ended at the model's own stop token within {budget} tokens; \
-                     a larger budget may decide it"
-                ),
+                {
+                    // Which addressings went silent is the whole content of
+                    // this negative, and dropping it would throw away the
+                    // observation that found F38 (A1).
+                    let refused: Vec<String> = silent
+                        .iter()
+                        .filter(|(_, times)| *times > 0)
+                        .map(|(name, times)| format!("{name} {times} of {trials}"))
+                        .collect();
+                    if refused.is_empty() {
+                        format!(
+                            "no addressing ended at the model's own stop token within {budget} \
+                             tokens; a larger budget may decide it"
+                        )
+                    } else {
+                        format!(
+                            "no addressing both answered and then ended its turn within {budget} \
+                             tokens. Some ended the turn having said nothing at all ({}), which \
+                             is the model declining to speak rather than finishing — a larger \
+                             budget may let the ones that were still talking finish (F38)",
+                            refused.join(", ")
+                        )
+                    }
+                },
                 ran,
                 spent,
                 conditions,
@@ -318,6 +486,7 @@ pub fn chat_template(
         (Some(best), false) => Outcome::Observed(Addressed {
             best,
             stopped,
+            silent,
             of: trials,
             declared_a_template,
         }),
@@ -346,7 +515,16 @@ pub fn chat_template(
 /// Short, ordinary, and answerable in a sentence: what is being observed is
 /// whether the model *finishes a turn*, so a question that invites an essay
 /// would make every addressing run to the budget and tell nothing.
-pub const QUESTION: &str = "What is the capital of France?";
+pub const QUESTIONS: [&str; 5] = [
+    "What is the capital of France?",
+    "How many days are in a week?",
+    "Name one colour of the rainbow.",
+    "What is two plus two?",
+    "Which planet do we live on?",
+];
+
+/// The first of them, for callers that need one question rather than a set.
+pub const QUESTION: &str = QUESTIONS[0];
 
 /// The conditions a probe result holds under (D42, §3.4).
 fn conditions(model: &Path, engine: &str) -> Conditions {
@@ -366,8 +544,17 @@ fn conditions(model: &Path, engine: &str) -> Conditions {
 /// What one trial did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trial {
-    /// It ended because the model emitted its own stop token.
-    Stopped,
+    /// It ended because the model emitted its own stop token, after saying
+    /// this many tokens.
+    ///
+    /// The count is not decoration. A model addressed in a way it does not
+    /// recognise can end its turn *immediately* — nothing said, then its stop
+    /// token — and counting that as a turn scored the silent addressing best
+    /// and the fluent one worst (F38).
+    Stopped {
+        /// How many tokens the model produced before its stop token.
+        after: usize,
+    },
     /// It ended because the budget ran out.
     RanOut,
     /// It could not be told apart, and why.
@@ -386,6 +573,7 @@ pub fn trial(
     socket: &Path,
     model: &Path,
     prompt: &str,
+    tokens: Option<&[usize]>,
     budget: usize,
     engine: Option<&str>,
 ) -> Trial {
@@ -400,6 +588,7 @@ pub fn trial(
         prompt: prompt.to_owned(),
         limit: budget,
         seed: 0,
+        tokens: tokens.map(<[usize]>::to_vec),
         engine: engine.map(str::to_owned),
     };
     if writeln!(connection, "{}", request.to_line())
@@ -409,13 +598,14 @@ pub fn trial(
         return Trial::CouldNotTell("the request could not be sent".to_owned());
     }
 
+    let mut said = 0_usize;
     let reader = BufReader::new(&connection);
     for line in reader.lines() {
         let Ok(line) = line else {
             return Trial::CouldNotTell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
-            Ok(crate::control::Streamed::Token { .. }) => {}
+            Ok(crate::control::Streamed::Token { .. }) => said = said.saturating_add(1),
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
                     return Trial::CouldNotTell(format!(
@@ -427,7 +617,7 @@ pub fn trial(
                     .get("stopped")
                     .and_then(mcf_record::json::Value::as_text)
                 {
-                    Some("stop_token") => Trial::Stopped,
+                    Some("stop_token") => Trial::Stopped { after: said },
                     Some("limit") => Trial::RanOut,
                     Some(other) => Trial::CouldNotTell(format!(
                         "this engine does not say why generation ended (it said {other:?}), so \

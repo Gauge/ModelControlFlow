@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 46 |
+| **Version** | 47 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4497,6 +4497,94 @@ what §3.11 calls a change without deliberation.
 into its conditions, so *are yesterday's number and today's comparable* becomes
 a question MCF can answer instead of one it has to assume.
 
+### D44 — MCF's own engine is the readable baseline, not the universal one *(on the operator's instruction)*
+
+**MCF's own engine covers what it can hold. A model too large for it is run by a
+provisioned engine, and MCF says which answered.**
+
+**What was asked and what was measured.** The instruction that opened D38 was
+that MCF's engine support all the models. The reference model measures that
+ambition: 27 billion parameters is 109 GB unpacked to `f32` against 63 GB free
+on this machine, so MCF's own engine refuses it in a tenth of a second (B-372)
+and the provisioned one answers it in ten (F36).
+
+**The decision, put to the operator and agreed.** Making the baseline universal
+means arithmetic over packed weights — most of an engine's difficulty, and the
+part most likely to be subtly wrong in ways that look like text. What is kept
+instead is the pair of properties that matter: something that always works with
+nothing installed, and something that runs anything. The split is honest
+because every answer names the engine that produced it and a stand-in answer
+carries its mark.
+
+**What this does not license.** Quietly declining a model MCF's engine *could*
+hold. The ceiling is arithmetic on the file's own directory, stated in both
+numbers, and it is a refusal rather than a silence (B-372). Nor does it close
+the door: quantized arithmetic in the baseline is a well-defined project rather
+than a prerequisite, and the oracle is what would keep it honest.
+
+### D45 — Accelerators are enumerated, never assumed to be one *(on the operator's instruction)*
+
+**Every path that places work on an accelerator is written for however many are
+present. One device is the case where that number is one — never the shape the
+code is written around.**
+
+**Why now, before any of it is built.** The operator's machine has one card and
+they want more than one supported. Code written for a single device and widened
+later is code whose single-device assumptions are load-bearing by the time
+anybody notices. Written the other way, the day a second card arrives nothing
+is rewritten.
+
+**And the claim is bounded by what has been watched.** A multi-device placement
+that has never run is *declared, not verified* — the same distinction MCF draws
+between a model card's claims and MCF's own observations (§3.18, A21) — and
+`mcf doctor` says so: this machine has one accelerator, the paths for more
+exist, and nothing here has exercised them. MCF may not report a figure taken
+across devices it has never placed work on.
+
+**What changes when a second device appears.** A claim becomes verified. That
+is the whole of it.
+
+### D46 — MCF reads a model's template and never runs it *(on the operator's instruction)*
+
+**A model file ships a small program describing how to wrap a conversation.
+MCF extracts what that program *says* — its marker strings and their order —
+and never executes its logic. Which extraction is right is settled by the
+model's behaviour, not by the file's claim.**
+
+**Why not run it.** It is logic from a file off the internet, which is the
+category §3.7 treats as untrusted everywhere else, and it would mean carrying
+an interpreter for a templating language forever. §6.4 permits executing an
+artifact's code deliberately, per artifact, with the risk stated — and a chat
+template is precisely where that ceremony would be skipped, because it happens
+on every generation.
+
+**How this adapts to models nobody has seen yet**, which is the operator's
+question and the reason this is a decision rather than an implementation note.
+Four layers, and only the last is a list inside MCF:
+
+1. **Candidates come from the file.** The template is text; its marker strings
+   and their order are readable without evaluating a single conditional. That
+   is reading a declaration (§3.18), not running a program.
+2. **Only candidates the model's own vocabulary can express survive.** A marker
+   must be one token in that model or MCF cannot send it as a marker — the
+   check F37 added after a probe scored an addressing it had never applied.
+3. **The model decides between what is left.** Each surviving candidate is
+   tried and the one the model actually ends its turn under is the answer.
+   Behaviour over declaration, so a misread template is caught by experiment.
+4. **A built-in list of known shapes is a fallback only** — for a file with no
+   template, or one MCF could not read.
+
+So a new family needs no change to MCF as long as it ships a template naming
+its markers and a vocabulary holding them, which is how these files are built.
+MCF changes when the *structure* of the convention changes, not when the
+strings do — and then it refuses by name and records it, so a new shape in the
+world is visible rather than silently mishandled.
+
+**The safety property, stated because it is the reason for the whole design.**
+The only marker tokens MCF emits are ones already in the model's vocabulary
+that came from the model's own template. Nothing a user typed can become one
+(F26).
+
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
 D39 admits a component MCF *provisions* rather than ships, and states four
@@ -4584,6 +4672,16 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 47 — three answers from the operator
+
+D44, D45 and D46, each put to the operator with a recommendation and agreed.
+MCF's own engine is the readable baseline rather than the universal one, and
+a provisioned engine carries what it cannot hold. Accelerator placement is
+written for however many devices are present, with the multi-device path
+declared and not verified until a second card exists to verify it on. And a
+model's chat template is read, never run — with the adaptation to models
+nobody has seen yet spelled out, because that was the operator's question.
 
 ### Version 46 — what a probe is
 
