@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 50 |
+| **Version** | 51 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -74,6 +74,7 @@ forward as one.
 | 44 | [F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)](#44--f44--a-configuration-says-whether-it-still-holds-and-the-probe-that-asked-spent-eight-thousand-passes-learning-it-could-not-b-058-b-059-d42-d43-a21-f39-f42) |
 | 45 | [F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)](#45--f45--the-page-whose-job-is-to-have-no-hidden-choices-had-one-and-the-check-for-a-moved-condition-invented-one-b-058-b-059-b-062-d43-315-a21-f44) |
 | 46 | [F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38) |
+| 47 | [F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3576,7 +3577,8 @@ experiment that did not measure it (B-059). The file holds them separately, and
 writing one reads the file first so that setting a budget cannot silently drop
 an addressing (A1).
 
-**A gate test that depends on whether a daemon happens to be running.**
+**A gate test that depends on whether a daemon happens to be running** (fixed
+in F47).
 `run::tests::a_file_that_is_not_a_model_is_refused_legibly` asserts the refusal
 says *no vendored engine* — true when MCF answers for itself, false when a
 daemon is up and a provisioned llama.cpp produces its own refusal instead. It
@@ -3597,7 +3599,68 @@ about a model that stops at wildly different lengths depending on the question:
 choice this probe makes and states rather than one it justifies. And no timing —
 sixteen trials and 1952 tokens is a cost, not a speed (B49, B35).
 
+## 47 · F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)
+
+**What was wrong.** `run` looked up whether a daemon was listening *in the
+middle of doing its job*, so a test asserting on the refusal MCF gives for an
+unreadable file was really asserting on whichever of MCF and a daemon answered.
+It passed alone and failed beside a running daemon, for reasons nothing in the
+test could see. F46 found it by leaving one running.
+
+**Why it matters more than one test.** This suite has been the arbiter of every
+change in this document. A gate whose answer depends on the state of the
+machine it ran on is not a gate — it is a different experiment each time,
+reported as though it were the same one, and §3.12 is exactly about the
+difference.
+
+**The fix is that where the daemon is becomes an input.** `run_where` takes it;
+`run` looks it up and passes it in. `None` means *no daemon*, which is both what
+a machine with no runtime directory gives and what a test wants to say. The
+tests call a helper named `without_a_daemon`, so what they assume is in the
+name rather than in the environment.
+
+**Shown to work in the direction that matters.** The old failure mode was *pass
+without a daemon, fail with one*. The tests now pass **identically with a
+daemon running and with none** — which is the assertion, and running it only
+one way would have demonstrated nothing (B-003).
+
+**A check, so it cannot come back.** A small table of entry points that reach
+for ambient state, each with the sibling that takes it as an argument, and the
+files watched for calls to them. Shown to fire: putting the ambient call back
+produced
+
+```
+crates/mcf-cli/src/run/tests.rs:47: calls `run(` — use `run_where(` instead,
+because it looks up whether a daemon is listening…
+```
+
+A second test asserts that every sibling the table names **exists**, because a
+check that tells somebody to call a function that is not there fails the reader
+rather than the code.
+
+**The table is small on purpose, and that is a limitation rather than a
+design.** It watches one call in one file. Nothing stops a *new* function from
+acquiring the same shape unnoticed, and nothing checks the other ambient
+readers — the model store, the record's path — which are read by tests that
+mostly pass their own scratch directories and were not audited here. What is
+mechanical is the regression, not the class.
+
+**What was not established.** Whether other tiers have the same dependency. The
+laboratory's serving scenarios build their own socket under a scratch world and
+`mcf-serve`'s cost tests do the same, which is why only the CLI's was found —
+but *these three read ambient state and are fine* is a survey of three, not of
+the suite.
+
 ## Changelog
+
+### Version 51 — the suite was reporting on the machine it found
+
+F47. B-378 fixed the day it was found, because the suite it undermines is the
+one every finding in this document rests on. Where the daemon is, is an input
+now rather than something looked up in the middle; the tests pass identically
+with a daemon and without, which is the assertion. A table-driven check keeps
+the shape from coming back, and a second test asserts the alternatives it names
+actually exist.
 
 ### Version 50 — MCF's own default was cutting every answer off
 

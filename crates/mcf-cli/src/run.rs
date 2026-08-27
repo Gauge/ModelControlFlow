@@ -50,6 +50,35 @@ pub(crate) fn run(
     seed: u64,
     engine: Option<&str>,
 ) -> Response {
+    run_where(
+        crate::serve::socket_path(),
+        model,
+        prompt,
+        limit,
+        seed,
+        engine,
+    )
+}
+
+/// The same, told where a daemon would be.
+///
+/// Where the daemon is, is an *input* rather than something looked up in the
+/// middle. It was ambient, and a test asserting on the refusal MCF gives for
+/// an unreadable file therefore reported on whether a daemon happened to be
+/// running on the machine — passing alone and failing beside one, for reasons
+/// nothing in the test could see (F46, B-378). §3.12 does not allow a suite
+/// whose answer depends on the state it found.
+///
+/// `None` means *no daemon*, which is both what a machine with no runtime
+/// directory gives and what a test wants to say.
+pub(crate) fn run_where(
+    socket: Option<std::path::PathBuf>,
+    model: &str,
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&str>,
+) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -73,7 +102,7 @@ pub(crate) fn run(
     // only when nothing is (B-034, PR9). Which one did is part of the account,
     // because it is a condition: the same file through the same engine in
     // another process is another process's memory, cache and clock.
-    let listening = crate::serve::socket_path().and_then(|socket| {
+    let listening = socket.and_then(|socket| {
         std::os::unix::net::UnixStream::connect(&socket)
             .ok()
             .map(|c| (socket, c))
