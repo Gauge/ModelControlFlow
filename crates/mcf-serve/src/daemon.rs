@@ -78,6 +78,12 @@ pub struct Daemon {
     recovered: Recovered,
     /// The one model held between requests, if any (D41, §7.18).
     resident: std::sync::Mutex<Option<crate::generation::Resident>>,
+    /// The provisioned engine's server, if one has been started (B-376).
+    ///
+    /// It holds its own model, so this is a second residency and not the same
+    /// one: MCF's engine loads into `resident`, and llama.cpp loads into its
+    /// own process. Dropping this stops that process (A27).
+    server: std::sync::Mutex<Option<crate::served::Served>>,
 }
 
 /// What was there when the daemon started.
@@ -161,6 +167,7 @@ impl Daemon {
             since: SystemClock.now(),
             recovered,
             resident: std::sync::Mutex::new(None),
+            server: std::sync::Mutex::new(None),
         };
         // An event, not a tick. *MCF was up between these two moments* is a
         // condition of anything measured in between (§3.4), and a daemon that
@@ -385,6 +392,11 @@ impl Daemon {
             &self.places.models,
             &mcf_home,
             &self.resident,
+            &self.server,
+            self.places
+                .socket
+                .parent()
+                .unwrap_or_else(|| Path::new("/tmp")),
             named,
             prompt,
             limit,

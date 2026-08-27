@@ -637,14 +637,19 @@ pub fn trial(
         return Trial::CouldNotTell("the request could not be sent".to_owned());
     }
 
-    let mut said = 0_usize;
     let reader = BufReader::new(&connection);
     for line in reader.lines() {
         let Ok(line) = line else {
             return Trial::CouldNotTell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
-            Ok(crate::control::Streamed::Token { .. }) => said = said.saturating_add(1),
+            // Deliberately not counted. MCF's own engine streams one line per
+            // token and the provisioned server streams the whole answer as
+            // one, so counting lines here measures the engine's chunking and
+            // calls it the model's output — which made every addressing look
+            // like a one-token turn through the server (F39). The count comes
+            // from the account, which both engines fill in the same units.
+            Ok(crate::control::Streamed::Token { .. }) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
                     return Trial::CouldNotTell(format!(
@@ -652,6 +657,34 @@ pub fn trial(
                         failure.to_line()
                     ));
                 }
+                let counted = account
+                    .get("tokens")
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|count| usize::try_from(count).ok());
+                let Some(counted) = counted else {
+                    return Trial::CouldNotTell(
+                        "the account did not say how many tokens were produced, so a finished \
+                         turn cannot be told from a refusal to speak (F38)"
+                            .to_owned(),
+                    );
+                };
+                // The two engines disagree by one at exactly the boundary this
+                // probe turns on: asked a question it does not recognise, a
+                // model emits its end-of-turn token and nothing else, and MCF's
+                // own engine calls that nought tokens while the provisioned
+                // server calls it one — it counts the end-of-turn token itself
+                // (F39). Neither is wrong, and a probe that took either
+                // literally would report *said nothing* on one engine and
+                // *said something* on the other for one behaviour.
+                //
+                // The text is the form both agree on: it is empty on both. So
+                // the count is what was said, and having said nothing is nought
+                // whatever the engine calls it.
+                let wordless = account
+                    .get("text")
+                    .and_then(mcf_record::json::Value::as_text)
+                    .is_none_or(|text| text.trim().is_empty());
+                let said = if wordless { 0 } else { counted };
                 return match account
                     .get("stopped")
                     .and_then(mcf_record::json::Value::as_text)

@@ -44,6 +44,8 @@ pub const CATALOGUE: &[Scenario] = &[
     engine::ENGINE_EXIT_SIGNAL,
     engine::ENGINE_SPAWN_REFUSED,
     engine::TWO_ENGINES_PROVISIONED,
+    engine::SERVER_NEVER_LISTENS,
+    engine::SERVER_ANSWER_UNREADABLE,
     resource::MODEL_LARGER_THAN_MEMORY,
     hub::REFERENCE_IS_NOT_ONE,
     hub::NEEDS_CREDENTIALS,

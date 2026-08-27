@@ -138,6 +138,8 @@ enum Request<'a> {
     Probe {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
+        /// Which engine to ask through, if the caller named one.
+        engine: Option<&'a str>,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -278,12 +280,23 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "explain",
             argument,
         },
-        ["probe", model] => Request::Probe { model },
+        ["probe", model] => Request::Probe {
+            model,
+            engine: None,
+        },
+        // Naming the engine is the point rather than a convenience: a probe
+        // result belongs to the engine it was taken through (D42), and until
+        // the two are shown to agree, which one answered is part of the
+        // result (B-376).
+        ["probe", model, "--engine", engine] => Request::Probe {
+            model,
+            engine: Some(engine),
+        },
         ["probe"] => Request::MissingArgument {
             command: "probe",
             needs: "<model>",
         },
-        ["probe", _, argument, ..] => Request::UnexpectedArgument {
+        ["probe", _, argument, ..] if argument != &"--engine" => Request::UnexpectedArgument {
             command: "probe",
             argument,
         },
@@ -765,7 +778,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
-                 \x20 mcf probe <model>                   ask a model to do the thing, and\n\
+                 \x20 mcf probe <model> [--engine <name>]  ask a model to do the thing, and\n\
                  \x20                                     report what it did — configuring\n\
                  \x20                                     nothing (§X, D42)\n\
                  \x20 mcf provision <component>           build a pinned component in a\n\
@@ -843,7 +856,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
-        Request::Probe { model } => probe::run(model),
+        Request::Probe { model, engine } => probe::run(model, *engine),
         Request::Provision { name, into } => provision::run(name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {

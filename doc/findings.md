@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 42 |
+| **Version** | 43 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -66,6 +66,7 @@ forward as one.
 | 36 | [F36 — The reference model answers, through an engine that is a process (B-032, B-033, B-367, D39, §XII)](#36--f36--the-reference-model-answers-through-an-engine-that-is-a-process-b-032-b-033-b-367-d39-xii) |
 | 37 | [F37 — The first probe found two defects and then refused to answer (B-051, B-052, D42, §3.18, F25, F26)](#37--f37--the-first-probe-found-two-defects-and-then-refused-to-answer-b-051-b-052-d42-318-f25-f26) |
 | 38 | [F38 — The probe's answer was upside down, and the decisive column was the broken one (B-052, B-374, D42, §3.18, F25, F37)](#38--f38--the-probes-answer-was-upside-down-and-the-decisive-column-was-the-broken-one-b-052-b-374-d42-318-f25-f37) |
+| 39 | [F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)](#39--f39--the-engine-that-can-be-probed-and-three-ways-the-instrument-stood-in-for-the-model-b-032-b-055-b-376-d39-d42-f36-f38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -2886,18 +2887,13 @@ and the budget was large enough to reach the end of a turn, the tie narrowed to
 **two** — so one of the three had been tied on refusals. Two addressings answer
 and end the turn equally often, and this observation cannot tell those two
 apart. Their
-turn lengths do separate them, on the first look:
-
-```
-start_of_turn…end_of_turn as assistant   ran 6-91 tokens
-start_of_turn…end_of_turn as model       ran 7-10 tokens
-```
-
-which is B-375's first candidate answering, and is **not yet an answer**: a
-turn of seven tokens can be a correct terse reply or a model cutting itself
-off, and telling those apart needs a question this probe does not ask. What it
-establishes is that the two addressings are *not* equivalent for this model,
-which the tie alone could not say. The
+turn lengths appeared to separate them, and **that separation did not survive a
+change of engine** — see F39, which measured the same thing through the
+provisioned server and found the two addressings running 7-11 and 8-11 tokens
+where MCF's own engine had them at 6-91 and 7-10. B-375's first candidate is
+therefore not yet a candidate: what it separated on one engine it does not
+separate on another, which is the definition of a reading that characterizes
+the instrument (B29). The
 tie-break that preferred `raw` was itself a defect — `max_by_key` returns the
 *last* maximum, which handed every tie to whichever candidate was listed last,
 and `raw` always is. A tie is now `inconclusive` naming the tie, because
@@ -2921,7 +2917,123 @@ what a probe learns on a 135M model is about that model. And nothing is
 configured by any of this — `mcf run` still sends raw text (§3.8); D42 holds
 that a probe writes the verified half of a capability and never a default.
 
+## 39 · F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)
+
+**What was built.** The provisioned engine driven as a **server** rather than
+as a completion tool. F36's engine is a subprocess per generation — a command
+line in, text out — and it runs the reference model honestly and cannot be
+probed at all, for two reasons that are properties of the interface rather than
+of llama.cpp: a turn of token identifiers has nowhere to go on a command line
+(B-374, F26), and the tool does not say why it stopped. Those are exactly the
+two things F38's observation is made of, so every probe was confined to MCF's
+own engine.
+
+**The contract was confirmed before anything was written.** The sixteen
+identifiers MCF assembles came back as `tokens_evaluated: 16`, and the
+generation ended `stop_type: "eos"`. Both halves, in one request.
+
+**It listens on a Unix socket, not a port.** `--host` binds one when the
+address ends in `.sock`. Four projects share this machine (§XVII); a port is a
+machine-wide resource two of them can collide over, and nothing here listens on
+the network. The model stays loaded between requests, which is the residency
+F36 left open.
+
+**The instrument stood in for the model three times, in one afternoon.**
+
+*First: ready is three conditions deep.* The socket file appears before
+anything listens; the listener accepts before the model is loaded; and a
+request in between is answered — with an error, in a shape close enough to a
+completion to be mistaken for one. The first readiness check waited for a
+connection to be accepted, which is the second condition and not the third, and
+the probe's opening trial read a still-loading server as *an engine that does
+not say why generation ended*. The wait is now on the server's own `/health`
+saying `ok`.
+
+*Second: the fix for F38 was itself engine-dependent.* F38 made a trial count
+only if the model spoke first, and *spoke* was measured by counting the token
+lines in the stream. MCF's own engine streams one line per token; the server
+streams the whole answer as one. So through the server **every** addressing
+looked like a one-token turn, and the probe reported a tie where there was
+none. The count now comes from the account, which both engines fill in the
+same units. **The defect F38 is about, inside the fix for F38.**
+
+*Third: the two engines disagree by exactly one, at the boundary the probe
+turns on.* Asked something it does not recognise, a model emits its end-of-turn
+token and nothing else. MCF's engine calls that **0** tokens; the server calls
+it **1** — it counts the end-of-turn token itself. Neither is wrong. But *said
+nothing* is the whole of F38's fix, and a probe taking either literally reports
+a refusal on one engine and an answer on the other for one behaviour. The form
+both agree on is the **text**, which is empty either way, so a turn with no text
+counts as no tokens whatever the engine calls it.
+
+**Then the two engines were made to answer the same question.** This is the
+test of whether a probe result is a property of the model or of the instrument
+(B29), and it is why the default was not changed on the speed alone:
+
+```
+                                       provisioned server        MCF's own engine
+im_start…im_end as assistant           5 of 5  ←                 5 of 5  ←
+raw                                    1 of 5, silent 4          1 of 5, silent 4
+best                                   im_start…im_end           im_start…im_end
+wall                                   13 s                      267 s
+```
+
+The verdict agrees — the same best addressing, the same counts, the same
+silences — and the server is **twenty times faster**. The agreement is what
+makes changing the default honest; the speed is what makes probing usable at
+all. A 270M model that took tens of minutes takes eight seconds.
+
+**And where they disagree, the disagreement is the finding.** gemma-3-270m's
+tie stands on both engines, but the turn lengths F38 recorded as B-375's first
+candidate do not:
+
+```
+                                         MCF's own engine      provisioned server
+start_of_turn…end_of_turn as assistant   ran 6-91              ran 7-11
+start_of_turn…end_of_turn as model       ran 7-10              ran 8-11
+```
+
+On one engine the two look separated; on the other they look identical. **A
+reading that changes with the instrument is a reading about the instrument.**
+B-375's candidate is withdrawn rather than kept with a caveat, and F38 is
+corrected where it recorded the separation as though it were about the model.
+
+**What this cost, and what caught it.** The repository's own gates caught four
+things this change would otherwise have shipped without: two failure categories
+claimed with no laboratory scenario able to produce them (A13, B-010), a place
+MCF starts a process that was not declared (§6.4), and two deletions that were
+not declared (§3.11). None of them were found by the author. That is what those
+checks are for, and it is the second time in this document that the gate has
+been the thing that noticed.
+
+**What was not established.** Nothing about a large model through this path:
+every figure here is a 135M and a 270M model, chosen because a probe that takes
+four minutes does not get run. Whether the server holds a 16 GB model usefully
+between requests is the thing residency was built for and is not measured. The
+turn lengths are now known to differ between engines and it is not known
+*why* — whether the sampling diverges, the tokenizers differ at some position,
+or something else — and B-373's oracle is the instrument for asking. No timing
+here is a measurement: none of it was taken in the exclusive window (B35), and
+the twentyfold figure is an order of magnitude rather than a number.
+
 ## Changelog
+
+### Version 43 — the engine that can be probed
+
+F39. The provisioned engine driven as a server: a turn of identifiers reaches
+it, and it says why it stopped. Probing a 270M model goes from tens of minutes
+to eight seconds, and the default changed only once both engines were shown to
+return the same verdict.
+
+Three times in building it the instrument stood in for the model — a readiness
+check one condition short, a token count that measured the engine's chunking
+rather than the model's output, and an off-by-one at exactly the boundary F38
+turns on. The second of those was the defect F38 is about, living inside the
+fix for F38.
+
+It also withdraws a claim: the turn lengths F38 offered as B-375's first
+candidate separate gemma-3-270m's tied addressings on one engine and not on
+the other, so they were measuring the instrument.
 
 ### Version 42 — the probe's answer was upside down
 

@@ -44,6 +44,15 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-serve/src/served.rs",
+        calls: 2,
+        what: "the Unix socket the provisioned server listens on — once before binding, in \
+               case a killed daemon left one behind, and once when the server is dropped. A \
+               socket is a name for a running process, not a thing anybody stored: it holds \
+               no bytes, it is created by MCF a moment earlier under MCF's own runtime \
+               directory, and leaving one behind is the litter B58 is about (A27, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-hub/src/store.rs",
         calls: 1,
         what: "an artifact on the shelf, in `purge`, which is the one place MCF destroys one \

@@ -34,7 +34,20 @@ const TRIALS: usize = 5;
 const BUDGET: usize = 320;
 
 /// Probes a model.
-pub(crate) fn run(model: &str) -> Response {
+/// The engine a probe uses when the caller does not name one.
+///
+/// The provisioned server where there is one, MCF's own otherwise.
+fn whichever_is_here() -> &'static str {
+    let provisioned = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+        .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)));
+    match provisioned {
+        Some(Ok(Some(_))) => "provisioned",
+        _ => "stand-in",
+    }
+}
+
+pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -86,11 +99,23 @@ pub(crate) fn run(model: &str) -> Response {
         };
     };
 
-    // This probe's observation is *why generation ended*, and only MCF's own
-    // engine reports it: a subprocess engine prints text and exits. So the
-    // probe asks for the stand-in by name and the conditions say so — which is
-    // D42's point that a probe result belongs to an engine and not to a model.
-    let engine = format!("MCF's own stand-in, through the daemon at {build}");
+    // A probe result belongs to the engine it was taken through, not to the
+    // model (D42), so whichever answers is named in the conditions.
+    //
+    // The default is the provisioned server where there is one, and it was
+    // changed on evidence rather than on the speed alone: the same probe run
+    // through both engines returns the same verdict — the same best
+    // addressing, the same counts, the same silences — and the server answers
+    // in thirteen seconds where MCF's own takes two hundred and sixty-seven
+    // (F39). A twentyfold difference decides which is usable; the agreement
+    // is what makes changing the default honest rather than convenient (B29).
+    //
+    // Where there is no provisioned engine, MCF's own answers, as before.
+    let asked: &str = match engine {
+        Some(named) => named,
+        None => whichever_is_here(),
+    };
+    let engine = format!("{asked}, through the daemon at {build}");
     let mut trial = |identifiers: &[usize], budget: usize| {
         probes::trial(
             &socket,
@@ -102,7 +127,7 @@ pub(crate) fn run(model: &str) -> Response {
             "",
             Some(identifiers),
             budget,
-            Some("stand-in"),
+            Some(asked),
         )
     };
     let probed = probes::chat_template(&path, &bytes, TRIALS, BUDGET, &engine, &mut trial);

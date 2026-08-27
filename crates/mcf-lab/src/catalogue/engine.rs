@@ -173,3 +173,80 @@ fn two_engines_provisioned(world: &World) -> Outcome {
         Ok(_) => Outcome::Unexpected("two pins were chosen between".to_owned()),
     }
 }
+
+/// A server that binds nothing: started, alive, never ready.
+pub(super) const SERVER_NEVER_LISTENS: Scenario = Scenario {
+    id: "engine/server-never-listens",
+    produces: Category::EngineHangNoOutput,
+    summary: "a provisioned server that starts and never begins answering is given up on with \
+              how long it was waited for, and is told apart from one that died",
+    run: server_never_listens,
+};
+
+fn server_never_listens(world: &World) -> Outcome {
+    // A "server" that lives and does nothing: the case the readiness wait is
+    // for. It is not enough for the process to be absent — that is
+    // `engine.spawn.not_found` — nor for it to die, which is
+    // `engine.exit.immediate`. It has to be alive and silent.
+    let prefix = world.scratch().join("llama.cpp@cccccccccccc");
+    let bin = prefix.join("build").join("bin");
+    if std::fs::create_dir_all(&bin).is_err() {
+        return Outcome::Unexpected("the fixture prefix could not be made".to_owned());
+    }
+    let server = bin.join("llama-server");
+    if std::fs::write(&server, b"#!/bin/sh\nexec sleep 600\n").is_err() {
+        return Outcome::Unexpected("the fixture server could not be written".to_owned());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).is_err() {
+            return Outcome::Unexpected("the fixture server could not be made runnable".to_owned());
+        }
+    }
+
+    let llama = mcf_serve::adapters::ProvisionedLlama {
+        prefix,
+        commit: "cccccccccccc".to_owned(),
+    };
+    // Three attempts rather than the six hundred a real start is given: the
+    // bound is a parameter so that this scenario can exist at all (A13).
+    let waited = mcf_serve::served::Served::start_within(
+        &llama,
+        &world.scratch().join("no-such-model.gguf"),
+        world.scratch(),
+        3,
+    );
+    match waited {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("a server that binds nothing was called ready".to_owned()),
+    }
+}
+
+/// A server whose answer MCF cannot read.
+pub(super) const SERVER_ANSWER_UNREADABLE: Scenario = Scenario {
+    id: "engine/server-answer-unreadable",
+    produces: Category::EngineProtocolMalformed,
+    summary: "an answer from the provisioned server that is not a generation — not JSON, or an \
+              error wearing a completion's shape — is refused rather than read as a model that \
+              said nothing",
+    run: server_answer_unreadable,
+};
+
+fn server_answer_unreadable(_world: &World) -> Outcome {
+    // Two shapes, because the second is the dangerous one: an error carries no
+    // `stop_type` and no content, which reads exactly like a model that
+    // emitted its end-of-turn token and nothing else — the observation F38
+    // turns on. Reading it as that would blame the model for the server.
+    let error_shaped =
+        mcf_serve::served::interpret("{\"error\":{\"code\":503,\"message\":\"Loading model\"}}");
+    if error_shaped.is_ok() {
+        return Outcome::Unexpected(
+            "an error was read as a generation that said nothing".to_owned(),
+        );
+    }
+    match mcf_serve::served::interpret("this is not JSON at all") {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("text that is not JSON was read as a completion".to_owned()),
+    }
+}
