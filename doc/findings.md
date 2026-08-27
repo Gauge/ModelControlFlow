@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 41 |
+| **Version** | 42 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -30,7 +30,7 @@ forward as one.
 |---|---|
 | 1 | [F1 — The adversarial prototype (§7.19, DEC-019)](#1--f1--the-adversarial-prototype-719-dec-019) |
 | 2 | [F2 — The development machine cannot attribute a budget (DEC-051)](#2--f2--the-development-machine-cannot-attribute-a-budget-dec-051) |
-| 3 | [F3 — The load average answers the wrong question (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
+| 3 | [F3 — The load average answers the wrong question, and the obvious fix silently could not fail (DEC-051, D30)](#3--f3--the-load-average-answers-the-wrong-question-and-the-obvious-fix-silently-could-not-fail-dec-051-d30) |
 | 4 | [F4 — What the new tiers found on their first runs (B-191)](#4--f4--what-the-new-tiers-found-on-their-first-runs-b-191) |
 | 5 | [F5 — The cold-start budget is a measurement of the filesystem (B-011, D30)](#5--f5--the-cold-start-budget-is-a-measurement-of-the-filesystem-b-011-d30) |
 | 6 | [F6 — The first mutant to survive (B-186)](#6--f6--the-first-mutant-to-survive-b-186) |
@@ -38,9 +38,34 @@ forward as one.
 | 8 | [F8 — How far a kernel MCF could maintain is from a specialist's (DEC-004)](#8--f8--how-far-a-kernel-mcf-could-maintain-is-from-a-specialists-dec-004) |
 | 9 | [F9 — What a network costs, and what the hub actually does (B-021)](#9--f9--what-a-network-costs-and-what-the-hub-actually-does-b-021) |
 | 10 | [F10 — What a machine says when a network is missing (DEC-011, D33)](#10--f10--what-a-machine-says-when-a-network-is-missing-dec-011-d33) |
-| 11 | [F11 — A disk fills at the flush, not at the write (B-026)](#11--f11--a-disk-fills-at-the-flush-not-at-the-write-b-026)  |
+| 11 | [F11 — A disk fills at the flush, not at the write (B-026)](#11--f11--a-disk-fills-at-the-flush-not-at-the-write-b-026) |
 | 12 | [F12 — What an engine would cost, as far as it has been measured (B-320)](#12--f12--what-an-engine-would-cost-as-far-as-it-has-been-measured-b-320) |
 | 13 | [F13 — Two writers, one record (DEC-037)](#13--f13--two-writers-one-record-dec-037) |
+| 14 | [F14 — What a query over the record costs, and what an SQL engine would cost to ship (B-300, B-042, D6, D20)](#14--f14--what-a-query-over-the-record-costs-and-what-an-sql-engine-would-cost-to-ship-b-300-b-042-d6-d20) |
+| 15 | [F15 — What actually needs elevation, asked of a machine (DEC-039, §7.39, §6.32)](#15--f15--what-actually-needs-elevation-asked-of-a-machine-dec-039-739-632) |
+| 16 | [F16 — Three defects the real reference model found, and none of them was the one expected (B-213, B-019, §3.7)](#16--f16--three-defects-the-real-reference-model-found-and-none-of-them-was-the-one-expected-b-213-b-019-37) |
+| 17 | [F17 — What a hub says when something is not there (DEC-038, §7.38)](#17--f17--what-a-hub-says-when-something-is-not-there-dec-038-738) |
+| 18 | [F18 — The wall three findings kept hitting is a packaged toolchain (B-320, B-183, DEC-047)](#18--f18--the-wall-three-findings-kept-hitting-is-a-packaged-toolchain-b-320-b-183-dec-047) |
+| 19 | [F19 — Two defects a real model found in an hour, and the tests that could not (B-364, B-365, A19, D38)](#19--f19--two-defects-a-real-model-found-in-an-hour-and-the-tests-that-could-not-b-364-b-365-a19-d38) |
+| 20 | [F20 — A second architecture, and two silences that fail differently (B-365, A2, A19, D26)](#20--f20--a-second-architecture-and-two-silences-that-fail-differently-b-365-a2-a19-d26) |
+| 21 | [F21 — Six families for a tenth of one model's bytes (B-369, D40, DEC-054, §3.12)](#21--f21--six-families-for-a-tenth-of-one-models-bytes-b-369-d40-dec-054-312) |
+| 22 | [F22 — Where a model becomes able to referee an engine (B-370, D40, DEC-054, A19)](#22--f22--where-a-model-becomes-able-to-referee-an-engine-b-370-d40-dec-054-a19) |
+| 23 | [F23 — Four expressions where MCF had two, and what no test could have found (B-365, B-370, A7, A19, A21)](#23--f23--four-expressions-where-mcf-had-two-and-what-no-test-could-have-found-b-365-b-370-a7-a19-a21) |
+| 24 | [F24 — A third architecture, and three habits that fail three different ways (B-365, B-370, A19, §3.18)](#24--f24--a-third-architecture-and-three-habits-that-fail-three-different-ways-b-365-b-370-a19-318) |
+| 25 | [F25 — The broken engine read better than the correct one (B-365, B-368, A19, D38)](#25--f25--the-broken-engine-read-better-than-the-correct-one-b-365-b-368-a19-d38) |
+| 26 | [F26 — The oracle found a defect on its first run, and it was an invention of MCF's own (B-368, A19, A21, §3.12)](#26--f26--the-oracle-found-a-defect-on-its-first-run-and-it-was-an-invention-of-mcfs-own-b-368-a19-a21-312) |
+| 27 | [F27 — What a coin-flip looks like, and what a defect looks like (B-368, B-365, A19, A21)](#27--f27--what-a-coin-flip-looks-like-and-what-a-defect-looks-like-b-368-b-365-a19-a21) |
+| 28 | [F28 — The mask, past the boundary (B-368, F27, A21)](#28--f28--the-mask-past-the-boundary-b-368-f27-a21) |
+| 29 | [F29 — The sixth family answers a different question (B-371, DEC-055, B-365, A19, §3.3)](#29--f29--the-sixth-family-answers-a-different-question-b-371-dec-055-b-365-a19-33) |
+| 30 | [F30 — Two ways to provision the same component, measured (DEC-052, B-367, D39, A27)](#30--f30--two-ways-to-provision-the-same-component-measured-dec-052-b-367-d39-a27) |
+| 31 | [F31 — What the first automated provisioning found in two tries (B-367, DEC-052, A27, §3.15)](#31--f31--what-the-first-automated-provisioning-found-in-two-tries-b-367-dec-052-a27-315) |
+| 32 | [F32 — A defect the oracle let through, and the hole it came through (B-364, B-368, F27, A19, A21)](#32--f32--a-defect-the-oracle-let-through-and-the-hole-it-came-through-b-364-b-368-f27-a19-a21) |
+| 33 | [F33 — The last schemes, and the widest noise (B-364, B-368, F32, A21)](#33--f33--the-last-schemes-and-the-widest-noise-b-364-b-368-f32-a21) |
+| 34 | [F34 — Distributions against distributions (B-373, B-368, F27, F32, F33, A19)](#34--f34--distributions-against-distributions-b-373-b-368-f27-f32-f33-a19) |
+| 35 | [F35 — What a load costs, apart from running (DEC-018, D41, B-034, §3.13)](#35--f35--what-a-load-costs-apart-from-running-dec-018-d41-b-034-313) |
+| 36 | [F36 — The reference model answers, through an engine that is a process (B-032, B-033, B-367, D39, §XII)](#36--f36--the-reference-model-answers-through-an-engine-that-is-a-process-b-032-b-033-b-367-d39-xii) |
+| 37 | [F37 — The first probe found two defects and then refused to answer (B-051, B-052, D42, §3.18, F25, F26)](#37--f37--the-first-probe-found-two-defects-and-then-refused-to-answer-b-051-b-052-d42-318-f25-f26) |
+| 38 | [F38 — The probe's answer was upside down, and the decisive column was the broken one (B-052, B-374, D42, §3.18, F25, F37)](#38--f38--the-probes-answer-was-upside-down-and-the-decisive-column-was-the-broken-one-b-052-b-374-d42-318-f25-f37) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -2766,7 +2791,148 @@ in that generations now end at a model's own end of text where they did not
 before — how often, on which models, under which addressing, is the same
 unasked question until the probe can ask it.
 
+## 38 · F38 — The probe's answer was upside down, and the decisive column was the broken one (B-052, B-374, D42, §3.18, F25, F37)
+
+**What was built.** B-374: a chat turn assembled from token identifiers rather
+than from text. A request now carries either a prompt or a list of identifiers;
+MCF builds the identifiers from the model's own markers, taken from the
+template in its own file; and what a *user* typed is never among them. This is
+what F26 left unbuildable and F37 stopped on — with it, the chat-template probe
+could compare addressings for the first time.
+
+It compared them, decided, and was wrong in the exact opposite direction.
+
+**The observation counted silence as success.** SmolLM2-135M, every one of its
+five quantizations, reported the same table:
+
+```
+im_start…im_end as assistant 0 of 5
+raw                          5 of 5 ←
+```
+
+The addressing was verified correct before this was believed — the identifiers
+were dumped and read back:
+
+```
+["<|im_start|>", "user", "Ċ", "What", "Ġis", "Ġthe", "Ġcapital",
+ "Ġof", "ĠFrance", "?", "<|im_end|>", "Ċ", "<|im_start|>", "ass", "istant", "Ċ"]
+```
+
+That is ChatML, exactly. So the two addressings were sent by hand and what came
+back was read rather than counted:
+
+| addressing | tokens produced | ended at | what it said |
+|---|---|---|---|
+| ChatML | 40 | the budget | "The capital of France is Paris. Paris is a city located in the northern part of the country…" |
+| raw | **0** | its own stop token | *nothing* |
+
+The addressing the model answers under scored **zero**. The addressing it
+refuses to speak under scored **five of five**. A model addressed in a way it
+does not recognise emits its end-of-turn token *first thing* — and the probe's
+question, *did it end at its own stop token*, cannot tell that apart from a
+finished answer. It is the same token. The whole result was inverted.
+
+**Why it was believed for as long as it was.** Because it was consistent. Five
+quantizations of the same model, `5 of 5` against `0 of 5` every time — the
+kind of stability that reads as signal. F25 is the same lesson from the other
+side (a deleted MoE router read *better* than the correct one) and F37 the same
+again (a garbled prompt gave a cleaner table than an honest one). Three times
+now the decisive-looking result has been the broken one. **Consistency is not
+correctness, and a clean margin is not evidence about anything but itself.**
+
+**The fix is not a threshold.** A trial counts only if the model *said
+something and then stopped*: `Trial::Stopped` carries how many tokens preceded
+the stop, and zero is a refusal to speak, not a completed turn. The boundary is
+not arbitrary — nothing said is nothing said. The silences are kept and printed
+rather than folded into the failures (A1), because *the model recognised its
+stop token and declined the turn* is a fact worth having:
+
+```
+im_start…im_end as assistant 5 of 5 ←   turn ran 10-292 token(s), middle 96
+raw                          1 of 5     (ended without saying anything 4 of 5)   turn ran 120
+```
+
+That is SmolLM2 after the fix, and it agrees with the file's own declaration.
+
+**The turn lengths are kept, because they were already paid for.** A trial
+cannot tell a finished turn from a refusal without counting what preceded the
+stop (that *is* the fix), so the count exists whether or not it is recorded —
+and throwing it away would be discarding a measurement MCF already made (A1).
+It is the observation a stop-condition question is asked of (B-056), and the
+first candidate for separating addressings that tie on *did the turn end*
+(B-375). The spread above is worth noticing on its own: the same model, the
+same addressing, five short factual questions, and turns from 10 tokens to
+292. Any budget chosen for *this* probe by looking at one question would have
+been wrong for the others — which is how the budget came to be measuring
+verbosity in the first place.
+
+**A third defect fell out of the first two: five trials were one trial.** MCF
+samples greedily from a fixed seed. Five trials of one question are one
+observation written down five times, and `5 of 5` was arithmetic wearing the
+costume of evidence (A19). The probe now asks a different short question each
+trial, so five trials are five observations of the thing actually being
+asked — *does this addressing get an answer out of this model*.
+
+**And the budget was measuring the model's verbosity.** At forty tokens the
+correct addressing had not finished; at 160 it still had not; it ends its turn
+cleanly at **250**. A budget too small to reach the end of a turn makes every
+addressing look identical, so *ran out of budget* was doing the work that *did
+not stop* was being credited for. It is 320 now, and B49 holds — the budget is
+in tokens, not seconds.
+
+**gemma-3-270m stays inconclusive, and correctly.** Under the broken
+observation three addressings tied at `5 of 5`; once silence stopped counting
+and the budget was large enough to reach the end of a turn, the tie narrowed to
+**two** — so one of the three had been tied on refusals. Two addressings answer
+and end the turn equally often, and this observation cannot tell those two
+apart. Their
+turn lengths do separate them, on the first look:
+
+```
+start_of_turn…end_of_turn as assistant   ran 6-91 tokens
+start_of_turn…end_of_turn as model       ran 7-10 tokens
+```
+
+which is B-375's first candidate answering, and is **not yet an answer**: a
+turn of seven tokens can be a correct terse reply or a model cutting itself
+off, and telling those apart needs a question this probe does not ask. What it
+establishes is that the two addressings are *not* equivalent for this model,
+which the tie alone could not say. The
+tie-break that preferred `raw` was itself a defect — `max_by_key` returns the
+*last* maximum, which handed every tie to whichever candidate was listed last,
+and `raw` always is. A tie is now `inconclusive` naming the tie, because
+choosing on a tie would be MCF reading its own default back as a finding
+(§3.15, D42).
+
+**What this puts within reach.** M3's first exit criterion is *a model that the
+defaults configure wrongly measurably improves, and the improvement is
+attributable to a named probe*. SmolLM2 is that model, and the margin is not
+subtle: addressed the way MCF addresses models today it produces **nothing at
+all**, and addressed the way the probe found it produces a fluent answer. What
+is missing is not the evidence but the act — nothing here configures anything
+(D42), and the parameter that would carry *which probe, when, under what
+conditions* is B-059.
+
+**What was not established.** Whether the addressings gemma3 ties under are
+genuinely equivalent for it, or whether a sharper question separates them —
+that is the next increment, and the probe says so rather than guessing. Nothing
+about any model larger than 270M: both models here are small on purpose, and
+what a probe learns on a 135M model is about that model. And nothing is
+configured by any of this — `mcf run` still sends raw text (§3.8); D42 holds
+that a probe writes the verified half of a capability and never a default.
+
 ## Changelog
+
+### Version 42 — the probe's answer was upside down
+
+F38. B-374 built: a chat turn assembled from token identifiers, which is what
+a chat template actually is. The probe then reported the exact inverse of the
+truth — a model that refuses to speak emits its end-of-turn token immediately,
+and *did it stop* cannot tell that from a finished answer. Fixed by requiring
+the model to have said something, by asking a different question each trial
+(greedy sampling made five trials one trial), and by a budget large enough to
+reach the end of a turn. B-052 answers for the first time, and agrees with the
+file it was checking.
 
 ### Version 41 — the first probe found two defects and then refused to answer
 

@@ -70,15 +70,24 @@ pub(crate) fn serve_generation(
     prompt: &str,
     limit: usize,
     seed: u64,
+    tokens: Option<&[usize]>,
     engine: Option<&str>,
     writer: &mut &UnixStream,
 ) -> Value {
     let chosen = choose_engine(mcf_home, engine);
     let account = match chosen {
+        // Identifiers cannot travel through this engine: it is driven as a
+        // subprocess that takes text on a command line and prints text back
+        // (B-032), so a turn assembled from token identifiers has nowhere to
+        // go. Dropping them and generating from `prompt` instead would answer
+        // a different question and say nothing about having done so — which
+        // is the defect F38 is about, wearing a different coat. It is refused
+        // (A2), and B-376 is the item that lifts it.
+        Ok(Chosen::Provisioned(_)) if tokens.is_some() => Err(identifiers_cannot_travel()),
         Ok(Chosen::Provisioned(llama)) => {
             through_provisioned(store, &llama, named, prompt, limit, seed, writer)
         }
-        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, limit, seed, writer),
+        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, tokens, limit, seed, writer),
         Err(failure) => Err(failure),
     };
     let account = match account {
@@ -130,6 +139,28 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
             None => Ok(Chosen::StandIn),
         },
     }
+}
+
+/// The refusal a turn of identifiers meets at the provisioned engine.
+///
+/// Its own function so that the decision can be tested for the words it uses
+/// as well as for the category it reaches: a refusal whose reason does not say
+/// what to do about it is A2 half-kept.
+fn identifiers_cannot_travel() -> Failure {
+    // Not `config.invalid`: the request is perfectly readable, and calling it
+    // unreadable would send somebody looking for a typo. What is missing is an
+    // engine that can carry a turn of identifiers — and when the daemon chose
+    // the provisioned engine itself, nothing the caller wrote is at fault, so
+    // this is attributed to the machine.
+    Failure::new(
+        mcf_core::failure::Category::EngineUnavailable,
+        mcf_core::failure::Attribution::Machine,
+        mcf_core::failure::Disposition::Refused,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        "no engine here can be given a turn built from token identifiers: the provisioned \
+         engine takes text and returns text, so the identifiers would be silently dropped and \
+         the prompt generated from instead. MCF's own engine can — ask for it by name (B-376)",
+    )
 }
 
 /// One generation through the provisioned engine, as a supervised subprocess
@@ -247,11 +278,16 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
               would put the guard that holds the model in one place and what it guards in \
               another"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's conditions, each named in the account"
+)]
 fn attempt(
     store: &Path,
     resident: &std::sync::Mutex<Option<Resident>>,
     named: &str,
     prompt: &str,
+    tokens: Option<&[usize]>,
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
@@ -311,7 +347,13 @@ fn attempt(
     let since = resident.since.clone();
     let dequantized = resident.dequantized_bytes;
 
-    let prompt_tokens = vocabulary.encode(prompt, true)?;
+    // Identifiers the caller assembled take precedence over text: a chat turn
+    // is built from the model's own markers and re-segmenting its text would
+    // not give the same tokens back (D46).
+    let prompt_tokens = match tokens {
+        Some(tokens) => tokens.to_vec(),
+        None => vocabulary.encode(prompt, true)?,
+    };
     let build = BuildIdentity::current().version.to_owned();
 
     let mut at = 0_usize;
@@ -407,5 +449,42 @@ impl WithResidency for Value {
             Value::Integer(i64::try_from(dequantized).unwrap_or(i64::MAX)),
         );
         Value::Map(fields)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identifiers_cannot_travel;
+
+    /// The refusal is a refusal, attributed to the configuration rather than
+    /// to the machine or the model, and it names the item that lifts it.
+    ///
+    /// A lab scenario would drive this end to end, and cannot yet: reaching it
+    /// needs a provisioned engine on the machine, which is what B-376 is
+    /// about. Until then the decision is tested where it is made, which is
+    /// more than the silent drop it replaced had.
+    #[test]
+    fn a_turn_of_identifiers_is_refused_rather_than_dropped() {
+        let failure = identifiers_cannot_travel();
+        assert_eq!(
+            failure.disposition(),
+            mcf_core::failure::Disposition::Refused,
+            "nothing was attempted, so nothing was aborted"
+        );
+        assert_eq!(
+            failure.attribution(),
+            mcf_core::failure::Attribution::Machine,
+            "the daemon may have chosen this engine itself, so nothing the caller wrote is \
+             at fault"
+        );
+        let said = failure.to_string();
+        assert!(
+            said.contains("B-376"),
+            "a refusal has to say what would lift it: {said}"
+        );
+        assert!(
+            said.contains("silently dropped"),
+            "and what it is refusing to do instead: {said}"
+        );
     }
 }

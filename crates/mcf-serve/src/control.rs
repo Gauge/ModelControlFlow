@@ -66,6 +66,14 @@ pub enum Request {
         limit: usize,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
+        /// The prompt already segmented, where the caller built it.
+        ///
+        /// A chat turn is a sequence of identifiers, and MCF assembles it from
+        /// the model's own markers (D46) — so a caller that has done that
+        /// sends the identifiers rather than text nobody could re-segment the
+        /// same way. `prompt` stays beside it for the record and for a client
+        /// that has only text.
+        tokens: Option<Vec<usize>>,
         /// Which engine, where the client says: `stand-in` for MCF's own,
         /// `provisioned` for the one MCF built. Absent means the daemon's
         /// stated rule: the provisioned engine where there is exactly one,
@@ -90,6 +98,7 @@ impl Request {
                 prompt,
                 limit,
                 seed,
+                tokens,
                 engine,
             } => Value::map([
                 ("ask", Value::text("generate")),
@@ -102,6 +111,20 @@ impl Request {
                 (
                     "seed",
                     Value::Integer(i64::try_from(*seed).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "tokens",
+                    match tokens {
+                        Some(tokens) => Value::List(
+                            tokens
+                                .iter()
+                                .map(|token| {
+                                    Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX))
+                                })
+                                .collect(),
+                        ),
+                        None => Value::Null,
+                    },
                 ),
                 (
                     "engine",
@@ -188,6 +211,13 @@ impl Request {
                         .and_then(Value::as_integer)
                         .and_then(|seed| u64::try_from(seed).ok())
                         .unwrap_or(0),
+                    tokens: value.get("tokens").and_then(Value::as_list).map(|tokens| {
+                        tokens
+                            .iter()
+                            .filter_map(Value::as_integer)
+                            .filter_map(|token| usize::try_from(token).ok())
+                            .collect()
+                    }),
                     engine: value
                         .get("engine")
                         .and_then(Value::as_text)
