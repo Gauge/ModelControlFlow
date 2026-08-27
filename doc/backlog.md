@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 165 |
+| **Version** | 166 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -54,8 +54,8 @@ implemented, only gestured at, until the decision is made.
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | **decided** — [PR9](proposals.md#pr9--what-serving-looks-like), accepted by the operator. MCF's own line-delimited protocol over the socket it already has, one request and many answer lines so a first token is observable, and the conditions — engine build, seed, sampler, degradation mark — in the terminating line, because the shape everybody expects has nowhere to put them and a surface that cannot carry the mark strips it (A5, B65). A runtime that dies mid-token is a partial answer with the tokens already produced and a classified failure, never a silent retry (A4, B2). One model resident at a time, because two make every latency figure depend on what else was loaded (§3.4); DEC-018 stays separate. An OpenAI-compatible adapter is a later and explicitly lossy decision that must refuse to serve a degraded result rather than serve it stripped |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half, and the disk half is now built rather than decided: B-026 refuses a download that would not fit, with the arithmetic, and classifies a filesystem that fills anyway (F11). What remains is genuinely M2's: several clients at once, and two resident models |
 | DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | **resolved** — D41, by measurement (F35): one model, held after its first request until another is asked for or the daemon stops, no timer (§6.9), stated in every account (`loaded: loaded` then `resident`, `resident_since`, dequantized size) and in `mcf status`. On MCF's own engine the load is 0.8 s against 6.8 s of forward passes for the shortest request, so residency is worth a twelfth today and the whole wait on a faster engine |
-| DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
-| DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | open |
+| DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | **resolved** — D42, via [PR10](proposals.md#pr10--what-a-probe-is-and-when-configuration-may-change). A probe earns its place when a wrong answer to it would corrupt a measurement, which bounds §X's "full" by §3.8's reason for it and sorts the list into configuring probes (M3: chat template, stop conditions, usable context) and characterizing ones (framework in M3, probes beside §XIII). On demand, never at acquisition. A result is a `Measurement` with conditions and caches exactly as far as they hold. Inconclusive licenses nothing |
+| DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | **resolved** — D43, via [PR10](proposals.md#pr10--what-a-probe-is-and-when-configuration-may-change). Never silently. A derived configuration carries the probe that set it; when MCF's answer would now differ that is a divergence it reports (B-058), and applying it is an act that is recorded and changes the conditions. Not the rotting branch: out-of-date is *visible* rather than stale |
 | DEC-017 | Proportionate protection for an exposed control plane | §7.17 | §V | M4 | open |
 | DEC-012 | Behaviour when several clients attach at once | §7.12 | §XI | M4 | open |
 | DEC-007 | What makes a result publishable: sample count, variance, warm-up, thermal state | §7.7 | **§II** | M5 | open |
@@ -209,13 +209,13 @@ first and importance second.
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
 | B-050 | Three-state capability model: *declared*, *verified*, *unknown* — never confused, never defaulted | §3.18, §3.6 | The type system prevents a declared capability being read as a verified one | **done** — `mcf_core::capability::Capability<T>`: two separately optional halves, read as `declaration()` and `observation()`, with no operation between them and no `unwrap_or` to give an absence a value. The state is derived — unknown, declared, verified — and the fourth situation, *diverged*, is B-058's finding rather than a fourth kind of knowing. `is_established` is the whole of §3.18 in one method: only an observation may be acted on. `mcf_hub::inspect` now uses it instead of an enum of its own, which found a real loss — a card whose weights MCF could not read was being reported as *unknown*, discarding what the card said (A1). `checks/tests/a_declaration_is_not_an_observation.rs` holds the shape, because the failure mode is not somebody writing the wrong method but somebody adding a convenience that reads well and collapses the two |
-| B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | blocked (DEC-024) |
-| B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | blocked (DEC-024) |
-| B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | blocked (DEC-024) |
-| B-054 | Probe: structured output conformance | §X | Verified by parsing what the model actually emits over repeated trials | blocked (DEC-024) |
-| B-055 | Probe: context length usable versus claimed | §X, §3.18 | Divergence between claimed and usable is reported as a finding | blocked (DEC-024) |
-| B-056 | Probe: stop-condition behaviour | §X | A model that will not stop is a recorded characteristic, not a hung request | blocked (DEC-024) |
-| B-057 | Probes: vision, embeddings, reasoning modes, multilingual — scoped and prioritized by DEC-024 rather than assumed | §X, §7.24 | Each in-scope modality has a probe; each out-of-scope one is recorded as declined | blocked (DEC-024) |
+| B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | blocked (DEC-024) | **unblocked** by D42 — the framework: trials, a `Measurement` result, conditions, a `Capability` to write the verified half of, a stated cost in tokens, and `Inconclusive` as an outcome that configures nothing |
+| B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | blocked (DEC-024) | **unblocked** by D42 — a configuring probe, and the one whose absence is measurable today: every instruct model in the corpus carries `tokenizer.chat_template` and MCF sends raw text |
+| B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | blocked (DEC-024) | open — a *characterizing* probe under D42: it describes a model without changing how MCF addresses it, so it belongs beside §XIII rather than in M3, and uses B-051’s framework |
+| B-054 | Probe: structured output conformance | §X | Verified by parsing what the model actually emits over repeated trials | blocked (DEC-024) | open — a characterizing probe under D42; framework in M3, probe beside §XIII |
+| B-055 | Probe: context length usable versus claimed | §X, §3.18 | Divergence between claimed and usable is reported as a finding | blocked (DEC-024) | **unblocked** by D42 — a configuring probe |
+| B-056 | Probe: stop-condition behaviour | §X | A model that will not stop is a recorded characteristic, not a hung request | blocked (DEC-024) | **unblocked** by D42 — a configuring probe |
+| B-057 | Probes: vision, embeddings, reasoning modes, multilingual — scoped and prioritized by DEC-024 rather than assumed | §X, §7.24 | Each in-scope modality has a probe; each out-of-scope one is recorded as declined | blocked (DEC-024) | open — characterizing probes under D42; each in-scope modality still records what it declines |
 | B-058 | Divergence reporting: declared-versus-verified disagreement is surfaced as a first-class finding, often the most useful thing MCF can say about a model | §3.18 | Divergences are listed per model and exportable | open — the type is there: `Capability::divergence` returns both sides, and `inspect::deception` turns the architecture's into `hub.metadata.deceptive` with a scenario behind it (A13). What remains is *per model and exportable*, which needs more than one thing to diverge about — that arrives with M3's probes |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | open |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | blocked (DEC-024) |
@@ -382,6 +382,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 166 — what a probe is
+
+DEC-024 and DEC-025 resolved by D42 and D43 (PR10), which unblocks M3's
+framework and its three configuring probes. The characterizing probes are
+re-sited beside §XIII with the reason on each row.
 
 ### Version 165 — the host stands
 

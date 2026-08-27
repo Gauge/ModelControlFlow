@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 45 |
+| **Version** | 46 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4443,6 +4443,60 @@ dequantized size. A file replaced under the same name is loaded again — the
 path, length and modification time identify the resident model, and A1 does
 not allow a stale one to be served as the file on disk.
 
+### D42 — A probe is an experiment, and its result is never a default *(closes §7.24)*
+
+**A capability probe runs trials on demand, reports a measurement with its
+conditions, writes only to the *verified* half of a capability, and configures
+nothing by itself.**
+
+**What bounds "full capabilities".** §X asks for them and §7.24 observes the
+list is open-ended. The bound is §X's own reason — §3.8's, that a misconfigured
+model is a measurement error — which makes the test: *a probe earns its place
+when a wrong answer to it would corrupt a measurement or a served answer.* That
+sorts the list into **configuring** probes, which change how MCF talks to a
+model and are M3's (the chat template, stop conditions, usable context against
+claimed), and **characterizing** probes, which describe a model without
+changing how MCF addresses it (tool calling, structured output, the modalities)
+and which belong beside §XIII's laboratories. M3 builds the framework both use.
+
+**When.** On demand — `mcf probe` — and never at acquisition. Custody is not
+evaluation; a probe needs an engine and which engine is a *condition*, so a
+probe at acquisition would be an observation about whatever engine happened to
+be installed; and it would spend on models nobody runs.
+
+**Caching, which §7.24 asks about across MCF versions, needs no new rule.** A
+probe result is a measurement with conditions, so it holds exactly as far as
+its conditions hold: a different engine, a different build, a different sampler
+or seed is a different observation. §3.4 already says this and §7.13's
+comparability problem is the same problem.
+
+**Inconclusive is a first-class outcome and licenses nothing** (§3.18's third
+state). *The model did not do the thing* and *MCF could not tell* are different
+facts; the second configures nothing, defaults to nothing, and is recorded as
+what it is.
+
+### D43 — Automatic configuration never changes under a user *(closes §7.25)*
+
+**MCF may learn better. What it does with that is say so.**
+
+A configuration MCF derived carries the probe that set it, when, and under what
+conditions. When MCF's answer *would now differ* — a better probe, another
+engine, a changed default — that is a **divergence**, reported the way a
+declared-against-verified disagreement is (B-058). Applying it is an act: it
+happens because somebody asked, it is recorded, and afterwards the conditions
+have changed, so measurements taken across it are not comparable — which MCF
+already says rather than assumes.
+
+**Why this is not the rotting branch §7.25 feared.** The fear was that refusing
+to update leaves configuration stale. It leaves it *visible*: an out-of-date
+configuration is a divergence MCF reports, and updating it is one command. What
+is refused is only the silent part, which is what §3.12 and §6.13 forbid and
+what §3.11 calls a change without deliberation.
+
+**The corollary for §IV.** A measurement carries its configuration's provenance
+into its conditions, so *are yesterday's number and today's comparable* becomes
+a question MCF can answer instead of one it has to assume.
+
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
 D39 admits a component MCF *provisions* rather than ships, and states four
@@ -4530,6 +4584,14 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 46 — what a probe is
+
+D42 and D43 close §7.24 and §7.25 together (PR10). A probe is an experiment
+whose result is a measurement with conditions, written to the verified half of
+a capability and never to a default; "full capabilities" is bounded by §3.8's
+reason for wanting them. Configuration never changes under a user: MCF reports
+that its answer would differ, and applying that is a recorded act.
 
 ### Version 45 — a model that stays
 
