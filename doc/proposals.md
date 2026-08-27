@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 10 |
+| **Version** | 11 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -42,6 +42,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR8 | [The stand-in engine](#pr8--the-stand-in-engine) | **Accepted** — B-360, B-361, B-362 | M0 · M2 |
 | PR9 | [What serving looks like](#pr9--what-serving-looks-like) | **Accepted** — DEC-001 decided; B-032, B-033, B-034 build it | M2 |
 | PR10 | [What a probe is, and when configuration may change](#pr10--what-a-probe-is-and-when-configuration-may-change) | **Accepted** — DEC-024 and DEC-025 decided; B-051–B-060 build it | M3 |
+| PR11 | [Prompt analysis: what the model actually received](#pr11--prompt-analysis-what-the-model-actually-received) | Accept the static half; defer the behavioural half | M3 · M4 |
 
 ---
 
@@ -1124,7 +1125,193 @@ carries in its terminating line stops being a hypothetical, because every answer
 from MCF's own engine has one.
 
 
+---
+
+## PR11 — Prompt analysis: what the model actually received
+
+**One line.** MCF can already tell how a model wants to be *addressed*; this
+proposes the other half — showing a person how a model *receives* the text they
+wrote, so that writing a chat template or an agent guidance document becomes an
+act of observation rather than an act of guessing.
+
+**Why this is a proposal.** The scenario it serves is concrete and outside
+anything the roadmap owns: *how do I craft an accurate chat prompt template
+specifically for a given model?* — for OpenCode, or any agentic harness that
+ships a guidance document. That is not a benchmarking question and not a
+configuration question. It is a question about the boundary between a person's
+text and a model's input, and MCF happens to hold every piece of machinery
+needed to answer it. Whether that makes it MCF's job is the decision.
+
+It also runs directly at the wall this project keeps hitting. F25, F37 and F38
+each established the same thing from a different side: **output quality is no
+evidence of implementation correctness in either direction.** A person tuning a
+system prompt today does exactly what those findings forbid — edit the text,
+read the reply, judge. This proposal is that loop replaced with observation.
+
+### The claim it enables
+
+**That a person can see what the model got, rather than infer it from what the
+model said.** Today nobody can. A prompt is written in an editor, passes through
+a template, a tokenizer, and a set of control tokens, and arrives as a sequence
+of integers that nobody looks at. Every transformation in that chain is a place
+where the text a person wrote stops being the text the model reads — and F37 is
+the proof that this is not hypothetical: `<|im_start|>` written into a prompt
+reached the model as **eight ordinary tokens**, and the resulting table was the
+cleanest and most decisive in this repository. MCF's own probe was fooled by it.
+A user has strictly less visibility than that probe had.
+
+### What it shows, concretely
+
+Four things, in increasing order of how much they cost to be honest about.
+
+**1 · Segmentation — the prompt as the model receives it.** The text broken
+into the tokens it becomes, with the fragments visible. This is the observation
+the idea came from: WordPiece exists to handle text a vocabulary does not
+contain, and *where it has to* is exactly where a model's grip on the text is
+weakest. A domain term that survives as one token and a domain term that
+shatters into six subwords are not the same input, and nothing in a person's
+editor distinguishes them. `[UNK]` is the extreme case and the easiest to
+report; the common case is fragmentation, which is quieter and matters more.
+
+**2 · Cost — what the prompt spends.** Token count against the model's usable
+context (B-055). The same guidance document is a rounding error on one model's
+window and a tenth of another's, and the number differs by vocabulary, not by
+word count. This is arithmetic and needs no judgement.
+
+**3 · Fidelity of the turn — does the template survive assembly?** Which of the
+markers a person wrote are real control tokens for this model and which are
+ordinary text. MCF already computes this: the marker-survival check exists
+because F37 forced it, and B-374 made a turn assemblable from identifiers. This
+is the piece that answers the stated scenario most directly, and it is nearly
+free.
+
+**4 · Behavioural comparison — does variant A differ from variant B?** Not *is
+this prompt good*, but *do these two prompts produce different behaviour from
+this model*, measured by something needing no judgement. MCF has three such
+measures already: whether the turn ends at the model's own stop token, how long
+it runs (F38), and the divergence between two token distributions, which the
+oracle already computes for its own purposes.
+
+### Where quantification is honest, and where it is not
+
+This is the crux, and the proposal is worth less than nothing if it gets it
+wrong.
+
+**The request is to "quantify a model's evaluation of a prompt." The honest
+form of that is a comparison, never a score.** There is no judgement-free
+measure of whether a model *understood* a prompt. A19 forbids inventing a
+number; A21 separates declared from verified; A7 keeps unknown unknown. A single
+"prompt quality score" would violate all three at once — it would be a
+fabricated aggregate over things that are not commensurable, and it would be
+believed precisely because it is a number. The failure mode is already on
+record three times in this repository: **the most decisive-looking result has
+been the broken one every time.**
+
+What *is* honest, and is most of what the scenario actually needs:
+
+| Question | Judgement needed | Status |
+|---|---|---|
+| How does this text segment for this model? | none | the tokenizer already answers |
+| How many tokens does it cost, of how many available? | none | arithmetic, plus B-055 |
+| Did the markers I wrote survive as control tokens? | none | F37's check, already built |
+| Does the assembled turn round-trip? | none | D46's rule, already held |
+| Do variants A and B produce different behaviour? | none — it is a comparison | F38's observations |
+| Which variant is *better*? | **judgement** | not MCF's to say |
+
+The last row is the boundary, and it is the same boundary D42 draws for probes:
+MCF writes the verified half and never the default. Here MCF shows what the
+model received and how its behaviour differed; **which prompt to ship is the
+person's decision**, and it stays theirs.
+
+### What it costs
+
+Small, relative to what it uses. The tokenizer handles all three schemes
+already — unigram, BPE, WordPiece — with the normalizers behind them. The
+marker check, the addressing assembly, the turn-length observation and the
+distribution comparison all exist and were built for other reasons. What is new
+is a presentation surface and a comparison harness. It is not a new subsystem;
+it is a view onto subsystems that are already load-bearing.
+
+The real cost is scope discipline. A prompt analyser is the kind of tool that
+attracts a score, a grade, a recommendation and a linter, and each of those
+would be a claim MCF cannot support.
+
+### What it collides with
+
+**§3.7 — untrusted input.** A prompt under analysis is data, always. It is
+tokenized, counted and displayed; it is never executed, and nothing in it may
+select a code path. This is the same rule that makes the analyser *useful*: the
+thing it exists to show is that user text does not become control tokens.
+
+**F26 — MCF must not parse control tokens out of prompt text.** The analyser
+must never lift this rule to make a template "work". Its job is the opposite:
+to make visible that a marker a person typed became eight ordinary tokens, so
+they stop typing it and address the model properly instead.
+
+**D42 — a probe writes the verified half of a capability and never a default.**
+The behavioural comparison is a probe by every one of D42's properties and
+should be one, with the same three outcomes. *Inconclusive* will be common here
+and must stay first-class: two prompt variants that produce no measurable
+difference is a real and useful answer, and is not the same as them being
+equivalent.
+
+**B-376 bounds it.** Behavioural comparison needs many generations, and MCF's
+own engine is currently the only one a probe can drive. The static half —
+segmentation, cost, marker fidelity — needs no engine at all and is unaffected.
+
+### What is unanswered
+
+- **Is this MCF's job?** MCF measures models. This measures the seam between a
+  person and a model. The case for yes is that the seam is where §3.8's
+  misconfiguration lives, and §X already calls a misconfigured model a
+  measurement error. The case for no is that it serves authors rather than
+  measurement, and §5 refuses features that only broaden appeal.
+- **Where it lands.** The static half could ship beside M3's probes, since it is
+  the same machinery pointed at the user's text. The comparison half wants
+  M4's window — a segmentation is something you *look at*, and a terminal is a
+  poor place to look at one. Splitting it across two milestones is likely right
+  and should be decided rather than drifted into.
+- **How many models at once.** The stated scenario is one guidance document
+  across many models, which argues for comparison across vocabularies as a
+  first-class view rather than a later addition. It also multiplies the cost of
+  every behavioural measure by the number of models.
+- **Whether fragmentation is worth reporting at all**, or only `[UNK]`. That
+  fragmentation matters is an intuition, not a finding. It is testable — the
+  same prompt with a term that survives whole against one that shatters, the
+  behavioural comparison run between them — and it should be tested before it
+  is designed around.
+
+### Recommendation
+
+**Accept the static half, defer the behavioural half.** Segmentation, cost and
+marker fidelity are cheap, need no engine, need no judgement, and answer most of
+the stated scenario on their own — a person who can see that their markers are
+not surviving has learned the thing that was actually wrong. The behavioural
+comparison is the part that needs B-376, needs care to avoid becoming a score,
+and needs the window to be worth looking at. It should be argued separately once
+the static half has shown what people do with it.
+
+**Not accepted; recorded.** Nothing here enters the backlog until that
+recommendation is taken.
+
 ## Changelog
+
+### Version 11 — prompt analysis
+
+PR11. Raised from the observation that WordPiece exists to handle text a
+vocabulary does not contain, and that *where it has to* is where a model's grip
+on the text is weakest — which nobody can currently see. The scenario is
+crafting a chat template or an agent guidance document for a specific model,
+and the argument it has to survive is F25, F37 and F38's shared lesson: output
+quality is no evidence of correctness in either direction, and tuning a prompt
+by reading replies is exactly the loop those findings forbid.
+
+Its hardest question is the one it was asked — *quantify a model's evaluation
+of a prompt*. The honest form of that is a comparison and never a score; a
+single "prompt quality score" would be A19's fabricated number, believed
+because it is a number. The proposal draws the line explicitly and puts *which
+prompt is better* on the person's side of it, which is where D42 already puts
+the equivalent decision for probes.
 
 ### Version 10 — PR10 accepted
 

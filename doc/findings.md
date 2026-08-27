@@ -2885,12 +2885,33 @@ observation three addressings tied at `5 of 5`; once silence stopped counting
 and the budget was large enough to reach the end of a turn, the tie narrowed to
 **two** — so one of the three had been tied on refusals. Two addressings answer
 and end the turn equally often, and this observation cannot tell those two
-apart. The
+apart. Their
+turn lengths do separate them, on the first look:
+
+```
+start_of_turn…end_of_turn as assistant   ran 6-91 tokens
+start_of_turn…end_of_turn as model       ran 7-10 tokens
+```
+
+which is B-375's first candidate answering, and is **not yet an answer**: a
+turn of seven tokens can be a correct terse reply or a model cutting itself
+off, and telling those apart needs a question this probe does not ask. What it
+establishes is that the two addressings are *not* equivalent for this model,
+which the tie alone could not say. The
 tie-break that preferred `raw` was itself a defect — `max_by_key` returns the
 *last* maximum, which handed every tie to whichever candidate was listed last,
 and `raw` always is. A tie is now `inconclusive` naming the tie, because
 choosing on a tie would be MCF reading its own default back as a finding
 (§3.15, D42).
+
+**What this puts within reach.** M3's first exit criterion is *a model that the
+defaults configure wrongly measurably improves, and the improvement is
+attributable to a named probe*. SmolLM2 is that model, and the margin is not
+subtle: addressed the way MCF addresses models today it produces **nothing at
+all**, and addressed the way the probe found it produces a fluent answer. What
+is missing is not the evidence but the act — nothing here configures anything
+(D42), and the parameter that would carry *which probe, when, under what
+conditions* is B-059.
 
 **What was not established.** Whether the addressings gemma3 ties under are
 genuinely equivalent for it, or whether a sharper question separates them —
