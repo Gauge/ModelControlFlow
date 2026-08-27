@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 33 |
+| **Version** | 34 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2249,7 +2249,83 @@ cosine at 0.999 is a floor calibrated on this model at this size — a larger
 model's arithmetic gap may sit elsewhere, and the floor would need remeasuring
 rather than trusting (A21). Nothing here is a speed (B65).
 
+## 30 · F30 — Two ways to provision the same component, measured (DEC-052, B-367, D39, A27)
+
+**The question.** D39 admits components MCF provisions — installs, builds and
+pins itself — and names four conditions: pinned and recorded, reproducible,
+contained and reversible, never the baseline. DEC-052 asks what mechanism makes
+"controlled" true. Two candidates existed on paper: a managed prefix built with
+the host's own tools, and a container. Both have now provisioned the same
+component — llama.cpp at commit `925e1179`, the oracle — and the differences
+were measured rather than argued.
+
+**Route A: the host's tools into a prefix.** This is how the oracle was first
+built (F26): clone pinned, `cmake`, build into `/home/gauge/Content/mcf-oracle`.
+It worked, and it failed D39's first condition in a way nobody would have
+noticed: **the build used cmake 4.2.1 resolved from a pyenv shim** —
+`~/.pyenv/shims/cmake` — while the system package, which is what anyone
+recording the environment would have asked `rpm` about, is 4.3.0. The toolchain
+that built the oracle was an accident of the operator's Python setup, recorded
+nowhere, and different from what every reasonable record would have said it
+was. That is "whatever the PATH resolved today", observed in the wild on the
+first provisioning MCF ever did.
+
+**Route B: a rootless container over a mounted prefix.** `podman run --rm` on
+`fedora:44` (pinned by digest `5a4a491c…`), the source mounted read-only, a
+prefix on the content drive mounted for output, the toolchain installed inside
+and its exact versions written into the prefix: gcc 16.2.1-2.fc44,
+cmake 4.3.0-1.fc44, glibc 2.43-8. The build ran under the shared machine's
+exclusive window like any other heavy work.
+
+**What was measured.**
+
+| property | route A (host prefix) | route B (container) |
+|---|---|---|
+| toolchain | ambient — a pyenv cmake, discovered after the fact | enumerated — image digest + package versions, written into the prefix |
+| residue outside the prefix | build used host state; nothing installed | **zero bytes**: container storage byte-identical before and after (`--rm` discards the layer the toolchain was installed into) |
+| the artifact on the host | runs (it is a host binary) | **runs, and agrees**: the container-built `llama-tokenize` on the host produces identifier-for-identifier the same output as the host-built one |
+| removal | `rm -rf` the prefix | `rm -rf` the prefix; the base image was already present and is shared |
+| cost of a rebuild | incremental | the toolchain reinstalls every run, because the layer that held it was discarded |
+
+**What decides it.** Route A's failure is not hypothetical — it happened, on
+the first try, silently. Route B's costs are visible and payable: a rebuild
+re-resolves packages unless the image is derived and kept, and a binary built
+against a container's glibc runs on the host only while the container's glibc
+is not newer than the host's — true here by construction, since the image is
+the host's own distribution and release, and a boundary any implementation must
+check rather than assume.
+
+DEC-052 is therefore resolved: **a controlled environment is a container MCF
+drives — rootless, base image pinned by digest, source mounted read-only, a
+prefix the operator can point at any drive mounted for output, and the
+component's exact package set recorded into the prefix beside what was built.**
+The managed prefix survives as the *shape of the output* — everything lands in
+one removable directory — and the container is what makes the inputs
+enumerable.
+
+**Afterwards, the reversibility claim was exercised rather than asserted:** the
+experiment's prefix was removed with one command, and the container store had
+nothing to remove.
+
+**What was not established.** Bit-identical rebuilds were not measured — two
+builds from the same image and commit may still differ by timestamps, and D39's
+second condition asks for "the same environment, or say what differed", which
+package-set recording satisfies and binary identity would exceed. GPU and
+vendor-runtime provisioning — the case that motivated D39 — adds device access
+to the container and was not exercised. And `podman` itself is now a condition:
+a machine without it falls back to nothing, because route A is what falling
+back looks like.
+
 ## Changelog
+
+### Version 34 — two ways to provision, measured
+
+F30. The same component was provisioned through a host prefix and through a
+rootless container, and the measurements resolve DEC-052. The host route failed
+D39's first condition on its very first use — the oracle was built by a cmake
+from a pyenv shim, recorded nowhere, different from what the system says — and
+the container route left container storage byte-identical while producing a
+binary that runs on the host and agrees with the host-built one exactly.
 
 ### Version 33 — the sixth family answers a different question
 
