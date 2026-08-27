@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 44 |
+| **Version** | 45 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4400,6 +4400,49 @@ generalizes to models in general. B28's mechanical check is what enforces the
 first, and DEC-053 settled how it tells a family GGUF states from an artifact
 MCF must not recognize.
 
+### D41 — A served model stays resident until displaced or stopped, and says so *(closes §7.18)*
+
+**One model at a time, held after its first request, released when another
+model is asked for or when the daemon stops. No timer. Every account and
+`mcf status` say what is held and what it costs.**
+
+**Decided by measurement, and the measurement is worth stating because it cut
+the other way from the intuition.** §7.18 assumed the choice was between paying
+a cold start on every request and holding memory. On MCF's own engine the load
+is the smaller cost by an order of magnitude: reading, parsing and dequantizing
+a 0.6-billion-parameter model takes 0.8 s, and the six forward passes a
+one-token request needs take 6.8 s (F35). Residency buys twelve percent of the
+shortest request and holds 2.4 GB of dequantized weights for it. On a vendored
+or provisioned engine the proportions invert — the forward pass is milliseconds
+and the load is the whole of the wait — which is why the decision is made now
+and made this way rather than deferred until it matters more.
+
+**Why hold rather than release.** §3.13 is about idle *cost*, and a resident
+model costs nothing while idle: no timer, no watcher, no tick — the soak tier
+is where that is asserted. §3.11 is about destruction, and releasing memory
+destroys nothing that cannot be reloaded from the file. What is left is §VI's
+first token, which residency serves, against memory the operator might want
+back, which is answered by saying — in status and in every account — exactly
+what is held and how much it weighs. A hidden 2.4 GB would be a §3.15
+violation; a stated one is a condition.
+
+**Why no timer.** An unload after idleness is a background timer, which §6.9
+forbids, and it would make a response time depend on how long ago the last
+request was — a condition nobody would think to record (§3.4). Displacement is
+an event with a cause; a timeout is a policy with a clock.
+
+**Why one.** Two resident models is DEC-009's arbitration question and DEC-001's
+residency question, and this decision does not reach into either: the daemon
+holds the last model asked for, and asking for another releases it. Which one
+is resident is therefore always the answer to *what was last asked for*, and
+never a policy.
+
+**What every account carries** (B-034): `loaded: loaded` on the request that
+paid the load, `loaded: resident` afterwards, `resident_since`, and the
+dequantized size. A file replaced under the same name is loaded again — the
+path, length and modification time identify the resident model, and A1 does
+not allow a stale one to be served as the file on disk.
+
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
 D39 admits a component MCF *provisions* rather than ships, and states four
@@ -4487,6 +4530,14 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 45 — a model that stays
+
+D41 closes §7.18 by measurement: on MCF's own engine the load is a tenth of the
+shortest request, so residency is worth little today and everything on a faster
+engine; it is held — one model, no timer, released by displacement or stop —
+and stated in every account and in status, because the price of residency is
+memory and a price nobody can see is a hidden choice.
 
 ### Version 44 — the question picks the model
 
