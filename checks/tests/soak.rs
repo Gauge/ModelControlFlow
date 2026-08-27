@@ -447,6 +447,118 @@ fn an_idle_daemon_costs_nothing_for_a_minute() {
     }
 }
 
+/// An idle daemon with a model resident costs nothing for a minute (D41, M2's
+/// third exit criterion, §3.13).
+///
+/// The same measurement as the idle daemon's, taken after one generation has
+/// loaded the laboratory's fixture and left it resident. What must be true is
+/// that residency is memory and nothing else: no timer to unload, no watcher,
+/// no tick — the processor time and context switches over the minute are read
+/// as deltas from after the generation, and the record must not move.
+#[test]
+#[ignore = "the soak tier is scheduled: scripts/ci.sh --with-soak (B38)"]
+fn an_idle_daemon_with_a_model_resident_costs_nothing_for_a_minute() {
+    use std::io::BufRead as _;
+
+    let scratch = Scratch::new("idle-resident");
+    let store = scratch
+        .path()
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&store).expect("a store");
+    std::fs::write(
+        store.join("a-model-that-runs.gguf"),
+        mcf_lab::fixture::a_model_that_runs(),
+    )
+    .expect("the fixture written");
+    let journal = scratch.path().join("mcf").join("record.jsonl");
+
+    let Some(binary) = the_built_binary() else {
+        println!("no mcf binary is built; the resident-idle claim stands unmeasured");
+        return;
+    };
+    let mut daemon = std::process::Command::new(&binary)
+        .arg("serve")
+        .env("XDG_DATA_HOME", scratch.path())
+        .env("XDG_RUNTIME_DIR", scratch.path())
+        .env_remove("HOME")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the daemon starts");
+    {
+        let stdout = daemon.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up"), "{line}");
+    }
+
+    // One generation, so that a model is resident for the minute.
+    let ran = std::process::Command::new(&binary)
+        .args([
+            "run",
+            "lab/fixture:a-model-that-runs.gguf",
+            "--prompt",
+            "yes",
+            "--limit",
+            "2",
+        ])
+        .env("XDG_DATA_HOME", scratch.path())
+        .env("XDG_RUNTIME_DIR", scratch.path())
+        .env_remove("HOME")
+        .output()
+        .expect("the client runs");
+    let said = String::from_utf8_lossy(&ran.stdout);
+    assert!(said.contains("model loaded loaded"), "{said}");
+
+    let pid = daemon.id();
+    let before_record = std::fs::read(&journal).expect("the record is readable");
+    let before_switches = context_switches(pid);
+    let before_ticks = processor_time(pid);
+    std::thread::sleep(std::time::Duration::from_secs(60));
+    let after_switches = context_switches(pid);
+    let after_ticks = processor_time(pid);
+    let after_record = std::fs::read(&journal).expect("the record is readable");
+
+    let stop = std::process::Command::new(&binary)
+        .args(["stop", "--because", "the resident-idle measurement is done"])
+        .env("XDG_DATA_HOME", scratch.path())
+        .env("XDG_RUNTIME_DIR", scratch.path())
+        .env_remove("HOME")
+        .status();
+    let _ended = daemon.wait();
+    assert!(
+        stop.is_ok_and(|status| status.success()),
+        "it would not stop"
+    );
+
+    assert_eq!(
+        before_record, after_record,
+        "the record changed while the daemon idled with a model resident"
+    );
+    if let (Some(before), Some(after)) = (before_switches, after_switches) {
+        let woken = after.saturating_sub(before);
+        println!("  idle daemon, model resident: {woken} context switches over 60 s");
+        assert!(
+            woken <= 2,
+            "scheduled {woken} times while idle with a model resident: a timer (D41, §6.9)"
+        );
+    } else {
+        println!("  this platform does not publish context switches; unmeasured");
+    }
+    if let (Some(before), Some(after)) = (before_ticks, after_ticks) {
+        let ticks = after.saturating_sub(before);
+        println!("  idle daemon, model resident: {ticks} clock ticks over 60 s");
+        assert!(
+            ticks <= 2,
+            "used {ticks} ticks while idle with a model resident"
+        );
+    } else {
+        println!("  this platform does not publish processor time; unmeasured");
+    }
+}
+
 /// The `mcf` binary this workspace built, debug or release.
 fn the_built_binary() -> Option<std::path::PathBuf> {
     let root = mcf_checks::workspace::root();

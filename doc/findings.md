@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 38 |
+| **Version** | 39 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2597,7 +2597,61 @@ text comparison. The floor is calibrated on this corpus; a file whose noise
 sits above 0.113 would be a new measurement, not a defect, and would say so by
 which file and which prompt.
 
+## 35 · F35 — What a load costs, apart from running (DEC-018, D41, B-034, §3.13)
+
+**The question.** §7.18 asks whether a served model stays resident, and frames
+it as a cold start on every request against memory held. Before deciding, the
+two costs were separated on this machine — one reading each, no window, so the
+figures are for scale and not for the record's baselines.
+
+**Through the daemon, loading per request, Qwen3-0.6B at Q4_K_M, a one-token
+answer:** 6.54, 6.52, 6.49 s. **The same with the model held after the first
+request:** 6.66 s (the load), then 12.28 s and 5.63 s resident. Residency did
+not make the request faster, and the second resident run was slower than the
+load — the machine is shared and nothing here was attributable, which is what
+the outlier says and all it says.
+
+**So the load was measured alone.** `load`, a diagnostic that reads, parses and
+dequantizes and prints each:
+
+| model | read | parse | dequantize | on disk |
+|---|---|---|---|---|
+| Qwen3-0.6B Q4_K_M | 0.112 s | 0.041 s | 0.636 s | 397 MB |
+| gemma-3-270m Q6_K | 0.080 s | 0.056 s | 0.293 s | 283 MB |
+| Llama-160M Q4_K | 0.034 s | 0.007 s | 0.177 s | 121 MB |
+
+Against that, six forward passes through Qwen3-0.6B in this process — a
+five-token prompt and one generated token — take 6.8 s. The load is 0.8 s. On
+MCF's own engine a request is the forward passes, and the load is the twelfth
+part of the shortest one.
+
+**What this decides, and what it does not.** It decides D41: residency is held,
+because it costs nothing idle and hides nothing when stated, and because on a
+faster engine the proportions invert — but it is not the saving §7.18 imagined
+on the engine MCF has today, and pretending otherwise would be a number
+without its conditions. It does not decide anything about two models, about
+memory pressure, or about an engine whose forward pass is milliseconds; those
+are DEC-009's and B-032's, and this finding is the baseline they will be read
+against.
+
+**And what residency costs idle: nothing.** The soak tier idles a daemon for
+sixty seconds with the fixture resident after one generation and reads zero
+context switches and zero clock ticks of processor time — the same figures as
+an empty daemon — with the record unchanged. Residency is memory and nothing
+else, which is the condition D41 was decided under.
+
+**What was not established.** These are single readings on a shared machine
+without the window; the 12.28 s is unexplained and recorded as such. The
+budget tier's first-token figure (B-035) is the one taken under conditions,
+and it is on the fixture, where the load is microseconds either way.
+
 ## Changelog
+
+### Version 39 — what a load costs, apart from running
+
+F35. Loading Qwen3-0.6B costs 0.8 s; the six forward passes of a one-token
+request cost 6.8 s. Residency saves the twelfth part of the shortest request on
+MCF's own engine, and everything on a faster one. D41 is decided on that.
 
 ### Version 38 — distributions against distributions
 

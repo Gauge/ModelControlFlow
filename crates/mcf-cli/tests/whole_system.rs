@@ -1808,6 +1808,16 @@ fn an_already_provisioned_component_is_left_alone() {
 /// the tokens streamed and the account read back from the record.
 #[test]
 fn a_running_daemon_serves_a_generation_and_records_its_account() {
+    /// A failed assertion must not leave a daemon behind holding the test's
+    /// pipes open: the first version of this test did, and the run hung until
+    /// the orphan was found and killed by hand.
+    struct Reaped(std::process::Child);
+    impl Drop for Reaped {
+        fn drop(&mut self) {
+            let _killed = self.0.kill();
+            let _waited = self.0.wait();
+        }
+    }
     let machine = Machine::new("served");
     let models = machine
         .0
@@ -1819,14 +1829,16 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
     let model = models.join("a-model-that-runs.gguf");
     std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
 
-    let mut serving = machine
-        .command(&["serve"])
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("the daemon starts");
+    let mut serving = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("the daemon starts"),
+    );
     {
         use std::io::BufRead as _;
-        let stdout = serving.stdout.as_mut().expect("it prints where it is");
+        let stdout = serving.0.stdout.as_mut().expect("it prints where it is");
         let mut line = String::new();
         std::io::BufReader::new(stdout)
             .read_line(&mut line)
@@ -1850,7 +1862,27 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
         said.contains("MARKED"),
         "the mark travels with the answer: {said}"
     );
-    assert!(said.contains("loaded per_request"), "{said}");
+    assert!(
+        said.contains("model loaded loaded"),
+        "the first request loads: {said}"
+    );
+
+    // The second request finds it resident, and status says what is held
+    // (D41): the price of residency is memory, and it is shown.
+    let again = text(&machine.run(&[
+        "run",
+        "lab/fixture:a-model-that-runs.gguf",
+        "--prompt",
+        "yes",
+        "--limit",
+        "2",
+    ]));
+    assert!(again.contains("model loaded resident"), "{again}");
+    let status = text(&machine.run(&["status"]));
+    assert!(
+        status.contains("resident: ") && status.contains("a-model-that-runs.gguf"),
+        "{status}"
+    );
 
     // And the daemon wrote the account down, in a different process from the
     // one that read it.
@@ -1865,5 +1897,5 @@ fn a_running_daemon_serves_a_generation_and_records_its_account() {
 
     let stopped = machine.run(&["stop", "--because", "the whole-system test is done"]);
     assert!(stopped.status.success(), "{}", error_text(&stopped));
-    assert!(serving.wait().expect("the daemon exits").success());
+    assert!(serving.0.wait().expect("the daemon exits").success());
 }

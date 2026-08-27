@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 40 |
+| **Version** | 41 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -1056,6 +1056,12 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 41 — idle with a model resident
+
+The soak tier idles a daemon for a minute with the fixture resident after one
+generation and reads zero context switches and zero clock ticks (D41, M2's
+third exit criterion). `mcf status` shows what is resident and what it weighs.
 
 ### Version 40 — the first token has a figure
 

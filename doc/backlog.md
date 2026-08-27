@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 161 |
+| **Version** | 162 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -53,7 +53,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-011 | How much works offline, and the difference between no internet and no local network | §7.11 | §3.2 | M1 | **resolved** — D33: offline is the ordinary case (everything but acquisition runs in a container with no network at all), and what MCF says when a network is needed and missing is what it *observed* rather than which layer is absent. [findings.md](findings.md) F10 measured why: a name that will not resolve reports no error kind at all, whether the cause is no network, no resolver or no such name. The distinction §V asks about is one an operator draws with `--from`, not one MCF probes for |
 | DEC-001 | API surface, the supervision contract on runtime death, simultaneous residency | §7.1 | §VI | M2 | **decided** — [PR9](proposals.md#pr9--what-serving-looks-like), accepted by the operator. MCF's own line-delimited protocol over the socket it already has, one request and many answer lines so a first token is observable, and the conditions — engine build, seed, sampler, degradation mark — in the terminating line, because the shape everybody expects has nowhere to put them and a surface that cannot carry the mark strips it (A5, B65). A runtime that dies mid-token is a partial answer with the tokens already produced and a classified failure, never a silent retry (A4, B2). One model resident at a time, because two make every latency figure depend on what else was loaded (§3.4); DEC-018 stays separate. An OpenAI-compatible adapter is a later and explicitly lossy decision that must refuse to serve a degraded result rather than serve it stripped |
 | DEC-009 | Arbitration outside a laboratory: disk exhaustion mid-download, several clients, two resident models | §7.9 | §3.8 | M2 | **narrowed** — D8 answers the lab/serving half, and the disk half is now built rather than decided: B-026 refuses a download that would not fit, with the arithmetic, and classifies a filesystem that fills anyway (F11). What remains is genuinely M2's: several clients at once, and two resident models |
-| DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | open — B-034 loads per request and says so in every account (`loaded: per_request`), which is the answer that costs nothing idle (§3.13) and hides no choice (§3.15) until this is decided; the price is a load at the start of every generation, and measuring it is B-035's business |
+| DEC-018 | Whether a served model stays resident when nobody is looking | §7.18 | §VI | M2 | **resolved** — D41, by measurement (F35): one model, held after its first request until another is asked for or the daemon stops, no timer (§6.9), stated in every account (`loaded: loaded` then `resident`, `resident_since`, dequantized size) and in `mcf status`. On MCF's own engine the load is 0.8 s against 6.8 s of forward passes for the shortest request, so residency is worth a twelfth today and the whole wait on a faster engine |
 | DEC-024 | Which capabilities are probed, when, at what cost, and what *inconclusive* licenses | §7.24 | **§X** | M3 | open |
 | DEC-025 | Whether automatic configuration may change under a user | §7.25 | §X | M3 | open |
 | DEC-017 | Proportionate protection for an exposed control plane | §7.17 | §V | M4 | open |
@@ -382,6 +382,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 162 — a model that stays
+
+DEC-018 resolved by D41 (F35): the daemon holds the last model asked for, says
+so in every account and in status, and releases it on displacement or stop.
 
 ### Version 161 — both halves of D24's latency figure
 

@@ -76,6 +76,8 @@ pub struct Daemon {
     /// What the record said when this process started, which is what *recovered
     /// across a restart* means concretely.
     recovered: Recovered,
+    /// The one model held between requests, if any (D41, §7.18).
+    resident: std::sync::Mutex<Option<crate::generation::Resident>>,
 }
 
 /// What was there when the daemon started.
@@ -158,6 +160,7 @@ impl Daemon {
             started,
             since: SystemClock.now(),
             recovered,
+            resident: std::sync::Mutex::new(None),
         };
         // An event, not a tick. *MCF was up between these two moments* is a
         // condition of anything measured in between (§3.4), and a daemon that
@@ -359,6 +362,7 @@ impl Daemon {
         let at = Timestamp::now();
         let account = crate::generation::serve_generation(
             &self.places.models,
+            &self.resident,
             named,
             prompt,
             limit,
@@ -405,6 +409,7 @@ impl Daemon {
         Value::map([
             ("protocol", Value::Integer(VERSION)),
             ("build", mcf_record::encode::build_identity(identity)),
+            ("resident", self.resident_value()),
             ("started_at", mcf_record::encode::timestamp(self.started)),
             (
                 "up_nanoseconds",
@@ -449,6 +454,21 @@ impl Daemon {
                 )]),
             ),
         ])
+    }
+
+    /// The model held between requests, or `Null` (D41).
+    ///
+    /// Said in status because memory held is the price of residency, and a
+    /// price nobody can see is a hidden choice (§3.15).
+    fn resident_value(&self) -> Value {
+        let held = self
+            .resident
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match held.as_ref() {
+            Some(resident) => resident.describe(),
+            None => Value::Null,
+        }
     }
 
     /// What this machine is holding, read from the disk rather than remembered.

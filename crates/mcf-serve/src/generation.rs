@@ -26,17 +26,48 @@ use mcf_standin::tokenizer::Vocabulary;
 
 use crate::control::Streamed;
 
+/// The model held between requests (D41, §7.18).
+///
+/// One at a time, identified by path and by the file's length and modification
+/// time — a file replaced under the same name is another model, and is loaded
+/// again rather than served from memory (A1).
+#[derive(Debug)]
+pub(crate) struct Resident {
+    path: std::path::PathBuf,
+    length: u64,
+    modified: Option<std::time::SystemTime>,
+    since: String,
+    vocabulary: Vocabulary,
+    model: llama::Loaded,
+    dequantized_bytes: u64,
+}
+
+impl Resident {
+    /// Path, size dequantized, and since when — what `mcf status` shows.
+    pub(crate) fn describe(&self) -> Value {
+        Value::map([
+            ("path", Value::text(self.path.display().to_string())),
+            (
+                "bytes_dequantized",
+                Value::Integer(i64::try_from(self.dequantized_bytes).unwrap_or(i64::MAX)),
+            ),
+            ("since", Value::text(self.since.clone())),
+        ])
+    }
+}
+
 /// Serves one generation, writing the stream, and returns the account that
 /// was sent as the terminating line.
 pub(crate) fn serve_generation(
     store: &Path,
+    resident: &std::sync::Mutex<Option<Resident>>,
     named: &str,
     prompt: &str,
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
 ) -> Value {
-    let account = match attempt(store, named, prompt, limit, seed, writer) {
+    let account = match attempt(store, resident, named, prompt, limit, seed, writer) {
         Ok(account) => account,
         Err(failure) => Value::map([
             ("tokens", Value::Integer(0)),
@@ -73,7 +104,7 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
             "engine",
             Value::text(format!("MCF's own stand-in, build {}", identity.version)),
         ),
-        ("loaded", Value::text("per_request")),
+        ("loaded", Value::text("not_loaded")),
         ("sampler", Value::text("greedy")),
         (
             "seed",
@@ -86,8 +117,16 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
     ])
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one generation is one sequence — resolve, reuse or load, encode, stream, account \
+              — and the residency decision sits in the middle of it; a function per half \
+              would put the guard that holds the model in one place and what it guards in \
+              another"
+)]
 fn attempt(
     store: &Path,
+    resident: &std::sync::Mutex<Option<Resident>>,
     named: &str,
     prompt: &str,
     limit: usize,
@@ -102,30 +141,59 @@ fn attempt(
     } else {
         store.join(named.replace(':', "/"))
     };
-    let bytes = std::fs::read(&path).map_err(|error| {
-        Failure::new(
-            mcf_core::failure::Category::ArtifactMissing,
-            mcf_core::failure::Attribution::User,
-            mcf_core::failure::Disposition::Refused,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            "there is no model at that path or name",
-        )
-        .with_context("asked_for", named.to_owned())
-        .with_context("looked_at", path.display().to_string())
-        .with_context("os_error", error.to_string())
-    })?;
-    let held = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    // The file as it is now, so that a resident model whose file has changed
+    // underneath is not served as if it were the file on disk.
+    let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
+    let length = metadata.len();
+    let modified = metadata.modified().ok();
 
-    let file = gguf::parse(&bytes)?;
-    llama::covers(&file)?;
-    let vocabulary = Vocabulary::read(&file)?;
-    let model = llama::load(&file, &bytes)?;
+    let mut held = resident
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let same = held.as_ref().is_some_and(|resident| {
+        resident.path == path && resident.length == length && resident.modified == modified
+    });
+    let loaded = if same {
+        "resident"
+    } else {
+        // Load, and hold: the previous resident, if any, is released here —
+        // one model at a time, and which one is what was asked for last.
+        let bytes = std::fs::read(&path).map_err(|error| missing(named, &path, &error))?;
+        let file = gguf::parse(&bytes)?;
+        llama::covers(&file)?;
+        let dequantized_bytes = file.dequantized_bytes().unwrap_or(0);
+        let vocabulary = Vocabulary::read(&file)?;
+        let model = llama::load(&file, &bytes)?;
+        *held = Some(Resident {
+            path: path.clone(),
+            length,
+            modified,
+            since: mcf_core::time::Timestamp::now().to_string(),
+            vocabulary,
+            model,
+            dequantized_bytes,
+        });
+        "loaded"
+    };
+    let Some(resident) = held.as_ref() else {
+        return Err(missing(
+            named,
+            &path,
+            &std::io::Error::other("nothing resident"),
+        ));
+    };
+    let vocabulary = &resident.vocabulary;
+    let model = &resident.model;
+    let held_bytes = length;
+    let since = resident.since.clone();
+    let dequantized = resident.dequantized_bytes;
+
     let prompt_tokens = vocabulary.encode(prompt, true)?;
     let build = BuildIdentity::current().version.to_owned();
 
     let mut at = 0_usize;
     let generated = session::generate_streaming(
-        &model,
+        model,
         &build,
         &Request {
             prompt: prompt_tokens.clone(),
@@ -171,8 +239,46 @@ fn attempt(
         ("text", Value::text(vocabulary.decode(&produced.tokens))),
         (
             "conditions",
-            conditions(named, Some((&path, held)), seed, limit),
+            conditions(named, Some((&path, held_bytes)), seed, limit).with_residency(
+                loaded,
+                &since,
+                dequantized,
+            ),
         ),
         ("degraded", Value::text(degradation)),
     ]))
+}
+
+/// The refusal for a model that is not where it was said to be.
+fn missing(named: &str, path: &Path, error: &std::io::Error) -> Failure {
+    Failure::new(
+        mcf_core::failure::Category::ArtifactMissing,
+        mcf_core::failure::Attribution::User,
+        mcf_core::failure::Disposition::Refused,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        "there is no model at that path or name",
+    )
+    .with_context("asked_for", named.to_owned())
+    .with_context("looked_at", path.display().to_string())
+    .with_context("os_error", error.to_string())
+}
+
+/// Residency, stated on every account (D41).
+trait WithResidency {
+    fn with_residency(self, loaded: &str, since: &str, dequantized: u64) -> Self;
+}
+
+impl WithResidency for Value {
+    fn with_residency(self, loaded: &str, since: &str, dequantized: u64) -> Self {
+        let Value::Map(mut fields) = self else {
+            return self;
+        };
+        fields.insert("loaded".to_owned(), Value::text(loaded));
+        fields.insert("resident_since".to_owned(), Value::text(since));
+        fields.insert(
+            "resident_bytes_dequantized".to_owned(),
+            Value::Integer(i64::try_from(dequantized).unwrap_or(i64::MAX)),
+        );
+        Value::Map(fields)
+    }
 }
