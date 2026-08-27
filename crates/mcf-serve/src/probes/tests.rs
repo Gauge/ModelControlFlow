@@ -349,9 +349,14 @@ fn speaking_then_stopping_is_what_counts() {
 
 use super::{Accepted, Context, usable_context};
 
-/// A file whose claim holds costs one trial, not fifteen. The search exists
-/// for the case where the claim does not hold, and running it anyway would
-/// spend a context's worth of forward passes to learn nothing.
+/// A file whose claim holds costs one cheap question and one real one, not
+/// fifteen. The search exists for the case where the claim does not hold, and
+/// running it anyway would spend a context's worth of forward passes to learn
+/// nothing.
+///
+/// The cheap one first is the instrument being asked whether it can answer at
+/// all, which is worth a single token and was worth eight thousand before
+/// (F44).
 #[test]
 fn a_context_that_holds_is_one_question() {
     let mut asked = Vec::new();
@@ -376,7 +381,11 @@ fn a_context_that_holds_is_one_question() {
             because: None,
         }
     );
-    assert_eq!(asked, vec![8191], "one trial, at the declared length");
+    assert_eq!(
+        asked,
+        vec![1, 8191],
+        "the instrument, then the claim — and no search"
+    );
 }
 
 /// Where the claim does not hold, the boundary is found exactly.
@@ -406,7 +415,7 @@ fn the_boundary_is_found_where_it_is() {
         "the engine's own reason travels with the divergence (A1)"
     );
     assert!(
-        probed.trials <= 14,
+        probed.trials <= 15,
         "a halving, not a walk: {}",
         probed.trials
     );
@@ -437,17 +446,31 @@ fn silent_truncation_is_caught_and_named() {
 
 /// An engine that cannot say how much it read leaves the question open. It is
 /// not *the context is short* and not *the context is fine* (A7, D42).
+///
+/// And it costs one token to learn. MCF's own engine is this engine, and the
+/// first version of this probe sent it the whole declared context before
+/// finding out — eight thousand forward passes to reach *could not tell*
+/// (F44).
 #[test]
 fn an_engine_that_cannot_say_leaves_it_unknown() {
+    let mut asked = Vec::new();
     let probed = usable_context(
         std::path::Path::new("/fixture"),
         8192,
         "test",
-        &mut |_length| Accepted::CouldNotTell("this engine does not say".to_owned()),
+        &mut |length| {
+            asked.push(length);
+            Accepted::CouldNotTell("this engine does not say".to_owned())
+        },
     );
     assert!(
         probed.outcome.observed().is_none(),
         "nothing was observed, so nothing may be reported as observed"
+    );
+    assert_eq!(
+        asked,
+        vec![1],
+        "and it was learned from one token, not from a context's worth"
     );
 }
 

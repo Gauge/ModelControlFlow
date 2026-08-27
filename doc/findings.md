@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 47 |
+| **Version** | 48 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -71,6 +71,7 @@ forward as one.
 | 41 | [F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)](#41--f41--the-check-could-not-fail-and-the-mutation-that-showed-it-was-not-the-first-one-tried-b-003-b-368-b-377-a13-f40) |
 | 42 | [F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)](#42--f42--the-context-both-models-declare-is-the-context-they-have-and-the-probe-that-asked-broke-the-protocol-asking-b-055-b-058-b-059-b-376-d42-37-38-a2-a21) |
 | 43 | [F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)](#43--f43--a-model-that-produced-nothing-now-answers-and-the-change-can-be-accounted-for-b-059-b-062-d42-d43-38-315-a21-f38) |
+| 44 | [F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)](#44--f44--a-configuration-says-whether-it-still-holds-and-the-probe-that-asked-spent-eight-thousand-passes-learning-it-could-not-b-058-b-059-d42-d43-a21-f39-f42) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3375,7 +3376,101 @@ model on one machine through one engine — §3.8's point is that the *wrong*
 configuration corrupts a measurement, and this shows the mechanism, not a
 general result about small models.
 
+## 44 · F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)
+
+**What was built.** D43's other half: MCF noticing when its answer *would now
+differ* from what somebody applied. Two things are checkable and they are not
+the same kind of knowledge, so they are reported separately and never mixed.
+
+**The conditions can be checked with no trials at all.** A configuration
+records the engine and the build it was taken through, and MCF knows which are
+in force. When they have moved it says so, naming both sides:
+
+```
+moved    the engine it was taken through is not the one in force:
+         was provisioned, now stand-in
+         which does not mean the answer changed — two engines agreed on this
+         question when it was measured (F39) — only that the evidence was
+         gathered elsewhere (A21)
+```
+
+**That caveat is the finding, not decoration.** F39 measured two engines
+returning the same verdict on this exact question, so *the conditions moved*
+and *the answer changed* are different claims and only the first is known. A
+tool that reported a changed engine as a disagreement would be manufacturing
+divergences, which is the same error as suppressing them and easier to make.
+
+**The answer is compared only where there is evidence.** `mcf probe` has just
+measured the thing that set the configuration, so the comparison is free and it
+is the one that can say *wrong*:
+
+```
+applied  im_start…im_end as assistant — set by the chat-template probe …
+agrees   this run measured the same addressing that is applied, so the
+         configuration is not merely old — it is confirmed (A21)
+```
+
+and, with the stored answer made to differ:
+
+```
+DIVERGENCE what is applied is some other addressing, and this run measured
+           im_start…im_end as assistant as best. MCF's answer would now differ,
+           which is the case D43 is about — applying it is an act
+```
+
+**An inconclusive re-probe is not a disagreement.** It leaves the capability
+where it was and does not license undoing anything — the same rule as D42's,
+applied to the second occasion it matters.
+
+**The probe spent eight thousand forward passes to learn it could not answer.**
+Running the whole of `mcf probe` through MCF's own engine took the
+usable-context probe (F42) down a path where the answer was never available:
+MCF's engine does not report how many identifiers it read, so the probe could
+only ever return *could not tell* — after sending it 8191 identifiers and
+paying a forward pass for each. The instrument is now asked the cheapest
+question there is, **one token**, before the model is asked anything:
+
+```
+INCONCLUSIVE — this engine does not say how many identifiers it read, so a
+prompt taken whole cannot be told from one quietly shortened (B-376)
+```
+
+Same answer, 8190 forward passes cheaper. The general shape is worth keeping:
+**ask the instrument whether it can answer before asking the model** — §3.18
+makes a probe an experiment, and an experiment whose instrument cannot read the
+result is one that should not be run.
+
+**A comparison that invented a parse.** The first version of the build check
+took the first two words of the build identity as its version. It worked on the
+real string and turned a compiler version into a version number on anything
+else. The whole identity is compared now and only the display is shortened: a
+different compiler or target *is* a different build, and choosing which
+differences count would be MCF deciding where it has no evidence (§3.15).
+
+**What was not established.** Whether a moved condition ever *does* change the
+answer here — F39 says not for these two engines on this question, and that is
+two engines and one question. Whether the model file itself changed: the
+configuration is keyed by path, and a file swapped underneath would be found by
+a re-probe and by nothing else. And the divergence is reported where somebody
+runs `mcf probe`; a configuration nobody re-probes is still as good as the day
+it was taken, which is now *visible* rather than fixed — which is what D43
+argues is the honest state and §7.25 feared was a rotting branch.
+
 ## Changelog
+
+### Version 48 — a configuration says whether it still holds
+
+F44. D43's divergence half. The conditions a configuration was taken under can
+be checked with no trials and are reported as *the evidence was gathered
+elsewhere*, never as a disagreement — F39 measured two engines agreeing on this
+question, so a moved engine is not a changed answer. The answer itself is
+compared only where a run has just measured it, which is the comparison that
+can say wrong.
+
+It also cost eight thousand forward passes to learn the instrument could not
+answer. The instrument is asked one token first now, which is a shape worth
+keeping: ask whether the instrument can read the result before running the
+experiment.
 
 ### Version 47 — a model that produced nothing now answers
 

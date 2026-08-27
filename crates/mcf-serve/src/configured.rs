@@ -147,6 +147,83 @@ impl Addressing {
     }
 }
 
+/// What has changed since a configuration was applied.
+///
+/// **Two kinds of thing, deliberately not mixed.** That the *conditions* have
+/// changed is a fact, checkable with no trials: the configuration says which
+/// engine and which build it was taken through, and MCF knows which are in
+/// force now. That the *answer* would now differ is not a fact until somebody
+/// asks the model again — and reporting the first as though it were the second
+/// would be a declaration wearing a measurement's clothes, which is what A21
+/// exists to stop.
+///
+/// So a changed condition says *this may no longer hold, and here is what to
+/// run*; only a re-probe says *it does not hold*.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Since {
+    /// Nothing has changed that MCF can see without asking.
+    ConditionsHold,
+    /// The configuration was taken under conditions that are no longer in
+    /// force, naming each one that moved.
+    ConditionsMoved(Vec<Moved>),
+}
+
+/// One condition that is not what it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moved {
+    /// What the condition is called.
+    pub what: &'static str,
+    /// What it was when the configuration was applied.
+    pub was: String,
+    /// What it is now.
+    pub now: String,
+}
+
+/// Whether the conditions a configuration was taken under still hold.
+///
+/// The engine is compared on the name a probe recorded, and the build on its
+/// version. Neither comparison proves the answer would differ — a model
+/// addressed one way through two engines usually wants the same addressing,
+/// and F39 measured exactly that. What it establishes is that the *evidence*
+/// was gathered somewhere else, which is the thing a person needs to know
+/// before deciding whether to trust it (D43, §3.4).
+#[must_use]
+pub fn since(addressing: &Addressing, engine_now: &str, build_now: &str) -> Since {
+    let mut moved = Vec::new();
+    let head = |said: &str| said.split(',').next().unwrap_or(said).trim().to_owned();
+    // The whole build identity, not a version parsed out of it. A different
+    // compiler or a different target is a different build, and inventing a
+    // parse to decide which differences count would be MCF deciding where it
+    // has no evidence (§3.15). What is *shown* is shortened; what is
+    // *compared* is everything.
+    let version = str::to_owned;
+    if head(&addressing.conditions) != head(engine_now) {
+        moved.push(Moved {
+            what: "engine",
+            was: head(&addressing.conditions),
+            now: head(engine_now),
+        });
+    }
+    if version(&addressing.build) != version(build_now) {
+        let shown = |said: &str| {
+            said.split_whitespace()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        moved.push(Moved {
+            what: "build",
+            was: shown(&addressing.build),
+            now: shown(build_now),
+        });
+    }
+    if moved.is_empty() {
+        Since::ConditionsHold
+    } else {
+        Since::ConditionsMoved(moved)
+    }
+}
+
 /// Where one model's derived configuration lives.
 #[must_use]
 pub fn path_for(mcf_home: &Path, model: &Path) -> PathBuf {

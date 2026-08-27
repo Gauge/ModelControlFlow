@@ -820,8 +820,17 @@ pub fn usable_context(
         );
     }
 
-    let mut trials = 0_usize;
-    let mut spent = 0_usize;
+    // Ask the *instrument* before asking the model, and ask it the cheapest
+    // question there is. MCF's own engine does not report how many identifiers
+    // it read, so it can never answer this probe — and finding that out by
+    // sending it the whole declared context first cost eight thousand forward
+    // passes to learn nothing (F44). One token learns the same thing.
+    if let Accepted::CouldNotTell(said) = ask(1) {
+        return inconclusive(said, 1, 1);
+    }
+
+    let mut trials = 1_usize;
+    let mut spent = 1_usize;
     let mut because: Option<String> = None;
     // Whole is the length asked for; read is what came back. They differ only
     // under truncation, and that difference is the finding.

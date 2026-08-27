@@ -115,3 +115,50 @@ fn the_provenance_says_which_probe_and_when() {
     assert!(said.contains("2026-08-27"), "{said}");
     assert!(said.contains("provisioned"), "{said}");
 }
+
+/// The conditions holding and the answer holding are different questions, and
+/// this is the one that needs no trials.
+#[test]
+fn conditions_that_still_hold_say_so() {
+    use super::{Since, since};
+    let held = an_addressing();
+    assert_eq!(
+        since(&held, "engine: provisioned", &an_addressing().build),
+        Since::ConditionsHold,
+        "the engine's head and the build's version are what is compared"
+    );
+}
+
+/// A different engine is a moved condition, named, with both sides kept.
+///
+/// It is deliberately *not* a divergence. F39 measured two engines returning
+/// the same verdict on this exact question, so *the evidence was gathered
+/// elsewhere* is what MCF knows and *the answer changed* is what it does not
+/// (A21).
+#[test]
+fn a_different_engine_is_a_moved_condition_not_a_disagreement() {
+    use super::{Since, since};
+    let held = an_addressing();
+    let moved = since(&held, "engine: stand-in", &an_addressing().build);
+    let Since::ConditionsMoved(moved) = moved else {
+        panic!("the engine moved and was not noticed");
+    };
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0].what, "engine");
+    assert!(moved[0].was.contains("provisioned"), "{:?}", moved[0]);
+    assert!(moved[0].now.contains("stand-in"), "{:?}", moved[0]);
+}
+
+/// A different build is a moved condition too, and both can move at once.
+#[test]
+fn a_different_build_is_a_moved_condition() {
+    use super::{Since, since};
+    let held = an_addressing();
+    let Since::ConditionsMoved(moved) =
+        since(&held, "engine: stand-in", "MCF 0.2.0-m1 (rustc 1.99)")
+    else {
+        panic!("two conditions moved and neither was noticed");
+    };
+    assert_eq!(moved.len(), 2, "{moved:?}");
+    assert!(moved.iter().any(|one| one.what == "build"));
+}

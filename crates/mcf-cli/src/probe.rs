@@ -138,7 +138,11 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     let applied = if apply {
         Some(apply_addressing(&path, &probed, &engine))
     } else {
-        None
+        // Not applying is not the same as not looking. If something was
+        // applied before, this run has just re-measured the thing that set it,
+        // and saying nothing about whether the two agree would be throwing
+        // away the comparison D43 asks for (B-058).
+        against_what_was_applied(&path, &probed, &engine)
     };
 
     let mut lines = vec![format!("probed {}", path.display()), String::new()];
@@ -151,7 +155,7 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     match &probed.outcome {
         Outcome::Observed(addressed) => lines.extend(observed(addressed)),
         Outcome::Inconclusive { because } => {
-            lines.push(format!("    INCONCLUSIVE — {because}"));
+            lines.push(format!(" INCONCLUSIVE — {because}"));
             lines.push(
                 " which licenses nothing: MCF configures no differently than before, and \
                  this is not a negative result (D42, §3.18)"
@@ -185,6 +189,74 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
 }
 
 /// What a decided probe says.
+/// What this run says about a configuration somebody applied earlier (D43,
+/// B-058).
+///
+/// D43's divergence is *MCF's answer would now differ*, and there are two ways
+/// to learn it, which are not the same kind of knowledge and are not reported
+/// as though they were.
+///
+/// The **conditions** can be compared with no trials at all: the configuration
+/// records the engine and build it was taken through. That they have moved
+/// does not mean the answer has — F39 measured two engines agreeing on this
+/// exact question — so it is reported as *this was learned somewhere else*,
+/// with what to run, and never as a disagreement.
+///
+/// The **answer** is compared only because this run has just measured it. That
+/// is evidence, and it is the one that says the configuration is wrong.
+fn against_what_was_applied(
+    path: &std::path::Path,
+    probed: &mcf_core::probe::Probed<Addressed>,
+    engine: &str,
+) -> Option<Vec<String>> {
+    use mcf_serve::configured::Since;
+
+    let home = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))?;
+    let stored = mcf_serve::configured::read(&home, path)?;
+
+    let mut said = vec![format!("  applied  {}", stored.provenance())];
+
+    // The evidence first, because it is the one that can say *wrong*.
+    match &probed.outcome {
+        Outcome::Observed(addressed) if addressed.best == stored.name => {
+            said.push(
+                "  agrees this run measured the same addressing that is applied, so the configuration is not merely old — it is confirmed (A21)"
+                    .to_owned(),
+            );
+        }
+        Outcome::Observed(addressed) => {
+            said.push(format!(
+                "  DIVERGENCE what is applied is {}, and this run measured {} as best. MCF's answer would now differ, which is the case D43 is about — applying it is an act: `mcf probe --apply` (§3.11, D43)",
+                stored.name, addressed.best
+            ));
+        }
+        Outcome::Inconclusive { .. } => {
+            said.push(
+                "  unchanged  this run could not tell, which is not a disagreement with what is applied and does not license undoing it: an inconclusive probe leaves the capability where it was (A7, D42)"
+                    .to_owned(),
+            );
+        }
+    }
+
+    // Then the conditions, which are a fact about where the evidence came from
+    // rather than a fact about the model.
+    let build = mcf_core::build_identity::BuildIdentity::current().to_string();
+    if let Since::ConditionsMoved(moved) = mcf_serve::configured::since(&stored, engine, &build) {
+        for one in moved {
+            said.push(format!(
+                "  moved the {} it was taken through is not the one in force: was {}, now {}",
+                one.what, one.was, one.now
+            ));
+        }
+        said.push(
+            " which does not mean the answer changed — two engines agreed on this question when it was measured (F39) — only that the evidence was gathered elsewhere (A21)"
+                .to_owned(),
+        );
+    }
+    Some(said)
+}
+
 /// The act D43 requires: somebody read what the probe observed and said *do
 /// that* (B-059).
 ///
@@ -256,7 +328,7 @@ fn apply_addressing(
                     .to_owned(),
             ];
             match recorded {
-                Ok(journal) => said.push(format!("           recorded in {}", journal.display())),
+                Ok(journal) => said.push(format!(" recorded in {}", journal.display())),
                 Err(failure) => said.push(format!(
                     " BUT NOT RECORDED — {failure}; a change nobody can find later is \
                      the silent part D43 forbids"
@@ -301,7 +373,7 @@ fn context_lines(
     ];
     match &probed.outcome {
         Outcome::Observed(context) => {
-            lines.push(format!("    declared {} token(s)", context.declared));
+            lines.push(format!(" declared {} token(s)", context.declared));
             lines.push(format!(
                 " accepted {} token(s) of prompt, with one left to generate",
                 context.accepted
@@ -322,12 +394,12 @@ fn context_lines(
                     context.declared, context.accepted
                 ));
                 if let Some(because) = &context.because {
-                    lines.push(format!("    the engine's own words: {because}"));
+                    lines.push(format!(" the engine's own words: {because}"));
                 }
             }
         }
         Outcome::Inconclusive { because } => {
-            lines.push(format!("    INCONCLUSIVE — {because}"));
+            lines.push(format!(" INCONCLUSIVE — {because}"));
             lines.push(
                 " which licenses nothing: MCF configures no differently than before, and this is not a negative result (D42, §3.18)"
                     .to_owned(),
@@ -345,7 +417,7 @@ fn context_lines(
 }
 
 fn observed(addressed: &Addressed) -> Vec<String> {
-    let mut lines = vec!["    answered, then ended at the model's own stop token:".to_owned()];
+    let mut lines = vec![" answered, then ended at the model's own stop token:".to_owned()];
     for (name, ended) in &addressed.stopped {
         let mark = if *name == addressed.best { " ←" } else { "" };
         // The silence is printed beside the count rather than under it: a
@@ -388,7 +460,7 @@ fn observed(addressed: &Addressed) -> Vec<String> {
         ));
     }
     lines.push(String::new());
-    lines.push(format!("    best     {}", addressed.best));
+    lines.push(format!(" best {}", addressed.best));
 
     // The divergence (B-058): what the file said against what the model did.
     let raw_is_best = addressed.best == "raw";
