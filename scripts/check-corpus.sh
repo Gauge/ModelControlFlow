@@ -48,6 +48,12 @@ readonly BUDGET=12
 
 # One line per entry: family | path under the store | state | what to expect.
 #
+# The embedding entry is expected to refuse for as long as B-371 is open, and
+# what it refuses *with* is the point: `bert` is a model with no next token to
+# produce, so `mcf run --prompt` has no question to put to it (DEC-055). It is
+# in the corpus anyway, because a family MCF does not cover should still be
+# refused by name rather than crashed on.
+#
 # `runs` expects the text to contain the fourth field. `refuses` expects the
 # refusal to contain it. The fourth field is what makes each line say something
 # a change could contradict.

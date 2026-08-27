@@ -39,6 +39,42 @@ const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
 pub use crate::architecture::FAMILIES;
 
+/// Whether this crate implements what the file declares itself to be.
+///
+/// **Separated from [`load`] so a caller can ask before it reads anything.**
+/// Loading a model dequantizes every tensor it names; a surface that wanted to
+/// tell the operator *this is not a model I can run* should not have to spend
+/// that first. It also decides which refusal an operator sees when more than
+/// one thing is unsupported at once, and the architecture is the more useful
+/// of them: a vocabulary MCF cannot read is a component, and an architecture it
+/// cannot read is the whole model.
+///
+/// # Errors
+///
+/// `artifact.format.unsupported` naming what the file declared and what this
+/// crate implements.
+pub fn covers(file: &File) -> Result<()> {
+    let architecture = file.architecture().unwrap_or("unstated");
+    if FAMILIES.contains(&architecture) {
+        return Ok(());
+    }
+    Err(Failure::new(
+        Category::ArtifactFormatUnsupported,
+        Attribution::Artifact,
+        Disposition::Refused,
+        WHERE,
+        "MCF's engine has not been taught this architecture",
+    )
+    .with_context("declared", architecture.to_owned())
+    .with_context("implemented", FAMILIES.join(", "))
+    .with_context(
+        "what_to_do",
+        "B-365 is the register item that grows this list, and it grows by somebody reading \
+         the architecture rather than by MCF guessing that one shaped like another will do \
+         (A19)",
+    ))
+}
+
 /// The architecture this module was written against, named for a message.
 pub const ARCHITECTURE: &str = "llama";
 
@@ -176,21 +212,7 @@ impl Cache {
 /// this crate does not decode.
 pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     let architecture = file.architecture().unwrap_or("unstated");
-    if !FAMILIES.contains(&architecture) {
-        return Err(Failure::new(
-            Category::ArtifactFormatUnsupported,
-            Attribution::Artifact,
-            Disposition::Refused,
-            WHERE,
-            "MCF's engine has not been taught this architecture",
-        )
-        .with_context("declared", architecture.to_owned())
-        .with_context("implemented", FAMILIES.join(", "))
-        .with_context(
-            "what_to_do",
-            "B-365 is the register item that grows this list, and it grows by somebody              reading the architecture rather than by MCF guessing that one shaped like              another will do (A19)",
-        ));
-    }
+    covers(file)?;
 
     let shape = read_shape(file, architecture)?;
     // Every quantity is read under the file's own architecture prefix, which is
