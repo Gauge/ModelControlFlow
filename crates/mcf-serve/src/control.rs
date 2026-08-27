@@ -70,7 +70,14 @@ pub enum Request {
         /// What to ask.
         prompt: String,
         /// How many tokens at most.
-        limit: usize,
+        /// How many tokens, if the caller said.
+        ///
+        /// `None` is not the same as the default. A caller that said nothing
+        /// may be given a budget somebody derived for this model, and a caller
+        /// that said `32` meant `32` — MCF never changes a value under
+        /// somebody who set it (D43). The daemon substitutes, so the two stay
+        /// distinguishable until the last moment.
+        limit: Option<usize>,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
         /// The prompt already segmented, where the caller built it.
@@ -113,7 +120,10 @@ impl Request {
                 ("prompt", Value::text(prompt.clone())),
                 (
                     "limit",
-                    Value::Integer(i64::try_from(*limit).unwrap_or(i64::MAX)),
+                    match limit {
+                        Some(limit) => Value::Integer(i64::try_from(*limit).unwrap_or(i64::MAX)),
+                        None => Value::Null,
+                    },
                 ),
                 (
                     "seed",
@@ -211,8 +221,7 @@ impl Request {
                     limit: value
                         .get("limit")
                         .and_then(Value::as_integer)
-                        .and_then(|limit| usize::try_from(limit).ok())
-                        .unwrap_or(DEFAULT_LIMIT),
+                        .and_then(|limit| usize::try_from(limit).ok()),
                     seed: value
                         .get("seed")
                         .and_then(Value::as_integer)

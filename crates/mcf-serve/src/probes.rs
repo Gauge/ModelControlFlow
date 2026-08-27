@@ -639,7 +639,7 @@ pub fn trial(
     let request = crate::control::Request::Generate {
         model: model.display().to_string(),
         prompt: prompt.to_owned(),
-        limit: budget,
+        limit: Some(budget),
         seed: 0,
         tokens: tokens.map(<[usize]>::to_vec),
         engine: engine.map(str::to_owned),
@@ -955,7 +955,7 @@ pub fn accepts(
     let request = crate::control::Request::Generate {
         model: model.display().to_string(),
         prompt: String::new(),
-        limit: 1,
+        limit: Some(1),
         seed: 0,
         tokens: Some(vec![filler; length]),
         engine: engine.map(str::to_owned),
@@ -1051,4 +1051,121 @@ pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
             .token(*at)
             .is_some_and(|spelled| spelled.chars().count() > 1 && !spelled.starts_with('<'))
     })
+}
+
+/// How long this model's turns run, and whether it ends them at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stopping {
+    /// The longest turn that ended at the model's own stop token.
+    pub longest: usize,
+    /// How many trials ended that way.
+    pub stopped: usize,
+    /// How many were asked.
+    pub of: usize,
+    /// The largest budget any trial was given.
+    pub ceiling: usize,
+    /// MCF's default budget, for the divergence — what a caller gets if they
+    /// say nothing.
+    pub default_budget: usize,
+}
+
+/// The method.
+pub const STOP_CONDITIONS: Method = Method {
+    name: "stop-conditions",
+    asks: "the same short questions, doubling the budget until the model ends its turn or a \
+           ceiling is reached, and reports the longest turn it finished — so that *this model \
+           does not stop* is told apart from *the budget was too small*, which look identical \
+           from outside",
+    decides: "how many tokens MCF should allow this model by default — and nothing else: a \
+              probe writes the verified half of a capability and never a default (D42)",
+};
+
+/// The turn lengths a model actually needs.
+///
+/// **Doubling rather than one large budget.** A budget large enough for the
+/// worst case is spent on every trial including the ones that end in ten
+/// tokens, and tokens are what a probe costs (B49). Doubling pays for the
+/// answer that was needed and one wasted step at most.
+///
+/// **A ceiling that is reported.** Reaching it is not *the model never stops* —
+/// it is *not within this many tokens*, which is a different claim and the only
+/// one the trials support (A7). The number travels so that a reader can decide
+/// whether it was large enough.
+#[must_use]
+pub fn stop_conditions(
+    model: &Path,
+    trials: usize,
+    from: usize,
+    ceiling: usize,
+    default_budget: usize,
+    engine: &str,
+    generate: &mut dyn FnMut(&str, usize) -> Trial,
+) -> Probed<Stopping> {
+    let conditions = conditions(&STOP_CONDITIONS, model, engine);
+    let mut spent = 0_usize;
+    let mut ran = 0_usize;
+    let mut longest = 0_usize;
+    let mut stopped = 0_usize;
+    let mut reached = from;
+
+    for trial in 0..trials {
+        let question = QUESTIONS
+            .get(trial % QUESTIONS.len())
+            .copied()
+            .unwrap_or(QUESTION);
+        let mut budget = from;
+        loop {
+            ran = ran.saturating_add(1);
+            spent = spent.saturating_add(budget);
+            reached = reached.max(budget);
+            match generate(question, budget) {
+                Trial::Stopped { after } => {
+                    stopped = stopped.saturating_add(1);
+                    longest = longest.max(after);
+                    break;
+                }
+                Trial::RanOut if budget >= ceiling => break,
+                Trial::RanOut => budget = budget.saturating_mul(2).min(ceiling),
+                Trial::CouldNotTell(because) => {
+                    return Probed::inconclusive(
+                        STOP_CONDITIONS,
+                        format!("on the question {question:?}: {because}"),
+                        ran,
+                        spent,
+                        conditions,
+                    );
+                }
+            }
+        }
+    }
+
+    if stopped == 0 {
+        return Probed::inconclusive(
+            STOP_CONDITIONS,
+            format!(
+                "no turn ended at this model's own stop token within {reached} tokens. That is \
+                 not *this model never stops* — it is *not within {reached}*, and a larger \
+                 ceiling or a different addressing may end it (A7). If this model is addressed \
+                 wrongly it will not stop at any budget, which is what the chat-template probe \
+                 is for"
+            ),
+            ran,
+            spent,
+            conditions,
+        );
+    }
+
+    Probed {
+        method: STOP_CONDITIONS,
+        outcome: Outcome::Observed(Stopping {
+            longest,
+            stopped,
+            of: trials,
+            ceiling: reached,
+            default_budget,
+        }),
+        trials: ran,
+        tokens: spent,
+        conditions,
+    }
 }

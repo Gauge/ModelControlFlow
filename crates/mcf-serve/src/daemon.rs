@@ -407,7 +407,7 @@ impl Daemon {
         &self,
         named: &str,
         prompt: &str,
-        limit: usize,
+        limit: Option<usize>,
         seed: u64,
         tokens: Option<&[usize]>,
         engine: Option<&str>,

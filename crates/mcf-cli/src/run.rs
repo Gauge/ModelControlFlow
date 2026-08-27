@@ -80,13 +80,11 @@ pub(crate) fn run(
     });
     if let Some((socket, connection)) = listening {
         return served(
-            connection,
-            &socket,
-            &path,
-            prompt,
-            limit.unwrap_or(TOKENS),
-            seed,
-            engine,
+            connection, &socket, &path, prompt,
+            // Not `unwrap_or(TOKENS)`: the daemon may have a budget somebody
+            // derived for this model, and it can only use it if it can tell a
+            // caller who said nothing from one who said thirty-two (D43).
+            limit, seed, engine,
         );
     }
     if engine.is_some_and(|engine| engine != "stand-in") {
@@ -153,7 +151,7 @@ fn served(
     socket: &Path,
     path: &Path,
     prompt: &str,
-    limit: usize,
+    limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
 ) -> Response {
@@ -272,7 +270,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}{}",
+             {}{}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -291,6 +289,14 @@ fn served(
                 .and_then(mcf_record::json::Value::as_text)
             {
                 Some(how) => format!("\x20 addressed {how}\n"),
+                None => String::new(),
+            },
+            match account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("budget_from"))
+                .and_then(mcf_record::json::Value::as_text)
+            {
+                Some(why) => format!("\x20 budget    {why}\n"),
                 None => String::new(),
             },
             match degraded {

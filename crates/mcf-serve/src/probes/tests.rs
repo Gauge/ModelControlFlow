@@ -527,3 +527,94 @@ fn what_is_applied_addresses_it_as_the_probe_did() {
          identifier"
     );
 }
+
+use super::{Stopping, stop_conditions};
+
+/// A model that ends its turns is reported by the longest one, and the budget
+/// doubles rather than starting large.
+#[test]
+fn a_model_that_stops_is_reported_by_its_longest_turn() {
+    let mut budgets = Vec::new();
+    let probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        2,
+        32,
+        1024,
+        32,
+        "test",
+        &mut |_question, budget| {
+            budgets.push(budget);
+            if budget >= 128 {
+                Trial::Stopped { after: 100 }
+            } else {
+                Trial::RanOut
+            }
+        },
+    );
+    let observed = probed.outcome.observed().expect("both turns ended");
+    assert_eq!(
+        observed,
+        &Stopping {
+            longest: 100,
+            stopped: 2,
+            of: 2,
+            ceiling: 128,
+            default_budget: 32,
+        }
+    );
+    assert_eq!(
+        budgets,
+        vec![32, 64, 128, 32, 64, 128],
+        "it doubles from the floor for each trial rather than starting large (B49)"
+    );
+}
+
+/// A model that never stops within the ceiling is *not* reported as one that
+/// never stops.
+///
+/// The claim the trials support is *not within this many tokens*, and the
+/// number travels so a reader can judge whether it was large enough (A7). It
+/// also names the likelier cause, because a model addressed wrongly does not
+/// stop at any budget (F38).
+#[test]
+fn never_stopping_names_the_ceiling_and_not_the_model() {
+    let probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        2,
+        32,
+        128,
+        32,
+        "test",
+        &mut |_question, _budget| Trial::RanOut,
+    );
+    assert!(probed.outcome.observed().is_none());
+    let said = format!("{:?}", probed.outcome);
+    assert!(said.contains("128"), "the ceiling has to be named: {said}");
+    assert!(
+        said.contains("chat-template"),
+        "and the likelier cause: {said}"
+    );
+}
+
+/// The ceiling is a ceiling: the budget never exceeds it.
+#[test]
+fn the_budget_never_passes_the_ceiling() {
+    let mut budgets = Vec::new();
+    let _probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        1,
+        32,
+        100,
+        32,
+        "test",
+        &mut |_question, budget| {
+            budgets.push(budget);
+            Trial::RanOut
+        },
+    );
+    assert!(
+        budgets.iter().all(|budget| *budget <= 100),
+        "a doubling that overshot the ceiling would spend past what was asked: {budgets:?}"
+    );
+    assert_eq!(budgets, vec![32, 64, 100]);
+}

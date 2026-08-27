@@ -33,6 +33,16 @@ const TRIALS: usize = 5;
 /// a probe that could not decide within it says so (D42's third state).
 const BUDGET: usize = 320;
 
+/// Where the stop-condition probe starts doubling.
+///
+/// Small on purpose: most turns are short, and a first budget large enough for
+/// the worst case is spent on every trial (B49).
+const FROM: usize = 32;
+
+/// And where it stops. Reaching this is *not within this many tokens*, never
+/// *never* (A7).
+const CEILING: usize = 1024;
+
 /// Probes a model.
 /// The engine, named the way a later comparison can use.
 ///
@@ -204,6 +214,9 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     lines.push(String::new());
 
     lines.extend(context_lines(&socket, &path, &bytes, &engine, asked));
+    lines.extend(stopping_lines(
+        &socket, &path, &bytes, &engine, asked, apply,
+    ));
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
          this model is an act somebody takes, and it is recorded (D42, D43)."
@@ -364,6 +377,148 @@ fn apply_addressing(
             }
             said
         }
+    }
+}
+
+/// How long this model's turns run, against the budget MCF would give it
+/// (B-056).
+///
+/// It is asked through whatever addressing was *applied*, because that is how
+/// the model will actually be spoken to — asking it raw would measure a turn
+/// nobody will ever ask for. A model addressed wrongly does not stop at any
+/// budget, which is the chat-template probe's business and is why this one
+/// says so rather than reporting an enormous number.
+fn stopping_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+    engine: &str,
+    asked: &str,
+    apply: bool,
+) -> Vec<String> {
+    let Ok(file) = mcf_serve::probes::gguf_of(bytes) else {
+        return Vec::new();
+    };
+    let Ok(vocabulary) = mcf_standin::tokenizer::Vocabulary::read(&file) else {
+        return Vec::new();
+    };
+    let home = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf));
+    let addressing = home
+        .as_ref()
+        .and_then(|home| mcf_serve::configured::read(home, path));
+
+    let mut ask = |question: &str, budget: usize| {
+        // The turn as it will really be sent: through what was applied, or
+        // raw where nothing was.
+        let identifiers = addressing.as_ref().and_then(|held| {
+            let mut pieces = held.before.clone();
+            pieces.push(mcf_standin::tokenizer::Piece::Text(question.to_owned()));
+            pieces.extend(held.after.iter().cloned());
+            vocabulary.addressed(&pieces)
+        });
+        match identifiers {
+            Some(identifiers) => {
+                probes::trial(socket, path, "", Some(&identifiers), budget, Some(asked))
+            }
+            None => probes::trial(socket, path, question, None, budget, Some(asked)),
+        }
+    };
+    let probed = probes::stop_conditions(
+        path,
+        TRIALS,
+        FROM,
+        CEILING,
+        crate::run::TOKENS,
+        engine,
+        &mut ask,
+    );
+
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(stopping) => {
+            lines.push(format!(
+                " ended its own turn in {} of {} trials, the longest running {} token(s)",
+                stopping.stopped, stopping.of, stopping.longest
+            ));
+            lines.push(String::new());
+            if stopping.longest > stopping.default_budget {
+                lines.push(format!(
+                    " DIVERGENCE MCF allows {} tokens unless told otherwise, and this model's turns run to {}. Every answer past that is cut off by MCF rather than finished by the model, which measures the budget and not the model (§3.8)",
+                    stopping.default_budget, stopping.longest
+                ));
+            } else {
+                lines.push(format!(
+                    " agrees MCF's {} tokens is enough for this model's turns, the longest of which ran {}",
+                    stopping.default_budget, stopping.longest
+                ));
+            }
+            if apply {
+                lines.push(String::new());
+                lines.extend(apply_budget(path, &probed, stopping, engine));
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(
+                " which licenses nothing: MCF configures no differently than before, and this is not a negative result (D42, §3.18)"
+                    .to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
+/// The act, for a budget.
+///
+/// The value applied is the longest turn observed, not an average and not a
+/// margin on top. An average cuts off half the answers; a margin is a number
+/// MCF invented, and §3.15 has no room for one. What is claimed is exactly
+/// what was measured: *this many tokens were enough for every turn that
+/// finished here*.
+fn apply_budget(
+    path: &std::path::Path,
+    probed: &mcf_core::probe::Probed<mcf_serve::probes::Stopping>,
+    stopping: &mcf_serve::probes::Stopping,
+    engine: &str,
+) -> Vec<String> {
+    if stopping.longest <= stopping.default_budget {
+        return vec![
+            "  NOT APPLIED — MCF's default is already enough, and writing it down would put a probe's provenance on a default (A21)"
+                .to_owned(),
+        ];
+    }
+    let Some(home) = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+    else {
+        return vec!["  NOT APPLIED — there is nowhere to write it".to_owned()];
+    };
+    let budget = mcf_serve::configured::Budget {
+        tokens: stopping.longest,
+        probe: probed.method.name.to_owned(),
+        at: mcf_core::time::Timestamp::now().to_string(),
+        build: mcf_core::build_identity::BuildIdentity::current().to_string(),
+        conditions: engine.to_owned(),
+    };
+    match mcf_serve::configured::write_budget(&home, path, &budget) {
+        Err(failure) => vec![format!("  NOT APPLIED — {failure}")],
+        Ok(_written) => vec![
+            format!("  APPLIED  {}", budget.provenance()),
+            " `mcf run` allows this model that many tokens unless --limit says otherwise, and the account says where the number came from"
+                .to_owned(),
+        ],
     }
 }
 

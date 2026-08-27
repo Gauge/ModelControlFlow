@@ -224,6 +224,95 @@ pub fn since(addressing: &Addressing, engine_now: &str, build_now: &str) -> Sinc
     }
 }
 
+/// How many tokens MCF should allow this model, and on what evidence.
+///
+/// Its own provenance rather than the file's, because the two parts are set by
+/// different probes on different days and *why this value* has to be
+/// answerable for each. A budget carrying the addressing's provenance would be
+/// a value citing an experiment that did not measure it (B-059).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Budget {
+    /// The budget itself.
+    pub tokens: usize,
+    /// Which probe found it.
+    pub probe: String,
+    /// When it was applied.
+    pub at: String,
+    /// The build that applied it.
+    pub build: String,
+    /// The conditions the probe ran under.
+    pub conditions: String,
+}
+
+impl Budget {
+    /// The record's shape.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        Value::map([
+            (
+                "tokens",
+                Value::Integer(i64::try_from(self.tokens).unwrap_or(i64::MAX)),
+            ),
+            ("probe", Value::text(self.probe.clone())),
+            ("at", Value::text(self.at.clone())),
+            ("build", Value::text(self.build.clone())),
+            ("conditions", Value::text(self.conditions.clone())),
+        ])
+    }
+
+    /// Reads one back, provenance and all or not at all.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
+        Some(Self {
+            tokens: value
+                .get("tokens")
+                .and_then(Value::as_integer)
+                .and_then(|found| usize::try_from(found).ok())?,
+            probe: text("probe")?,
+            at: text("at")?,
+            build: text("build")?,
+            conditions: text("conditions")?,
+        })
+    }
+
+    /// One line saying where this came from.
+    #[must_use]
+    pub fn provenance(&self) -> String {
+        format!(
+            "{} tokens — set by the {} probe at {}, through {}",
+            self.tokens,
+            self.probe,
+            self.at.split('.').next().unwrap_or(&self.at),
+            self.conditions
+                .split(',')
+                .next()
+                .unwrap_or(&self.conditions),
+        )
+    }
+}
+
+/// Everything somebody applied to one model.
+///
+/// Each part is separately absent, separately provenanced, and separately
+/// compared: a model may be addressed on one probe's evidence and budgeted on
+/// another's, taken months apart through different engines.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Derived {
+    /// How to address it.
+    pub addressing: Option<Addressing>,
+    /// How many tokens to allow it.
+    pub budget: Option<Budget>,
+}
+
+impl Derived {
+    /// Whether anything at all was applied.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.addressing.is_none() && self.budget.is_none()
+    }
+}
+
 /// Where one model's derived configuration lives.
 #[must_use]
 pub fn path_for(mcf_home: &Path, model: &Path) -> PathBuf {
@@ -241,9 +330,22 @@ pub fn path_for(mcf_home: &Path, model: &Path) -> PathBuf {
 /// the act of writing one — the failure is loud.
 #[must_use]
 pub fn read(mcf_home: &Path, model: &Path) -> Option<Addressing> {
-    let held = std::fs::read_to_string(path_for(mcf_home, model)).ok()?;
-    let value = json::parse(&held).ok()?;
-    Addressing::from_value(value.get("addressing")?)
+    read_derived(mcf_home, model).addressing
+}
+
+/// Everything MCF was told about this model.
+#[must_use]
+pub fn read_derived(mcf_home: &Path, model: &Path) -> Derived {
+    let Ok(held) = std::fs::read_to_string(path_for(mcf_home, model)) else {
+        return Derived::default();
+    };
+    let Ok(value) = json::parse(&held) else {
+        return Derived::default();
+    };
+    Derived {
+        addressing: value.get("addressing").and_then(Addressing::from_value),
+        budget: value.get("budget").and_then(Budget::from_value),
+    }
 }
 
 /// Writes what somebody decided.
@@ -254,6 +356,32 @@ pub fn read(mcf_home: &Path, model: &Path) -> Option<Addressing> {
 /// a configuration somebody asked for and did not get is worse than one they
 /// never asked for (A2).
 pub fn write(mcf_home: &Path, model: &Path, addressing: &Addressing) -> Result<PathBuf, Failure> {
+    let mut held = read_derived(mcf_home, model);
+    held.addressing = Some(addressing.clone());
+    write_derived(mcf_home, model, &held)
+}
+
+/// Writes a budget somebody decided, keeping whatever else was there.
+///
+/// # Errors
+///
+/// As [`write()`].
+pub fn write_budget(mcf_home: &Path, model: &Path, budget: &Budget) -> Result<PathBuf, Failure> {
+    let mut held = read_derived(mcf_home, model);
+    held.budget = Some(budget.clone());
+    write_derived(mcf_home, model, &held)
+}
+
+/// Writes the whole of what was decided.
+///
+/// Read-then-write rather than append: the two parts live in one file, and
+/// setting one must not silently drop the other — which is what writing the
+/// file from a single part would do (A1).
+///
+/// # Errors
+///
+/// `record.unwritable` if the file cannot be written.
+pub fn write_derived(mcf_home: &Path, model: &Path, derived: &Derived) -> Result<PathBuf, Failure> {
     let path = path_for(mcf_home, model);
     let unwritable = |what: &str, error: &std::io::Error| {
         Failure::new(
@@ -273,10 +401,14 @@ pub fn write(mcf_home: &Path, model: &Path, addressing: &Addressing) -> Result<P
     // The model's own path is written beside the digest that names the file,
     // because a directory of digests nobody can read is a directory nobody can
     // audit (A1).
-    let held = Value::map([
-        ("model", Value::text(model.display().to_string())),
-        ("addressing", addressing.to_value()),
-    ]);
+    let mut fields = vec![("model", Value::text(model.display().to_string()))];
+    if let Some(addressing) = &derived.addressing {
+        fields.push(("addressing", addressing.to_value()));
+    }
+    if let Some(budget) = &derived.budget {
+        fields.push(("budget", budget.to_value()));
+    }
+    let held = Value::map(fields);
     std::fs::write(&path, format!("{}\n", held.to_line()))
         .map_err(|error| unwritable("the configuration could not be written", &error))?;
     Ok(path)

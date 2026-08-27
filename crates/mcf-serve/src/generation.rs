@@ -71,7 +71,7 @@ pub(crate) fn serve_generation(
     runtime: &Path,
     named: &str,
     prompt: &str,
-    limit: usize,
+    limit: Option<usize>,
     seed: u64,
     tokens: Option<&[usize]>,
     engine: Option<&str>,
@@ -82,7 +82,15 @@ pub(crate) fn serve_generation(
     // it wants and is not overridden; a caller that sent a prompt gets the
     // addressing that was applied, and the account says so — MCF doing
     // something other than the plain thing must never be invisible (§3.15).
-    let derived = crate::configured::read(mcf_home, &resolved(store, named));
+    let derived = crate::configured::read_derived(mcf_home, &resolved(store, named));
+    // The caller's word first, then what somebody derived for this model, then
+    // MCF's stated default. A caller who said nothing is not a caller who said
+    // the default (D43, §3.15).
+    let limit = limit
+        .or_else(|| derived.budget.as_ref().map(|budget| budget.tokens))
+        .unwrap_or(crate::control::DEFAULT_LIMIT);
+    let derived_budget = derived.budget.clone();
+    let derived = derived.addressing;
     let wrapped = match (tokens, derived.as_ref()) {
         (None, Some(addressing)) => addressed_as(store, named, prompt, addressing),
         _ => None,
@@ -120,6 +128,15 @@ pub(crate) fn serve_generation(
                         )
                     }),
                 );
+            }
+            Value::Map(fields)
+        }
+        (account, _) => account,
+    });
+    let account = account.map(|account| match (account, derived_budget) {
+        (Value::Map(mut fields), Some(budget)) => {
+            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
             }
             Value::Map(fields)
         }

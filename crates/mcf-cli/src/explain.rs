@@ -318,9 +318,15 @@ fn engine_identity() -> String {
 
 /// What somebody applied to this model, if anybody did (D43, B-059).
 fn derived(path: &Path) -> Option<mcf_serve::configured::Addressing> {
-    let home = crate::models::default_root()
-        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))?;
-    mcf_serve::configured::read(&home, path)
+    derived_all(path).addressing
+}
+
+/// Everything somebody applied to this model.
+fn derived_all(path: &Path) -> mcf_serve::configured::Derived {
+    crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+        .map(|home| mcf_serve::configured::read_derived(&home, path))
+        .unwrap_or_default()
 }
 
 fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
@@ -392,10 +398,25 @@ fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
             "0 unless --seed says".to_owned(),
             "a condition of the answer (D19)",
         ),
-        (
-            "token budget",
-            format!("{} unless --limit says", run::TOKENS),
-            "tokens rather than seconds, because a stand-in is slow by design (B49)",
+        derived_all(path).budget.map_or_else(
+            || {
+                (
+                    "token budget",
+                    format!("{} unless --limit says", run::TOKENS),
+                    "tokens rather than seconds, because a stand-in is slow by design (B49); \
+                     nothing has been applied here, and `mcf probe` measures how long this \
+                     model's turns actually run (B-056)",
+                )
+            },
+            |budget| {
+                (
+                    "token budget",
+                    format!("{} unless --limit says", budget.tokens),
+                    "the longest turn this model was seen to finish, applied by somebody on a \
+                     probe's evidence — MCF's own default would have cut its answers off \
+                     (§3.8, D43)",
+                )
+            },
         ),
         (
             "context for planning",

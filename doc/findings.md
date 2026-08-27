@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 49 |
+| **Version** | 50 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -73,6 +73,7 @@ forward as one.
 | 43 | [F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)](#43--f43--a-model-that-produced-nothing-now-answers-and-the-change-can-be-accounted-for-b-059-b-062-d42-d43-38-315-a21-f38) |
 | 44 | [F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)](#44--f44--a-configuration-says-whether-it-still-holds-and-the-probe-that-asked-spent-eight-thousand-passes-learning-it-could-not-b-058-b-059-d42-d43-a21-f39-f42) |
 | 45 | [F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)](#45--f45--the-page-whose-job-is-to-have-no-hidden-choices-had-one-and-the-check-for-a-moved-condition-invented-one-b-058-b-059-b-062-d43-315-a21-f44) |
+| 46 | [F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3517,7 +3518,102 @@ n. And the divergence is still only reported where somebody looks — a
 configuration nobody explains or re-probes is unexamined, which D43 argues is
 the honest state rather than a defect.
 
+## 46 · F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)
+
+**What was built.** The stop-condition probe, and the second *applied*
+parameter — the thing M3 was measured to lack (F45).
+
+**The question it answers, and why it is a configuring probe.** MCF allows
+**32 tokens** unless told otherwise. SmolLM2's turns, addressed the way it asks
+to be, run to **313**. Every answer past the thirty-second token was being cut
+off by MCF rather than finished by the model, which is a measurement of the
+budget and not of the model — §3.8's exact complaint, sitting in MCF's own
+default the whole time.
+
+```
+ended its own turn in 5 of 5 trials, the longest running 313 token(s)
+
+DIVERGENCE MCF allows 32 tokens unless told otherwise, and this model's turns
+           run to 313. Every answer past that is cut off by MCF rather than
+           finished by the model (§3.8)
+
+APPLIED    313 tokens — set by the stop-conditions probe at 2026-08-27T22:15:34,
+           through provisioned llama.cpp @925e1179947e
+```
+
+Afterwards, the same question ends at **65 tokens with the model's own stop
+token** where MCF's default would have truncated it.
+
+**Telling *does not stop* from *the budget was too small*.** They look
+identical from outside, and B-056 is the item that says so. The probe doubles:
+32, 64, 128… until the turn ends or a ceiling is reached. Doubling rather than
+one large budget because a budget sized for the worst case is spent on every
+trial including the ones that finish in ten tokens, and tokens are what a probe
+costs (B49). Reaching the ceiling is reported as **not within this many
+tokens** — never as *never* — with the number, and naming the likelier cause: a
+model addressed wrongly does not stop at any budget, which is the
+chat-template probe's business (F38, A7).
+
+**The value applied is the longest turn observed. Not an average, not a
+margin.** An average truncates half the answers; a margin is a number MCF
+invented, and §3.15 has no room for one. What is claimed is exactly what was
+measured — *this many tokens were enough for every turn that finished here*.
+
+**A caller who says nothing is not a caller who says the default.** The budget
+only applies where the caller gave none, and making that true required the
+distinction to exist on the wire: `mcf run` substituted its default *before*
+sending, so the daemon could not tell `--limit 32` from silence. The request
+now carries `None`, and the daemon resolves the caller's word, then what
+somebody derived, then MCF's stated default. Verified both ways: silence gets
+313 and finishes at 65, `--limit 8` gets 8 and is cut off. D43 is that MCF
+never changes a value under somebody who set it, and that rule is unenforceable
+if the value arrives already substituted.
+
+**Each derived parameter carries its own provenance.** The addressing and the
+budget are set by different probes on different days through possibly different
+engines, and a budget citing the chat-template probe would be a value citing an
+experiment that did not measure it (B-059). The file holds them separately, and
+writing one reads the file first so that setting a budget cannot silently drop
+an addressing (A1).
+
+**A gate test that depends on whether a daemon happens to be running.**
+`run::tests::a_file_that_is_not_a_model_is_refused_legibly` asserts the refusal
+says *no vendored engine* — true when MCF answers for itself, false when a
+daemon is up and a provisioned llama.cpp produces its own refusal instead. It
+failed during this work because a daemon was left running from a manual check,
+and passed when it was stopped. **The test is right and the isolation is
+missing**: §3.12 makes a suite whose result depends on ambient state a suite
+that cannot be reproduced, and this one silently reports on whichever machine
+state it found. Registered as B-378 rather than fixed here, because the fix is
+about how the CLI tests reach a daemon and is not this probe's business.
+
+**What was not established.** Whether the longest turn observed over five short
+factual questions is the longest turn this model has — it plainly is not, and
+the probe claims only what it measured. A model asked to write an essay will
+exceed it, and the honest reading of the applied budget is *enough for turns
+like the ones asked*, which is why the questions are part of the method. Nothing
+about a model that stops at wildly different lengths depending on the question:
+10 to 313 on this one, and a single number for a distribution that wide is a
+choice this probe makes and states rather than one it justifies. And no timing —
+sixteen trials and 1952 tokens is a cost, not a speed (B49, B35).
+
 ## Changelog
+
+### Version 50 — MCF's own default was cutting every answer off
+
+F46. The stop-condition probe, and the second applied parameter. MCF allows 32
+tokens unless told otherwise and SmolLM2's turns run to 313, so every answer
+past the thirty-second token was being ended by MCF rather than by the model —
+§3.8's complaint sitting in MCF's own default.
+
+Making the budget apply only where the caller gave none required the
+distinction to exist on the wire: `mcf run` substituted its default before
+sending, so the daemon could not tell `--limit 32` from silence. D43's rule
+that MCF never changes a value under somebody who set it is unenforceable if
+the value arrives already substituted.
+
+It also found a gate test whose result depends on whether a daemon happens to
+be running, which §3.12 does not allow. B-378.
 
 ### Version 49 — the page with no hidden choices had one
 
