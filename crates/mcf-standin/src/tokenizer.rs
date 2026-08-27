@@ -33,6 +33,7 @@ use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Sub
 
 use crate::bpe::{self, Ranks, Split};
 use crate::gguf::{Model as File, Value};
+use crate::wordpiece;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::tokenizer");
 
@@ -58,6 +59,24 @@ pub enum Scheme {
         /// How the text is cut up before any merge applies.
         split: Split,
     },
+    /// Whole words matched greedily against the vocabulary, longest piece
+    /// first, with one unknown token standing in for any word no pieces cover.
+    ///
+    /// What GGUF calls `bert`. The vocabulary is stored respelled: a token
+    /// that starts a word carries the `▁` prefix and a continuation does not,
+    /// so the lookup itself is the same map the other schemes use.
+    WordPieces {
+        /// The identifier that stands in for a word nothing covers.
+        unknown: usize,
+        /// Whether text is lowercased before matching.
+        lowercase: bool,
+        /// Whether accents are stripped before matching. Follows `lowercase`
+        /// unless the file says otherwise, which is the reference's rule.
+        strip_accents: bool,
+        /// The identifier appended after the text — `[SEP]`, where the file
+        /// names one.
+        separator: Option<usize>,
+    },
 }
 
 impl Scheme {
@@ -67,6 +86,7 @@ impl Scheme {
         match self {
             Self::Unigram => "llama (unigram, with byte fallback)",
             Self::Pairs { .. } => "gpt2 (byte-level byte-pair)",
+            Self::WordPieces { .. } => "bert (word pieces, greedy longest match)",
         }
     }
 }
@@ -150,6 +170,23 @@ impl Vocabulary {
                 ranks: Ranks::read(&strings(file, "tokenizer.ggml.merges")),
                 split: pre_tokenizer(file)?,
             },
+            "bert" => {
+                let lowercase = file
+                    .get("tokenizer.ggml.normalizer.lowercase")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                Scheme::WordPieces {
+                    unknown: identifier(file, "tokenizer.ggml.unknown_token_id")
+                        .ok_or_else(|| missing("tokenizer.ggml.unknown_token_id"))?,
+                    lowercase,
+                    strip_accents: file
+                        .get("tokenizer.ggml.normalizer.strip_accents")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(lowercase),
+                    separator: identifier(file, "tokenizer.ggml.seperator_token_id")
+                        .or_else(|| identifier(file, "tokenizer.ggml.eos_token_id")),
+                }
+            }
             _ => {
                 return Err(Failure::new(
                     Category::EngineUnavailable,
@@ -364,7 +401,72 @@ impl Vocabulary {
         {
             identifiers.insert(0, beginning);
         }
+        // A word-piece text is bracketed, not only begun: `[CLS] … [SEP]` is
+        // the shape every one of these models was trained on, and the second
+        // bracket is as load-bearing as the first.
+        if with_beginning
+            && let Scheme::WordPieces {
+                separator: Some(separator),
+                ..
+            } = &self.scheme
+        {
+            identifiers.push(*separator);
+        }
         Ok(identifiers)
+    }
+
+    /// Segments text the word-piece way: normalized, split into words, and
+    /// each word matched greedily against the vocabulary, longest piece first.
+    ///
+    /// Infallible where the other schemes are not, because the algorithm has
+    /// an unknown token: a word nothing covers *is representable*, as the
+    /// statement that it was not (A1 — the information that something was
+    /// there survives, even though its spelling does not).
+    fn word_pieces(
+        &self,
+        text: &str,
+        unknown: usize,
+        lowercase: bool,
+        strip_accents: bool,
+    ) -> Vec<usize> {
+        let mut identifiers = Vec::new();
+        for word in wordpiece::words(text, lowercase, strip_accents) {
+            // The word-start spelling: the vocabulary stores `▁hello` for a
+            // token that begins a word and `ing` for one that continues it.
+            let spelled = format!("{SPACE}{word}");
+            let before = identifiers.len();
+            let mut at = 0;
+            while at < spelled.len() {
+                // Longest match first, and every match must end on a character
+                // boundary — `get` returns None off one, so the loop skips
+                // those positions rather than slicing bytes.
+                let mut matched = None;
+                for end in (at + 1..=spelled.len()).rev() {
+                    let Some(piece) = spelled.get(at..end) else {
+                        continue;
+                    };
+                    if let Some(identifier) = self.by_token.get(piece).copied() {
+                        matched = Some((identifier, end));
+                        break;
+                    }
+                }
+                let Some((identifier, end)) = matched else {
+                    // One character has no piece, so the *word* has no
+                    // spelling: everything matched so far is discarded and the
+                    // unknown token stands for the whole word, which is the
+                    // reference's rule and the trained models' convention.
+                    identifiers.truncate(before);
+                    identifiers.push(unknown);
+                    break;
+                };
+                identifiers.push(identifier);
+                at = end;
+            }
+            if identifiers.len() == before {
+                identifiers.push(unknown);
+            }
+        }
+        identifiers
     }
 
     /// The first control or user-defined token in the text: where, how long,
@@ -398,6 +500,12 @@ impl Vocabulary {
         match &self.scheme {
             Scheme::Unigram => self.unigram(text),
             Scheme::Pairs { ranks, split } => self.pairs(text, ranks, *split),
+            Scheme::WordPieces {
+                unknown,
+                lowercase,
+                strip_accents,
+                ..
+            } => Ok(self.word_pieces(text, *unknown, *lowercase, *strip_accents)),
         }
     }
 
@@ -607,7 +715,10 @@ impl Vocabulary {
     #[must_use]
     pub fn decode(&self, identifiers: &[usize]) -> String {
         match self.scheme {
-            Scheme::Unigram => self.decode_unigram(identifiers),
+            // Word pieces are spelled the way unigram pieces are — `▁` for a
+            // word start, nothing for a continuation — so one decoder serves
+            // both.
+            Scheme::Unigram | Scheme::WordPieces { .. } => self.decode_unigram(identifiers),
             Scheme::Pairs { .. } => self.decode_pairs(identifiers),
         }
     }

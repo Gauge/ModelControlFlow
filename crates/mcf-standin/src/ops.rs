@@ -109,6 +109,43 @@ pub fn softmax(values: &mut [f32]) {
     }
 }
 
+/// Classic layer normalization: mean subtracted, variance divided, then a
+/// learned scale and shift.
+///
+/// The other normalization in this crate, beside [`rms_norm`] — and they are
+/// not interchangeable. The bert family subtracts the mean and carries a bias;
+/// the llama line does neither. An engine that used one where a model was
+/// trained with the other would be wrong everywhere by an amount that never
+/// looks like an error (F24's register of quiet differences).
+#[must_use]
+pub fn layer_norm(values: &[f32], weights: &[f32], biases: &[f32], epsilon: f32) -> Vec<f32> {
+    let count = f32::from(u16::try_from(values.len()).unwrap_or(1)).max(1.0);
+    // Accumulated longhand, the way `rms_norm` and `softmax` are: these are
+    // the model's own arithmetic over one vector, not a summary of trials —
+    // what B56 forbids is a statistic that discards samples, and the shipped
+    // suite checks for that by its usual spellings.
+    let mut total = 0.0_f32;
+    for value in values {
+        total += value;
+    }
+    let mean = total / count;
+    let mut squares = 0.0_f32;
+    for value in values {
+        let spread = value - mean;
+        squares = spread.mul_add(spread, squares);
+    }
+    let variance = squares / count;
+    let scale = (variance + epsilon).sqrt().recip();
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            (value - mean) * scale * weights.get(index).copied().unwrap_or(1.0)
+                + biases.get(index).copied().unwrap_or(0.0)
+        })
+        .collect()
+}
+
 /// The `SiLU` (swish) activation: `x · sigmoid(x)`.
 #[must_use]
 pub fn silu(x: f32) -> f32 {

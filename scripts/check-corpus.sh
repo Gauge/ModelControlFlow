@@ -48,11 +48,9 @@ readonly BUDGET=12
 
 # One line per entry: family | path under the store | state | what to expect.
 #
-# The embedding entry is expected to refuse for as long as B-371 is open, and
-# what it refuses *with* is the point: `bert` is a model with no next token to
-# produce, so `mcf run --prompt` has no question to put to it (DEC-055). It is
-# in the corpus anyway, because a family MCF does not cover should still be
-# refused by name rather than crashed on.
+# `embeds` is the third state: the model has no next token to produce, so it is
+# asked through `mcf embed` and the expectation is the width its file declares
+# on the JSON line (DEC-055, B-371).
 #
 # `runs` expects the text to contain the fourth field. `refuses` expects the
 # refusal to contain it. The fourth field is what makes each line say something
@@ -61,7 +59,7 @@ readonly CORPUS=(
     "llama, unigram vocabulary|Felladrin/gguf-Llama-160M-Chat-v1/Llama-160M-Chat-v1.Q4_K.gguf|runs|Paris"
     "qwen3|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_K_M.gguf|runs|Paris"
     "llama, byte-pair vocabulary|bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf|runs|Paris"
-    "embedding|leliuga/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q4_0.gguf|refuses|bert"
+    "embedding|leliuga/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q4_0.gguf|embeds|\"width\":384"
     "mixture-of-experts|RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf/TinyMixtral-4x248M-MoE.Q5_K_M.gguf|runs|Paris"
     "gemma3|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q6_K.gguf|runs|Paris"
 )
@@ -141,6 +139,17 @@ for entry in "${CORPUS[@]}"; do
             printf '  %-30s refuses, naming %s\n' "$family" "$expected"
         else
             printf '  %-30s REFUSES WITHOUT SAYING WHAT IT WANTED — expected %s:\n%s\n' "$family" "$expected" "$head"
+            failures=$((failures + 1))
+        fi
+        ;;
+    embeds)
+        said=$("$mcf" embed "$path" --text "$PROMPT" 2>&1) || true
+        head=$(printf '%s' "$said" | sed -n '1p')
+        if printf '%s' "$head" | grep -qF "$expected"; then
+            printf '  %-30s embeds, and the JSON line carries %s\n' "$family" "$expected"
+        else
+            printf '  %-30s DID NOT EMBED — expected %s on line one:\n%s\n' \
+                "$family" "$expected" "$(printf '%s' "$said" | sed -n '1,4p')"
             failures=$((failures + 1))
         fi
         ;;

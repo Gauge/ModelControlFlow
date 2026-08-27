@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 151 |
+| **Version** | 152 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -81,7 +81,7 @@ implemented, only gestured at, until the decision is made.
 | DEC-052 | What a *controlled environment* is, concretely: a container MCF builds, a prefix MCF manages, or something else — and what containment it must give against an engine's own installer | §7.53 | D39, A27, §6.32 | M2 | open — D39 states the four conditions any answer must satisfy (pinned and recorded, reproducible, contained and reversible, never the baseline). What is not settled is the mechanism, and it decides how much of somebody else's installer MCF is prepared to run |
 | DEC-053 | What B28 forbids, exactly: recognizing an *artifact* against reading a *field the file states* — and where a family may be named | §XII, B28, B29 | D26, A19 | M2 | **resolved** — they are different things and only the first is forbidden. GGUF states `general.architecture` and `tokenizer.ggml.pre`, and an engine that would not read them is an engine that runs one family; the reference model's publisher, repository and digest are identity and are read nowhere. A family may be named in `crates/mcf-standin/src/architecture.rs` and nowhere else, and that module is held to three things the neutrality check verifies: it names no publisher, it names no artifact, and no function in it takes a name and answers yes or no — the shape *is this the special one* is what B28 is actually about. Totality is deliberately **not** checked: a `match` on a `&str` does not compile without a catch-all, so a check for it would be one that cannot fail (F19) |
 | DEC-054 | What the engine is developed against, given that the reference model is 16 GB and every iteration runs it | §XII, D38, §3.12 | D40, B-370 | M2 | **resolved** — the question the test asks picks the model, in both directions. §XII's three justifications are provenance, the quantization frontier, and residency pressure; none is about running a model, so the engine gets a conformance corpus of the smallest *trained* model per family, one distinct quantization each. But there is no size policy: reading a format needs the smallest artifact of that shape, refereeing behaviour needs one good enough to be right, and residency needs one big enough to press on the machine. F22 measured the middle floor — at 160M a correct engine and one with a swapped rotary pairing are indistinguishable because the correct engine answers three of four ordinary questions wrongly by itself; at 0.6B every prompt separates them, for 397 MB and sixteen seconds. F21's claim that the corpus *depends* on B-368's oracle is withdrawn: it holds for the corpus's smallest member and not one step up |
-| DEC-055 | Embedding models are a different *kind* of model, not another family: what surface asks one for an answer | §XII, §VI, D38, §5 | B-371 | M2 | **narrowed** by the operator's instruction that MCF's engine support all the models — so *whether* is settled and only the surface is open. The corpus artifact `all-MiniLM-L6-v2` shows how different: no output head, so there is no next token to produce; attention that is not causal, so the whole sequence is read at once rather than a token at a time; normalization with a bias, which no family MCF runs has; a feed-forward with no gate; learned position embeddings; and a pooling step that turns a sequence into one vector. `mcf run --prompt` cannot ask it anything, because "what does it say next" is not a question it answers. The open part is the verb and what it prints: §3.3 wants the vector machine-readable first and legible second, and 384 floats on a terminal is neither |
+| DEC-055 | Embedding models are a different *kind* of model, not another family: what surface asks one for an answer | §XII, §VI, D38, §5 | B-371 | Embedding models: the bert family, its WordPiece vocabulary, and the surface that asks one for a vector | DEC-055, D38, §VI | An embedding model in the corpus produces a vector of the width its file declares; the tokenizer agrees with the reference exactly; the vector agrees at a measured floor and means what related-against-unrelated sentences say it means | **done** (F29) — tokenizer identifier-exact on five texts including `[UNK]` and accents; forward pass at cosine 0.9996–0.9998 against the reference where the floor is 0.999 and a single swapped normalization falls to 0.97; corpus six for six. Not covered, and said: nomic-bert's rotary positions and gated feed-forward, the first-position pooling no artifact exercises, and the floor is calibrated on this model at this size |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-044 | How a user declares a workflow — a named list, a weighting across laboratories, inference from their own traffic, or from an imported configuration | §7.44 | **§6.36, B41** | M7 | open |
@@ -380,6 +380,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 152 — the corpus is six for six
+
+DEC-055 resolved and B-371 done (F29). The bert family embeds through its own
+verb, checked against the reference the day it was written: tokenizer exact,
+forward pass at a measured cosine floor, meaning by related-against-unrelated
+sentences. Every family F21 acquired now runs or embeds through MCF's engine.
 
 ### Version 151 — the mask, past the boundary
 

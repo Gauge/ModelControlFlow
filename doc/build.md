@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 33 |
+| **Version** | 34 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -836,6 +836,13 @@ near-tie**, and what narrows that is more prompts rather than a cleverer rule.
 `cargo run -p mcf-standin --example margins -- <model> "<text>"` is the
 instrument, and is worth running by hand whenever a divergence appears.
 
+**Embeddings are compared too, at their own measured floor.** An embedding
+model's vectors cannot equal the reference's — MCF multiplies dequantized
+floats where the reference multiplies in quantized arithmetic — and F29
+measured the gap: cosine 0.9996–0.9998 across five texts. The floor is 0.999,
+which a single normalization swapped in a single layer falls through (0.972).
+Models are discovered by whether `mcf embed` serves them.
+
 **The reference is a development instrument and is not vendored.** Nothing in it
 ships, nothing in it is on the path of any MCF command, and MCF's own engine
 runs with none of it present — D39's fourth condition. What MCF may *provision*
@@ -986,6 +993,13 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 34 — the sixth family, and its own verb
+
+`mcf embed <model> --text <text>` exists (B-371, DEC-055): one JSON line first,
+conditions after. The oracle grew an embedding comparison at a cosine floor
+measured before it was set, and the corpus tier a third state — `embeds`,
+expecting the width the file declares.
 
 ### Version 33 — the forward pass, against a measured tolerance
 

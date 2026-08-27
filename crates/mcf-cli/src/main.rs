@@ -12,6 +12,7 @@
 
 mod check;
 mod doctor;
+mod embed;
 mod explain;
 mod licence;
 mod log;
@@ -107,6 +108,13 @@ enum Request<'a> {
         limit: Option<usize>,
         /// The seed, which is a condition of the answer (D19).
         seed: u64,
+    },
+    /// Ask an embedding model for a vector.
+    Embed {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// The text to embed.
+        text: &'a str,
     },
     /// Ask a running daemon what it is.
     Status,
@@ -238,6 +246,23 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["explain", _, argument, ..] => Request::UnexpectedArgument {
             command: "explain",
+            argument,
+        },
+        ["embed", model, "--text", text] => Request::Embed { model, text },
+        ["embed", _model, "--text"] => Request::MissingArgument {
+            command: "embed",
+            needs: "--text <text>",
+        },
+        ["embed", _model] => Request::MissingArgument {
+            command: "embed",
+            needs: "--text <text>",
+        },
+        ["embed"] => Request::MissingArgument {
+            command: "embed",
+            needs: "<model> --text <text>",
+        },
+        ["embed", _, argument, ..] => Request::UnexpectedArgument {
+            command: "embed",
             argument,
         },
         ["run", rest @ ..] => match run_options(rest) {
@@ -652,6 +677,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
+                 \x20                                     vector: JSON first, conditions\n\
+                 \x20                                     after (DEC-055)\n\
                  \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
                  \x20         [--last <n>] [--full]       read back out of the record\n\
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
@@ -720,6 +748,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             limit,
             seed,
         } => run::run(model, prompt, *limit, *seed),
+        Request::Embed { model, text } => embed::run(model, text),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::List => models::list(),

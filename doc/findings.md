@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 32 |
+| **Version** | 33 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2198,7 +2198,68 @@ global), one model. A file whose window differs from 512 or whose pattern the
 file states explicitly exercises arithmetic this did not. Nothing here is a
 speed (B65).
 
+## 29 · F29 — The sixth family answers a different question (B-371, DEC-055, B-365, A19, §3.3)
+
+**What was built.** The bert family: a WordPiece tokenizer, a whole-sequence
+non-causal forward pass with classic layer normalization and biases throughout,
+mean pooling as the file declares, and a new surface — `mcf embed <model>
+--text <text>` — because the question these models answer is not `mcf run`'s
+question. There is no output head and no next token; there is one vector for
+the text, and DEC-055 is resolved by giving that its own verb. The vector goes
+first and machine-readable — one JSON line, `{"width":…,"embedding":[…]}` —
+and the conditions after, legible: token count, the declared pooling, the unit
+normalization, and the same B65 mark every stand-in answer carries.
+
+**Everything transcribed was checked against the reference the same day it was
+written**, which is what B-368 existing before B-371 was for.
+
+*The tokenizer, exactly.* Five texts — plain English, punctuation with
+contractions, `café naïve 你好`, digits, and invented words that must become
+`[UNK]` — agree with the reference identifier for identifier. The normalizer's
+scope is stated in the module rather than hidden: accents are stripped by a
+Latin fold table because MCF carries no Unicode tables, and a precomposed
+accented letter outside Latin passes through where the reference would
+decompose it (A21).
+
+*The forward pass, at a measured distance.* MCF dequantizes to floats and
+multiplies; the reference multiplies in quantized arithmetic and quantizes the
+activations too. The vectors therefore cannot be equal, and how unequal is the
+measurement: across five texts, cosine 0.999596 to 0.999811, largest single
+component difference 0.006. The oracle's floor is set at 0.999 — under the
+observed agreement, and far above what anything structural leaves standing:
+swapping one normalization in one layer from LayerNorm to RMS drops cosine to
+0.972–0.988, and the tier fires on every text.
+
+*That the vector means something*, which agreement alone does not show: `The
+cat sat on the mat` against `A kitten rested on the rug` scores 0.62; each
+against `Quarterly revenue grew by twelve percent` scores under 0.03.
+
+**The corpus is six for six.** Every family acquired in F21 now either runs or
+embeds through MCF's own engine, and each got there the same way: read the
+reference, take from the file everything the file states, put what no file
+states where DEC-053 requires, and let the oracle say whether the transcription
+is right. Four defects were found on that road (F23 ×3, F26, F27) and none by
+reading output.
+
+**What was not established.** One bert model, quantized one way, on short
+English-heavy texts. The nomic-bert variant on this machine adds rotary
+positions and a gated feed-forward and is not covered by anything here. The
+first-position pooling variant is implemented and exercised by no artifact. And
+cosine at 0.999 is a floor calibrated on this model at this size — a larger
+model's arithmetic gap may sit elsewhere, and the floor would need remeasuring
+rather than trusting (A21). Nothing here is a speed (B65).
+
 ## Changelog
+
+### Version 33 — the sixth family answers a different question
+
+F29. The bert family embeds, through its own verb — `mcf embed`, vector first
+as one JSON line, conditions after — and everything transcribed was checked
+against the reference the same day: the tokenizer exactly, the forward pass at
+a measured cosine floor of 0.999 that a single swapped normalization falls
+through, and the vector's meaning by related-against-unrelated sentences.
+
+The corpus is six for six.
 
 ### Version 32 — the mask, past the boundary
 

@@ -78,6 +78,15 @@ readonly GENERATE_FROM=(
 )
 readonly GENERATE_TOKENS=10
 
+# The embedding agreement floor, measured before it was set (F29). MCF
+# dequantizes to floats and multiplies; the reference multiplies in quantized
+# arithmetic, quantizing the activations too — so the two vectors are near and
+# cannot be equal. Across five texts the worst cosine observed was 0.999596;
+# a structural defect (a wrong normalization, a missed bias, the wrong pooling)
+# moves cosine by orders of magnitude more than that. The floor sits well under
+# the observed agreement and far above what any defect leaves standing.
+readonly EMBED_FLOOR=0.999
+
 readonly TEXTS=(
     'The capital of France is'
     'In 2024 there were 365 days and 1234567 seconds'
@@ -239,6 +248,46 @@ else
                 "$closest" "$CLOSE_ENOUGH"
             printf '      MCF:       %s\n' "$mine"
             printf '      reference: %s\n' "$theirs"
+        done
+    done
+fi
+
+# ── the embedding path ──────────────────────────────────────────────────────
+
+embedding_reference="$oracle/build/bin/llama-embedding"
+if [ -x "$embedding_reference" ] && [ -x "$mcf" ]; then
+    printf '\n'
+    for model in "${models[@]}"; do
+        name=$(basename "$model")
+        # Only models MCF can embed: the ones `mcf embed` serves.
+        line=$("$mcf" embed "$model" --text "A" 2>/dev/null | sed -n '1p' || true)
+        case "$line" in '{"width"'*) ;; *) continue ;; esac
+
+        for text in "${TEXTS[@]}"; do
+            rendered=$(printf '%b' "$text")
+            [ -n "$rendered" ] || continue
+            mine=$("$mcf" embed "$model" --text "$rendered" 2>/dev/null | sed -n '1p' |
+                sed 's/.*"embedding":\[//; s/\]}//' || true)
+            theirs=$("$embedding_reference" -m "$model" -p "$rendered" \
+                --embd-output-format json --embd-normalize 2 -ngl 0 --no-warmup 2>/dev/null |
+                grep -o '"embedding": \[[^]]*\]' | sed 's/.*\[//; s/\]//' || true)
+            if [ -z "$mine" ] || [ -z "$theirs" ]; then
+                printf '  %-40s not compared on %s: one side produced nothing\n' "$name" "$rendered"
+                continue
+            fi
+            compared=$((compared + 1))
+            cosine=$(printf '%s\n%s\n' "$mine" "$theirs" | awk -F',' '
+                NR == 1 { for (i = 1; i <= NF; i++) a[i] = $i; n = NF }
+                NR == 2 { dot = 0; for (i = 1; i <= NF && i <= n; i++) dot += a[i] * $i;
+                          printf "%.6f", dot }')
+            if awk -v c="$cosine" -v f="$EMBED_FLOOR" 'BEGIN { exit !(c >= f) }'; then
+                continue
+            fi
+            disagreements=$((disagreements + 1))
+            printf '  %-40s EMBEDS DIFFERENTLY on %s\n' "$name" "$rendered"
+            printf '      cosine %s, under the %s floor — quantized-against-float arithmetic\n' \
+                "$cosine" "$EMBED_FLOOR"
+            printf '      does not reach this far down; something structural does (F29)\n'
         done
     done
 fi

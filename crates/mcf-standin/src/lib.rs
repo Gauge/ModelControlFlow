@@ -44,6 +44,7 @@
 //! format nobody can read is a model nobody can run.
 
 pub mod architecture;
+pub mod bert;
 pub mod bpe;
 pub mod codebook;
 pub mod dequantize;
@@ -53,3 +54,4 @@ pub mod ops;
 pub mod sample;
 pub mod session;
 pub mod tokenizer;
+pub mod wordpiece;
