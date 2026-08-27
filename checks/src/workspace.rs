@@ -71,8 +71,12 @@ pub const MEMBERS: &[Member] = &[
         path: "crates/mcf-serve",
         // `mcf-hub` because a daemon is asked what models this machine is
         // holding, and what is held is the store's answer rather than a second
-        // reader that could disagree with it (B-030, §VI).
-        depends_on: &["mcf-core", "mcf-record", "mcf-hub"],
+        // reader that could disagree with it (B-030, §VI). `mcf-standin`
+        // because the daemon serves generations (B-034), and MCF's own engine
+        // is the one that runs in its process — a provisioned engine will be
+        // a supervised subprocess, which is an edge to a process rather than
+        // to a crate (B-032).
+        depends_on: &["mcf-core", "mcf-record", "mcf-hub", "mcf-standin"],
     },
     Member {
         name: "mcf-lab",
