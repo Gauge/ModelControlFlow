@@ -2848,11 +2848,23 @@ rather than folded into the failures (A1), because *the model recognised its
 stop token and declined the turn* is a fact worth having:
 
 ```
-im_start…im_end as assistant 5 of 5 ←
-raw                          1 of 5   (ended without saying anything 4 of 5)
+im_start…im_end as assistant 5 of 5 ←   turn ran 10-292 token(s), middle 96
+raw                          1 of 5     (ended without saying anything 4 of 5)   turn ran 120
 ```
 
 That is SmolLM2 after the fix, and it agrees with the file's own declaration.
+
+**The turn lengths are kept, because they were already paid for.** A trial
+cannot tell a finished turn from a refusal without counting what preceded the
+stop (that *is* the fix), so the count exists whether or not it is recorded —
+and throwing it away would be discarding a measurement MCF already made (A1).
+It is the observation a stop-condition question is asked of (B-056), and the
+first candidate for separating addressings that tie on *did the turn end*
+(B-375). The spread above is worth noticing on its own: the same model, the
+same addressing, five short factual questions, and turns from 10 tokens to
+292. Any budget chosen for *this* probe by looking at one question would have
+been wrong for the others — which is how the budget came to be measuring
+verbosity in the first place.
 
 **A third defect fell out of the first two: five trials were one trial.** MCF
 samples greedily from a fixed seed. Five trials of one question are one
@@ -2868,8 +2880,12 @@ addressing look identical, so *ran out of budget* was doing the work that *did
 not stop* was being credited for. It is 320 now, and B49 holds — the budget is
 in tokens, not seconds.
 
-**gemma-3-270m stays inconclusive, and correctly.** Three addressings answer and
-end the turn equally often, so this observation cannot tell them apart. The
+**gemma-3-270m stays inconclusive, and correctly.** Under the broken
+observation three addressings tied at `5 of 5`; once silence stopped counting
+and the budget was large enough to reach the end of a turn, the tie narrowed to
+**two** — so one of the three had been tied on refusals. Two addressings answer
+and end the turn equally often, and this observation cannot tell those two
+apart. The
 tie-break that preferred `raw` was itself a defect — `max_by_key` returns the
 *last* maximum, which handed every tie to whichever candidate was listed last,
 and `raw` always is. A tie is now `inconclusive` naming the tie, because

@@ -166,8 +166,26 @@ fn observed(addressed: &Addressed) -> Vec<String> {
         } else {
             String::new()
         };
+        // How long the finished turns ran. Already observed, and the thing a
+        // stop-condition question is asked of (B-056).
+        let ran = addressed
+            .lengths
+            .iter()
+            .find(|(other, _)| other == name)
+            .map(|(_, ran)| ran.as_slice())
+            .unwrap_or_default();
+        let middle = ran.get(ran.len().wrapping_div(2));
+        let span = match (ran.first(), middle, ran.last()) {
+            (Some(least), _, Some(most)) if least == most => {
+                format!("   turn ran {least} token(s)")
+            }
+            (Some(least), Some(middle), Some(most)) => {
+                format!("   turn ran {least}-{most} token(s), middle {middle}")
+            }
+            _ => String::new(),
+        };
         lines.push(format!(
-            "      {name:<18} {ended} of {}{mark}{note}",
+            "      {name:<18} {ended} of {}{mark}{note}{span}",
             addressed.of
         ));
     }

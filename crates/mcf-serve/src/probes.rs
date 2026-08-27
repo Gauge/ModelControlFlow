@@ -265,6 +265,14 @@ pub struct Addressed {
     /// fact: the model recognised the stop token and declined the turn. A1 —
     /// and the reason F38 was found at all.
     pub silent: Vec<(String, usize)>,
+    /// Every candidate, and how long each of its finished turns ran.
+    ///
+    /// The lengths are already observed — a trial cannot tell a finished turn
+    /// from a refusal without them (F38) — so throwing them away would be
+    /// discarding a measurement MCF already paid for (A1). They are what a
+    /// stop-condition question is asked of (B-056), and the first candidate
+    /// for separating addressings that tie on *did the turn end* (B-375).
+    pub lengths: Vec<(String, Vec<usize>)>,
     /// How many trials each candidate had.
     pub of: usize,
     /// What the file *declared*, for the divergence (B-058) — never used to
@@ -350,11 +358,13 @@ pub fn chat_template(
 
     let mut stopped: Vec<(String, usize)> = Vec::new();
     let mut silent: Vec<(String, usize)> = Vec::new();
+    let mut lengths: Vec<(String, Vec<usize>)> = Vec::new();
     let mut spent = 0_usize;
     let mut ran = 0_usize;
     for addressing in &candidates {
         let mut ended = 0_usize;
         let mut said_nothing = 0_usize;
+        let mut ran_for: Vec<usize> = Vec::new();
         for trial in 0..trials {
             // A different question each trial. MCF samples greedily from a
             // fixed seed, so five trials of one question are one trial
@@ -388,10 +398,11 @@ pub fn chat_template(
                     spent = spent.saturating_add(budget);
                     said_nothing = said_nothing.saturating_add(1);
                 }
-                Trial::Stopped { .. } => {
+                Trial::Stopped { after } => {
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
                     ended = ended.saturating_add(1);
+                    ran_for.push(after);
                 }
                 Trial::RanOut => {
                     ran = ran.saturating_add(1);
@@ -413,6 +424,8 @@ pub fn chat_template(
         }
         stopped.push((addressing.name.clone(), ended));
         silent.push((addressing.name.clone(), said_nothing));
+        ran_for.sort_unstable();
+        lengths.push((addressing.name.clone(), ran_for));
     }
 
     // The best is the one that answered-then-stopped most, earliest first —
@@ -435,12 +448,37 @@ pub fn chat_template(
     // (D42, §3.15).
     let ties = stopped.iter().filter(|(_, ended)| *ended == most).count();
     if ties > 1 && !all_zero {
+        // The turn lengths go with the tie. They are the first candidate for
+        // the sharper question (B-375), and this branch is exactly where they
+        // would otherwise be thrown away — an inconclusive result that
+        // discards the measurement that might resolve it is the shape A1
+        // forbids.
+        let spans: Vec<String> = stopped
+            .iter()
+            .filter(|(_, ended)| *ended == most)
+            .map(|(name, _)| {
+                let ran_for = lengths
+                    .iter()
+                    .find(|(other, _)| other == name)
+                    .map(|(_, ran)| ran.as_slice())
+                    .unwrap_or_default();
+                match (ran_for.first(), ran_for.last()) {
+                    (Some(least), Some(longest)) if least == longest => {
+                        format!("{name} ran {least}")
+                    }
+                    (Some(least), Some(longest)) => format!("{name} ran {least}-{longest}"),
+                    _ => format!("{name} ran nothing recorded"),
+                }
+            })
+            .collect();
         return Probed::inconclusive(
             CHAT_TEMPLATE,
             format!(
                 "{ties} addressings ended the model's turn equally often ({most} of {trials}), \
                  so ending a turn does not tell them apart on this model — a sharper question \
-                 than *did it stop* is needed to choose between them"
+                 than *did it stop* is needed to choose between them. The turns they ran for, \
+                 in tokens, which is the first place to look for one (B-375): {}",
+                spans.join("; ")
             ),
             ran,
             spent,
@@ -487,6 +525,7 @@ pub fn chat_template(
             best,
             stopped,
             silent,
+            lengths,
             of: trials,
             declared_a_template,
         }),
