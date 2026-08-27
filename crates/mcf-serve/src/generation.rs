@@ -182,7 +182,10 @@ fn through_provisioned(
                 "tokens",
                 Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
             ),
-            ("stopped", Value::text("engine_finished")),
+            // Not "the model stopped": this engine prints text and exits, and
+            // why it ended — its own end-of-turn token, or the budget — is not
+            // on the wire. A7: what MCF does not know it does not say.
+            ("stopped", Value::text("unknown_the_engine_did_not_say")),
             ("text", Value::text(text)),
             ("conditions", conditions),
         ])),
@@ -320,7 +323,11 @@ fn attempt(
             limit,
             settings: Settings::Greedy,
             seed,
-            stop: Vec::new(),
+            // The model's own end of text, which the file states and MCF was
+            // reading and never using: without it a generation always runs to
+            // the budget, and *the model finished* is unobservable — which is
+            // what the chat-template probe found first (F37).
+            stop: vocabulary.ending.into_iter().collect(),
         },
         &mut |token| {
             // Each token goes out as it exists. A write that fails — the

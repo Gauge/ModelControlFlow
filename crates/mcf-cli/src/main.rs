@@ -17,6 +17,7 @@ mod explain;
 mod licence;
 mod log;
 mod models;
+mod probe;
 mod provision;
 mod pull;
 mod run;
@@ -132,6 +133,11 @@ enum Request<'a> {
         because: Option<&'a str>,
         /// A prefix root other than the default.
         into: Option<&'a str>,
+    },
+    /// Ask a model to do the thing, and report what it did.
+    Probe {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -270,6 +276,15 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["explain", _, argument, ..] => Request::UnexpectedArgument {
             command: "explain",
+            argument,
+        },
+        ["probe", model] => Request::Probe { model },
+        ["probe"] => Request::MissingArgument {
+            command: "probe",
+            needs: "<model>",
+        },
+        ["probe", _, argument, ..] => Request::UnexpectedArgument {
+            command: "probe",
             argument,
         },
         ["provision", "--list"] => Request::ProvisionList { into: None },
@@ -750,6 +765,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf probe <model>                   ask a model to do the thing, and\n\
+                 \x20                                     report what it did — configuring\n\
+                 \x20                                     nothing (§X, D42)\n\
                  \x20 mcf provision <component>           build a pinned component in a\n\
                  \x20     [--list] [--remove <c>          container, everything recorded,\n\
                  \x20      --because <why>] [--into <dir>] removable without residue (B-367)\n\
@@ -825,6 +843,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
+        Request::Probe { model } => probe::run(model),
         Request::Provision { name, into } => provision::run(name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
@@ -919,7 +938,12 @@ mod tests {
         assert!(text.contains("mcf log"), "{text}");
         assert!(text.contains("mcf pull"), "{text}");
         assert!(text.contains("mcf check"), "{text}");
-        for unbuilt in ["mcf bench", "mcf lab", "mcf probe", "mcf recommend"] {
+        // Built since this list was written: `mcf probe` asks a model to do
+        // the thing (B-051, B-052) and `mcf provision` builds a component in a
+        // controlled environment (B-367).
+        assert!(text.contains("mcf probe"), "{text}");
+        assert!(text.contains("mcf provision"), "{text}");
+        for unbuilt in ["mcf bench", "mcf lab", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which nothing has built"

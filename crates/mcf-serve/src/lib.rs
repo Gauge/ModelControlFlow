@@ -18,3 +18,4 @@ pub mod control;
 pub mod cost;
 pub mod daemon;
 mod generation;
+pub mod probes;

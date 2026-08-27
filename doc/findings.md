@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 40 |
+| **Version** | 41 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2707,7 +2707,75 @@ long-lived server child is the shape that would hold a 16 GB model between
 requests, and that is a further increment of B-032. One engine, one component,
 processor only.
 
+## 37 · F37 — The first probe found two defects and then refused to answer (B-051, B-052, D42, §3.18, F25, F26)
+
+**What was built.** `mcf probe`, the framework D42 describes, and the first
+configuring probe. Its question is the chat template, and its observation needs
+no judgement: a model addressed the way it was trained ends its turn at its own
+stop token, and one addressed wrongly runs to the budget. Five trials per
+addressing, forty tokens each, through a named engine.
+
+**The first defect: MCF never used the stop token it had been reading.** Every
+generation ran to its budget, because `Request.stop` was empty at both call
+sites — `mcf run` and the daemon — while the vocabulary had been carrying
+`ending` since the tokenizer was written. A model saying *I am done* was
+generated as an ordinary token and passed over. Nothing had noticed, because
+nothing had asked *why* a generation ended; the probe asks exactly that, and
+found it in its first run. Both sites now pass the model's own end of text.
+
+**The second defect: the answer was an artifact of the instrument.** With the
+stop token honoured the probe decided, and said `raw` was best for both
+SmolLM2 and gemma3 — with `turns 0 of 5` against `raw 5 of 5`. That is a clean
+result and it was worthless. MCF refuses to parse control tokens out of prompt
+text — a prompt must not be able to produce a chat marker by spelling one
+(F26) — so `<|im_start|>` written into a prompt reaches the model as **eight
+ordinary tokens**, and `<start_of_turn>` likewise. The chat addressings were
+never applied. The probe had compared raw against a garbled prompt and reported
+the garbling as the model's behaviour.
+
+This is F25's lesson arriving from the other side. There, a broken engine read
+*better* than a correct one; here, a broken experiment produced a *cleaner*
+result than an honest one — `5 of 5` against `0 of 5` is the most decisive
+table in this document and it means nothing.
+
+**So the probe now checks that what it sends is what it means.** Each marker is
+tokenized and must come back as one token spelling itself. Where it does not,
+the addressing is untestable *as text*, and the probe reports inconclusive
+naming exactly why. On the corpus today that is every instruct model:
+
+```
+SmolLM2-135M   INCONCLUSIVE — chatml cannot be applied: its markers are control
+               tokens, and MCF does not parse control tokens out of prompt text
+               (F26) … addressing has to be built from token identifiers (B-374)
+gemma-3-270m   INCONCLUSIVE — turns cannot be applied: …
+Llama-160M     INCONCLUSIVE — no addressing ended at the model's own stop token
+               within 40 tokens; a larger budget may decide it
+```
+
+**A probe that will not answer is the probe working.** D42 made *inconclusive*
+a first-class outcome for exactly this: *the model did not do the thing* and
+*MCF could not tell* are different facts, and only the first would license a
+configuration. What MCF has learned here is about MCF — its prompt surface
+cannot express a chat turn — and B-374 is the item that fixes it: addressing
+built from token identifiers rather than from text, which is what a chat
+template actually is.
+
+**What was not established.** Nothing at all about how these models prefer to
+be addressed; that is what B-374 unblocks. The stop-token fix is verified only
+in that generations now end at a model's own end of text where they did not
+before — how often, on which models, under which addressing, is the same
+unasked question until the probe can ask it.
+
 ## Changelog
+
+### Version 41 — the first probe found two defects and then refused to answer
+
+F37. `mcf probe` and the chat-template probe. It found that MCF had never used
+the stop token it was reading — every generation ran to its budget — and then
+that its own first answer was an artifact: MCF cannot put a control token into
+a prompt (F26, rightly), so the chat addressings it scored were never applied.
+It now reports inconclusive with that reason, which is D42's third state doing
+its job.
 
 ### Version 40 — the reference model answers
 

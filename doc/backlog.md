@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 166 |
+| **Version** | 167 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -209,14 +209,15 @@ first and importance second.
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
 | B-050 | Three-state capability model: *declared*, *verified*, *unknown* — never confused, never defaulted | §3.18, §3.6 | The type system prevents a declared capability being read as a verified one | **done** — `mcf_core::capability::Capability<T>`: two separately optional halves, read as `declaration()` and `observation()`, with no operation between them and no `unwrap_or` to give an absence a value. The state is derived — unknown, declared, verified — and the fourth situation, *diverged*, is B-058's finding rather than a fourth kind of knowing. `is_established` is the whole of §3.18 in one method: only an observation may be acted on. `mcf_hub::inspect` now uses it instead of an enum of its own, which found a real loss — a card whose weights MCF could not read was being reported as *unknown*, discarding what the card said (A1). `checks/tests/a_declaration_is_not_an_observation.rs` holds the shape, because the failure mode is not somebody writing the wrong method but somebody adding a convenience that reads well and collapses the two |
-| B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | blocked (DEC-024) | **unblocked** by D42 — the framework: trials, a `Measurement` result, conditions, a `Capability` to write the verified half of, a stated cost in tokens, and `Inconclusive` as an outcome that configures nothing |
-| B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | blocked (DEC-024) | **unblocked** by D42 — a configuring probe, and the one whose absence is measurable today: every instruct model in the corpus carries `tokenizer.chat_template` and MCF sends raw text |
+| B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | **done** — `mcf_core::probe`: a `Method` that says what was asked and what it decides, an `Outcome` whose only reader is `observed() -> Option`, a cost in tokens, and conditions the result holds under. `Inconclusive` carries its reason and has no path to a value. `mcf probe` is the surface (F37) |
+| B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | **in progress** (F37) — the probe exists, asks each addressing the model's own vocabulary can express, and counts which end at the model's stop token. It found two defects and now correctly refuses to answer: MCF cannot express a chat addressing in a prompt at all (F26), so every instruct model is inconclusive until B-374 |
 | B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | blocked (DEC-024) | open — a *characterizing* probe under D42: it describes a model without changing how MCF addresses it, so it belongs beside §XIII rather than in M3, and uses B-051’s framework |
 | B-054 | Probe: structured output conformance | §X | Verified by parsing what the model actually emits over repeated trials | blocked (DEC-024) | open — a characterizing probe under D42; framework in M3, probe beside §XIII |
 | B-055 | Probe: context length usable versus claimed | §X, §3.18 | Divergence between claimed and usable is reported as a finding | blocked (DEC-024) | **unblocked** by D42 — a configuring probe |
 | B-056 | Probe: stop-condition behaviour | §X | A model that will not stop is a recorded characteristic, not a hung request | blocked (DEC-024) | **unblocked** by D42 — a configuring probe |
 | B-057 | Probes: vision, embeddings, reasoning modes, multilingual — scoped and prioritized by DEC-024 rather than assumed | §X, §7.24 | Each in-scope modality has a probe; each out-of-scope one is recorded as declined | blocked (DEC-024) | open — characterizing probes under D42; each in-scope modality still records what it declines |
 | B-058 | Divergence reporting: declared-versus-verified disagreement is surfaced as a first-class finding, often the most useful thing MCF can say about a model | §3.18 | Divergences are listed per model and exportable | open — the type is there: `Capability::divergence` returns both sides, and `inspect::deception` turns the architecture's into `hub.metadata.deceptive` with a scenario behind it (A13). What remains is *per model and exportable*, which needs more than one thing to diverge about — that arrives with M3's probes |
+| B-374 | Addressing built from token identifiers: a chat turn is a sequence of tokens, and MCF's prompt surface can only send text — which its own refusal to parse control tokens from prompts (F26) makes unable to express one | B-052, D42, §3.18, F37 | A model can be addressed the way its template describes without a control token ever being parsed out of user text; the chat-template probe compares addressings rather than reporting that it cannot | open, and it blocks B-052 — the probe found it by refusing to answer. The shape: a request carries either text or identifiers, MCF builds the identifiers from the model's own markers, and what a *user* typed is never among them |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | open |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | blocked (DEC-024) |
 | B-061 | Reconfiguration policy enforcement: whatever DEC-025 decides, comparability across a configuration change is preserved or explicitly invalidated | §7.25, §3.4 | A configuration change either preserves comparability or marks prior results non-comparable | blocked (DEC-025) |
@@ -382,6 +383,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 167 — the first probe
+
+B-051 done and B-052 in progress (F37). The probe found that MCF never used the
+stop token it was reading, and then that its own first answer was an artifact
+of MCF being unable to put a control token in a prompt. B-374 opened for the
+addressing-by-identifiers that unblocks it.
 
 ### Version 166 — what a probe is
 
