@@ -93,7 +93,8 @@ pub(crate) fn run() -> Response {
     println!(
         "mcf is up on {}\n  \
          recovered {} record entr{} and {} model file{}{}\n  \
-         it cannot serve a model yet: no inference engine is vendored (B-320)\n  \
+         it serves models through MCF's own engine, marked as such (D38, B65); \
+         no vendored engine yet (B-320)\n  \
          idle costs nothing — this process is blocked in accept until asked (§3.13)",
         daemon.socket().display(),
         recovered.entries,

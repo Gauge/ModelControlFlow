@@ -55,6 +55,18 @@ pub enum Request {
         /// rather than a signal that leaves no trace.
         reason: String,
     },
+    /// Generate: a model answers a prompt, one line per token and a
+    /// terminating line carrying the conditions (B-034, PR9).
+    Generate {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// What to ask.
+        prompt: String,
+        /// How many tokens at most.
+        limit: usize,
+        /// The seed, which is a condition of the answer (D19).
+        seed: u64,
+    },
 }
 
 impl Request {
@@ -67,6 +79,24 @@ impl Request {
             Self::Stop { reason } => Value::map([
                 ("ask", Value::text("stop")),
                 ("reason", Value::text(reason.clone())),
+            ]),
+            Self::Generate {
+                model,
+                prompt,
+                limit,
+                seed,
+            } => Value::map([
+                ("ask", Value::text("generate")),
+                ("model", Value::text(model.clone())),
+                ("prompt", Value::text(prompt.clone())),
+                (
+                    "limit",
+                    Value::Integer(i64::try_from(*limit).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "seed",
+                    Value::Integer(i64::try_from(*seed).unwrap_or(i64::MAX)),
+                ),
             ]),
         };
         let Value::Map(mut fields) = body else {
@@ -121,8 +151,104 @@ impl Request {
                     .unwrap_or_default()
                     .to_owned(),
             }),
+            Some("generate") => {
+                let text = |key: &str| -> Result<String> {
+                    value
+                        .get(key)
+                        .and_then(Value::as_text)
+                        .map(str::to_owned)
+                        .ok_or_else(|| refused("a generation naming no model or no prompt", key))
+                };
+                Ok(Self::Generate {
+                    model: text("model")?,
+                    prompt: text("prompt")?,
+                    // A request that names no budget takes the stated default;
+                    // a request that names no seed takes zero, and both are
+                    // said back in the terminating line (§3.15).
+                    limit: value
+                        .get("limit")
+                        .and_then(Value::as_integer)
+                        .and_then(|limit| usize::try_from(limit).ok())
+                        .unwrap_or(DEFAULT_LIMIT),
+                    seed: value
+                        .get("seed")
+                        .and_then(Value::as_integer)
+                        .and_then(|seed| u64::try_from(seed).ok())
+                        .unwrap_or(0),
+                })
+            }
             Some(other) => Err(refused("a request MCF does not have", other)),
             None => Err(refused("a request asking for nothing", line)),
+        }
+    }
+}
+
+/// How many tokens a generation produces when the request does not say.
+///
+/// The same number `mcf run` uses when nobody says, for the same reason: a
+/// budget in tokens rather than seconds (B49), and one number in one place.
+pub const DEFAULT_LIMIT: usize = 32;
+
+/// One line of a streamed generation (PR9).
+///
+/// A token line carries the token's text and its index; the terminating line
+/// carries everything else — count, why it stopped, the conditions, and the
+/// mark. A client that reads lines until it sees `done` has the whole answer,
+/// and a client that hangs up early has the tokens it was sent (A4).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Streamed {
+    /// One token, as text, at its index.
+    Token {
+        /// Its index in the generation.
+        at: usize,
+        /// The text it decodes to.
+        text: String,
+    },
+    /// The end, with the account.
+    Done(Value),
+}
+
+impl Streamed {
+    /// The line the daemon writes.
+    #[must_use]
+    pub fn to_line(&self) -> String {
+        let body = match self {
+            Self::Token { at, text } => Value::map([
+                ("protocol", Value::Integer(VERSION)),
+                ("token", Value::text(text.clone())),
+                ("at", Value::Integer(i64::try_from(*at).unwrap_or(i64::MAX))),
+            ]),
+            Self::Done(account) => Value::map([
+                ("protocol", Value::Integer(VERSION)),
+                ("done", account.clone()),
+            ]),
+        };
+        body.to_line()
+    }
+
+    /// Reads one line of a stream.
+    ///
+    /// # Errors
+    ///
+    /// `config.invalid` for a line that is neither a token nor the end.
+    pub fn read(line: &str) -> Result<Self> {
+        let value = json::parse(line)
+            .map_err(|error| refused("a streamed line that is not one", &error.to_string()))?;
+        if let Some(done) = value.get("done") {
+            return Ok(Self::Done(done.clone()));
+        }
+        match (
+            value.get("token").and_then(Value::as_text),
+            value.get("at").and_then(Value::as_integer),
+        ) {
+            (Some(text), Some(at)) => Ok(Self::Token {
+                at: usize::try_from(at).unwrap_or(usize::MAX),
+                text: text.to_owned(),
+            }),
+            _ => Err(refused(
+                "a streamed line naming neither a token nor the end",
+                line,
+            )),
         }
     }
 }
@@ -190,7 +316,7 @@ impl Answer {
 }
 
 /// What a client said, kept but bounded.
-fn refused(wanted: &str, found: &str) -> Failure {
+pub(crate) fn refused(wanted: &str, found: &str) -> Failure {
     let kept: String = found.chars().take(200).collect();
     Failure::new(
         Category::ConfigInvalid,

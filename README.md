@@ -78,7 +78,9 @@ may not exist.
 **A model on this machine answers something.** `mcf run <model> --prompt <text>`
 drives MCF's own implementation of inference end to end — deliberately slow,
 written to be read — and the answer arrives with its mark, its sampler, its seed
-and a sentence saying what it cannot be. That is the behaviour half of §VI's bar
+and a sentence saying what it cannot be. When `mcf serve` is up, the same
+command is a client of the daemon: the tokens stream over its socket as they
+are produced, the account follows, and the daemon records it (B-034, PR9). That is the behaviour half of §VI's bar
 and it is the half MCF can reach honestly today.
 
 **`mcf log` reads the record back**, one line an event with the field a reader

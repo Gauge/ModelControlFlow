@@ -86,11 +86,18 @@ pub enum EntryKind {
     /// `ArtifactAcquired`: after the removal the prefix is gone and this line
     /// is all there is.
     ComponentRemoved,
+    /// A model answered a prompt through the daemon, and under what
+    /// conditions (B-034, PR9, D20).
+    ///
+    /// The terminating line of the stream, written down as it was sent: a
+    /// client that ignored the conditions still leaves them in the record, and
+    /// a client that hung up early leaves the account of what it got.
+    Generated,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -104,6 +111,7 @@ impl EntryKind {
         // its position in this list, so the order is part of the format (D20).
         Self::ComponentProvisioned,
         Self::ComponentRemoved,
+        Self::Generated,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -124,6 +132,7 @@ impl EntryKind {
             Self::ArtifactRemoved => "artifact_removed",
             Self::ComponentProvisioned => "component_provisioned",
             Self::ComponentRemoved => "component_removed",
+            Self::Generated => "generated",
         }
     }
 

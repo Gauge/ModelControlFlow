@@ -95,14 +95,38 @@ pub fn generate(
     build: &str,
     request: &Request,
 ) -> Result<Degraded<Behaviour<Generated>>> {
+    generate_streaming(model, build, request, &mut |_token| {})
+}
+
+/// The same, telling the caller each token as it is produced.
+///
+/// What a serving surface needs (B-034, PR9): a first token is observable only
+/// if it is handed over before the last one exists. The mark is applied to the
+/// whole at the end exactly as for [`generate`] — a token streamed early is
+/// still a token from the stand-in, and the terminating line is where the
+/// caller is told so.
+///
+/// # Errors
+///
+/// As [`generate`].
+pub fn generate_streaming(
+    model: &Loaded,
+    build: &str,
+    request: &Request,
+    on_token: &mut dyn FnMut(usize),
+) -> Result<Degraded<Behaviour<Generated>>> {
     let run: Run<StandIn> = Run::at_build(build);
-    let generated = run_loop(model, request)?;
+    let generated = run_loop(model, request, on_token)?;
     Ok(run.mark(run.behaviour(generated)))
 }
 
 /// The loop itself, separated from the marking so that the mark cannot be
 /// forgotten by a future caller reaching for the loop.
-fn run_loop(model: &Loaded, request: &Request) -> Result<Generated> {
+fn run_loop(
+    model: &Loaded,
+    request: &Request,
+    on_token: &mut dyn FnMut(usize),
+) -> Result<Generated> {
     let mut cache = Cache::for_model(&model.shape);
     let mut rng = Rng::seeded(request.seed);
     let mut logits = Vec::new();
@@ -133,6 +157,7 @@ fn run_loop(model: &Loaded, request: &Request) -> Result<Generated> {
             break;
         }
         tokens.push(next);
+        on_token(next);
         logits = model.forward(next, position, &mut cache)?;
         position = position.saturating_add(1);
     }

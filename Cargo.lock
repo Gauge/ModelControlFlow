@@ -159,6 +159,7 @@ dependencies = [
  "mcf-core",
  "mcf-hub",
  "mcf-record",
+ "mcf-standin",
 ]
 
 [[package]]
