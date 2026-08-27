@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 162 |
+| **Version** | 163 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
@@ -190,7 +190,7 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | **in progress** — `mcf_serve::daemon`, with `mcf serve`, `mcf status` and `mcf stop` at the surface. It keeps no state a crash could lose: what it knows on start is what the record and the model store say, both read fresh, so *recovering across a restart* is a property of the disk rather than of a memory — and a test asserts that what one daemon leaves the next recovers. A damaged record is recovered **and said** (B62). Starting and stopping are recorded as events rather than on a timer, so *MCF was up between these two moments* is answerable (§3.4) without costing anything while idle (B-031). A second daemon on one socket is refused; a socket left by a dead process is taken over. Nothing a client says can stop it (A3). A daemon killed with `SIGKILL` at eight moments of its life — before the socket exists, during the append that says it started, idle in `accept`, and mid-answer — comes back every time: the next daemon takes over the socket the dead one left, the record opens whole or names a bounded loss inside the file, and `mcf status` answers with what it recovered. What remains is what a daemon *holds* — a runtime to drain, an accelerator to release — which arrives with B-032 and the engine |
+| B-030 | Daemon: long-lived, restartable, recovers its state across restarts, survives indefinitely | §7.1, §I | The lab kills the daemon at every lifecycle stage and it recovers to a coherent, queryable state each time | **in progress** — `mcf_serve::daemon`, with `mcf serve`, `mcf status` and `mcf stop` at the surface. It keeps no state a crash could lose: what it knows on start is what the record and the model store say, both read fresh, so *recovering across a restart* is a property of the disk rather than of a memory — and a test asserts that what one daemon leaves the next recovers. A damaged record is recovered **and said** (B62). Starting and stopping are recorded as events rather than on a timer, so *MCF was up between these two moments* is answerable (§3.4) without costing anything while idle (B-031). A second daemon on one socket is refused; a socket left by a dead process is taken over. Nothing a client says can stop it (A3). A daemon killed with `SIGKILL` at eight moments of its life — before the socket exists, during the append that says it started, idle in `accept`, and mid-answer — comes back every time: the next daemon takes over the socket the dead one left, the record opens whole or names a bounded loss inside the file, and `mcf status` answers with what it recovered. What remains is what a daemon *holds* — a runtime to drain, an accelerator to release — which arrives with B-032 and the engine. Serving added a stage that did not exist before: the daemon killed mid-generation with a model resident — the client keeps the tokens it received, says the account never came (A4, A7) and exits unserved; the next daemon takes the socket and answers; the record opens. The whole-system tier drives it |
 | B-031 | Idle discipline: no polling loops, no background timers, no always-on watchers; idle cost indistinguishable from zero | §3.13, §6.9 | Measured idle CPU and wakeups meet DEC-016's budget, asserted in CI | **done** — measured rather than designed-for. The soak tier runs a real daemon for the minute D24 names, with nobody talking to it, and reads what the kernel keeps: **zero context switches and zero clock ticks of processor time**, with the record byte-for-byte unchanged. The shape is what makes it true — the daemon blocks in `accept` and has no tick, no poll and no watcher — and the tier is what makes it a claim rather than an intention |
 | B-032 | Engine adapter layer: inference engines are supervised subprocesses, and which engine is in use is a recorded condition | §7.4, §6.2 | At least one engine is driven end to end; swapping engines changes a recorded condition, not a code path | in progress — the *recorded condition* half is built: every served generation names its engine and build in the account (B-034). The *supervised subprocess* half waits for an engine that is one — MCF's own runs in the daemon's process, and a provisioned engine (B-367, DEC-052) is the first that will not |
 | B-033 | Supervision contract: a runtime that dies mid-token is a classified, attributed failure that does not take the manager down | §3.1, §7.1 | The lab kills a runtime at every stage — pre-load, mid-load, mid-token, post-token — and the daemon stays coherent | blocked (DEC-001) |
@@ -382,6 +382,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 163 — killed mid-stream
+
+B-030 gains the stage serving created: a daemon killed mid-generation with a
+model resident, the client saying so and keeping what it got, the next daemon
+answering. With D41's zero-tick idle, M2's exit criteria stand at the surface
+as it now is; what remains of the milestone is B-033's subprocess half, which
+waits for an engine that is a subprocess.
 
 ### Version 162 — a model that stays
 
