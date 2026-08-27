@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 36 |
+| **Version** | 37 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -828,8 +828,8 @@ with the reference choosing exactly MCF's runner-up and in every case at the
 smallest margin of that whole generation. The one real defect sat at 0.775.
 
 So a generation that differs fails when the margin **at the step where the
-two texts part** is over 0.30 — above every noise margin observed (0.017 to
-0.237), below both defects observed (0.449, 0.775). F27's first rule took the
+two texts part** is over 0.40 — above every noise margin observed (0.017 to
+0.320, the widest on a Q2_K file), below both defects observed (0.449, 0.775). F27's first rule took the
 smallest margin *anywhere* in the generation, and F32 found what that let
 through: a broken decoder that parted at step 0 with 0.449 and was excused by a
 0.021 five tokens later. `margins --against "<reference text>"` finds the
@@ -1045,6 +1045,12 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 37 — the threshold at 0.40
+
+F33's Q2_K witness parts once at 0.320, on the coarsest scheme, where the
+arithmetic gap is widest; the threshold moves to 0.40 and the corpus tier
+gains four scheme witnesses.
 
 ### Version 36 — the margin where they part
 
