@@ -34,6 +34,28 @@ const TRIALS: usize = 5;
 const BUDGET: usize = 320;
 
 /// Probes a model.
+/// The engine, named the way a later comparison can use.
+///
+/// `provisioned` is not an engine; a particular build at a particular commit
+/// is. The name a caller types is resolved to that before it is recorded, so
+/// that *the same engine* and *another build of it* can be told apart (D43,
+/// §3.4).
+fn resolved_engine(asked: &str) -> String {
+    if asked == "stand-in" {
+        return "stand-in".to_owned();
+    }
+    let found = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+        .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)));
+    match found {
+        Some(Ok(Some(llama))) => format!(
+            "provisioned llama.cpp @{}",
+            llama.commit.get(..12).unwrap_or(&llama.commit)
+        ),
+        _ => asked.to_owned(),
+    }
+}
+
 /// The engine a probe uses when the caller does not name one.
 ///
 /// The provisioned server where there is one, MCF's own otherwise.
@@ -119,7 +141,13 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
         Some(named) => named,
         None => whichever_is_here(),
     };
-    let engine = format!("{asked}, through the daemon at {build}");
+    // The engine as it *resolves*, not as it was asked for. A configuration
+    // records this and `mcf explain` compares against it, and the two have to
+    // be the same kind of name or the comparison invents a moved condition
+    // out of two spellings of one engine — which it did (F45). A different
+    // provisioned build is a genuinely different condition and is only
+    // visible if the commit is part of the name.
+    let engine = format!("{}, through the daemon at {build}", resolved_engine(asked));
     let mut trial = |identifiers: &[usize], budget: usize| {
         probes::trial(
             &socket,

@@ -136,29 +136,50 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
 
     lines.push(String::new());
     lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (§3.15: no hidden choices)".to_owned());
-    for (what, value, source) in chosen() {
-        // Three columns with the last one wrapped under itself. A space after
-        // the value rather than a wider column: a value that exactly filled the
-        // width used to run into its source with nothing between them, and
-        // widening only moves where that happens.
+    for (what, value, source) in chosen(path) {
+        // Three columns, and *both* of the last two wrapped under themselves.
+        // The value was not wrapped once, on the reasoning that a value is
+        // short — true of every row until a derived configuration arrived
+        // carrying its own provenance, which is a sentence (F45). A value that
+        // overruns pushes its source onto the same line and the table stops
+        // being one.
+        let mut held = wrapped(&value, 22).into_iter();
         let mut under = wrapped(source, 56).into_iter();
-        lines.push(format!(
-            "  {what:<38}{value:<22} {}",
-            under.next().unwrap_or_default()
-        ));
-        for line in under {
-            lines.push(format!("  {:<38}{:<22} {line}", "", ""));
+        lines.push(
+            format!(
+                "  {what:<38}{:<22} {}",
+                held.next().unwrap_or_default(),
+                under.next().unwrap_or_default()
+            )
+            .trim_end()
+            .to_owned(),
+        );
+        loop {
+            let (left, right) = (held.next(), under.next());
+            if left.is_none() && right.is_none() {
+                break;
+            }
+            lines.push(
+                format!(
+                    "  {:<38}{:<22} {}",
+                    "",
+                    left.unwrap_or_default(),
+                    right.unwrap_or_default()
+                )
+                .trim_end()
+                .to_owned(),
+            );
         }
     }
 
     lines.push(String::new());
     lines.push("WHAT MCF CANNOT TELL YOU, AND WHY".to_owned());
-    for (question, why) in unanswered() {
+    for (question, why) in unanswered(path) {
         lines.push(format!("  {question}"));
         // Wrapped, because the rest of this report is: a paragraph that runs
         // past a terminal's width is one somebody stops reading, and what is
         // in these is the honest half of a defaults screen (C7).
-        for line in wrapped(why, 88) {
+        for line in wrapped(&why, 88) {
             lines.push(format!("    {line}"));
         }
     }
@@ -278,7 +299,32 @@ fn quantizations(file: &Model) -> String {
 /// `--engine` overrides either. What is here is what `mcf run` would use, and
 /// every line names where it is written down so that a reader can go and
 /// disagree with it.
-fn chosen() -> Vec<(&'static str, String, &'static str)> {
+/// The engine in force, named the way a configuration records it.
+///
+/// The same spelling `mcf probe` writes down, because a comparison between two
+/// names for one engine reports a moved condition that did not move (F45).
+fn engine_identity() -> String {
+    let found = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+        .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)));
+    match found {
+        Some(Ok(Some(llama))) => format!(
+            "provisioned llama.cpp @{}",
+            llama.commit.get(..12).unwrap_or(&llama.commit)
+        ),
+        _ => "stand-in".to_owned(),
+    }
+}
+
+/// What somebody applied to this model, if anybody did (D43, B-059).
+fn derived(path: &Path) -> Option<mcf_serve::configured::Addressing> {
+    let home = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))?;
+    mcf_serve::configured::read(&home, path)
+}
+
+fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
+    let engine_now = engine_identity();
     let engine = match crate::models::default_root()
         .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
         .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)))
@@ -301,8 +347,41 @@ fn chosen() -> Vec<(&'static str, String, &'static str)> {
             "nothing is provisioned here (D39); `mcf provision llama.cpp` would change this line",
         ),
     };
+    // How MCF will address this model. It is the first row because it is the
+    // one that changed under M3, and because a page whose job is to have no
+    // hidden choices (§3.15) must not omit the choice somebody made
+    // deliberately (D43).
+    let addressed = derived(path).map_or_else(
+        || {
+            (
+                "raw text, MCF's default".to_owned(),
+                "nothing has been applied here; `mcf probe <model>` asks the model how it wants \
+                 to be addressed, and `--apply` acts on the answer (§3.8, D42)",
+            )
+        },
+        |held| {
+            let build = mcf_core::build_identity::BuildIdentity::current().to_string();
+            let still = matches!(
+                mcf_serve::configured::since(&held, &engine_now, &build),
+                mcf_serve::configured::Since::ConditionsHold
+            );
+            (
+                held.provenance(),
+                if still {
+                    "applied by somebody, on a probe's evidence, under the conditions in force \
+                     here (D43, B-059)"
+                } else {
+                    "applied by somebody, on a probe's evidence gathered under conditions that \
+                     have since moved — `mcf probe <model>` says whether the answer moved with \
+                     them (D43, A21)"
+                },
+            )
+        },
+    );
+
     vec![
-        ("engine", engine.0, engine.1),
+        ("engine", engine.0.clone(), engine.1),
+        ("addressed as", addressed.0, addressed.1),
         (
             "sampler",
             "greedy".to_owned(),
@@ -337,28 +416,46 @@ fn chosen() -> Vec<(&'static str, String, &'static str)> {
 /// objective, so *which is best* has no answer here; §3.4 makes a number
 /// without conditions meaningless, so *how fast* has none either. Both shrink
 /// when the milestones that earn them land, and neither is filled in before.
-fn unanswered() -> Vec<(&'static str, &'static str)> {
+fn unanswered(path: &Path) -> Vec<(&'static str, String)> {
+    // What has been probed is a fact about *this model*, and saying "nothing
+    // here has been probed" to somebody who probed it yesterday is the kind of
+    // stale sentence that makes a reader stop believing the rest of the page
+    // (A1, A21).
+    let probed = derived(path).is_some();
     vec![
         (
             "Which quantization should I run?",
             "MCF has measured none of them here. The objective that would decide it is DEC-002 \
-             and the measurements are M5–M7 (§6.5).",
+             and the measurements are M5–M7 (§6.5)."
+                .to_owned(),
         ),
         (
             "How fast is it on this machine?",
             "Unmeasured. Through MCF's own stand-in it is unanswerable in principle — B65 \
              forbids a speed from it (D31). Through a provisioned engine it is answerable and \
-             nobody has: that is M5's `mcf bench`, under conditions and with its uncertainty.",
+             nobody has: that is M5's `mcf bench`, under conditions and with its uncertainty."
+                .to_owned(),
         ),
         (
             "What is it good at?",
-            "M6's laboratories, gated on capabilities M3 verifies. Nothing here has been probed, \
-             and a model card's claims are declarations rather than facts (§3.18).",
+            if probed {
+                "M6's laboratories, gated on capabilities M3 verifies. What *has* been probed \
+                 here is how this model wants to be addressed — `mcf probe` shows it, and the \
+                 line above says what was applied. A model card's other claims are declarations \
+                 rather than facts (§3.18)."
+                    .to_owned()
+            } else {
+                "M6's laboratories, gated on capabilities M3 verifies. Nothing here has been \
+                 probed, and a model card's claims are declarations rather than facts (§3.18). \
+                 `mcf probe <model>` asks."
+                    .to_owned()
+            },
         ),
         (
             "Will it fit in memory?",
             "`mcf pull <repository>` answers that for every variant a repository publishes, from \
-             the model's own configuration and this machine's free memory (B-213).",
+             the model's own configuration and this machine's free memory (B-213)."
+                .to_owned(),
         ),
     ]
 }

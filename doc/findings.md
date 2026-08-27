@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 48 |
+| **Version** | 49 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -72,6 +72,7 @@ forward as one.
 | 42 | [F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)](#42--f42--the-context-both-models-declare-is-the-context-they-have-and-the-probe-that-asked-broke-the-protocol-asking-b-055-b-058-b-059-b-376-d42-37-38-a2-a21) |
 | 43 | [F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)](#43--f43--a-model-that-produced-nothing-now-answers-and-the-change-can-be-accounted-for-b-059-b-062-d42-d43-38-315-a21-f38) |
 | 44 | [F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)](#44--f44--a-configuration-says-whether-it-still-holds-and-the-probe-that-asked-spent-eight-thousand-passes-learning-it-could-not-b-058-b-059-d42-d43-a21-f39-f42) |
+| 45 | [F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)](#45--f45--the-page-whose-job-is-to-have-no-hidden-choices-had-one-and-the-check-for-a-moved-condition-invented-one-b-058-b-059-b-062-d43-315-a21-f44) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3456,7 +3457,77 @@ runs `mcf probe`; a configuration nobody re-probes is still as good as the day
 it was taken, which is now *visible* rather than fixed — which is what D43
 argues is the honest state and §7.25 feared was a rotting branch.
 
+## 45 · F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)
+
+**What was built.** `mcf explain` carrying the derived configuration beside the
+declared defaults. It is the command whose entire purpose is §3.15 — *no hidden
+choices* — and since F43 it had been omitting the one choice somebody made
+deliberately. A model configured yesterday was explained as though it would be
+addressed raw.
+
+```
+addressed as   im_start…im_end as     applied by somebody, on a probe's
+               assistant — set by the evidence, under the conditions in
+               chat-template probe at force here (D43, B-059)
+               2026-08-27T22:08:33,
+               through provisioned
+               llama.cpp @925e1179947e
+```
+
+It also said *Nothing here has been probed* under **What is it good at?**, to a
+reader who had probed it. That sentence was true when it was written and is the
+kind of stale line that makes a reader stop believing the rest of the page.
+
+**The comparison invented a moved condition.** `explain` reported that the
+configuration had been taken under conditions that no longer held, on a machine
+where nothing had changed. The two sides were not the same kind of name: the
+probe recorded the engine as **the name a caller asked for** — `provisioned` —
+and `explain` held **the engine that resolved** — `provisioned llama.cpp
+@925e1179947e, from /path`. Comparing those compares two spellings of one
+engine and finds them different every time.
+
+This is exactly the failure F44 argued the design must avoid, arriving one
+commit later by a different route. There, the danger was reporting a moved
+condition as a disagreement; here it was reporting a condition as moved when it
+had not. **Manufacturing a divergence is the same error as suppressing one, and
+it is the easier one to make** — a false divergence looks like diligence.
+
+**The fix is to record the engine as the thing it is.** `provisioned` is not an
+engine; a build at a commit is. Both sides now write
+`provisioned llama.cpp @925e1179947e`, which also makes a *different build of
+the same engine* visible as the moved condition it genuinely is — a distinction
+the old name could not express at all. Two tests pin the spellings together, so
+that changing one has to change the other.
+
+**A table that assumed its values were short.** The value column was never
+wrapped, on the reasoning that a value is a word or a number. True of every row
+for as long as there were only defaults; a derived configuration's value is a
+*sentence*, because it carries its own provenance. An overrunning value pushed
+its source onto the same line and the table stopped being a table. Both columns
+wrap now.
+
+**What was not established.** Whether the resolved engine name is stable across
+provisioning — a rebuild at the same commit produces the same name and a
+genuinely different environment, and MCF would call that unmoved. The
+provenance is compared, not the environment it names, and closing that gap
+means comparing the provisioned component's own record rather than its name.
+Nothing about a second derived parameter: the usable context is measured (F42)
+and nothing consumes it, so `explain` has one derived row and the machinery for
+n. And the divergence is still only reported where somebody looks — a
+configuration nobody explains or re-probes is unexamined, which D43 argues is
+the honest state rather than a defect.
+
 ## Changelog
+
+### Version 49 — the page with no hidden choices had one
+
+F45. `mcf explain` carries the derived configuration now, and said *nothing
+here has been probed* to a reader who had probed it. Building that found the
+inverse of F44's danger: the check for a moved condition compared the engine a
+probe *asked for* against the engine that *resolved*, which are two spellings
+of one thing, and reported a machine where nothing had changed as one where the
+conditions no longer held. A false divergence looks like diligence, which makes
+it the easier error.
 
 ### Version 48 — a configuration says whether it still holds
 

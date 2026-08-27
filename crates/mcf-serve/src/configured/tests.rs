@@ -162,3 +162,45 @@ fn a_different_build_is_a_moved_condition() {
     assert_eq!(moved.len(), 2, "{moved:?}");
     assert!(moved.iter().any(|one| one.what == "build"));
 }
+
+/// Two spellings of one engine must not read as two engines.
+///
+/// The comparison is between a name a probe wrote down and a name another
+/// command computes, and when those were *different kinds of name* — "the
+/// engine I asked for" against "the engine that resolved" — `mcf explain`
+/// reported a moved condition for an engine that had not moved (F45). The
+/// spelling is the resolved one on both sides; this pins the shape so that a
+/// later change to one has to change the other.
+#[test]
+fn one_engine_under_two_names_has_not_moved() {
+    use super::{Since, since};
+    let mut held = an_addressing();
+    held.conditions = "provisioned llama.cpp @925e1179947e, through the daemon".to_owned();
+    assert_eq!(
+        since(
+            &held,
+            "provisioned llama.cpp @925e1179947e",
+            &held.build.clone()
+        ),
+        Since::ConditionsHold,
+        "the same engine, written the same way, has not moved"
+    );
+}
+
+/// A different build of the same engine *has* moved, which is the whole reason
+/// the commit is part of the name.
+#[test]
+fn another_build_of_the_same_engine_has_moved() {
+    use super::{Since, since};
+    let mut held = an_addressing();
+    held.conditions = "provisioned llama.cpp @925e1179947e, through the daemon".to_owned();
+    let Since::ConditionsMoved(moved) = since(
+        &held,
+        "provisioned llama.cpp @ffffffffffff",
+        &held.build.clone(),
+    ) else {
+        panic!("a different commit of the engine was not noticed");
+    };
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0].what, "engine");
+}
