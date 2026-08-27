@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 32 |
+| **Version** | 33 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -819,12 +819,22 @@ floating-point arithmetic in the way. It is also the part F23 found three
 defects in, every one of them by reading rather than running, and every one of
 them still unverified by anything but that reading.
 
-**Logits and generated text are deliberately not compared yet.** A correct
-implementation can flip an argmax on a near-tie through nothing worse than a
-different summation order, so a disagreement there is a finding to investigate
-rather than a verdict, and a tier that failed on it is a tier people learn to
-ignore. That comparison wants a tolerance nobody has measured, and measuring it
-is its own piece of work.
+**The forward pass is compared too, against a tolerance that was measured.**
+Greedy generation is deterministic, so two correct implementations should agree
+— except where the best and second-best logits are close enough that a different
+summation order picks a different winner. F27 measured which is which: the four
+noise divergences sat at margins of 0.040, 0.098, 0.105 and 0.159, in every case
+with the reference choosing exactly MCF's runner-up and in every case at the
+smallest margin of that whole generation. The one real defect sat at 0.775.
+
+So a generation that differs fails only when *every* step of it still had a
+margin over 0.50 — three times the largest observed noise, two-thirds of the one
+observed defect. Otherwise the difference is printed with the margin that
+explains it. The threshold is provisional: **a defect can hide under a
+near-tie**, and what narrows that is more prompts rather than a cleverer rule.
+
+`cargo run -p mcf-standin --example margins -- <model> "<text>"` is the
+instrument, and is worth running by hand whenever a divergence appears.
 
 **The reference is a development instrument and is not vendored.** Nothing in it
 ships, nothing in it is on the path of any MCF command, and MCF's own engine
@@ -976,6 +986,13 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 33 — the forward pass, against a measured tolerance
+
+The oracle now compares generations as well as identifiers. What makes that
+possible is F27's measurement of what a near-tie looks like against what a
+defect looks like, rather than an assumption about it. Both defects the oracle
+has found are recorded, and reintroducing either makes the tier fire.
 
 ### Version 32 — against a reference implementation
 

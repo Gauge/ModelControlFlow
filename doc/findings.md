@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 30 |
+| **Version** | 31 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2077,7 +2077,111 @@ and unchecked. Nothing about the embedding family, whose vocabulary MCF still
 refuses and which was reported as not compared rather than counted as agreeing
 (A4). And nothing about texts unlike these six.
 
+## 27 · F27 — What a coin-flip looks like, and what a defect looks like (B-368, B-365, A19, A21)
+
+**The question this had to answer before the forward pass could be compared at
+all.** Greedy generation is deterministic, so two correct implementations should
+produce the same tokens from the same model and prompt. Except they need not:
+where the best and second-best logits are close enough, a different order of
+summation picks a different winner, and neither implementation is wrong. F26
+compared identifiers precisely because that comparison has no such problem —
+integers agree or they do not. Comparing generated text needs a way to tell a
+coin-flip from a defect, and MCF had asserted one was needed without measuring
+it.
+
+**The instrument.** `margins`, which reports for every step of a generation the
+gap between the chosen token's logit and the runner-up's. The claim it makes
+possible is: *a divergence at a small margin is arithmetic; a divergence with
+room to spare is a defect.*
+
+**Fifteen comparisons, five models, three prompts, ten tokens each.** Eleven
+agreed exactly, token for token. Four diverged, and every one of them looks the
+same:
+
+| model · prompt | margin where they parted | MCF chose | reference chose |
+|---|---|---|---|
+| SmolLM2 · *Water freezes…* | **0.040** | ` freezing` | ` equation` |
+| Llama-160M · *Water freezes…* | **0.098** | ` water` | ` free` |
+| SmolLM2 · *The capital of France is* | **0.105** | ` the` | ` a` |
+| gemma3 · *Water freezes…* | **0.159** | `2` | `0` |
+
+In **every** case the reference's choice was exactly MCF's runner-up, and in
+every case the divergence happened at the smallest margin in that whole
+generation. That is what a coin-flip looks like: the two implementations
+disagree only where the model itself was indifferent.
+
+**And then the defect, which looks nothing like it.** Before the above, gemma3
+diverged on *The opposite of hot is* at a margin of **0.775**, choosing `Hot`
+where the reference chose `The`. Five to nineteen times the largest noise
+margin. That was real, and this is what it was.
+
+Gemma 3 alternates sliding and global blocks — five that see only the last 512
+positions, then one that sees everything — and the two kinds **rotate at
+different base frequencies**. The corpus artifact declares
+`gemma3.attention.sliding_window = 512` and does *not* declare a base for the
+sliding blocks. F24 recorded exactly this and called it untested ground: MCF
+used the one base the file states, for every block.
+
+What the reference does when that key is absent is use **ten thousand** — a
+default in its own header, not anything the file says. So MCF was rotating five
+blocks in six at 1,000,000 where every other implementation rotates them at
+10,000. The model still answered `Paris.` and `cold.` correctly, which is why
+nothing before this caught it.
+
+MCF now reads `rope.freq_base_swa` where a file states it, falls back to ten
+thousand where it does not, and applies the window itself — a key at position
+`p0` is visible from `p1` only while `p1 - p0` is under the window, which is the
+reference's boundary.
+
+**The tolerance, and its honest width.** The check now fails a generation
+divergence only when *every* step of it had a margin over **0.50** — above the
+largest noise observed by a factor of three, below the one observed defect by a
+factor of one and a half. Reintroducing the sliding-window defect makes it fire:
+`closest margin 0.95879, over 0.50 — this is not a near-tie`, and the run exits
+non-zero after printing its summary.
+
+The threshold is provisional and the reason is worth stating plainly: **a defect
+can hide under a near-tie.** If a wrong engine happens to be wrong only where the
+model was indifferent, this passes it. What narrows the gap is more comparisons
+and more prompts, not a cleverer rule; four noise observations is what this rests
+on.
+
+**What is now known.** Across five corpus models, MCF's tokenizer agrees with the
+reference on thirty comparisons exactly, and its forward pass agrees on eleven of
+fifteen generations token for token, the other four differing only where the
+model was indifferent. F20, F24 and F25 each ended by saying the forward pass
+was transcribed and unchecked. It is no longer unchecked — for these models,
+these prompts, and ten tokens, which is what a check establishes and not more.
+
+**What was not established.** Nothing about long contexts: at ten tokens the
+sliding window never truncates anything, so the *mask* MCF now applies is
+exercised by nothing here and only the rotary base was measured. Nothing about
+the embedding family, still refused. Nothing about sampling other than greedy.
+And nothing here is a speed (B65).
+
 ## Changelog
+
+### Version 31 — what a coin-flip looks like, and what a defect looks like
+
+F27. Before the forward pass could be compared at all, a way was needed to tell
+two correct implementations disagreeing on a near-tie from one of them being
+wrong. That was measured rather than assumed.
+
+Four divergences across fifteen comparisons were noise: margins of 0.040, 0.098,
+0.105 and 0.159, in every case the reference choosing exactly MCF's runner-up,
+in every case at the smallest margin of that whole generation. The one real
+defect diverged at 0.775.
+
+The defect was the sliding-window rotary base. Gemma 3 rotates its sliding
+blocks at a different frequency from its global ones, the artifact does not
+declare it, and the reference falls back to ten thousand where MCF was using the
+million the file states for the others — so five blocks in six were rotating
+wrongly. The model still said `Paris.` correctly, which is why nothing before
+this caught it. F24 had recorded this as untested ground.
+
+The forward pass is no longer unchecked, for these models and prompts. The
+threshold that separates the two cases is provisional, and a defect can still
+hide under a near-tie.
 
 ### Version 30 — the oracle found a defect on its first run
 

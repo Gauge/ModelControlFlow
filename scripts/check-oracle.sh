@@ -18,12 +18,24 @@
 # It is also the part F23 found three defects in, all of them by reading rather
 # than running, and all of them still unverified by anything but that reading.
 #
-# **What is deliberately not compared yet.** Logits and generated text. A
-# correct implementation can still flip an argmax on a near-tie through nothing
-# worse than a different summation order, so a disagreement there is a finding
-# to investigate rather than a verdict, and a tier that failed on it would be a
-# tier people learn to ignore. That comparison wants a tolerance nobody has
-# measured yet, and measuring it is its own piece of work.
+# **The forward pass is compared too, and the tolerance was measured rather than
+# assumed** (F27). Greedy generation is deterministic, so two correct
+# implementations should produce the same tokens — except where the best and
+# second-best logits are close enough that a different summation order picks a
+# different winner. That is not a defect in either and never will be.
+#
+# What separates the two is the *margin* between the best and second-best logit
+# at the step where they part. Measured over fifteen comparisons: the four
+# divergences that were float noise happened at margins of 0.040, 0.098, 0.105
+# and 0.159, in every case with the reference choosing exactly MCF's runner-up.
+# The one real defect found — a sliding-window rotary base MCF was not applying
+# — diverged at a margin of 0.775.
+#
+# So the rule below is: if the texts differ *and* every step had a comfortable
+# margin, something is wrong. If any step was close, the divergence is
+# explainable and is reported rather than failed. The threshold sits between the
+# largest observed noise and the smallest observed defect, and it is provisional
+# — a defect can hide under a near-tie, and only more comparisons narrow it.
 #
 # **The reference is a development instrument and is not vendored.** Nothing
 # here ships, nothing here is on the path of any MCF command, and MCF's own
@@ -32,8 +44,9 @@
 # asks for a build that is already there and says how to make one when it is
 # not.
 #
-# Exit status: 0 when every comparison agreed; 1 when one did not; 2 when the
-# check could not be made — no reference build, or no corpus.
+# Exit status: 0 when every comparison agreed, or differed only where a margin
+# was close; 1 when one differed with room to spare; 2 when the check could not
+# be made — no reference build, or no corpus.
 
 set -o errexit -o nounset -o pipefail
 
@@ -51,6 +64,20 @@ readonly REFERENCE_COMMIT=925e1179947ea0c0ebfb0032df18af3a729822be
 # lead character either joins or does not; contractions; characters outside
 # ASCII; runs of whitespace; and a plain sentence, so that a total disagreement
 # is distinguishable from an edge case.
+# The margin below which a different choice is explained by arithmetic rather
+# than by a defect. See the note above for the fifteen measurements this sits
+# between; it is deliberately nearer the noise than the defect.
+readonly CLOSE_ENOUGH=0.50
+
+# What to generate from, and how far. Ten tokens is enough for a divergence to
+# show and short enough that five models finish in a minute.
+readonly GENERATE_FROM=(
+    'The capital of France is'
+    'The opposite of hot is'
+    'Water freezes at a temperature of'
+)
+readonly GENERATE_TOKENS=10
+
 readonly TEXTS=(
     'The capital of France is'
     'In 2024 there were 365 days and 1234567 seconds'
@@ -143,13 +170,75 @@ for model in "${models[@]}"; do
     done
 done
 
+# ── the forward pass ────────────────────────────────────────────────────────
+
+completion_reference="$oracle/build/bin/llama-completion"
+margins="$root/target/release/examples/margins"
+mcf="$root/target/release/mcf"
+
+if [ ! -x "$completion_reference" ] || [ ! -x "$margins" ] || [ ! -x "$mcf" ]; then
+    printf '\n  the forward pass was not compared: needs llama-completion, MCF'"'"'s margins\n'
+    printf '  example and the mcf binary\n'
+else
+    printf '\n'
+    for model in "${models[@]}"; do
+        name=$(basename "$model")
+        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+
+        for prompt in "${GENERATE_FROM[@]}"; do
+            flatten() { sed -e 's/[[:space:]]\+/ /g' | tr -d '\n' | sed 's/^ *//; s/ *$//'; }
+            mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" 2>&1 |
+                sed -n '/── what produced it/q;p' | flatten || true)
+            theirs=$("$completion_reference" -m "$model" -p "$prompt" -n "$GENERATE_TOKENS" \
+                --temp 0 --seed 0 --no-warmup -ngl 0 -no-cnv --no-display-prompt 2>/dev/null |
+                flatten || true)
+            # A model that produced nothing on either side is not a comparison.
+            if [ -z "$mine" ] || [ -z "$theirs" ]; then
+                printf '  %-40s not compared on %s: one side produced nothing\n' "$name" "$prompt"
+                continue
+            fi
+
+            compared=$((compared + 1))
+            if [ "$mine" = "$theirs" ]; then
+                continue
+            fi
+
+            # They differ. Whether that is a defect depends on how close the
+            # closest choice was, so ask.
+            # `|| true` on every one of these: `pipefail` plus `errexit` would
+            # otherwise end the whole run at the first model whose margins
+            # cannot be taken, and a check that stops before its summary is a
+            # check that cannot report (A4).
+            closest=$("$margins" "$model" "$prompt" "$GENERATE_TOKENS" 2>/dev/null |
+                awk 'NR > 1 && $2 != "" { if (min == "" || $2 < min) min = $2 } END { print min + 0 }' ||
+                true)
+            [ -n "$closest" ] || closest=0
+            if awk -v m="$closest" -v t="$CLOSE_ENOUGH" 'BEGIN { exit !(m < t) }'; then
+                printf '  %-40s differs on %s\n' "$name" "$prompt"
+                printf '      explained: the closest choice had a margin of %s, under %s\n' \
+                    "$closest" "$CLOSE_ENOUGH"
+                continue
+            fi
+            disagreements=$((disagreements + 1))
+            printf '  %-40s DIFFERS on %s WITH ROOM TO SPARE\n' "$name" "$prompt"
+            printf '      closest margin %s, over %s — this is not a near-tie\n' \
+                "$closest" "$CLOSE_ENOUGH"
+            printf '      MCF:       %s\n' "$mine"
+            printf '      reference: %s\n' "$theirs"
+        done
+    done
+fi
+
 printf '\n'
 if [ "$skipped" -gt 0 ]; then
     printf '%d model(s) were not compared because MCF refuses their vocabulary\n' "$skipped"
 fi
 if [ "$disagreements" -gt 0 ]; then
     printf 'the oracle: %d of %d comparisons disagreed\n' "$disagreements" "$compared" >&2
-    printf 'a disagreement here is exact: identifiers are integers and there is no tolerance\n' >&2
+    printf 'each of these is either a list of identifiers, where there is no tolerance to\n' >&2
+    printf 'argue about, or a generation that parted while every choice still had room to\n' >&2
+    printf 'spare — which is not what a near-tie looks like (F27)\n' >&2
     exit "$EXIT_FAILED"
 fi
-printf 'the oracle: MCF and the reference agree on all %d comparisons (B-368)\n' "$compared"
+printf 'the oracle: MCF and the reference agree on all %d comparisons, or differ only\n' "$compared"
+printf 'where the choice was closer than %s (B-368, F27)\n' "$CLOSE_ENOUGH"

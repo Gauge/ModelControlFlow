@@ -119,6 +119,35 @@ pub struct Shape {
     pub experts: usize,
     /// How many of those experts each token is actually routed to.
     pub experts_used: usize,
+    /// How far back a *sliding* block may look, where the file states one.
+    ///
+    /// `None` is the ordinary case: every block sees the whole history. A file
+    /// that states a window has blocks that see only the last `window`
+    /// positions — and, more consequentially at short lengths, blocks that
+    /// rotate at a different base (F27).
+    pub sliding_window: Option<usize>,
+    /// One block in every `sliding_window_pattern` sees everything; the rest
+    /// slide.
+    ///
+    /// Six unless the file says otherwise, which is what the reference uses
+    /// when the key is absent.
+    pub sliding_window_pattern: usize,
+}
+
+impl Shape {
+    /// Whether this block slides rather than seeing the whole history.
+    ///
+    /// The last block of each period is the one that sees everything, so with a
+    /// period of six the blocks that slide are 0–4, 6–10, and so on.
+    #[must_use]
+    pub fn is_sliding(&self, block: usize) -> bool {
+        if self.sliding_window.is_none() || self.sliding_window_pattern == 0 {
+            return false;
+        }
+        block
+            .checked_rem(self.sliding_window_pattern)
+            .is_some_and(|within| within < self.sliding_window_pattern.saturating_sub(1))
+    }
 }
 
 impl Shape {
@@ -160,6 +189,15 @@ pub struct Loaded {
     epsilon: f32,
     /// The rope base frequency the file states.
     rope_theta: f32,
+    /// The rope base frequency a *sliding* block uses.
+    ///
+    /// **Ten thousand when the file does not say, and that is not a guess about
+    /// this model — it is what the reference does.** A file can state a
+    /// sliding window and omit the base its sliding blocks rotate at, and every
+    /// implementation then uses ten thousand rather than the base stated for
+    /// the others. MCF used the stated base for every block, and produced
+    /// different text from the reference by the fourth token (F27).
+    rope_theta_swa: f32,
     /// What this family does that its file does not say it does.
     ///
     /// Read from the architecture rather than from the file, because nothing in
@@ -225,6 +263,8 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     )
     .unwrap_or(1e-5);
     let rope_theta = float(file, &format!("{architecture}.rope.freq_base")).unwrap_or(10_000.0);
+    let rope_theta_swa =
+        float(file, &format!("{architecture}.rope.freq_base_swa")).unwrap_or(10_000.0);
 
     let mut tensors = BTreeMap::new();
     for (name, elements) in manifest(&shape) {
@@ -260,6 +300,7 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         shape,
         epsilon,
         rope_theta,
+        rope_theta_swa,
         habits: crate::architecture::habits(architecture),
         tensors,
     })
@@ -298,6 +339,13 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
         experts_used: number(file, &key("expert_used_count"))
             .and_then(|value| usize::try_from(value).ok())
             .unwrap_or(0),
+        sliding_window: number(file, &key("attention.sliding_window"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|window| *window > 0),
+        sliding_window_pattern: number(file, &key("attention.sliding_window_pattern"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|period| *period > 0)
+            .unwrap_or(6),
         vocabulary: file
             .get("tokenizer.ggml.tokens")
             .and_then(Value::as_list)
@@ -538,6 +586,14 @@ impl Loaded {
     /// `artifact.format.malformed` when a projection produces a width the
     /// model's own shape does not permit — a file that loaded and is still
     /// wrong about itself.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one block's attention is one sequence — project, normalize each head, rotate, \
+                  cache, weigh, gather, project back — and every step of it depends on the \
+                  widths bound at the top. Splitting it would put the widths in one function \
+                  and their use in another, which is how a head width comes to be wrong \
+                  somewhere and right elsewhere (F19)"
+    )]
     fn attention(
         &self,
         block: usize,
@@ -596,17 +652,27 @@ impl Loaded {
             normalize_each_head(&mut keys, head, weights, self.epsilon);
         }
 
+        // A sliding block rotates at its own base and sees only the last
+        // `window` positions. Both come from the file; which blocks slide is
+        // the period it states, or the six the reference uses when it does not.
+        let sliding = self.shape.is_sliding(block);
+        let theta = if sliding {
+            self.rope_theta_swa
+        } else {
+            self.rope_theta
+        };
+
         // Rotate each head of the query and the key by this position.
         for index in 0..self.shape.heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = queries.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta, self.habits.rotation);
+                ops::rope(slice, position, theta, self.habits.rotation);
             }
         }
         for index in 0..self.shape.key_value_heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = keys.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta, self.habits.rotation);
+                ops::rope(slice, position, theta, self.habits.rotation);
             }
         }
 
@@ -627,6 +693,17 @@ impl Loaded {
 
             let mut weights = Vec::with_capacity(history);
             for step in 0..history {
+                // A key outside a sliding block's window is not attended to at
+                // all. The boundary is the reference's: a key at `step` is
+                // visible from `position` when `position - step` is less than
+                // the window, so the window counts the current position too.
+                if let Some(window) = self.shape.sliding_window
+                    && sliding
+                    && position.saturating_sub(step) >= window
+                {
+                    weights.push(f32::NEG_INFINITY);
+                    continue;
+                }
                 let key = slice_at(cache.keys.get(block), step, key_at, head);
                 weights.push(ops::dot(query, key) * scale);
             }
