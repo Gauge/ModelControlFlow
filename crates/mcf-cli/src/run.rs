@@ -98,6 +98,12 @@ struct Said {
 /// Reads the model, runs it, and keeps the mark.
 fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, Failure> {
     let file = gguf::parse(bytes)?;
+    // Asked before the vocabulary, because when both are unsupported the
+    // architecture is what the operator needs to hear: a vocabulary MCF cannot
+    // read is one component of a model it might otherwise run, and an
+    // architecture it cannot read is the whole model. An embedding model
+    // refused for its tokenizer sounds like a tokenizer problem.
+    mcf_standin::llama::covers(&file)?;
     let vocabulary = Vocabulary::read(&file)?;
     let model = load(&file, bytes)?;
 
@@ -219,9 +225,12 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
 /// own: MCF's reader is strict because there is nothing else to fall back to.
 fn refused(path: &Path, failure: &Failure) -> String {
     format!(
-        "{}\n  MCF's stand-in implements one architecture and reads GGUF: a model it refuses \
-         is one a vendored engine would take, and there is no vendored engine yet (D31, B-320)",
-        crate::say::refusal(&format!("{} did not run", path.display()), failure)
+        "{}\n  MCF's own engine reads GGUF and implements {}: a model it refuses is one a \
+         vendored engine would take, and there is no vendored engine yet (D31, B-320)",
+        crate::say::refusal(&format!("{} did not run", path.display()), failure),
+        // Said rather than counted, so that the sentence cannot go stale the
+        // way "one architecture" did once there were four.
+        mcf_standin::llama::FAMILIES.join(", ")
     )
 }
 

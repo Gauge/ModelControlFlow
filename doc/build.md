@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 30 |
+| **Version** | 34 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
 
 **One command builds it and one command gates it.** `cargo build --locked`
@@ -763,6 +763,103 @@ free against the home partition's few. That matters beyond convenience: the
 drive an artifact was read from is a condition of every measurement taken
 against it (B-193), and the two drives here are not the same kind of device.
 
+## 11c · The conformance corpus
+
+```
+$ scripts/ci.sh --with-corpus           # or scripts/check-corpus.sh
+```
+
+The engine is developed against the smallest *trained* model of each family MCF
+covers or means to cover, one distinct quantization apiece, so that architecture
+and quantization coverage come from the same handful of files (D40, DEC-054).
+Six of them are 1.4 GB against the reference model's 16.5 GB — which is the
+point: the size that makes residency a real problem is the size that makes every
+engine iteration slow.
+
+**Each entry declares what MCF does with it today, and the check fails both
+ways.** A model that ran and now refuses is a regression. A model that refused
+and now runs is *also* reported, because the entry is then out of date and
+somebody should say which family MCF covers. A check that quietly accepted good
+news would be a check that stops being read.
+
+**A refusal is checked for what it says.** Today four of the six refuse, and
+each names a different missing thing — a `smollm` pre-tokenizer, a `bert`
+tokenizer scheme, a per-expert gate where MCF looked for `ffn_gate.weight`, and
+an architecture MCF has not been taught. That list is B-365's order of work,
+read off artifacts rather than predicted, and a refusal that stopped naming what
+it wanted would have lost the thing that made it useful.
+
+**Where the corpus is.** `MCF_CORPUS`, or the store MCF itself would use. It is
+scheduled rather than gating because a gate that needs 1.4 GB of models is a
+gate that fails on a fresh clone; `mcf pull` the artifacts named in
+[findings.md](findings.md) F21 to have it.
+
+**Nothing here is timed and nothing here may be** (B65). The figures in F21 and
+F22 are recorded as what the decision was about, not as properties of any model.
+
+## 11d · Against a reference implementation
+
+```
+$ scripts/ci.sh --with-oracle           # or scripts/check-oracle.sh
+```
+
+**Why this exists, in one measurement.** [findings.md](findings.md) F25 removed
+the expert router from MCF's mixture-of-experts entirely and the model produced
+`Paris. It is located on the River Seine in`; the correct implementation
+produced `Paris, France is Paris, Paris is Paris is`. The broken engine read
+*better* than the right one. Four findings now say the same thing from different
+directions (F20, F22, F24, F25): **output quality is not evidence about
+implementation correctness, in either direction.** Every family MCF's engine
+covers was transcribed from somebody else's source and is unverified in A21's
+exact sense. This is what verifies it.
+
+**It starts with the tokenizer because that part can be exact.** Identifiers are
+integers. Two tokenizers either agree about them or do not — no tolerance, no
+floating-point arithmetic in the way. It is also the part F23 found three
+defects in, every one of them by reading rather than running, and every one of
+them still unverified by anything but that reading.
+
+**The forward pass is compared too, against a tolerance that was measured.**
+Greedy generation is deterministic, so two correct implementations should agree
+— except where the best and second-best logits are close enough that a different
+summation order picks a different winner. F27 measured which is which: the four
+noise divergences sat at margins of 0.040, 0.098, 0.105 and 0.159, in every case
+with the reference choosing exactly MCF's runner-up and in every case at the
+smallest margin of that whole generation. The one real defect sat at 0.775.
+
+So a generation that differs fails only when *every* step of it still had a
+margin over 0.50 — three times the largest observed noise, two-thirds of the one
+observed defect. Otherwise the difference is printed with the margin that
+explains it. The threshold is provisional: **a defect can hide under a
+near-tie**, and what narrows that is more prompts rather than a cleverer rule.
+
+`cargo run -p mcf-standin --example margins -- <model> "<text>"` is the
+instrument, and is worth running by hand whenever a divergence appears.
+
+**Embeddings are compared too, at their own measured floor.** An embedding
+model's vectors cannot equal the reference's — MCF multiplies dequantized
+floats where the reference multiplies in quantized arithmetic — and F29
+measured the gap: cosine 0.9996–0.9998 across five texts. The floor is 0.999,
+which a single normalization swapped in a single layer falls through (0.972).
+Models are discovered by whether `mcf embed` serves them.
+
+**The reference is a development instrument and is not vendored.** Nothing in it
+ships, nothing in it is on the path of any MCF command, and MCF's own engine
+runs with none of it present — D39's fourth condition. What MCF may *provision*
+for itself is DEC-052 and is not settled; until it is, this check asks for a
+build that is already there, names the pinned commit it was written against, and
+says so when the build is at a different one.
+
+```
+$ git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp
+$ git checkout 925e1179947ea0c0ebfb0032df18af3a729822be
+$ cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
+$ cmake --build build -j --target llama-tokenize llama-cli
+```
+
+`MCF_ORACLE` names the checkout; the corpus comes from `MCF_CORPUS` or MCF's own
+store. Scheduled rather than gating, because it needs both.
+
 ## 12 · A machine with something else on it
 
 A machine that hosts several projects with heavy test workloads — as the one MCF
@@ -896,6 +993,35 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 34 — the sixth family, and its own verb
+
+`mcf embed <model> --text <text>` exists (B-371, DEC-055): one JSON line first,
+conditions after. The oracle grew an embedding comparison at a cosine floor
+measured before it was set, and the corpus tier a third state — `embeds`,
+expecting the width the file declares.
+
+### Version 33 — the forward pass, against a measured tolerance
+
+The oracle now compares generations as well as identifiers. What makes that
+possible is F27's measurement of what a near-tie looks like against what a
+defect looks like, rather than an assumption about it. Both defects the oracle
+has found are recorded, and reintroducing either makes the tier fire.
+
+### Version 32 — against a reference implementation
+
+`--with-oracle` added (B-368). MCF's tokenizer against llama.cpp's, at a pinned
+commit, over texts chosen for where tokenizers differ. Identifiers are integers,
+so the comparison is exact and a disagreement is a defect rather than a
+judgement — which is what four findings in a row have been asking for.
+
+### Version 31 — the conformance corpus
+
+`--with-corpus` added (B-370). The engine's development subject is no longer the
+reference model: §XII is amended by D40, and the corpus of six small trained
+models is what an iteration runs. The tier checks each entry against what the
+register says it does, in both directions, and reads a refusal for what it
+names.
 
 ### Version 21 — the real hub, on purpose
 

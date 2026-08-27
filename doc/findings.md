@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 23 |
+| **Version** | 33 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -1598,7 +1598,823 @@ cause; this is its sibling for fixtures — *a fixture that cannot be wrong the
 way a real file is wrong hides the defect it was built to catch*. Real artifacts
 are how that is escaped, and B-368's oracle is how it is escaped systematically.
 
+## 20 · F20 — A second architecture, and two silences that fail differently (B-365, A2, A19, D26)
+
+**What was run.** Qwen3 0.6B, as Ollama already holds it on this machine —
+`sha256-7f4030…e1fa`, 28 blocks, 1024 wide, 16 query heads over 8 key/value
+heads, a stated head width of 128 that is *not* the embedding divided by the
+heads, and a `gpt2` byte-pair vocabulary of 151,936 tokens with 151,387 merges.
+The prompt was `The capital of France is`, greedy, seed 0, twelve tokens, run
+through `mcf run` on the build in the working tree.
+
+**What it produced, in four states.** The engine was run with each of the two
+corrections this finding is about present and absent, and the four outputs are
+the finding:
+
+| rotary pairing | per-head query/key norm | what came out |
+|---|---|---|
+| adjacent pairs (llama's) | not applied | `了吗了吗了吗了吗了吗了吗…` |
+| split halves (Qwen's) | not applied | `了吗了吗了吗了吗了吗了吗…` |
+| adjacent pairs (llama's) | applied | `the the capital of of the the country of in which the` |
+| split halves (Qwen's) | applied | `Paris, and the capital of the United States is Washington,` |
+
+**The first thing this establishes is that the two defects fail differently, and
+only one of them looks like a defect.** A missing per-head normalization
+collapses the model onto a single token and is unmistakable. A wrong rotary
+pairing produces *English* — words in the right proportions, function words in
+plausible places, and no answer. Anybody watching the third row without the
+fourth beside it would report a small model doing what small models do. The
+rotation was already suspected and already documented as the thing to suspect;
+what the experiment adds is that its signature is fluency, so *fluent output is
+not evidence the rotation is right*. Nothing short of a second implementation or
+a known answer distinguishes row three from a model that is simply small (A19).
+
+**The second is that neither defect was a mistake in arithmetic.** Both were
+silences.
+
+The rotary pairing is not in the file. GGUF states the base frequency and the
+head width and never states which two components of a head turn together, so
+every engine that runs these files carries a table from architecture to pairing
+under some name, and MCF's absence of one was a table with one entry that never
+said so. It is now `rotation_for`, written out, defaulting to llama's, with the
+families that want the other named — because being wrong there does not fail, it
+produces text.
+
+The per-head normalization was worse, because MCF had the code for it. The
+weights are two tensors per block that llama does not carry, the engine asked
+for them with `if let Ok(weights) = self.tensor(…)`, and the tensor map was
+built from a manifest that did not list them. The lookup failed on every block
+of every model, and an `if let Ok` cannot say so. That is A2's silent failure
+inside an engine written under A2 — the guard was shaped like an option and was
+in fact an error being discarded. Optional tensors are now loaded by asking the
+file whether it carries them; a tensor that is there and unreadable is a refusal
+rather than an absence, which is the difference between an optional part and a
+skipped one.
+
+**What this says about where to look next.** Both defects are of the same
+family: something the architecture requires that the *file* does not say and the
+*llama* path does not need. That family has more members — gemma3's sandwich
+normalizations, llama4's expert routing, the reference model's sixteen
+full-attention blocks among sixty-four — and none of them will announce
+themselves. The reference implementation of B-368 is the systematic answer; a
+real file per family, run and read, is what is available before it.
+
+**What was not established.** Nothing here is a speed, and it cannot be (B65).
+Twelve tokens from one prompt at one seed is not a measure of quality, and the
+fourth row's claim about Washington is the model's own. That the engine now
+produces coherent text for two architectures says that the paths it exercises
+are right for these two files; it says nothing about the paths they do not
+exercise — long contexts, other quantization schemes, the grouped-query ratios
+these two happen not to have.
+
+## 21 · F21 — Six families for a tenth of one model's bytes (B-369, D40, DEC-054, §3.12)
+
+**What prompted it.** The operator observed that development against the
+reference model is slow, that §XII's choice of it was made for its quality
+rather than for its fitness as a development subject, and that the models
+already on this machine should not be used — their state is unknown and they are
+all large. F19 had reached for those models precisely because they were already
+there, which is how an unexamined convenience becomes a condition of the work.
+
+**What was acquired.** The smallest *trained* model of each family MCF covers or
+means to cover, one distinct quantization apiece so that architecture coverage
+and quantization coverage come from the same six files. Every one was fetched by
+`mcf pull`, digest-verified, and recorded with its provenance.
+
+| family | artifact | quantization | bytes |
+|---|---|---|---|
+| llama, unigram vocabulary | `Felladrin/gguf-Llama-160M-Chat-v1` | Q4_K | 121,295,296 |
+| llama, byte-pair vocabulary | `bartowski/SmolLM2-135M-Instruct-GGUF` | Q8_0 | 144,811,360 |
+| qwen3 | `unsloth/Qwen3-0.6B-GGUF` | Q4_K_M | 396,705,472 |
+| gemma3 | `unsloth/gemma-3-270m-it-GGUF` | Q6_K | 282,975,264 |
+| mixture-of-experts | `RichardErkhov/Isotonic_-_TinyMixtral-4x248M-MoE-gguf` | Q5_K_M | 500,878,816 |
+| embedding | `leliuga/all-MiniLM-L6-v2-GGUF` | Q4_0 | 19,699,648 |
+
+**1.4 GB for six families against 16.5 GB for one model.** The two that run
+today answer a five-token prompt in 3.9 s (160M) and 15.9 s (0.6B) on this
+machine, measured with `time` around `mcf run` at a ten-token budget. These are
+*not* speeds in B65's sense and cannot become them — they are the stand-in's own
+cost and are recorded here only as the quantity the decision was about: how long
+it takes to find out you were wrong.
+
+**The other four refuse, and what they say is the finding's second half.** Each
+names exactly what it wanted:
+
+- the byte-pair llama asks for a pre-tokenizer called `smollm`, which MCF has
+  not implemented and will not substitute (A7);
+- the embedding model carries a third tokenizer scheme, `bert`;
+- the mixture-of-experts file has no `blk.0.ffn_gate.weight`, because its gate
+  is per-expert;
+- gemma3 is an architecture MCF has not been taught, and says which it has.
+
+Four refusals, four different subsystems, four different categories, and not one
+of them a crash or a guess. That is the surface working — but note what it also
+is: **the refusals are the order of work**, derived from artifacts rather than
+from a list somebody wrote down. B-365's remaining sequence is now read off six
+files instead of being predicted.
+
+**What this costs, stated because it is not free.** A 135M model cannot referee
+the difference F20 turned on. That finding separated a correct engine from a
+subtly wrong one because the correct one answered `Paris` and the wrong one
+produced fluent English containing no answer; the judgement needed a model good
+enough to be right. The corpus buys iteration speed by giving up the oracle that
+F20 used, and the only thing that buys it back is a reference implementation to
+compare against numerically — which is D39's opening and B-368's item. That is
+why DEC-054 moves B-368 ahead of the remaining families rather than after them.
+
+**What was not established.** That these six are the smallest such models, only
+that they are the smallest found by asking the hub for each family's known small
+releases; a smaller trained gemma3 or mixture-of-experts may exist. Nothing here
+measures quality, and the two timings measure this machine and this stand-in.
+Whether the four refusals are the *only* things those files need is unknown —
+a refusal names the first thing missing, not every thing.
+
+## 22 · F22 — Where a model becomes able to referee an engine (B-370, D40, DEC-054, A19)
+
+**The question.** F21 asserted that a small model cannot tell a correct engine
+from a subtly wrong one, and used that to make the conformance corpus depend on
+an oracle. The assertion was reasoning, not measurement. This measures it.
+
+**The method.** Two corpus models were run against a correct engine and against
+one with a single defect: the rotary pairing swapped, so each family gets the
+other convention. That is the defect from F20 that produces *English* rather
+than gibberish — the hard case, deliberately. Four prompts with answers a person
+knows, greedy, seed 0, fourteen tokens. The engine was rebuilt from a
+git-clean tree before each block; a first attempt at this measurement compared
+two runs of the same stale binary and produced two identical tables, which is
+how the rebuild came to be part of the method.
+
+**Llama-160M-Chat, Q4_K:**
+
+| prompt | correct engine | rotation swapped |
+|---|---|---|
+| The capital of France is | `Paris.` | `the capital city of Paris.` |
+| Water freezes at a temperature of | `100 °C. The water freezes at a temperature` | `120°C. The water dropleases are formed` |
+| The largest planet in our solar system is | `Mercury. Mercury is the second-largest planet in our` | `the Sun.` |
+| The opposite of hot is | `hot.` | `hot.` |
+
+**Qwen3-0.6B, Q4_K_M:**
+
+| prompt | correct engine | rotation swapped |
+|---|---|---|
+| The capital of France is | `Paris. The capital of France is also the capital of the Republic of` | `the the capital of of the the country which is the the capital of` |
+| Water freezes at a temperature of | `0°C, and the boiling point of water is at 1` | `at 200000000000` |
+| The largest planet in our solar system is | `...? A. Mercury B. Venus C. Earth D. Mars` | `called the...? A.. B B.. C..` |
+| The opposite of hot is | `cold, and the opposite of cold is hot. So, the opposite` | `a the of the the same as the opposite of cold. So,` |
+
+**At 160M the reader cannot tell which column is the broken engine, and the
+reason is not subtlety.** It is that the correct engine's own answers are wrong:
+water freezing at 100 °C, Mercury as the largest planet, the opposite of hot
+being hot. Three of four prompts are answered incorrectly by a *correctly
+implemented* engine. A model that does not know the answer cannot be asked
+whether the engine found it, and on one prompt the two engines produce
+character-identical output. The one row that looks like a signal — `dropleases`,
+which is not a word — is the only one, and one non-word in four prompts is not
+something to build a tier on.
+
+**At 0.6B all four are unmistakable, and the correct column is right.** Freezing
+at 0 °C, the opposite of hot being cold. The broken column repeats function
+words and emits a run of twelve digits. No judgement is required to separate
+them.
+
+**So the threshold is between the two, and it is cheap.** 0.6B is 397 MB and
+answers in about sixteen seconds on this machine — not the 16.5 GB the reference
+model costs. The useful statement is not *small models are unfit* but **a model
+must be good enough to be right about the thing being asked**, and that turns
+out to start well below a billion parameters.
+
+**This corrects F21 and the decision that cited it.** F21 concluded the corpus
+*depends on* an oracle because coherence cannot referee at small sizes. The
+dependency is real at the bottom of the corpus and absent one step up. The
+oracle is still worth building — it is exact where this is a judgement, it works
+on the 160M model where this does not, and it catches defects that leave output
+fluent at any size — but it is not a precondition for the corpus to be useful.
+B-368 keeps its priority on its own merits and not on this one.
+
+**What was not established.** One defect, one seed, one greedy sampler, four
+prompts, two models. That 0.6B suffices *for this defect* is not that it
+suffices for every defect; a defect subtler than a swapped rotation may be
+invisible at 0.6B and visible only to a numeric comparison. The threshold is a
+lower bound on what is needed, never an upper bound on what is enough (A21).
+
+## 23 · F23 — Four expressions where MCF had two, and what no test could have found (B-365, B-370, A7, A19, A21)
+
+**What prompted it.** SmolLM2 refused with `asked for: smollm`, and MCF's
+pre-tokenizer table had to grow by one. Rather than infer what `smollm` means
+from its name, the reference implementation was read — llama.cpp's
+`llama-vocab.cpp`, the `switch` on the pre-tokenizer type and the table that
+maps the string in `tokenizer.ggml.pre` onto it. That reading found three
+things wrong with what MCF had already shipped.
+
+**One: `qwen2` and `llama-bpe` are not the same expression.** MCF had them as
+one, on the strength of how similar they look. They differ in one place:
+llama3 takes digits in groups of up to three, `\p{N}{1,3}`, and qwen2 takes them
+one at a time, `\p{N}`. A different cut is a different set of merges that can
+apply, so a number tokenizes differently under the two.
+
+**Two: `deepseek-llm` was claimed and is not implemented.** MCF listed it in the
+same group. Its pre-tokenizer is six expressions, one of which is an explicit
+enumeration of several hundred letter ranges. It is now refused by name.
+
+**Three: `default` is not GPT-2's expression.** MCF read a file with no
+`tokenizer.ggml.pre` as GPT-2, reasoning that the field postdates the format.
+llama.cpp's fallback for that case is a *fourth* pattern — four expressions,
+one of which splits on punctuation. A file that does not say is now refused
+rather than run through something that resembles what it wants.
+
+**None of the three could have been found by running anything, and the first
+one demonstrates why.** Qwen3-0.6B tokenizes `What is 1234 plus 5678` into
+thirteen tokens with every digit separate — *both before and after* the fix.
+Its merge list contains no merge that joins two digits, so the grouping never
+had anything to group and the two cuts agree on this artifact. The defect is
+real, it is fixed, and no prompt against this model distinguishes the fixed
+version from the broken one. What a name maps to is a fact about somebody
+else's software; the only instrument that reads it is somebody reading it
+(A21: declared is not verified — and here, *not verifiable by observation*).
+
+**What the corpus did catch.** With `smollm` implemented, SmolLM2 runs — and
+the tier reported it as a failure, which is what it is for: the register said
+that entry refuses, it no longer does, and good news nobody notices is how a
+check stops being read.
+
+**And SmolLM2 corrects F22.** That finding put the floor for refereeing an
+engine "between 160M and 0.6B". SmolLM2-135M-Instruct at Q8_0 is *smaller* than
+Llama-160M-Chat at Q4_K and answers all three probe questions correctly —
+`Paris.`, `0 degrees Celsius.`, `cold.` — where the 160M model got every one of
+them wrong. Run with the rotary pairing swapped it gives `Paris.`,
+`10 degrees Celsius.`, `10.`: two of three visibly degraded.
+
+So the floor is not a parameter count. **It is whether that artifact, at that
+quantization, knows the answer to what is being asked** — and a well-trained
+135M model at Q8_0 knows more of it than a poorly-trained 160M model at Q4_K.
+F22's measurement stands; its generalization to a size does not.
+
+**A fourth defect, found by the round-trip and not by reading.** Every corpus
+vocabulary is now encoded and decoded over awkward text — digit runs,
+punctuation against letters, characters that are several bytes, runs of
+whitespace, the empty string. The empty string came back wrong for every
+unigram vocabulary: adding control-token matching to `encode` had introduced a
+walk that skipped an empty remainder, silently turning *encode nothing* from
+one token into no tokens. It has a test now.
+
+The round-trip also showed something that is **not** a defect and had to be
+told apart from one: `SentencePiece` puts a space in front of every text, so
+`decode(encode(t))` is `" " + t` and no decoder can tell that space from one
+the text really had. MCF now reads `tokenizer.ggml.add_space_prefix` where a
+file states it, and the check allows the convention for exactly the
+vocabularies that declare it rather than stripping a leading space and eating a
+real one.
+
+**What was not established.** That the four expressions are now right — only
+that they are transcribed from a reference that runs these models, and that
+three vocabularies round-trip. The transcription itself is unverified in the
+sense A21 means, and B-368's oracle is what would verify it: two
+implementations agreeing on identifiers for the same text is a check, and one
+implementation agreeing with itself is not.
+
+## 24 · F24 — A third architecture, and three habits that fail three different ways (B-365, B-370, A19, §3.18)
+
+**What was added.** Gemma 3, read from llama.cpp's `models/gemma3.cpp` rather
+than inferred, and run against the corpus artifact `gemma-3-270m-it` at Q6_K —
+18 blocks, 640 wide, 4 query heads over 1 key/value head, a stated head width
+of 256, and a unigram vocabulary of 262,144 tokens that declares
+`add_space_prefix = false`.
+
+It differs from llama in five places. Two the file states and three it does not,
+and that division is the finding.
+
+**What the file states, and is therefore read from the file (§3.18):** two more
+normalizations per block — on the way *out* of the attention half and out of
+the feed-forward half, which is what makes these blocks a "sandwich" — carried
+as `post_attention_norm.weight` and `post_ffw_norm.weight`. MCF applies them
+because the tensors are there, so a file of any family carrying them gets them
+and a gemma file without them would not.
+
+**What the file does not state, and is therefore a table:** the gated block
+activates with `GELU` rather than `SiLU`, the embedding is multiplied by the
+square root of its width on the way in, and the rotation pairs halves rather
+than adjacent components. None of the three is visible in any tensor or any
+metadata key. A `GELU`-gated block and a `SiLU`-gated one have the same tensors
+of the same shapes.
+
+**Each was removed in turn, and they fail in three different registers.** The
+prompts are `The capital of France is` and `The opposite of hot is`; correct,
+the model says `Paris.` and `cold.`
+
+| what was removed | what came out |
+|---|---|
+| the two sandwich normalizations | `incessant intensive intensiveHighwayHighwayHighway…` |
+| `GELU`, using `SiLU` instead | `the 12th city, and the` · `a cold. It's a cold, a` |
+| the embedding's scale | `चौ चौ चौلسللسللسللسل…` |
+
+Word salad, fluent-and-wrong, and characters from another script. **Only the
+middle one is dangerous**, and it is the one that would survive review: real
+words, plausible grammar, and no answer. It is the same signature F20 measured
+for the rotary pairing and F22 measured again — and it is now three habits, in
+two different families, that produce it. That is no longer a coincidence worth
+noting once. *An unobservable habit, got wrong, produces fluent text* looks like
+the general case, and the loud failures are the lucky ones.
+
+**Where this leaves the division of labour.** Everything observable is read
+from the artifact, which is why gemma3 needed no new code path for its
+normalizations — only two more names in the list of tensors MCF will load if
+they are there. Everything unobservable is in one table, `architecture.rs`,
+which DEC-053 already requires and which the neutrality check already holds to
+naming no artifact. Growing a family is now: read the reference, add what the
+file cannot tell you, and let the rest be found.
+
+**What was not established.** Gemma 3 alternates local and global attention on a
+five-to-one pattern with a different rotary base for each, and this artifact
+declares a sliding window of 512 but **no** separate base for the local layers.
+MCF therefore uses the one base the file states, for every layer, which is what
+the file says and not necessarily what the model was trained with (A7, A21). At
+twelve tokens no window truncates anything, so nothing here exercises the
+sliding window at all. A file that declares a second base, or a prompt longer
+than 512 tokens, is untested ground.
+
+Nor is the 27B variant's attention scale exercised: gemma scales queries by the
+inverse root of the head width except at 27B, where it is the inverse root of
+the embedding over the heads. On this artifact those coincide with what MCF
+already computes.
+
+## 25 · F25 — The broken engine read better than the correct one (B-365, B-368, A19, D38)
+
+**What was added.** A mixture of experts, read from llama.cpp's
+`build_moe_ffn`, and run against the corpus artifact `TinyMixtral-4x248M-MoE` at
+Q5_K_M — twelve blocks, four experts per block, two used per token.
+
+Notably the file declares `general.architecture = llama`. Whether a block holds
+one feed-forward or a stack of them is not a property of the family: it is
+`llama.expert_count`, which the file states, so MCF reads the shape from the
+count and not from the name (§3.18). Nothing about "mixtral" appears anywhere in
+the engine.
+
+**What a mixture adds is a choice.** Each expert is an ordinary feed-forward run
+with the same three matrix multiplies. The new part is: score every expert
+through a small router, softmax the scores, take the highest two, renormalize
+those two so they sum to one, and add their outputs in proportion.
+
+**Two pieces of that were removed in turn, and here is the result that matters.**
+The prompts are `The capital of France is` and `The opposite of hot is`.
+
+| version | what came out |
+|---|---|
+| as written | `Paris, France is Paris, Paris is Paris is` · `hot. The hot is hot, the hot is` |
+| the router ignored — experts 0 and 1 every time | `Paris. It is located on the River Seine in` · `hot.` |
+| the two weights not renormalized | `France France France France France France` · `hot` |
+
+**The broken version reads better than the correct one.** Ignoring the router
+entirely — never scoring an expert, always taking the first two — produces
+`Paris. It is located on the River Seine in`, which is a fluent, accurate,
+well-formed sentence. The implementation transcribed from the reference produces
+a stammer. Anybody tuning this by reading the output would have deleted the
+router and called it an improvement.
+
+That is the same phenomenon as F20's rotation, F22's measurement and F24's three
+habits, and it is now at its limit: it is not merely that a wrong engine can
+look right, it is that **a wrong engine can look better than a right one**, on
+the same artifact and the same prompt. Output quality is not evidence about
+implementation correctness in either direction. This finding is the case for
+B-368 and there is no longer a stronger one to be made.
+
+**What is actually known about this implementation.** That it was transcribed
+from the reference rather than inferred; that both the routing and the
+renormalization are live, because removing either changes the output; that the
+shape is read from the file's own counts and refuses a file that states experts
+without stating how many are used. That is not the same as knowing it is right,
+and the difference is exactly what an oracle would close (A21).
+
+**Why the artifact is a poor witness, stated because it bears on the above.**
+`TinyMixtral-4x248M-MoE` is a merge of four small models rather than a mixture
+trained as one, so its own quality is low and its stammer is a plausible thing
+for it to do unassisted. A better mixture would make the correct column read
+better — and would not change the argument, because the broken column would
+still have read fluently.
+
+**What was not established.** The weight scale some mixtures apply
+(`expert_weights_scale`), which this file does not declare and MCF therefore
+does not apply; expert biases and grouped routing, which belong to other
+families; and whether two of four is representative of routing at a realistic
+width. Nothing here is a speed (B65).
+
+## 26 · F26 — The oracle found a defect on its first run, and it was an invention of MCF's own (B-368, A19, A21, §3.12)
+
+**What was built.** llama.cpp at commit `925e1179`, built from source as a
+development instrument — vendored nowhere, on no MCF command's path, and absent
+from every artifact MCF ships (D39's fourth condition). The build queued behind
+another project's run on the shared machine rather than taking the window from
+it.
+
+**What is compared, and why only this.** Token identifiers. They are integers:
+two tokenizers either agree about a list of them or do not, with no tolerance to
+argue about and no floating-point arithmetic in the way. Logits are deliberately
+not compared yet — a correct implementation can flip an argmax on a near-tie
+through nothing worse than a different summation order, so a disagreement there
+is a finding to investigate rather than a verdict.
+
+Six texts across five corpus vocabularies: a plain sentence, digit runs,
+punctuation against letters with contractions, characters outside ASCII, a tab
+and a double space, and a single letter.
+
+**The result: 29 of 30 agreed exactly, and the thirtieth was a defect.**
+
+```
+gemma-3-270m-it   on  "tabs\tand  spaces"
+    MCF:        2 39218 255968 624 236743 9952
+    reference:  2 39218 255968 624 138 35220
+```
+
+The two agree for four tokens and part at the double space. Token 138 in that
+vocabulary is `'  '` — two literal spaces, marked **user-defined**. MCF was
+segmenting it into `▁` and `▁spaces`; the reference matches it whole.
+
+**The cause was a guard MCF invented.** MCF matches user-defined tokens in the
+raw text before segmenting, and the code that did it skipped any token shorter
+than three bytes, on the reasoning that *a one-character token would match
+inside ordinary words*. That reasoning is plausible and is not what any
+implementation does. The reference matches every user-defined token whatever its
+length, sorted longest-first so a longer token claims its text before a shorter
+one can — the sorting MCF already did, with a guard on top that nobody else has.
+
+Gemma's vocabulary carries 163 user-defined tokens, many of them runs of
+whitespace. Any text containing a double space tokenized differently in MCF than
+in every other implementation of the same file.
+
+**A second thing the reference settled, which MCF had guessed at.** MCF matched
+*control* tokens in ordinary text too — `<|im_start|>` typed into a prompt became
+the token a chat template uses to start a turn. The reference's default is to
+leave control tokens as text and match only user-defined ones, and that is both
+the compatible answer and the safer one: a prompt is text somebody typed, and it
+should not be able to produce a marker by spelling it. MCF now does the same, and
+a surface that applies a chat template will have to ask for the other behaviour
+rather than receive it by accident.
+
+**Why this finding matters more than the defect in it.** The defect is small.
+What it demonstrates is the thing four previous findings argued for and could
+not supply: F20, F22, F24 and F25 each established that output is no evidence
+about correctness, and each ended by saying an oracle would settle it. This is
+the first check MCF has that can say *wrong* about an engine without a human
+judging a sentence — and the first time it ran, on five models it had been
+producing plausible text with all day, it found something.
+
+Note also what found it: not the plain sentence, and not the model failing to
+say `Paris`. Gemma answers `Paris.` and `cold.` correctly with the defect
+present. It was the tab-and-double-space string, which exists in that list
+precisely because whitespace is where tokenizers differ.
+
+**What is now known that was not.** MCF's four pre-tokenizer expressions, its
+byte-level alphabet, its merge ordering and tie-breaking, its unigram
+segmentation, its byte fallback, its space prefix and its beginning-of-text
+handling agree with the reference on thirty comparisons across five vocabularies
+of two schemes. F23 recorded three transcription defects found by reading and
+said plainly that the transcription itself was unverified. That part is now
+verified — for these vocabularies and these texts, which is what a check
+establishes and not more (A21).
+
+**What was not established.** Nothing about the forward pass: the arithmetic
+that F20, F24 and F25 were about is untouched by this, and remains transcribed
+and unchecked. Nothing about the embedding family, whose vocabulary MCF still
+refuses and which was reported as not compared rather than counted as agreeing
+(A4). And nothing about texts unlike these six.
+
+## 27 · F27 — What a coin-flip looks like, and what a defect looks like (B-368, B-365, A19, A21)
+
+**The question this had to answer before the forward pass could be compared at
+all.** Greedy generation is deterministic, so two correct implementations should
+produce the same tokens from the same model and prompt. Except they need not:
+where the best and second-best logits are close enough, a different order of
+summation picks a different winner, and neither implementation is wrong. F26
+compared identifiers precisely because that comparison has no such problem —
+integers agree or they do not. Comparing generated text needs a way to tell a
+coin-flip from a defect, and MCF had asserted one was needed without measuring
+it.
+
+**The instrument.** `margins`, which reports for every step of a generation the
+gap between the chosen token's logit and the runner-up's. The claim it makes
+possible is: *a divergence at a small margin is arithmetic; a divergence with
+room to spare is a defect.*
+
+**Fifteen comparisons, five models, three prompts, ten tokens each.** Eleven
+agreed exactly, token for token. Four diverged, and every one of them looks the
+same:
+
+| model · prompt | margin where they parted | MCF chose | reference chose |
+|---|---|---|---|
+| SmolLM2 · *Water freezes…* | **0.040** | ` freezing` | ` equation` |
+| Llama-160M · *Water freezes…* | **0.098** | ` water` | ` free` |
+| SmolLM2 · *The capital of France is* | **0.105** | ` the` | ` a` |
+| gemma3 · *Water freezes…* | **0.159** | `2` | `0` |
+
+In **every** case the reference's choice was exactly MCF's runner-up, and in
+every case the divergence happened at the smallest margin in that whole
+generation. That is what a coin-flip looks like: the two implementations
+disagree only where the model itself was indifferent.
+
+**And then the defect, which looks nothing like it.** Before the above, gemma3
+diverged on *The opposite of hot is* at a margin of **0.775**, choosing `Hot`
+where the reference chose `The`. Five to nineteen times the largest noise
+margin. That was real, and this is what it was.
+
+Gemma 3 alternates sliding and global blocks — five that see only the last 512
+positions, then one that sees everything — and the two kinds **rotate at
+different base frequencies**. The corpus artifact declares
+`gemma3.attention.sliding_window = 512` and does *not* declare a base for the
+sliding blocks. F24 recorded exactly this and called it untested ground: MCF
+used the one base the file states, for every block.
+
+What the reference does when that key is absent is use **ten thousand** — a
+default in its own header, not anything the file says. So MCF was rotating five
+blocks in six at 1,000,000 where every other implementation rotates them at
+10,000. The model still answered `Paris.` and `cold.` correctly, which is why
+nothing before this caught it.
+
+MCF now reads `rope.freq_base_swa` where a file states it, falls back to ten
+thousand where it does not, and applies the window itself — a key at position
+`p0` is visible from `p1` only while `p1 - p0` is under the window, which is the
+reference's boundary.
+
+**The tolerance, and its honest width.** The check now fails a generation
+divergence only when *every* step of it had a margin over **0.50** — above the
+largest noise observed by a factor of three, below the one observed defect by a
+factor of one and a half. Reintroducing the sliding-window defect makes it fire:
+`closest margin 0.95879, over 0.50 — this is not a near-tie`, and the run exits
+non-zero after printing its summary.
+
+The threshold is provisional and the reason is worth stating plainly: **a defect
+can hide under a near-tie.** If a wrong engine happens to be wrong only where the
+model was indifferent, this passes it. What narrows the gap is more comparisons
+and more prompts, not a cleverer rule; four noise observations is what this rests
+on.
+
+**What is now known.** Across five corpus models, MCF's tokenizer agrees with the
+reference on thirty comparisons exactly, and its forward pass agrees on eleven of
+fifteen generations token for token, the other four differing only where the
+model was indifferent. F20, F24 and F25 each ended by saying the forward pass
+was transcribed and unchecked. It is no longer unchecked — for these models,
+these prompts, and ten tokens, which is what a check establishes and not more.
+
+**What was not established.** Nothing about long contexts: at ten tokens the
+sliding window never truncates anything, so the *mask* MCF now applies is
+exercised by nothing here and only the rotary base was measured. Nothing about
+the embedding family, still refused. Nothing about sampling other than greedy.
+And nothing here is a speed (B65).
+
+## 28 · F28 — The mask, past the boundary (B-368, F27, A21)
+
+**The hole this closes.** F27 fixed gemma3's sliding-window rotary base and
+*implemented* the window's mask, then said plainly that at ten tokens the mask
+is exercised by nothing. A defect in a boundary nobody crosses is invisible, and
+the mask MCF now applies had never once masked anything.
+
+**Two prompts, both past the boundary, chosen for different failure shapes.**
+Gemma3's window is 512 positions; five blocks in six see only that far back.
+
+- **682 tokens of one sentence repeated**, then eight generated. The blandest
+  possible history: if the mask boundary were off by one, the sliding blocks
+  would attend to a slightly different set of near-identical keys — a defect
+  with room to hide. Both implementations produce `The quick brown fox jumps
+  over the`, token for token.
+- **A distinctive fact, then 550 tokens of filler, then a cue** — `My name is
+  Konstantin Aurelio Blackwood… [filler] …My name is`. The name sits *outside*
+  every sliding block's window and inside the global blocks' view, so the two
+  kinds of block must disagree about what the history holds, and only an engine
+  that masks the sliding ones and not the global ones recalls it. Both
+  implementations produce `Konstantin Aurelio Blackwood. I live`, token for
+  token.
+
+Both tokenizations were verified identical before comparing (682 and 621
+identifiers), so the generations compare the forward pass and nothing else.
+
+**What this establishes.** MCF's window mask — a key at `p0` visible from `p1`
+only while `p1 − p0` is under the window — agrees with the reference's at 682
+positions, on a boundary that is actually crossed, in both a history where the
+masked keys resemble the kept ones and a history where they do not. The
+comparison is available on demand as `MCF_ORACLE_LONG=1 scripts/check-oracle.sh`
+and is off by default: the stand-in pays one forward pass per prompt token, and
+a tier that costs minutes by default stops being run.
+
+**What was not established.** One window size, one pattern (five sliding to one
+global), one model. A file whose window differs from 512 or whose pattern the
+file states explicitly exercises arithmetic this did not. Nothing here is a
+speed (B65).
+
+## 29 · F29 — The sixth family answers a different question (B-371, DEC-055, B-365, A19, §3.3)
+
+**What was built.** The bert family: a WordPiece tokenizer, a whole-sequence
+non-causal forward pass with classic layer normalization and biases throughout,
+mean pooling as the file declares, and a new surface — `mcf embed <model>
+--text <text>` — because the question these models answer is not `mcf run`'s
+question. There is no output head and no next token; there is one vector for
+the text, and DEC-055 is resolved by giving that its own verb. The vector goes
+first and machine-readable — one JSON line, `{"width":…,"embedding":[…]}` —
+and the conditions after, legible: token count, the declared pooling, the unit
+normalization, and the same B65 mark every stand-in answer carries.
+
+**Everything transcribed was checked against the reference the same day it was
+written**, which is what B-368 existing before B-371 was for.
+
+*The tokenizer, exactly.* Five texts — plain English, punctuation with
+contractions, `café naïve 你好`, digits, and invented words that must become
+`[UNK]` — agree with the reference identifier for identifier. The normalizer's
+scope is stated in the module rather than hidden: accents are stripped by a
+Latin fold table because MCF carries no Unicode tables, and a precomposed
+accented letter outside Latin passes through where the reference would
+decompose it (A21).
+
+*The forward pass, at a measured distance.* MCF dequantizes to floats and
+multiplies; the reference multiplies in quantized arithmetic and quantizes the
+activations too. The vectors therefore cannot be equal, and how unequal is the
+measurement: across five texts, cosine 0.999596 to 0.999811, largest single
+component difference 0.006. The oracle's floor is set at 0.999 — under the
+observed agreement, and far above what anything structural leaves standing:
+swapping one normalization in one layer from LayerNorm to RMS drops cosine to
+0.972–0.988, and the tier fires on every text.
+
+*That the vector means something*, which agreement alone does not show: `The
+cat sat on the mat` against `A kitten rested on the rug` scores 0.62; each
+against `Quarterly revenue grew by twelve percent` scores under 0.03.
+
+**The corpus is six for six.** Every family acquired in F21 now either runs or
+embeds through MCF's own engine, and each got there the same way: read the
+reference, take from the file everything the file states, put what no file
+states where DEC-053 requires, and let the oracle say whether the transcription
+is right. Four defects were found on that road (F23 ×3, F26, F27) and none by
+reading output.
+
+**What was not established.** One bert model, quantized one way, on short
+English-heavy texts. The nomic-bert variant on this machine adds rotary
+positions and a gated feed-forward and is not covered by anything here. The
+first-position pooling variant is implemented and exercised by no artifact. And
+cosine at 0.999 is a floor calibrated on this model at this size — a larger
+model's arithmetic gap may sit elsewhere, and the floor would need remeasuring
+rather than trusting (A21). Nothing here is a speed (B65).
+
 ## Changelog
+
+### Version 33 — the sixth family answers a different question
+
+F29. The bert family embeds, through its own verb — `mcf embed`, vector first
+as one JSON line, conditions after — and everything transcribed was checked
+against the reference the same day: the tokenizer exactly, the forward pass at
+a measured cosine floor of 0.999 that a single swapped normalization falls
+through, and the vector's meaning by related-against-unrelated sentences.
+
+The corpus is six for six.
+
+### Version 32 — the mask, past the boundary
+
+F28. The sliding-window mask F27 implemented but could not exercise is now
+compared past the boundary: 682 tokens of repetition, and a distinctive name
+parked outside the sliding blocks' view with a cue after the filler. Both agree
+with the reference token for token. The long comparison is gated behind
+`MCF_ORACLE_LONG=1` because the stand-in pays a forward pass per prompt token.
+
+### Version 31 — what a coin-flip looks like, and what a defect looks like
+
+F27. Before the forward pass could be compared at all, a way was needed to tell
+two correct implementations disagreeing on a near-tie from one of them being
+wrong. That was measured rather than assumed.
+
+Four divergences across fifteen comparisons were noise: margins of 0.040, 0.098,
+0.105 and 0.159, in every case the reference choosing exactly MCF's runner-up,
+in every case at the smallest margin of that whole generation. The one real
+defect diverged at 0.775.
+
+The defect was the sliding-window rotary base. Gemma 3 rotates its sliding
+blocks at a different frequency from its global ones, the artifact does not
+declare it, and the reference falls back to ten thousand where MCF was using the
+million the file states for the others — so five blocks in six were rotating
+wrongly. The model still said `Paris.` correctly, which is why nothing before
+this caught it. F24 had recorded this as untested ground.
+
+The forward pass is no longer unchecked, for these models and prompts. The
+threshold that separates the two cases is provisional, and a defect can still
+hide under a near-tie.
+
+### Version 30 — the oracle found a defect on its first run
+
+F26. llama.cpp at a pinned commit, built as a development instrument, compared
+against MCF on token identifiers — the one part of an engine that can be checked
+exactly, because identifiers are integers.
+
+Twenty-nine of thirty comparisons agreed. The thirtieth was a real defect, and
+an invention of MCF's own: a guard that skipped user-defined tokens shorter than
+three bytes, on the plausible reasoning that a short token would match inside
+ordinary words. No implementation does that, and gemma's vocabulary carries a
+token spelled as two literal spaces.
+
+The reference also settled something MCF had guessed: control tokens are left as
+text and only user-defined ones are matched, which is both the compatible answer
+and the safer one — a prompt should not be able to produce a chat marker by
+spelling it.
+
+What found the defect was the tab-and-double-space string, not the sentence.
+Gemma answers `Paris.` correctly with the defect present.
+
+### Version 29 — the broken engine read better than the correct one
+
+F25. A mixture of experts runs, read from the reference. The shape comes from
+the file's own `expert_count` rather than from the family name — the artifact
+declares `llama` and is a mixture of four.
+
+Removing the router entirely, so that every token goes to experts 0 and 1,
+produces `Paris. It is located on the River Seine in`. The implementation
+transcribed from the reference produces `Paris, France is Paris, Paris is Paris
+is`. The broken version reads better.
+
+F20, F22 and F24 each showed that a wrong engine can look right. This shows a
+wrong engine looking *better* than a right one, on the same artifact and prompt.
+Output quality is not evidence about correctness in either direction, and this
+is the strongest case for B-368 that can be made.
+
+### Version 28 — a third architecture, and three habits that fail three ways
+
+F24. Gemma 3 runs, read from the reference rather than inferred. It differs from
+llama in five places: two the file states — the normalizations on the way out of
+each half of a block — and three it does not — a `GELU` gate, an embedding
+scaled by the square root of its width, and the other rotary pairing.
+
+Removing each in turn gives word salad, fluent-and-wrong, and text in another
+script. The middle one is the dangerous one, and it is now the third
+unobservable habit across two families to fail that way. *Unobservable habit,
+got wrong, produces fluent text* looks like the general case rather than a
+coincidence.
+
+The division holds up: everything observable is read from the artifact, so
+gemma3's normalizations needed no new code path — only two more tensor names.
+Everything unobservable is in the one table DEC-053 already governs.
+
+### Version 27 — four expressions where MCF had two
+
+F23. Implementing one more pre-tokenizer meant reading the reference rather than
+inferring from a name, and the reading found three defects already shipped:
+`qwen2` and `llama-bpe` are different expressions (digits singly against groups
+of three), `deepseek-llm` was claimed and is not implemented, and `default` is
+not GPT-2's expression but a fourth one.
+
+The first is the instructive one. Qwen3-0.6B tokenizes a numeric prompt
+identically before and after the fix, because its merge list never joins digits.
+No prompt against that model distinguishes the broken version from the fixed
+one. Some facts are about somebody else's software and are read, not measured.
+
+A fourth defect came from the round-trip now run over every corpus vocabulary:
+the empty string had stopped encoding as anything for unigram vocabularies, a
+regression from adding control-token matching.
+
+And SmolLM2-135M corrects F22's generalization: it is *smaller* than
+Llama-160M and answers correctly where that model does not, so the floor for
+refereeing an engine is not a parameter count but whether that artifact knows
+the answer being asked of it.
+
+### Version 26 — where a model becomes able to referee an engine
+
+F22, which measures what F21 asserted. Two corpus models, run against a correct
+engine and one with the rotary pairing swapped — F20's *fluent* defect, chosen
+because it is the hard one to see.
+
+At 160M the reader cannot tell the columns apart, because the correct engine
+answers three of four prompts wrongly on its own: a model that does not know the
+answer cannot be asked whether the engine found it. At 0.6B every prompt is
+unmistakable and the correct column is right.
+
+The rule is therefore not *small models are unfit* but *a model must be good
+enough to be right about the thing being asked* — which starts below a billion
+parameters and costs sixteen seconds. F21's claim that the corpus depends on an
+oracle is corrected: the dependency exists at the bottom of the corpus and not
+one step up.
+
+### Version 25 — six families for a tenth of one model's bytes
+
+F21. The reference model is 16.5 GB and every engine iteration ran it. Six small
+trained models — one per family, one quantization each, 1.4 GB together —
+replace it for that job, and §XII is amended (D40) to say which job each
+artifact has.
+
+Two of the six run. The other four refuse, each naming what it wants: a
+pre-tokenizer, a tokenizer scheme, an expert-routing tensor, an architecture.
+Those four refusals are B-365's remaining order of work, read off artifacts
+rather than predicted.
+
+The cost is stated rather than glossed: small models cannot referee what F20
+turned on, so the corpus depends on B-368's oracle rather than merely preferring
+it.
+
+### Version 24 — a second architecture, and two silences that fail differently
+
+F20. Qwen3 needed two things llama does not: a rotary pairing that splits the
+head in half rather than taking adjacent pairs, and a normalization of each
+query and key head before the rotation. Neither is stated in the file.
+
+Running the engine with each correction present and absent gives four outputs,
+and the point of the finding is that they are not four degrees of one failure.
+Without the per-head normalization the model emits one token forever. With it
+and the wrong rotation, it emits *English* — and an observer without the fourth
+row beside it would call that a small model being small.
+
+The normalization was the more serious of the two, because the code for it was
+already written: it asked for its weights with `if let Ok(…)`, the manifest
+never loaded them, and the error was discarded on every block of every model.
+A2 inside an engine written under A2.
 
 ### Version 23 — two defects a real model found in an hour
 

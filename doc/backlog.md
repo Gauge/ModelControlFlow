@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 139 |
+| **Version** | 152 |
 | **Status** | Living |
-| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**250 items: 50 decisions (30 open, 1 drafted, 2 narrowed, 17 resolved) and 200
-build items (50 done, 1 dropped, 10 in progress, 51 blocked on a decision, 89 open).** Every item cites
+**255 items: 53 decisions (30 open, 1 drafted, 3 narrowed, 19 resolved) and 202
+build items (51 done, 1 dropped, 10 in progress, 52 blocked on a decision, 89 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -79,6 +79,9 @@ implemented, only gestured at, until the decision is made.
 | DEC-037 | Who writes to the record, and what happens to a write that loses | §7.37 | §3.1, D6 | M2 | **decided** — D34: everybody writes, nobody arbitrates, and an identifier carries the writer that minted it. [findings.md](findings.md) F13 measured that concurrent appends of whole lines do not tear — eight processes, sixteen thousand lines, two filesystems, none torn — so the question was never coordination. It was naming: each writer counted its own appends from zero, so two programs recording the same kind of event in the same second produced one identifier for two events. A writer token — the process, the moment the writer was made, and a count of the writers made in that process — makes that impossible without any coordination at all. A write that fails is classified and returned, never retried silently and never dropped. The single-writer alternative is priced in D34: a running daemon for every command, to buy an ordering the record already has |
 | DEC-038 | What happens when a pinned artifact decays upstream — withdrawn, gated, relicensed, repointed | §7.38 | §3.6, §3.7 | M1 | **decided** — D37, on [findings.md](findings.md) F17's measurement of what a hub will actually say. Checked when somebody asks and never on a timer (B4, §3.13); recorded against the provenance rather than over it, because provenance is what was true at acquisition (§3.6); and never retroactive — a model vanishing from a hub says nothing about the bytes on this disk, and a tool that greyed out its own measurements because somebody else deleted something would be destroying evidence. What is really lost is third-party reproducibility, which belongs in the repro bundle as a stated condition (PR2). What MCF cannot detect is *withdrawn* versus *private* versus *never existed*: the hub answers 401 to all three, so the refusal names the ambiguity instead of advising a credential that may not exist |
 | DEC-052 | What a *controlled environment* is, concretely: a container MCF builds, a prefix MCF manages, or something else — and what containment it must give against an engine's own installer | §7.53 | D39, A27, §6.32 | M2 | open — D39 states the four conditions any answer must satisfy (pinned and recorded, reproducible, contained and reversible, never the baseline). What is not settled is the mechanism, and it decides how much of somebody else's installer MCF is prepared to run |
+| DEC-053 | What B28 forbids, exactly: recognizing an *artifact* against reading a *field the file states* — and where a family may be named | §XII, B28, B29 | D26, A19 | M2 | **resolved** — they are different things and only the first is forbidden. GGUF states `general.architecture` and `tokenizer.ggml.pre`, and an engine that would not read them is an engine that runs one family; the reference model's publisher, repository and digest are identity and are read nowhere. A family may be named in `crates/mcf-standin/src/architecture.rs` and nowhere else, and that module is held to three things the neutrality check verifies: it names no publisher, it names no artifact, and no function in it takes a name and answers yes or no — the shape *is this the special one* is what B28 is actually about. Totality is deliberately **not** checked: a `match` on a `&str` does not compile without a catch-all, so a check for it would be one that cannot fail (F19) |
+| DEC-054 | What the engine is developed against, given that the reference model is 16 GB and every iteration runs it | §XII, D38, §3.12 | D40, B-370 | M2 | **resolved** — the question the test asks picks the model, in both directions. §XII's three justifications are provenance, the quantization frontier, and residency pressure; none is about running a model, so the engine gets a conformance corpus of the smallest *trained* model per family, one distinct quantization each. But there is no size policy: reading a format needs the smallest artifact of that shape, refereeing behaviour needs one good enough to be right, and residency needs one big enough to press on the machine. F22 measured the middle floor — at 160M a correct engine and one with a swapped rotary pairing are indistinguishable because the correct engine answers three of four ordinary questions wrongly by itself; at 0.6B every prompt separates them, for 397 MB and sixteen seconds. F21's claim that the corpus *depends* on B-368's oracle is withdrawn: it holds for the corpus's smallest member and not one step up |
+| DEC-055 | Embedding models are a different *kind* of model, not another family: what surface asks one for an answer | §XII, §VI, D38, §5 | B-371 | Embedding models: the bert family, its WordPiece vocabulary, and the surface that asks one for a vector | DEC-055, D38, §VI | An embedding model in the corpus produces a vector of the width its file declares; the tokenizer agrees with the reference exactly; the vector agrees at a measured floor and means what related-against-unrelated sentences say it means | **done** (F29) — tokenizer identifier-exact on five texts including `[UNK]` and accents; forward pass at cosine 0.9996–0.9998 against the reference where the floor is 0.999 and a single swapped normalization falls to 0.97; corpus six for six. Not covered, and said: nomic-bert's rotary positions and gated feed-forward, the first-position pooling no artifact exercises, and the floor is calibrated on this model at this size |
 | DEC-032 | Distribution and update policy; whether the container image and the local binary are one artifact or two | §7.32 | **D7** | M8 | open |
 | DEC-036 | Whether model licences constrain publishing measurements about the model | §7.36 | §XIV | M9 | open |
 | DEC-044 | How a user declares a workflow — a named list, a weighting across laboratories, inference from their own traffic, or from an imported configuration | §7.44 | **§6.36, B41** | M7 | open |
@@ -152,10 +155,12 @@ first and importance second.
 | B-360 | MCF's own engine: readers for the formats MCF acquires, dequantization per scheme, the ordinary transformer operations written to be read, and sampling. Threads and the compiler's vectorizer are permitted and hand-written kernels are not; output is bit-identical whatever the thread count | D38, D31, §III, §3.2, B7 | **Every** model MCF can acquire reaches a first token on it, and every result taken on it is marked (A5) | **in progress** — `mcf-standin`, its own crate because B65's prohibition is a boundary as well as a type. A model runs: the GGUF reader, dequantization for five schemes, the transformer operations each written as its definition, the llama forward pass over a key/value cache, seeded sampling, and a generation loop whose result is a `Degraded<Behaviour<…>>` that cannot be unwrapped without its mark (A5). It is the fifth target in the fuzz tier and the three failures it constructs have laboratory scenarios (A13). The tokenizer is here too — the unigram vocabulary a llama-family file carries, with byte fallback, and a refusal by name for the byte-pair kind it does not implement. Text goes in and text comes out: `crates/mcf-standin/tests/a_first_token.rs`. What remains before the done-when holds is a *real* artifact rather than one a test constructs, which M1 acquires (B-019, B-020), and the cross-check against a vendored engine that would establish agreement rather than wiring (B-362) And it is exercised against weights MCF did not write: the online check acquires a 260-thousand-parameter model from a real publisher and runs it end to end, asserting text comes out with its mark on it. Everywhere else the stand-in reads a fixture the laboratory built, which is MCF checking its own arithmetic against its own file — A19 wants the other kind **It runs a real 7B model.** `Mistral-7B-Instruct-v0.3`, from the operator's own store, answers *The capital of France is* with *Paris, but the largest city is Marseille* — which took fixing the tokenizer's algorithm and three quantization decoders, neither of which any test could see wrong (F19) |
 | B-362 | Cross-check laboratory: where both engines can run an artifact, compare them on a fixed input and report agreement or divergence | D31, A19, A12, §II | Disagreement between the two implementations is a recorded finding about one of them, with the tolerance stated (D19's shape) | open |
 | B-364 | Quantization coverage: every scheme the formats MCF acquires can carry, decoded against published vectors rather than against MCF's own reader | D38, §III, A19 | A file in each scheme decodes to the values its reference implementation produces; a scheme MCF cannot decode is named, never guessed | **in progress** — the reference model's own file reads. The K family (Q2_K, Q3_K, Q4_K, Q5_K, Q6_K) and three of the non-linear family (IQ4_NL, IQ4_XS, IQ3_S) are decoded, which takes `Qwen3.8-27B-UD-Q4_K_M` from *five schemes MCF cannot read* to **all 866 tensors in schemes it can**. The IQ schemes needed two codebooks, which are data rather than logic and are transcribed with their source and terms recorded ([vendored.md](vendored.md) §2b): a table cannot be derived, and one MCF invented would decode 128 tensors into confident nonsense. Every test is hand-computed from the format's own sentence rather than recorded from the decoder, which is the only check available until B-368's oracle. Three of the five K decoders were then found **wrong** by the first real model to use one — every value decoded correctly and written to the wrong position ([findings.md](findings.md) F19) — and rewritten against the format's own source. The tests that missed it are replaced by ones that could not: every position holds a distinct value, so a permutation fails. What remains: the schemes no acquired file has needed yet, and the ones a later format adds |
-| B-365 | Architecture coverage: the families the hub actually publishes, each as its own reading of the same operations rather than a special case bolted onto llama | D38, §III | A model of each covered family reaches a first token; one MCF does not cover is refused by name with what it declared | open — llama today. The families in order of what a hub publishes: qwen2/qwen3, gemma, phi, mistral variants, mixture-of-experts routing, and the hybrid attention the reference model itself uses (F16 found sixteen full-attention layers in sixty-four) |
+| B-365 | Architecture coverage: the families the hub actually publishes, each as its own reading of the same operations rather than a special case bolted onto llama | D38, §III | A model of each covered family reaches a first token; one MCF does not cover is refused by name with what it declared | in progress — five of the six corpus families run: llama with either vocabulary, qwen3, gemma3, and a mixture of experts. The division that makes this cheap: what the file states is read from the file (§3.18) — the mixture is found by `expert_count`, not by a family name — and what it cannot state lives in `architecture.rs` (F24). Remaining: the `bert` scheme an embedding family carries, which is a different *kind* of model and may want a different surface than `mcf run` |
+| B-370 | The conformance corpus: smallest trained model per family, one quantization each, acquired by MCF with provenance, run by a scheduled tier | D40, DEC-054, §3.12, §XII | Every family MCF claims runs a corpus model; every family it does not claim is refused by name saying what it wanted; the tier fails when an entry stops being true in either direction | **done** — six acquired (1.4 GB against 16.5 GB), `scripts/check-corpus.sh` and `ci.sh --with-corpus`. Two run, four refuse and each names a different missing thing. All five failure modes were verified to fire: a runner declared to refuse, a refuser declared to run, a refusal that stops naming what it wanted, a runner that says something else, and no corpus at all. What remains is the oracle (B-368), which is exact where this is a judgement — F22 measured the judgement's floor at between 160M and 0.6B |
+| B-371 | Embedding models: the bert family, its `bert` (`WordPiece`) vocabulary, and the surface that asks one for a vector | DEC-055, D38, §VI | An embedding model in the corpus produces a vector of the width its file declares; the same text twice produces the same vector; a model MCF cannot embed is refused by name | blocked on DEC-055's surface. The engine work is real and not a variation on what exists: a whole-sequence forward pass rather than a token at a time, `LayerNorm` with biases rather than `RMSNorm`, biases on every projection, an ungated feed-forward, learned positions, and mean pooling. Deliberately sequenced **after** B-368: F25 established that output quality is no evidence of correctness, and this is the family least like the ones MCF has checked |
 | B-366 | Threads without changing the answer: work split across processors, partitioned by index and reduced in a fixed order, so a result does not depend on how busy the machine was | D38, §3.12, D19 | The same input produces the same bytes at one thread and at many, asserted as a property over generated inputs | open — floating-point addition is not associative, which makes this the one place reproducibility can be lost without anybody noticing |
 | B-367 | Provisioned environments: MCF installs, builds and pins a component itself, records exactly what it got, can do it again, and can remove it without residue | D39, §3.4, A27, §6.32 | A provisioned engine is reproducible from its record; removing it leaves the machine as it was found; nothing outside the environment MCF made is touched | open — D39's four conditions are the specification. The container runtime is one candidate for *controlled*, a managed prefix is another, and which is a decision (DEC-052) |
-| B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is a recorded finding about one of them | D39, D38, A19, §II | A divergence is reported with both outputs and the conditions of each; agreement across a corpus of models is what licenses MCF's own engine to be believed | open — this is what A19 has wanted since it was written, and what D31 could only half-answer with a second implementation MCF also wrote |
+| B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is the finding | D39, D38, A19, §3.12 | Two implementations are compared on the same artifact and the same text; a disagreement is reported with where it first appears and whether it is explainable | **done** for what it can reach — `scripts/check-oracle.sh` and `ci.sh --with-oracle`. Thirty tokenizer comparisons, exact; fifteen greedy generations, compared against a **measured** tolerance rather than an assumed one (F27): a divergence fails only where every step still had a margin over 0.50, which is three times the largest observed noise and two-thirds of the one observed defect. Both defects it found are recorded (F26, F27) and reintroducing either makes it fire. What remains is *breadth*: more prompts to narrow a threshold that four observations rest on. The sliding-window mask is now exercised past the boundary (F28), gated behind `MCF_ORACLE_LONG=1` because the stand-in pays a forward pass per prompt token |
 | B-369 | Several model stores, chosen at acquisition time: where the large files go is the operator's choice, independent of where MCF is installed, and every surface looks in all of them | §3.15, §5, A7, A6 | Models land where the operator says; a listing covers every store; a name held in two is refused rather than resolved | **done** — `MCF_MODELS`, an ordered list of absolute paths in the platform's own idiom, because §5 refuses MCF a configuration language and a list in a variable is not one. The first is where a new acquisition goes and all of them are searched for what is held; `mcf pull --into <directory>` overrides for one acquisition and may name a store MCF was never told about, since naming a path *is* choosing one. A relative path is dropped and **named** rather than resolved against whatever directory MCF was started in. A name held in two stores is refused with both paths, because two files under one name are two artifacts with two provenances and a measurement against whichever MCF reached first is one nobody could reproduce. `mcf doctor` shows the stores in order, which one new models go to, and how much room each has — asking the filesystem that *would* hold a store that does not exist yet, since that is the number somebody deciding where to put sixteen gigabytes actually wants |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
 
@@ -375,6 +380,129 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 152 — the corpus is six for six
+
+DEC-055 resolved and B-371 done (F29). The bert family embeds through its own
+verb, checked against the reference the day it was written: tokenizer exact,
+forward pass at a measured cosine floor, meaning by related-against-unrelated
+sentences. Every family F21 acquired now runs or embeds through MCF's engine.
+
+### Version 151 — the mask, past the boundary
+
+F28 closes the hole F27 stated: the sliding-window mask is compared at 682
+tokens, in a bland history and in one with a distinctive fact parked outside
+the sliding blocks' view. Token-for-token agreement both ways.
+
+### Version 150 — the forward pass is no longer unchecked
+
+B-368 done for what it can reach. The forward pass is compared against a
+tolerance that was measured rather than assumed (F27): noise divergences sit at
+margins of 0.04–0.16 with the reference always choosing MCF's runner-up, and the
+one real defect sat at 0.775.
+
+That defect was the sliding-window rotary base, which F24 had flagged as
+untested ground: gemma3 rotates five blocks in six at a frequency the file does
+not state and the reference defaults to ten thousand. MCF was using the million
+stated for the others. The model still answered correctly, which is why nothing
+before the oracle caught it.
+
+### Version 149 — the oracle found a defect on its first run
+
+B-368 delivers its first result: 29 of 30 tokenizer comparisons agreed and the
+thirtieth was a real defect in MCF — a length guard on user-defined tokens that
+MCF invented and no implementation has (F26). Control tokens are no longer
+matched in ordinary text, which is the reference's default and the safer
+reading of a prompt.
+
+F23's transcriptions are now verified for these vocabularies and texts, which is
+what a check establishes and not more.
+
+### Version 148 — an oracle, starting where it can be exact
+
+B-368 in progress. MCF's tokenizer against llama.cpp's at a pinned commit, over
+texts chosen for where tokenizers differ. Identifiers are integers, so a
+disagreement is a defect rather than a judgement — which is what F20, F22, F24
+and F25 have each asked for in turn.
+
+Logits are not compared yet, on purpose: a correct implementation can flip an
+argmax on a near-tie through summation order alone, so that comparison needs a
+measured tolerance before it can be a verdict.
+
+### Version 147 — the embedding family is a different kind of model
+
+DEC-055 and B-371 opened. `all-MiniLM-L6-v2` refused, and reordering the checks
+so the architecture is asked before the vocabulary made the refusal say the
+useful thing: it is not that MCF cannot read a `bert` tokenizer, it is that
+`bert` is a model with no next token to produce. `mcf run --prompt` has no
+question to put to it.
+
+Sequenced after B-368 on purpose. F25 said output quality is no evidence of
+correctness, and this is the family least like anything MCF has checked.
+
+### Version 146 — a mixture, and the case for the oracle closes
+
+B-365: five of six. The mixture of experts is found by the file's own
+`expert_count` rather than by a family name — the artifact declares `llama`.
+
+B-368 is now the highest-value item in M2, on the strength of F25: deleting the
+expert router entirely produces better-reading output than the correct
+implementation. Every family added past this point is transcribed and
+unverified, and only an oracle changes that.
+
+### Version 145 — a third architecture
+
+B-365 advanced: gemma3 runs, four of six corpus families now. Its two sandwich
+normalizations needed no code path, only two more names in the list of optional
+tensors — what the file states is read from the file. Its three unobservable
+habits went into `architecture.rs` with the rest (F24).
+
+### Version 144 — four expressions where MCF had two
+
+B-365 advanced: SmolLM2 runs, which took a fourth pre-tokenizer and found three
+defects in the two MCF had already shipped (F23) — two expressions treated as
+one, a third claimed and not implemented, and a fourth assumed for files that
+name none. None was findable by running anything.
+
+The corpus tier gained a round-trip over every vocabulary that loads, which
+found a fourth defect: the empty string had stopped encoding as anything for
+unigram vocabularies. `Split` variants are named for the expression rather than
+the family, which is what DEC-053 requires of everything outside the one module
+that may name a family.
+
+### Version 143 — the corpus is a tier
+
+B-370 done. `scripts/check-corpus.sh` runs each corpus entry and checks it
+against what the register says it does — failing when a runner regresses, when a
+refuser starts running, and when a refusal stops naming what it wanted. All five
+failure modes verified to fire.
+
+### Version 142 — the question picks the model
+
+DEC-054 restated after F22. Not a preference for small artifacts: each tier
+names what it must establish, and that names the artifact. The floor for
+refereeing behaviour was measured at between 160M and 0.6B, and the withdrawal
+of F21's oracle-dependency claim is recorded with it.
+
+### Version 141 — the reference model was asked to be two things
+
+DEC-054 resolved and B-370 opened, against D40's amendment of §XII. The engine
+is developed against a conformance corpus of the smallest trained model per
+family — six of them, 1.4 GB against the reference model's 16.5 GB, each a
+different quantization ([findings.md](findings.md) F21). Two run; the four that
+refuse name what they want, and that list is B-365's remaining order of work.
+
+The cost is recorded with the decision: a small model cannot referee what F20
+turned on, so B-368's oracle moves ahead of the remaining families rather than
+after them.
+
+### Version 140 — what B28 forbids, exactly
+
+DEC-053 resolved. Reading `general.architecture` is not recognizing an artifact,
+and B28's check now distinguishes them: a family may be named in one declared
+module, which may name no publisher, no artifact, and no function taking a name
+and answering yes or no. B-365 advanced to in progress — llama and qwen3 both
+run against real files (F20).
 
 ### Version 139 — a real model, and the two defects it found in an hour
 

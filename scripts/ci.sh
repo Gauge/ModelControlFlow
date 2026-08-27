@@ -41,6 +41,8 @@
 #                           container that holds it and nothing else.
 #   --with-reproducibility  (B-001) rebuilds the workspace twice under the
 #                           release profile and compares the bytes.
+#   --with-corpus           (B-370) runs the conformance corpus through the engine
+#   --with-oracle           (B-368) compares MCF's engine against a reference
 #   --with-online           (B-029) acquires a real model from the real hub
 #                           over TLS, verifies it, lists it and removes it.
 #                           The only thing here that needs a network.
@@ -74,6 +76,8 @@ with_load=false
 with_soak=false
 with_mutation=false
 with_from_scratch=false
+with_corpus=false
+with_oracle=false
 with_online=false
 for argument in "$@"; do
     case "$argument" in
@@ -84,6 +88,8 @@ for argument in "$@"; do
         --with-soak) with_soak=true ;;
         --with-mutation) with_mutation=true ;;
         --with-from-scratch) with_from_scratch=true ;;
+        --with-corpus) with_corpus=true ;;
+        --with-oracle) with_oracle=true ;;
         --with-online) with_online=true ;;
         --all)
             with_reproducibility=true
@@ -93,6 +99,8 @@ for argument in "$@"; do
             with_soak=true
             with_mutation=true
             with_from_scratch=true
+            with_corpus=true
+            with_oracle=true
             with_online=true
             ;;
         *)
@@ -100,7 +108,7 @@ for argument in "$@"; do
             printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
             printf '[--with-budget] [--with-mutation]\n' >&2
             printf '                     [--with-from-scratch] [--with-reproducibility] ' >&2
-            printf '[--with-online] | --all\n' >&2
+            printf '[--with-corpus] [--with-oracle] [--with-online] | --all\n' >&2
             exit 2
             ;;
     esac
@@ -254,6 +262,32 @@ if [ "$with_mutation" = true ]; then
         "$(printf '%s' "$mutation_output" | grep '^mutation score' || printf 'score not reported')"
 fi
 
+if [ "$with_corpus" = true ]; then
+    step "the conformance corpus (B-370)"
+    # No exclusive window: nothing here is timed and nothing here may be
+    # (B65). What it costs is a minute of one processor, and a tier that took
+    # the window to produce no number would be taking it from work that has one.
+    corpus=0
+    "$root/scripts/check-corpus.sh" || corpus=$?
+    if [ "$corpus" -eq 1 ]; then
+        printf 'ci: the conformance corpus did not do what the register says\n' >&2
+        exit 1
+    fi
+fi
+
+if [ "$with_oracle" = true ]; then
+    step "against a reference implementation (B-368)"
+    # No exclusive window: what runs here is two tokenizers over six short
+    # strings, and nothing is timed. Building the reference is the heavy part,
+    # and this check does not build it.
+    oracle=0
+    "$root/scripts/check-oracle.sh" || oracle=$?
+    if [ "$oracle" -eq 1 ]; then
+        printf 'ci: MCF and the reference implementation disagree\n' >&2
+        exit 1
+    fi
+fi
+
 if [ "$with_online" = true ]; then
     step "the real hub (B-029)"
     # No exclusive window: nothing here is timed, and what it waits for is
@@ -300,6 +334,8 @@ report_absent "$with_soak" "soak (B-191)                 — scripts/ci.sh --wit
 report_absent "$with_budget" "performance budget (B-011)   — scripts/ci.sh --with-budget"
 report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh --with-mutation"
 report_absent "$with_from_scratch" "from-scratch conformance     — scripts/ci.sh --with-from-scratch"
+report_absent "$with_corpus" "conformance corpus (B-370)   — scripts/ci.sh --with-corpus"
+report_absent "$with_oracle" "against a reference (B-368)  — scripts/ci.sh --with-oracle"
 report_absent "$with_online" "the real hub (B-029)         — scripts/ci.sh --with-online"
 report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"
 if [ "$not_run" = false ]; then

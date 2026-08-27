@@ -109,32 +109,115 @@ pub fn softmax(values: &mut [f32]) {
     }
 }
 
+/// Classic layer normalization: mean subtracted, variance divided, then a
+/// learned scale and shift.
+///
+/// The other normalization in this crate, beside [`rms_norm`] — and they are
+/// not interchangeable. The bert family subtracts the mean and carries a bias;
+/// the llama line does neither. An engine that used one where a model was
+/// trained with the other would be wrong everywhere by an amount that never
+/// looks like an error (F24's register of quiet differences).
+#[must_use]
+pub fn layer_norm(values: &[f32], weights: &[f32], biases: &[f32], epsilon: f32) -> Vec<f32> {
+    let count = f32::from(u16::try_from(values.len()).unwrap_or(1)).max(1.0);
+    // Accumulated longhand, the way `rms_norm` and `softmax` are: these are
+    // the model's own arithmetic over one vector, not a summary of trials —
+    // what B56 forbids is a statistic that discards samples, and the shipped
+    // suite checks for that by its usual spellings.
+    let mut total = 0.0_f32;
+    for value in values {
+        total += value;
+    }
+    let mean = total / count;
+    let mut squares = 0.0_f32;
+    for value in values {
+        let spread = value - mean;
+        squares = spread.mul_add(spread, squares);
+    }
+    let variance = squares / count;
+    let scale = (variance + epsilon).sqrt().recip();
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            (value - mean) * scale * weights.get(index).copied().unwrap_or(1.0)
+                + biases.get(index).copied().unwrap_or(0.0)
+        })
+        .collect()
+}
+
 /// The `SiLU` (swish) activation: `x · sigmoid(x)`.
 #[must_use]
 pub fn silu(x: f32) -> f32 {
     x / (1.0 + (-x).exp())
 }
 
-/// The gated feed-forward activation the llama family uses:
-/// `silu(gate) · up`, elementwise.
+/// The `GELU` activation, in the `tanh` approximation every one of these models
+/// was trained with.
+///
+/// The exact form uses the Gaussian error function; the approximation below is
+/// what the reference implementations compute, and computing the *exact* one
+/// here would make MCF disagree with them by a small amount everywhere — which
+/// is the kind of difference that is invisible in the output and fatal to a
+/// comparison against an oracle (A19).
 #[must_use]
-pub fn swiglu(gate: &[f32], up: &[f32]) -> Vec<f32> {
+pub fn gelu(x: f32) -> f32 {
+    const ROOT_TWO_OVER_PI: f32 = 0.797_884_6;
+    const FUDGE: f32 = 0.044_715;
+    0.5 * x * (1.0 + (ROOT_TWO_OVER_PI * x.mul_add(FUDGE * x * x, x)).tanh())
+}
+
+/// Which activation a gated feed-forward block uses.
+///
+/// Not observable from the file: the tensors of a `SiLU`-gated block and a
+/// `GELU`-gated one are the same tensors of the same shapes. It is a property
+/// of the architecture, so it lives in the one table that holds those (B28,
+/// DEC-053).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activation {
+    /// `x · sigmoid(x)`, what the llama family was trained with.
+    Silu,
+    /// The Gaussian error linear unit, what the gemma family was trained with.
+    Gelu,
+}
+
+/// The gated feed-forward activation: `activation(gate) · up`, elementwise.
+#[must_use]
+pub fn gated(gate: &[f32], up: &[f32], activation: Activation) -> Vec<f32> {
+    let apply = match activation {
+        Activation::Silu => silu,
+        Activation::Gelu => gelu,
+    };
     gate.iter()
         .zip(up.iter())
-        .map(|(gate, up)| silu(*gate) * up)
+        .map(|(gate, up)| apply(*gate) * up)
         .collect()
+}
+
+/// Which two components of a head a rotary embedding turns together.
+///
+/// **This is not a detail, and no file states it.** GGUF carries the base and
+/// the head width but never says which pairing the model was trained with, so
+/// it is a property of the architecture and MCF keeps a table of it. A model
+/// run under the wrong one produces fluent nonsense that gets worse with
+/// distance — which is exactly the failure a second implementation exists to
+/// catch (A19), and exactly what MCF produced for Qwen3 before this existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    /// Component `2i` with component `2i+1`: what llama was trained with, and
+    /// what llama.cpp calls `NORM`.
+    Interleaved,
+    /// Component `i` with component `i + head_dim/2`: what the GPT-NeoX line
+    /// and everything descended from it was trained with, Qwen included, and
+    /// what llama.cpp calls `NEOX`.
+    Halved,
 }
 
 /// Rotary position embedding, applied in place to one head's vector.
 ///
-/// The convention here is the one GGUF's llama models are written for: the
-/// vector is treated as `head_dim / 2` **adjacent pairs**, and pair `i` is
-/// rotated by `position · theta^(-2i/head_dim)`. The other convention in the
-/// wild splits the vector in half and pairs `i` with `i + head_dim/2`; a model
-/// run under the wrong one produces fluent nonsense that gets worse with
-/// distance, which is precisely the failure a second implementation exists to
-/// catch (A19).
-pub fn rope(vector: &mut [f32], position: usize, theta: f32) {
+/// Pair `i` is rotated by `position · theta^(-2i/head_dim)` under either
+/// convention; the convention decides only *which two components* are the pair.
+pub fn rope(vector: &mut [f32], position: usize, theta: f32, rotation: Rotation) {
     let head_dimension = vector.len();
     if head_dimension < 2 {
         return;
@@ -147,17 +230,21 @@ pub fn rope(vector: &mut [f32], position: usize, theta: f32) {
         let frequency = theta.powf(-exponent);
         let angle = position * frequency;
         let (sine, cosine) = angle.sin_cos();
-        let at = pair.saturating_mul(2);
-        let (Some(first), Some(second)) = (
-            vector.get(at).copied(),
-            vector.get(at.saturating_add(1)).copied(),
-        ) else {
+        let (at, and) = match rotation {
+            Rotation::Interleaved => (
+                pair.saturating_mul(2),
+                pair.saturating_mul(2).saturating_add(1),
+            ),
+            Rotation::Halved => (pair, pair.saturating_add(pairs)),
+        };
+        let (Some(first), Some(second)) = (vector.get(at).copied(), vector.get(and).copied())
+        else {
             continue;
         };
         if let Some(slot) = vector.get_mut(at) {
             *slot = first.mul_add(cosine, -(second * sine));
         }
-        if let Some(slot) = vector.get_mut(at.saturating_add(1)) {
+        if let Some(slot) = vector.get_mut(and) {
             *slot = first.mul_add(sine, second * cosine);
         }
     }

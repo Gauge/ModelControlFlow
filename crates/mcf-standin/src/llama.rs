@@ -37,20 +37,43 @@ use crate::ops;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
-/// The architectures this module runs.
+pub use crate::architecture::FAMILIES;
+
+/// Whether this crate implements what the file declares itself to be.
 ///
-/// A list rather than one name, and a list rather than *whatever loads*: the
-/// families here are the ones somebody has checked have the structure this
-/// module implements — RMS normalization, rotary positions, grouped attention
-/// and a gated feed-forward — under whatever names their files use. A family
-/// that merely *loads* is not a family that runs correctly, and producing
-/// fluent nonsense from a structure MCF guessed at is the failure a second
-/// implementation exists to catch rather than to cause (A19, D38).
-pub const FAMILIES: &[&str] = &[
-    // The architecture the format was designed around, and the one every
-    // structural decision here was read from.
-    "llama",
-];
+/// **Separated from [`load`] so a caller can ask before it reads anything.**
+/// Loading a model dequantizes every tensor it names; a surface that wanted to
+/// tell the operator *this is not a model I can run* should not have to spend
+/// that first. It also decides which refusal an operator sees when more than
+/// one thing is unsupported at once, and the architecture is the more useful
+/// of them: a vocabulary MCF cannot read is a component, and an architecture it
+/// cannot read is the whole model.
+///
+/// # Errors
+///
+/// `artifact.format.unsupported` naming what the file declared and what this
+/// crate implements.
+pub fn covers(file: &File) -> Result<()> {
+    let architecture = file.architecture().unwrap_or("unstated");
+    if FAMILIES.contains(&architecture) {
+        return Ok(());
+    }
+    Err(Failure::new(
+        Category::ArtifactFormatUnsupported,
+        Attribution::Artifact,
+        Disposition::Refused,
+        WHERE,
+        "MCF's engine has not been taught this architecture",
+    )
+    .with_context("declared", architecture.to_owned())
+    .with_context("implemented", FAMILIES.join(", "))
+    .with_context(
+        "what_to_do",
+        "B-365 is the register item that grows this list, and it grows by somebody reading \
+         the architecture rather than by MCF guessing that one shaped like another will do \
+         (A19)",
+    ))
+}
 
 /// The architecture this module was written against, named for a message.
 pub const ARCHITECTURE: &str = "llama";
@@ -77,16 +100,83 @@ pub struct Shape {
     pub context: usize,
     /// How many tokens the vocabulary has.
     pub vocabulary: usize,
+    /// The width of one attention head, where the file states it.
+    ///
+    /// `None` means it does not, and the width is the embedding divided by the
+    /// heads — which is true of the family this module was written against and
+    /// **false** of the next one. Qwen3 0.6B states 128 against an embedding of
+    /// 1024 and sixteen heads, so the divided answer is 64 and the model is
+    /// twice as wide as MCF would have assumed. A shape MCF assumed is a model
+    /// MCF would have run confidently and wrongly (A21, F19's lesson).
+    pub stated_head_dimension: Option<usize>,
+    /// How many experts each feed-forward block holds, where it holds any.
+    ///
+    /// Zero is the ordinary case — one dense feed-forward per block. A file
+    /// that states a count carries its feed-forward as a *stack* of that many,
+    /// with a router choosing between them per token, and MCF reads which shape
+    /// it is from this number rather than from the family: the artifact in the
+    /// corpus declares `llama` and is a mixture of four.
+    pub experts: usize,
+    /// How many of those experts each token is actually routed to.
+    pub experts_used: usize,
+    /// How far back a *sliding* block may look, where the file states one.
+    ///
+    /// `None` is the ordinary case: every block sees the whole history. A file
+    /// that states a window has blocks that see only the last `window`
+    /// positions — and, more consequentially at short lengths, blocks that
+    /// rotate at a different base (F27).
+    pub sliding_window: Option<usize>,
+    /// One block in every `sliding_window_pattern` sees everything; the rest
+    /// slide.
+    ///
+    /// Six unless the file says otherwise, which is what the reference uses
+    /// when the key is absent.
+    pub sliding_window_pattern: usize,
+}
+
+impl Shape {
+    /// Whether this block slides rather than seeing the whole history.
+    ///
+    /// The last block of each period is the one that sees everything, so with a
+    /// period of six the blocks that slide are 0–4, 6–10, and so on.
+    #[must_use]
+    pub fn is_sliding(&self, block: usize) -> bool {
+        if self.sliding_window.is_none() || self.sliding_window_pattern == 0 {
+            return false;
+        }
+        block
+            .checked_rem(self.sliding_window_pattern)
+            .is_some_and(|within| within < self.sliding_window_pattern.saturating_sub(1))
+    }
 }
 
 impl Shape {
     /// The width of one attention head.
     #[must_use]
     pub const fn head_dimension(&self) -> usize {
+        if let Some(stated) = self.stated_head_dimension {
+            return stated;
+        }
         match self.embedding.checked_div(self.heads) {
             Some(width) => width,
             None => 0,
         }
+    }
+
+    /// The width of every query head together, which is what the query
+    /// projection produces and what the output projection consumes.
+    ///
+    /// Equal to the embedding only where the head width was not stated
+    /// separately, which is why it is a method rather than an assumption.
+    #[must_use]
+    pub const fn query_width(&self) -> usize {
+        self.head_dimension().saturating_mul(self.heads)
+    }
+
+    /// The width of every key/value head together.
+    #[must_use]
+    pub const fn key_value_width(&self) -> usize {
+        self.head_dimension().saturating_mul(self.key_value_heads)
     }
 }
 
@@ -99,6 +189,20 @@ pub struct Loaded {
     epsilon: f32,
     /// The rope base frequency the file states.
     rope_theta: f32,
+    /// The rope base frequency a *sliding* block uses.
+    ///
+    /// **Ten thousand when the file does not say, and that is not a guess about
+    /// this model — it is what the reference does.** A file can state a
+    /// sliding window and omit the base its sliding blocks rotate at, and every
+    /// implementation then uses ten thousand rather than the base stated for
+    /// the others. MCF used the stated base for every block, and produced
+    /// different text from the reference by the fourth token (F27).
+    rope_theta_swa: f32,
+    /// What this family does that its file does not say it does.
+    ///
+    /// Read from the architecture rather than from the file, because nothing in
+    /// the file states any of it — see [`crate::architecture::habits`].
+    habits: crate::architecture::Habits,
     /// Every tensor, dequantized once and kept.
     ///
     /// Dequantizing on load rather than per token is the one memory-for-time
@@ -146,21 +250,7 @@ impl Cache {
 /// this crate does not decode.
 pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     let architecture = file.architecture().unwrap_or("unstated");
-    if !FAMILIES.contains(&architecture) {
-        return Err(Failure::new(
-            Category::ArtifactFormatUnsupported,
-            Attribution::Artifact,
-            Disposition::Refused,
-            WHERE,
-            "MCF's engine has not been taught this architecture",
-        )
-        .with_context("declared", architecture.to_owned())
-        .with_context("implemented", FAMILIES.join(", "))
-        .with_context(
-            "what_to_do",
-            "B-365 is the register item that grows this list, and it grows by somebody              reading the architecture rather than by MCF guessing that one shaped like              another will do (A19)",
-        ));
-    }
+    covers(file)?;
 
     let shape = read_shape(file, architecture)?;
     // Every quantity is read under the file's own architecture prefix, which is
@@ -173,10 +263,24 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
     )
     .unwrap_or(1e-5);
     let rope_theta = float(file, &format!("{architecture}.rope.freq_base")).unwrap_or(10_000.0);
+    let rope_theta_swa =
+        float(file, &format!("{architecture}.rope.freq_base_swa")).unwrap_or(10_000.0);
 
     let mut tensors = BTreeMap::new();
     for (name, elements) in manifest(&shape) {
         tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
+    }
+
+    // What some architectures carry and others do not. *Present in the file*
+    // is the whole test — but a tensor that is there and cannot be read is a
+    // failure rather than an absence, which is the difference between an
+    // optional part and a silently skipped one (A2). Skipping it silently is
+    // exactly how MCF ran Qwen3 without its per-head normalization and got
+    // fluent nonsense back (F20).
+    for (name, elements) in optional(&shape) {
+        if file.tensor(&name).is_some() {
+            tensors.insert(name.clone(), read_tensor(file, bytes, &name, elements)?);
+        }
     }
 
     // The output projection is tied to the embedding in some models and its own
@@ -196,6 +300,8 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         shape,
         epsilon,
         rope_theta,
+        rope_theta_swa,
+        habits: crate::architecture::habits(architecture),
         tensors,
     })
 }
@@ -224,12 +330,41 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
         },
         feed_forward: count(file, &key("feed_forward_length"))?,
         context: count(file, &key("context_length"))?,
+        stated_head_dimension: number(file, &key("attention.key_length"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|width| *width > 0),
+        experts: number(file, &key("expert_count"))
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0),
+        experts_used: number(file, &key("expert_used_count"))
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(0),
+        sliding_window: number(file, &key("attention.sliding_window"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|window| *window > 0),
+        sliding_window_pattern: number(file, &key("attention.sliding_window_pattern"))
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|period| *period > 0)
+            .unwrap_or(6),
         vocabulary: file
             .get("tokenizer.ggml.tokens")
             .and_then(Value::as_list)
             .map(<[Value]>::len)
             .ok_or_else(|| missing("tokenizer.ggml.tokens"))?,
     };
+
+    // A file that says it has experts and does not say how many are used is a
+    // file MCF cannot run: the count is not derivable, every value gives a
+    // different model, and picking one would be a hidden choice (§3.15, A7).
+    if shape.experts > 0 && shape.experts_used == 0 {
+        return Err(missing(&key("expert_used_count")));
+    }
+    if shape.experts_used > shape.experts {
+        return Err(malformed(
+            "the file routes each token to more experts than it has",
+            &format!("{} used of {}", shape.experts_used, shape.experts),
+        ));
+    }
 
     if shape.heads == 0 || !shape.embedding.is_multiple_of(shape.heads) {
         return Err(malformed(
@@ -255,9 +390,8 @@ fn read_shape(file: &File, architecture: &str) -> Result<Shape> {
 /// a model missing a tensor is a named absence rather than a forward pass that
 /// quietly skips a block.
 fn manifest(shape: &Shape) -> Vec<(String, usize)> {
-    let head = shape.head_dimension();
-    let kv_width = head.saturating_mul(shape.key_value_heads);
-    let square = shape.embedding.saturating_mul(shape.embedding);
+    let kv_width = shape.key_value_width();
+    let query = shape.query_width().saturating_mul(shape.embedding);
     let gate = shape.feed_forward.saturating_mul(shape.embedding);
 
     let mut wanted = vec![
@@ -267,25 +401,100 @@ fn manifest(shape: &Shape) -> Vec<(String, usize)> {
         ),
         ("output_norm.weight".to_owned(), shape.embedding),
     ];
-    for block in 0..shape.blocks {
-        for (suffix, elements) in [
-            ("attn_norm.weight", shape.embedding),
-            ("attn_q.weight", square),
-            ("attn_k.weight", kv_width.saturating_mul(shape.embedding)),
-            ("attn_v.weight", kv_width.saturating_mul(shape.embedding)),
-            ("attn_output.weight", square),
-            ("ffn_norm.weight", shape.embedding),
+    // A feed-forward is either one of each or a stack of `experts` of each with
+    // a router in front. Which it is comes from the file's own count, so a file
+    // of any family that declares experts is read as having them (§3.18).
+    let stack = gate.saturating_mul(shape.experts);
+    let feed_forward: Vec<(&str, usize)> = if shape.experts > 0 {
+        vec![
+            (
+                "ffn_gate_inp.weight",
+                shape.embedding.saturating_mul(shape.experts),
+            ),
+            ("ffn_gate_exps.weight", stack),
+            ("ffn_up_exps.weight", stack),
+            ("ffn_down_exps.weight", stack),
+        ]
+    } else {
+        vec![
             ("ffn_gate.weight", gate),
             ("ffn_up.weight", gate),
             ("ffn_down.weight", gate),
+        ]
+    };
+
+    for block in 0..shape.blocks {
+        for (suffix, elements) in [
+            ("attn_norm.weight", shape.embedding),
+            ("attn_q.weight", query),
+            ("attn_k.weight", kv_width.saturating_mul(shape.embedding)),
+            ("attn_v.weight", kv_width.saturating_mul(shape.embedding)),
+            ("attn_output.weight", query),
+            ("ffn_norm.weight", shape.embedding),
         ] {
             wanted.push((format!("blk.{block}.{suffix}"), elements));
+        }
+        for (suffix, elements) in &feed_forward {
+            wanted.push((format!("blk.{block}.{suffix}"), *elements));
         }
     }
     wanted
 }
 
+/// The tensors an architecture may carry and llama does not.
+///
+/// Read for their presence rather than named by a flag: a file that carries
+/// `attn_q_norm` is a file whose model expects it, and a file that does not is
+/// one whose model does not (§3.18, D26 — build the observable).
+fn optional(shape: &Shape) -> Vec<(String, usize)> {
+    let head = shape.head_dimension();
+    let mut wanted = Vec::new();
+    for block in 0..shape.blocks {
+        for suffix in ["attn_q_norm.weight", "attn_k_norm.weight"] {
+            wanted.push((format!("blk.{block}.{suffix}"), head));
+        }
+        // The normalizations on the way *out* of each half of a block. A file
+        // that carries them is a file whose model was trained with them; a
+        // file that does not is left alone.
+        for suffix in ["post_attention_norm.weight", "post_ffw_norm.weight"] {
+            wanted.push((format!("blk.{block}.{suffix}"), shape.embedding));
+        }
+    }
+    wanted
+}
+
+/// Normalizes each head of a projection in place, against one set of weights.
+///
+/// The weights are one head wide and shared by every head, which is what makes
+/// this a *per-head* normalization rather than a normalization of the whole
+/// projection: the scale of one head must not depend on what another head is
+/// doing.
+fn normalize_each_head(values: &mut [f32], head: usize, weights: &[f32], epsilon: f32) {
+    if head == 0 {
+        return;
+    }
+    let heads = values.len().wrapping_div(head);
+    for index in 0..heads {
+        let at = index.saturating_mul(head);
+        let Some(slice) = values.get(at..at.saturating_add(head)) else {
+            continue;
+        };
+        let normalized = ops::rms_norm(slice, weights, epsilon);
+        if let Some(slot) = values.get_mut(at..at.saturating_add(head)) {
+            slot.copy_from_slice(&normalized);
+        }
+    }
+}
+
 impl Loaded {
+    /// A tensor this file may or may not carry.
+    ///
+    /// Distinct from [`Self::tensor`], which is for the ones the shape says
+    /// must be there and whose absence is a malformed file.
+    fn carried(&self, name: &str) -> Option<&[f32]> {
+        self.tensors.get(name).map(Vec::as_slice)
+    }
+
     /// Whether the output projection reuses the embedding matrix.
     #[must_use]
     pub fn output_is_tied(&self) -> bool {
@@ -326,10 +535,32 @@ impl Loaded {
             })?
             .to_vec();
 
+        // Some families scale the embedding on the way in. It is one multiply
+        // and it moves every number that follows, so it is stated in the
+        // architecture table rather than inferred from anything (F20's lesson
+        // about habits no file declares).
+        if self.habits.scales_the_embedding {
+            let scale = f32::from(u16::try_from(width).unwrap_or(1)).sqrt();
+            for value in &mut hidden {
+                *value *= scale;
+            }
+        }
+
         for block in 0..self.shape.blocks {
-            let attended = self.attention(block, &hidden, position, cache)?;
+            let mut attended = self.attention(block, &hidden, position, cache)?;
+            // A normalization on the way out of the attention half, where the
+            // file carries the weights for it — the other half of what makes
+            // these blocks a "sandwich". Read from the tensors, not the name.
+            if let Some(weights) = self.carried(&format!("blk.{block}.post_attention_norm.weight"))
+            {
+                attended = ops::rms_norm(&attended, weights, self.epsilon);
+            }
             hidden = ops::add(&hidden, &attended);
-            let fed = self.feed_forward(block, &hidden)?;
+
+            let mut fed = self.feed_forward(block, &hidden)?;
+            if let Some(weights) = self.carried(&format!("blk.{block}.post_ffw_norm.weight")) {
+                fed = ops::rms_norm(&fed, weights, self.epsilon);
+            }
             hidden = ops::add(&hidden, &fed);
         }
 
@@ -355,6 +586,14 @@ impl Loaded {
     /// `artifact.format.malformed` when a projection produces a width the
     /// model's own shape does not permit — a file that loaded and is still
     /// wrong about itself.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one block's attention is one sequence — project, normalize each head, rotate, \
+                  cache, weigh, gather, project back — and every step of it depends on the \
+                  widths bound at the top. Splitting it would put the widths in one function \
+                  and their use in another, which is how a head width comes to be wrong \
+                  somewhere and right elsewhere (F19)"
+    )]
     fn attention(
         &self,
         block: usize,
@@ -364,7 +603,8 @@ impl Loaded {
     ) -> Result<Vec<f32>> {
         let width = self.shape.embedding;
         let head = self.shape.head_dimension();
-        let kv_width = head.saturating_mul(self.shape.key_value_heads);
+        let query_width = self.shape.query_width();
+        let kv_width = self.shape.key_value_width();
         let groups = self
             .shape
             .heads
@@ -379,7 +619,7 @@ impl Loaded {
         let mut queries = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.attn_q.weight"))?,
             &normalized,
-            width,
+            query_width,
             width,
         );
         let mut keys = ops::matmul_vec(
@@ -394,24 +634,45 @@ impl Loaded {
             kv_width,
             width,
         );
-        if queries.len() != width || keys.len() != kv_width || values.len() != kv_width {
+        if queries.len() != query_width || keys.len() != kv_width || values.len() != kv_width {
             return Err(malformed(
                 "a projection produced the wrong width",
                 &format!("block {block}"),
             ));
         }
 
+        // Normalize each head before it is rotated, where the file carries the
+        // weights for it. Qwen3 does and llama does not, and the difference is
+        // whether the tensors are there rather than a flag MCF sets: a file
+        // that carries `attn_q_norm` is a file whose model expects it (§3.18).
+        if let Some(weights) = self.carried(&format!("blk.{block}.attn_q_norm.weight")) {
+            normalize_each_head(&mut queries, head, weights, self.epsilon);
+        }
+        if let Some(weights) = self.carried(&format!("blk.{block}.attn_k_norm.weight")) {
+            normalize_each_head(&mut keys, head, weights, self.epsilon);
+        }
+
+        // A sliding block rotates at its own base and sees only the last
+        // `window` positions. Both come from the file; which blocks slide is
+        // the period it states, or the six the reference uses when it does not.
+        let sliding = self.shape.is_sliding(block);
+        let theta = if sliding {
+            self.rope_theta_swa
+        } else {
+            self.rope_theta
+        };
+
         // Rotate each head of the query and the key by this position.
         for index in 0..self.shape.heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = queries.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta);
+                ops::rope(slice, position, theta, self.habits.rotation);
             }
         }
         for index in 0..self.shape.key_value_heads {
             let at = index.saturating_mul(head);
             if let Some(slice) = keys.get_mut(at..at.saturating_add(head)) {
-                ops::rope(slice, position, self.rope_theta);
+                ops::rope(slice, position, theta, self.habits.rotation);
             }
         }
 
@@ -421,7 +682,7 @@ impl Loaded {
 
         // The scale keeps the logits' variance independent of the head width.
         let scale = f32::from(u16::try_from(head).unwrap_or(1)).sqrt().recip();
-        let mut attended = vec![0.0_f32; width];
+        let mut attended = vec![0.0_f32; query_width];
         for head_index in 0..self.shape.heads {
             let group = head_index.checked_div(groups).unwrap_or(0);
             let query_at = head_index.saturating_mul(head);
@@ -432,6 +693,17 @@ impl Loaded {
 
             let mut weights = Vec::with_capacity(history);
             for step in 0..history {
+                // A key outside a sliding block's window is not attended to at
+                // all. The boundary is the reference's: a key at `step` is
+                // visible from `position` when `position - step` is less than
+                // the window, so the window counts the current position too.
+                if let Some(window) = self.shape.sliding_window
+                    && sliding
+                    && position.saturating_sub(step) >= window
+                {
+                    weights.push(f32::NEG_INFINITY);
+                    continue;
+                }
                 let key = slice_at(cache.keys.get(block), step, key_at, head);
                 weights.push(ops::dot(query, key) * scale);
             }
@@ -451,7 +723,7 @@ impl Loaded {
             self.tensor(&format!("blk.{block}.attn_output.weight"))?,
             &attended,
             width,
-            width,
+            query_width,
         ))
     }
 
@@ -462,31 +734,140 @@ impl Loaded {
     ///
     /// As [`Loaded::attention`]: a tensor the model names and does not have.
     fn feed_forward(&self, block: usize, hidden: &[f32]) -> Result<Vec<f32>> {
-        let width = self.shape.embedding;
         let normalized = ops::rms_norm(
             hidden,
             self.tensor(&format!("blk.{block}.ffn_norm.weight"))?,
             self.epsilon,
         );
+        if self.shape.experts > 0 {
+            return self.experts(block, &normalized);
+        }
+        self.dense(block, &normalized)
+    }
+
+    /// One feed-forward: gate, up, activate, down.
+    fn dense(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
+        let width = self.shape.embedding;
+        let inner = self.shape.feed_forward;
         let gate = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_gate.weight"))?,
-            &normalized,
-            self.shape.feed_forward,
+            normalized,
+            inner,
             width,
         );
         let up = ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_up.weight"))?,
-            &normalized,
-            self.shape.feed_forward,
+            normalized,
+            inner,
             width,
         );
-        let activated = ops::swiglu(&gate, &up);
+        let activated = ops::gated(&gate, &up, self.habits.activation);
         Ok(ops::matmul_vec(
             self.tensor(&format!("blk.{block}.ffn_down.weight"))?,
             &activated,
             width,
-            self.shape.feed_forward,
+            inner,
         ))
+    }
+
+    /// A stack of feed-forwards, a router in front, and the two or three the
+    /// router picked, added up in proportion.
+    ///
+    /// **The routing is the whole of what is new here.** Each expert is an
+    /// ordinary feed-forward and MCF runs it with the same three matrix
+    /// multiplies; what a mixture adds is a choice, and the choice is made the
+    /// same way every time: score every expert, take the highest few, weigh
+    /// their outputs by scores that have been renormalized to sum to one.
+    ///
+    /// **Renormalizing is not optional and not a detail.** The scores come from
+    /// a softmax over *all* the experts, so the few that were chosen sum to
+    /// less than one — how much less depends on how confident the router was.
+    /// Using them unnormalized scales the whole block's output by that
+    /// confidence, which is a plausible-looking thing to do and not what these
+    /// models were trained with.
+    fn experts(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
+        let width = self.shape.embedding;
+        let inner = self.shape.feed_forward;
+        let experts = self.shape.experts;
+        // Both counts were checked when the shape was read, so this is the
+        // file's own number rather than a repair of it.
+        let used = self.shape.experts_used.min(experts);
+
+        let mut scores = ops::matmul_vec(
+            self.tensor(&format!("blk.{block}.ffn_gate_inp.weight"))?,
+            normalized,
+            experts,
+            width,
+        );
+        ops::softmax(&mut scores);
+
+        // The highest `used` scores, and their experts. A linear selection
+        // rather than a sort: the count is small, and what matters is that ties
+        // go to the lower index every time, so that two runs of one model make
+        // the same choice (§3.12).
+        let mut chosen: Vec<usize> = Vec::with_capacity(used);
+        for _ in 0..used {
+            let mut best: Option<usize> = None;
+            for expert in 0..experts {
+                if chosen.contains(&expert) {
+                    continue;
+                }
+                let score = scores.get(expert).copied().unwrap_or(f32::NEG_INFINITY);
+                let standing = best
+                    .and_then(|index| scores.get(index).copied())
+                    .unwrap_or(f32::NEG_INFINITY);
+                if score > standing {
+                    best = Some(expert);
+                }
+            }
+            match best {
+                Some(expert) => chosen.push(expert),
+                None => break,
+            }
+        }
+
+        // Longhand, like every accumulation in this crate: the ban on summary
+        // statistics checks for `.sum`, and arithmetic that dodged it by
+        // spelling would be obeying the letter against the point.
+        let mut total = 0.0_f32;
+        for expert in &chosen {
+            total += scores.get(*expert).copied().unwrap_or(0.0);
+        }
+        // Clamped rather than guarded, at the smallest number a half-precision
+        // float can hold — the same floor the reference uses, and the reason is
+        // that a router which scored every expert at zero must not turn the
+        // block's output into infinities.
+        let total = total.max(6.103_515_6e-5);
+
+        let gates = self.tensor(&format!("blk.{block}.ffn_gate_exps.weight"))?;
+        let ups = self.tensor(&format!("blk.{block}.ffn_up_exps.weight"))?;
+        let downs = self.tensor(&format!("blk.{block}.ffn_down_exps.weight"))?;
+        let per_expert = inner.saturating_mul(width);
+
+        let mut out = vec![0.0_f32; width];
+        for expert in chosen {
+            let at = expert.saturating_mul(per_expert);
+            let end = at.saturating_add(per_expert);
+            let (Some(gate_weights), Some(up_weights), Some(down_weights)) =
+                (gates.get(at..end), ups.get(at..end), downs.get(at..end))
+            else {
+                return Err(malformed(
+                    "an expert is outside the stack the file said it holds",
+                    &format!("block {block}, expert {expert} of {experts}"),
+                ));
+            };
+
+            let gate = ops::matmul_vec(gate_weights, normalized, inner, width);
+            let up = ops::matmul_vec(up_weights, normalized, inner, width);
+            let activated = ops::gated(&gate, &up, self.habits.activation);
+            let produced = ops::matmul_vec(down_weights, &activated, width, inner);
+
+            let weight = scores.get(expert).copied().unwrap_or(0.0) / total;
+            for (slot, value) in out.iter_mut().zip(produced.iter()) {
+                *slot = weight.mul_add(*value, *slot);
+            }
+        }
+        Ok(out)
     }
 
     fn tensor(&self, name: &str) -> Result<&[f32]> {
@@ -514,7 +895,12 @@ fn push(cache: &mut [Vec<Vec<f32>>], block: usize, row: Vec<f32>) {
 
 /// Reads and dequantizes one tensor, checking it is the size the model's shape
 /// implies.
-fn read_tensor(file: &File, bytes: &[u8], name: &str, elements: usize) -> Result<Vec<f32>> {
+pub(crate) fn read_tensor(
+    file: &File,
+    bytes: &[u8],
+    name: &str,
+    elements: usize,
+) -> Result<Vec<f32>> {
     let tensor = file.tensor(name).ok_or_else(|| missing(name))?;
     let expected = u64::try_from(elements).unwrap_or(u64::MAX);
     if tensor.elements() != Some(expected) {
@@ -549,17 +935,17 @@ fn read_tensor(file: &File, bytes: &[u8], name: &str, elements: usize) -> Result
     dequantize::tensor(tensor.kind, raw, elements)
 }
 
-fn count(file: &File, key: &str) -> Result<usize> {
+pub(crate) fn count(file: &File, key: &str) -> Result<usize> {
     number(file, key)
         .and_then(|value| usize::try_from(value).ok())
         .ok_or_else(|| missing(key))
 }
 
-fn number(file: &File, key: &str) -> Option<i64> {
+pub(crate) fn number(file: &File, key: &str) -> Option<i64> {
     file.get(key).and_then(Value::as_integer)
 }
 
-fn float(file: &File, key: &str) -> Option<f32> {
+pub(crate) fn float(file: &File, key: &str) -> Option<f32> {
     match file.get(key) {
         Some(Value::Float(value)) => Some(narrow(*value)),
         _ => None,
@@ -578,7 +964,7 @@ fn narrow(value: f64) -> f32 {
     value as f32
 }
 
-fn missing(what: &str) -> Failure {
+pub(crate) fn missing(what: &str) -> Failure {
     Failure::new(
         Category::ArtifactProvenanceIncomplete,
         Attribution::Artifact,
@@ -589,7 +975,7 @@ fn missing(what: &str) -> Failure {
     .with_context("wanted", what.to_owned())
 }
 
-fn malformed(detail: &str, found: &str) -> Failure {
+pub(crate) fn malformed(detail: &str, found: &str) -> Failure {
     Failure::new(
         Category::ArtifactFormatMalformed,
         Attribution::Artifact,
