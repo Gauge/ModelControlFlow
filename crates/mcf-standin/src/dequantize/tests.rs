@@ -591,3 +591,88 @@ fn the_transcribed_tables_are_the_size_and_shape_they_were() {
         }
     }
 }
+
+/// `Q5_0`: the fifth bit of value `j` in the first half is bit `j` of the
+/// word, and of value `j` in the second half is bit `j + 16`. A block with
+/// scale one, nibble zero everywhere, and only bits 0 and 16 set decodes to
+/// exactly two values of `16 - 16 = 0` and thirty of `0 - 16 = -16` — which is
+/// only true if the bits land on values 0 and 16 and nowhere else.
+#[test]
+fn q5_0_places_the_fifth_bit_where_the_reference_does() {
+    let mut block = vec![0_u8; 22];
+    block[0..2].copy_from_slice(&to_half(1.0).to_le_bytes());
+    // Bits 0 and 16 of the high word.
+    block[2..6].copy_from_slice(&0x0001_0001_u32.to_le_bytes());
+    let mut out = Vec::new();
+    super::q5(&block, &mut out, false);
+    assert_eq!(out.len(), 32);
+    for (index, value) in out.iter().enumerate() {
+        let expected = if index == 0 || index == 16 {
+            0.0
+        } else {
+            -16.0
+        };
+        assert!(
+            (value - expected).abs() < 1e-6,
+            "value {index} was {value}, expected {expected}"
+        );
+    }
+}
+
+/// `Q5_1` adds the minimum and does not centre: nibble 3 with no fifth bit,
+/// scale 2 and minimum 1 is `3 · 2 + 1 = 7`.
+#[test]
+fn q5_1_scales_and_shifts_without_centring() {
+    let mut block = vec![0_u8; 24];
+    block[0..2].copy_from_slice(&to_half(2.0).to_le_bytes());
+    block[2..4].copy_from_slice(&to_half(1.0).to_le_bytes());
+    // Nibbles: value 0 = 3 (low nibble of byte 0), value 16 = 5 (high nibble).
+    block[8] = 0x53;
+    let mut out = Vec::new();
+    super::q5(&block, &mut out, true);
+    assert!((out[0] - 7.0).abs() < 1e-6, "{}", out[0]);
+    assert!((out[16] - 11.0).abs() < 1e-6, "{}", out[16]);
+    assert!(
+        (out[1] - 1.0).abs() < 1e-6,
+        "an empty nibble is the minimum alone"
+    );
+}
+
+/// `Q3_K`'s high-bit plane is thirty-two bytes serving both halves of the
+/// block, the mask bit telling them apart — not sixty-four indexed by half.
+///
+/// The fixture is chosen so that the difference *shows*: every plane bit set
+/// (nothing inverted), every low bit zero, and scales that make the multiplier
+/// one. Correct decoding is 256 zeros. The decoder F19 left behind read the
+/// plane at `half × 32 + position`, ran off its end for the second half, took
+/// zero for every byte there, and produced −4 for values 128..255 — which the
+/// previous test, on a zeroed fixture, could not distinguish from a plane of
+/// real zeros (F32).
+#[test]
+fn q3_k_reads_one_plane_for_both_halves() {
+    let mut block = vec![0_u8; 110];
+    // hmask: all bits set, so no value is inverted anywhere in the block.
+    for byte in block.iter_mut().take(32) {
+        *byte = 0xFF;
+    }
+    // scales: each six-bit scale must be 33 so that `scale − 32 = 1`. Low
+    // nibbles hold 1 for all sixteen (bytes 96..104 = 0x11), high two bits
+    // hold 0b10 for all sixteen (bytes 104..108 = 0xAA).
+    for byte in block.iter_mut().skip(96).take(8) {
+        *byte = 0x11;
+    }
+    for byte in block.iter_mut().skip(104).take(4) {
+        *byte = 0xAA;
+    }
+    block[108..110].copy_from_slice(&to_half(1.0).to_le_bytes());
+
+    let mut out = Vec::new();
+    super::q3_k(&block, &mut out);
+    assert_eq!(out.len(), 256);
+    for (index, value) in out.iter().enumerate() {
+        assert!(
+            value.abs() < 1e-6,
+            "value {index} decoded to {value}; the second half reads the plane off its end"
+        );
+    }
+}

@@ -103,6 +103,8 @@ fn decode_block(kind: TensorKind, raw: &[u8], out: &mut Vec<f32>) -> Result<()> 
                 out.push(scale * (f32::from(value >> 4) - 8.0));
             }
         }
+        TensorKind::Q5_0 => q5(raw, out, false),
+        TensorKind::Q5_1 => q5(raw, out, true),
         TensorKind::Q4_1 => {
             // A scale and a minimum, then thirty-two unbiased four-bit values.
             let scale = from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]));
@@ -315,13 +317,69 @@ fn q3_k(raw: &[u8], out: &mut Vec<f32>) {
                 for position in 0..16_usize {
                     let at = run * 16 + position;
                     let bits = (low.get(at).copied().unwrap_or(0) >> shift) & 3;
-                    let inverted = high_plane.get(half * 32 + at).copied().unwrap_or(0) & mask == 0;
+                    // The high-bit plane is thirty-two bytes for the whole
+                    // block: the same byte serves both halves, and the mask —
+                    // one bit per (half, shift) pair, eight in all — is what
+                    // tells them apart. Indexing it by half ran off its end for
+                    // the second half, and `get` handed back zero for every
+                    // one of those, which reads as "inverted" (F32).
+                    let inverted = high_plane.get(at).copied().unwrap_or(0) & mask == 0;
                     let centred = i32::from(bits) - if inverted { 4 } else { 0 };
                     out.push(d * as_float(scale) * as_float(centred));
                 }
             }
             mask = mask.rotate_left(1);
         }
+    }
+}
+
+/// The five-bit schemes: nibbles for the low four bits and one 32-bit word
+/// holding the fifth bit of every value in the block.
+///
+/// The fifth bits are not beside their nibbles. Value `j` of the first half
+/// takes bit `j` of the word, and value `j` of the second half takes bit
+/// `j + 16` — which is what the reference's `(qh >> (j + 12)) & 0x10` does
+/// in one shift, and is spelled out here because a transcription that
+/// preserved the trick and lost the meaning is the kind F23 warns about.
+fn q5(block: &[u8], out: &mut Vec<f32>, with_minimum: bool) {
+    let d = from_half(u16::from_le_bytes([byte(block, 0), byte(block, 1)]));
+    let (m, at) = if with_minimum {
+        (
+            from_half(u16::from_le_bytes([byte(block, 2), byte(block, 3)])),
+            4,
+        )
+    } else {
+        (0.0, 2)
+    };
+    let high = u32::from_le_bytes([
+        byte(block, at),
+        byte(block, at + 1),
+        byte(block, at + 2),
+        byte(block, at + 3),
+    ]);
+    let nibbles = block.get(at + 4..at + 20).unwrap_or_default();
+    // First half: low nibbles with fifth bits 0..15. Second half: high nibbles
+    // with fifth bits 16..31. Written as two passes so the order of the output
+    // is the order of the block.
+    for (j, packed) in nibbles.iter().enumerate() {
+        let fifth = u8::try_from((high >> j) & 1).unwrap_or(0) << 4;
+        let value = i32::from((packed & 0x0F) | fifth);
+        out.push(five(value, d, m, with_minimum));
+    }
+    for (j, packed) in nibbles.iter().enumerate() {
+        let fifth = u8::try_from((high >> (j + 16)) & 1).unwrap_or(0) << 4;
+        let value = i32::from((packed >> 4) | fifth);
+        out.push(five(value, d, m, with_minimum));
+    }
+}
+
+/// One five-bit value: an offset from sixteen under `Q5_0`, a plain magnitude
+/// plus the minimum under `Q5_1`.
+fn five(value: i32, d: f32, m: f32, with_minimum: bool) -> f32 {
+    if with_minimum {
+        d.mul_add(as_float(value), m)
+    } else {
+        d * as_float(value - 16)
     }
 }
 

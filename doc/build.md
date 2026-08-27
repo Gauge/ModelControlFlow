@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 35 |
+| **Version** | 36 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -827,11 +827,15 @@ noise divergences sat at margins of 0.040, 0.098, 0.105 and 0.159, in every case
 with the reference choosing exactly MCF's runner-up and in every case at the
 smallest margin of that whole generation. The one real defect sat at 0.775.
 
-So a generation that differs fails only when *every* step of it still had a
-margin over 0.50 — three times the largest observed noise, two-thirds of the one
-observed defect. Otherwise the difference is printed with the margin that
-explains it. The threshold is provisional: **a defect can hide under a
-near-tie**, and what narrows that is more prompts rather than a cleverer rule.
+So a generation that differs fails when the margin **at the step where the
+two texts part** is over 0.30 — above every noise margin observed (0.017 to
+0.237), below both defects observed (0.449, 0.775). F27's first rule took the
+smallest margin *anywhere* in the generation, and F32 found what that let
+through: a broken decoder that parted at step 0 with 0.449 and was excused by a
+0.021 five tokens later. `margins --against "<reference text>"` finds the
+parting step. The threshold is provisional in one direction only: **a defect
+that parts at a genuine near-tie still passes**, and what narrows that is more
+files rather than a cleverer rule.
 
 `cargo run -p mcf-standin --example margins -- <model> "<text>"` is the
 instrument, and is worth running by hand whenever a divergence appears.
@@ -1041,6 +1045,12 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 36 — the margin where they part
+
+The oracle's generation rule takes the margin at the step where MCF's text
+stops being a prefix of the reference's, not the smallest margin anywhere
+(F32). Threshold 0.30.
 
 ### Version 35 — provisioning is a command
 
