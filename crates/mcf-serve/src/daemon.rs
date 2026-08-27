@@ -309,6 +309,17 @@ impl Daemon {
         let answer = match read {
             Err(_) | Ok(0) => return None,
             Ok(_) => match Request::read(line.trim_end()) {
+                Ok(Request::Generate {
+                    model,
+                    prompt,
+                    limit,
+                    seed,
+                }) => {
+                    // A generation is one request and many lines, so it has
+                    // its own path: nothing about it fits in one `Answer`.
+                    self.generate(&model, &prompt, limit, seed, &mut writer);
+                    return None;
+                }
                 Ok(request) => {
                     let (answer, stop) = self.respond(&request);
                     let _written = writeln!(writer, "{}", answer.to_line());
@@ -323,11 +334,55 @@ impl Daemon {
         None
     }
 
+    /// A model answers a prompt, one line per token, then the account (B-034,
+    /// PR9).
+    ///
+    /// **Loaded per request and dropped after.** Whether a served model stays
+    /// resident when nobody is looking is DEC-018 and open; until it is
+    /// decided, the daemon holds nothing between requests, which is the answer
+    /// that costs nothing while idle (§3.13) and hides no choice (§3.15). The
+    /// price is paid at the start of every generation and stated in the
+    /// account as `loaded: per_request`.
+    ///
+    /// **What is recorded is the terminating line.** The same object the
+    /// client was sent (D20): a client that ignores the conditions still leaves
+    /// them behind, and one that hangs up mid-stream leaves the account of what
+    /// it got (A4, A26).
+    fn generate(
+        &self,
+        named: &str,
+        prompt: &str,
+        limit: usize,
+        seed: u64,
+        writer: &mut &UnixStream,
+    ) {
+        let at = Timestamp::now();
+        let account = crate::generation::serve_generation(
+            &self.places.models,
+            named,
+            prompt,
+            limit,
+            seed,
+            writer,
+        );
+        self.note(EntryKind::Generated, at, account);
+    }
+
     /// What MCF says to each request.
     fn respond(&self, request: &Request) -> (Answer, Option<Stopped>) {
         match request {
             Request::Status => (Answer::served(self.status()), None),
             Request::Holding => (Answer::served(self.holding()), None),
+            // Handled before `respond` is reached; here so the match is
+            // total and a future request type is a compile error rather than a
+            // silent fall-through.
+            Request::Generate { .. } => (
+                Answer::refused(&crate::control::refused(
+                    "a generation reached the one-answer path",
+                    "generate",
+                )),
+                None,
+            ),
             Request::Stop { reason } => (
                 Answer::served(Value::map([
                     ("stopping", Value::Bool(true)),

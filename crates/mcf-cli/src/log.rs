@@ -223,6 +223,19 @@ fn summarize(entry: &Entry) -> String {
             text(body, "component").unwrap_or_else(|| "component".to_owned()),
             text(body, "reason").unwrap_or_else(|| "no reason recorded".to_owned())
         ),
+        EntryKind::Generated => format!(
+            "generated {} token(s) from {} — {}{}",
+            integer(body, "tokens"),
+            body.get("conditions")
+                .and_then(|conditions| conditions.get("model"))
+                .and_then(Value::as_text)
+                .unwrap_or("an unnamed model"),
+            text(body, "stopped").unwrap_or_else(|| "stopped for no stated reason".to_owned()),
+            match text(body, "degraded") {
+                Some(_) => ", MARKED degraded",
+                None => "",
+            }
+        ),
         EntryKind::ArtifactRemoved => format!(
             "removed {} file(s), because: {}",
             body.get("removed")

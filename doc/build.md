@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 38 |
+| **Version** | 39 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -1056,6 +1056,12 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 39 — the served token
+
+`mcf run` goes through a listening daemon (B-034, PR9): tokens stream as they
+are produced and the account follows, saying which process produced it and
+that the model was loaded per request. The whole-system tier drives it.
 
 ### Version 38 — distributions against distributions
 

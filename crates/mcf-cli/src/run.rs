@@ -73,6 +73,23 @@ pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) ->
         };
     }
 
+    // A daemon that is listening serves the generation; this process runs it
+    // only when nothing is (B-034, PR9). Which one did is part of the account,
+    // because it is a condition: the same file through the same engine in
+    // another process is another process's memory, cache and clock.
+    if let Some(socket) = crate::serve::socket_path()
+        && let Ok(connection) = std::os::unix::net::UnixStream::connect(&socket)
+    {
+        return served(
+            connection,
+            &socket,
+            &path,
+            prompt,
+            limit.unwrap_or(TOKENS),
+            seed,
+        );
+    }
+
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -93,6 +110,147 @@ pub(crate) fn run(model: &str, prompt: &str, limit: Option<usize>, seed: u64) ->
             text: refused(&path, &failure),
             served: false,
         },
+    }
+}
+
+/// The generation through the daemon: tokens printed as they arrive, the
+/// account printed when it comes.
+///
+/// The tokens go to the terminal *as they are read* — that is the whole point
+/// of a stream (B-035, D24) — and the conditions block follows the last one,
+/// so what a person sees is what `render` prints for an in-process run, with
+/// one more line saying which process produced it.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the client side of one protocol exchange: send, stream, account. Splitting it \
+              would put the three ways the stream can end in three places, and they are \
+              one decision"
+)]
+fn served(
+    connection: std::os::unix::net::UnixStream,
+    socket: &Path,
+    path: &Path,
+    prompt: &str,
+    limit: usize,
+    seed: u64,
+) -> Response {
+    use std::io::{BufRead as _, BufReader, Write as _};
+
+    use mcf_serve::control::{Request as Ask, Streamed};
+
+    // Between tokens the stand-in can take a second per token on a
+    // half-billion-parameter model; between the request and the first token
+    // it loads the model. Both are bounded, and the bound is stated here.
+    let patience = std::time::Duration::from_secs(600);
+    let _deadline = connection.set_read_timeout(Some(patience));
+    let _writing = connection.set_write_timeout(Some(patience));
+    let mut connection = connection;
+
+    let request = Ask::Generate {
+        model: path.display().to_string(),
+        prompt: prompt.to_owned(),
+        limit,
+        seed,
+    };
+    if let Err(error) =
+        writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())
+    {
+        return Response {
+            text: format!(
+                "mcf: the daemon at {} would not take the request\n  {error}",
+                socket.display()
+            ),
+            served: false,
+        };
+    }
+
+    let mut out = std::io::stdout();
+    let mut produced = 0_usize;
+    let mut account: Option<mcf_record::json::Value> = None;
+    let reader = BufReader::new(&connection);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        match Streamed::read(line.trim_end()) {
+            Ok(Streamed::Token { text, .. }) => {
+                produced = produced.saturating_add(1);
+                let _printed = write!(out, "{text}");
+                let _flushed = out.flush();
+            }
+            Ok(Streamed::Done(done)) => {
+                account = Some(done);
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+    let _newline = writeln!(out);
+
+    // The stream ended without its account: the daemon died, or the wire
+    // did. What was received was received (A4), and the absence of the
+    // account is said rather than filled in (A7).
+    let Some(account) = account else {
+        return Response {
+            text: format!(
+                "\n── the stream ended before its account ──────────────────────\n  \
+                 {produced} token(s) were received from the daemon at {} and printed above;\n  \
+                 the terminating line never came, so the conditions of this answer are\n  \
+                 unknown here — the daemon's record has them if it lived to write them (A4, A26)",
+                socket.display()
+            ),
+            served: false,
+        };
+    };
+
+    if let Some(failure) = account.get("failure") {
+        return Response {
+            text: format!(
+                "mcf: {} did not run\n  the daemon at {} refused it:\n  {}",
+                path.display(),
+                socket.display(),
+                failure.to_line()
+            ),
+            served: false,
+        };
+    }
+
+    let get = |key: &str| {
+        account
+            .get(key)
+            .map_or_else(|| "?".to_owned(), mcf_record::json::Value::to_line)
+    };
+    let conditions = account.get("conditions");
+    let condition = |key: &str| {
+        conditions.and_then(|c| c.get(key)).map_or_else(
+            || "?".to_owned(),
+            |v| v.as_text().map_or_else(|| v.to_line(), str::to_owned),
+        )
+    };
+    Response {
+        text: format!(
+            "\n── what produced it ─────────────────────────────────────────\n\
+             \x20 model    {}\n\
+             \x20 prompt   {} token(s)\n\
+             \x20 produced {} token(s); stopped: {}\n\
+             \x20 sampler  {}, seed {}\n\
+             \x20 engine   {}\n\
+             \x20 served   by the daemon at {}, model loaded {}\n\
+             \x20 MARKED   {}\n\
+             \x20 This is a behaviour answer and can never be a speed (B65, D31).",
+            condition("path"),
+            get("prompt_tokens"),
+            get("tokens"),
+            get("stopped").trim_matches('"'),
+            condition("sampler"),
+            condition("seed"),
+            condition("engine"),
+            socket.display(),
+            condition("loaded"),
+            account
+                .get("degraded")
+                .and_then(mcf_record::json::Value::as_text)
+                .unwrap_or("nothing"),
+        ),
+        served: true,
     }
 }
 

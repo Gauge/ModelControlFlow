@@ -1375,7 +1375,10 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
         }
     }
     assert!(said.contains("mcf is up on"), "{said}");
-    assert!(said.contains("cannot serve a model yet"), "{said}");
+    assert!(
+        said.contains("serves models through MCF's own engine"),
+        "{said}"
+    );
     assert!(said.contains("idle costs nothing"), "{said}");
 
     // A second daemon refuses rather than sharing the record.
@@ -1798,4 +1801,69 @@ fn an_already_provisioned_component_is_left_alone() {
         text(&output)
     );
     assert!(marker.exists(), "an existing build is untouched");
+}
+
+/// A first token from a named model in one command, on a machine that has
+/// never served before (B-034's condition, PR9) — through the daemon, with
+/// the tokens streamed and the account read back from the record.
+#[test]
+fn a_running_daemon_serves_a_generation_and_records_its_account() {
+    let machine = Machine::new("served");
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    let model = models.join("a-model-that-runs.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let mut serving = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the daemon starts");
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        std::io::BufReader::new(stdout)
+            .read_line(&mut line)
+            .expect("the first line");
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+
+    // By name, the way §VI wants it typed.
+    let ran = machine.run(&[
+        "run",
+        "lab/fixture:a-model-that-runs.gguf",
+        "--prompt",
+        "yes",
+        "--limit",
+        "4",
+    ]);
+    assert!(ran.status.success(), "{}", error_text(&ran));
+    let said = text(&ran);
+    assert!(said.contains("served   by the daemon at"), "{said}");
+    assert!(
+        said.contains("MARKED"),
+        "the mark travels with the answer: {said}"
+    );
+    assert!(said.contains("loaded per_request"), "{said}");
+
+    // And the daemon wrote the account down, in a different process from the
+    // one that read it.
+    let log = text(&machine.run(&["log", "--kind", "generated"]));
+    assert!(log.contains("generated"), "{log}");
+    assert!(log.contains("MARKED degraded"), "{log}");
+
+    // A model the daemon cannot find is a terminating line with a failure,
+    // never a hang.
+    let missing = machine.run(&["run", "lab/fixture:no-such.gguf", "--prompt", "x"]);
+    assert!(!missing.status.success());
+
+    let stopped = machine.run(&["stop", "--because", "the whole-system test is done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(serving.wait().expect("the daemon exits").success());
 }
