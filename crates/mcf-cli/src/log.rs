@@ -211,6 +211,18 @@ fn summarize(entry: &Entry) -> String {
             text(body, "bytes").unwrap_or_else(|| "were not compared".to_owned()),
             text(body, "detail").unwrap_or_else(|| "no finding recorded".to_owned())
         ),
+        EntryKind::ComponentProvisioned => format!(
+            "provisioned {} at {} — image {}, into {}",
+            text(body, "component").unwrap_or_else(|| "a component".to_owned()),
+            text(body, "commit").unwrap_or_else(|| "an unstated commit".to_owned()),
+            text(body, "image").unwrap_or_else(|| "an unstated image".to_owned()),
+            text(body, "prefix").unwrap_or_default()
+        ),
+        EntryKind::ComponentRemoved => format!(
+            "removed the provisioned {}, because: {}",
+            text(body, "component").unwrap_or_else(|| "component".to_owned()),
+            text(body, "reason").unwrap_or_else(|| "no reason recorded".to_owned())
+        ),
         EntryKind::ArtifactRemoved => format!(
             "removed {} file(s), because: {}",
             body.get("removed")

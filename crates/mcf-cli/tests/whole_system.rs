@@ -1668,3 +1668,134 @@ fn walk(directory: &Path, into: &mut Vec<PathBuf>) {
         }
     }
 }
+
+// ── provisioning, everything short of the container ─────────────────────────
+//
+// The container run itself needs podman, an image and the network, which puts
+// it outside this tier's edge (B19); the oracle tier is where the real thing
+// runs. What gates here is every path around it: what the table says, what a
+// removal records, and what is refused.
+
+/// A provisioned component, as the run leaves it: the provenance file is what
+/// `--list` and `--remove` recognize.
+fn seed_provisioned(machine: &Machine) -> PathBuf {
+    let prefix = machine
+        .0
+        .join("mcf")
+        .join("provisioned")
+        .join("llama.cpp@925e1179947e");
+    std::fs::create_dir_all(prefix.join("build").join("bin")).expect("a prefix");
+    std::fs::write(
+        prefix.join("mcf-provenance.json"),
+        "{\"component\":\"llama.cpp\",\"commit\":\"925e1179947ea0c0ebfb0032df18af3a729822be\"}\n",
+    )
+    .expect("provenance written");
+    prefix
+}
+
+/// The table is read from the binary and says what is and is not there.
+#[test]
+fn provisioning_lists_what_it_knows_and_what_is_present() {
+    let machine = Machine::new("provision-list");
+    let before = machine.run(&["provision", "--list"]);
+    assert!(before.status.success(), "{}", error_text(&before));
+    let listed = text(&before);
+    assert!(listed.contains("llama.cpp@925e1179947e"), "{listed}");
+    assert!(listed.contains("not provisioned"), "{listed}");
+    assert!(
+        listed.contains("sha256:"),
+        "the image digest is what pins: {listed}"
+    );
+
+    seed_provisioned(&machine);
+    let after = text(&machine.run(&["provision", "--list"]));
+    assert!(after.contains("—  provisioned"), "{after}");
+}
+
+/// A removal needs a reason, records it before the directory goes, and leaves
+/// nothing behind — the base image is not MCF's to remove.
+#[test]
+fn a_removal_is_reasoned_recorded_and_complete() {
+    let machine = Machine::new("provision-remove");
+    let prefix = seed_provisioned(&machine);
+
+    let unreasoned = machine.run(&["provision", "--remove", "llama.cpp"]);
+    assert!(!unreasoned.status.success());
+    assert!(prefix.exists(), "a refusal removes nothing");
+    // Refusals are said on stderr, the way every unserved response is.
+    assert!(
+        error_text(&unreasoned).contains("--because"),
+        "{}",
+        error_text(&unreasoned)
+    );
+
+    let removed = machine.run(&[
+        "provision",
+        "--remove",
+        "llama.cpp",
+        "--because",
+        "the whole-system tier asked",
+    ]);
+    assert!(removed.status.success(), "{}", error_text(&removed));
+    assert!(!prefix.exists(), "the prefix is gone");
+    assert!(
+        text(&removed).contains("the whole-system tier asked"),
+        "{}",
+        text(&removed)
+    );
+
+    // The record, read back by a different process.
+    let log = text(&machine.run(&["log", "--kind", "component_removed"]));
+    assert!(
+        log.contains("removed the provisioned llama.cpp, because: the whole-system tier asked"),
+        "{log}"
+    );
+
+    // And a second removal of what is not there is said, not erred.
+    let again = machine.run(&["provision", "--remove", "llama.cpp", "--because", "again"]);
+    assert!(again.status.success());
+    assert!(
+        text(&again).contains("is not provisioned"),
+        "{}",
+        text(&again)
+    );
+}
+
+/// A component MCF has no recipe for is refused by name, with the table shown:
+/// adding one is a change to MCF, not a configuration (§5).
+#[test]
+fn an_unknown_component_is_refused_with_the_table() {
+    let machine = Machine::new("provision-unknown");
+    let output = machine.run(&["provision", "not-a-component"]);
+    assert!(!output.status.success());
+    let said = error_text(&output);
+    assert!(
+        said.contains("does not know how to provision not-a-component"),
+        "{said}"
+    );
+    assert!(said.contains("llama.cpp"), "{said}");
+    assert!(
+        !machine.journal().exists(),
+        "a refusal before anything happened records nothing"
+    );
+}
+
+/// A component already provisioned is not built again over itself.
+#[test]
+fn an_already_provisioned_component_is_left_alone() {
+    let machine = Machine::new("provision-twice");
+    let prefix = seed_provisioned(&machine);
+    let marker = prefix.join("build").join("bin").join("keep");
+    std::fs::write(&marker, b"present").expect("a marker");
+
+    let output = machine.run(&["provision", "llama.cpp"]);
+    // Served: nothing was wrong, it is simply already there — and the run
+    // never reached podman, which is why this test can exist inside the edge.
+    assert!(output.status.success(), "{}", error_text(&output));
+    assert!(
+        text(&output).contains("already provisioned"),
+        "{}",
+        text(&output)
+    );
+    assert!(marker.exists(), "an existing build is untouched");
+}

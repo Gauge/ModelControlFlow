@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 154 |
+| **Version** | 156 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **256 items: 53 decisions (29 open, 1 drafted, 2 narrowed, 21 resolved) and 203
-build items (52 done, 1 dropped, 10 in progress, 51 blocked on a decision, 90 open).** Every item cites
+build items (53 done, 1 dropped, 9 in progress, 51 blocked on a decision, 90 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -160,7 +160,7 @@ first and importance second.
 | B-371 | Embedding models: the bert family, its WordPiece vocabulary, and the surface that asks one for a vector | DEC-055, D38, §VI | An embedding model in the corpus produces a vector of the width its file declares; the tokenizer agrees with the reference exactly; the vector agrees at a measured floor and means what related-against-unrelated sentences say it means | **done** (F29) — tokenizer identifier-exact on five texts including `[UNK]` and accents; forward pass at cosine 0.9996–0.9998 against the reference where the floor is 0.999 and a single swapped normalization falls to 0.97; corpus six for six. Not covered, and said: nomic-bert's rotary positions and gated feed-forward, the first-position pooling no artifact exercises, and the floor is calibrated on this model at this size |
 | B-372 | The reference model does not fit the stand-in's memory design, and the engine says so before trying: 27,320,697,856 parameters dequantized to f32 is 109.3 GB against what `/proc/meminfo` reports free | D38, §XII, A7, B7 | `mcf run` against an artifact whose dequantized weight exceeds free memory refuses up front, naming both numbers, rather than being killed by the kernel mid-load; an engine change that lifts the ceiling is measured against F29's oracle before it ships | the refusal half is **done** — `Model::fits_dequantized` is arithmetic on the directory against a number the surface observed, the directory is read from a bounded prefix (16 MiB, then 256, then the file) so the reference model's refusal fell from 72 s of reading to 0.16 s, and the laboratory produces the failure (A13). The lifted ceiling — dequantize per use, or quantized arithmetic — remains open and is the expensive half |
 | B-366 | Threads without changing the answer: work split across processors, partitioned by index and reduced in a fixed order, so a result does not depend on how busy the machine was | D38, §3.12, D19 | The same input produces the same bytes at one thread and at many, asserted as a property over generated inputs | open — floating-point addition is not associative, which makes this the one place reproducibility can be lost without anybody noticing |
-| B-367 | Provisioned environments: MCF installs, builds and pins a component itself, records exactly what it got, can do it again, and can remove it without residue | D39, §3.4, A27, §6.32, DEC-052 | A provisioned engine is reproducible from its record; removing it leaves the machine as it was found; nothing outside the environment MCF made is touched | open, unblocked — DEC-052 settled the mechanism (F30) and the manual run is the specification: what `mcf provision` must automate is exactly the container invocation, digest pinning, package recording and prefix layout that F30 performed by hand, plus the journal entries that make it A27-accountable |
+| B-367 | Provisioned environments: MCF installs, builds and pins a component itself, records exactly what it got, can do it again, and can remove it without residue | D39, §3.4, A27, §6.32, DEC-052 | A provisioned engine is reproducible from its record; removing it leaves the machine as it was found; nothing outside the environment MCF made is touched | **done** (F31) — `mcf provision <component>`, `--list`, `--remove --because`. One component, the reference implementation: image by digest, source by commit, packages recorded exactly, self-contained build, `mcf-provenance.json` in the prefix and `component_provisioned` in the record; the oracle tier finds it on its own and agrees 57 of 57 through it. Four runs to get there, each finding something the manual run had not: podman's store must not follow MCF's data home, git's ownership guard inside a mount, a shared build's `RUNPATH` from the wrong side of the boundary, and that a success can still not run. Removal exercised once for real, reasoned and recorded. Not covered: a second component, GPU device access, and provisioning categories of its own — one category carried every failure with distinct details, which is fine for one component and worth revisiting at two |
 | B-368 | A reference implementation as an oracle: where MCF's engine and a provisioned reference disagree about the same model, same input and same seed, the disagreement is the finding | D39, D38, A19, §3.12 | Two implementations are compared on the same artifact and the same text; a disagreement is reported with where it first appears and whether it is explainable | **done** for what it can reach — `scripts/check-oracle.sh` and `ci.sh --with-oracle`. Thirty tokenizer comparisons, exact; fifteen greedy generations, compared against a **measured** tolerance rather than an assumed one (F27): a divergence fails only where every step still had a margin over 0.50, which is three times the largest observed noise and two-thirds of the one observed defect. Both defects it found are recorded (F26, F27) and reintroducing either makes it fire. What remains is *breadth*: more prompts to narrow a threshold that four observations rest on. The sliding-window mask is now exercised past the boundary (F28), gated behind `MCF_ORACLE_LONG=1` because the stand-in pays a forward pass per prompt token |
 | B-369 | Several model stores, chosen at acquisition time: where the large files go is the operator's choice, independent of where MCF is installed, and every surface looks in all of them | §3.15, §5, A7, A6 | Models land where the operator says; a listing covers every store; a name held in two is refused rather than resolved | **done** — `MCF_MODELS`, an ordered list of absolute paths in the platform's own idiom, because §5 refuses MCF a configuration language and a list in a variable is not one. The first is where a new acquisition goes and all of them are searched for what is held; `mcf pull --into <directory>` overrides for one acquisition and may name a store MCF was never told about, since naming a path *is* choosing one. A relative path is dropped and **named** rather than resolved against whatever directory MCF was started in. A name held in two stores is refused with both paths, because two files under one name are two artifacts with two provenances and a measurement against whichever MCF reached first is one nobody could reproduce. `mcf doctor` shows the stores in order, which one new models go to, and how much room each has — asking the filesystem that *would* hold a store that does not exist yet, since that is the number somebody deciding where to put sixteen gigabytes actually wants |
 | B-017 | Decision record (ADR) format and index, so §7 resolutions and their reasoning survive the code that implements them | §8 | A resolved void points at an ADR and the ADR points back at §7 | **dropped** — the thing already exists under another name. §2.1 holds each resolution, the intent document's changelog holds the reasoning that produced it, and §7's retired-void index is the pointer back. An ADR set would be a second home for statements that have one, and duplication is a defect ([README.md](../README.md)); the item's own condition is already met by documents that exist |
@@ -381,6 +381,19 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 156 — provisioning is done, four runs later
+
+B-367 done (F31). The fourth run stands: self-contained, loads bare, 95 MB, and
+the oracle tier agrees 57 of 57 through the prefix MCF built. Removal was
+exercised once for real with the reason in the record.
+
+### Version 155 — provisioning is a command
+
+B-367 in progress: `mcf provision` turns F30's manual run into a recorded,
+removable, repeatable command (F31). Two new record kinds,
+`component_provisioned` and `component_removed`, appended to the kind list so
+the derived index's positions hold.
 
 ### Version 154 — the ceiling refuses from the header
 

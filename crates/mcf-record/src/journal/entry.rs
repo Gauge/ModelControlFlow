@@ -72,11 +72,25 @@ pub enum EntryKind {
     /// reclaiming space without a decision, and a decision nobody wrote down is
     /// indistinguishable from an automatic one.
     ArtifactRemoved,
+    /// A component was installed, built and pinned into an environment MCF
+    /// controls (B-367, D39).
+    ///
+    /// The record is what makes a provisioned component a *condition* rather
+    /// than a circumstance: every measurement taken through it cites an
+    /// environment this entry can reproduce — the image by digest, the source
+    /// by commit, the packages by exact version (§3.4).
+    ComponentProvisioned,
+    /// A provisioned component was removed, and why (A27, §3.11).
+    ///
+    /// The pair to `ComponentProvisioned` the way `ArtifactRemoved` pairs with
+    /// `ArtifactAcquired`: after the removal the prefix is gone and this line
+    /// is all there is.
+    ComponentRemoved,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -86,6 +100,10 @@ impl EntryKind {
         Self::ArtifactAcquired,
         Self::ArtifactChecked,
         Self::ArtifactRemoved,
+        // Appended rather than sorted in: the derived index stores a kind as
+        // its position in this list, so the order is part of the format (D20).
+        Self::ComponentProvisioned,
+        Self::ComponentRemoved,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -104,6 +122,8 @@ impl EntryKind {
             Self::ArtifactAcquired => "artifact_acquired",
             Self::ArtifactChecked => "artifact_checked",
             Self::ArtifactRemoved => "artifact_removed",
+            Self::ComponentProvisioned => "component_provisioned",
+            Self::ComponentRemoved => "component_removed",
         }
     }
 

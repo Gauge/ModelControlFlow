@@ -26,6 +26,30 @@ pub(super) const TRUNCATED_BUNDLE: Scenario = Scenario {
     run: truncated_bundle,
 };
 
+/// A pinned checkout that came back as something else.
+///
+/// B-367's provisioning pins a commit; a remote that moved or a hash mistyped
+/// produces a checkout that is not the pin, and MCF refuses to record it as if
+/// it were (§3.12). The observation is two hashes that differ; the judgement
+/// is the shipped one.
+pub(super) const PIN_DIVERGED: Scenario = Scenario {
+    id: "exchange/pin-diverged",
+    produces: Category::ExchangeReproduceDivergent,
+    summary: "a checkout that did not land on its pin is refused with both hashes named, \
+              rather than recorded as the pin",
+    run: pin_diverged,
+};
+
+fn pin_diverged(_world: &World) -> Outcome {
+    match mcf_core::provenance::checked_out(
+        "925e1179947ea0c0ebfb0032df18af3a729822be",
+        "0000000000000000000000000000000000000000\n",
+    ) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(()) => Outcome::Unexpected("two different hashes were judged the same pin".to_owned()),
+    }
+}
+
 /// A bundle from a format this build does not implement.
 pub(super) const UNREADABLE_BUNDLE: Scenario = Scenario {
     id: "exchange/unreadable-bundle",

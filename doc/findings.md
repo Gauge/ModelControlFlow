@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 34 |
+| **Version** | 35 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2316,7 +2316,114 @@ to the container and was not exercised. And `podman` itself is now a condition:
 a machine without it falls back to nothing, because route A is what falling
 back looks like.
 
+## 31 · F31 — What the first automated provisioning found in two tries (B-367, DEC-052, A27, §3.15)
+
+**What was built.** `mcf provision <component>`: F30's manual run turned into a
+command. A table of components in MCF's source — one entry, the reference
+implementation — each pinning an image by digest, a source by commit, a package
+list, a configure line and targets. One `podman run --rm` over the pinned
+image with a prefix bind-mounted; the recipe written into the prefix as a
+script before it runs; the package versions, the landed commit and the log
+written into the prefix by the run; `mcf-provenance.json` beside the build and
+a `component_provisioned` entry in the record on success. Removal carries a
+reason and is recorded before the directory goes.
+
+**The first run failed in 30 seconds, and the failure was MCF's.** Exit 126:
+
+```
+Error: cannot chown /home/gauge/Content/mcf-data/containers/storage/overlay/…/merged
+to 0:0: … read-only file system
+```
+
+Rootless podman keeps its *image store* under `$XDG_DATA_HOME/containers`.
+MCF's data home on this machine is the large content drive — the operator's
+instruction, and the right place for a prefix — and podman inherited it. That
+drive's filesystem presents every file as root-owned and will not perform the
+ownership changes an overlay store needs. 196 MB of image were pulled into a
+store that could not hold them before the run stopped. F30's manual run had
+not hit this only because it ran with the data home unset.
+
+The division that holds: the *prefix* is MCF's and goes where the operator
+says; the *store* is podman's, shared with everything else on the machine,
+and goes where the platform puts it. `mcf provision` now hands its child the
+platform default for the store and the operator's choice for the output. The
+misplaced store was removed by hand, and that is the last time it will need
+to be.
+
+**The second run failed after the clone, and the failure was git's guard.**
+Exit 128: `fatal: detected dubious ownership in repository at '/work/source'`.
+The same filesystem, seen from inside the container, presents the freshly
+cloned repository as owned by somebody else, and git refuses to operate in a
+repository it thinks it does not own. The clone had succeeded and the package
+versions were already recorded; the checkout was what refused. The exception
+is now passed per invocation — `git -c safe.directory=/work/source` — scoped
+to one directory for the life of one command, which is exactly as far as it
+should reach.
+
+**Both failures did what A2 asks.** Each named its exit status and its log,
+said the prefix was safe to remove and the run safe to repeat, and left the
+record untouched — nothing was written as provisioned that was not. What
+neither could do was *say* which of the four D39 conditions was in play, and
+that is worth noticing: the platform-mechanism category carried both with
+distinct details, and a reader of the record would need the log to tell them
+apart. Whether provisioning deserves categories of its own is a question for
+when there is a second component.
+
+**The third run succeeded, and found the fourth thing.** Image pulled by
+digest, packages resolved and recorded exactly — gcc-c++ 16.2.1-2.fc44,
+cmake 4.3.0-1.fc44, git 2.55.0-1.fc44, make 4.4.1-12.fc44, glibc 2.43-8.fc44 —
+the checkout verified against the pin, three targets built, 656 MB in the
+prefix, `mcf-provenance.json` beside the build, a `component_provisioned`
+entry in the record, and the container store byte-identical to before (195,424
+KB) with nothing created under MCF's data home. Run from the host against the
+corpus's embedding model, the provisioned `llama-tokenize` produced identifier
+for identifier what the hand-built one did.
+
+*With an incantation.* Without `LD_LIBRARY_PATH` it loaded nothing:
+
+```
+error while loading shared libraries: libllama-common.so.0: cannot open shared object file
+RUNPATH: [/work/build/bin:]
+```
+
+The build was shared, and a shared build bakes the library path *at build time*
+into every binary — `/work/build/bin`, which is where the build directory was
+inside the container and nowhere on the host. The hand-built oracle had never
+shown this because its RUNPATH was a real host path. The artifact was correct,
+complete, recorded, and unusable where it landed. The recipe now builds
+self-contained (`-DBUILD_SHARED_LIBS=OFF`), the test that holds every recipe
+requires it, and the shared build was removed *through MCF* — `mcf provision
+--remove … --because "built shared: its RUNPATH names /work/build/bin …"` —
+so the record says why a build that worked was thrown away (A27).
+
+**The fourth run is the one that stands.** Self-contained: no `RUNPATH` in the
+binary at all, `llama-tokenize` runs bare from the host and agrees with the
+corpus, the prefix is 95 MB where the shared build was 656, the oracle tier
+finds the provisioned prefix on its own and reports 57 of 57 comparisons in
+agreement through it, and podman's store is still 195,424 KB. B-367's three
+conditions, each exercised rather than asserted: reproducible from its record
+(the recipe, the digest, the commit and the package set are all in the
+prefix and the journal), removable without residue (done once, through MCF,
+with the reason recorded), nothing outside the environment touched.
+
+**Four findings from one command in one evening, none of them about the
+component.** A store that follows the wrong variable, a guard that mistrusts a
+mount, a path baked in from the wrong side of a boundary, and — implicit in all
+three — that a provisioning which *succeeds* can still hand back something that
+does not run. D39's four conditions say what a controlled environment must
+guarantee; these are what it took to make one do so on one machine with one
+component, and each is now either code or a test.
+
 ## Changelog
+
+### Version 35 — what the first automated provisioning found in two tries
+
+F31. `mcf provision` exists, and its first two runs each found something real.
+Rootless podman put its image store under MCF's data home — the content drive,
+whose filesystem cannot hold an overlay store — so the store and the prefix now
+go to different places on purpose. Then git refused the cloned repository as
+foreign-owned from inside the container. Both failures named their exit status
+and log and touched nothing in the record.
 
 ### Version 34 — two ways to provision, measured
 
