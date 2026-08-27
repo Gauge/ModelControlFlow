@@ -417,6 +417,13 @@ fn stopping_lines(
             pieces.extend(held.after.iter().cloned());
             vocabulary.addressed(&pieces)
         });
+        // Where nothing was applied the question still travels as identifiers,
+        // just unwrapped. Sending it as *text* routes it to the engine that
+        // takes a command line and cannot say why it stopped, so the probe
+        // would report inconclusive on every unconfigured model — most of
+        // them — for a reason that is MCF's plumbing rather than the model's
+        // behaviour (B-376, F48).
+        let identifiers = identifiers.or_else(|| vocabulary.encode(question, true).ok());
         match identifiers {
             Some(identifiers) => {
                 probes::trial(socket, path, "", Some(&identifiers), budget, Some(asked))

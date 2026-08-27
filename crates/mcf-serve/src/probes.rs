@@ -26,6 +26,41 @@ use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
 use mcf_standin::tokenizer::{Piece, Vocabulary};
 
+/// Role words a template *assigns*, in the order it assigns them.
+///
+/// Lexical and deliberately narrow: the text after `set <name> =` up to the
+/// closing quote, for a single- or double-quoted literal. It recognises the
+/// one shape that matters — a template deciding what word to write — and
+/// recognises nothing else, which is the honest extent of reading a program
+/// without running it. Where it finds nothing the caller falls back to the
+/// words the template mentions.
+fn assigned_roles(template: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for after in template.split("set ").skip(1) {
+        let Some((name, rest)) = after.split_once('=') else {
+            continue;
+        };
+        if !name.trim().eq_ignore_ascii_case("role") {
+            continue;
+        }
+        let rest = rest.trim_start();
+        let Some(quote) = rest
+            .chars()
+            .next()
+            .filter(|mark| *mark == '"' || *mark == '\'')
+        else {
+            continue;
+        };
+        let Some((literal, _)) = rest[quote.len_utf8()..].split_once(quote) else {
+            continue;
+        };
+        if !literal.is_empty() && !found.iter().any(|held| held == literal) {
+            found.push(literal.to_owned());
+        }
+    }
+    found
+}
+
 /// One way of putting a question to a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressing {
@@ -173,20 +208,43 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
     };
     let (open, close) = (&open, &close);
 
-    // Which word names the answering side. Taken from the template rather than
-    // assumed, and where it names more than one every one is a candidate —
-    // the model decides between them (D46's third layer).
-    let mut roles: Vec<&str> = ["assistant", "model"]
-        .into_iter()
-        .filter(|role| template.contains(role))
-        .collect();
+    // Which word names the answering side.
+    //
+    // Reading the template for the word it *emits*, not for the words it
+    // mentions. Mentioning is not meaning: gemma's template names `assistant`
+    // exactly once and does it to rename it —
+    //
+    //     {%- if (message['role'] == 'assistant') -%}
+    //     {%- set role = "model" -%}
+    //
+    // — so a bag-of-words read produced a candidate the template explicitly
+    // rejects, and then the probe could not tell the two apart because
+    // *ending a turn* does not (F48, B-375). A word assigned to the role is
+    // what gets written out; a word compared against is an input name being
+    // translated away.
+    //
+    // This reads the template's shape and does not execute it: a template is
+    // a program in somebody else's language, and running one is a door §3.7
+    // keeps shut.
+    let assigned = assigned_roles(template);
+    let mut roles: Vec<String> = if assigned.is_empty() {
+        // Nothing assigned: the template emits the role it was given, so the
+        // ordinary names are the candidates and the model decides between them.
+        ["assistant", "model"]
+            .into_iter()
+            .filter(|role| template.contains(role))
+            .map(str::to_owned)
+            .collect()
+    } else {
+        assigned
+    };
     if roles.is_empty() {
-        roles.push("assistant");
+        roles.push("assistant".to_owned());
     }
 
     roles
         .into_iter()
-        .map(|role| Addressing {
+        .map(|role: String| Addressing {
             name: format!("{}…{} as {role}", trim(open), trim(close)),
             pieces_before: vec![
                 Piece::Marker(open.clone()),

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 51 |
+| **Version** | 52 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -75,6 +75,7 @@ forward as one.
 | 45 | [F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)](#45--f45--the-page-whose-job-is-to-have-no-hidden-choices-had-one-and-the-check-for-a-moved-condition-invented-one-b-058-b-059-b-062-d43-315-a21-f44) |
 | 46 | [F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38) |
 | 47 | [F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46) |
+| 48 | [F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)](#48--f48--the-tie-was-mcfs-not-the-models-a-template-that-names-a-role-in-order-to-rename-it-b-375-b-376-d42-d46-37-f38-f39-f40) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3651,7 +3652,92 @@ laboratory's serving scenarios build their own socket under a scratch world and
 but *these three read ambient state and are fine* is a survey of three, not of
 the suite.
 
+## 48 · F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)
+
+**The question B-375 asked.** gemma-3-270m had two addressings that both
+answered and ended the turn five times of five, so *did the turn end* could not
+separate them. F38 offered turn length as the sharper question and F40
+withdrew it — it separated them on one engine and not on another, which made it
+a reading about the instrument. What was left was to find a question that
+holds.
+
+**There was no question to find, because there was no ambiguity.** The two
+candidates differed only in the role word — `assistant` against `model` — and
+gemma's own template says which:
+
+```
+{%- if (message['role'] == 'assistant') -%}
+    {%- set role = "model" -%}
+```
+
+It names `assistant` **exactly once, and does it to rename it**. MCF read the
+template as a bag of words: *does this text contain "assistant"? then that is a
+candidate.* So it manufactured a candidate the file explicitly rejects, failed
+to tell it from the real one, and reported the file as ambiguous when the file
+is explicit. Two findings' worth of searching for a sharper observation, and
+the defect was in the question's premise.
+
+**Mentioning is not meaning.** A word a template *compares against* is an input
+name on its way to being translated; a word it *assigns* is what gets written
+out. MCF now reads the assignment — `set <name> = "literal"`, both quotings,
+every occurrence — and falls back to the mentioned names only when a template
+assigns nothing, which is the case where it emits the role it was given and the
+mentioned names really are the candidates.
+
+**It reads the template's shape and does not execute it.** A chat template is a
+program in somebody else's language and running one is a door §3.7 keeps shut —
+which is also the position taken when this was last raised. What is recognised
+is one shape, the one that matters, and nothing else; that is the honest extent
+of reading a program without running it, and it is stated rather than implied.
+
+```
+gemma-3-270m   start_of_turn…end_of_turn as model   5 of 5 ←
+               raw                                  4 of 5
+               best: as model — agrees with the file
+```
+
+**A behavioural question was tried first, and is worth recording because it
+failed on the model it was for.** Stop the turn *before* the role word and let
+the model supply it: `<start_of_turn>user\n…<end_of_turn>\n<start_of_turn>` and
+one token. SmolLM2 answers `ass` — the first token of `assistant`, its own role
+word, exactly right. gemma-3-270m answers a **newline**. The question is sharp,
+needs no judgement, and does not discriminate on the one model with a tie. It
+is not built.
+
+**And the fix uncovered a plumbing defect it would have hidden.** With gemma
+deciding, the stop-condition probe ran on an *unconfigured* model for the first
+time and returned inconclusive: with nothing applied it sent the question as
+**text**, which routes to the engine that takes a command line and cannot say
+why it stopped (B-376). Every unconfigured model — most of them — would have
+reported inconclusive for a reason that is MCF's plumbing rather than the
+model's behaviour. The question travels as identifiers now whether or not it is
+wrapped.
+
+**What was not established.** How many real templates the assignment rule
+reads correctly: two, here. A template that builds the role by concatenation,
+or in a macro, or with a variable it assigns twice, is not handled and is not
+claimed to be — a template naming two roles yields two candidates, which is a
+tie MCF has evidence for, unlike the one it invented. And nothing here verifies
+that `model` is *right* for gemma beyond the model ending its turns under it:
+that is the same observation as before, on a candidate set that is no longer
+wrong.
+
 ## Changelog
+
+### Version 52 — the tie was MCF's, not the model's
+
+F48. B-375 asked for a sharper question than *did the turn end*, to separate
+two addressings gemma-3-270m tied on. There was none to find: the two differed
+only in a role word, and gemma's template names the losing one exactly once, in
+order to rename it. MCF read the template as a bag of words and manufactured a
+candidate the file explicitly rejects.
+
+A behavioural question was tried and is recorded for failing on the model it
+was for — stopping before the role word and letting the model supply it works
+on SmolLM2 and yields a newline on gemma. And with gemma deciding, the
+stop-condition probe ran on an unconfigured model for the first time and found
+that it had been sending the question as text, which reaches the one engine
+that cannot say why it stopped.
 
 ### Version 51 — the suite was reporting on the machine it found
 

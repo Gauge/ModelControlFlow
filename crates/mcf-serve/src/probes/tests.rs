@@ -618,3 +618,54 @@ fn the_budget_never_passes_the_ceiling() {
     );
     assert_eq!(budgets, vec![32, 64, 100]);
 }
+
+/// A template that names a role in order to *rename* it must not yield the
+/// name it renamed.
+///
+/// gemma's template mentions `assistant` exactly once and does it to map it to
+/// `model`. A bag-of-words read produced both as candidates, the probe could
+/// not tell them apart because *ending a turn* does not, and the tie was
+/// reported as though the file were ambiguous when it is explicit (F48,
+/// B-375).
+#[test]
+fn a_role_that_is_renamed_is_not_a_candidate() {
+    let template = "{%- if (message['role'] == 'assistant') -%}\n                    {%- set role = \"model\" -%}\n                    {%- else -%}{%- set role = message['role'] -%}{%- endif -%}\n                    {{ '<start_of_turn>' + role + '\n' }}";
+    assert_eq!(
+        super::assigned_roles(template),
+        vec!["model".to_owned()],
+        "the word the template writes out, not the word it tests for"
+    );
+}
+
+/// A template that emits the role it was given assigns nothing, and the
+/// ordinary names stay candidates for the model to decide between.
+#[test]
+fn a_template_that_assigns_nothing_yields_nothing() {
+    let chatml = "{% for message in messages %}                  {{'<|im_start|>' + message['role'] + '\n' + message['content'] }}                  {% endfor %}";
+    assert!(
+        super::assigned_roles(chatml).is_empty(),
+        "nothing is assigned, so nothing is claimed"
+    );
+}
+
+/// Single quotes count, and the first assignment is not the only one.
+#[test]
+fn both_quotings_are_read_and_every_assignment_is_kept() {
+    let template = "{%- set role = 'model' -%}{%- set role = \"agent\" -%}";
+    assert_eq!(
+        super::assigned_roles(template),
+        vec!["model".to_owned(), "agent".to_owned()],
+        "a template naming two is ambiguous and both are candidates — that is a tie MCF has \
+         evidence for, unlike the one it invented"
+    );
+}
+
+/// A `set` of something other than the role is not a role.
+#[test]
+fn only_the_role_variable_is_read() {
+    let template = "{%- set first_user_prefix = \"model\" -%}";
+    assert!(
+        super::assigned_roles(template).is_empty(),
+        "an assignment to another name says nothing about the role"
+    );
+}
