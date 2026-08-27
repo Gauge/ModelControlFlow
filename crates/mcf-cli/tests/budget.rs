@@ -372,6 +372,81 @@ impl Drop for Quarters {
     }
 }
 
+/// The other half of D24's added-latency figure: request to the engine's
+/// first token, through the daemon, on the laboratory's fixture (B-035,
+/// B-034).
+///
+/// **On the fixture, on purpose.** D24 budgets what MCF *interposes*, and on a
+/// one-block model the engine's own share of a first token is microseconds —
+/// so the figure is MCF's: accept, parse, resolve, load per request, tokenize,
+/// one forward pass, write back. On a real model the same path is dominated by
+/// the engine, and a reading taken there would be a reading of the engine.
+/// `mcf_serve::cost::to_first_token` says what it includes; this prints it.
+#[test]
+#[ignore = "the budget tier is scheduled, not gating (B38): scripts/ci.sh --with-budget"]
+fn the_latency_to_a_first_token_is_within_its_ceiling() {
+    let machine = Machine::read();
+    let quarters = Quarters::new("first-token");
+    let store = quarters
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&store).expect("a store for the fixture");
+    let model = store.join("a-model-that-runs.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("the fixture written");
+
+    let Some(mut daemon) = quarters.serve() else {
+        judge(&ADDED_LATENCY, Verdict::NotMeasured, "no daemon started");
+        return;
+    };
+
+    let watch = Watch::start();
+    let conditions = conditions(&machine, &Attributability::Unknown);
+    let measured =
+        mcf_serve::cost::to_first_token(&quarters.socket(), &model, EVENT_TRIALS, conditions);
+    let attributable = watch.finish();
+    let stopped = quarters.stop();
+    let _reaped = daemon.wait();
+
+    let Some(measured) = measured else {
+        judge(
+            &ADDED_LATENCY,
+            Verdict::NotMeasured,
+            "the daemon produced no first token",
+        );
+        assert!(stopped, "the daemon under measurement would not stop");
+        return;
+    };
+
+    let spread = measured.round_trip.spread();
+    judge(
+        &ADDED_LATENCY,
+        ADDED_LATENCY.read_measurement(&measured.round_trip, &attributable),
+        &format!(
+            "to a first token: p99 {} (median {}, n={})",
+            ADDED_LATENCY.statistic(&measured.round_trip),
+            spread.median,
+            measured.round_trip.n()
+        ),
+    );
+    for missing in &measured.excludes {
+        println!("    this reading excludes {missing}");
+    }
+    against_baseline(
+        "added_latency_to_first_token",
+        i64::try_from(ADDED_LATENCY.statistic(&measured.round_trip).as_nanos()).unwrap_or(i64::MAX),
+        "ns",
+        measured.round_trip.conditions(),
+        &Judgement::NotJudged(
+            "as for the round trip: a p99 over a hundred trials moves with the tail rather \
+             than with the code, so the ceiling judges and the baseline records",
+        ),
+    );
+    assert!(stopped, "the daemon under measurement would not stop");
+}
+
 /// The tier says what it measured under, always. B20 requires a performance
 /// change carry a before-and-after *under stated conditions*, and conditions
 /// that are only in the record are conditions nobody reads while looking at the

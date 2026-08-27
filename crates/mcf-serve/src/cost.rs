@@ -30,7 +30,7 @@ use std::path::Path;
 use mcf_core::measurement::{Conditions, Measurement};
 use mcf_core::time::{Clock as _, Duration, Monotonic, SystemClock};
 
-use crate::control::{Answer, Request};
+use crate::control::{Answer, Request, Streamed};
 
 /// A reading of what MCF interposes, with what it does not cover.
 #[derive(Debug)]
@@ -77,6 +77,81 @@ pub fn interposed(socket: &Path, trials: usize, conditions: Conditions) -> Optio
 }
 
 /// One question, one answer, timed the way a caller experiences it.
+/// The other half of D24's figure: hand a request to the engine and wait for
+/// its first token (B-035, B-034).
+///
+/// Measured across the real process boundary on a running daemon, from the
+/// write of a `generate` request to the read of the first token line. It
+/// **includes** everything MCF interposes on that path — accept, parse, route,
+/// resolve the model, load it (per request, which is DEC-018's price and is
+/// named as such), tokenize the prompt, the engine's first forward pass, and
+/// the write back — because that is what a person waiting for a first token
+/// waits for. The model is the caller's: on the laboratory's fixture the
+/// engine's own share is microseconds and the figure is MCF's overhead; on a
+/// real model the engine's share dominates and the figure is the engine's,
+/// which is why the budget tier measures it on the fixture and says so.
+///
+/// Every trial reads the stream to its end before the next begins, so that no
+/// trial is timed against a daemon still finishing the last.
+#[must_use]
+pub fn to_first_token(
+    socket: &Path,
+    model: &Path,
+    trials: usize,
+    conditions: Conditions,
+) -> Option<Interposed> {
+    let clock = SystemClock;
+    let mut samples = Vec::with_capacity(trials);
+    for _ in 0..trials {
+        let Some(elapsed) = one_first_token(socket, model, clock) else {
+            continue;
+        };
+        samples.push(elapsed);
+    }
+    Some(Interposed {
+        round_trip: Measurement::from_samples(samples, conditions)?,
+        excludes: vec![
+            "residency: the model is loaded per request and that load is *included* here, \
+             which is DEC-018's price until it is decided (§7.18)",
+            "a network hop: the control plane is a Unix socket, and §XI's remote surface is later",
+            "any engine but MCF's own: a provisioned engine's hand-off arrives with B-032",
+        ],
+    })
+}
+
+fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Duration<Monotonic>> {
+    let mut connection = UnixStream::connect(socket).ok()?;
+    let line = Request::Generate {
+        model: model.display().to_string(),
+        prompt: "yes".to_owned(),
+        limit: 2,
+        seed: 0,
+    }
+    .to_line();
+    let started = clock.now();
+    writeln!(connection, "{line}").ok()?;
+    connection.flush().ok()?;
+    let mut reader = BufReader::new(&connection);
+    let mut first = String::new();
+    reader.read_line(&mut first).ok()?;
+    let elapsed = clock.now().saturating_duration_since(started);
+    // The first line must be a token, not a refusal wearing `done`: a trial
+    // that timed a refusal would be timing the wrong thing.
+    match Streamed::read(first.trim_end()).ok()? {
+        Streamed::Token { .. } => {}
+        Streamed::Done(_) => return None,
+    }
+    // Drain to the end so the next trial starts on a quiet daemon.
+    let mut rest = String::new();
+    while reader.read_line(&mut rest).ok()? > 0 {
+        if let Ok(Streamed::Done(_)) = Streamed::read(rest.trim_end()) {
+            break;
+        }
+        rest.clear();
+    }
+    Some(elapsed)
+}
+
 fn one_round_trip(socket: &Path, clock: SystemClock) -> Option<Duration<Monotonic>> {
     let mut connection = UnixStream::connect(socket).ok()?;
     let line = Request::Status.to_line();
