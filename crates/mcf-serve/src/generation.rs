@@ -76,6 +76,19 @@ pub(crate) fn serve_generation(
 ) -> Value {
     let chosen = choose_engine(mcf_home, engine);
     let account = match chosen {
+        // Identifiers cannot travel through this engine: it is driven as a
+        // subprocess that takes text on a command line and prints text back
+        // (B-032), so a turn assembled from token identifiers has nowhere to
+        // go. Dropping them and generating from `prompt` instead would answer
+        // a different question and say nothing about having done so — which
+        // is the defect F38 is about, wearing a different coat. It is refused
+        // (A2), and B-376 is the item that lifts it.
+        Ok(Chosen::Provisioned(_)) if tokens.is_some() => Err(crate::control::refused(
+            "a turn built from token identifiers, which the provisioned engine cannot be given: \
+             it takes text and returns text, so the identifiers would be silently dropped and \
+             the prompt generated from instead (B-376)",
+            "engine: provisioned",
+        )),
         Ok(Chosen::Provisioned(llama)) => {
             through_provisioned(store, &llama, named, prompt, limit, seed, writer)
         }
