@@ -13,6 +13,7 @@
 //! questions, and cost nothing while nobody is asking — which is the part §3.13
 //! makes central, because a daemon idles far more than it works.
 
+pub mod adapters;
 pub mod control;
 pub mod cost;
 pub mod daemon;

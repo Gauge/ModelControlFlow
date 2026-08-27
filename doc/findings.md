@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 39 |
+| **Version** | 40 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -2645,7 +2645,76 @@ without the window; the 12.28 s is unexplained and recorded as such. The
 budget tier's first-token figure (B-035) is the one taken under conditions,
 and it is on the fixture, where the load is microseconds either way.
 
+## 36 · F36 — The reference model answers, through an engine that is a process (B-032, B-033, B-367, D39, §XII)
+
+**What was built.** An engine adapter for the provisioned `llama.cpp` (F31): a
+supervised subprocess per generation, its output streamed to the client as it
+arrives, its exit classified into the stage it died in — not started
+(`engine.spawn.not_found`, `engine.spawn.refused`), dead before a byte
+(`engine.exit.immediate`), dead after part of an answer
+(`engine.exit.midstream`), killed (`engine.exit.signal`) — and the daemon
+standing after each. The laboratory produces every one of those with a shell
+that dies the stated way (D26), and the whole-system tier drives a fake engine
+through the daemon: chosen without being asked when it is the only one
+provisioned, named in the account, its partial answer kept and its own last
+words attached when it dies mid-answer.
+
+**The stated rule for which engine serves** (§3.15): what the client asks for;
+else the provisioned engine where exactly one is here; else MCF's own. Two
+provisioned pins is refused by name rather than chosen between. The account
+says which served — `engine: provisioned llama.cpp @925e1179947e from
+<prefix>` — and a provisioned answer carries no degraded mark, because it is a
+real engine and D39 says a timing taken under stated conditions through it
+would be a measurement.
+
+**Two things the first live run found.** The completion tool's `--log-disable`
+silences the completion itself in this build: the first provisioned
+generation exited cleanly with an empty answer. And `mcf run` was refusing the
+reference model *before* asking the daemon, on MCF's own engine's architecture
+check — a check that belongs to the engine that will run, and only that one.
+Both are fixed and the whole-system tier holds them.
+
+**Then the reference model answered.** `Qwen3.8-27B-UD-Q4_K_M.gguf` — 27.3
+billion parameters, 16.5 GB, the artifact §XII named, refused by MCF's own
+engine as an architecture it has not been taught and as 109 GB dequantized
+against 63 usable (B-372) — through the provisioned engine, on this machine's
+processor, twelve tokens:
+
+```
+$ mcf run …/Qwen3.8-27B-UD-Q4_K_M.gguf --prompt "The capital of France is" --limit 12 --engine provisioned
+ Paris.
+The capital of Germany is Berlin.
+  produced 12 token(s); stopped: engine_finished
+  engine   provisioned llama.cpp @925e1179947e from …/provisioned/llama.cpp@925e1179947e
+```
+
+Ten and a half seconds of wall clock, load included, one reading on a shared
+machine without the window — for scale, not for the record (B20). The corpus
+model through the same engine: `Paris. The capital of France is also the
+capital of the`, twelve tokens, 1.7 s.
+
+**What this closes.** M2's first exit criterion in the form §VI meant it: a
+model of the size §XII chose for residency and arbitration, on a machine that
+had never served it, from one command. B-032 in both halves — the engine is a
+recorded condition, and it is a supervised subprocess. B-033 at the stages a
+process can die in. And the path D39 opened: what MCF provisions, MCF drives.
+
+**What was not established.** Nothing timed under conditions — the engine may
+be timed, and the budget tier does not time it yet (B-035 measures MCF's own
+engine on the fixture, on purpose). Residency for a subprocess engine: this
+loads per request, and the daemon's resident model is MCF's own engine's; a
+long-lived server child is the shape that would hold a 16 GB model between
+requests, and that is a further increment of B-032. One engine, one component,
+processor only.
+
 ## Changelog
+
+### Version 40 — the reference model answers
+
+F36. An engine that is a process: the provisioned llama.cpp driven as a
+supervised subprocess per generation, its exit classified by the stage it died
+in, the daemon standing after each. The reference model — 27B, 16.5 GB, the
+artifact §XII named — produced text through MCF in ten and a half seconds.
 
 ### Version 39 — what a load costs, apart from running
 

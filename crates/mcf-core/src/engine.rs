@@ -57,6 +57,22 @@ impl Engine for Vendored {
     const MAY_BE_TIMED: bool = true;
 }
 
+/// An engine MCF provisioned — installed, built and pinned itself, in an
+/// environment it controls — and drives as a subprocess (D39, B-032, B-367).
+///
+/// A real engine: it may be timed, and nothing it produces is marked degraded.
+/// What makes it a condition rather than a circumstance is that every result
+/// names the component, its pinned commit and the prefix it ran from, so that
+/// the same request through another engine differs in a recorded field and in
+/// nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Provisioned;
+
+impl Engine for Provisioned {
+    const NAME: &'static str = "provisioned";
+    const MAY_BE_TIMED: bool = true;
+}
+
 /// MCF's own deliberately slow implementation (D31).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandIn;

@@ -2005,3 +2005,170 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
     assert!(stopped.status.success(), "{}", error_text(&stopped));
     assert!(next.wait().expect("the daemon exits").success());
 }
+
+/// A provisioned engine is a subprocess the daemon supervises (B-032, B-033).
+///
+/// Inside this tier's edge there is no llama.cpp to build (B19), so the
+/// provisioned prefix is a *shape*: a provenance file naming the component,
+/// and a `llama-completion` that is a shell script. What is tested is
+/// everything MCF does around the engine — finding it, choosing it, streaming
+/// what it prints, naming it in the account, and classifying how it died —
+/// which is exactly the part that is MCF's (D26).
+fn fake_provisioned_engine(machine: &Machine, script: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let prefix = machine
+        .0
+        .join("mcf")
+        .join("provisioned")
+        .join("llama.cpp@fakefakefake");
+    let bin = prefix.join("build").join("bin");
+    std::fs::create_dir_all(&bin).expect("a prefix");
+    std::fs::write(
+        prefix.join("mcf-provenance.json"),
+        "{\"component\":\"llama.cpp\",\"commit\":\"fakefakefakefakefakefakefakefakefakefake\"}\n",
+    )
+    .expect("provenance");
+    let tool = bin.join("llama-completion");
+    std::fs::write(&tool, script).expect("the engine written");
+    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).expect("executable");
+    prefix
+}
+
+#[test]
+fn a_provisioned_engine_is_chosen_streamed_and_named() {
+    struct Reaped(std::process::Child);
+    impl Drop for Reaped {
+        fn drop(&mut self) {
+            let _killed = self.0.kill();
+            let _waited = self.0.wait();
+        }
+    }
+    let machine = Machine::new("provisioned-engine");
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    std::fs::write(models.join("a-model-that-runs.gguf"), b"not even a gguf").expect("a file");
+    // An engine that prints in two chunks and exits well.
+    fake_provisioned_engine(
+        &machine,
+        "#!/bin/sh\nprintf 'Paris'; sleep 0.05; printf ' is the capital.'\n",
+    );
+
+    let mut serving = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("the daemon starts"),
+    );
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.0.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+
+    // With one provisioned engine present, the daemon's stated rule chooses it
+    // without being asked, and the account names it (B-032).
+    let ran = machine.run(&["run", "lab/fixture:a-model-that-runs.gguf", "--prompt", "x"]);
+    assert!(ran.status.success(), "{}", error_text(&ran));
+    let said = text(&ran);
+    assert!(said.starts_with("Paris is the capital."), "{said}");
+    assert!(
+        said.contains("provisioned llama.cpp @fakefakefake"),
+        "{said}"
+    );
+    assert!(said.contains("a real engine"), "{said}");
+    assert!(
+        !said.contains("MARKED"),
+        "a real engine is not marked degraded: {said}"
+    );
+
+    // Asking for MCF's own engine by name still gets it — the file is not a
+    // model, so it is refused, which proves the choice was honoured.
+    let own = machine.run(&[
+        "run",
+        "lab/fixture:a-model-that-runs.gguf",
+        "--prompt",
+        "x",
+        "--engine",
+        "stand-in",
+    ]);
+    assert!(!own.status.success());
+
+    let stopped = machine.run(&["stop", "--because", "done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(serving.0.wait().expect("the daemon exits").success());
+}
+
+#[test]
+fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemon() {
+    struct Reaped(std::process::Child);
+    impl Drop for Reaped {
+        fn drop(&mut self) {
+            let _killed = self.0.kill();
+            let _waited = self.0.wait();
+        }
+    }
+    let machine = Machine::new("provisioned-dies");
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    std::fs::write(models.join("m.gguf"), b"x").expect("a file");
+    fake_provisioned_engine(
+        &machine,
+        "#!/bin/sh\nprintf 'Paris is'; echo 'segmentation fault, or thereabouts' >&2; exit 139\n",
+    );
+
+    let mut serving = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("the daemon starts"),
+    );
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.0.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+
+    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "x"]);
+    // Unserved — an answer that ended in a death is not served — but what
+    // arrived is printed, and how it ended is said with the engine's own
+    // words (A4, B-033).
+    assert!(!ran.status.success());
+    let out = format!("{}{}", text(&ran), error_text(&ran));
+    assert!(
+        out.contains("Paris is"),
+        "the partial answer is kept: {out}"
+    );
+    assert!(out.contains("THE ENGINE DIED"), "{out}");
+    assert!(out.contains("engine.exit.midstream"), "{out}");
+    assert!(
+        out.contains("segmentation fault, or thereabouts"),
+        "the engine's own words: {out}"
+    );
+
+    // The daemon did not die with its child (§3.1), and the account is in the
+    // record.
+    let status = machine.run(&["status"]);
+    assert!(status.status.success(), "the daemon died with its engine");
+    let log = text(&machine.run(&["log", "--kind", "generated"]));
+    assert!(log.contains("generated"), "{log}");
+
+    let stopped = machine.run(&["stop", "--because", "done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(serving.0.wait().expect("the daemon exits").success());
+}

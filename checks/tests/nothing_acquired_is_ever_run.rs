@@ -45,6 +45,21 @@ struct Spawns {
 /// Every place MCF's shipped code starts a process.
 const DECLARED: &[Spawns] = &[
     Spawns {
+        file: "crates/mcf-lab/src/catalogue/engine.rs",
+        sites: 5,
+        what: "the laboratory's stand-ins for an engine that dies: a shell told to exit, a \
+               shell told to kill itself, a program that is not there, a directory where a \
+               program should be. What is simulated is the death, never a model (D26, B-033)",
+    },
+    Spawns {
+        file: "crates/mcf-serve/src/adapters.rs",
+        sites: 1,
+        what: "an engine that is a process: the completion tool MCF itself built into a \
+               provisioned prefix (B-367), supervised as B-033 asks — or, in the laboratory, a \
+               shell that dies a stated way. What it is given is a model file as *input*; the \
+               program is never something MCF acquired (D39, B-032)",
+    },
+    Spawns {
         file: "crates/mcf-cli/src/provision.rs",
         sites: 1,
         what: "podman, from the platform's own path, running an image pinned by digest and a \

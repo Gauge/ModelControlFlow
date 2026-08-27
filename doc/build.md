@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 41 |
+| **Version** | 42 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -1056,6 +1056,14 @@ worth having in the build document rather than only in a commit message,
 because the pair now makes the point better than either did alone — 5.7 % for a
 licence text and 356 % for a network, both refused by the same detector, both
 accepted the same way, and neither by moving a threshold.
+
+### Version 42 — an engine that is a process
+
+`mcf run --engine provisioned|stand-in` (B-032). With one provisioned
+llama.cpp present the daemon chooses it without being asked and says so; the
+engine runs as a supervised subprocess and its death is classified by stage
+(B-033). The whole-system tier drives a fake engine through the daemon; the
+laboratory produces every death.
 
 ### Version 41 — idle with a model resident
 
