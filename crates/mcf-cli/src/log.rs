@@ -260,3 +260,43 @@ fn integer(body: &Value, key: &str) -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Writes down that somebody changed how MCF addresses a model (D43, B-059).
+///
+/// The pair to the configuration file the way `ComponentProvisioned` pairs
+/// with a prefix: the file says what MCF does now, and this says who changed
+/// it, when, and on what evidence. A configuration whose file is edited by
+/// hand still has this line to be compared against.
+///
+/// # Errors
+///
+/// `record.unwritable` where there is nowhere to write.
+pub(crate) fn record_configured(
+    model: &std::path::Path,
+    addressing: &mcf_serve::configured::Addressing,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-cli::log"),
+            "there is nowhere to record the configuration",
+        ));
+    };
+    let body = Value::map([
+        ("model", Value::text(model.display().to_string())),
+        ("addressing", addressing.to_value()),
+        // What MCF did before, so that the entry says what *changed* and not
+        // only what is now true. A record of the new state alone cannot answer
+        // whether anything happened (A1).
+        ("was", Value::text("raw text, MCF's default (§3.8)")),
+    ]);
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&Entry::new(
+        EntryKind::ModelConfigured,
+        mcf_core::time::Timestamp::now(),
+        body,
+    ))?;
+    Ok(path)
+}

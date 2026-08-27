@@ -77,18 +77,22 @@ pub(crate) fn serve_generation(
     engine: Option<&str>,
     writer: &mut &UnixStream,
 ) -> Value {
+    // What somebody decided this model should be addressed as, if anybody
+    // did (D43, B-059). A caller that sent identifiers has said exactly what
+    // it wants and is not overridden; a caller that sent a prompt gets the
+    // addressing that was applied, and the account says so — MCF doing
+    // something other than the plain thing must never be invisible (§3.15).
+    let derived = crate::configured::read(mcf_home, &resolved(store, named));
+    let wrapped = match (tokens, derived.as_ref()) {
+        (None, Some(addressing)) => addressed_as(store, named, prompt, addressing),
+        _ => None,
+    };
+    let tokens = wrapped.as_deref().or(tokens);
+
     let chosen = choose_engine(mcf_home, engine);
     let account = match chosen {
-        // Identifiers cannot travel through this engine: it is driven as a
-        // subprocess that takes text on a command line and prints text back
-        // (B-032), so a turn assembled from token identifiers has nowhere to
-        // go. Dropping them and generating from `prompt` instead would answer
-        // a different question and say nothing about having done so — which
-        // is the defect F38 is about, wearing a different coat. It is refused
-        // (A2), and B-376 is the item that lifts it.
-        // A turn of identifiers goes to the server, which can be given one.
-        // The refusal below stands for the case where there is no server to
-        // start — a prefix built before MCF asked for one.
+        // A turn of identifiers goes to the server, which can be given one;
+        // a prompt goes to the completion tool, which cannot (B-376).
         Ok(Chosen::Provisioned(llama)) => match tokens {
             Some(tokens) => through_served(
                 store, &llama, server, runtime, named, tokens, limit, seed, writer,
@@ -98,6 +102,29 @@ pub(crate) fn serve_generation(
         Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, tokens, limit, seed, writer),
         Err(failure) => Err(failure),
     };
+    // The provenance travels into the account, so that a measurement taken
+    // through a derived configuration carries what set it — which is what
+    // makes *are yesterday's number and today's comparable* answerable rather
+    // than assumed (D43, §3.4).
+    let account = account.map(|account| match (account, derived) {
+        (Value::Map(mut fields), Some(addressing)) => {
+            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                conditions.insert(
+                    "addressed_as".to_owned(),
+                    Value::text(if wrapped.is_some() {
+                        addressing.provenance()
+                    } else {
+                        format!(
+                            "{} — not applied here: the caller sent its own identifiers",
+                            addressing.provenance()
+                        )
+                    }),
+                );
+            }
+            Value::Map(fields)
+        }
+        (account, _) => account,
+    });
     let account = match account {
         Ok(account) => account,
         Err(failure) => Value::map([
@@ -147,6 +174,43 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
             None => Ok(Chosen::StandIn),
         },
     }
+}
+
+/// The model a request names, as a path.
+///
+/// Written once: three engines resolved it identically, and a fourth reader —
+/// the derived configuration — would have made four.
+fn resolved(store: &Path, named: &str) -> std::path::PathBuf {
+    let given = Path::new(named);
+    if given.is_file() {
+        given.to_path_buf()
+    } else {
+        store.join(named.replace(':', "/"))
+    }
+}
+
+/// A prompt wrapped the way somebody decided this model should be addressed.
+///
+/// `None` where the turn cannot be built — a vocabulary that will not read, a
+/// marker the file no longer holds. That is not a silent fallback to raw: the
+/// generation proceeds with the prompt as text, which is what would have
+/// happened anyway, and the account still carries the configuration so a
+/// reader can see it was on file. Wrapping *some* of a turn would be worse
+/// than not wrapping it (F37).
+fn addressed_as(
+    store: &Path,
+    named: &str,
+    prompt: &str,
+    addressing: &crate::configured::Addressing,
+) -> Option<Vec<usize>> {
+    let path = resolved(store, named);
+    let bytes = std::fs::read(&path).ok()?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let mut pieces = addressing.before.clone();
+    pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
+    pieces.extend(addressing.after.iter().cloned());
+    vocabulary.addressed(&pieces)
 }
 
 /// One generation through the provisioned engine driven as a *server*

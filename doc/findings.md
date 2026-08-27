@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 46 |
+| **Version** | 47 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -70,6 +70,7 @@ forward as one.
 | 40 | [F40 — MCF's engine agrees with the reference for seven hundred positions (B-368, B-373, B-377, D39, A19, F27, F32, F39)](#40--f40--mcfs-engine-agrees-with-the-reference-for-seven-hundred-positions-and-the-rule-that-would-have-called-it-broken-was-the-wrong-rule-b-368-b-373-b-377-d39-a19-f27-f32-f39) |
 | 41 | [F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)](#41--f41--the-check-could-not-fail-and-the-mutation-that-showed-it-was-not-the-first-one-tried-b-003-b-368-b-377-a13-f40) |
 | 42 | [F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)](#42--f42--the-context-both-models-declare-is-the-context-they-have-and-the-probe-that-asked-broke-the-protocol-asking-b-055-b-058-b-059-b-376-d42-37-38-a2-a21) |
+| 43 | [F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)](#43--f43--a-model-that-produced-nothing-now-answers-and-the-change-can-be-accounted-for-b-059-b-062-d42-d43-38-315-a21-f38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3291,7 +3292,104 @@ at all: it does not report how many identifiers it read, so the probe returns
 *could not tell* rather than assuming it read them all (A7). And no timing —
 thirty seconds on a shared machine is a duration, not a measurement (B35).
 
+## 43 · F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)
+
+**M3's first exit criterion, met.** *A model that the defaults configure
+wrongly measurably improves, and the improvement is attributable to a named
+probe.* The same model, the same prompt, the same engine, either side of one
+act:
+
+```
+BEFORE  mcf run … --prompt "What is the capital of France?"
+        [end of text]
+
+THE ACT mcf probe … --apply
+        APPLIED  im_start…im_end as assistant — set by the chat-template probe
+                 at 2026-08-27T21:32:11, through provisioned (MCF 0.1.0-m0)
+
+AFTER   mcf run … --prompt "What is the capital of France?"
+        The capital of France is Paris. Paris is a city located in the northern
+        part of the country, known for its historical landmarks, cultural
+        institutions, and cultural attractions…
+```
+
+The margin is not subtle and it is not a matter of quality: addressed the way
+MCF addresses every model today, SmolLM2 emits its end-of-turn token and
+**says nothing at all**. F38 measured that as a refusal to speak and it is what
+`mcf run` had been doing since there was an `mcf run`.
+
+**What the act is, and what it is not.** D42 is that a probe reports a
+measurement and configures nothing; D43 is that MCF never reconfigures under a
+user. Between them there has to be a person, and `--apply` is where the person
+is. It is a flag rather than a default because that *is* the decision: MCF may
+learn better, and what it does with that is say so until somebody asks.
+
+Three answers, and only one writes anything. Observed and not raw: written down
+with the probe, the moment, the build and the conditions, and the act goes on
+the record as a `model_configured` entry naming what MCF did **before**, so the
+line says what changed rather than only what is now true. Observed and raw:
+nothing to apply, because writing a configuration that changes nothing would
+put a probe's provenance on a default and make it look derived (A21).
+**Inconclusive: refused** — and gemma-3-270m is the case, refused in a real run.
+D42 made *could not tell* first-class exactly so that it could not become a
+configuration, and this is the place that rule has to hold or it holds nowhere.
+
+**Every value answers *why this value*, and answers it where it is used.** The
+provenance is not filed away; it is on the account, in the record, and on every
+`mcf run`:
+
+```
+  addressed im_start…im_end as assistant — set by the chat-template probe
+            at 2026-08-27T21:32:11, through provisioned (MCF 0.1.0-m0)
+```
+
+§3.15 is why it is printed rather than merely stored: MCF doing something other
+than the plain thing must never be something a reader has to go looking for.
+The full build identity and the conditions in full are in the file and the
+journal entry, where somebody chasing a difference between two machines will
+look — legibility decides where they are shown, A1 decides that they are kept.
+
+**The test that makes the attribution real.** *Attributable to a named probe*
+is only true if the thing applied is the thing measured. A configuration that
+rebuilt the turn slightly differently — another marker, a lost newline — would
+be a different addressing wearing the probe's provenance, which is worse than
+no provenance. So the winning addressing is carried out of the probe rather
+than looked up again by name, and a test asserts that the turn a stored
+configuration builds is the turn the probe sent, **identifier for identifier**.
+
+**What the gate caught, again.** `forget` destroys a file and §3.11 requires
+every deletion in MCF to be declared with what it destroys and why that is not
+an artifact. It was not, and the gate said so. What goes is MCF's note about
+how to address a model — never the model, and never the record: the
+`model_configured` entry outlives the file the way `ArtifactRemoved` outlives an
+artifact.
+
+**What was not established.** The other half of D43: MCF does not yet notice
+when its answer *would now differ* from what was applied — a better probe,
+another engine, a changed default — which is the divergence half of B-058 and
+is not built. A configuration is therefore as good as the day it was taken, and
+nothing warns when it stops being. Nothing about a second parameter: the usable
+context is probed (F42) and is not applied to anything, because nothing in MCF
+yet reads a context bound from configuration. And the improvement here is one
+model on one machine through one engine — §3.8's point is that the *wrong*
+configuration corrupts a measurement, and this shows the mechanism, not a
+general result about small models.
+
 ## Changelog
+
+### Version 47 — a model that produced nothing now answers
+
+F43. M3's first exit criterion met: SmolLM2 addressed the way MCF addresses
+every model says nothing at all, and addressed the way the chat-template probe
+found it answers — with the change written down, recorded, and printed on
+every run that uses it.
+
+The act is where D42 and D43 meet: a probe configures nothing, MCF never
+reconfigures under a user, so between them there is a person and `--apply` is
+where the person is. Inconclusive refuses to apply, which is the one place that
+rule has to hold. And the winning addressing is carried out of the probe rather
+than rebuilt from its name, because *attributable to a named probe* is only
+true if what was applied is what was measured.
 
 ### Version 46 — the context is what it says, and asking broke the protocol
 

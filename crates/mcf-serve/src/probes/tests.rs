@@ -450,3 +450,57 @@ fn an_engine_that_cannot_say_leaves_it_unknown() {
         "nothing was observed, so nothing may be reported as observed"
     );
 }
+
+/// What is applied must address the model exactly as the probe did.
+///
+/// The improvement M3's first exit criterion asks for is *attributable to a
+/// named probe*, and it is only attributable if the thing applied is the thing
+/// measured. A configuration that rebuilt the turn slightly differently —
+/// another marker, a lost newline — would be a different addressing wearing
+/// the probe's provenance, which is worse than no provenance at all (A21).
+#[test]
+fn what_is_applied_addresses_it_as_the_probe_did() {
+    let bytes = chatml();
+    let file = mcf_standin::gguf::parse(&bytes).expect("the fixture reads");
+    let vocabulary =
+        mcf_standin::tokenizer::Vocabulary::read(&file).expect("the fixture has a vocabulary");
+    let candidates = super::addressings(&file, &vocabulary);
+    let chosen = candidates
+        .iter()
+        .find(|candidate| candidate.name != "raw")
+        .expect("the fixture declares a template");
+
+    // What the probe sent.
+    let measured = chosen
+        .wrap(&vocabulary, super::QUESTION)
+        .expect("the probe could assemble it");
+
+    // The same thing, through the file a person's decision writes.
+    let stored = crate::configured::Addressing {
+        name: chosen.name.clone(),
+        before: chosen.pieces_before.clone(),
+        after: chosen.pieces_after.clone(),
+        probe: super::CHAT_TEMPLATE.name.to_owned(),
+        at: "2026-08-27T00:00:00Z".to_owned(),
+        build: "0.1.0-m0".to_owned(),
+        conditions: "test".to_owned(),
+    };
+    let value = stored.to_value();
+    let read_back =
+        crate::configured::Addressing::from_value(&value).expect("it survives the round trip");
+
+    let mut pieces = read_back.before.clone();
+    pieces.push(mcf_standin::tokenizer::Piece::Text(
+        super::QUESTION.to_owned(),
+    ));
+    pieces.extend(read_back.after.iter().cloned());
+    let applied = vocabulary
+        .addressed(&pieces)
+        .expect("the stored addressing assembles");
+
+    assert_eq!(
+        applied, measured,
+        "the turn a configuration builds must be the turn the probe measured, identifier for \
+         identifier"
+    );
+}

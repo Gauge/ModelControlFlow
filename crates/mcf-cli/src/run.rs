@@ -272,7 +272,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}",
+             {}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -282,6 +282,17 @@ fn served(
             condition("engine"),
             socket.display(),
             condition("loaded"),
+            // MCF addressing a model other than plainly must never be
+            // something a reader has to go looking for (§3.15, D43). The
+            // account carries it either way; this is where a person sees it.
+            match account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("addressed_as"))
+                .and_then(mcf_record::json::Value::as_text)
+            {
+                Some(how) => format!("\x20 addressed {how}\n"),
+                None => String::new(),
+            },
             match degraded {
                 Some(mark) => format!(
                     "\x20 MARKED   {mark}\n\x20 This is a behaviour answer and can never be a speed \

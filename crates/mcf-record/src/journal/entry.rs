@@ -93,11 +93,24 @@ pub enum EntryKind {
     /// client that ignored the conditions still leaves them in the record, and
     /// a client that hung up early leaves the account of what it got.
     Generated,
+    /// MCF was told to address a model the way a probe found it wants to be,
+    /// and on whose word (D42, D43, B-059).
+    ///
+    /// The act D43 requires. A probe writes the verified half of a capability
+    /// and never a default, so nothing a probe learns changes how MCF talks to
+    /// a model until somebody says so — and when somebody does, the change has
+    /// to outlive the moment. This entry is what makes a derived configuration
+    /// answer *why this value*: which probe, when, under what conditions, and
+    /// what MCF did differently afterwards.
+    ///
+    /// It is also the line that makes measurements across it non-comparable,
+    /// which §3.4 requires MCF to say rather than assume.
+    ModelConfigured,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -112,6 +125,7 @@ impl EntryKind {
         Self::ComponentProvisioned,
         Self::ComponentRemoved,
         Self::Generated,
+        Self::ModelConfigured,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -133,6 +147,7 @@ impl EntryKind {
             Self::ComponentProvisioned => "component_provisioned",
             Self::ComponentRemoved => "component_removed",
             Self::Generated => "generated",
+            Self::ModelConfigured => "model_configured",
         }
     }
 

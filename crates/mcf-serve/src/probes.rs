@@ -278,6 +278,9 @@ pub struct Addressed {
     /// What the file *declared*, for the divergence (B-058) — never used to
     /// decide, only to disagree with.
     pub declared_a_template: bool,
+    /// The winning addressing itself, so that applying it needs no second
+    /// search and cannot pick a different one than was reported (D43).
+    pub best_addressing: Option<Addressing>,
 }
 
 /// The method, written where the result can carry it.
@@ -522,6 +525,10 @@ pub fn chat_template(
             );
         }
         (Some(best), false) => Outcome::Observed(Addressed {
+            best_addressing: candidates
+                .iter()
+                .find(|candidate| candidate.name == best)
+                .cloned(),
             best,
             stopped,
             silent,

@@ -140,6 +140,8 @@ enum Request<'a> {
         model: &'a str,
         /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
+        /// Whether to apply what was observed, which is an act (D43).
+        apply: bool,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -283,6 +285,20 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["probe", model] => Request::Probe {
             model,
             engine: None,
+            apply: false,
+        },
+        // The act D43 requires. It is a flag rather than a default because
+        // that is the whole of the decision: MCF may learn better, and what it
+        // does with that is say so until somebody asks for the change.
+        ["probe", model, "--apply"] => Request::Probe {
+            model,
+            engine: None,
+            apply: true,
+        },
+        ["probe", model, "--engine", engine, "--apply"] => Request::Probe {
+            model,
+            engine: Some(engine),
+            apply: true,
         },
         // Naming the engine is the point rather than a convenience: a probe
         // result belongs to the engine it was taken through (D42), and until
@@ -291,15 +307,18 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["probe", model, "--engine", engine] => Request::Probe {
             model,
             engine: Some(engine),
+            apply: false,
         },
         ["probe"] => Request::MissingArgument {
             command: "probe",
             needs: "<model>",
         },
-        ["probe", _, argument, ..] if argument != &"--engine" => Request::UnexpectedArgument {
-            command: "probe",
-            argument,
-        },
+        ["probe", _, argument, ..] if argument != &"--engine" && argument != &"--apply" => {
+            Request::UnexpectedArgument {
+                command: "probe",
+                argument,
+            }
+        }
         ["provision", "--list"] => Request::ProvisionList { into: None },
         ["provision", "--list", "--into", into] => Request::ProvisionList { into: Some(into) },
         ["provision", "--remove", name] => Request::ProvisionRemove {
@@ -778,7 +797,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
-                 \x20 mcf probe <model> [--engine <name>]  ask a model to do the thing, and\n\
+                 \x20 mcf probe <model> [--engine <name>] [--apply]\n\
+                 \x20                                       ask a model to do the thing, and\n\
                  \x20                                     report what it did — configuring\n\
                  \x20                                     nothing (§X, D42)\n\
                  \x20 mcf provision <component>           build a pinned component in a\n\
@@ -856,7 +876,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
-        Request::Probe { model, engine } => probe::run(model, *engine),
+        Request::Probe {
+            model,
+            engine,
+            apply,
+        } => probe::run(model, *engine, *apply),
         Request::Provision { name, into } => provision::run(name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {

@@ -47,7 +47,11 @@ fn whichever_is_here() -> &'static str {
     }
 }
 
-pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
+#[allow(
+    clippy::too_many_lines,
+    reason = "one command, written as what it does in order: resolve, probe, report, apply"
+)]
+pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -131,12 +135,17 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
         )
     };
     let probed = probes::chat_template(&path, &bytes, TRIALS, BUDGET, &engine, &mut trial);
+    let applied = if apply {
+        Some(apply_addressing(&path, &probed, &engine))
+    } else {
+        None
+    };
 
     let mut lines = vec![format!("probed {}", path.display()), String::new()];
     lines.extend([
         format!("  {}", probed.method.name),
-        format!("    asks     {}", probed.method.asks),
-        format!("    decides  {}", probed.method.decides),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
         String::new(),
     ]);
     match &probed.outcome {
@@ -144,7 +153,7 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
         Outcome::Inconclusive { because } => {
             lines.push(format!("    INCONCLUSIVE — {because}"));
             lines.push(
-                "    which licenses nothing: MCF configures no differently than before, and \
+                " which licenses nothing: MCF configures no differently than before, and \
                  this is not a negative result (D42, §3.18)"
                     .to_owned(),
             );
@@ -156,6 +165,10 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
         probed.trials, probed.tokens
     ));
     lines.push(format!("  under: {}", probed.conditions));
+    if let Some(said) = applied {
+        lines.push(String::new());
+        lines.extend(said);
+    }
     lines.push(String::new());
 
     lines.extend(context_lines(&socket, &path, &bytes, &engine, asked));
@@ -172,6 +185,88 @@ pub(crate) fn run(model: &str, engine: Option<&str>) -> Response {
 }
 
 /// What a decided probe says.
+/// The act D43 requires: somebody read what the probe observed and said *do
+/// that* (B-059).
+///
+/// Three answers, and only one of them writes anything.
+///
+///   - **Observed, and not raw.** The addressing is written down with the
+///     probe that found it, the moment, the build and the conditions, and the
+///     act goes on the record. `mcf run` addresses the model that way
+///     afterwards, and every account says so.
+///   - **Observed, and raw.** There is nothing to apply: raw is what MCF does
+///     already, and writing a configuration that changes nothing would put a
+///     provenance on a default and make it look derived (A21).
+///   - **Inconclusive.** Refused. D42 makes *could not tell* a first-class
+///     outcome precisely so that it cannot become a configuration, and this is
+///     the place that rule has to hold or it holds nowhere.
+fn apply_addressing(
+    path: &std::path::Path,
+    probed: &mcf_core::probe::Probed<Addressed>,
+    engine: &str,
+) -> Vec<String> {
+    let Outcome::Observed(addressed) = &probed.outcome else {
+        return vec![
+            "  NOT APPLIED — the probe could not tell, and a configuration MCF cannot account \
+             for is worse than none (D42, A7)"
+                .to_owned(),
+        ];
+    };
+    let Some(chosen) = &addressed.best_addressing else {
+        return vec![
+            "  NOT APPLIED — the probe named an addressing it cannot hand over, which is a \
+             defect in MCF rather than an answer about this model"
+                .to_owned(),
+        ];
+    };
+    if chosen.pieces_before.is_empty() && chosen.pieces_after.is_empty() {
+        return vec![
+            "  NOT APPLIED — the addressing observed is raw, which is what MCF does already. \
+             Writing that down would put a probe's provenance on a default and make it look \
+             derived (A21)"
+                .to_owned(),
+        ];
+    }
+
+    let Some(home) = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+    else {
+        return vec!["  NOT APPLIED — there is nowhere to write it".to_owned()];
+    };
+    let at = mcf_core::time::Timestamp::now();
+    let addressing = mcf_serve::configured::Addressing {
+        name: chosen.name.clone(),
+        before: chosen.pieces_before.clone(),
+        after: chosen.pieces_after.clone(),
+        probe: probed.method.name.to_owned(),
+        at: at.to_string(),
+        build: mcf_core::build_identity::BuildIdentity::current().to_string(),
+        conditions: engine.to_owned(),
+    };
+    match mcf_serve::configured::write(&home, path, &addressing) {
+        Err(failure) => vec![format!("  NOT APPLIED — {failure}")],
+        Ok(written) => {
+            let recorded = crate::log::record_configured(path, &addressing);
+            let mut said = vec![
+                format!("  APPLIED  {}", addressing.provenance()),
+                format!(" written to {}", written.display()),
+                " `mcf run` addresses this model that way from now on, and every account says so"
+                    .to_owned(),
+                " measurements taken before and after this are not comparable — the conditions changed, and MCF says so rather than assuming (D43, §3.4)"
+                    .to_owned(),
+            ];
+            match recorded {
+                Ok(journal) => said.push(format!("           recorded in {}", journal.display())),
+                Err(failure) => said.push(format!(
+                    " BUT NOT RECORDED — {failure}; a change nobody can find later is \
+                     the silent part D43 forbids"
+                )),
+            }
+            said
+        }
+    }
+}
+
 /// The usable context against the declared one (B-055).
 ///
 /// Its own section rather than its own command: the two probes ask different
@@ -200,15 +295,15 @@ fn context_lines(
 
     let mut lines = vec![
         format!("  {}", probed.method.name),
-        format!("    asks     {}", probed.method.asks),
-        format!("    decides  {}", probed.method.decides),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
         String::new(),
     ];
     match &probed.outcome {
         Outcome::Observed(context) => {
             lines.push(format!("    declared {} token(s)", context.declared));
             lines.push(format!(
-                "    accepted {} token(s) of prompt, with one left to generate",
+                " accepted {} token(s) of prompt, with one left to generate",
                 context.accepted
             ));
             lines.push(String::new());
@@ -218,12 +313,12 @@ fn context_lines(
             // arithmetic (B-055, F42).
             if context.accepted.saturating_add(1) >= context.declared {
                 lines.push(
-                    "    agrees   the file's claim holds: every token it declares but one is taken as prompt, and the one left over is the answer"
+                    " agrees the file's claim holds: every token it declares but one is taken as prompt, and the one left over is the answer"
                         .to_owned(),
                 );
             } else {
                 lines.push(format!(
-                    "    DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt (§3.8, A21)",
+                    " DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt (§3.8, A21)",
                     context.declared, context.accepted
                 ));
                 if let Some(because) = &context.because {
@@ -234,7 +329,7 @@ fn context_lines(
         Outcome::Inconclusive { because } => {
             lines.push(format!("    INCONCLUSIVE — {because}"));
             lines.push(
-                "    which licenses nothing: MCF configures no differently than before, and                  this is not a negative result (D42, §3.18)"
+                " which licenses nothing: MCF configures no differently than before, and this is not a negative result (D42, §3.18)"
                     .to_owned(),
             );
         }
@@ -263,7 +358,7 @@ fn observed(addressed: &Addressed) -> Vec<String> {
             .map_or(0, |(_, times)| *times);
         let note = if quiet > 0 {
             format!(
-                "   (ended without saying anything {quiet} of {})",
+                " (ended without saying anything {quiet} of {})",
                 addressed.of
             )
         } else {
@@ -280,15 +375,15 @@ fn observed(addressed: &Addressed) -> Vec<String> {
         let middle = ran.get(ran.len().wrapping_div(2));
         let span = match (ran.first(), middle, ran.last()) {
             (Some(least), _, Some(most)) if least == most => {
-                format!("   turn ran {least} token(s)")
+                format!(" turn ran {least} token(s)")
             }
             (Some(least), Some(middle), Some(most)) => {
-                format!("   turn ran {least}-{most} token(s), middle {middle}")
+                format!(" turn ran {least}-{most} token(s), middle {middle}")
             }
             _ => String::new(),
         };
         lines.push(format!(
-            "      {name:<18} {ended} of {}{mark}{note}{span}",
+            " {name:<18} {ended} of {}{mark}{note}{span}",
             addressed.of
         ));
     }
@@ -304,7 +399,7 @@ fn observed(addressed: &Addressed) -> Vec<String> {
         .map_or(0, |(_, ended)| *ended);
     lines.push(match (addressed.declared_a_template, raw_is_best) {
         (true, true) => format!(
-            "    DIVERGENCE the file declares a chat template, and the model ended its turn \
+            " DIVERGENCE the file declares a chat template, and the model ended its turn \
              {best_count} of {} times addressed *raw* while the addressing built from that \
              template ended none. That is a disagreement between the file and the model worth \
              a person's attention — and it is not a licence to address this model raw: what \
@@ -313,18 +408,16 @@ fn observed(addressed: &Addressed) -> Vec<String> {
             addressed.of
         ),
         (true, false) => format!(
-            "    agrees   the file declares a chat template and the model ends its turns under \
+            " agrees the file declares a chat template and the model ends its turns under \
              {}, which is what MCF would address it as — `mcf run` sends raw text today (§3.8)",
             addressed.best
         ),
         (false, false) => format!(
-            "    DIVERGENCE the file declares no chat template, and the model ends its turns \
+            " DIVERGENCE the file declares no chat template, and the model ends its turns \
              under {} — a capability its own metadata does not mention (§3.18)",
             addressed.best
         ),
-        (false, true) => {
-            "    agrees   no template declared, and raw is what it answers to".to_owned()
-        }
+        (false, true) => " agrees no template declared, and raw is what it answers to".to_owned(),
     });
     lines
 }
