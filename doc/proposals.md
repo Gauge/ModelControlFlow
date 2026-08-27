@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 9 |
+| **Version** | 10 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -41,6 +41,118 @@ A citation made before this change still resolves. Registered as B-353.
 | PR7 | [Longitudinal regression detection](#pr7--longitudinal-regression-detection) | Accept — the one artifact §6.7 names and nothing builds | M8 |
 | PR8 | [The stand-in engine](#pr8--the-stand-in-engine) | **Accepted** — B-360, B-361, B-362 | M0 · M2 |
 | PR9 | [What serving looks like](#pr9--what-serving-looks-like) | **Accepted** — DEC-001 decided; B-032, B-033, B-034 build it | M2 |
+| PR10 | [What a probe is, and when configuration may change](#pr10--what-a-probe-is-and-when-configuration-may-change) | **Accepted** — DEC-024 and DEC-025 decided; B-051–B-060 build it | M3 |
+
+---
+
+## PR10 — What a probe is, and when configuration may change
+
+**One line.** A probe is an experiment MCF runs on demand, whose result is a
+measurement with conditions and is never a default; and MCF never reconfigures
+a model under a user — it reports that its answer would now differ, and
+applying that is an act.
+
+**Why this is a proposal.** DEC-024 and DEC-025 gate all of M3, and they are
+one question in two halves: what a probe *is* determines whether its result may
+change something, and whether configuration may change determines what a probe
+result is allowed to be. Arguing them apart produces a probe framework that
+cannot say what to do with its own output.
+
+### The claim it enables
+
+**That a measurement taken on MCF is a measurement of the model.** §X's reason
+for existing is §3.8's: a misconfigured model is a measurement error. The
+concrete case is in the corpus today. Every instruct model there carries
+`tokenizer.chat_template` — Qwen3's is forty lines of Jinja — and MCF ignores
+all of them: `mcf run --prompt "The capital of France is"` sends raw text to a
+model trained to see `<|im_start|>user`. What comes back is a completion from a
+model being asked the wrong kind of question, and every number taken on it
+would be a number about that mistake.
+
+### What a probe is (DEC-024)
+
+**Four properties, and the first three are already types MCF has.**
+
+1. **Its result is a `Measurement`, not a boolean** (B-051). A probe runs
+   trials; what it reports is what was observed across them, with the spread.
+   *Three of five stop-token trials stopped* is a different fact from *stopping
+   works*, and only the first survives being read six months later.
+2. **It carries its conditions** (§3.4). A probe result belongs to a
+   *(model, engine, engine build, sampler, seed)* — not to the model. The same
+   file through MCF's own engine and through a provisioned one is two
+   observations, and the second does not inherit the first's answer.
+3. **Its result is a `Capability`, never a default** (B-050). A probe writes to
+   the `verified` half; nothing writes a probe result into a configuration
+   value. What reads it must ask for it as an observation.
+4. **It says how much it cost**, in tokens rather than seconds (B49's shape).
+
+**Which capabilities are probed, and the rule that decides.** A probe earns its
+place when a wrong answer to it would corrupt a measurement or a served answer.
+That is a test, not a list, and it sorts the open-ended list of §7.24 into two
+kinds:
+
+- **Configuring probes**, which change how MCF talks to the model, and are M3's:
+  the chat template (B-052), stop conditions (B-056), usable context against
+  claimed (B-055). Getting these wrong corrupts everything downstream.
+- **Characterizing probes**, which describe what a model can do without
+  changing how MCF talks to it: tool calling (B-053), structured output
+  (B-054), the modalities of B-057. These are findings about a model, they
+  belong beside M6's laboratories, and M3 builds the framework they will use
+  rather than the probes themselves.
+
+The division is not a deferral: it is the answer to *what bounds "full"*. §X's
+word is bounded by §3.8's reason for it.
+
+**When probing happens: on demand, and never at acquisition.** `mcf probe
+<model>` runs them; `mcf run` uses what has been probed and says when nothing
+has. Not at acquisition, for three reasons — custody is not evaluation (M1's
+job is that the bytes arrived intact); a probe needs an engine, and which
+engine is a condition, so a probe at `pull` time would be a result about
+whatever engine happened to be installed; and it would pay for every model
+somebody never runs.
+
+**What a probe result costs to keep.** It is a measurement with conditions, so
+it caches exactly as far as its conditions hold and no further — which answers
+§7.24's question about caching across MCF versions without a new rule. A
+different engine build is different conditions. MCF does not compare across
+them and does not silently reuse.
+
+**Inconclusive** (B-060) is a first-class outcome and is not a negative. A
+probe that could not decide reports what it saw and how many trials it took,
+and MCF configures nothing from it. §3.18's third state exists because *the
+model did not do the thing* and *MCF could not tell* are different facts, and
+the second one licenses nothing.
+
+### When configuration may change (DEC-025)
+
+**Never under a user. MCF may learn better; what it does with that is say so.**
+
+A configuration MCF derived carries the probe that set it, when, and under what
+conditions (B-059). When MCF's answer *would now differ* — a better probe, a
+new engine, a changed default — that is a **divergence**, reported the way
+B-058 reports declared-against-verified. Applying it is an act: it happens
+because somebody asked, and it is recorded, and after it the conditions have
+changed and measurements taken before and after are not comparable — which MCF
+already knows how to say.
+
+This is the branch §7.25 feared would let configuration rot, and the fear is
+answered by the reporting: a configuration that is out of date is *visible*
+rather than silently stale, and updating it is one command. What is refused is
+only the silent part. §3.12 keeps its guarantee — a result depends on nothing
+hidden — and §3.11 keeps its: nothing changes without deliberation.
+
+**The corollary that matters for M5.** A benchmark run under a configuration
+carries that configuration's provenance into its conditions. Yesterday's
+benchmark and today's are comparable exactly when the configuration between
+them did not change, and MCF can now answer that question rather than assume
+it.
+
+### What it costs
+
+The framework is real work: trials, conditions, storage beside the model,
+and a surface. The three configuring probes are each an experiment somebody
+must design against §3.18's standard. The chat template is the first, because
+it is the one whose absence is measurable today.
 
 ---
 
@@ -1013,6 +1125,16 @@ from MCF's own engine has one.
 
 
 ## Changelog
+
+### Version 10 — PR10 accepted
+
+DEC-024 and DEC-025 decided together, because they are one question in two
+halves. A probe is an experiment whose result is a measurement with conditions
+and never a default; MCF never reconfigures under a user, it reports that its
+answer would differ. The open-ended list of §7.24 is bounded by §3.8's reason:
+a probe earns its place when a wrong answer to it would corrupt a measurement,
+which sorts the list into configuring probes (M3) and characterizing ones (the
+framework in M3, the probes beside M6).
 
 ### Version 9 — PR9 accepted
 
