@@ -271,17 +271,38 @@ fn quantizations(file: &Model) -> String {
 
 /// What MCF would choose, and where each choice comes from.
 ///
-/// Short, because MCF chooses little: there is no engine to configure, no
-/// placement to decide and no quantization to pick between. What is here is
-/// what `mcf run` would use, and every line names where it is written down so
-/// that a reader can go and disagree with it.
+/// Short, because MCF chooses little: no placement to decide and no
+/// quantization to pick between. The engine is the one real choice now
+/// (B-032), and it is made by a stated rule rather than a preference: the
+/// provisioned engine where exactly one is here, MCF's own otherwise, and
+/// `--engine` overrides either. What is here is what `mcf run` would use, and
+/// every line names where it is written down so that a reader can go and
+/// disagree with it.
 fn chosen() -> Vec<(&'static str, String, &'static str)> {
-    vec![
-        (
-            "engine",
-            "MCF's own stand-in".to_owned(),
-            "the only one there is (D31); a vendored engine is B-320",
+    let engine = match crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+        .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)))
+    {
+        Some(Ok(Some(llama))) => (
+            format!(
+                "provisioned llama.cpp @{}, from {}",
+                llama.commit.get(..12).unwrap_or(&llama.commit),
+                llama.prefix.display()
+            ),
+            "the one engine provisioned on this machine (B-032, D39); `--engine stand-in` \
+             asks for MCF's own instead",
         ),
+        Some(Err(_)) => (
+            "refused: more than one llama.cpp is provisioned".to_owned(),
+            "MCF will not choose between builds; `mcf provision --list` shows them (§3.15)",
+        ),
+        _ => (
+            "MCF's own stand-in".to_owned(),
+            "nothing is provisioned here (D39); `mcf provision llama.cpp` would change this line",
+        ),
+    };
+    vec![
+        ("engine", engine.0, engine.1),
         (
             "sampler",
             "greedy".to_owned(),
@@ -325,8 +346,9 @@ fn unanswered() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "How fast is it on this machine?",
-            "Unanswerable today: the only engine is MCF's own stand-in, and B65 forbids a speed \
-             from it — a timing taken from it would measure the stand-in (D31).",
+            "Unmeasured. Through MCF's own stand-in it is unanswerable in principle — B65 \
+             forbids a speed from it (D31). Through a provisioned engine it is answerable and \
+             nobody has: that is M5's `mcf bench`, under conditions and with its uncertainty.",
         ),
         (
             "What is it good at?",

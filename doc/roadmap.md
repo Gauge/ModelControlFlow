@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Plan — ten milestones, each a vertical MVP slice |
-| **Version** | 19 |
+| **Version** | 20 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24 and governed by [rules.md](rules.md) |
 | **Registers to** | [backlog.md](backlog.md) · illustrated by [mockup/](mockup/) |
@@ -46,7 +46,7 @@ thing to erode it.
 |---|---|---|---|---|
 | **M0** | **The instrument** — `mcf doctor` | Learn what this machine is, what MCF costs on it, and what MCF will and will not promise here | §I, §II, §VII, §VIII | §7.16✓, §7.10✓, §7.19✓, §7.21✓, §7.22✓, §7.8✓, §7.50✓, §7.39✓ |
 | **M1** | **Custody** — `mcf pull` | Bring any Hugging Face model onto this machine with its provenance intact and its licence legible, or learn precisely why not | §III, §3.7 | §7.11✓, §7.38✓ |
-| **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9, §7.18 |
+| **M2** | **The host** — `mcf serve` | Get a first token from a named model in one command, from a daemon that stays up | §VI, §I | §7.1 residuals, §7.9 narrowed, §7.18✓ |
 | **M3** | **Right by construction** — `mcf probe` | Run a model the way it was designed to run, and see where its claims and its behaviour diverge | §X, §3.18 | §7.24, §7.25 |
 | **M4** | **The window** | See and drive all of the above from the machine or from a handheld device, with nothing installed | §V, §XI | §7.17, §7.12 residual |
 | **M5** | **The measurement** — `mcf bench` | Obtain a defensible performance number taken *here*, with its conditions and its uncertainty | §II, §IV | §7.7, §7.6 |
@@ -206,6 +206,16 @@ knowing what a runtime is.
   returns coherent and queryable each time
 - Idle cost meets budget with a model resident
 - Nothing is reachable from another host in the default configuration
+
+**Where it stands (2026-08-27).** All four exercised: a first token from a
+named model through the daemon, including the 16 GB reference model through a
+provisioned engine (F36); the daemon killed at every stage it has, now including
+mid-generation with a model resident; zero context switches and zero ticks over
+a minute with a model resident (D41, F35); a control plane that is a Unix
+socket with no address to expose (B-036). What the register still holds open
+under M2 is stated there rather than here: B-210's draining and releasing wait
+for MCF to hold an accelerator, B-036's deliberate exposure waits for §XI, and
+B-032's long-lived engine child is a further increment of a done item.
 
 ---
 
@@ -551,6 +561,13 @@ local exception.
 ---
 
 ## Changelog
+
+### Version 20 — the host stands
+
+M2's four exit criteria exercised, §7.18 closed by D41, §7.9 narrowed. The
+milestone's product — a first token from a named model in one command, from a
+daemon that stays up — exists in the form §VI meant it, with the reference
+model answering through an engine MCF provisioned and supervises (F36).
 
 ### Version 19 — what M0 turned out to be
 
