@@ -195,6 +195,13 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
 /// and a wrap that counted bytes would break lines short for no reason a reader
 /// could see.
 fn wrapped(text: &str, width: usize) -> Vec<String> {
+    // A paragraph that already has its own lines keeps them. A table wrapped
+    // as prose is a table destroyed, and one of these answers is a table
+    // (B-379) — a reader cannot compare thirteen figures that have been run
+    // together into a paragraph.
+    if text.contains('\n') {
+        return text.lines().map(str::to_owned).collect();
+    }
     let mut lines = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -310,6 +317,96 @@ fn how_fast(path: &Path) -> String {
         ),
         Err(why) => format!("{unmeasured} There is no projection either: {why}."),
     }
+}
+
+/// What each declared language costs on this vocabulary (B-379, DEC-002).
+///
+/// **A fact about the vocabulary, not about the model or the language.** A
+/// vocabulary that spells a script expensively spends more context, more time
+/// and more money on the same meaning — and says nothing whatever about how
+/// well the model handles it. The wording keeps those apart deliberately,
+/// because *expensive* reads as *bad* to a reader who is not being careful.
+///
+/// **A ratio against the cheapest** rather than a rank: what a reader needs is
+/// *this costs 2.6 times that*, which is the number that compounds. And the
+/// sentence travels with the result, because a different sentence gives
+/// different figures and a ratio with no text behind it is not reproducible
+/// (§3.4, §II).
+///
+/// No generation and no judgement (§3.15).
+fn language_cost(path: &Path) -> String {
+    let Some(vocabulary) = crate::bench::read_prefix(path)
+        .and_then(|bytes| mcf_standin::gguf::parse(&bytes).ok())
+        .and_then(|file| mcf_standin::tokenizer::Vocabulary::read(&file).ok())
+    else {
+        return "Unanswerable: this file carries no vocabulary MCF can read, and a cost per \
+                language is a question about a vocabulary (A7)."
+            .to_owned();
+    };
+    let vocabulary = &vocabulary;
+    let mut costs: Vec<(&'static str, usize, usize)> = Vec::new();
+    for sample in mcf_standin::languages::DECLARED {
+        let Ok(tokens) = vocabulary.encode(sample.text, false) else {
+            // A vocabulary that cannot represent a script at all is a fact
+            // about it, and dropping the row would hide the strongest result
+            // this can produce (A1, A7).
+            costs.push((sample.language, 0, sample.text.chars().count()));
+            continue;
+        };
+        costs.push((sample.language, tokens.len(), sample.text.chars().count()));
+    }
+    // **Total tokens, not tokens per character.** Per-character is the
+    // arithmetic the register asked for and it answers the wrong question: a
+    // script that writes the same meaning in nineteen characters looks
+    // expensive per character while costing fewer tokens outright. What
+    // compounds — context, money, time — is the total for the same meaning,
+    // and these sentences carry the same meaning by construction, which is why
+    // a carefully translated parallel text was chosen over one MCF wrote. The
+    // character count stays on the line, because it is what makes the two
+    // readings separable by anyone who wants the other one.
+    let cheapest = costs
+        .iter()
+        .map(|(_, tokens, _)| *tokens)
+        .filter(|tokens| *tokens > 0)
+        .min()
+        .unwrap_or(0)
+        .max(1);
+
+    let mut lines = vec![
+        "One sentence, in each of a declared set of languages, as this vocabulary spells it:"
+            .to_owned(),
+        String::new(),
+    ];
+    costs.sort_by_key(|(_, tokens, _)| *tokens);
+    for (language, tokens, letters) in &costs {
+        if *tokens == 0 {
+            lines.push(format!(
+                "  {language:<22} this vocabulary cannot represent that text at all"
+            ));
+            continue;
+        }
+        let times = tokens.saturating_mul(10).checked_div(cheapest).unwrap_or(0);
+        lines.push(format!(
+            "  {language:<22} {tokens:>3} token(s) for {letters:>3} character(s) — {}.{}x the \
+             cheapest here",
+            times.wrapping_div(10),
+            times.wrapping_rem(10)
+        ));
+    }
+    // Wrapped here rather than by the renderer: this answer keeps its own
+    // lines so that the table survives (see `wrapped`), which means the prose
+    // in it has to wrap itself.
+    let note = format!(
+        "The sentence is {}, so every line above is the same meaning. What differs is what \
+         this vocabulary spends on it — a property of the file, not a claim about the model's \
+         fluency, and nothing here rates it (§3.15, DEC-002).",
+        mcf_standin::languages::SOURCE
+    );
+    lines.push(String::new());
+    for line in wrapped(&note, 74) {
+        lines.push(format!("  {line}"));
+    }
+    lines.join("\n")
 }
 
 /// A band as a person reads it, without a float (A6).
@@ -553,6 +650,7 @@ fn unanswered(path: &Path) -> Vec<(&'static str, String)> {
                 .to_owned(),
         ),
         ("How fast is it on this machine?", how_fast(path)),
+        ("What does each language cost here?", language_cost(path)),
         (
             "What is it good at?",
             if probed {

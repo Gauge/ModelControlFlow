@@ -107,6 +107,7 @@ forward as one.
 | 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
 | 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
 | 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
+| 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5925,6 +5926,62 @@ matters.
 tokens and `[INST]` costs three. Neither does anything. Nothing in the output
 says a person was wrong to write them: §3.15's job is to make the effect
 visible, not to grade the prompt.
+
+## 81 · F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)
+
+**`mcf explain` now answers *what does each language cost here*.** One
+sentence — the first clause of Article 1 of the Universal Declaration of Human
+Rights, in the United Nations' own translations — put through the model's own
+vocabulary, in thirteen languages spanning Latin, Cyrillic, Greek, Han, Kana,
+Hangul, Arabic and Devanagari.
+
+On SmolLM2-135M-Instruct:
+
+| language | tokens | characters | against the cheapest |
+|---|---|---|---|
+| English | 13 | 63 | 1.0x |
+| German | 24 | 64 | 1.8x |
+| Chinese (Simplified) | 29 | 19 | 2.2x |
+| Arabic | 45 | 51 | 3.4x |
+| Russian | 54 | 69 | 4.1x |
+| Greek | 70 | 83 | 5.3x |
+| Japanese | 72 | 42 | 5.5x |
+| Korean | 85 | 39 | 6.5x |
+| Hindi | 92 | 87 | 7.0x |
+
+**And on the Llama vocabulary of `stories15M`, the order changes.** Russian
+costs 54 tokens on SmolLM2 and **23** there; Greek costs 70 on SmolLM2 and
+**84** there. Neither vocabulary dominates, which is the result that makes the
+point: this is not a ranking of languages by difficulty. It is a table of what
+somebody happened to put in a file.
+
+**The ratio is over the same meaning, not the same character count.** The
+register asked for *tokens per character*, and per-character answers the wrong
+question: Chinese writes this sentence in nineteen characters, so it looks
+expensive per character while costing fewer tokens outright than French. What
+compounds — context, money, time — is the total for the same meaning, and
+these sentences *are* the same meaning by construction, which is the whole
+reason for using a carefully translated parallel text rather than one MCF
+wrote. The character count stays on every line so that a reader who wants the
+other reading can have it (A1).
+
+**The wording is the hard part, and it has its own check.** The arithmetic is
+counting tokens. What is easy to get wrong is that *expensive* reads as *bad*:
+a sentence letting a vocabulary's spelling be heard as a judgement about a
+language, or about how well the model speaks it, would be the most damaging
+thing in this repository and the easiest to write by accident. So
+`checks/tests/a_language_cost_is_about_the_vocabulary.rs` requires the answer
+to name what it is a property *of* — the file — to deny what it is not, and to
+contain none of a list of grading words. A model can be excellent at a language
+its vocabulary spells expensively.
+
+**A smaller thing worth recording.** The check first failed against a sentence
+that is in the source: `rustfmt` had broken it across lines with a trailing
+`\`, so a substring search found nothing and would have gone on asserting
+about a string that never appears. It joins continuations first now. That is
+the fourth variant this repository has met of *a check that passes without
+checking* (F80), and the second where the fix was to read the source the way a
+compiler does rather than the way a text editor shows it.
 
 ## Changelog
 

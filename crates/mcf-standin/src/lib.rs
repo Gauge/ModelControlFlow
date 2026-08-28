@@ -49,6 +49,7 @@ pub mod bpe;
 pub mod codebook;
 pub mod dequantize;
 pub mod gguf;
+pub mod languages;
 pub mod llama;
 pub mod ops;
 pub mod recommended;
