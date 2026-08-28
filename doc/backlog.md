@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 196 |
+| **Version** | 197 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (114 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 60 open).** Every item cites
+decided, 23 resolved) and 224 build items (115 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 59 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -295,7 +295,7 @@ first and importance second.
 | B-230 | Behaviour-class labs cannot express a wall-clock deadline; deadlines are token budgets | B49, D8, §3.8 | A wall-clock timeout in a behaviour lab does not compile | open |
 | B-231 | A behaviour-class run under injected contention produces the same outcomes as one without, differing only in recorded conditions | B49, §6.40, §3.4 | The lab scenario asserts outcome equivalence and condition divergence | open |
 | B-232 | Serving latency under a concurrent behaviour-class run stays within its budget; hosting yields to the user and nothing yields to hosting | B50, §3.26, §VI | Asserted in CI against the interposed-latency budget | open |
-| B-233 | Environment failures are a distinct taxonomy branch from model failures: an out-of-memory from competition is a condition of the run, never the model giving up | B49, §7.10, §3.1 | Every yielding run's failures classify to one branch or the other, never ambiguously | open |
+| B-233 | Environment failures are a distinct taxonomy branch from model failures: an out-of-memory from competition is a condition of the run, never the model giving up | B49, §7.10, §3.1 | Every yielding run's failures classify to one branch or the other, never ambiguously | done Already structural: every failure supplies an `Attribution` and there is no default, so the classification cannot be omitted. What was added is `Attribution::branch()` — the coarse reading a surface needs — and a check that the model's branch is reachable only through `ModelUnderTest`, that every branch is reachable, and that no construction in the workspace crosses the two directions. Reading the branch from the *category* was tried first, compiled, and disagreed with eleven correct call sites: a category says what went wrong and only the attribution says whose (F84). |
 | B-234 | Yielding mechanism: low priority, foreground-aware, pausable and resumable, per platform | B49, §3.26, §7.42 | A background run does not stutter an interactive application, measured rather than asserted | blocked (DEC-042) |
 | B-236 | Resource boxes: a declared allocation of cores, host memory, accelerator share and I/O that a model runs inside, enforced where the platform allows and reported as unavailable where it does not | D15, §XVII, A7 | A model runs inside a stated box; unenforceable dimensions are named rather than silently unbounded | blocked (DEC-043) |
 | B-240 | A result carries its box or the explicit absence of one, names the dimensions the box could not bound, and cannot be compared with a result from a different box | B51, D15, A8 | Boxed and unboxed results are not comparable by construction | open |
@@ -396,6 +396,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 197 — the branch is read from the attribution
+
+B-233 done, and mostly by discovering it was already satisfied. The obvious
+implementation — a branch per category — disagreed with eleven correct call
+sites, which is what showed it was the wrong axis. F84.
 
 ### Version 196 — the probe writes it down
 

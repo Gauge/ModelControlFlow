@@ -35,7 +35,7 @@ mod axes;
 mod category;
 
 pub use axes::{Attribution, Disposition};
-pub use category::{Category, Domain};
+pub use category::{Branch, Category, Domain};
 
 use core::fmt;
 
@@ -252,3 +252,14 @@ pub type Result<T> = core::result::Result<T, Failure>;
 
 #[cfg(test)]
 mod tests;
+
+impl Failure {
+    /// Whose failure this is (B-233).
+    ///
+    /// From the attribution, which is the axis that answers *whose*. See
+    /// [`Branch`] for why not from the category.
+    #[must_use]
+    pub const fn branch(&self) -> Option<Branch> {
+        self.attribution.branch()
+    }
+}

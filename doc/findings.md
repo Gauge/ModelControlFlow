@@ -110,6 +110,7 @@ forward as one.
 | 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
 | 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
 | 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
+| 84 | [F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)](#84--f84--the-branch-is-read-from-the-attribution-and-reading-it-from-the-category-is-the-obvious-wrong-design-b-233-b24-710-34) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6079,6 +6080,55 @@ model where they diverge, that clause is the whole story.
 for one artifact is not a fact about a differently quantized sibling; the path
 must match exactly, because the conditions §3.4 requires include which artifact
 was asked.
+
+## 84 · F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)
+
+**B-233's requirement.** *Environment failures are a distinct taxonomy branch
+from model failures: an out-of-memory from competition is a condition of the
+run, never the model giving up.* Recorded as the model's, a busy afternoon
+becomes a claim about a model — and nothing downstream can undo it, because a
+wrong attribution reads exactly like a right one.
+
+**The first implementation was wrong, and it was the obvious one.**
+`Category::branch()`: a hundred and eleven categories, each mapped to one of
+four branches, derived from its domain with a handful of stated exceptions. It
+compiled, it was exhaustive, and running it against every `Failure::new` in the
+workspace produced eleven disagreements — all of which were the *map* being
+wrong and the code being right:
+
+- `probe.inconclusive` attributed to the **machine**, because the machine
+  misbehaved. The map said MCF's.
+- `engine.unavailable` attributed to **MCF**, because MCF's own stand-in does
+  not implement that format. The map said the environment's.
+- `config.invalid` attributed to the **user**. The map said MCF's.
+- `engine.exit.immediate` attributed to the **machine**. The map said the
+  artifact's.
+
+**A category says *what went wrong*. Only the attribution says *whose*.** The
+same category is honestly attributable to different parties depending on the
+situation, which is precisely why `Attribution` is a separate axis that
+`Failure::new` demands and gives no default for. So B-233 was **already
+structurally satisfied** before any of this: every failure classifies
+unambiguously, because every failure supplies the axis that classifies it.
+
+What is now added is the coarser reading a surface needs — `Attribution::branch`
+— and what is checked is only what is not structural: that the model's branch
+is reachable *only* through `ModelUnderTest`, that every branch is reachable at
+all, and that no construction in the workspace attributes a model's behaviour
+elsewhere or a condition of the run to the model. That last check passes across
+the whole workspace with no exceptions.
+
+**`Unattributable` returns `None`, not a fourth branch.** B24 makes *MCF cannot
+tell* a real result, and folding it into a branch would be the attribution MCF
+refused to make, made anyway.
+
+**The general lesson.** The wrong design was more code, more precise-looking,
+and produced a table of eleven violations that would have been "fixed" by
+editing eleven correct call sites. A check that disagrees with working code is
+evidence about the check first. This is the second time in this session that
+running a new rule against the existing codebase is what showed the rule was
+wrong — the first being the register's parser (F80), where the code was right
+and the reader was not.
 
 ## Changelog
 
