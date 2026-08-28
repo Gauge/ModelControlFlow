@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 66 |
+| **Version** | 67 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -90,6 +90,7 @@ forward as one.
 | 60 | [F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)](#60--f60--the-clock-in-the-type-stopped-a-comparison-not-a-record-a11-b-082-d9-f59) |
 | 61 | [F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)](#61--f61--the-seed-set-had-to-become-arithmetic-and-eintr-was-being-called-a-cut-off-transfer-b-290-b61-d19-a2-f53-f55) |
 | 62 | [F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)](#62--f62--the-seed-set-is-shown-representative-and-the-sampler-that-would-have-cleared-it-for-nothing-b-291-d19-616-713-b65) |
+| 63 | [F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)](#63--f63--the-recommendation-is-in-a-different-repository-from-the-weights-b-281-b60-d18-a21-315) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4793,7 +4794,106 @@ ratio; the resolution of ten percent is chosen too, and both are one line each.
 Eleven and a half minutes is the cost on a fifteen-million-parameter model, and
 it scales with the model.
 
+## 63 · F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)
+
+**What B60 asks for.** *Calibration adopts what the artifact recommends rather
+than imposing a house style, and marks it declared, unverified until a sweep
+has tested it.* Its violation is *a global default temperature applied to every
+model, which measures each of them under settings some were never designed
+for.*
+
+**The first question is where a recommendation would be**, and the answer was
+measured rather than assumed. There are exactly two places MCF can look: the
+model file's own metadata, which travels with the weights and is the only
+source an offline machine has; and the repository's `generation_config.json`,
+which does not travel.
+
+Six repositories were listed and one model file's metadata was dumped:
+
+| repository | `config.json` | `generation_config.json` |
+|---|---|---|
+| `ggml-org/tiny-llamas` | no | no |
+| `bartowski/SmolLM2-135M-Instruct-GGUF` | no | no |
+| `unsloth/Qwen3-0.6B-GGUF` | yes | **no** |
+| `unsloth/gemma-3-270m-it-GGUF` | no | no |
+| `Felladrin/gguf-Llama-160M-Chat-v1` | no | no |
+| `QuantFactory/SmolLM2-360M-Instruct-GGUF` | no | no |
+| `HuggingFaceTB/SmolLM2-135M-Instruct` *(the base repository)* | yes | **yes, 132 bytes** |
+
+And the GGUF metadata of an acquired model carries twenty keys — architecture,
+tokenizer, quantization version — and **not one sampler parameter**.
+
+**So: none of six GGUF repositories publishes a sampling recommendation, and
+the one repository that does is the base repository the conversion came from —
+which MCF was never asked to fetch and cannot identify from the conversion
+alone.** B60's *adopt what the artifact recommends* has, for the artifacts MCF
+actually acquires, nothing to adopt. That is a fact about the ecosystem rather
+than about MCF, and it is the fact that shapes what MCF can honestly do.
+
+**What was built.** MCF looks in both places and says what it found.
+`mcf_standin::recommended` reads the file's metadata under the architecture it
+declares; `mcf_hub::recommendation` reads the repository's
+`generation_config.json`. Each has *nothing declared* as a state rather than as
+an empty set, because *no recommendation* and *a recommendation that sets
+nothing* are different facts and **only the first justifies MCF choosing for
+itself**. The hub's reader keeps a third state as well: a file that is
+published and states no sampler parameter is a publisher who looked and said
+nothing, which is not the same as a publisher who did not look.
+
+`mcf_core::configuration::Calibrated` is where the attribution lives: values
+plus **whose choice they are**, with four constructors and no fifth — declared
+by the artifact, measured here by a sweep, pinned by a laboratory, or MCF's own
+with the reason it had to choose. There is no constructor that omits the
+source, and `Sampling` has no `Default`, which together are B60's *no global
+default* as a shape rather than a habit.
+
+**And the surface says it.** `mcf explain` previously read *sampler: greedy —
+MCF default, stated in crates/mcf-cli/src/run.rs*: transparent about the value
+and silent about the fact that nobody had asked the model. It now reads
+
+```
+sampler   greedy   MCF's own, because this file recommends none: no sampler
+                   key in its metadata, and a conversion repository publishes
+                   no generation_config.json either (B60, F63). Stated in
+                   crates/mcf-cli/src/run.rs
+```
+
+which is the same value and a different claim. §3.15's *no hidden choices* is
+not satisfied by naming the value; it is satisfied by naming whose the value
+is.
+
+**Kept apart** (B60): a laboratory's pinned method is quarantined from anything
+that inherited the artifact's recommendation, in both directions, and from
+another laboratory's pin — two laboratories that each imposed their own are two
+methods, not one. Everything that did not pin stays comparable, because an
+artifact's recommendation, a sweep's measurement and MCF's own choice are all
+answers to *how should this be sampled*, and A8 already refuses the case where
+the answers differ.
+
+**Attribution is not identity** (D17, D18). The same numbers are the same
+distribution however each arrived at them, which is exactly why the attribution
+has to travel separately rather than be inferred from the values — a test
+asserts both halves.
+
+**What was not established.** The half of B60 that needs a sweep: *divergence
+between the recommendation and what measures best here is a finding and is
+surfaced.* Nothing measures a sampling setting yet (B-280 is open), so
+`Chosen::MeasuredHere` exists and is unreachable — which is the honest way to
+say a state is defined and unpopulated. The GGUF keys are read where present
+and no examined file has them, so that path is tested against constructed files
+rather than against a real one. And MCF does not follow a conversion back to
+its base repository to find the recommendation there: doing so would mean MCF
+deciding which repository a file came from, which is a claim about provenance
+it has no basis for (A21, §3.6).
+
 ## Changelog
+
+### Version 67 — the recommendation is somewhere else
+
+F63. None of six GGUF repositories publishes a sampling recommendation, and no
+acquired model file carries one in its metadata; the recommendation lives in
+the base repository the conversion came from. MCF looks in both places it can,
+says what it found, and names its own choice as its own.
 
 ### Version 66 — the seed set is shown, not assumed
 

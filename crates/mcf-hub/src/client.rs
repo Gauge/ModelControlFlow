@@ -212,7 +212,20 @@ impl Hub {
     ///
     /// As [`Self::list`], for anything that is not a plain absence.
     pub fn configuration(&self, listing: &Listing) -> Result<Option<Value>> {
-        if listing.entry("config.json").is_none() {
+        self.metadata_file(listing, "config.json")
+    }
+
+    /// Any small JSON document the repository publishes beside the weights.
+    ///
+    /// `Ok(None)` when the repository publishes none, which is a state to
+    /// report rather than a shape to guess (A7). The listing is consulted
+    /// first, so a repository that publishes no such file costs no request.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::list`], for anything that is not a plain absence.
+    pub fn metadata_file(&self, listing: &Listing, named: &str) -> Result<Option<Value>> {
+        if listing.entry(named).is_none() {
             return Ok(None);
         }
         let revision = listing
@@ -220,7 +233,7 @@ impl Hub {
             .clone()
             .unwrap_or_else(|| "main".to_owned());
         let target = format!(
-            "/{}/resolve/{revision}/config.json",
+            "/{}/resolve/{revision}/{named}",
             listing.reference.repository()
         );
         match self.read_metadata(&listing.reference, &target) {

@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 174 |
+| **Version** | 175 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (91 done, 1 dropped, 11 in progress,
-36 blocked on a decision, 78 open).** Every item cites
+decided, 23 resolved) and 217 build items (91 done, 1 dropped, 12 in progress,
+36 blocked on a decision, 77 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -266,7 +266,7 @@ first and importance second.
 | B-280 | A reported improvement traces to a workload split that was not used to select it; a winner failing validation reports *no improvement found* | B59, D18, A10 | Sweep results cannot be published from the selection split | open |
 | B-290 | A trial cannot be constructed without its seed, and a run cannot declare one seed for every trial; the seed set is published and recorded as a condition | B61, D19, §3.4 | Identical-output runs are unrepresentable; comparisons refuse mismatched seed sets | **done** (F61). `Trial` has a fifth field with no default, so a trial that does not say what it drew does not exist. It is a `Draw` with two variants, because D19 gives the two laboratories opposite rules — a behaviour trial draws seed *i* at trial *i*, a timing trial holds its seed still and pins its generation length — and two variants rather than one with a flag, so a timing run's fixed seed can never be mistaken for a behaviour run's mistake. **The published set is arithmetic, not a list**: D19 assumed a trial count and F55 removed it, so a fixed list would run out and have only bad answers for what happens next. Six lines, unbounded, identical on every machine, and a bijection — two trials cannot draw the same seed by construction. A declared set is admitted, refused if it repeats a seed or holds fewer than two, and runs out rather than wrapping around. The set is the floor's twelfth condition, so it renders everywhere and enters the isolation check for free; `Comparison::from_trials` refuses two arms that drew from different sets, pair by pair, because the two runs of a pair must have drawn the same thing. And `mcf bench` pins a length now: it did not, which made every timing include the models' verbosity |
 | B-291 | Seed-set validation: periodically compare the fixed set's distribution against a larger random set; divergence replaces the set and records a break in comparability | D19, §6.16, §7.13 | The standard set is shown to be representative rather than assumed | **done** (F62). §6.16 turned on MCF's own instrument: the published set is the first thirty-two draws of a stated stream, and the tier runs three hundred and twenty more from a million indices further along and asks whether the prefix behaves like the body. `mcf_bench::seeds` holds the arithmetic and inverts the polarity — here *the same* is the good news and *distinguishable* is the finding, so a clearance can never render as a discovery — and **not decided is not clearance**, because treating it as clearance is how an unvalidated instrument stays unvalidated. The two draws cannot be paired (different seeds by construction), so it uses the pooled null §3.27 already calls weaker, which is the honest one here. Scheduled: `scripts/ci.sh --with-seed-set`. **It samples with nucleus and has to** — MCF's shipped generation is greedy and greedy ignores the seed, so a validation against it would compare a constant with a constant and clear the set for a reason that is not about the set |
-| B-281 | Recommended sampling renders as *declared* until a sweep promotes it; a lab that pins its own sampling declares it and its results stay apart | B60, D18, A21 | No global default sampling exists; divergence between recommended and best-measured is surfaced | open |
+| B-281 | Recommended sampling renders as *declared* until a sweep promotes it; a lab that pins its own sampling declares it and its results stay apart | B60, D18, A21 | No global default sampling exists; divergence between recommended and best-measured is surfaced | **in progress** (F63). `mcf_core::configuration::Calibrated` holds the values **and whose choice they are** — declared by the artifact, measured by a sweep, pinned by a laboratory, or MCF's own with the reason — with four constructors and no fifth, and `Sampling` has no `Default`: together that is *no global default* as a shape rather than a habit. A laboratory's pin is quarantined from anything that inherited, in both directions and from another laboratory's pin. **And MCF now looks before it chooses**: `mcf_standin::recommended` reads the file's own metadata and `mcf_hub::recommendation` reads the repository's `generation_config.json`, each with *nothing declared* as a state rather than an empty set, because only the first justifies MCF choosing for itself. `mcf explain` says whose choice the sampler is instead of only what it is. **The measured finding is that there is usually nothing to adopt**: none of six GGUF repositories publishes a recommendation and no acquired file carries one in its metadata — it lives in the base repository the conversion came from. What remains is the half that needs a sweep: `Chosen::MeasuredHere` exists and is unreachable until B-280 |
 | B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
 | B-211 | Repro bundle: one file carrying a claim, its method, its full §3.4 conditions, its raw samples, the artifact's provenance chain, the §XV identifier, and a verification manifest | [PR2](proposals.md#pr2--the-repro-bundle), §II, A6 | A bundle is emitted for any published measurement and contains everything needed to re-run it | open |
 | B-212 | `mcf verify <bundle>`: reproduce the configuration, re-run the method, report agreement or divergence with conditions compared side by side | [PR2](proposals.md#pr2--the-repro-bundle), §II, A8 | A bundle from another machine either agrees, or names which conditions differ and refuses to attribute the gap | open |
@@ -394,6 +394,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 175 — whose choice the sampler is
+
+B-281 in progress (F63). A sampling configuration cannot exist without saying
+whose choice it is, `Sampling` has no `Default`, a laboratory's pin is
+quarantined, and MCF looks at the artifact before choosing for it. The measured
+finding is that there is usually nothing to adopt: the recommendation lives in
+a different repository from the weights.
 
 ### Version 174 — the seed set is shown, not assumed
 

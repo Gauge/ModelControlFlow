@@ -26,6 +26,7 @@ use std::path::Path;
 use mcf_core::digest::sha256;
 use mcf_hub::store;
 use mcf_standin::gguf::{self, Model, TensorKind, Value};
+use mcf_standin::recommended::Recommendation;
 
 use crate::Response;
 use crate::run;
@@ -136,7 +137,7 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
 
     lines.push(String::new());
     lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (§3.15: no hidden choices)".to_owned());
-    for (what, value, source) in chosen(path) {
+    for (what, value, source) in chosen(path, file) {
         // Three columns, and *both* of the last two wrapped under themselves.
         // The value was not wrapped once, on the reasoning that a value is
         // short — true of every row until a derived configuration arrived
@@ -144,7 +145,7 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
         // overruns pushes its source onto the same line and the table stops
         // being one.
         let mut held = wrapped(&value, 22).into_iter();
-        let mut under = wrapped(source, 56).into_iter();
+        let mut under = wrapped(&source, 56).into_iter();
         lines.push(
             format!(
                 "  {what:<38}{:<22} {}",
@@ -260,6 +261,40 @@ fn declared(file: &Model) -> Vec<(&'static str, String)> {
 
 /// How the weights are encoded, counted by kind.
 ///
+/// Whose choice the sampler is (B60, B-281).
+///
+/// B60 has MCF adopt what the artifact recommends rather than imposing a house
+/// style, and mark the adoption *declared, unverified* (A21). So the first
+/// thing this does is **look**: at the file's own metadata, which is the only
+/// source an offline machine has. Where the file recommends something, that is
+/// what MCF would use, and the line says which key it was read from — *the
+/// artifact says so* is not checkable and *this key says so* is.
+///
+/// Where it recommends nothing — which is the ordinary case, and was true of
+/// six of six files examined for [findings.md](../../../doc/findings.md) F63 —
+/// MCF's own choice is named **as MCF's**, with the reason it had to make one.
+/// A house choice that says it is a house choice is a condition a reader can
+/// weigh; one that does not is the hidden default §3.15 forbids.
+fn sampler(file: &Model) -> (String, String) {
+    match mcf_standin::recommended::read(file) {
+        Recommendation::Declared { sampling, keys } => (
+            sampling.to_string(),
+            format!(
+                "declared by the file ({}) and unverified here — adopted because the publisher \
+                 knows what this model was trained for (A21, B60)",
+                keys.join(", ")
+            ),
+        ),
+        Recommendation::NoneDeclared => (
+            "greedy".to_owned(),
+            "MCF's own, because this file recommends none: no sampler key in its metadata, and a \
+             conversion repository publishes no generation_config.json either (B60, F63). Stated \
+             in crates/mcf-cli/src/run.rs"
+                .to_owned(),
+        ),
+    }
+}
+
 /// The *file's* quantization rather than a name somebody gave it: a repository
 /// calls a file `Q4_K_M` and what is inside it is whatever is inside it, which
 /// is the same distinction A21 draws everywhere else.
@@ -329,7 +364,7 @@ fn derived_all(path: &Path) -> mcf_serve::configured::Derived {
         .unwrap_or_default()
 }
 
-fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
+fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
     let engine_now = engine_identity();
     let engine = match crate::models::default_root()
         .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
@@ -385,18 +420,15 @@ fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
         },
     );
 
+    let sampler = sampler(file);
     vec![
-        ("engine", engine.0.clone(), engine.1),
-        ("addressed as", addressed.0, addressed.1),
-        (
-            "sampler",
-            "greedy".to_owned(),
-            "MCF default, stated in crates/mcf-cli/src/run.rs",
-        ),
+        ("engine", engine.0.clone(), engine.1.to_owned()),
+        ("addressed as", addressed.0, addressed.1.to_owned()),
+        ("sampler", sampler.0, sampler.1),
         (
             "seed",
             "0 unless --seed says".to_owned(),
-            "a condition of the answer (D19)",
+            "a condition of the answer (D19)".to_owned(),
         ),
         derived_all(path).budget.map_or_else(
             || {
@@ -405,7 +437,8 @@ fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
                     format!("{} unless --limit says", run::TOKENS),
                     "tokens rather than seconds, because a stand-in is slow by design (B49); \
                      nothing has been applied here, and `mcf probe` measures how long this \
-                     model's turns actually run (B-056)",
+                     model's turns actually run (B-056)"
+                        .to_owned(),
                 )
             },
             |budget| {
@@ -414,19 +447,20 @@ fn chosen(path: &Path) -> Vec<(&'static str, String, &'static str)> {
                     format!("{} unless --limit says", budget.tokens),
                     "the longest turn this model was seen to finish, applied by somebody on a \
                      probe's evidence — MCF's own default would have cut its answers off \
-                     (§3.8, D43)",
+                     (§3.8, D43)"
+                        .to_owned(),
                 )
             },
         ),
         (
             "context for planning",
             format!("{} tokens", crate::pull::PLANNING_CONTEXT),
-            "what `mcf pull` plans against, stated in crates/mcf-cli/src/pull.rs",
+            "what `mcf pull` plans against, stated in crates/mcf-cli/src/pull.rs".to_owned(),
         ),
         (
             "placement",
             "the processor".to_owned(),
-            "MCF's stand-in has no accelerator path (D31, §3.2)",
+            "MCF's stand-in has no accelerator path (D31, §3.2)".to_owned(),
         ),
     ]
 }

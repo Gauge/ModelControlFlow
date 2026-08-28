@@ -43,9 +43,11 @@
 //! `0.7` is not a value a float holds exactly, and two configurations that
 //! should be the same must not depend on how each was parsed.
 
+mod calibrated;
 mod placement;
 mod sampling;
 
+pub use calibrated::{Calibrated, Chosen};
 pub use placement::Placement;
 pub use sampling::{Sampling, Thousandths};
 

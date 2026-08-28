@@ -22,6 +22,7 @@ pub mod fitment;
 pub mod http;
 pub mod inspect;
 pub mod licence;
+pub mod recommendation;
 pub mod reference;
 pub mod source;
 pub mod store;
