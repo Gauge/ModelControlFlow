@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 201 |
+| **Version** | 202 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (124 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 50 open).** Every item cites
+decided, 23 resolved) and 224 build items (126 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 48 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -370,8 +370,8 @@ first and importance second.
 | B-160 | Share flow: per-share, opt-in, renders the rows that leave rather than a description of them, states the terms (D21) and that publication cannot be undone; whether MCF may ever prompt is DEC-031 | A24, §3.20, §6.27, DEC-031 | No egress path exists that is not user-initiated per share; the confirmation shows the payload | open |
 | B-168 | De-identification: fields coarsened, withheld or sent per DEC-027, with MCF stating plainly what a contribution does and does not protect | §7.27, §6.27, §3.10 | A contribution's identifying content is enumerated and the honest claim about anonymity is displayed at the moment of sharing | blocked (DEC-027) |
 | B-169 | Identifier: emit one for a configuration MCF holds, and resolve one it is given | §XV, §7.28 | Round-trip on this machine: emit, wipe, resolve, and reproduce the identical configuration | blocked (DEC-028) |
-| B-166 | An imported configuration reads as `declared` until a local probe or benchmark verifies it; numbers that travelled with it are attributed elsewhere | B33, §3.21, §6.29 | No imported figure renders as though MCF measured it; verification promotes it and records the divergence | open |
-| B-172 | Failure to reproduce an identifier is a first-class outcome, and divergence between imported and local numbers is a recorded finding about how far results travel | §6.29, §6.3, §3.4 | "This identifier needs 48 GiB and you have 24" is a complete answer; a numeric divergence is stored as evidence, not an error | open |
+| B-166 | An imported configuration reads as `declared` until a local probe or benchmark verifies it; numbers that travelled with it are attributed elsewhere | B33, §3.21, §6.29 | No imported figure renders as though MCF measured it; verification promotes it and records the divergence | done `Imported` holds the figure as a `FromCorpus`, which cannot back a recommendation and cannot render as MCF's own, and says *DECLARED elsewhere* while naming what would change that. There is no `verify`, `promote` or `into_local`: verification replaces the claim rather than converting it, exactly as A20 replaces an estimate. F87. |
+| B-172 | Failure to reproduce an identifier is a first-class outcome, and divergence between imported and local numbers is a recorded finding about how far results travel | §6.29, §6.3, §3.4 | "This identifier needs 48 GiB and you have 24" is a complete answer; a numeric divergence is stored as evidence, not an error | done `Reproduction` has three states and all three are outcomes: `Measured` keeps both figures side by side, `WillNotFitHere` is a complete answer naming what it needs against what this machine has (§6.3, A9), and `NotAttempted` is its own state because unattempted is not agreement. A divergence is evidence about how far a result travels, never an error. F87. |
 | B-170 | Contribution schema versioning: a contribution declares the schema and MCF version that wrote it, and a reader that cannot fully interpret one says so | §7.30, §3.1, §3.4 | An older contribution is read, marked, or refused — never silently misinterpreted | blocked (DEC-030) |
 | B-251 | A contribution carries comparisons in preference to absolutes: both arms, the pairing, and the effect size; absolute rows carry the full §3.4 condition set or are not contributable | B54, §3.27, §XIV | The corpus accumulates ratios that survive travel rather than bare numbers that do not | done `Absolute::new` is fallible and refuses unless all thirteen of the condition floor's questions are answered; a `Comparison` carries both arms, the pairing and the effect size and needs no complete floor. The preference is in what is easy to construct rather than in a docstring. F87. |
 | B-171 | Contribution carries outcomes, never artifacts: scores, classifications, conditions and distributions leave; tasks, tools, fixtures and model outputs do not | §6.30, §3.19 | An audit of a contribution finds no task content; contamination exposure is recorded per task | done `mcf_core::contribution`: there is no field in the format that can hold a prompt, a completion, a document or a path, so an audit finds no task content because there was never anywhere to put it. Stripping on the way out would be one line away from not stripping. F87. |
@@ -396,6 +396,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 202 — an import arrives as a claim
+
+B-166 and B-172 done, the other half of the M9 shape: what arrives is declared
+until this machine measures it, and a divergence between two machines is
+evidence rather than an error. F87.
 
 ### Version 201 — a contribution with nowhere to put a task
 

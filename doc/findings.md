@@ -6283,6 +6283,26 @@ there is nowhere in the format to put one. Publication cannot be undone: MCF
 offers no retraction, because there is no such act (D21, B63).
 ```
 
+**And the other direction: what arrives** (B-166, B-172). An import is a
+claim. `Imported` holds the figure as a `FromCorpus`, which cannot back a
+recommendation (B-167) and cannot render as MCF's own, and it says so in
+words — *DECLARED elsewhere … `mcf probe` and `mcf bench` are what would make
+it a measurement here*. There is no `verify`, no `promote`, no `into_local`:
+verification does not convert a claim, it **replaces** it, exactly as A20
+replaces an estimate.
+
+`Reproduction` has three states and all three are outcomes. `Measured` keeps
+*both* figures side by side — only the local one throws away the comparison,
+only the difference throws away what was compared. `WillNotFitHere` is a
+complete answer rather than a refusal to answer: *it needs 48 GiB and this
+machine has 24* is what the operator asked. And `NotAttempted` is its own
+state, because unattempted is not agreement.
+
+A divergence between two machines running one identifier is the most valuable
+thing a corpus can learn about itself — how far a result travels — and
+recording it as an error would throw away the one observation nobody else is
+positioned to make (§6.29).
+
 **A small recurrence.** Those terms name every forbidden thing in order to say
 it is absent, so the check that forbids them failed on the sentence explaining
 why it passes — the third time in this session (F81 was the second). The check

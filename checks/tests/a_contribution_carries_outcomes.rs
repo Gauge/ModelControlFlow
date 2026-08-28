@@ -129,6 +129,48 @@ fn a_bare_number_cannot_be_constructed() {
     );
 }
 
+/// An imported figure cannot be rendered as MCF's own (B-166).
+#[test]
+fn an_import_arrives_as_a_claim() {
+    let held = source();
+    assert!(
+        held.contains("claimed: crate::origin::FromCorpus<T>"),
+        "an import must hold a `FromCorpus`, which cannot back a recommendation (B-167) and \
+         cannot render as a local measurement (B43)"
+    );
+    for promotion in [
+        "fn verify(self)",
+        "fn promote",
+        "fn into_local",
+        "impl From<Imported",
+    ] {
+        assert!(
+            !held.contains(promotion),
+            "`{promotion}` would convert a claim into a measurement; verification *replaces* \
+             it and records what both said, exactly as A20 replaces an estimate"
+        );
+    }
+    assert!(
+        held.contains("theirs:") && held.contains("ours:"),
+        "B-172: a reproduction keeps both figures — only the local one throws away the \
+         comparison, only the difference throws away what was compared (A1)"
+    );
+}
+
+/// Not fitting here is an outcome, not an error (B-172, A9, §6.3).
+#[test]
+fn a_configuration_that_will_not_run_is_a_complete_answer() {
+    let held = source();
+    assert!(
+        held.contains("WillNotFitHere"),
+        "*this needs 48 GiB and you have 24* answers the question that was asked"
+    );
+    assert!(
+        held.contains("NotAttempted"),
+        "and *nothing was tried* must be its own state: unattempted is not agreement (A21, A7)"
+    );
+}
+
 /// The type prefers comparisons, and says why.
 #[test]
 fn a_comparison_needs_less_than_an_absolute() {

@@ -283,3 +283,121 @@ impl fmt::Display for Contribution {
 
 #[cfg(test)]
 mod tests;
+
+/// What arrives from somewhere else, and what it is worth here
+/// (B-166, B-172, B33, §3.21, §6.29, §6.3, §3.4, A21).
+///
+/// **An import is a claim, not a measurement.** Somebody else's machine
+/// produced these numbers, and A21's line — *declared is not verified* — is
+/// exactly the line an import crosses if nothing stops it. So an [`Imported`]
+/// carries the configuration as **declared** and the numbers as
+/// [`FromCorpus`], which cannot be rendered as MCF's own and cannot back a
+/// recommendation (B-167). Verification does not convert it; it *replaces* it
+/// with a local measurement and records what the two said.
+///
+/// **And the divergence is the finding, not the error** (B-172). Two machines
+/// running the same identifier and getting different numbers is a fact about
+/// how far a result travels, which is the most valuable thing a corpus can
+/// learn about itself. Recording it as a failure would throw away the one
+/// observation nobody else is positioned to make.
+///
+/// [`FromCorpus`]: crate::origin::FromCorpus
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Imported<T> {
+    identifier: String,
+    claimed: crate::origin::FromCorpus<T>,
+}
+
+impl<T> Imported<T> {
+    /// Takes in somebody else's figure, as theirs.
+    ///
+    /// Deliberately verbose at the boundary: this is the one place a foreign
+    /// number enters, and it should look like it.
+    #[must_use]
+    pub fn new(identifier: impl Into<String>, claimed: crate::origin::FromCorpus<T>) -> Self {
+        Self {
+            identifier: identifier.into(),
+            claimed,
+        }
+    }
+
+    /// Which configuration this is about.
+    #[must_use]
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    /// What was claimed, which may advise and may not decide (B43).
+    #[must_use]
+    pub const fn claimed(&self) -> &crate::origin::FromCorpus<T> {
+        &self.claimed
+    }
+}
+
+/// What happened when MCF tried to reproduce an imported result (B-172).
+///
+/// **Every one of these is an outcome and none is an error** (A9, §6.3). *This
+/// identifier needs 48 GiB and you have 24* is a complete answer to *can I run
+/// this*, and storing it as a failure would make the register unable to say
+/// what this machine has been told it cannot run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reproduction<T> {
+    /// It was measured here, and the two figures are recorded side by side.
+    ///
+    /// **Both, always.** Keeping only the local one throws away the
+    /// comparison; keeping only the difference throws away what was compared.
+    Measured {
+        /// What they said.
+        theirs: crate::origin::FromCorpus<T>,
+        /// What this machine found.
+        ours: crate::origin::LocallyMeasured<T>,
+    },
+    /// The configuration cannot run here, and why.
+    ///
+    /// A complete answer rather than a refusal to answer (§6.3).
+    WillNotFitHere {
+        /// What it would need, in the words of whatever judged it.
+        needs: String,
+        /// What this machine has.
+        has: String,
+    },
+    /// Nothing was tried yet.
+    ///
+    /// The state an import is in the moment it arrives, and the reason
+    /// [`Imported`] renders as *declared*: unattempted is not agreement (A21,
+    /// A7).
+    NotAttempted,
+}
+
+impl<T: fmt::Display> fmt::Display for Reproduction<T> {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Measured { theirs, ours } => write!(
+                form,
+                "measured here: {ours}, against {theirs} — a difference between two machines \
+                 running one identifier is evidence about how far a result travels, not an \
+                 error (B-172, §6.29)"
+            ),
+            Self::WillNotFitHere { needs, has } => write!(
+                form,
+                "will not run here: it needs {needs} and this machine has {has}. That is a \
+                 complete answer (§6.3, A9)"
+            ),
+            Self::NotAttempted => form.write_str(
+                "declared, and not verified here: nothing has been measured, which is not \
+                 agreement (A21, A7)",
+            ),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Imported<T> {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            form,
+            "{} — DECLARED elsewhere: {}. `mcf probe` and `mcf bench` are what would make it \
+             a measurement here (A21, §3.21)",
+            self.identifier, self.claimed
+        )
+    }
+}

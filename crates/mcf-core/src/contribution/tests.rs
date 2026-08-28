@@ -143,3 +143,80 @@ fn a_contribution_says_what_it_holds() {
         "2 row(s): 1 comparison(s) and 1 absolute(s)"
     );
 }
+
+/// An import is a claim until this machine measures it (B-166, B-172).
+mod imports {
+    use crate::contribution::{Imported, Reproduction};
+    use crate::origin::{FromCorpus, LocallyMeasured};
+
+    #[test]
+    fn an_import_renders_as_declared_and_names_what_would_change_that() {
+        let held = Imported::new(
+            "a-configuration-somebody-else-named",
+            FromCorpus::new(380_u64, 12),
+        );
+        let shown = held.to_string();
+        assert!(
+            shown.contains("DECLARED elsewhere"),
+            "A21: an imported figure must not render as though MCF measured it: {shown}"
+        );
+        assert!(
+            shown.contains("`mcf probe` and `mcf bench`"),
+            "and must name what would make it a measurement, or the marking is a disclaimer: \
+             {shown}"
+        );
+        assert_eq!(
+            held.claimed().reports(),
+            12,
+            "B44: the sample count travels"
+        );
+    }
+
+    #[test]
+    fn nothing_attempted_is_not_agreement() {
+        let shown = Reproduction::<u64>::NotAttempted.to_string();
+        assert!(shown.contains("not agreement"), "{shown}");
+        for wrong in ["confirmed", "agrees", "holds"] {
+            assert!(!shown.contains(wrong), "{wrong} in {shown}");
+        }
+    }
+
+    #[test]
+    fn a_divergence_keeps_both_figures() {
+        let held = Reproduction::Measured {
+            theirs: FromCorpus::new(380_u64, 12),
+            ours: LocallyMeasured::new(520_u64),
+        };
+        let shown = held.to_string();
+        assert!(shown.contains("520"), "{shown}");
+        assert!(
+            shown.contains("380"),
+            "keeping only the local figure throws away the comparison, and keeping only the \
+             difference throws away what was compared (A1): {shown}"
+        );
+        assert!(
+            shown.contains("not an error"),
+            "§6.29: a difference between two machines is evidence about how far a result \
+             travels: {shown}"
+        );
+    }
+
+    #[test]
+    fn not_fitting_here_is_a_complete_answer() {
+        let held = Reproduction::<u64>::WillNotFitHere {
+            needs: "48 GiB".to_owned(),
+            has: "24 GiB".to_owned(),
+        };
+        let shown = held.to_string();
+        assert!(
+            shown.contains("48 GiB") && shown.contains("24 GiB"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("complete answer"),
+            "§6.3, A9: *this needs 48 GiB and you have 24* answers the question that was \
+             asked, and storing it as a failure would make the register unable to say what \
+             this machine has been told it cannot run: {shown}"
+        );
+    }
+}
