@@ -27,6 +27,7 @@ mod run;
 mod say;
 mod serve;
 mod show;
+mod verify;
 
 use std::process::ExitCode;
 
@@ -116,6 +117,11 @@ enum Request<'a> {
         seed: u64,
         /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
+    },
+    /// Check a bundle against this machine.
+    Verify {
+        /// The bundle to check.
+        bundle: &'a str,
     },
     /// Write one file that reproduces one claim.
     Bundle {
@@ -433,6 +439,15 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 command: "bench",
                 argument,
             },
+        },
+        ["verify", bundle] => Request::Verify { bundle },
+        ["verify"] => Request::MissingArgument {
+            command: "verify",
+            needs: "<bundle>, which `mcf bundle` writes",
+        },
+        ["verify", _, argument, ..] => Request::UnexpectedArgument {
+            command: "verify",
+            argument,
         },
         ["bundle", id] => Request::Bundle { id, into: None },
         ["bundle", id, "--into", path] => Request::Bundle {
@@ -1017,6 +1032,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
+                 \x20 mcf verify <bundle>                 does this machine agree, and if\n\
+                 \x20                                     not, which conditions differ — MCF\n\
+                 \x20                                     will not say which caused it (A8)\n\
                  \x20 mcf bundle <entry-id>               one file that reproduces one\n\
                  \x20        [--into <path>]              claim: the method, the conditions,\n\
                  \x20                                     every trial and the provenance (PR2)\n\
@@ -1111,6 +1129,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             resolving.map(mcf_core::measurement::PartsPerMillion),
             *cold,
         ),
+        Request::Verify { bundle } => verify::run(bundle),
         Request::Bundle { id, into } => bundle::run(id, *into),
         Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
