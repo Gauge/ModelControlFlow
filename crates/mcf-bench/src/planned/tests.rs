@@ -88,3 +88,79 @@ fn the_declaration_reads_in_countable_units() {
         assert!(!shown.contains(unit), "{unit} in {shown}");
     }
 }
+
+/// A budget names what it excludes, or refuses.
+mod budgets {
+    use super::each;
+    use crate::planned::{Proposal, Work};
+    use mcf_core::time::Duration;
+
+    fn ceiling() -> Work {
+        Work {
+            trials: 20,
+            arms: 2,
+            tokens: 128,
+        }
+    }
+
+    #[test]
+    fn a_budget_that_covers_everything_excludes_nothing() {
+        let held = Proposal::within(ceiling(), &each(1, 1_000), Duration::from_nanos(60_000), 2);
+        assert_eq!(held, Proposal::Whole { running: ceiling() });
+    }
+
+    #[test]
+    fn six_of_twenty_arrives_with_the_fourteen() {
+        // §3.1's acceptance, arithmetically: 2000ns a trial at the slow edge,
+        // 12_000ns of budget, so six trials fit.
+        let held = Proposal::within(
+            ceiling(),
+            &each(500, 1_000),
+            Duration::from_nanos(12_000),
+            2,
+        );
+        let Proposal::Fewer { running, excluded } = held else {
+            panic!("a budget that covers part of the work proposes part of it: {held:?}");
+        };
+        assert_eq!(running.trials, 6);
+        assert_eq!(excluded.trials, 14);
+        assert_eq!(running.tokens, excluded.tokens);
+    }
+
+    #[test]
+    fn the_excluded_half_is_in_the_sentence() {
+        let shown = Proposal::within(
+            ceiling(),
+            &each(500, 1_000),
+            Duration::from_nanos(12_000),
+            2,
+        )
+        .to_string();
+        assert!(shown.contains("EXCLUDED"), "{shown}");
+        assert!(shown.contains("14 paired trial(s)"), "{shown}");
+    }
+
+    #[test]
+    fn a_budget_below_a_comparison_refuses_rather_than_shrinking() {
+        let held = Proposal::within(ceiling(), &each(500, 1_000), Duration::from_nanos(3_000), 2);
+        assert_eq!(
+            held,
+            Proposal::NotEnough {
+                least: Work {
+                    trials: 2,
+                    ..ceiling()
+                }
+            }
+        );
+        assert_eq!(held.running(), None);
+        assert!(held.to_string().contains("less than a comparison"));
+    }
+
+    #[test]
+    fn planning_is_against_the_slow_edge() {
+        // Fast edge 1ns, slow edge 1000ns, budget 12_000ns. Against the fast
+        // edge six thousand trials would "fit"; against the slow one, six.
+        let held = Proposal::within(ceiling(), &each(1, 1_000), Duration::from_nanos(12_000), 2);
+        assert_eq!(held.running().map(|work| work.trials), Some(6));
+    }
+}

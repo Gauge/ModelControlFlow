@@ -155,6 +155,13 @@ enum Request<'a> {
         resolving: Option<u64>,
         /// Whether every trial must load the model for itself (§6.13, F65).
         cold: bool,
+        /// A wall-clock budget, in seconds, from the operator.
+        ///
+        /// **The operator's, not the laboratory's** (B-224, B-226). A lab may
+        /// not declare its work in minutes; a person may certainly say how
+        /// many they have. What MCF owes in return is a proposal naming what
+        /// fits and what does not, rather than a quietly smaller run (§3.1).
+        within: Option<u64>,
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
@@ -690,6 +697,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut engine = None;
     let mut resolving = None;
     let mut cold = false;
+    let mut within = None;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -739,6 +747,15 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                 }
             },
             "--cold" => cold = true,
+            "--within" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(seconds) => within = Some(seconds),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--within <seconds>, a number",
+                    });
+                }
+            },
             "--resolving" => match rest.next().and_then(|value| per_cent(value)) {
                 Some(held) => resolving = Some(held),
                 None => {
@@ -754,8 +771,51 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
         }
     }
 
+    Ok(assembled(&Asked {
+        left,
+        right,
+        prompt,
+        limit,
+        seed,
+        engine,
+        resolving,
+        cold,
+        within,
+    }))
+}
+
+/// What `bench` was asked for, before it is known to be a complete request.
+struct Asked<'a> {
+    left: Option<&'a str>,
+    right: Option<&'a str>,
+    prompt: Option<&'a str>,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&'a str>,
+    resolving: Option<u64>,
+    cold: bool,
+    within: Option<u64>,
+}
+
+/// A benchmark request, or the first thing missing from one.
+///
+/// Which thing is missing is named rather than counted: *bench needs an
+/// argument* sends the reader back to the manual, and `--against <model>`
+/// sends them back to the shell.
+fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
+    let &Asked {
+        left,
+        right,
+        prompt,
+        limit,
+        seed,
+        engine,
+        resolving,
+        cold,
+        within,
+    } = asked;
     match (left, right, prompt) {
-        (Some(left), Some(right), Some(prompt)) => Ok(Request::Bench {
+        (Some(left), Some(right), Some(prompt)) => Request::Bench {
             left,
             right,
             prompt,
@@ -764,19 +824,20 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             engine,
             resolving,
             cold,
-        }),
-        (None, _, _) => Ok(Request::MissingArgument {
+            within,
+        },
+        (None, _, _) => Request::MissingArgument {
             command: "bench",
             needs: "<model>",
-        }),
-        (Some(_), None, _) => Ok(Request::MissingArgument {
+        },
+        (Some(_), None, _) => Request::MissingArgument {
             command: "bench",
             needs: "--against <model>",
-        }),
-        (Some(_), Some(_), None) => Ok(Request::MissingArgument {
+        },
+        (Some(_), Some(_), None) => Request::MissingArgument {
             command: "bench",
             needs: "--prompt <text>",
-        }),
+        },
     }
 }
 
@@ -1120,6 +1181,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             engine,
             resolving,
             cold,
+            within,
         } => bench::bench(
             left,
             right,
@@ -1129,6 +1191,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             *engine,
             resolving.map(mcf_core::measurement::PartsPerMillion),
             *cold,
+            within.map(|seconds| {
+                mcf_core::time::Duration::from_nanos(seconds.saturating_mul(1_000_000_000))
+            }),
         ),
         Request::Verify { bundle } => verify::run(bundle),
         Request::Bundle { id, into } => bundle::run(id, *into),

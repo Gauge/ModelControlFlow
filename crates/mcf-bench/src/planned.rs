@@ -114,3 +114,121 @@ impl fmt::Display for Work {
 
 #[cfg(test)]
 mod tests;
+
+/// What a time budget can buy, and what it cannot (B-226, B47, §3.1).
+///
+/// **The failure this exists to prevent** is silent truncation: an operator
+/// gives a budget, the run quietly does six of the twenty things it would have
+/// done, and reports the six. Nothing on the page is false, and the reader has
+/// still been misled — they are looking at a sixth of an experiment believing
+/// it is the experiment. §3.1's rule is that *ran 6 of 20* is always
+/// accompanied by the fourteen.
+///
+/// So a budget produces a **proposal**, which names both halves, or it
+/// produces a refusal that says why no proposal could be made. It never
+/// produces a smaller run with no note attached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Proposal {
+    /// The whole declaration fits.
+    Whole {
+        /// What will run.
+        running: Work,
+    },
+    /// Some of it fits, and this is the rest.
+    Fewer {
+        /// What will run.
+        running: Work,
+        /// What will not, which is never left unsaid.
+        excluded: Work,
+    },
+    /// Not even the least that would be a comparison fits.
+    ///
+    /// A refusal rather than a one-pair run: two trials of two arms is the
+    /// smallest thing that is a paired comparison at all, and producing
+    /// something below it would be answering a different question quietly.
+    NotEnough {
+        /// The least work that would have been a comparison.
+        least: Work,
+    },
+}
+
+impl Proposal {
+    /// What a budget buys, planned against the slow edge of a measured band.
+    ///
+    /// **The slow edge on purpose.** Planning against the fast edge would put
+    /// the run over budget about as often as under it, and the whole point of
+    /// a budget is the ceiling. Planning conservatively means a run sometimes
+    /// finishes early, which is the harmless direction.
+    ///
+    /// **`least` is the caller's**, not this module's: what counts as the
+    /// smallest worthwhile comparison belongs to whoever is asking, and a
+    /// number chosen here would be one more figure MCF invented.
+    #[must_use]
+    pub fn within(
+        ceiling: Work,
+        each: &Estimate<Duration<Monotonic>>,
+        budget: Duration<Monotonic>,
+        least: usize,
+    ) -> Self {
+        let per_trial = each
+            .high()
+            .as_nanos()
+            .saturating_mul(u64::try_from(ceiling.arms).unwrap_or(u64::MAX));
+        let affordable = if per_trial == 0 {
+            ceiling.trials
+        } else {
+            usize::try_from(budget.as_nanos().wrapping_div(per_trial)).unwrap_or(usize::MAX)
+        };
+        if affordable < least {
+            return Self::NotEnough {
+                least: Work {
+                    trials: least,
+                    ..ceiling
+                },
+            };
+        }
+        if affordable >= ceiling.trials {
+            return Self::Whole { running: ceiling };
+        }
+        Self::Fewer {
+            running: Work {
+                trials: affordable,
+                ..ceiling
+            },
+            excluded: Work {
+                trials: ceiling.trials.saturating_sub(affordable),
+                ..ceiling
+            },
+        }
+    }
+
+    /// What will run, where anything will.
+    #[must_use]
+    pub const fn running(&self) -> Option<Work> {
+        match self {
+            Self::Whole { running } | Self::Fewer { running, .. } => Some(*running),
+            Self::NotEnough { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for Proposal {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Whole { running } => {
+                write!(form, "the whole declaration fits the budget: {running}")
+            }
+            Self::Fewer { running, excluded } => write!(
+                form,
+                "the budget buys {running} — EXCLUDED, and not silently: {excluded}, because at \
+                 the slow edge of this machine's measured band that is what would not fit \
+                 (§3.1, B-226)"
+            ),
+            Self::NotEnough { least } => write!(
+                form,
+                "the budget buys less than a comparison. The least that would be one is \
+                 {least}, and a run below it would answer a smaller question without saying so"
+            ),
+        }
+    }
+}

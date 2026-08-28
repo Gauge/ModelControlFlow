@@ -11,7 +11,9 @@ const NOWHERE: &str = "/nonexistent/mcf-bench-test/model.gguf";
 /// command starts one.
 #[test]
 fn without_a_daemon_it_refuses_rather_than_reporting() {
-    let response = bench_where(None, NOWHERE, NOWHERE, "hello", None, 0, None, None, false);
+    let response = bench_where(
+        None, NOWHERE, NOWHERE, "hello", None, 0, None, None, false, None,
+    );
     assert!(!response.served);
     assert!(
         response.text.contains("there is no model at"),
@@ -27,7 +29,9 @@ fn a_missing_daemon_is_named() {
     let scratch = std::env::temp_dir().join(format!("mcf-bench-{}.gguf", std::process::id()));
     let _written = std::fs::write(&scratch, b"not a model, and never read");
     let named = scratch.display().to_string();
-    let response = bench_where(None, &named, &named, "hello", None, 0, None, None, false);
+    let response = bench_where(
+        None, &named, &named, "hello", None, 0, None, None, false, None,
+    );
     let _removed = std::fs::remove_file(&scratch);
     assert!(!response.served);
     assert!(
@@ -81,7 +85,7 @@ fn a_resolution_is_read_without_a_float() {
 fn asking_for_a_cold_run_is_an_argument_and_not_a_default() {
     let source = include_str!("../bench.rs");
     assert!(
-        source.contains("let (left_identifiers, right_identifiers) = if cold {"),
+        source.contains("fn vocabularies(") && source.contains("    if cold {"),
         "the flag must decide whether identifiers are sent, which is what decides whether the \
          request reaches the server that holds a model (B-376, F65)"
     );
@@ -108,15 +112,9 @@ fn a_mixed_run_says_what_to_do_about_it() {
     }
 }
 
-/// **B24 with a name attached.** A run that could not decide renders what was
-/// competing with it, and says plainly that MCF is not attributing the
-/// indecision to the arms (PR5, §3.8, B-216).
-///
-/// Deterministic, because the trigger is not: five attempts to provoke a real
-/// *not decided* at loads up to sixty-one all reached a verdict instead, which
-/// is a fact about the stopping condition rather than about this path (F70).
-#[test]
-fn a_run_that_could_not_decide_renders_what_competed_with_it() {
+/// The rendering of a run that could not decide, built once for the
+/// assertions that follow it.
+fn rendering_of_a_run_that_could_not_decide() -> String {
     use mcf_bench::compare::{Discipline, Interleaving, UnderTest};
     use mcf_bench::warmth::Warmth;
     use mcf_core::attested::Attested;
@@ -179,7 +177,7 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
         load: Attested::Unknown,
         accelerator: Attested::Unknown,
     };
-    let said = super::report(
+    super::report(
         &finding,
         &held,
         &Err("nowhere to write".to_owned()),
@@ -196,12 +194,30 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
                 tokens: 128,
             },
             expected: "no expected duration: nothing has been measured".to_owned(),
+            proposal: Some("the budget buys 6 paired trial(s) — EXCLUDED, and not silently: 14 paired trial(s)".to_owned()),
+            refused: None,
         },
         Some(&snapshot),
         Some(&Err("nor the snapshot".to_owned())),
-    );
+    )
+}
+
+/// **B24 with a name attached.** A run that could not decide renders what was
+/// competing with it, and says plainly that MCF is not attributing the
+/// indecision to the arms (PR5, §3.8, B-216).
+///
+/// Deterministic, because the trigger is not: five attempts to provoke a real
+/// *not decided* at loads up to sixty-one all reached a verdict instead, which
+/// is a fact about the stopping condition rather than about this path (F70).
+#[test]
+fn a_run_that_could_not_decide_renders_what_competed_with_it() {
+    let said = rendering_of_a_run_that_could_not_decide();
 
     assert!(said.contains("what was competing"), "{said}");
+    assert!(
+        said.contains("EXCLUDED, and not silently"),
+        "B-226, §3.1: what a budget excluded is on the page beside what it ran: {said}"
+    );
     assert!(
         said.contains("400 generation(s)"),
         "B-224: the work is declared in countable units: {said}"

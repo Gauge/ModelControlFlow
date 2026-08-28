@@ -84,10 +84,15 @@ fn the_duration_is_derived_and_banded() {
 fn an_impossible_amount_of_work_does_not_wrap() {
     let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
     assert_eq!(
-        source.matches("saturating_mul").count(),
-        4,
+        source.matches("_mul(").count(),
+        source.matches("saturating_mul(").count(),
         "every multiplication in the derivation must saturate: a wrapped one turns a century \
          of work into a microsecond, which is the one wrong answer that reads as good news"
+    );
+    assert!(
+        source.matches("saturating_mul(").count() >= 4,
+        "the counts and the derivation each multiply, and this check is worth nothing if \
+         they stop"
     );
 }
 
@@ -96,9 +101,12 @@ fn an_impossible_amount_of_work_does_not_wrap() {
 #[test]
 fn the_operator_is_shown_counts_and_a_marked_estimate() {
     let rendering = code_only(&read("crates/mcf-bench/src/planned.rs"));
-    let (_, shown) = rendering
+    let (_, after) = rendering
         .split_once("impl fmt::Display for Work")
         .expect("`Work` renders itself");
+    let (shown, _) = after
+        .split_once("\n}")
+        .expect("and that rendering ends somewhere");
     for unit in ["second", "minute", "hour", " ms", "Duration"] {
         assert!(
             !shown.contains(unit),

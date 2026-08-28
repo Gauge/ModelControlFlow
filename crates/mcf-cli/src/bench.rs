@@ -104,6 +104,34 @@ fn asked_for(
     )
 }
 
+/// The prompt as each model's own vocabulary produces it, done **once**.
+///
+// The prompt as each model's own vocabulary produces it, done **once**
+/// rather than per trial: tokenizing is not generating, and a benchmark that
+/// paid for it every trial would be timing MCF's tokenizer alongside the
+/// engine (B-090, F64).
+///
+/// Unless the operator asked for a cold run. **Why that option exists**
+/// (F65): the provisioned engine's server holds one model at a time
+/// (DEC-001), and a paired comparison of two models alternates them — so
+/// most trials reload and some do not, which is a *mixed* run and not one
+/// measurement (§6.13). The text path is uniformly cold, because it is a
+/// fresh process per request, and uniformly cold is a measurement even
+/// though it includes what F64 measured as forty-six milliseconds of
+/// overhead. Uniform and honest beats warm and mixed.
+fn vocabularies(
+    left: &Path,
+    right: &Path,
+    prompt: &str,
+    cold: bool,
+) -> (Option<Vec<usize>>, Option<Vec<usize>>) {
+    if cold {
+        (None, None)
+    } else {
+        (as_identifiers(left, prompt), as_identifiers(right, prompt))
+    }
+}
+
 /// What a run declared it would do, and what that was expected to take.
 ///
 /// The two are separate fields on purpose (B-224). The work is a fact about
@@ -113,11 +141,20 @@ fn asked_for(
 ///
 /// [`Estimate`]: mcf_core::measurement::Estimate
 pub(crate) struct Planned {
-    /// The declaration, in countable units.
+    /// The declaration, in countable units — already reduced where a budget
+    /// bought less than the ceiling, and never reduced silently.
     work: mcf_bench::planned::Work,
     /// What that much work was expected to take here, already rendered — or
     /// why there was nothing to derive it from.
     expected: String,
+    /// What a time budget proposed, where one was given.
+    proposal: Option<String>,
+    /// Why no run was possible under the budget asked for.
+    ///
+    /// A budget that buys less than a comparison, or one MCF has no measured
+    /// rate to plan against, is a refusal with a reason — never a quietly
+    /// smaller run (§3.1, B47).
+    refused: Option<String>,
 }
 
 /// Declares the work, and derives what it should take from local history.
@@ -133,18 +170,43 @@ pub(crate) struct Planned {
 /// gets the reason it has no expectation, and still gets the declaration:
 /// B-224's countable units are what a laboratory owes, and the minutes are the
 /// part MCF may be unable to supply.
-fn declared(left: &Path, right: &Path, tokens: Option<u32>) -> Planned {
+fn declared(
+    left: &Path,
+    right: &Path,
+    tokens: Option<u32>,
+    within: Option<Duration<Monotonic>>,
+) -> Planned {
+    // B-226: the budget produces a proposal, and the proposal names both
+    // halves. Two pairs is the smallest thing that is a paired comparison at
+    // all — the same floor `bench_where` refuses below.
+    const LEAST: usize = 2;
+
     let work = mcf_bench::planned::Work {
         trials: CEILING,
         arms: 2,
         tokens: tokens.unwrap_or(0),
     };
+    // A budget MCF cannot plan against is a refusal, not a run that hopes.
+    // Truncating against a rate it does not have would be inventing the rate
+    // (A7); running the full ceiling anyway would be ignoring what was asked.
+    let unplannable = |why: String| Planned {
+        expected: format!("no expected duration: {why}"),
+        refused: within.map(|_| {
+            format!(
+                "mcf: a time budget needs a measured rate to plan against, and there is none \
+                 here — {why}\n  run without --within to take the comparison and give this \
+                 machine that history"
+            )
+        }),
+        work,
+        proposal: None,
+    };
     let Some(tokens) = tokens else {
-        return Planned {
-            work,
-            expected: "no expected duration: a behaviour run pins no generation length, so                        there is no budget to project at (D19)"
+        return unplannable(
+            "a behaviour run pins no generation length, so there is no budget to project at \
+             (D19)"
                 .to_owned(),
-        };
+        );
     };
     let history = crate::history::read();
     let sized = |path: &Path| std::fs::metadata(path).map_or(0, |meta| meta.len());
@@ -152,25 +214,46 @@ fn declared(left: &Path, right: &Path, tokens: Option<u32>) -> Planned {
         mcf_bench::project::band(&history.points, sized(left), tokens),
         mcf_bench::project::band(&history.points, sized(right), tokens),
     ];
-    let expected = match bands {
-        [Ok(one), Ok(other)] => {
-            let widest = mcf_core::measurement::Estimate::band(
-                one.low().min(other.low()),
-                one.high().max(other.high()),
-                one.basis().clone(),
-            );
-            format!(
-                "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local \
-                 history, never a measurement and never a declaration (B-224, A20)",
-                span(&work.expected(&widest)),
-                history.points.len()
-            )
-        }
-        [Err(why), _] | [_, Err(why)] => {
-            format!("no expected duration: {why}")
-        }
+    let widest = match bands {
+        [Ok(one), Ok(other)] => mcf_core::measurement::Estimate::band(
+            one.low().min(other.low()),
+            one.high().max(other.high()),
+            one.basis().clone(),
+        ),
+        [Err(why), _] | [_, Err(why)] => return unplannable(why.to_string()),
     };
-    Planned { work, expected }
+    let expected = format!(
+        "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local history, \
+         never a measurement and never a declaration (B-224, A20)",
+        span(&work.expected(&widest)),
+        history.points.len()
+    );
+    let Some(budget) = within else {
+        return Planned {
+            work,
+            expected,
+            proposal: None,
+            refused: None,
+        };
+    };
+    let proposal = mcf_bench::planned::Proposal::within(work, &widest, budget, LEAST);
+    let running = proposal.running();
+    Planned {
+        work: running.unwrap_or(work),
+        expected: running.map_or_else(
+            || expected.clone(),
+            |held| {
+                format!(
+                    "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local \
+                     history, never a measurement and never a declaration (B-224, A20)",
+                    span(&held.expected(&widest)),
+                    history.points.len()
+                )
+            },
+        ),
+        refused: running.is_none().then(|| format!("mcf: {proposal}")),
+        proposal: Some(proposal.to_string()),
+    }
 }
 
 /// A duration band as a person reads it, without a float (A6).
@@ -252,6 +335,7 @@ pub(crate) fn bench(
     engine: Option<&str>,
     resolving: Option<PartsPerMillion>,
     cold: bool,
+    within: Option<Duration<Monotonic>>,
 ) -> Response {
     bench_where(
         crate::serve::socket_path(),
@@ -263,6 +347,7 @@ pub(crate) fn bench(
         engine,
         resolving,
         cold,
+        within,
     )
 }
 
@@ -287,6 +372,7 @@ pub(crate) fn bench_where(
     engine: Option<&str>,
     resolving: Option<PartsPerMillion>,
     cold: bool,
+    within: Option<Duration<Monotonic>>,
 ) -> Response {
     let resolving = resolving.unwrap_or(RESOLVING);
     let (discipline, method, limit) = asked_for(prompt, limit, seed, engine, resolving, cold);
@@ -309,28 +395,7 @@ pub(crate) fn bench_where(
         };
     };
 
-    // The prompt as each model's own vocabulary produces it, done **once**
-    // rather than per trial: tokenizing is not generating, and a benchmark that
-    // paid for it every trial would be timing MCF's tokenizer alongside the
-    // engine (B-090, F64).
-    //
-    // Unless the operator asked for a cold run. **Why that option exists**
-    // (F65): the provisioned engine's server holds one model at a time
-    // (DEC-001), and a paired comparison of two models alternates them — so
-    // most trials reload and some do not, which is a *mixed* run and not one
-    // measurement (§6.13). The text path is uniformly cold, because it is a
-    // fresh process per request, and uniformly cold is a measurement even
-    // though it includes what F64 measured as forty-six milliseconds of
-    // overhead. Uniform and honest beats warm and mixed.
-    let (left_identifiers, right_identifiers) = if cold {
-        (None, None)
-    } else {
-        (
-            as_identifiers(&left_path, prompt),
-            as_identifiers(&right_path, prompt),
-        )
-    };
-
+    let (left_identifiers, right_identifiers) = vocabularies(&left_path, &right_path, prompt, cold);
     // B65, asked rather than assumed. One request per arm, and the account
     // says which engine ran.
     if let Err(text) = timeable(
@@ -357,7 +422,16 @@ pub(crate) fn bench_where(
     // B-224: what this run will do, counted, and — separately and derived —
     // what that would take here. Taken *before* the run: an expectation formed
     // afterwards is hindsight wearing the word *expected*.
-    let planned = declared(&left_path, &right_path, discipline.pinned_tokens());
+    let planned = declared(&left_path, &right_path, discipline.pinned_tokens(), within);
+    // §3.1 and B47: a budget that buys less than a comparison, or one there is
+    // no measured rate to plan against, refuses and says why. It never becomes
+    // a quietly smaller run.
+    if let Some(why) = planned.refused {
+        return Response {
+            text: why,
+            served: false,
+        };
+    }
     let held = interleave(
         &socket,
         Arms {
@@ -371,6 +445,7 @@ pub(crate) fn bench_where(
             seed,
             engine,
             resolving,
+            ceiling: planned.work.trials,
         },
     );
     // A4: a run that was interrupted before it had two pairs has no comparison
@@ -464,6 +539,9 @@ struct Asked<'a> {
     seed: u64,
     engine: Option<&'a str>,
     resolving: PartsPerMillion,
+    /// The most pairs this run will take — the declared ceiling, or the
+    /// smaller number a time budget proposed (B-226).
+    ceiling: usize,
 }
 
 /// Runs the pairs until the comparison decides or the ceiling is reached.
@@ -501,7 +579,7 @@ fn interleave(
         discipline.clone(),
     );
     let named = Arm::new(arms.left.0.display().to_string());
-    for _ in 0..CEILING {
+    for _ in 0..asked.ceiling {
         let ran = running.round(|which, _drew| {
             let (path, identifiers) = if *which == named {
                 arms.left
@@ -908,6 +986,11 @@ fn report(
         ),
         format!("  order    {left_first} left-first, {right_first} right-first"),
     ];
+    if let Some(proposal) = planned.proposal.as_ref() {
+        // §3.1: *ran 6 of 20* is always accompanied by the fourteen, and the
+        // fourteen are in the record rather than only on the screen.
+        lines.push(format!("  budget   {proposal}"));
+    }
     if let Some((left, right)) = held.medians() {
         // The absolute, beside the comparison and never instead of it (§3.27):
         // it answers *will this fit in my latency budget*, which a ratio

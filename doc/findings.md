@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 76 |
+| **Version** | 78 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -100,6 +100,8 @@ forward as one.
 | 70 | [F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)](#70--f70--a-run-that-cannot-decide-names-what-it-competed-with-and-i-could-not-make-one-b-216-pr5-38-b24-b4-d25-f55) |
 | 71 | [F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7) |
 | 72 | [F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7) |
+| 73 | [F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)](#73--f73--a-budget-proposes-and-what-it-excluded-is-on-the-page-b-226-b47-31-a7) |
+| 74 | [F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5542,7 +5544,126 @@ projecting it from the others, and what `mcf doctor` already reports (F68: 42
 of 49 inside, worst miss 150.1%). A separate score of the derived figure would
 be a second number that could disagree with the first about the same history.
 
+## 73 · F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)
+
+**The failure this prevents.** An operator gives a time budget, the run quietly
+does six of the twenty things it would have done, and reports the six. Nothing
+on the page is false and the reader is still misled: they are looking at a
+sixth of an experiment believing it is the experiment. §3.1's rule is that *ran
+6 of 20* always arrives with the fourteen.
+
+**A budget is the operator's, and never the laboratory's.** F72 established
+that a lab may not declare its work in minutes. A person may certainly say how
+many they have — `mcf bench --within <seconds>` — and the asymmetry is the
+point: the constraint comes from outside the apparatus, and what the apparatus
+owes in return is a *proposal*.
+
+**`Proposal` has three shapes and no fourth.** `Whole` where everything fits;
+`Fewer`, which cannot be constructed without the excluded half, so the fourteen
+are in the type and not only in the prose; and `NotEnough`, which is a refusal.
+A budget that buys less than two paired trials does not buy a smaller
+comparison, because two trials of two arms is the smallest thing that *is* a
+paired comparison and producing something below it would be answering a
+different question quietly.
+
+**Planned against the slow edge of the measured band.** Against the fast edge a
+run would go over budget about as often as under it, which makes a budget
+decorative. Under-spending is the harmless direction, so that is the direction
+the arithmetic errs in.
+
+**And a budget MCF cannot plan against is a refusal.** Truncating against a
+rate it does not have would be inventing the rate (A7); running the full
+ceiling anyway would be ignoring what the operator asked for. Measured on this
+machine, at a token budget nothing has been run at:
+
+```
+mcf: a time budget needs a measured rate to plan against, and there is none
+here — nothing has been measured at 45 tokens here; this machine has history
+at 1, 32, 64, 97, 128, 400, 2000 — two requests of different lengths are two
+different things
+  run without --within to take the comparison and give this machine that
+  history
+```
+
+The refusal names what would fix it, which is the difference between a rule and
+an obstacle.
+
+**And a refusal that was arithmetically right for a reason worth reading.**
+Asked for sixty seconds at a budget this machine *did* have history at, MCF
+refused: *the budget buys less than a comparison*. That looked wrong — sixty
+seconds is many generations of a 135M model — until the history was read. It
+was right, and why it was right is [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34).
+
+## 74 · F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)
+
+**Found while checking something else.** A benchmark of two SmolLM2
+quantizations was asked for within sixty seconds and refused: *the budget buys
+less than a comparison* (F73). Sixty seconds is a great many generations of a
+135M-parameter model, so the refusal looked like a defect. It was not. Read out
+of the record, the last three comparisons at those budgets say:
+
+| tokens | competing before | competing after | fastest left trial | slowest |
+|---|---|---|---|---|
+| 128 | 0.35 core(s) | 0.15 | 400.8 ms | 424.9 ms |
+| 128 | 33.05 core(s) | 33.10 | 6.69 s | 13.37 s |
+| 97 | 33.70 core(s) | 35.90 | 5.62 s | 18.59 s |
+| 97 | 33.25 core(s) | 33.30 | 3.43 s | 18.35 s |
+
+A generation that takes 400 milliseconds on a quiet machine took **thirteen to
+eighteen seconds** while thirty-three cores were busy. Planned against the slow
+edge of that, sixty seconds genuinely does not buy two paired trials, and the
+refusal was arithmetic rather than a bug.
+
+**What was competing was not MCF's.** The processes were a .NET test suite in
+an unrelated repository on the same machine, running at 2640% processor and
+holding twenty-six cores for the better part of twenty minutes. Nothing about
+it is MCF's business except that it was there.
+
+**B-217 worked exactly as built.** F71 said the movement across a run is
+recorded as a condition and never as a verdict, and that the reader of such a
+record can discard it while MCF cannot discard it for them. That is what
+happened: the confound is in the record, in its own field, in parts per
+million, for anyone who reads the entry. Without it, the only trace would have
+been four unexplained slow numbers.
+
+**And here is the gap it exposed.** `mcf_bench::project::band` reads the
+history and does not read the conditions the history was taken under. Four
+contended entries sit in it beside sixty-odd quiet ones, and every projection
+made from that history — the expected duration on the screen, the band
+`mcf explain` shows, the score `mcf doctor` reports — silently rests on them
+without saying so. That is not a wrong number; it is a number whose conditions
+did not travel with it, which is the thing §3.4 and A6 exist to prevent, and it
+is one layer deeper than where MCF was enforcing them.
+
+**What was deliberately not done.** The contended entries were not deleted:
+A1 forbids losing them, and they are true measurements of what this machine did
+that afternoon. Nor were they filtered out, because filtering needs a threshold
+and the threshold is DEC-007's, still open — the same wall F71 stopped at. What
+is owed is narrower and needs no decision: **a projection must carry the
+conditions of the history it rests on**, so that a reader sees *from 68
+measured arms, 4 of which were taken while the machine was not steady* rather
+than *from 68 measured arms*. That is registered as B-385.
+
+**A note on how this was found**, because it matters more than the finding.
+Nobody was looking for it. A refusal that seemed wrong was checked against the
+record instead of being adjusted until it looked right, and the record had the
+answer in a field added the previous day for an unrelated reason. That is what
+§3.8 is for.
+
 ## Changelog
+
+### Version 78 — the record caught somebody else's workload
+
+F74. Thirty-three cores of an unrelated .NET test suite made a 400 ms
+generation take eighteen seconds, B-217's machine field caught it, and the
+projection that reads that history does not yet say so. B-385 registers the
+gap; the entries stay, because A1.
+
+### Version 77 — a budget proposes rather than truncating
+
+F73. B-226: a time budget is the operator's to give and produces a proposal
+naming both halves, a refusal below a comparison, or a refusal where there is
+no measured rate to plan against — never a quietly smaller run.
 
 ### Version 76 — work is counted, and minutes are derived
 
