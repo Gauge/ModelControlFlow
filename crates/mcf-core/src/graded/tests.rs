@@ -99,3 +99,103 @@ fn an_empty_profile_says_so_rather_than_reading_as_zero() {
             .contains("no laboratory has reported")
     );
 }
+
+/// A field refuses rather than ranking what is not a field (B-127), and its
+/// numbers can only have come from here (B-167).
+mod fields {
+    use crate::graded::{Candidate, Field, Graded, LabId, NoRecommendation, Profile, Score};
+    use crate::origin::LocallyMeasured;
+
+    fn candidate(name: &str, lab: &str, parts: Option<u64>) -> Candidate {
+        let graded = parts.map_or(
+            Graded::Unknown {
+                why: "not probed".to_owned(),
+            },
+            |held| Graded::Measured(Score::new(LabId::new(lab), held)),
+        );
+        Candidate::new(
+            name,
+            LocallyMeasured::new(Profile::empty().and(LabId::new(lab), graded)),
+        )
+    }
+
+    #[test]
+    fn a_field_of_one_is_refused_and_names_the_one() {
+        let field = Field::empty().and(candidate("a", "agentic", Some(800_000)));
+        let held = field.ordered_by(&LabId::new("agentic"));
+        assert_eq!(
+            held,
+            Err(NoRecommendation::AFieldOfOne {
+                only: "a".to_owned()
+            }),
+            "a frontier with a single point is not a frontier (§6.23)"
+        );
+        let Err(why) = held else {
+            panic!("checked just above");
+        };
+        assert!(
+            why.to_string()
+                .contains("recommends whatever it was handed"),
+            "and the refusal must say why, since *the best of one* reads exactly like a \
+             comparison: {why}"
+        );
+    }
+
+    #[test]
+    fn an_empty_field_is_not_a_field_of_one() {
+        assert_eq!(
+            Field::empty().ordered_by(&LabId::new("agentic")),
+            Err(NoRecommendation::AFieldOfNone)
+        );
+    }
+
+    #[test]
+    fn a_field_of_six_with_one_reading_is_a_field_of_one() {
+        let mut field = Field::empty().and(candidate("a", "agentic", Some(800_000)));
+        for named in ["b", "c", "d", "e", "f"] {
+            field = field.and(candidate(named, "agentic", None));
+        }
+        assert_eq!(
+            field.ordered_by(&LabId::new("agentic")),
+            Err(NoRecommendation::TooFewMeasured {
+                lab: LabId::new("agentic"),
+                measured: 1
+            }),
+            "the other five were not measured badly, they were not measured (B40)"
+        );
+    }
+
+    #[test]
+    fn a_real_field_is_ordered_best_first() {
+        let field = Field::empty()
+            .and(candidate("slow", "agentic", Some(200_000)))
+            .and(candidate("quick", "agentic", Some(800_000)))
+            .and(candidate("unprobed", "agentic", None));
+        let ordered = field
+            .ordered_by(&LabId::new("agentic"))
+            .expect("two candidates were measured");
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|candidate| candidate.name())
+                .collect::<Vec<&str>>(),
+            ["quick", "slow"],
+            "and the unmeasured candidate is absent rather than last: a missing reading is not \
+             a low one (B-200)"
+        );
+    }
+
+    #[test]
+    fn a_laboratory_nobody_measured_yields_a_refusal_not_an_empty_ranking() {
+        let field = Field::empty()
+            .and(candidate("a", "agentic", Some(1)))
+            .and(candidate("b", "agentic", Some(2)));
+        assert!(
+            matches!(
+                field.ordered_by(&LabId::new("summarization")),
+                Err(NoRecommendation::TooFewMeasured { .. })
+            ),
+            "an empty list would read as *nothing is any good* rather than *nothing was asked*"
+        );
+    }
+}

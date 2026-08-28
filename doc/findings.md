@@ -112,6 +112,7 @@ forward as one.
 | 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
 | 84 | [F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)](#84--f84--the-branch-is-read-from-the-attribution-and-reading-it-from-the-category-is-the-obvious-wrong-design-b-233-b24-710-34) |
 | 85 | [F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)](#85--f85--an-idle-daemon-took-zero-processor-ticks-and-issued-zero-reads-in-ninety-seconds-b-187-b-108-b4-d5-313-618) |
+| 86 | [F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)](#86--f86--a-field-of-one-is-refused-by-name-and-a-foreign-number-has-no-route-in-b-167-b-127-b34-b43-623-5) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6171,6 +6172,50 @@ the operator ran, and no path from the daemon to the benchmark crate.
 `Machine::read_through`, reached only from `mcf doctor`, `mcf run`'s fitment
 check, `mcf pull`'s, and `mcf verify`. Every one of those is something a person
 typed.
+
+## 86 · F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)
+
+**Built ahead of the recommender, for the reason [F77](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39)
+gives.** Both items specify a *type-level* property, and a type is cheapest to
+get right before there are values to retrofit it around.
+
+**B-167: no foreign number reaches a recommendation.** `Candidate` holds a
+`LocallyMeasured<Profile>` and there is no other constructor. A contributed
+measurement is a `FromCorpus`, `origin` offers no conversion in either
+direction, and so a corpus number cannot arrive by any route — not by being
+confirmed, not by being averaged in, not by being passed as an argument that
+happens to typecheck.
+
+The failure mode this guards is not somebody deliberately ranking on foreign
+data. It is a number arriving through three layers of helpers with nobody
+noticing where it came from. A type that has to be *written* at the boundary is
+the only thing that survives that, which is why `LocallyMeasured::new` is
+deliberately not a `From`.
+
+**B-127: a field of one is not a field.** `Field::ordered_by` returns a named
+refusal rather than a list:
+
+```
+one candidate (a) is not a field: a frontier with a single point is not a
+frontier, and *the best of one* recommends whatever it was handed (§6.23)
+```
+
+and it names the one, because the operator's next move is to name a second. An
+empty field is a *different* refusal from a field of one, since *nothing was
+considered* and *only this was considered* are different situations.
+
+**And the case that would otherwise slip through.** A field of six where one
+candidate has a reading is a field of one wearing six names — the other five
+were not measured badly, they were not measured (B40). `TooFewMeasured` says
+so, and names the laboratory and the count. Asking a laboratory nobody ran
+gets the same refusal rather than an empty ranking, because an empty list reads
+as *nothing is any good* rather than *nothing was asked*.
+
+**Unmeasured candidates are absent from the ordering, not last.** A missing
+reading is not a low one, which is [F77](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39)'s
+rule showing up one layer higher — and ordering is stable, so two candidates a
+laboratory could not tell apart keep the order they were considered in rather
+than one the sort invented.
 
 ## Changelog
 

@@ -130,6 +130,60 @@ fn a_profile_has_no_overall_number() {
     }
 }
 
+/// A recommendation's inputs can only have been measured here (B-167).
+#[test]
+fn no_foreign_number_can_reach_a_recommendation() {
+    let held = source();
+    assert!(
+        held.contains("profile: crate::origin::LocallyMeasured<Profile>"),
+        "a candidate must hold a locally-measured profile and nothing else: the failure mode \
+         is not somebody deliberately ranking on foreign data, it is a number arriving through \
+         three layers of helpers with nobody noticing (B34, B43)"
+    );
+    for foreign in ["FromCorpus", "fn from_corpus", "impl From<FromCorpus"] {
+        assert!(
+            !held.contains(&format!("{foreign}<Profile>")),
+            "`{foreign}` here would be a route for a contributed measurement to become an \
+             input to a recommendation (B-167, §6.28, §5)"
+        );
+    }
+    let origin = std::fs::read_to_string(
+        mcf_checks::workspace::root().join("crates/mcf-core/src/origin.rs"),
+    )
+    .expect("origin.rs is readable");
+    for conversion in [
+        "impl From<FromCorpus",
+        "impl From<LocallyMeasured",
+        "fn into_local",
+        "fn confirm",
+    ] {
+        assert!(
+            !origin.contains(conversion),
+            "`{conversion}` would let a corpus value become a local one by being confirmed; \
+             A20's shape applies — it is replaced by a measurement, never promoted into one"
+        );
+    }
+}
+
+/// A field of one is refused, not ranked (B-127).
+#[test]
+fn a_single_candidate_produces_a_refusal_with_its_reasoning() {
+    let held = source();
+    assert!(
+        held.contains("AFieldOfOne"),
+        "§6.23: a frontier with a single point is not a frontier, and the refusal is a named \
+         outcome rather than an empty list"
+    );
+    assert!(
+        held.contains("only: String"),
+        "and it names the one candidate, because the operator's next move is to name a second"
+    );
+    assert!(
+        held.contains("TooFewMeasured"),
+        "a field of six of which one has a reading is a field of one wearing six names (B40)"
+    );
+}
+
 /// Coverage travels, which is the half a reader is least likely to be shown.
 #[test]
 fn a_profile_renders_what_it_did_not_measure() {

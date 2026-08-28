@@ -289,3 +289,186 @@ impl fmt::Display for Profile {
 
 #[cfg(test)]
 mod tests;
+
+/// One thing a recommendation could be about, and where its numbers came from
+/// (B-167, B34, §6.28, §5).
+///
+/// **The wall, in the type.** A candidate holds a [`LocallyMeasured`] profile
+/// and there is no other constructor. A contributed or imported measurement is
+/// a [`FromCorpus`], there is no conversion in either direction, and so a
+/// foreign number cannot reach a recommendation by any route — not by being
+/// confirmed, not by being averaged in, not by being passed as an argument
+/// that happens to typecheck.
+///
+/// **Why that matters more than it sounds.** B43 lets the corpus advise and
+/// never decide, and the failure mode is not somebody deliberately ranking on
+/// foreign data — it is a number arriving through three layers of helpers and
+/// nobody noticing where it came from. A type that has to be *written* at the
+/// boundary is the only thing that survives that.
+///
+/// [`LocallyMeasured`]: crate::origin::LocallyMeasured
+/// [`FromCorpus`]: crate::origin::FromCorpus
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    name: String,
+    profile: crate::origin::LocallyMeasured<Profile>,
+}
+
+impl Candidate {
+    /// A candidate, from measurements taken here.
+    #[must_use]
+    pub fn new(name: impl Into<String>, profile: crate::origin::LocallyMeasured<Profile>) -> Self {
+        Self {
+            name: name.into(),
+            profile,
+        }
+    }
+
+    /// What it is called.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// What the laboratories reported about it.
+    #[must_use]
+    pub const fn profile(&self) -> &Profile {
+        self.profile.value()
+    }
+}
+
+/// Why there is no recommendation (B-127, §6.23, §3.9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoRecommendation {
+    /// Nothing was considered.
+    AFieldOfNone,
+    /// One thing was considered, which is not a field.
+    ///
+    /// **§6.23's refusal.** A frontier with a single point is not a frontier,
+    /// and *the best of one* is a sentence with no content — it recommends
+    /// whatever it was handed. Worse, it reads exactly like a comparison, so a
+    /// reader takes it as one.
+    AFieldOfOne {
+        /// What the one candidate was, so the refusal is actionable: the
+        /// operator's next move is to name a second.
+        only: String,
+    },
+    /// Fewer than two candidates were actually measured by that laboratory.
+    ///
+    /// A field of six of which one has a reading is a field of one wearing
+    /// six names (B40): the others were not measured badly, they were not
+    /// measured.
+    TooFewMeasured {
+        /// Which laboratory was asked.
+        lab: LabId,
+        /// How many candidates it has a reading for.
+        measured: usize,
+    },
+}
+
+impl fmt::Display for NoRecommendation {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AFieldOfNone => form.write_str(
+                "nothing was considered, so there is nothing to recommend and nothing to \
+                 compare",
+            ),
+            Self::AFieldOfOne { only } => write!(
+                form,
+                "one candidate ({only}) is not a field: a frontier with a single point is not a \
+                 frontier, and *the best of one* recommends whatever it was handed (§6.23)"
+            ),
+            Self::TooFewMeasured { lab, measured } => write!(
+                form,
+                "{lab} has a reading for {measured} of the candidates, which is not a \
+                 comparison: the others were not measured badly, they were not measured (B40)"
+            ),
+        }
+    }
+}
+
+/// The candidates under consideration.
+///
+/// **What it will not do.** There is no method here that ranks across
+/// laboratories, and none that produces a single number about a candidate —
+/// that is B-201's wall, and [`Profile`] holds it. What a field does is order
+/// candidates *within one laboratory*, which is the only comparison that has a
+/// referent (B41, §3.9).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Field {
+    candidates: Vec<Candidate>,
+}
+
+impl Field {
+    /// A field with nothing in it.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            candidates: Vec::new(),
+        }
+    }
+
+    /// Considers a candidate.
+    #[must_use]
+    pub fn and(mut self, candidate: Candidate) -> Self {
+        self.candidates.push(candidate);
+        self
+    }
+
+    /// Everything under consideration.
+    #[must_use]
+    pub fn all(&self) -> &[Candidate] {
+        &self.candidates
+    }
+
+    /// The candidates one laboratory measured, best first.
+    ///
+    /// **Refuses rather than ranks** where there is no field to rank (B-127).
+    /// Candidates that laboratory did not measure are not last — they are not
+    /// in the ordering at all, because a missing reading is not a low one
+    /// (B40, B-200).
+    ///
+    /// # Errors
+    ///
+    /// [`NoRecommendation`], by name: an empty field, a field of one, or a
+    /// laboratory with fewer than two readings across the field.
+    pub fn ordered_by(&self, lab: &LabId) -> Result<Vec<&Candidate>, NoRecommendation> {
+        match self.candidates.as_slice() {
+            [] => return Err(NoRecommendation::AFieldOfNone),
+            [only] => {
+                return Err(NoRecommendation::AFieldOfOne {
+                    only: only.name.clone(),
+                });
+            }
+            _ => {}
+        }
+        let mut measured: Vec<(&Candidate, u64)> = self
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .profile()
+                    .all()
+                    .iter()
+                    .find(|(named, _)| named == lab)
+                    .and_then(|(_, graded)| graded.score())
+                    .filter(|score| score.lab() == lab)
+                    .map(|score| (candidate, score.parts_per_million()))
+            })
+            .collect();
+        if measured.len() < 2 {
+            return Err(NoRecommendation::TooFewMeasured {
+                lab: lab.clone(),
+                measured: measured.len(),
+            });
+        }
+        // Descending, and stable, so that two candidates a laboratory could
+        // not tell apart stay in the order they were considered rather than in
+        // one this function invented.
+        measured.sort_by_key(|(_, parts)| core::cmp::Reverse(*parts));
+        Ok(measured
+            .into_iter()
+            .map(|(candidate, _)| candidate)
+            .collect())
+    }
+}
