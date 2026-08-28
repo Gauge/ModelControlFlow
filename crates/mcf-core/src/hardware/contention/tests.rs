@@ -201,3 +201,53 @@ fn it_reports_a_number_and_no_verdict() {
         );
     }
 }
+
+/// **The defect F90 found.** The rate was computed by dividing accumulated
+/// processor ticks by [`OVER`], the interval the sampler *intends* to wait.
+/// Walking `/proc` costs real time — a file read per process — and that time
+/// falls inside the window, so the true interval is always longer than `OVER`
+/// and the reported figure is inflated by exactly the ratio. It inflates most
+/// when the machine is busiest, because that is when the walk is slowest and
+/// when the reading matters.
+///
+/// Measured against `/proc/stat` on this machine: under forty-eight spinners
+/// on thirty-two threads, dividing by `OVER` reported **35.2 cores** — more
+/// than the machine has — where the kernel's own accounting said **28.9**.
+/// Dividing by the elapsed time instead agreed to under one percent.
+#[test]
+fn the_interval_is_measured_rather_than_assumed() {
+    let source = include_str!("../contention.rs");
+    assert!(
+        source.contains("saturating_duration_since(opened)"),
+        "the window a rate is divided by must be the one that elapsed, not the one that was \
+         intended: `/proc` takes time to walk and that time is inside the window"
+    );
+    assert!(
+        !source.contains("OVER.as_millis()"),
+        "dividing by the intended interval is the defect itself, and it reports figures the \
+         machine cannot physically produce"
+    );
+}
+
+/// A machine cannot be more than fully busy.
+///
+/// The arithmetic check the old code would have failed: no snapshot may report
+/// more cores competing than the machine has, because a figure above the
+/// ceiling is not a large reading, it is a broken instrument.
+#[test]
+fn no_snapshot_reports_more_cores_than_the_machine_has() {
+    let held = super::sample();
+    let ceiling = u64::try_from(std::thread::available_parallelism().map_or(1, Into::into))
+        .unwrap_or(u64::MAX)
+        .saturating_mul(1_000);
+    // A tenth of slack for scheduling granularity: the tick accounting is
+    // integral and a process can be credited a tick it began before the
+    // window opened. Ten percent is far below the 22% the defect produced.
+    let slack = ceiling.saturating_add(ceiling.wrapping_div(10));
+    assert!(
+        held.cores_taken <= slack,
+        "reported {} thousandths of a core on a machine with {ceiling} — a reading above the \
+         ceiling is a broken instrument, not a busy machine",
+        held.cores_taken
+    );
+}

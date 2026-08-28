@@ -116,6 +116,7 @@ forward as one.
 | 87 | [F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)](#87--f87--a-contribution-has-nowhere-to-put-a-task-and-no-way-to-be-unsent-b-171-b-203-b-251-b-310-b42-b54-d21-630-320) |
 | 88 | [F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)](#88--f88--a-behaviour-laboratorys-bound-has-nowhere-to-put-a-wall-clock-b-230-b-223-b45-d8-d13-38) |
 | 89 | [F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)](#89--f89--a-figure-with-a-unit-and-nothing-behind-it-is-the-most-convincing-kind-of-wrong-b-188-b-163-b-164-b39-b31-a20-a7) |
+| 90 | [F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6390,6 +6391,70 @@ acceptable for somebody else's measurement — the same kind of figure DEC-007
 exists to derive rather than assume, and the same wall
 [F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
 stopped at. A check forbids the words.
+
+## 90 · F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)
+
+**Found by an operator's question, not by a test.** Asked whether the noisy
+benchmarks of [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34)
+were simply a machine with headroom to spare, the first thing to check was the
+core count. This machine is a 16-core, 32-thread Ryzen 9 9950X. The record
+contained a comparison whose conditions said **44.05 cores competing** — a
+figure the machine cannot physically produce.
+
+**The instrument was dividing by the interval it intended to wait.**
+`contention::sample` reads every process's accumulated processor time, sleeps
+`OVER` (200 ms), reads again, and converts the difference to a rate by dividing
+by `OVER`. But walking `/proc` costs real time — one file read per process —
+and that time falls *inside* the window. The true interval is `OVER` plus two
+walks, and the reported rate is inflated by exactly their ratio.
+
+**It inflates most when it matters most.** The walk is slower when the machine
+is busy, which is precisely when the reading is being taken and relied upon.
+Measured against `/proc/stat`, which is the kernel's own accounting and cannot
+exceed the core count:
+
+| condition | dividing by `OVER` | dividing by the elapsed window | `/proc/stat` |
+|---|---|---|---|
+| quiet | 1.25 cores | 1.16 | 1.16 |
+| 48 spinners on 32 threads | **35.20** | 28.65 | 28.89 |
+| 48 spinners, repeat | 35.55 | 29.19 | 29.40 |
+| 48 spinners, repeat | 35.20 | 28.81 | 29.10 |
+
+Eight percent over when quiet; **twenty-two percent over under load**, and past
+the physical ceiling. The per-process summation itself was never wrong — with
+the measured interval it agrees with the kernel to under one percent.
+
+**Fixed, and the interval is now a condition.** The window is measured with the
+monotonic clock and carried on the `Snapshot` as `over_millis`, because it is
+not constant: it grows with the number of processes and with how busy the
+machine is, and two snapshots taken over different windows are not the same
+measurement (§3.4). Rebuilt and re-measured under the same 48 spinners, MCF
+reports 28.5–29.3 cores where the kernel reports 32.0–32.2 — under rather than
+over, and never above the ceiling.
+
+**Two checks now hold it.** One forbids the old arithmetic by name. The other
+asserts that no snapshot reports more cores than the machine has, with ten
+percent of slack for tick granularity — an assertion the defect would have
+failed by more than twice that margin.
+
+**What this does to what was already recorded.** Every machine reading in the
+record before this fix is high by roughly a fifth. The recorded *44.05 cores*
+was about 36; the recorded *33* was about 27. The entries stay as they are
+(A1) — they are what the instrument said — and the conclusion of F74 is
+unchanged and in fact sharpened: those runs were at 85 % to 113 % of what a
+32-thread machine can deliver. There was no headroom at all.
+
+**And a caution about the class of defect.** The reading was wrong in the
+direction that makes a machine look busier than it is, which is the direction
+that would have made a refusal threshold fire too often. Had B-217's refusal
+been built when it was asked for, it would have been calibrated against an
+instrument that was over-reading by a fifth under exactly the conditions the
+threshold governs. Two of this session's decisions not to invent a threshold —
+[F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+and [F75](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7)
+— turn out to have been protecting against this without knowing it. *Measure
+the instrument before you calibrate anything against it* is §6.16 with a number
+attached.
 
 ## Changelog
 

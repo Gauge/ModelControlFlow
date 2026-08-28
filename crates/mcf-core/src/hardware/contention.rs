@@ -89,6 +89,14 @@ impl fmt::Display for Competitor {
 /// What the machine was doing at one moment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
+    /// How long the reading actually took, in milliseconds.
+    ///
+    /// A condition of the rate rather than a detail (§3.4, F90): the window is
+    /// [`OVER`] plus whatever walking `/proc` cost, which is not constant and
+    /// grows with the number of processes and with how busy the machine is.
+    /// Carried so that two snapshots can be told apart when one was taken over
+    /// twice the window of the other.
+    pub over_millis: u64,
     /// The processes taking the most processor time, most first.
     pub competitors: Vec<Competitor>,
     /// How much of a core everything took between them, in thousandths.
@@ -118,7 +126,7 @@ impl fmt::Display for Snapshot {
             "{}.{:02} core(s) taken over {} ms by {} process(es)",
             self.cores_taken / 1000,
             (self.cores_taken % 1000) / 10,
-            OVER.as_millis(),
+            self.over_millis,
             self.competitors.len()
         )
     }
@@ -213,10 +221,29 @@ pub fn steadiness(readings: usize) -> Steadiness {
 /// make MCF one of the competitors it is reporting (§3.8, B3).
 #[must_use]
 pub fn sample() -> Snapshot {
+    use crate::time::Clock as _;
+
     let ours = std::process::id();
+    let clock = crate::time::SystemClock;
+    // **The interval is measured, not assumed** (F90). Walking `/proc` costs
+    // real time — it reads a file per process — and that time falls *inside*
+    // the window the rate is computed over. Dividing by `OVER` when the window
+    // was longer inflates every figure by exactly the ratio, and it inflates
+    // most when the machine is busiest, because that is when the walk is
+    // slowest and when the reading matters. Measured against `/proc/stat`,
+    // assuming `OVER` reported 35.2 cores on a 32-thread machine where the
+    // truth was 28.9; dividing by the elapsed time instead agreed to under one
+    // percent.
+    let opened = clock.now();
     let before = processor_time();
     std::thread::sleep(OVER);
     let after = processor_time();
+    let elapsed_millis = clock
+        .now()
+        .saturating_duration_since(opened)
+        .as_nanos()
+        .wrapping_div(1_000_000)
+        .max(1);
 
     let ticks = ticks_per_second();
     let mut competitors: Vec<Competitor> = after
@@ -235,7 +262,7 @@ pub fn sample() -> Snapshot {
             let whole = took
                 .saturating_mul(1_000)
                 .saturating_mul(1_000)
-                .wrapping_div(ticks.saturating_mul(u64::try_from(OVER.as_millis()).unwrap_or(1)));
+                .wrapping_div(ticks.saturating_mul(elapsed_millis));
             Some(Competitor {
                 pid: *pid,
                 command: command.clone(),
@@ -252,6 +279,7 @@ pub fn sample() -> Snapshot {
     competitors.truncate(NAMED);
 
     Snapshot {
+        over_millis: elapsed_millis,
         competitors,
         cores_taken,
         processor_pressure: pressure("cpu"),

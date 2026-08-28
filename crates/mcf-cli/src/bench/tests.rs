@@ -164,6 +164,7 @@ fn rendering_of_a_run_that_could_not_decide() -> String {
     );
 
     let snapshot = Snapshot {
+        over_millis: 214,
         competitors: vec![Competitor {
             pid: 4242,
             command: "a burner somebody left running".to_owned(),
