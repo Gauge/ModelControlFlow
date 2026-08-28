@@ -475,6 +475,67 @@ pub fn series<Q: Quantity>(series: &Series<Q>, as_integer: impl Fn(Q) -> i64) ->
     ])
 }
 
+/// What was competing for the machine (B-216, PR5).
+///
+/// The command lines are the operator's own machine's and go into the
+/// operator's own record; §3.20's gate is on whatever *sends* a record rather
+/// than on writing one, and a snapshot naming no names would be a number where
+/// a diagnosis was asked for.
+#[must_use]
+pub fn contention(held: &mcf_core::hardware::Snapshot) -> Value {
+    let fraction = |value: Attested<u64>| match value {
+        Attested::Known(held) => Value::Integer(i64::try_from(held).unwrap_or(i64::MAX)),
+        Attested::Unknown => Value::Null,
+    };
+    Value::map([
+        (
+            "over_ms",
+            Value::Integer(i64::try_from(mcf_core::hardware::OVER.as_millis()).unwrap_or(i64::MAX)),
+        ),
+        (
+            "cores_taken_thousandths",
+            Value::Integer(i64::try_from(held.cores_taken).unwrap_or(i64::MAX)),
+        ),
+        ("processor_pressure_ppm", fraction(held.processor_pressure)),
+        ("memory_pressure_ppm", fraction(held.memory_pressure)),
+        ("storage_pressure_ppm", fraction(held.storage_pressure)),
+        (
+            "load_average_thousandths",
+            match held.load {
+                Attested::Known(load) => Value::Integer(i64::try_from(load.0).unwrap_or(i64::MAX)),
+                Attested::Unknown => Value::Null,
+            },
+        ),
+        // D25: a capability of the observer, and *unknown* is not *none*.
+        (
+            "accelerator_occupancy",
+            match &held.accelerator {
+                Attested::Known(said) => Value::text(said.clone()),
+                Attested::Unknown => Value::Null,
+            },
+        ),
+        (
+            "competitors",
+            Value::List(
+                held.competitors
+                    .iter()
+                    .map(|one| {
+                        Value::map([
+                            ("pid", Value::Integer(i64::from(one.pid))),
+                            ("command", Value::text(one.command.clone())),
+                            (
+                                "cores_taken_thousandths",
+                                Value::Integer(i64::try_from(one.cores_taken).unwrap_or(i64::MAX)),
+                            ),
+                            ("is_mcf", Value::Bool(one.is_mcf)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
 /// The machine, as read at this moment (§3.8).
 #[must_use]
 pub fn machine(machine: &Machine) -> Value {

@@ -27,12 +27,42 @@ fn the_record_does_not_know_what_content_is() {
         let source = code_only(&record_source(file));
         for forbidden in ["Content", "ContentStore", "content::"] {
             assert!(
-                !source.contains(forbidden),
+                !names(&source, forbidden),
                 "`{forbidden}` appears in {file}: the record has acquired a way to hold \
                  user content (A25, §6.8)"
             );
         }
     }
+}
+
+/// Whether a source *names* something, rather than merely containing its
+/// letters.
+///
+/// **Why this is not `contains`.** It was, and it caught `ContentionSnapshot` —
+/// a record kind about what was competing for the machine, which begins with
+/// the six letters of `Content` and has nothing to do with user content
+/// (B-216). A check that cannot tell a type from a prefix is a check that
+/// blocks correct work and teaches people to rename around it, which is how a
+/// rule stops being believed.
+///
+/// So an occurrence followed by a lowercase letter is part of a longer word and
+/// is not the name. `ContentStore` still matches, because `S` is not lowercase;
+/// `Contention` does not.
+fn names(source: &str, wanted: &str) -> bool {
+    let mut rest = source;
+    while let Some(at) = rest.find(wanted) {
+        let after = rest
+            .get(at.saturating_add(wanted.len())..)
+            .and_then(|held| held.chars().next());
+        if !after.is_some_and(|held| held.is_ascii_lowercase()) {
+            return true;
+        }
+        let Some(next) = rest.get(at.saturating_add(wanted.len())..) else {
+            return false;
+        };
+        rest = next;
+    }
+    false
 }
 
 /// And the content store never mentions the record's types.
@@ -115,4 +145,29 @@ fn record_source(file: &str) -> String {
         .join(file);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
+}
+
+/// The check tells a type from a prefix.
+///
+/// It did not, and refused `ContentionSnapshot` — a record kind about what was
+/// competing for the machine (B-216), which shares six letters with `Content`
+/// and nothing else. A check that blocks correct work teaches people to rename
+/// around it, and a rule people rename around is a rule nobody believes.
+#[test]
+fn the_check_tells_a_type_from_a_prefix() {
+    assert!(names("pub struct Content {", "Content"));
+    assert!(names("Content,", "Content"));
+    assert!(names("ContentStore", "ContentStore"));
+    assert!(
+        names("fn holds(held: Content) {", "Content"),
+        "the type in a signature is still the type"
+    );
+    assert!(
+        !names("ContentionSnapshot,", "Content"),
+        "a longer word that begins with the letters is not the name"
+    );
+    assert!(
+        !names("contention_snapshot", "content::"),
+        "nor is a field whose name merely starts alike"
+    );
 }

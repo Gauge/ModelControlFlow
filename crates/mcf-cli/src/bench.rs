@@ -242,14 +242,54 @@ pub(crate) fn bench_where(
     }
 
     let finding = held.finding(resolving);
+    // B24, PR5: a run that could not decide is one whose next question is
+    // *what was competing with it*, and MCF is the only thing positioned to
+    // answer — it was here when it happened. Sampled **after** the run, so
+    // that MCF is not one of the competitors it reports (§3.8, B3), and only
+    // when there is something to explain: B4 refuses ambient sampling.
+    let competing = matches!(
+        finding.verdict(),
+        Some(mcf_bench::enough::Verdict::NotYet { .. })
+    )
+    .then(mcf_core::hardware::contention);
     let written = keep(&held, &finding, &method, mcf_core::time::Timestamp::now());
+    let competing_written = competing
+        .as_ref()
+        .map(|held| keep_contention(held, mcf_core::time::Timestamp::now()));
     // Every verdict is served. A18: a benchmark has no pass condition, and a
     // command that exited non-zero on *not decided* would be a pass condition
     // wearing an exit status.
     Response {
-        text: report(&finding, &held, &written),
+        text: report(
+            &finding,
+            &held,
+            &written,
+            competing.as_ref(),
+            competing_written.as_ref(),
+        ),
         served: true,
     }
+}
+
+/// Writes a contention snapshot beside the comparison it explains.
+///
+/// PR5 requires the snapshot persist with the record rather than being a
+/// transient thing on a screen, so that the finding survives the terminal it
+/// was printed in (§3.1).
+fn keep_contention(held: &mcf_core::hardware::Snapshot, at: Timestamp) -> Result<PathBuf, String> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err("there is nowhere to write a record on this machine".to_owned());
+    };
+    let mut journal =
+        Journal::open(&path).map_err(|failure| format!("the record would not open — {failure}"))?;
+    journal
+        .append(&Record::new(
+            EntryKind::ContentionSnapshot,
+            at,
+            mcf_record::encode::contention(held),
+        ))
+        .map(|_id| path)
+        .map_err(|failure| format!("the snapshot would not append — {failure}"))
 }
 
 /// The two arms of a comparison: where each model is, and the prompt as each
@@ -691,6 +731,8 @@ fn report(
     finding: &mcf_bench::compare::Finding,
     held: &Comparison<Monotonic>,
     written: &Result<PathBuf, String>,
+    competing: Option<&mcf_core::hardware::Snapshot>,
+    competing_written: Option<&Result<PathBuf, String>>,
 ) -> String {
     let (left_first, right_first) = held.order_balance();
     let mut lines = vec![
@@ -750,6 +792,23 @@ fn report(
             "  measurable; comparing a model with itself is uniform too.",
         ] {
             lines.push(said.to_owned());
+        }
+    }
+    if let Some(snapshot) = competing {
+        lines.push(String::new());
+        lines.push("── what was competing, sampled after the run ─────────────────".to_owned());
+        lines.push(format!("  {snapshot}"));
+        for one in &snapshot.competitors {
+            lines.push(format!("    {one}"));
+        }
+        lines.push(
+            "  This run could not decide, and B24 says MCF must not attribute that".to_owned(),
+        );
+        lines.push(
+            "  to the arms. What it can do is say what else was here (PR5, §3.8).".to_owned(),
+        );
+        if let Some(Err(why)) = competing_written {
+            lines.push(format!("  THE SNAPSHOT WAS NOT RECORDED — {why}"));
         }
     }
     lines.push(String::new());

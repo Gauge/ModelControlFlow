@@ -246,6 +246,9 @@ pub(crate) fn summarize(entry: &Entry) -> String {
         // A9: a comparison that found nothing is a result, and it reads as
         // one here.
         EntryKind::Comparison => comparison(body),
+        // B24 with a name attached: a measurement that could not be
+        // attributed, and what else was here when it happened (PR5, B-216).
+        EntryKind::ContentionSnapshot => contention(body),
         // The other half of A9, and the one §6.3 already calls a complete
         // success: *this will not run here, because it needs 131 GiB and you
         // have 24.*
@@ -325,6 +328,26 @@ fn differing(body: &Value) -> String {
         .filter_map(Value::as_text)
         .collect::<Vec<&str>>()
         .join(", ")
+}
+
+/// A contention snapshot, as a reader meets it in the log (B-216, PR5).
+fn contention(body: &Value) -> String {
+    let competitors = body.get("competitors").and_then(Value::as_list);
+    let busiest = competitors
+        .and_then(<[Value]>::first)
+        .and_then(|one| one.get("command"))
+        .and_then(Value::as_text)
+        .unwrap_or("nothing it could name");
+    let taken = body
+        .get("cores_taken_thousandths")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    format!(
+        "what was competing: {}.{} core(s) across {} process(es), busiest {busiest}",
+        taken.wrapping_div(1_000),
+        taken.wrapping_div(100).wrapping_rem(10),
+        competitors.map_or(0, <[Value]>::len)
+    )
 }
 
 /// A plan, as a reader meets it in the log (A9, §6.3, B-213).

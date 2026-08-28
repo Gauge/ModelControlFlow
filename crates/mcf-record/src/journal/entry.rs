@@ -132,11 +132,26 @@ pub enum EntryKind {
     /// question an operator asks before downloading tens of gigabytes a second
     /// time.
     FitmentPlanned,
+    /// What was competing for this machine when a measurement could not be
+    /// attributed (B-216, PR5, §3.8, B24).
+    ///
+    /// **B24's refusal with a name attached.** Having been told a measurement
+    /// is unattributable, the operator's next question is always *by what?* —
+    /// and MCF is the only thing positioned to answer, because it was there
+    /// when it happened. This is that answer, kept: PR5 requires the snapshot
+    /// persist with the record rather than being a transient thing on a
+    /// screen, so that the finding survives the terminal it was printed in
+    /// (§3.1).
+    ///
+    /// Written when something asks for it and at no other time. B4 refuses
+    /// ambient sampling and there is no timer here: a snapshot exists because
+    /// a run could not decide, or because somebody asked.
+    ContentionSnapshot,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -154,6 +169,7 @@ impl EntryKind {
         Self::ModelConfigured,
         Self::Comparison,
         Self::FitmentPlanned,
+        Self::ContentionSnapshot,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -178,6 +194,7 @@ impl EntryKind {
             Self::ModelConfigured => "model_configured",
             Self::Comparison => "comparison",
             Self::FitmentPlanned => "fitment_planned",
+            Self::ContentionSnapshot => "contention_snapshot",
         }
     }
 

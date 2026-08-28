@@ -107,3 +107,109 @@ fn a_mixed_run_says_what_to_do_about_it() {
         );
     }
 }
+
+/// **B24 with a name attached.** A run that could not decide renders what was
+/// competing with it, and says plainly that MCF is not attributing the
+/// indecision to the arms (PR5, §3.8, B-216).
+///
+/// Deterministic, because the trigger is not: five attempts to provoke a real
+/// *not decided* at loads up to sixty-one all reached a verdict instead, which
+/// is a fact about the stopping condition rather than about this path (F70).
+#[test]
+fn a_run_that_could_not_decide_renders_what_competed_with_it() {
+    use mcf_bench::compare::{Discipline, Interleaving, UnderTest};
+    use mcf_bench::warmth::Warmth;
+    use mcf_core::attested::Attested;
+    use mcf_core::build_identity::BuildIdentity;
+    use mcf_core::hardware::{Competitor, Snapshot};
+    use mcf_core::measurement::{Conditions, Floor};
+    use mcf_core::time::{Duration, Monotonic};
+    use mcf_core::trial::{Arm, SessionId};
+
+    let arm = |named: &str| {
+        UnderTest::new(
+            Arm::new(named),
+            Conditions::new(BuildIdentity::current(), Floor::nothing_known()),
+        )
+    };
+    let named = Arm::new("one");
+    let mut running = Interleaving::<Monotonic>::new(
+        arm("one"),
+        arm("other"),
+        SessionId::new("s"),
+        3,
+        Discipline::Timing {
+            seed: 0,
+            tokens: 32,
+        },
+    );
+    // Two pairs of wildly scattered timings: too few and too noisy to decide.
+    let mut round = 0_u64;
+    for _ in 0..2 {
+        let _ran = running.round(|which, _drew| {
+            round = round.saturating_add(1);
+            let held = if *which == named { 1 } else { 9 };
+            Some((
+                Duration::from_nanos(held * 100_000_000 * round),
+                Warmth::Cold,
+            ))
+        });
+    }
+    let held = running.finish();
+    let finding = held.finding(PartsPerMillion(1_000));
+    assert!(
+        matches!(
+            finding.verdict(),
+            Some(mcf_bench::enough::Verdict::NotYet { .. })
+        ),
+        "the fixture must be undecidable, or this is testing something else: {finding}"
+    );
+
+    let snapshot = Snapshot {
+        competitors: vec![Competitor {
+            pid: 4242,
+            command: "a burner somebody left running".to_owned(),
+            cores_taken: 3_500,
+            is_mcf: false,
+        }],
+        cores_taken: 41_000,
+        processor_pressure: Attested::Known(880_000),
+        memory_pressure: Attested::Unknown,
+        storage_pressure: Attested::Known(1_200),
+        load: Attested::Unknown,
+        accelerator: Attested::Unknown,
+    };
+    let said = super::report(
+        &finding,
+        &held,
+        &Err("nowhere to write".to_owned()),
+        Some(&snapshot),
+        Some(&Err("nor the snapshot".to_owned())),
+    );
+
+    assert!(said.contains("what was competing"), "{said}");
+    assert!(said.contains("a burner somebody left running"), "{said}");
+    assert!(
+        said.contains("must not attribute that"),
+        "B24: the indecision is not attributed to the arms: {said}"
+    );
+    assert!(
+        said.contains("THE SNAPSHOT WAS NOT RECORDED"),
+        "and a snapshot that could not be kept says so rather than reading as kept (A2): {said}"
+    );
+}
+
+/// A run that *did* decide takes no snapshot, because there is nothing to
+/// explain and B4 refuses sampling for its own sake.
+#[test]
+fn a_run_that_decided_renders_no_snapshot() {
+    let source = include_str!("../bench.rs");
+    assert!(
+        source.contains("let competing = matches!("),
+        "the snapshot must be conditional on the verdict"
+    );
+    assert!(
+        source.contains("if let Some(snapshot) = competing {"),
+        "and the section conditional on there being one"
+    );
+}

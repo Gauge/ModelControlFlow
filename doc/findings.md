@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 73 |
+| **Version** | 74 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -97,6 +97,7 @@ forward as one.
 | 67 | [F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)](#67--f67--the-first-frontier-and-what-it-is-mostly-a-frontier-of-b-091-xii-34-327-f64-f65) |
 | 68 | [F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii) |
 | 69 | [F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)](#69--f69--a-band-predicted-before-the-measurement-and-the-measurement-landed-in-it-b-214-b-215-pr3-a20-b46-616-f67) |
+| 70 | [F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)](#70--f70--a-run-that-cannot-decide-names-what-it-competed-with-and-i-could-not-make-one-b-216-pr5-38-b24-b4-d25-f55) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5341,7 +5342,93 @@ every outlier the history has, and the 150% miss is one of them arriving. And
 nothing prunes the history: a measurement taken under contention stays a point
 for ever, which is a decision nobody has made (DEC-013).
 
+## 70 · F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)
+
+**B24's refusal, upgraded to a diagnosis.** §3.8: *MCF knows the difference
+between "this model is slow" and "this machine was busy". When it cannot tell
+the difference, it says so rather than attributing the result.* Having been told
+a measurement is unattributable, the operator's next question is always **by
+what?** — and MCF is the only thing positioned to answer, because it was there
+and nothing else was.
+
+**What was built.** `mcf_core::hardware::contention` reads `/proc` twice a
+stated fifth of a second apart, turns accumulated processor time into a rate,
+and **names the processes**: a snapshot whose answer is *the machine was busy*
+is a number, and one that says which processes and what they took is a
+diagnosis. The kernel's own stall accounting is read for processor, memory and
+storage. Per-process accelerator occupancy is `Unknown`, because MCF has no
+vendor library here and D25 makes *unknown* not *none*.
+
+**MCF's own process is marked, not filtered out.** It is the one process the
+reader can do something about, and a snapshot that hid it would be hiding the
+useful half.
+
+**Two rules had to be satisfied at once.** B4 refuses ambient sampling and D5
+settled it: MCF does not watch, it looks when there is a reason. So a snapshot
+is taken **because a comparison could not decide**, and at no other time — one
+caller, no timer, no thread, and *after* the run, because sampling during one
+would make MCF one of the competitors it reports. A check asserts each of those
+and counts the callers, because the failure here is the natural one: a snapshot
+is useful, so somebody takes it more often, and then on a timer, and then MCF
+is a monitor.
+
+**And it goes into the record**, as `contention_snapshot`. PR5 is explicit that
+the snapshot must persist rather than be a transient thing on a screen, because
+a finding printed and not written down does not survive the terminal (§3.1).
+
+---
+
+**What I could not do: make a real run end *not decided*.** Five attempts, all
+of them trying to provoke the condition the snapshot exists for:
+
+| resolution | budget | arms | load | outcome |
+|---|---|---|---|---|
+| 0.5% | 32 | two quantizations | 61 | decided at 113 pairs |
+| 0.1% | 32 | two quantizations | 61 | *differ by 2.0%* at 12 pairs |
+| 0.1% | 32 | one model against itself | 61 | *same* at 113 pairs |
+| 0.05% | 1 | one model against itself | 61 | refused: the unit is one decimal place |
+| 5% | 1 | two quantizations | 60 | *same* at 35 pairs |
+
+**That is a finding about the stopping condition rather than about this path.**
+F55 and F57 built it to find the count a claim needs, and on this machine, at a
+load average of sixty, with the finest resolution the unit expresses, it reached
+a verdict every time. *Not decided* is genuinely hard to reach — which is good
+news about the instrument and inconvenient for demonstrating a feature that
+fires only there.
+
+So the rendering is covered deterministically instead: a comparison built to be
+undecidable, a snapshot constructed by hand, and the section asserted — including
+that a snapshot which could **not** be written says so rather than reading as
+kept (A2). The sampling itself is tested against this real machine: that it
+names the busiest first, that the total counts processes the list did not name,
+that MCF's own process is marked, that an unreadable accelerator is unknown
+rather than idle, and that it costs the interval it states and no more.
+
+**A check that could not tell a type from a prefix.** `ContentionSnapshot`
+begins with the six letters of `Content`, and
+`checks/tests/content_is_not_the_record.rs` — which exists to stop the record
+acquiring a way to hold user content (A25, §6.8) — refused it on a substring
+match. The fix was to make the check precise rather than to rename around it: an
+occurrence followed by a lowercase letter is part of a longer word.
+**A check that blocks correct work teaches people to rename around it, and a
+rule people rename around is a rule nobody believes.**
+
+**What was not established.** The end-to-end trigger has not been observed
+firing on a real run. Thermal and clock state are not in the snapshot: F53
+measured that the only sensor this machine exposes reads sixteen degrees, which
+is not a processor temperature, and a field filled from it would be worse than
+an absent one. The interval and the number of processes named are chosen
+numbers, each stated in one line. And the command lines go into the operator's
+own record — §3.20's gate is on whatever *sends* a record, and `mcf bundle`
+already lists what leaves.
+
 ## Changelog
+
+### Version 74 — a run that cannot decide names what it competed with
+
+F70. B24's refusal with a name attached, taken on demand and never on a timer.
+And five attempts to provoke a real *not decided* at load sixty all reached a
+verdict instead, which is a finding about the stopping condition.
 
 ### Version 73 — a band predicted before the measurement
 

@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 183 |
+| **Version** | 184 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (100 done, 1 dropped, 12 in progress,
-36 blocked on a decision, 68 open).** Every item cites
+decided, 23 resolved) and 217 build items (101 done, 1 dropped, 12 in progress,
+36 blocked on a decision, 67 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -272,7 +272,7 @@ first and importance second.
 | B-212 | `mcf verify <bundle>`: reproduce the configuration, re-run the method, report agreement or divergence with conditions compared side by side | [PR2](proposals.md#pr2--the-repro-bundle), §II, A8 | A bundle from another machine either agrees, or names which conditions differ and refuses to attribute the gap | **done**. The digest is checked before a byte is read out of it — a bundle arrives from somewhere else and is an untrusted input (§3.7) — and then it says what it claims, what differs between the machine it was taken on and this one, and whether what it measured is here. The conditions comparison is `Isolation`'s, the same arithmetic that decides whether two arms of a benchmark are comparable (A8, B-085): a second way of answering *which conditions differ* would eventually disagree with the first. **The refusal is the point**: if a re-run gives a different number MCF names every difference and stops, because picking one and calling it the cause is A8's confound wearing a helpful voice. The re-run is **printed rather than run** — verifying a bundle is reading a file somebody sent, and running a model because a file said to is a different act with a different cost, which MCF does not take on the reader's behalf (§3.7, A16). A claim whose arms are not on this machine still gets the conditions comparison, which is PR2's *tells you exactly why your machine cannot* |
 | B-214 | Expectation bands from local history: project throughput for unmeasured configurations from what this machine has measured, as a labelled estimate that can never sit beside a measurement unlabelled | [PR3](proposals.md#pr3--pre-acquisition-planning), A20, B34 | Projections are band-shaped, marked as estimates, derived from local history only, and absent where there is no history | **done** (F69). `mcf_bench::project` reads between two measured sizes and **never past them**: F67 established the relationship and also measured where it stops being straight, so a file outside the measured range gets no band and the refusal says why. Band-shaped (B46), `Basis::LocalHistory` (B34), and absent at a budget nothing was measured at — two requests of different lengths are two different things. `mcf explain` says the word *ESTIMATE* in the sentence a reader meets and says what A20 forbids doing with it. **Validated by predicting first**: a quantization this machine had never benchmarked was projected at 385.7–404.5 ms and then measured at 397.3 |
 | B-215 | Every projection is scored against the measurement that eventually replaces it, and the score is reported | [PR3](proposals.md#pr3--pre-acquisition-planning), §6.16, §3.4 | Prediction error is tracked over time; a projection model whose error grows is a finding about the model | **done** (F69). Scored by **leaving each point out**: for every measurement in the history, the band its neighbours would have given is computed and compared with what it actually was. No stored predictions and no new record kind — it is recomputed from the record each time, so it moves as the history does, which is what *over time* means when the history is the thing changing. `mcf doctor` reports it: **42 of 49 inside, worst miss 150.1%**, with the five that could not be scored named rather than counted as hits — the points at the ends have nothing to be read between, and counting them would be scoring the refusal to extrapolate. The misses are real and the largest is large, which is a finding about the model rather than a reassurance |
-| B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [PR5](proposals.md#pr5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | open |
+| B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [PR5](proposals.md#pr5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | **done** (F70). `mcf_core::hardware::contention` reads two `/proc` samples a stated fifth of a second apart, turns accumulated processor time into a rate, and **names the processes** — a snapshot whose answer is *the machine was busy* is a number, one that says which processes and what they took is a diagnosis. MCF's own process is marked rather than filtered out: it is the one the reader can do something about. The kernel's own stall accounting is read for processor, memory and storage; per-process accelerator occupancy is `Unknown` because MCF has no vendor library here, and D25 makes *unknown* not *none*. **Taken because a run could not decide, and at no other time** — B4 refuses ambient sampling, and a check asserts there is exactly one caller, no timer and no thread, and that it is sampled *after* the run so MCF is not one of the competitors it reports. It goes into the record as `contention_snapshot`, because a finding printed and not written down does not survive the terminal (§3.1) |
 | B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | **done** (F65). The command builds the comparison the only way one can be built (B-250), stops when its own arithmetic decides (F55, F57), states what it reused (B-081) and records the whole of it (B-086). It sends the prompt as **identifiers**, which reaches the provisioned engine's server rather than a fresh process per request (B-376) — and that turned out to make a two-model comparison *mixed* rather than warm, because one model is resident at a time (DEC-001) and a paired comparison alternates two. So the delta is withheld from a mixed run and the refusal names the two uniform ways: `--cold`, which sends text and loads the model for every trial, and comparing a model with itself. Both were run: *no difference as large as 5.0%* at nine and at fifteen paired trials, with `reuse` stated either way. What is not answered is whether a *warm* two-model comparison is worth having, which needs two resident models and is DEC-001's question |
 
 ### M6 — Judge
@@ -394,6 +394,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 184 — a run that could not decide names what it competed with
+
+B-216 done (F70). B24's refusal with a name attached: a snapshot of what was
+taking the machine, read on demand and never on a timer, taken because a
+comparison could not decide and at no other time. It names the processes and
+marks MCF's own; what MCF cannot read is unknown rather than idle; and it goes
+into the record rather than onto a screen.
 
 ### Version 183 — a band, and the score against it
 
