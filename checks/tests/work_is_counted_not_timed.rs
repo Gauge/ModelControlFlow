@@ -19,7 +19,7 @@
 //! `Estimate` — the three places the rule could quietly be lost.
 
 // Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
-#![allow(clippy::panic)]
+#![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 /// The declaration is counts, and nothing in it is a time.
 #[test]

@@ -53,6 +53,17 @@ fn no_verdict_makes_the_benchmark_fail() {
     // From where the verdict is taken to the end of the command: everything
     // before it is MCF failing to *run* the benchmark, which is a refusal and
     // is allowed to fail.
+    // Anchored on a line that must appear exactly once, and checked to: an
+    // anchor that silently matches an earlier occurrence would move this
+    // check's window somewhere it was never meant to look, and it would still
+    // pass or fail with confidence.
+    assert_eq!(
+        source
+            .matches("let finding = held.finding(resolving);")
+            .count(),
+        1,
+        "the command takes its verdict in exactly one place, and this check reads from there"
+    );
     let Some((_, body)) = source.split_once("let finding = held.finding(resolving);") else {
         panic!("the command takes a verdict somewhere");
     };

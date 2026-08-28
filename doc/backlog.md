@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 188 |
+| **Version** | 189 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **273 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 218 build items (105 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 63 open).** Every item cites
+decided, 23 resolved) and 218 build items (106 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 62 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -309,7 +309,7 @@ first and importance second.
 | B-224 | A laboratory declares its work in countable units — trials, sweep points, tokens, documents — never in minutes | B46, D14 | No lab declares a duration; duration is derived from work × the machine's measured rate | done `mcf_bench::planned::Work` carries trials, arms and tokens and has no fourth field: no duration, no deadline, no timeout, because a type with one would let a lab declare in minutes. The duration is multiplied out of a per-generation band this machine measured, arrives as an `Estimate`, and is absent by name where there is no history — measured both ways (F72). Held by `checks/tests/work_is_counted_not_timed.rs`, since Rust cannot say *no field here means a duration*. |
 | B-225 | Duration estimates are banded, marked as estimates, scored against actuals, and their error is tracked and reported | B46, D14, A20 | A lab whose estimates are persistently wrong surfaces as a finding | done Banded and marked at the point of rendering (F72). Scored by `project::score` and reported by `mcf doctor` (F68): an expectation is the per-trial band multiplied by a count both sides agree on, so it is inside its band exactly when the per-trial band contained the truth, and a second bookkeeping path could only disagree with the first about the same history. |
 | B-226 | A time budget produces a proposal naming what will run and what is excluded and why; never a silent truncation | B47, D14, §3.1 | "Ran 6 of 20" is always accompanied by the fourteen | done `mcf bench --within <seconds>` — the budget is the operator's, never the laboratory's (F72). `planned::Proposal` has three shapes and no fourth: `Whole`, `Fewer` (which cannot be constructed without the excluded half, so the fourteen are in the type), and `NotEnough`, a refusal rather than a smaller question answered quietly. Planned against the slow edge, because a budget planned against the fast one is decorative. A budget with no measured rate behind it refuses and names what would fix it (A7). F73, and the refusal that looked wrong and was not: F74. |
-| B-227 | Anytime results: every lab reports as it goes; a run stopped early keeps what it produced, marked incomplete | B47, A4, §3.1 | A multi-day lab interrupted at hour three yields three hours of marked data | open |
+| B-227 | Anytime results: every lab reports as it goes; a run stopped early keeps what it produced, marked incomplete | B47, A4, §3.1 | A multi-day lab interrupted at hour three yields three hours of marked data | done The keeping was already true (A4: the pairs stand, the reason travels, the comparison is marked cut short). The reporting is new: an interim line per pair on standard error — never standard output, which is where the result goes — carrying the pair count, the words *so far*, and the two arms' medians rather than repeating *not decided* forty times. It cannot change what the run does (A18), which a check holds. F76. |
 | B-228 | Environment ladder: report, wait for quiet, suspend-and-restore only with per-run approval of a named list, never terminate; scope granted per DEC-041 | B48, §6.39, A27, DEC-041 | A scenario asserts nothing outside the approved list is touched and every suspension resumes, including when MCF is killed | open |
 | B-222 | Every corpus statement renders its sample count; no filter removes a candidate from a listing | B44, §3.24 | An unreported option is ranked lower and annotated, never hidden | open |
 | B-273 | Lab setup and teardown: each lab owns both, may use its own tooling, and leaves nothing behind — asserted by running two labs back to back, including after the first is killed mid-run | B58, A27, §XIII | The second lab sees no trace of the first, warm caches included | open |
@@ -395,6 +395,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 189 — a run reports as it goes
+
+B-227 done. The interim lines say what moves — the two arms — rather than
+repeating the verdict that has not changed. F76.
 
 ### Version 188 — a band says what it rested on
 

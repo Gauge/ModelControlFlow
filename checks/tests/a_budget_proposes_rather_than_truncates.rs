@@ -12,7 +12,7 @@
 //! proposal is possible refuse rather than running something smaller.
 
 // Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
-#![allow(clippy::panic)]
+#![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_bench::planned::{Proposal, Work};
 use mcf_core::measurement::{Basis, Estimate};

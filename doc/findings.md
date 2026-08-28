@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 79 |
+| **Version** | 80 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -103,6 +103,7 @@ forward as one.
 | 73 | [F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)](#73--f73--a-budget-proposes-and-what-it-excluded-is-on-the-page-b-226-b47-31-a7) |
 | 74 | [F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) |
 | 75 | [F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7) |
+| 76 | [F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)](#76--f76--a-run-that-reports-as-it-goes-shows-what-moves-not-what-has-not-decided-b-227-a4-31-a18) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5699,7 +5700,66 @@ measure the condition, attach it to the claim, and leave the judgement to the
 decision that has not been made (F71, and this). Neither needed a threshold to
 be useful, and both would have needed one to refuse.
 
+## 76 · F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)
+
+**Half of B-227 was already true.** A4 keeps what an interrupted run produced:
+the pairs are kept, the reason it stopped travels with them, and the comparison
+is marked cut short. What was missing is the other half — *reports as it goes*.
+A benchmark that takes minutes and says nothing until it finishes is one an
+operator cannot tell from a hung one, and one whose forty pairs are first heard
+of when it stops.
+
+**Where it goes.** Standard error, and only there. The result of a benchmark is
+one thing and goes to standard output; these are the run talking about itself
+while it works, and a pipeline reading a verdict must not have to filter
+progress out of it. A check counts `println!` against `eprintln!` to keep it
+that way — a substring test would forbid the very thing it is asking for, since
+one ends in the other.
+
+**What it says, which took a second attempt.** The first version rendered the
+verdict, and the verdict while a run is going is *not decided* at nearly every
+pair:
+
+```
+… after 2 pair(s), so far: not decided after 2 paired trial(s): the arms have
+  not separated and the noise is still wider than the difference being looked for
+… after 3 pair(s), so far: not decided after 3 paired trial(s): the arms have
+  not separated and the noise is still wider than the difference being looked for
+```
+
+Forty lines of that is not reporting, it is repeating — and it is worse than
+silence, because it buries the one line that will differ. What actually moves
+while a run goes on is the two arms, so that is what is shown:
+
+```
+… after 2 pair(s), so far: 1894.1 ms against 3511.2 ms
+… after 3 pair(s), so far: 1687.1 ms against 1720.3 ms
+… after 4 pair(s), so far: 1687.1 ms against 1835.2 ms
+… after 5 pair(s), so far: 1687.1 ms against 1720.3 ms
+```
+
+An operator watching that sees the second arm settling out of its first cold
+reading, which is a thing worth knowing while it happens. Where a verdict *is*
+reached the verdict is what is shown, because then it is the news.
+
+**Marked in the line, not by where it appeared.** Every interim line carries
+the count it rests on and the words *so far*, so that a reader who scrolls back
+cannot take one for the answer. It is not an estimate (A20): it is a real
+finding over fewer pairs, which is a different thing and is labelled as the
+different thing.
+
+**And it cannot change what the run does** (A18). `so_far` takes the comparison
+by shared reference and contains no `break`, no exit and no error path; a check
+holds all of that. A benchmark has no pass condition, and a progress line that
+could stop a run would be one.
+
 ## Changelog
+
+### Version 80 — a run reports as it goes
+
+F76. B-227's missing half: interim lines on standard error, carrying the pair
+count and the two arms' medians rather than repeating *not decided* forty
+times. A4 already kept what an interrupted run produced.
 
 ### Version 79 — a band says what it rested on
 

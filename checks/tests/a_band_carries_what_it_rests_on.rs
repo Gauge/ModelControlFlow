@@ -19,7 +19,7 @@
 //! zero would be a claim MCF cannot support.
 
 // Every item in this file is test code; see the note in `taxonomy_agreement.rs`.
-#![allow(clippy::panic)]
+#![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
 
 use mcf_bench::project::{Point, band};
 

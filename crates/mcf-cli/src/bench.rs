@@ -104,6 +104,46 @@ fn asked_for(
     )
 }
 
+/// What the run has so far, said while it is still going (B-227, A4, §3.1).
+///
+/// **To standard error, and only there.** The result of a benchmark is one
+/// thing and goes to standard output; these are the run talking about itself
+/// while it works. A pipeline reading the verdict must not have to filter
+/// progress out of it.
+///
+/// **Marked as partial in the line itself**, not by where it appeared. A
+/// reader who scrolls back to an interim line must not be able to mistake it
+/// for the answer — so it is prefixed and it always says how many pairs it
+/// rests on. It is not an estimate (A20): it is a real finding over fewer
+/// pairs, which is a different thing and is labelled as the different thing.
+///
+/// **Nothing is computed here that the run does not already compute.** The
+/// finding at this many pairs is what the stopping condition asks for anyway,
+/// so reporting costs a rendering and not a measurement, and this cannot
+/// change what the run does (A18: a benchmark has no pass condition, and
+/// progress is not one).
+fn so_far(held: &Comparison<Monotonic>, resolving: PartsPerMillion) {
+    let pairs = held.pairs().len();
+    // Two is the floor below which there is no comparison to report.
+    if pairs < 2 {
+        return;
+    }
+    let reached = held.finding(resolving);
+    // The medians rather than the verdict's own sentence: while a run is going
+    // *not decided* is the answer at nearly every pair, and repeating it forty
+    // times says nothing. What moves is the two arms, so that is what a
+    // watching operator is shown — labelled *so far*, which is what keeps it
+    // from reading as the result.
+    let said = match (reached.verdict(), held.medians()) {
+        (Some(mcf_bench::enough::Verdict::NotYet { .. }) | None, Some((left, right))) => {
+            format!("{} against {}", milliseconds(left), milliseconds(right))
+        }
+        (Some(verdict), _) => verdict.to_string(),
+        (None, None) => return,
+    };
+    eprintln!("  … after {pairs} pair(s), so far: {said}");
+}
+
 /// The prompt as each model's own vocabulary produces it, done **once**.
 ///
 // The prompt as each model's own vocabulary produces it, done **once**
@@ -639,6 +679,11 @@ fn interleave(
             running.stopped_short(text.clone());
             break;
         }
+        // B-227: what it has so far, as it goes. A run that takes minutes and
+        // says nothing until it is finished is one an operator cannot tell
+        // from a hung one, and a run interrupted at pair forty should not be
+        // the first time they learn what forty pairs said.
+        so_far(running.comparison(), asked.resolving);
         // A run whose trials have stopped being alike cannot produce a delta
         // however long it goes on (§6.13), so it stops as soon as that is
         // true rather than spending the ceiling to arrive at the same refusal.
