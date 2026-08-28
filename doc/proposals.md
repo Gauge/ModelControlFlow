@@ -43,7 +43,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR9 | [What serving looks like](#pr9--what-serving-looks-like) | **Accepted** — DEC-001 decided; B-032, B-033, B-034 build it | M2 |
 | PR10 | [What a probe is, and when configuration may change](#pr10--what-a-probe-is-and-when-configuration-may-change) | **Accepted** — DEC-024 and DEC-025 decided; B-051–B-060 build it | M3 |
 | PR11 | [Prompt analysis: what the model actually received](#pr11--prompt-analysis-what-the-model-actually-received) | **Accepted in part** — the static half, as B-381, B-382, B-383; the behavioural half deferred | M4 |
-| PR12 | [Lifting the stand-in's ceiling, and why the cheap version is worse](#pr12--lifting-the-stand-ins-ceiling-and-why-the-cheap-version-is-worse) | Do not lift it by dequantizing per use; take B-366 first, then measure | M5 |
+| PR12 | [Lifting the stand-in's ceiling, and why the cheap version is worse](#pr12--lifting-the-stand-ins-ceiling-and-why-the-cheap-version-is-worse) | **Accepted** — do not lift it; B-366 first, then B-384 measures the usable size | M5 |
 
 ---
 
