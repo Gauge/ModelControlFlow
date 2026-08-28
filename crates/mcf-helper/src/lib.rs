@@ -85,8 +85,47 @@ pub const OPERATIONS: &[(&str, &str)] = &[
 /// `config.invalid` for anything that is not one of [`OPERATIONS`] with the
 /// arguments it takes, and whatever the operation itself produces.
 pub fn run(arguments: &[&str]) -> Result<Vec<String>> {
+    // The machine, and only the machine. A caller cannot tell this program
+    // where the machine is.
+    //
+    // It could once: `--under` rebased every fixed path, and the *shipped*
+    // binary honoured it. With no privilege that is harmless, which is why it
+    // survived. With any privilege it is a hole exactly the size of the
+    // privilege — `energy --under <a tree you control>` reads any file as
+    // root through a symlink, and the governor operation writes one. This
+    // program exists to be given privilege (D35), so the seam cannot be in it
+    // (§6.32, B-190, F50).
+    //
+    // Refused rather than ignored: a caller who asked for something and did
+    // not get it must be told (A2).
+    if arguments.contains(&"--under") {
+        return Err(Failure::new(
+            Category::ConfigInvalid,
+            Attribution::User,
+            Disposition::Refused,
+            Subsystem::new("mcf-helper"),
+            "this program reads and writes the machine's own paths and cannot be pointed \
+             elsewhere: a helper that can be told where the machine is, is a helper that reads \
+             and writes anything it is given privilege for",
+        ));
+    }
+    run_under(Path::new("/"), arguments)
+}
+
+/// The same, against a stated root.
+///
+/// Not reachable from the binary and not reachable from an argument: the root
+/// is a parameter, so the only callers are the laboratory and this crate's own
+/// tests, which is what lets a privileged program be exercised without letting
+/// it near the machine (D26).
+///
+/// # Errors
+///
+/// As [`run`].
+pub fn run_under(root: &Path, arguments: &[&str]) -> Result<Vec<String>> {
     let (operation, rest) = arguments.split_first().ok_or_else(usage)?;
-    let (rest, root) = root_of(rest)?;
+    let rest: Vec<&str> = rest.to_vec();
+    let root = root.to_path_buf();
 
     match *operation {
         "governor" => {
@@ -125,26 +164,6 @@ pub fn run(arguments: &[&str]) -> Result<Vec<String>> {
                 .join(", "),
         )),
     }
-}
-
-/// Splits `--under <path>` off the arguments.
-///
-/// Absent, everything is under `/`, which is the only thing an operator ever
-/// wants. Present, it is a laboratory looking at what the helper does without
-/// letting it near the machine.
-fn root_of<'a>(arguments: &[&'a str]) -> Result<(Vec<&'a str>, PathBuf)> {
-    let mut rest = Vec::new();
-    let mut root = PathBuf::from("/");
-    let mut reading = arguments.iter();
-    while let Some(argument) = reading.next() {
-        if *argument == "--under" {
-            let named = reading.next().ok_or_else(usage)?;
-            root = PathBuf::from(named);
-        } else {
-            rest.push(*argument);
-        }
-    }
-    Ok((rest, root))
 }
 
 fn usage() -> Failure {

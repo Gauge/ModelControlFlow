@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 53 |
+| **Version** | 54 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -77,6 +77,7 @@ forward as one.
 | 47 | [F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46) |
 | 48 | [F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)](#48--f48--the-tie-was-mcfs-not-the-models-a-template-that-names-a-role-in-order-to-rename-it-b-375-b-376-d42-d46-37-f38-f39-f40) |
 | 49 | [F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)](#49--f49--mcf-can-check-its-own-engine-against-the-one-it-built-on-a-users-machine-b-362-b-376-d31-d39-a12-a19-ii) |
+| 50 | [F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)](#50--f50--the-privileged-helper-could-be-told-where-the-machine-is-b-190-d35-632-xvii-a2-a26) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3801,7 +3802,89 @@ user would most want the check. And the threshold is provisional in the
 direction all of them here are: a defect that only ever swaps the top two
 tokens passes.
 
+## 50 · F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)
+
+**Found by preparing to use it.** D35 names three privileged operations and one
+of them is *read the processor's energy counter* — the awkward one, a read that
+needs elevation, without which there is no energy-per-token figure on a
+processor at all. Energy was raised as a fourth axis for the first benchmark,
+and the question was whether this machine could measure it. It can, and the
+helper that would do it was already built and already correct in every respect
+this document had checked.
+
+**It accepted `--under`.** The flag rebases every fixed path, and it exists so
+that three laboratory scenarios can drive a privileged program against a
+fixture without letting it near the machine (D26). It was parsed by the
+**shipped binary**, not only by the tests. Demonstrated as an ordinary user,
+against a directory made a moment earlier:
+
+```
+$ mcf-helper energy --under /tmp/…/fake
+name: 4242
+```
+
+**With no privilege that is harmless, which is exactly why it survived.** The
+helper has never held any. But this program exists *in order to* be given some,
+and the moment it is — by a capability, by setuid, by a line in a sudoers
+file — `--under` is a hole the size of the privilege:
+
+- `energy --under <a tree you control>` reads any file the privilege can reach,
+  through a symlink at the path it expects.
+- the governor operation *writes* under the same rebased root, and the value it
+  writes is chosen from `scaling_available_governors` — which is read from
+  under that root too, so the caller supplies that as well.
+
+A local privilege escalation, latent, waiting for the grant that was about to
+be made. §6.32 is the section that asks how a privileged daemon avoids becoming
+a way to run anything as root, and the answer it settled on — per-operation,
+minimal, auditable, a separate executable that exits — was implemented
+faithfully. The hole was in an argument nobody classed as part of that surface.
+
+**The fix is that the seam is not in the program.** `run` takes no root and
+refuses `--under`; `run_under(root, arguments)` is a parameter, reachable from
+the laboratory and this crate's tests and from nothing else. Refused rather
+than ignored: a caller who asked for something and did not get it must be told
+(A2), and silently reading the real machine instead would be worse than either.
+
+**One existing test asserted the weaker guarantee.** `under_cannot_name_a_file_to_write`
+checked that a root naming a *file* produced a platform failure and left the
+file untouched — true, and it was checking that the rebasing was survivable
+rather than that it should not exist. It now asserts both: the shipped program
+refuses the argument, and the parameterised form still declines a root with no
+processors under it.
+
+**What this says about the shape of the audit.** The repository has a check
+that nothing shipped reaches for elevation and that nothing links the helper
+but the laboratory, and it passes — the danger was never that the daemon would
+become privileged. It was that the helper's *input* was wider than its
+operations, and a surface enumerated as three operations was really three
+operations and a root. **An enumerated surface is only enumerated if the
+arguments are part of the enumeration.**
+
+**What was not established.** Whether the other two operations have a
+comparable widening — the accelerator one takes an index and shells out to a
+vendor tool, which is a second thing to look at with the same eyes and has not
+been. Whether any other program in this repository takes a test seam through
+its shipped argument parsing: one was found by needing it, not by looking.
+And the grant itself has still not been made, so nothing here is a claim that
+energy is measurable — only that the program which would measure it is no
+longer a way to read anything else.
+
 ## Changelog
+
+### Version 54 — the privileged helper could be told where the machine is
+
+F50. Found by preparing to grant the helper the privilege D35 says it needs to
+read the processor's energy counter. It accepted a flag that rebased every path
+it touches, in the shipped binary and not only in tests — harmless while it held
+no privilege, and a local escalation the moment it held any. The seam is a
+parameter now and not an argument.
+
+The lesson is about the audit rather than the bug: the repository already
+checks that nothing shipped reaches for elevation and that only the laboratory
+links the helper, and both passed. The surface was enumerated as three
+operations and was really three operations and a root. An enumerated surface is
+only enumerated if the arguments are part of the enumeration.
 
 ### Version 53 — MCF can check its own engine on a user's machine
 

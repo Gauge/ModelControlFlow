@@ -65,7 +65,7 @@ fn mechanism_unavailable(world: &World) -> Outcome {
     let Some(under) = root.to_str() else {
         return Outcome::Unexpected("the fixture's path is not text".to_owned());
     };
-    match mcf_helper::run(&["governor", "performance", "--under", under]) {
+    match mcf_helper::run_under(std::path::Path::new(under), &["governor", "performance"]) {
         Err(failure) if failure.category() == Category::PlatformMechanismUnavailable => {
             Outcome::Produced(failure)
         }

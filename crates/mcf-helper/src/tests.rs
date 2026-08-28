@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_core::failure::Category;
 
-use super::{OPERATIONS, run};
+use super::{OPERATIONS, run, run_under};
 
 struct Machine(PathBuf);
 
@@ -98,7 +98,7 @@ fn it_performs_three_operations_and_refuses_every_other_name() {
 #[test]
 fn setting_a_governor_says_what_each_processor_was() {
     let machine = Machine::new("set", 4, "performance powersave", "powersave");
-    let said = run(&["governor", "performance", "--under", machine.under()])
+    let said = run_under(Path::new(machine.under()), &["governor", "performance"])
         .expect("the fixture permits it");
 
     for index in 0..4 {
@@ -120,16 +120,17 @@ fn setting_a_governor_says_what_each_processor_was() {
 #[test]
 fn putting_it_back_is_the_same_operation() {
     let machine = Machine::new("restore", 2, "performance powersave", "powersave");
-    run(&["governor", "performance", "--under", machine.under()]).expect("it sets");
-    let back = run(&["governor", "powersave", "--under", machine.under()]).expect("it restores");
+    run_under(Path::new(machine.under()), &["governor", "performance"]).expect("it sets");
+    let back =
+        run_under(Path::new(machine.under()), &["governor", "powersave"]).expect("it restores");
     assert_eq!(machine.governor_of(0), "powersave");
     assert!(
         back.iter().any(|line| line.contains("was performance")),
         "{back:?}"
     );
 
-    let again =
-        run(&["governor", "powersave", "--under", machine.under()]).expect("it is asked again");
+    let again = run_under(Path::new(machine.under()), &["governor", "powersave"])
+        .expect("it is asked again");
     assert!(
         again.iter().any(|line| line.contains("already powersave")),
         "a processor that was already there was written to anyway: {again:?}"
@@ -141,7 +142,7 @@ fn putting_it_back_is_the_same_operation() {
 #[test]
 fn a_governor_the_machine_does_not_offer_is_refused_before_anything_is_written() {
     let machine = Machine::new("unknown", 2, "performance powersave", "powersave");
-    let refused = run(&["governor", "conservative", "--under", machine.under()])
+    let refused = run_under(Path::new(machine.under()), &["governor", "conservative"])
         .expect_err("a governor this machine does not offer");
     assert_eq!(refused.category(), Category::ConfigInvalid);
     assert!(
@@ -161,13 +162,7 @@ fn a_machine_with_no_governor_says_so() {
     let root = std::env::temp_dir().join(format!("mcf-helper-bare-{}", std::process::id()));
     drop(std::fs::remove_dir_all(&root));
     std::fs::create_dir_all(root.join("sys/devices/system/cpu")).expect("a fixture");
-    let refused = run(&[
-        "governor",
-        "performance",
-        "--under",
-        root.to_str().unwrap_or_default(),
-    ])
-    .expect_err("nothing to set");
+    let refused = run_under(&root, &["governor", "performance"]).expect_err("nothing to set");
     assert_eq!(refused.category(), Category::PlatformMechanismUnavailable);
     drop(std::fs::remove_dir_all(&root));
 }
@@ -185,8 +180,8 @@ fn a_refused_write_partway_through_says_what_was_already_changed() {
     std::fs::remove_file(&second).expect("it goes");
     std::fs::create_dir(&second).expect("something that cannot be written as a file");
 
-    let refused =
-        run(&["governor", "performance", "--under", machine.under()]).expect_err("cpu1 refuses");
+    let refused = run_under(Path::new(machine.under()), &["governor", "performance"])
+        .expect_err("cpu1 refuses");
     assert!(
         refused
             .context()
@@ -202,12 +197,12 @@ fn a_refused_write_partway_through_says_what_was_already_changed() {
 fn energy_is_read_per_domain_and_its_absence_is_said() {
     let machine = Machine::new("energy", 1, "performance", "performance")
         .with_energy(&[("package-0", 123_456), ("dram", 654_321)]);
-    let said = run(&["energy", "--under", machine.under()]).expect("counters");
+    let said = run_under(Path::new(machine.under()), &["energy"]).expect("counters");
     assert!(said.contains(&"package-0: 123456".to_owned()), "{said:?}");
     assert!(said.contains(&"dram: 654321".to_owned()), "{said:?}");
 
     let bare = Machine::new("no-energy", 1, "performance", "performance");
-    let refused = run(&["energy", "--under", bare.under()]).expect_err("no counters");
+    let refused = run_under(Path::new(bare.under()), &["energy"]).expect_err("no counters");
     assert!(
         matches!(
             refused.category(),
@@ -267,13 +262,20 @@ fn under_cannot_name_a_file_to_write() {
     drop(std::fs::remove_file(&elsewhere));
     std::fs::write(&elsewhere, "untouched").expect("a file the helper must not write");
 
+    // Twice: once as a caller of the shipped program, which now refuses to be
+    // pointed anywhere at all, and once through the parameterised form the
+    // laboratory uses, where a root that is a file simply has no processors
+    // under it. Neither writes.
     let refused = run(&[
         "governor",
         "performance",
         "--under",
         elsewhere.to_str().unwrap_or_default(),
     ])
-    .expect_err("a root that is a file has no processors under it");
+    .expect_err("the shipped program takes no root");
+    assert_eq!(refused.category(), Category::ConfigInvalid, "{refused}");
+    let refused = run_under(&elsewhere, &["governor", "performance"])
+        .expect_err("a root that is a file has no processors under it");
     assert!(
         matches!(
             refused.category(),
@@ -305,3 +307,48 @@ fn the_helper_reads_no_environment() {
 }
 
 fn _unused(_: &Path) {}
+
+/// The shipped program cannot be told where the machine is.
+///
+/// This program exists to be given privilege, and a helper that accepts a root
+/// from its arguments is an arbitrary-file read for whatever privilege it
+/// holds — and, through the governor operation, an arbitrary write. It was
+/// accepted once, and was harmless only because nothing had granted the
+/// privilege yet (F50).
+#[test]
+fn the_shipped_program_refuses_to_be_pointed_elsewhere() {
+    let machine = Machine::new("not-the-machine", 1, "performance powersave", "powersave");
+    for arguments in [
+        vec!["energy", "--under", machine.under()],
+        vec!["governor", "performance", "--under", machine.under()],
+        vec!["accelerator", "exclusive", "0", "--under", machine.under()],
+    ] {
+        let refused = run(&arguments).expect_err("a root from an argument is refused");
+        assert_eq!(refused.category(), Category::ConfigInvalid);
+        assert!(
+            refused.to_string().contains("cannot be pointed elsewhere"),
+            "the refusal has to say why: {refused}"
+        );
+    }
+}
+
+/// And the refusal is a refusal, not a silent fall back to the real machine.
+///
+/// Ignoring the argument would read the true counters and answer as though
+/// nothing had been asked, which is the caller getting something other than
+/// what they asked for without being told (A2).
+#[test]
+fn being_pointed_elsewhere_is_refused_rather_than_ignored() {
+    let machine = Machine::new("ignored-root", 1, "performance powersave", "powersave");
+    assert!(
+        run(&["energy", "--under", machine.under()]).is_err(),
+        "a rebased read must not quietly become a read of this machine"
+    );
+    // The parameterised form still reaches the fixture — that the seam is gone
+    // from the *arguments* must not mean it is gone from the laboratory (D26).
+    let through = run_under(Path::new(machine.under()), &["governor", "performance"]);
+    assert!(
+        through.is_ok(),
+        "the laboratory still drives it against a fixture: {through:?}"
+    );
+}
