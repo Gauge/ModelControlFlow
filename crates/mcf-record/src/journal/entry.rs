@@ -106,11 +106,37 @@ pub enum EntryKind {
     /// It is also the line that makes measurements across it non-comparable,
     /// which §3.4 requires MCF to say rather than assume.
     ModelConfigured,
+    /// What two arms of a comparison were found to do (B-086, B-250, A9).
+    ///
+    /// **A kind of its own because a null result is a result.** A9: *"no
+    /// measurable difference" and "does not fit here" are findings, not
+    /// failures.* A comparison that separated its arms, one that established
+    /// they are the same to a stated resolution, and one that refused a delta
+    /// because more than one variable differed are three outcomes of the same
+    /// event, and putting any of them anywhere but here would make it
+    /// unfindable next to the others — the `Same` reading in a note, the
+    /// refusal in `Failure`, and the register unable to answer *what has been
+    /// compared on this machine*.
+    ///
+    /// The paired differences are written out beside the verdict, because B56
+    /// keeps the trials and derives the summary: a comparison whose
+    /// distribution was thrown away is a question nobody can re-ask.
+    Comparison,
+    /// What MCF judged about a variant before a byte of it was fetched
+    /// (B-086, B-213, PR3, §6.3).
+    ///
+    /// *This will not run here, because it needs 131 GiB and you have 24* is a
+    /// complete success of §III, and A9 makes it a result rather than a
+    /// refusal. Recorded whichever way it came out, so that the register can
+    /// answer *what has this machine been told it cannot run* — which is the
+    /// question an operator asks before downloading tens of gigabytes a second
+    /// time.
+    FitmentPlanned,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 15] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -126,6 +152,8 @@ impl EntryKind {
         Self::ComponentRemoved,
         Self::Generated,
         Self::ModelConfigured,
+        Self::Comparison,
+        Self::FitmentPlanned,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -148,6 +176,8 @@ impl EntryKind {
             Self::ComponentRemoved => "component_removed",
             Self::Generated => "generated",
             Self::ModelConfigured => "model_configured",
+            Self::Comparison => "comparison",
+            Self::FitmentPlanned => "fitment_planned",
         }
     }
 

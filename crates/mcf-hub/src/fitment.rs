@@ -250,11 +250,112 @@ pub enum Verdict {
 }
 
 impl Verdict {
+    /// The outcome's name, as the record writes it.
+    ///
+    /// Stable for life (C5), and none of the three is a failure: all three are
+    /// answers to *will this run here*, which A9 makes results.
+    #[must_use]
+    pub const fn outcome(&self) -> &'static str {
+        match *self {
+            Self::Fits { .. } => "fits",
+            Self::FitsWithoutContextHeadroom { .. } => "fits_at_a_shorter_context",
+            Self::DoesNotFit { .. } => "does_not_fit",
+        }
+    }
+
     /// Whether this variant can be run here at all.
     #[must_use]
     pub const fn is_runnable(&self) -> bool {
         !matches!(self, Self::DoesNotFit { .. })
     }
+}
+
+/// A plan, as the record keeps it (B-086, A9, §6.3).
+///
+/// **A9's other half.** *"Does not fit here" is a finding, not a failure.*
+/// §6.3 already calls *this will not run here, because it needs 131 GiB and
+/// you have 24* a complete success of §III, and this is where that success
+/// stops being a sentence printed once and becomes something the register can
+/// answer questions from: *what has this machine been told it cannot run* is
+/// the question an operator asks before downloading tens of gigabytes a second
+/// time.
+///
+/// Written whichever way each variant came out, because a record that kept
+/// only the refusals could not answer *when was this last known to fit* (A1).
+/// The numbers that produced each verdict travel with it, since a verdict
+/// without them is an opinion (§3.4).
+#[must_use]
+pub fn planned(verdicts: &[(String, Verdict)], context: u64, available: Bytes) -> Value {
+    Value::map([
+        ("context", Value::Integer(whole(context))),
+        ("available_bytes", Value::Integer(whole(available.0))),
+        ("usable_per_cent", Value::Integer(whole(USABLE_PER_CENT))),
+        (
+            "runtime_overhead_bytes",
+            Value::Integer(whole(RUNTIME_OVERHEAD.0)),
+        ),
+        (
+            "variants",
+            Value::List(
+                verdicts
+                    .iter()
+                    .map(|(name, verdict)| {
+                        let mut fields = vec![
+                            ("name".to_owned(), Value::text(name.clone())),
+                            ("outcome".to_owned(), Value::text(verdict.outcome())),
+                        ];
+                        match verdict {
+                            Verdict::Fits { needs, headroom } => {
+                                fields.push((
+                                    "needs_bytes".to_owned(),
+                                    Value::Integer(whole(needs.0)),
+                                ));
+                                fields.push((
+                                    "headroom_bytes".to_owned(),
+                                    Value::Integer(whole(headroom.0)),
+                                ));
+                                fields.push(("longest_context".to_owned(), Value::Null));
+                                fields.push(("short_by_bytes".to_owned(), Value::Null));
+                            }
+                            Verdict::FitsWithoutContextHeadroom {
+                                needs,
+                                longest_context,
+                            } => {
+                                fields.push((
+                                    "needs_bytes".to_owned(),
+                                    Value::Integer(whole(needs.0)),
+                                ));
+                                fields.push(("headroom_bytes".to_owned(), Value::Null));
+                                fields.push((
+                                    "longest_context".to_owned(),
+                                    Value::Integer(whole(*longest_context)),
+                                ));
+                                fields.push(("short_by_bytes".to_owned(), Value::Null));
+                            }
+                            Verdict::DoesNotFit { needs, short_by } => {
+                                fields.push((
+                                    "needs_bytes".to_owned(),
+                                    Value::Integer(whole(needs.0)),
+                                ));
+                                fields.push(("headroom_bytes".to_owned(), Value::Null));
+                                fields.push(("longest_context".to_owned(), Value::Null));
+                                fields.push((
+                                    "short_by_bytes".to_owned(),
+                                    Value::Integer(whole(short_by.0)),
+                                ));
+                            }
+                        }
+                        Value::map(fields)
+                    })
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+/// A count, saturating rather than wrapping into a negative number.
+fn whole(held: u64) -> i64 {
+    i64::try_from(held).unwrap_or(i64::MAX)
 }
 
 /// Judges one variant against what a machine has.

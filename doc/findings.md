@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 60 |
+| **Version** | 61 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -84,6 +84,8 @@ forward as one.
 | 54 | [F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)](#54--f54--the-stopping-condition-and-the-first-comparison-that-stopped-itself-b-083-b-086-b-250-dec-007-f51-f52-f53) |
 | 55 | [F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)](#55--f55--the-pairing-is-worth-eighty-eight-percent-and-the-stopping-condition-could-only-answer-one-way-b-250-b-083-b53-327-dec-007-f51-f53-f54) |
 | 56 | [F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)](#56--f56--a-confounded-comparison-has-no-delta-to-give-a8-b-085-34-a7-f55) |
+| 57 | [F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)](#57--f57--the-sign-test-and-the-resampling-that-could-not-see-identical-arms-b-086-b-083-dec-007-a9-f51-f55) |
+| 58 | [F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)](#58--f58--a-null-result-reaches-the-disk-as-a-result-a9-b-086-b-213-63-d16-f56) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4344,7 +4346,133 @@ are what makes the values comparable, and until they exist the strings are the
 caller's to keep consistent. Nothing here checks that a *declared* confound is
 a reasonable one, and nothing can.
 
+## 57 · F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)
+
+**What was found, and how.** B-086 needed a test that records a null result, so
+the first fixture written for it compared two arms with *identical* timings —
+the clearest null there is. The stopping condition answered *not decided*, at
+forty pairs, about data that could not be clearer.
+
+The cause is in the statistic. F55's null was a sign flip over the paired
+differences, judged by the median's size. When every difference is the same
+magnitude — and *identical arms* is the extreme case, every difference exactly
+zero — flipping signs cannot move that size. The null distribution is a single
+point, the observed value sits on it, and the p-value is one, for ever. **An
+instrument that cannot recognize the cleanest possible null is not a
+conservative instrument; it is a broken one.**
+
+**What replaced it: the sign test, exact.** Under *these two arms are the
+same*, which arm came out ahead in a given pair is a coin toss. The chance of a
+split as lopsided as the one observed is a sum of binomial coefficients — whole
+numbers, computed in `u128`, with no resampling, no seed, and no approximation.
+Ten pairs won by one arm is 1,953 parts per million; a test asserts that exact
+figure, which a resampling could only have come near and would have moved
+whenever the seed did.
+
+It also uses **only the ordering of two values within a pair**, which is what
+`Quantity` guarantees and all it guarantees. F51 measured a tail made of
+whatever else the machine was doing; a statistic that weighs by magnitude
+carries that tail into the answer.
+
+**The cost is stated, and it arrived immediately.** Discarding magnitudes
+discards power when the noise is well behaved, and the test will call a
+difference real that is far too small to act on. The very first fixture written
+after the change gave the left arm a systematic extra millisecond in a run of
+one-second trials — forty pairs out of forty, a real difference of **a tenth of
+a percent**, found and reported. The fixture was wrong and the instrument said
+so on its first use, which is the best possible demonstration of both halves of
+the trade.
+
+**Two properties the exact form makes checkable.** Six pairs is the fewest that
+can reach one in twenty at all — five gives one chance in sixteen — so `Differ`
+is arithmetically unreachable below six, whatever the data. That is F55's
+four-pair defect in its general form, and it is now a test rather than an
+anecdote. And `2^n` leaves `u128` past a hundred and twenty-seven pairs: the
+first draft answered *not decided* at a hundred and sixty pairs of data it had
+decided at eighty, which is **an instrument whose confidence falls as its
+evidence grows**. The counts are now scaled down to the largest exactly
+computable size with the winner's count rounded down, which can only weaken the
+claim, never strengthen it.
+
+**What it costs and buys, on this machine.** The same noise that needed eighty
+pairs under the resampling test reaches a five-percent null result at **twenty**
+under the sign test. A real difference between two token budgets, previously
+found at ten paired trials, is now found at **six** — 88.1%, the minimum count
+the test admits. Two clean runs of one command against itself established *no
+difference as large as 5%* at twelve and at twenty-eight pairs, which is F53
+arriving again: the count is a property of the sitting.
+
+**What was not established.** The sign test's power depends on the noise being
+symmetric about zero under the null, which pairing makes reasonable and does not
+prove. The `Same` branch still estimates power from a single realization of this
+run's own noise rather than averaging over the noise's distribution, so it is a
+statement about *this run* — which is what F53 says any such statement can be.
+And the pooled path, for comparisons assembled from separate sessions, still
+resamples: it has no pairs to take signs of.
+
+## 58 · F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)
+
+**The failure this is against.** Not that MCF prints the wrong word. It is that
+a null result is never written down — so that six weeks later nobody can tell
+whether two configurations were compared and found the same, or were never
+compared at all. **In an empty register those two look identical**, and the
+second is the one that gets the work repeated.
+
+**Two kinds, and neither is a failure.** `EntryKind::Comparison` and
+`EntryKind::FitmentPlanned`. A9 names both halves — *"no measurable difference"
+and "does not fit here" are findings, not failures* — and §6.3 already calls
+*this will not run here, because it needs 131 GiB and you have 24* a complete
+success of §III. A test asserts of both kinds that they are not
+`EntryKind::Failure` and that their rendered line contains no such word,
+because filing a null result under failures is filing it where nobody looking
+for results will find it.
+
+**Four outcomes for a comparison, all written.** *Differ*, *same to a stated
+resolution*, *not yet decided*, and *not comparable*. The third and fourth are
+the ones a reader will call *it didn't work*: the log says which it was rather
+than leaving anyone to infer it from a missing number. The null result carries
+the resolution that would have shown — *no difference as large as 5.0%, which
+is a result, not a failure to find one* — so it never reads as *we stopped
+looking*. The refusal names the conditions that differed and contains no delta
+anywhere in the line, which is A8 held at the surface as well as in the type.
+
+**The distribution goes to the disk, not only the verdict.** Every pair: both
+raw durations, both positions, which arm ran first, and the difference. D16
+keeps raw trials always and B56 derives summaries at query time, and this is
+the case that proves why — **the stopping condition's own rule has changed
+twice in two days** (F55, then F57). A record holding only the verdicts would
+now be a record of two obsolete opinions. It holds the numbers, so the question
+can be asked again.
+
+Both arms' full conditions are written too, so the isolation question (F56) can
+be re-asked rather than trusted.
+
+**A plan is kept whichever way it came out.** Every variant of a repository,
+with its outcome and the arithmetic behind it: what it needs, what is left, the
+longest context that would fit, or how much more memory the machine would have
+to have. Kept for the ones that fit as well as the ones that do not, because a
+record of only the refusals cannot answer *when was this last known to fit*
+(A1). `mcf pull` on a repository with no file named now writes one before it
+answers, and a record it cannot open does not stop it answering — a plan is
+information about a repository and a machine, not a change to either (A4).
+
+**What was not established.** The plan is recorded on the listing path only;
+`mcf pull` of a named file re-plans to check what is true now and does not write
+that second plan, which would be two entries about one moment. Nothing yet reads
+these entries back to answer a question — *what has this machine been told it
+cannot run* is a query the register can now support and does not yet offer, and
+that is B-217's. And a comparison entry is written by whoever holds a
+`Comparison`; no surface produces one yet, because the benchmark runner is
+B-080.
+
 ## Changelog
+
+### Version 61 — the sign test, and a null result on the disk
+
+F57 and F58. The paired verdict is an exact sign test: the resampling it
+replaces could not recognize two arms with identical timings, and answered *not
+decided* about the clearest null there is. A comparison and a fitment plan are
+now record kinds of their own, and neither is a failure.
 
 ### Version 60 — a confounded comparison has no delta
 

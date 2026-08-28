@@ -147,6 +147,13 @@ pub(crate) fn run(
         // repository and no file: not *what is published* but *which of these
         // will run here* (PR3, B-213).
         let planned = plan_for(&hub, &listing);
+        // And it is kept, whichever way it came out. A9 makes *does not fit
+        // here* a finding rather than a refusal, and a finding printed once and
+        // not written down cannot answer *what has this machine already been
+        // told it cannot run* (B-086).
+        if let Ok(plan) = &planned {
+            record_plan(&listing, plan, mcf_core::time::Timestamp::now());
+        }
         return Response {
             text: offer(&listing, &planned),
             served: true,
@@ -210,6 +217,7 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     // than assumed to have held.
     let again = match plan_for(hub, listing) {
         Ok(plan) => plan
+            .lines()
             .into_iter()
             .find(|line| line.contains(&entry.path))
             .ok_or_else(|| {
@@ -498,7 +506,7 @@ const CACHE_ELEMENT: u64 = 2;
 /// could not parse and one that publishes none read identically — and the first
 /// is a defect in MCF while the second is a fact about the repository
 /// ([findings.md](../../../doc/findings.md) F16).
-fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Vec<String>, String> {
+fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Plan, String> {
     let configuration = match hub.configuration(listing) {
         Ok(Some(configuration)) => configuration,
         Ok(None) => {
@@ -547,27 +555,81 @@ fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Vec<String>, St
 
     let verdicts = fitment::plan(&requirements, PLANNING_CONTEXT, available)
         .map_err(|failure| format!("the arithmetic would not add up — {failure}"))?;
-    Ok(verdicts
-        .iter()
-        .map(|(name, verdict)| match verdict {
-            Verdict::Fits { needs, headroom } => format!(
-                "  {name} — fits: needs {} of {} usable, {} left",
-                needs.0, available.0, headroom.0
-            ),
-            Verdict::FitsWithoutContextHeadroom {
-                needs,
-                longest_context,
-            } => format!(
-                "  {name} — fits at a shorter context: {} at {PLANNING_CONTEXT} tokens is \
-                 more than this machine has; {longest_context} tokens would fit",
-                needs.0
-            ),
-            Verdict::DoesNotFit { needs, short_by } => format!(
-                "  {name} — does NOT fit: needs {}, which is {} more than this machine has",
-                needs.0, short_by.0
-            ),
-        })
-        .collect())
+    Ok(Plan {
+        available,
+        verdicts,
+    })
+}
+
+/// What MCF judged about a repository's variants, kept rather than rendered.
+///
+/// The verdicts themselves rather than the sentences they print, because the
+/// same plan is written to the record (B-086) and shown to the operator, and a
+/// plan that existed only as prose could be written to one of those and not the
+/// other.
+#[derive(Debug)]
+struct Plan {
+    available: Bytes,
+    verdicts: Vec<(String, Verdict)>,
+}
+
+impl Plan {
+    /// The plan as an operator reads it.
+    fn lines(&self) -> Vec<String> {
+        let available = self.available;
+        self.verdicts
+            .iter()
+            .map(|(name, verdict)| match verdict {
+                Verdict::Fits { needs, headroom } => format!(
+                    "  {name} — fits: needs {} of {} usable, {} left",
+                    needs.0, available.0, headroom.0
+                ),
+                Verdict::FitsWithoutContextHeadroom {
+                    needs,
+                    longest_context,
+                } => format!(
+                    "  {name} — fits at a shorter context: {} at {PLANNING_CONTEXT} tokens is \
+                     more than this machine has; {longest_context} tokens would fit",
+                    needs.0
+                ),
+                Verdict::DoesNotFit { needs, short_by } => format!(
+                    "  {name} — does NOT fit: needs {}, which is {} more than this machine has",
+                    needs.0, short_by.0
+                ),
+            })
+            .collect()
+    }
+}
+
+/// Writes a plan to the record, and says nothing if it cannot.
+///
+/// A plan is information about a repository and a machine, not a change to
+/// either, so a record that could not be opened must not stop MCF answering
+/// the question it was asked (A4). The failure is not swallowed either: it is
+/// what `mcf log` will be missing, and the acquisition path already reports an
+/// unwritable record loudly where it matters.
+fn record_plan(listing: &Listing, plan: &Plan, at: Timestamp) {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return;
+    };
+    let Ok(mut journal) = Journal::open(&path) else {
+        return;
+    };
+    let body = Value::map([
+        ("repository", Value::text(listing.reference.repository())),
+        (
+            "revision",
+            match listing.revision.as_deref() {
+                Some(revision) => Value::text(revision),
+                None => Value::Null,
+            },
+        ),
+        (
+            "plan",
+            fitment::planned(&plan.verdicts, PLANNING_CONTEXT, plan.available),
+        ),
+    ]);
+    let _written = journal.append(&Record::new(EntryKind::FitmentPlanned, at, body));
 }
 
 /// What a repository publishes, when nobody has said which file they want.
@@ -575,7 +637,7 @@ fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Vec<String>, St
 /// Choosing for an operator would be choosing what they measure. What MCF can
 /// do is put the choice in front of them with the sizes, which is the question
 /// they are actually asking.
-fn offer(listing: &Listing, planned: &std::result::Result<Vec<String>, String>) -> String {
+fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> String {
     let mut lines = vec![format!(
         "{} publishes {} file(s) at {}",
         listing.reference.repository(),
@@ -608,7 +670,7 @@ fn offer(listing: &Listing, planned: &std::result::Result<Vec<String>, String>) 
             lines.push(format!(
                 "\nat {PLANNING_CONTEXT} tokens of context, on this machine:"
             ));
-            lines.extend(plan.iter().cloned());
+            lines.extend(plan.lines());
         }
         // The reason, not just the absence: a repository that publishes no
         // configuration and one whose configuration MCF could not read are

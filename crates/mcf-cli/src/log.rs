@@ -243,11 +243,108 @@ fn summarize(entry: &Entry) -> String {
                 .map_or(0, <[Value]>::len),
             text(body, "reason").unwrap_or_else(|| "no reason recorded".to_owned())
         ),
+        // A9: a comparison that found nothing is a result, and it reads as
+        // one here.
+        EntryKind::Comparison => comparison(body),
+        // The other half of A9, and the one §6.3 already calls a complete
+        // success: *this will not run here, because it needs 131 GiB and you
+        // have 24.*
+        EntryKind::FitmentPlanned => fitment(body),
         // `EntryKind` is non-exhaustive: an entry from a newer build is shown as
         // what it is rather than hidden, because a log that skipped what it did
         // not understand would be a log that lies by omission (§7.30, A1).
         other => format!("{other}: {}", body.to_line()),
     }
+}
+
+/// A comparison, as a reader meets it in the log (A9, B-086).
+///
+/// Three of the four outcomes are things a reader will call *it didn't work*,
+/// and none of them is a failure. The line says which it was rather than
+/// leaving anyone to infer it from a missing number.
+fn comparison(body: &Value) -> String {
+    let arm = |side: &str| {
+        body.get(side)
+            .and_then(|held| held.get("arm"))
+            .and_then(Value::as_text)
+            .unwrap_or("an unnamed arm")
+            .to_owned()
+    };
+    let outcome = body.get("outcome");
+    let of = |key: &str| {
+        outcome
+            .and_then(|held| held.get(key))
+            .and_then(Value::as_integer)
+            .unwrap_or(0)
+    };
+    let kind = outcome
+        .and_then(|held| held.get("kind"))
+        .and_then(Value::as_text)
+        .unwrap_or("an unrecorded outcome");
+    let said = match kind {
+        "differ" => format!("they differ by {}", per_cent(of("difference"))),
+        "same" => format!(
+            "no difference as large as {} — which is a result, not a failure to find one",
+            per_cent(of("resolution"))
+        ),
+        "not_yet" => "not decided: the arms have not separated".to_owned(),
+        "not_comparable" => format!("not comparable: {} differed", differing(body)),
+        other => other.to_owned(),
+    };
+    format!(
+        "compared {} with {}: {said}, after {} paired trial(s)",
+        arm("left"),
+        arm("right"),
+        of("pairs")
+    )
+}
+
+/// The conditions a comparison found differing, as one phrase.
+fn differing(body: &Value) -> String {
+    let Some(held) = body
+        .get("isolation")
+        .and_then(|held| held.get("differ"))
+        .and_then(Value::as_list)
+    else {
+        return "more than one condition".to_owned();
+    };
+    held.iter()
+        .filter_map(Value::as_text)
+        .collect::<Vec<&str>>()
+        .join(", ")
+}
+
+/// A plan, as a reader meets it in the log (A9, §6.3, B-213).
+fn fitment(body: &Value) -> String {
+    let variants = body
+        .get("plan")
+        .and_then(|plan| plan.get("variants"))
+        .and_then(Value::as_list);
+    let counted = |wanted: &str| {
+        variants.map_or(0, |held| {
+            held.iter()
+                .filter(|variant| variant.get("outcome").and_then(Value::as_text) == Some(wanted))
+                .count()
+        })
+    };
+    format!(
+        "planned {} — {} of {} variant(s) fit here, {} at a shorter context, {} do not",
+        text(body, "repository").unwrap_or_else(|| "a repository".to_owned()),
+        counted("fits"),
+        variants.map_or(0, <[Value]>::len),
+        counted("fits_at_a_shorter_context"),
+        counted("does_not_fit")
+    )
+}
+
+/// A ratio in parts per million, as a reader wants it.
+///
+/// Integer arithmetic: this crate renders what the record holds and does not
+/// introduce a float to do it (A6).
+fn per_cent(held: i64) -> String {
+    let whole = held.wrapping_div(10_000);
+    let tenths = held.wrapping_div(1_000).wrapping_rem(10).abs();
+    format!("{whole}.{tenths}%")
 }
 
 fn text(body: &Value, key: &str) -> Option<String> {

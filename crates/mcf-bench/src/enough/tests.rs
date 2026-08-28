@@ -214,3 +214,94 @@ fn the_same_noise_decides_once_there_are_enough_pairs_of_it() {
         "four pairs cannot decide anything, so the answer must arrive later: {at}"
     );
 }
+
+/// **The degeneracy F57 found.** Two arms whose timings are *identical* — every
+/// paired difference exactly zero — are the same, and the resampling test that
+/// stood here first could not say so: flipping the signs of a set of equal
+/// magnitudes cannot move the median's size, so the null was a single point and
+/// the answer was *cannot tell* about data that could not be clearer.
+#[test]
+fn identical_arms_are_the_same_rather_than_undecided() {
+    let held = over_paired_differences(&[0; 40], FIVE);
+    assert!(
+        matches!(held, Verdict::Same { .. }),
+        "arms that ran to the same nanosecond forty times are the same: {held}"
+    );
+}
+
+/// **More evidence never gives a weaker verdict.** The exact tail leaves
+/// `u128` past about a hundred and twenty pairs, and the first draft answered
+/// *not decided* there about data it had decided at eighty — an instrument
+/// whose confidence falls as its evidence grows.
+#[test]
+fn a_longer_run_never_decides_less() {
+    let noise: [i64; 4] = [137_000, -66_000, 6_000, -6_000];
+    let mut decided_at = None;
+    for copies in [5_usize, 10, 20, 40, 80, 160] {
+        let many: Vec<i64> = std::iter::repeat_n(noise, copies).flatten().collect();
+        let held = over_paired_differences(&many, FIVE);
+        let decided = !matches!(held, Verdict::NotYet { .. });
+        if decided && decided_at.is_none() {
+            decided_at = Some(many.len());
+        }
+        if decided_at.is_some() {
+            assert!(
+                decided,
+                "{} pairs is undecided after {} decided it: {held}",
+                many.len(),
+                decided_at.unwrap_or(0)
+            );
+        }
+    }
+    assert!(decided_at.is_some(), "this noise resolves at some count");
+}
+
+/// The chance a verdict reports is the exact sign-test tail, not an estimate.
+///
+/// Ten pairs won by one arm is two in one thousand and twenty-four, which is
+/// 1953 parts per million after rounding down. A resampling would have given
+/// something near it and different every time the seed changed.
+#[test]
+fn the_reported_chance_is_exact() {
+    let Verdict::Differ { by_chance, .. } = over_paired_differences(&[100_000; 10], FIVE) else {
+        panic!("ten pairs won by one arm separate them");
+    };
+    assert_eq!(
+        by_chance,
+        PartsPerMillion(1953),
+        "two in one thousand and twenty-four, computed rather than sampled"
+    );
+}
+
+/// Six pairs is the fewest that can reach one in twenty at all, and five
+/// cannot — which is a property of the test rather than of the data, and is
+/// the general form of the defect F55 caught at four.
+#[test]
+fn five_pairs_cannot_reach_the_threshold_and_six_can() {
+    assert!(
+        matches!(
+            over_paired_differences(&[100_000; 5], FIVE),
+            Verdict::NotYet { .. } | Verdict::Same { .. }
+        ),
+        "five coins landing the same way is one chance in sixteen, which is not one in twenty"
+    );
+    assert!(
+        matches!(
+            over_paired_differences(&[100_000; 6], FIVE),
+            Verdict::Differ { .. }
+        ),
+        "six is one in thirty-two, which is"
+    );
+}
+
+/// A tie supports neither arm and is excluded from the count, which is the
+/// standard treatment — and the pair is still reported as having happened.
+#[test]
+fn ties_leave_the_count_but_not_the_record_of_having_run() {
+    let mut differences = vec![100_000_i64; 8];
+    differences.extend([0, 0, 0, 0]);
+    let Verdict::Differ { after, .. } = over_paired_differences(&differences, FIVE) else {
+        panic!("eight pairs won by one arm separate them: {differences:?}");
+    };
+    assert_eq!(after, 12, "every pair that ran is counted in what it cost");
+}

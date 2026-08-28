@@ -29,14 +29,18 @@
 //! compile*.
 //!
 //! **Two nulls, because there are two data shapes.** A paired comparison is
-//! decided by flipping the signs of its own paired differences: under *the
-//! arms are the same*, which arm came out ahead in a given pair is a coin
-//! toss, so re-tossing the coins gives the distribution of medians that noise
-//! alone produces. That test uses the pairing, which is the point of having
-//! it. A comparison assembled from separate sessions has no pairs, so its null
-//! is the older and weaker one — the two arms' timings pooled and redrawn as
-//! independent groups — and the [`Strength`] travelling beside the verdict is
-//! what stops the two being read as the same claim.
+//! decided by the **sign test**: under *the arms are the same*, which arm came
+//! out ahead in a given pair is a coin toss, so the chance of a split this
+//! lopsided is a sum of binomial coefficients — exact, in whole numbers, with
+//! no resampling and no seed in it. That test uses the pairing, which is the
+//! point of having it, and uses nothing but the ordering of two values within
+//! a pair, which is all [`Quantity`] guarantees. A comparison assembled from
+//! separate sessions has no pairs, so its null is the older and weaker one —
+//! the two arms' timings pooled and redrawn as independent groups — and the
+//! [`Strength`] travelling beside the verdict is what stops the two being read
+//! as the same claim.
+//!
+//! [`Quantity`]: mcf_core::measurement::Quantity
 //!
 //! [`compare`]: super::compare
 //! [`Comparison`]: super::compare::Comparison
@@ -138,27 +142,45 @@ impl fmt::Display for Verdict {
 /// The verdict over a paired comparison's own differences.
 ///
 /// `differences` is one signed ratio per pair, in parts per million against
-/// the quicker arm, positive where the left arm was quicker. The statistic is
-/// their median — the median *of the differences*, which is what B53 means by
-/// the reported quantity, and not the difference of two medians.
+/// the quicker arm, positive where the left arm was quicker.
 ///
-/// The null is a sign flip. Under *these two arms are the same*, the sign of
-/// each paired difference is a coin toss, because whatever made one pair's
-/// left run slower was the arm or was the noise and the null says it was the
-/// noise. Re-tossing every sign four thousand times gives the medians noise
-/// alone produces, and the observed median is believed when it is bigger than
-/// all but one in twenty of them.
+/// **The test is the sign test, and it is exact.** Under *these two arms are
+/// the same*, which arm came out ahead in a given pair is a coin toss, so the
+/// number of pairs won by one arm is binomial with a half — and that tail is a
+/// sum of binomial coefficients, which is arithmetic on whole numbers with no
+/// resampling, no seed and no approximation in it. Ten pairs won by one arm is
+/// one chance in five hundred and twelve, computed rather than estimated.
 ///
-/// This throws away nothing the pairing bought: each difference keeps the
-/// conditions it was taken under, because both its runs were taken under them.
+/// **Why not a statistic that uses the magnitudes.** Two reasons, both
+/// measured. The resampling test that stood here first was degenerate on a
+/// pair of arms with *identical* timings: every difference is the same
+/// magnitude, so flipping the signs cannot move the median's size, the null
+/// distribution is a single point, and the answer is *cannot tell* about data
+/// that could not be clearer (F57). And the sign test uses only the ordering
+/// of two values within a pair, which is what [`Quantity`] guarantees and all
+/// it guarantees — F51 measured a tail made of whatever else the machine was
+/// doing, and a statistic that weighs by magnitude carries that tail into the
+/// answer.
+///
+/// **The cost is stated.** Discarding the magnitudes discards power when the
+/// noise is well behaved, and the test can call a difference real that is far
+/// too small to act on. That is what `resolving` is for, and why the size of
+/// the difference is reported beside the verdict and never in place of it.
+///
+/// **Ties are excluded and their count is not lost.** A pair in which both
+/// arms took exactly the same time supports neither, so it leaves the count —
+/// the standard treatment — and `after` still reports every pair that was run,
+/// because A1 forbids losing the fact that a trial happened.
+///
+/// [`Quantity`]: mcf_core::measurement::Quantity
 pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMillion) -> Verdict {
     let pairs = differences.len();
     if pairs < 2 {
         return Verdict::NotYet { so_far: pairs };
     }
     let observed = magnitude(median_signed(&sorted_signed(differences)));
+    let by_chance = one_sided_luck(differences);
 
-    let by_chance = flipped(differences, observed);
     if observed > 0 && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
             by: PartsPerMillion(observed),
@@ -177,6 +199,138 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
     } else {
         Verdict::NotYet { so_far: pairs }
     }
+}
+
+/// How often a coin toss wins as lopsidedly as these pairs did.
+///
+/// The two-sided sign test: with `n` pairs that were not ties and `m` of them
+/// won by whichever arm won more, this is the chance that tossing `n` coins
+/// gives `m` or more of either face. Exact, in whole numbers, computed in
+/// `u128` — which holds the arithmetic up to a hundred and twenty-odd pairs
+/// and saturates rather than wraps beyond that, so a very long run is
+/// conservative rather than wrong.
+fn one_sided_luck(differences: &[i64]) -> PartsPerMillion {
+    let ahead = differences.iter().filter(|held| **held > 0).count();
+    let behind = differences.iter().filter(|held| **held < 0).count();
+    let counted = ahead.saturating_add(behind);
+    if counted == 0 {
+        // Every pair a tie. That is not evidence of a difference, and the
+        // `Same` branch is where it is turned into an answer.
+        return PartsPerMillion(MILLION);
+    }
+    let (n, m) = at_most_countable(counted, ahead.max(behind));
+    let (Some(tail), Some(total)) = (binomial_tail(n, m), two_to_the(n)) else {
+        // Unreachable given the reduction above, and answered rather than
+        // asserted: *the noise does this all the time* refuses, where the
+        // alternative would overclaim.
+        return PartsPerMillion(MILLION);
+    };
+    let chance = tail
+        .saturating_mul(2)
+        .saturating_mul(u128::from(MILLION))
+        .wrapping_div(total);
+    PartsPerMillion(u64::try_from(chance.min(u128::from(MILLION))).unwrap_or(MILLION))
+}
+
+/// The counts, reduced to a size the exact arithmetic holds.
+///
+/// `2^n` leaves `u128` at a hundred and twenty-seven, and a run may have more
+/// pairs than that. Refusing to answer there would make **more evidence give a
+/// weaker verdict**, which is not a property any instrument may have — the
+/// first draft did exactly that, going back to *not decided* at a hundred and
+/// sixty pairs of data it had decided at eighty.
+///
+/// So the counts are scaled down to the largest size that can be computed
+/// exactly, with the winning side's count rounded **down**. That is
+/// conservative in the only direction that matters: the same lopsidedness over
+/// fewer pairs is less surprising, so the chance reported is never smaller than
+/// the true one. What is lost is a little power on very long runs, which is the
+/// cheap side of the trade.
+fn at_most_countable(counted: usize, lopsided: usize) -> (u32, u32) {
+    /// The largest `n` for which `2^n` and the tail both fit in `u128`.
+    const COUNTABLE: usize = 126;
+    let (counted, lopsided) = if counted > COUNTABLE {
+        let scaled = lopsided
+            .saturating_mul(COUNTABLE)
+            .wrapping_div(counted.max(1));
+        // A side that won cannot be reduced below half, which would be a
+        // reduction into a different question.
+        (COUNTABLE, scaled.max(COUNTABLE.wrapping_div(2)))
+    } else {
+        (counted, lopsided)
+    };
+    (
+        u32::try_from(counted).unwrap_or(1),
+        u32::try_from(lopsided).unwrap_or(1),
+    )
+}
+
+/// The sum of `n` choose `k` for every `k` from `m` to `n`.
+///
+/// `None` where the arithmetic would leave `u128`, which is a run long enough
+/// that the caller reports *undecided* rather than a number it cannot stand
+/// behind.
+fn binomial_tail(n: u32, m: u32) -> Option<u128> {
+    let mut total: u128 = 0;
+    for k in m..=n {
+        total = total.checked_add(choose(n, k)?)?;
+    }
+    Some(total)
+}
+
+/// `n` choose `k`, exactly.
+///
+/// Multiplied and divided in step so the running value stays as small as the
+/// answer allows: `C(n, k) = C(n, k-1) * (n - k + 1) / k`, and each division is
+/// exact because the running value is a binomial coefficient at every step.
+fn choose(n: u32, k: u32) -> Option<u128> {
+    if k > n {
+        return Some(0);
+    }
+    let k = k.min(n.saturating_sub(k));
+    let mut held: u128 = 1;
+    for step in 1..=k {
+        held = held.checked_mul(u128::from(n.saturating_sub(step).saturating_add(1)))?;
+        held = held.checked_div(u128::from(step))?;
+    }
+    Some(held)
+}
+
+/// Two to the power of `n`, or `None` past what `u128` holds.
+fn two_to_the(n: u32) -> Option<u128> {
+    if n >= 127 { None } else { Some(1_u128 << n) }
+}
+
+/// Whether a paired effect of `resolving` would have been declared, on this
+/// run's own noise.
+///
+/// **This is a question about power, and the first draft asked a different
+/// one.** It asked whether *these* differences reach `resolving` — which is
+/// circular, because the yardstick is built out of the very differences an
+/// effect would have moved. On four real paired trials it declared *no
+/// difference as large as five percent* from differences of thirteen and seven
+/// percent, at a count where a sign test over four pairs cannot reach one in
+/// twenty at all: `Differ` was unreachable, and a rule that can only answer one
+/// way is not a test (F55).
+///
+/// What is asked instead: take this run's differences, remove whatever effect
+/// they already carry by centring them on their median, add an effect of
+/// exactly `resolving`, and ask whether *that* would have been declared. If it
+/// would, the arms are the same to that resolution and A9's null result is
+/// earned. If it would not, more pairs are owed.
+///
+/// Both directions are asked, because the sign test is not symmetric on a set
+/// with ties and the cheaper assumption would be one nobody had checked.
+fn a_paired_effect_would_show(differences: &[i64], resolving: PartsPerMillion) -> bool {
+    let centre = median_signed(&sorted_signed(differences));
+    let effect = i64::try_from(resolving.0).unwrap_or(i64::MAX);
+    [effect, effect.saturating_neg()].into_iter().all(|shift| {
+        let moved: Vec<i64> = differences
+            .iter()
+            .map(|held| held.saturating_sub(centre).saturating_add(shift))
+            .collect();
+        one_sided_luck(&moved) <= FALSE_ALARMS_ALLOWED
+    })
 }
 
 /// The verdict over two arms that were never paired.
@@ -227,41 +381,6 @@ pub(super) fn over_separate_arms(
     }
 }
 
-/// Whether a paired effect of `resolving` would have been declared, on this
-/// run's own noise.
-///
-/// **This is a question about power, and the first draft asked a different
-/// one.** It asked whether *these* differences' sign flips reach `resolving`
-/// — which is circular, because the null is built out of the very differences
-/// an effect would have moved. On four real paired trials it declared *no
-/// difference as large as five percent* from differences of thirteen and seven
-/// percent, and a sign-flip test on four pairs has sixteen assignments and so
-/// **cannot ever** produce a p-value below one in sixteen: `Differ` was
-/// unreachable at that count, and a rule that can only answer one way is not a
-/// test (F55).
-///
-/// What is asked instead: take this run's differences, remove whatever effect
-/// they already carry by centring them on their median, add an effect of
-/// exactly `resolving`, and ask whether *that* would have been declared. If it
-/// would, the arms are the same to that resolution and B-086's null result is
-/// earned. If it would not, more pairs are owed.
-///
-/// Both directions are asked although the statistic and the null are both
-/// symmetric under negation, so they agree — the cost is one more resampling
-/// and the gain is that the symmetry is asserted rather than assumed.
-fn a_paired_effect_would_show(differences: &[i64], resolving: PartsPerMillion) -> bool {
-    let centre = median_signed(&sorted_signed(differences));
-    let effect = i64::try_from(resolving.0).unwrap_or(i64::MAX);
-    [effect, effect.saturating_neg()].into_iter().all(|shift| {
-        let moved: Vec<i64> = differences
-            .iter()
-            .map(|held| held.saturating_sub(centre).saturating_add(shift))
-            .collect();
-        let observed = magnitude(median_signed(&sorted_signed(&moved)));
-        observed > 0 && flipped(&moved, observed) <= FALSE_ALARMS_ALLOWED
-    })
-}
-
 /// Whether an effect of `resolving` would have been declared between two arms
 /// that were never paired.
 ///
@@ -288,48 +407,6 @@ fn a_separate_effect_would_show(
         return false;
     };
     observed.0 > 0 && manufactured(one, &scaled, observed, each) <= FALSE_ALARMS_ALLOWED
-}
-
-/// How often re-tossing the sign of every paired difference produces a median
-/// at least this big.
-fn flipped(differences: &[i64], effect: u64) -> PartsPerMillion {
-    if differences.is_empty() {
-        return PartsPerMillion(MILLION);
-    }
-    let mut state = 0x2545_F491_4F6C_DD1D_u64;
-    let mut next = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
-    };
-    let mut tossed = vec![0_i64; differences.len()];
-    let mut alarms = 0_u64;
-    for _ in 0..RESAMPLINGS {
-        let mut bits = next();
-        for (slot, held) in differences.iter().enumerate() {
-            // A fresh word every sixty-four signs; the generator is cheap but
-            // not free, and a sign needs one bit.
-            if slot % 64 == 0 && slot > 0 {
-                bits = next();
-            }
-            if let Some(into) = tossed.get_mut(slot) {
-                *into = if bits >> (slot % 64) & 1 == 0 {
-                    *held
-                } else {
-                    held.saturating_neg()
-                };
-            }
-        }
-        if magnitude(median_signed(&sorted_signed(&tossed))) >= effect {
-            alarms = alarms.saturating_add(1);
-        }
-    }
-    PartsPerMillion(
-        alarms
-            .saturating_mul(MILLION)
-            .wrapping_div(u64::try_from(RESAMPLINGS).unwrap_or(1).max(1)),
-    )
 }
 
 /// A signed ratio's size, whichever way it pointed.

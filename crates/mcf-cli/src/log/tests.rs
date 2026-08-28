@@ -89,3 +89,110 @@ fn the_count_says_what_it_counted() {
 fn the_default_is_stated() {
     assert_eq!(SHOWN, 20);
 }
+
+/// **A9 in the window.** A comparison that found no difference reads as a
+/// result, and says so in as many words — a reader must not have to know that
+/// an absent number means *we looked and there was nothing there*.
+#[test]
+fn a_null_comparison_reads_as_a_result() {
+    let said = summarize(&an_entry(
+        EntryKind::Comparison,
+        Value::map([
+            ("left", Value::map([("arm", Value::text("q8_0"))])),
+            ("right", Value::map([("arm", Value::text("q2_k"))])),
+            (
+                "outcome",
+                Value::map([
+                    ("kind", Value::text("same")),
+                    ("resolution", Value::Integer(50_000)),
+                    ("pairs", Value::Integer(37)),
+                ]),
+            ),
+        ]),
+    ));
+    assert!(said.contains("q8_0") && said.contains("q2_k"), "{said}");
+    assert!(said.contains("no difference as large as 5.0%"), "{said}");
+    assert!(
+        said.contains("a result, not a failure"),
+        "the null result says what it is: {said}"
+    );
+    assert!(said.contains("37 paired trial(s)"), "{said}");
+}
+
+/// A comparison that was refused reads as an outcome and names what differed,
+/// with no number anywhere in the line (A8, A9).
+#[test]
+fn a_refused_comparison_reads_as_an_outcome() {
+    let said = summarize(&an_entry(
+        EntryKind::Comparison,
+        Value::map([
+            ("left", Value::map([("arm", Value::text("q8_0"))])),
+            ("right", Value::map([("arm", Value::text("q2_k"))])),
+            (
+                "outcome",
+                Value::map([
+                    ("kind", Value::text("not_comparable")),
+                    ("pairs", Value::Integer(12)),
+                ]),
+            ),
+            (
+                "isolation",
+                Value::map([
+                    ("kind", Value::text("confounded")),
+                    (
+                        "differ",
+                        Value::List(vec![
+                            Value::text("thermal_state"),
+                            Value::text("quantization"),
+                        ]),
+                    ),
+                ]),
+            ),
+        ]),
+    ));
+    assert!(said.contains("not comparable"), "{said}");
+    assert!(said.contains("thermal_state, quantization"), "{said}");
+    assert!(!said.contains("differ by"), "no delta escapes: {said}");
+}
+
+/// *Does not fit here* reads as a finding, with the count of each outcome
+/// (A9, §6.3).
+#[test]
+fn a_plan_reads_as_a_finding() {
+    let variant = |outcome: &str| Value::map([("outcome", Value::text(outcome))]);
+    let said = summarize(&an_entry(
+        EntryKind::FitmentPlanned,
+        Value::map([
+            ("repository", Value::text("owner/model")),
+            (
+                "plan",
+                Value::map([(
+                    "variants",
+                    Value::List(vec![
+                        variant("fits"),
+                        variant("fits_at_a_shorter_context"),
+                        variant("does_not_fit"),
+                        variant("does_not_fit"),
+                    ]),
+                )]),
+            ),
+        ]),
+    ));
+    assert!(said.contains("planned owner/model"), "{said}");
+    assert!(said.contains("1 of 4 variant(s) fit here"), "{said}");
+    assert!(said.contains("1 at a shorter context"), "{said}");
+    assert!(said.contains("2 do not"), "{said}");
+}
+
+/// Neither kind is a failure, which is the whole of A9: a reader filtering the
+/// log for failures must not find them, and one filtering for results must.
+#[test]
+fn neither_new_kind_is_a_failure() {
+    for kind in [EntryKind::Comparison, EntryKind::FitmentPlanned] {
+        assert_ne!(kind, EntryKind::Failure);
+        assert!(
+            !summarize(&an_entry(kind, Value::map::<String>([]))).contains("failure"),
+            "{kind} must not read as a failure"
+        );
+    }
+}
