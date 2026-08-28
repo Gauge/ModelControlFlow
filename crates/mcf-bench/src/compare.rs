@@ -841,6 +841,34 @@ impl<K: ClockKind> Comparison<K> {
         }
     }
 
+    /// The middle of each arm's timings, left then right.
+    ///
+    /// **The absolute, which §3.27 says stays local.** It does not travel —
+    /// a duration from a stranger's machine is nearly uninterpretable — and it
+    /// is what answers *will this fit in my latency budget*, which a ratio
+    /// cannot. So it is reported beside the comparison and never instead of
+    /// it.
+    ///
+    /// `None` where there are no pairs.
+    #[must_use]
+    pub fn medians(&self) -> Option<(Duration<K>, Duration<K>)> {
+        let middle = |mut held: Vec<u64>| -> u64 {
+            held.sort_unstable();
+            held.get(held.len().wrapping_div(2)).copied().unwrap_or(0)
+        };
+        if self.pairs().is_empty() {
+            return None;
+        }
+        Some((
+            Duration::from_nanos(middle(
+                self.pairs().iter().map(|p| p.left.as_nanos()).collect(),
+            )),
+            Duration::from_nanos(middle(
+                self.pairs().iter().map(|p| p.right.as_nanos()).collect(),
+            )),
+        ))
+    }
+
     /// How many pairs ran the left arm first, and how many the right.
     ///
     /// B53 randomizes the order so that going first is not an advantage; this

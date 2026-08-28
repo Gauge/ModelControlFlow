@@ -127,6 +127,7 @@ fn outcome(finding: &Finding) -> Value {
     match finding.verdict() {
         None => Value::map([
             ("kind", Value::text("not_comparable")),
+            ("quicker", Value::Null),
             ("resolution", Value::Null),
             ("difference", Value::Null),
             ("by_chance", Value::Null),
@@ -134,10 +135,16 @@ fn outcome(finding: &Finding) -> Value {
         ]),
         Some(Verdict::Differ {
             by,
+            left_quicker,
             by_chance,
             after,
         }) => Value::map([
             ("kind", Value::text("differ")),
+            // A size without a direction is not a comparison (F67).
+            (
+                "quicker",
+                Value::text(if *left_quicker { "left" } else { "right" }),
+            ),
             ("resolution", Value::Null),
             ("difference", parts_per_million(*by)),
             ("by_chance", parts_per_million(*by_chance)),
@@ -151,6 +158,7 @@ fn outcome(finding: &Finding) -> Value {
             // Named for what it is. A9: this is a finding, and a reader
             // filtering for results must not have to know that `same` is one.
             ("kind", Value::text("same")),
+            ("quicker", Value::Null),
             ("resolution", parts_per_million(*resolving)),
             // The measured difference, which is smaller than the resolution
             // and is not nothing. A reader who later cares about a smaller
@@ -161,6 +169,7 @@ fn outcome(finding: &Finding) -> Value {
         ]),
         Some(Verdict::NotYet { so_far }) => Value::map([
             ("kind", Value::text("not_yet")),
+            ("quicker", Value::Null),
             ("resolution", Value::Null),
             ("difference", Value::Null),
             ("by_chance", Value::Null),

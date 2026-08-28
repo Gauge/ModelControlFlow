@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 70 |
+| **Version** | 71 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -94,6 +94,7 @@ forward as one.
 | 64 | [F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)](#64--f64--every-benchmark-trial-was-cold-and-three-fifths-of-it-was-process-start-b-081-613-b-376-f59-d41-f35) |
 | 65 | [F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)](#65--f65--one-resident-model-and-paired-interleaving-cannot-both-be-had-b-090-b-081-b-250-dec-001-613-b53-f64) |
 | 66 | [F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)](#66--f66--fifty-eight-of-a-hundred-trials-is-fifty-eight-data-points-and-the-fifty-ninth-was-not-one-a4-b-087-31-a1-a6) |
+| 67 | [F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)](#67--f67--the-first-frontier-and-what-it-is-mostly-a-frontier-of-b-091-xii-34-327-f64-f65) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5104,7 +5105,88 @@ the shape is what stops the natural all-or-nothing return coming back. And A4's
 other example, *eleven tokens before a runtime died are eleven tokens*, was
 already held by the generation path and is asserted rather than newly built.
 
+## 67 · F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)
+
+**The cleanest comparison §3.4 admits**, and MCF's first: one model, one
+machine, one prompt, one engine build, one sitting, and seven quantizations of
+the same weights by the same publisher. What differs between two arms is the
+quantization, read from each file's own tensor types rather than from its name
+(A21), and everything else is held still.
+
+Built as **seven paired comparisons against one reference arm**, not as seven
+absolutes on a chart: §3.27 makes the comparison the durable output, so each
+point carries its own stopping condition, its own count and its own conditions.
+`--cold` throughout, because F65 established that a warm run of two models
+comes out mixed and has no delta to give.
+
+```
+reference  SmolLM2-135M-Instruct-Q8_0.gguf   (145 MB)
+
+f16      271 MB   the reference is quicker by 61.9%   6 pairs, 3.1%
+Q2_K      88 MB   this arm is quicker by 26.1%        6 pairs, 3.1%
+Q3_K_S    88 MB   this arm is quicker by 25.7%        6 pairs, 3.1%
+Q4_0      92 MB   this arm is quicker by 24.4%        6 pairs, 3.1%
+Q4_K_M   105 MB   this arm is quicker by 18.2%        6 pairs, 3.1%
+Q5_K_M   112 MB   this arm is quicker by 16.6%        6 pairs, 3.1%
+Q6_K     138 MB   no difference as large as 5.0%; measured 2.8%
+```
+
+Absolute, for the one point that has it here: **372.0 ms against 476.7 ms**,
+which §3.27 keeps local and does not travel.
+
+**It is monotone in file size, and that is the finding.** 88, 88, 92, 105, 112,
+138, 145, 271 megabytes give 26.1, 25.7, 24.4, 18.2, 16.6, ~3, 0, −61.9
+percent. The ordering is exact and the two 88 MB files — which are different
+quantization *schemes* — differ by four tenths of a percent from each other.
+
+F64 already said why: every trial loads the model, because the engine holds one
+at a time and a paired comparison alternates two, and load time goes with
+bytes. So **this is principally a frontier of file size**, and the generation
+work that distinguishes one quantization scheme from another is the smaller
+term underneath it. A straight line through the two extreme points predicts f16
+at 1.84× the reference against 2.04× observed, so it is not *purely* size —
+f16 also moves more memory per token — but size is what dominates.
+
+That is a true measurement, honestly conditioned, and it is not the frontier
+somebody wants. The frontier somebody wants needs the load out of the figure,
+which needs a warm two-model comparison, which needs two resident models
+(F65, DEC-001).
+
+**Six paired trials, seven times.** The sign test's minimum: six pairs won by
+one arm is one chance in thirty-two, which clears one in twenty, and every
+difference here is far larger than the five percent asked about. The
+comparisons stopped at the first count that could decide, which is F55's
+stopping condition doing exactly what it is for.
+
+**A size without a direction is not a comparison.** The first run of this
+frontier reported seven differences and said of none of them which way round it
+was — a table nobody can read. `Verdict::Differ` carries which arm was quicker
+now, the sign was already in the paired differences, and the rendering names the
+arm. Found by producing the thing and looking at it.
+
+**What this characterizes.** The instrument. `scripts/frontier.sh` prints that
+in as many words, because B-091 requires it: this is not a statement about
+quantization in general, about these quantizations on other hardware, or about
+anything but latency — and what a quantization costs in *quality* is not
+measured here and is not measured anywhere yet (§IV, DEC-002).
+
+**What was not established.** One sitting, and F53 says a sitting is what a
+sitting had. One prompt of four tokens and one budget of 128, so the ratio of
+prompt to generation is fixed and unexplored. The reference arm is Q8_0 by
+default and a different reference would give a different table of the same
+shape. Seven of the twenty variants this repository publishes. And the script
+is not a step of `scripts/ci.sh` and never will be: it has no pass condition,
+and A18 forbids a benchmark gating a change.
+
 ## Changelog
+
+### Version 71 — the first frontier
+
+F67. Seven quantizations of one model, one machine, one sitting, built as seven
+paired comparisons against one reference. It is monotone in file size, which is
+what F64 predicted: every trial loads the model, and load time goes with bytes.
+Also: a size without a direction is not a comparison, and the first run of the
+frontier had none.
 
 ### Version 70 — a partial run keeps what it produced
 

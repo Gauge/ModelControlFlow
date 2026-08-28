@@ -130,17 +130,47 @@ fn one_pair_decides_nothing() {
     ));
 }
 
-/// The sign flip is symmetric: an effect the other way round is found the same
-/// way and reported at the same size.
+/// The test is symmetric: an effect the other way round is found the same way,
+/// at the same size and the same chance — and **the direction is the one thing
+/// that changes**, which is what makes the verdict a comparison rather than a
+/// magnitude (F67).
 #[test]
-fn direction_does_not_change_the_size() {
+fn direction_changes_only_the_direction() {
     let one = over_paired_differences(&differences(300_000, 40_000, 20), FIVE);
     let held: Vec<i64> = differences(300_000, 40_000, 20)
         .into_iter()
         .map(i64::saturating_neg)
         .collect();
     let other = over_paired_differences(&held, FIVE);
-    assert_eq!(one, other, "a difference is a size, not a direction");
+
+    let (
+        Verdict::Differ {
+            by,
+            left_quicker,
+            by_chance,
+            after,
+        },
+        Verdict::Differ {
+            by: mirrored,
+            left_quicker: the_other_way,
+            by_chance: as_likely,
+            after: as_many,
+        },
+    ) = (&one, &other)
+    else {
+        panic!("both directions separate: {one} and {other}");
+    };
+    assert_eq!(by, mirrored, "the same size");
+    assert_eq!(by_chance, as_likely, "at the same chance");
+    assert_eq!(after, as_many, "after the same count");
+    assert!(
+        left_quicker != the_other_way,
+        "and the other way round, which is the whole of what a comparison adds to a magnitude"
+    );
+    assert!(
+        *left_quicker,
+        "positive differences mean the left arm is quicker"
+    );
 }
 
 /// The pooled null still works, because a comparison assembled from separate

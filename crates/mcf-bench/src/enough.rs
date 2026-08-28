@@ -85,6 +85,14 @@ pub enum Verdict {
     Differ {
         /// The difference, against the smaller median.
         by: PartsPerMillion,
+        /// Whether the left arm was the quicker one.
+        ///
+        /// **A size without a direction is not a comparison.** The first
+        /// frontier MCF produced reported seven differences and said of none
+        /// of them which way round it was, which is a table nobody can read
+        /// (F67). The sign is in the paired differences already; this is
+        /// carrying it out.
+        left_quicker: bool,
         /// How often the noise alone produced one that big.
         by_chance: PartsPerMillion,
         /// How many paired trials it took.
@@ -123,12 +131,14 @@ impl fmt::Display for Verdict {
         match self {
             Self::Differ {
                 by,
+                left_quicker,
                 by_chance,
                 after,
             } => write!(
                 form,
-                "they differ by {}, after {after} paired trial(s) — noise alone produced a gap \
-                 that big {} of the time",
+                "the {} arm is quicker by {}, after {after} paired trial(s) — noise alone \
+                 produced a gap that big {} of the time",
+                if *left_quicker { "left" } else { "right" },
                 percent(*by),
                 percent(*by_chance)
             ),
@@ -191,7 +201,8 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
     if pairs < 2 {
         return Verdict::NotYet { so_far: pairs };
     }
-    let observed = magnitude(median_signed(&sorted_signed(differences)));
+    let middle = median_signed(&sorted_signed(differences));
+    let observed = magnitude(middle);
     let by_chance = one_sided_luck(differences);
 
     // **Both halves, and the second was missing.** A difference must be real
@@ -207,6 +218,9 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
     if observed >= resolving.0 && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
             by: PartsPerMillion(observed),
+            // Positive is the left arm quicker, which is how a paired
+            // difference is signed throughout this crate.
+            left_quicker: middle > 0,
             by_chance,
             after: pairs,
         };
@@ -392,6 +406,7 @@ pub(super) fn over_separate_arms(
     if observed >= resolving && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
             by: observed,
+            left_quicker: a < b,
             by_chance,
             after: each,
         };

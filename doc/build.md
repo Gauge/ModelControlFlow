@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 44 |
+| **Version** | 45 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -403,6 +403,19 @@ keeps its own flag. So do the checks that need something on the disk: the
 conformance corpus (`--with-corpus`), the reference comparison
 (`--with-oracle`), the real hub (`--with-online`), the from-scratch container
 (`--with-from-scratch`) and the seed set (`--with-seed-set`).
+
+### The frontier
+
+`scripts/frontier.sh` (B-091, F67). Not a check and not a step of
+`scripts/ci.sh`: it is a **benchmark**, it has no pass condition, and A18
+forbids one gating a change. Its exit status says whether it could run, never
+what it found.
+
+It compares every quantization of one model against one reference arm — seven
+paired comparisons rather than seven absolutes on a chart, because §3.27 makes
+the comparison the durable output. It prints what it characterizes in as many
+words: the instrument, not quantization in general, and nothing at all about
+quality.
 
 ### The seed-set check
 
@@ -1017,6 +1030,12 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 45 — the frontier
+
+`scripts/frontier.sh` (B-091). A benchmark rather than a check: no pass
+condition, not a step of `scripts/ci.sh`, and its exit status says whether it
+could run rather than what it found.
 
 ### Version 44 — the seed set is checked rather than trusted
 

@@ -666,6 +666,15 @@ fn keep(
         .map_err(|failure| format!("the comparison would not append — {failure}"))
 }
 
+/// A duration as a person reads it, without a float.
+///
+/// Milliseconds and tenths, from integer arithmetic: this crate holds no
+/// floating-point number and a rendering is not a reason to introduce one (A6).
+fn milliseconds(held: Duration<Monotonic>) -> String {
+    let tenths = held.as_nanos().wrapping_div(100_000);
+    format!("{}.{} ms", tenths.wrapping_div(10), tenths.wrapping_rem(10))
+}
+
 /// What the operator reads.
 fn report(
     finding: &mcf_bench::compare::Finding,
@@ -685,6 +694,16 @@ fn report(
         ),
         format!("  order    {left_first} left-first, {right_first} right-first"),
     ];
+    if let Some((left, right)) = held.medians() {
+        // The absolute, beside the comparison and never instead of it (§3.27):
+        // it answers *will this fit in my latency budget*, which a ratio
+        // cannot, and it is the figure that does not travel.
+        lines.push(format!(
+            "  medians  {} and {} — local figures, which do not travel (§3.27)",
+            milliseconds(left),
+            milliseconds(right)
+        ));
+    }
     if let Some(differences) = held.paired_differences() {
         lines.push("  paired differences, in interleaving order:".to_owned());
         for (at, difference) in differences.iter().enumerate() {
