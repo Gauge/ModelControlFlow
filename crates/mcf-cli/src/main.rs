@@ -132,6 +132,8 @@ enum Request<'a> {
         engine: Option<&'a str>,
         /// The difference the caller cares about, in parts per million.
         resolving: Option<u64>,
+        /// Whether every trial must load the model for itself (§6.13, F65).
+        cold: bool,
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
@@ -635,6 +637,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut seed = 0_u64;
     let mut engine = None;
     let mut resolving = None;
+    let mut cold = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -683,6 +686,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            "--cold" => cold = true,
             "--resolving" => match rest.next().and_then(|value| per_cent(value)) {
                 Some(held) => resolving = Some(held),
                 None => {
@@ -707,6 +711,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             seed,
             engine,
             resolving,
+            cold,
         }),
         (None, _, _) => Ok(Request::MissingArgument {
             command: "bench",
@@ -963,7 +968,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf bench <model> --against <model> compare two models on an engine\n\
                  \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
                  \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
-                 \x20       [--engine <name>]              something the machine said (A18)\n\
+                 \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
                  \x20 mcf cross-check <model>              read one engine's tokens with the\n\
                  \x20                                       other, and say whether they agree\n\
                  \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -1053,6 +1058,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
             resolving,
+            cold,
         } => bench::bench(
             left,
             right,
@@ -1061,6 +1067,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             *seed,
             *engine,
             resolving.map(mcf_core::measurement::PartsPerMillion),
+            *cold,
         ),
         Request::CrossCheck { model } => crosscheck::run(model),
         Request::Probe {

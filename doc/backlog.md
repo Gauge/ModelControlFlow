@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 176 |
+| **Version** | 177 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (92 done, 1 dropped, 12 in progress,
-36 blocked on a decision, 76 open).** Every item cites
+decided, 23 resolved) and 217 build items (93 done, 1 dropped, 12 in progress,
+36 blocked on a decision, 75 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -273,7 +273,7 @@ first and importance second.
 | B-214 | Expectation bands from local history: project throughput for unmeasured configurations from what this machine has measured, as a labelled estimate that can never sit beside a measurement unlabelled | [PR3](proposals.md#pr3--pre-acquisition-planning), A20, B34 | Projections are band-shaped, marked as estimates, derived from local history only, and absent where there is no history | open |
 | B-215 | Every projection is scored against the measurement that eventually replaces it, and the score is reported | [PR3](proposals.md#pr3--pre-acquisition-planning), §6.16, §3.4 | Prediction error is tracked over time; a projection model whose error grows is a finding about the model | open |
 | B-216 | Contention snapshot: on demand and on invalidation, sample per-process accelerator occupancy, memory pressure, thermal and clock state against baseline, and attach it to the invalidation record | [PR5](proposals.md#pr5--contention-diagnosis), §3.8, B24 | An unattributable run names what it was competing with; the snapshot persists with the record rather than on a screen | open |
-| B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | open |
+| B-090 | `mcf bench`: the M5 product — a defensible performance number taken here, with its conditions and its uncertainty | §II, §IV | Two configurations of one model are compared on this machine with a stated method, spread and conclusion — including "within noise" | **done** (F65). The command builds the comparison the only way one can be built (B-250), stops when its own arithmetic decides (F55, F57), states what it reused (B-081) and records the whole of it (B-086). It sends the prompt as **identifiers**, which reaches the provisioned engine's server rather than a fresh process per request (B-376) — and that turned out to make a two-model comparison *mixed* rather than warm, because one model is resident at a time (DEC-001) and a paired comparison alternates two. So the delta is withheld from a mixed run and the refusal names the two uniform ways: `--cold`, which sends text and loads the model for every trial, and comparing a model with itself. Both were run: *no difference as large as 5.0%* at nine and at fifteen paired trials, with `reuse` stated either way. What is not answered is whether a *warm* two-model comparison is worth having, which needs two resident models and is DEC-001's question |
 
 ### M6 — Judge
 
@@ -394,6 +394,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 177 — a defensible number, and the two ways to get one
+
+B-090 done (F65). `mcf bench` sends identifiers so the request reaches the
+engine's server — which made a two-model comparison *mixed* rather than warm,
+because one model is resident at a time and a paired comparison alternates two.
+A mixed run has no delta to give; `--cold` and comparing a model with itself are
+the two uniform ways, and both were run. Whether a warm two-model comparison is
+worth having is DEC-001's question.
 
 ### Version 176 — every trial was cold
 

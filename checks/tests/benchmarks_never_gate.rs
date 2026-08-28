@@ -50,8 +50,11 @@ const MEASURED: [&str; 4] = [
 #[test]
 fn no_verdict_makes_the_benchmark_fail() {
     let source = read("crates/mcf-cli/src/bench.rs");
-    let Some((_, body)) = source.split_once("let held = running.finish();") else {
-        panic!("the runner finishes its comparison somewhere");
+    // From where the verdict is taken to the end of the command: everything
+    // before it is MCF failing to *run* the benchmark, which is a refusal and
+    // is allowed to fail.
+    let Some((_, body)) = source.split_once("let finding = held.finding(resolving);") else {
+        panic!("the command takes a verdict somewhere");
     };
     let finished = body
         .split_once("#[cfg(test)]")

@@ -547,8 +547,34 @@ pub struct Finding {
     verdict: Option<Verdict>,
     strength: Strength,
     isolation: Isolation,
+    reuse: Reuse,
+    withheld: Option<Withheld>,
     declared: Option<String>,
     arms: (Arm, Arm),
+}
+
+/// Why a comparison has no delta to give.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Withheld {
+    /// More than one condition differs (A8).
+    Confounded,
+    /// The trials were not alike in what they reused (§6.13).
+    ///
+    /// A run that loaded the model for some trials and not for others has
+    /// measured two things and would be reporting one. The delta exists
+    /// arithmetically and is not a delta between the arms: part of it is the
+    /// difference between a trial that paid the load and one that did not,
+    /// and which trials those were is a property of the order the run drew.
+    MixedReuse,
+}
+
+impl fmt::Display for Withheld {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        form.write_str(match *self {
+            Self::Confounded => "more than one condition differs (A8)",
+            Self::MixedReuse => "the trials were not alike in what they reused (§6.13)",
+        })
+    }
 }
 
 impl Finding {
@@ -585,15 +611,34 @@ impl Finding {
     pub fn declared(&self) -> Option<&str> {
         self.declared.as_deref()
     }
+
+    /// What the run reused (§6.13, B-081).
+    #[must_use]
+    pub const fn reuse(&self) -> &Reuse {
+        &self.reuse
+    }
+
+    /// Why there is no delta, where there is none.
+    #[must_use]
+    pub const fn withheld(&self) -> Option<Withheld> {
+        self.withheld
+    }
 }
 
 impl fmt::Display for Finding {
     fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (left, right) = &self.arms;
         write!(form, "{left} vs {right}: ")?;
-        match &self.verdict {
-            Some(verdict) => write!(form, "{verdict}")?,
-            None => write!(form, "{}", self.isolation)?,
+        match (&self.verdict, self.withheld) {
+            (Some(verdict), _) => write!(form, "{verdict}")?,
+            (None, Some(Withheld::MixedReuse)) => write!(
+                form,
+                "no delta: {} — a run whose trials were not alike is not one measurement, and \
+                 part of any difference between the arms would be the difference between a trial \
+                 that loaded the model and one that did not",
+                self.reuse
+            )?,
+            (None, _) => write!(form, "{}", self.isolation)?,
         }
         write!(form, " — {}", self.strength)?;
         if let Some(because) = &self.declared {
@@ -804,13 +849,31 @@ impl<K: ClockKind> Comparison<K> {
             ),
         };
         let isolation = self.isolation();
-        // A8's refusal, and the only place a delta is withheld. A declared
-        // confound is not withheld: it is reported with its declaration.
-        let withheld = isolation.is_confounded() && self.declared.is_none();
+        let reuse = self.reuse();
+        // The two refusals, and the only places a delta is withheld. A8's is a
+        // confound nobody declared; §6.13's is a run whose trials were not
+        // alike, which is not one measurement whatever else was equal.
+        //
+        // A declared confound is not withheld — it is reported with its
+        // declaration — and a mixed run is not declarable: an operator can say
+        // *I know these two variables moved together*, and cannot say *I know
+        // some of my trials loaded the model*, because that is not a statement
+        // about the question, it is a statement about the instrument.
+        let withheld = if reuse.is_uniform() {
+            (isolation.is_confounded() && self.declared.is_none()).then_some(Withheld::Confounded)
+        } else {
+            Some(Withheld::MixedReuse)
+        };
         Finding {
-            verdict: if withheld { None } else { Some(verdict) },
+            verdict: if withheld.is_some() {
+                None
+            } else {
+                Some(verdict)
+            },
             strength: self.strength(),
             isolation,
+            reuse,
+            withheld,
             declared: self.declared.clone(),
             arms: (self.left.arm().clone(), self.right.arm().clone()),
         }

@@ -11,7 +11,7 @@ const NOWHERE: &str = "/nonexistent/mcf-bench-test/model.gguf";
 /// command starts one.
 #[test]
 fn without_a_daemon_it_refuses_rather_than_reporting() {
-    let response = bench_where(None, NOWHERE, NOWHERE, "hello", None, 0, None, None);
+    let response = bench_where(None, NOWHERE, NOWHERE, "hello", None, 0, None, None, false);
     assert!(!response.served);
     assert!(
         response.text.contains("there is no model at"),
@@ -27,7 +27,7 @@ fn a_missing_daemon_is_named() {
     let scratch = std::env::temp_dir().join(format!("mcf-bench-{}.gguf", std::process::id()));
     let _written = std::fs::write(&scratch, b"not a model, and never read");
     let named = scratch.display().to_string();
-    let response = bench_where(None, &named, &named, "hello", None, 0, None, None);
+    let response = bench_where(None, &named, &named, "hello", None, 0, None, None, false);
     let _removed = std::fs::remove_file(&scratch);
     assert!(!response.served);
     assert!(
@@ -72,4 +72,38 @@ fn a_resolution_is_read_without_a_float() {
         "a zero difference is not a question"
     );
     assert_eq!(per_cent_of("five"), None);
+}
+
+/// `--cold` is how an operator asks for a uniform run when the warm path
+/// cannot give one (§6.13, F65) — so it must reach the runner, and the flag
+/// must be the thing that decides it rather than a default nobody set.
+#[test]
+fn asking_for_a_cold_run_is_an_argument_and_not_a_default() {
+    let source = include_str!("../bench.rs");
+    assert!(
+        source.contains("let (left_identifiers, right_identifiers) = if cold {"),
+        "the flag must decide whether identifiers are sent, which is what decides whether the \
+         request reaches the server that holds a model (B-376, F65)"
+    );
+    assert!(
+        source.contains("(None, None)"),
+        "and a cold run sends text, which is a fresh process per request and therefore uniform"
+    );
+}
+
+/// A benchmark that could not produce a uniform run says what to do about it,
+/// rather than leaving an operator with a refusal and no next step (§3.9).
+#[test]
+fn a_mixed_run_says_what_to_do_about_it() {
+    let source = include_str!("../bench.rs");
+    for said in [
+        "`--cold` makes every trial load the model",
+        "comparing a model with itself is uniform too",
+        "resident at a time and a paired comparison alternates them",
+    ] {
+        assert!(
+            source.contains(said),
+            "the advice after a mixed run must name a way forward: `{said}` is gone"
+        );
+    }
 }

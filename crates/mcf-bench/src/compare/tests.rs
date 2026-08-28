@@ -15,6 +15,7 @@ use mcf_core::trial::{Draw, SeedSet};
 
 use super::{
     Comparison, Difference, Discipline, Interleaving, NotComparable, Side, Strength, UnderTest,
+    Withheld,
 };
 use crate::enough::Verdict;
 use crate::warmth::{Reuse, Warmth};
@@ -955,6 +956,74 @@ fn a_mixed_run_says_it_is_not_one_measurement() {
         .expect("a mixed run states its mixture");
     assert!(stated.contains("MIXED"), "{stated}");
     assert!(stated.contains("not one measurement"), "{stated}");
+
+    // **And it has no delta to give.** §6.13: a run whose trials were not
+    // alike has measured two things and would be reporting one, and part of
+    // any difference between the arms would be the difference between a trial
+    // that loaded the model and one that did not.
+    let finding = held.finding(FIVE);
+    assert_eq!(finding.withheld(), Some(Withheld::MixedReuse));
+    assert!(finding.verdict().is_none(), "{finding}");
+    assert!(
+        format!("{finding}").contains("no delta"),
+        "and the rendering says so first: {finding}"
+    );
+}
+
+/// A mixed run is **not declarable**. An operator can say *I know these two
+/// variables moved together*, and cannot say *I know some of my trials loaded
+/// the model* — the first is a statement about the question, the second about
+/// the instrument (§6.13, A8).
+#[test]
+fn a_mixed_run_cannot_be_declared_away() {
+    let (left, right) = arms();
+    let mut round = 0_usize;
+    let mut running = interleaving(&left, &right, 23);
+    for _ in 0..6 {
+        let _ran = running.round(|_arm, _drew| {
+            round = round.saturating_add(1);
+            let found = if round.is_multiple_of(2) {
+                Warmth::Cold
+            } else {
+                Warmth::Warm
+            };
+            (ns(SECOND.saturating_mul(2)), found)
+        });
+    }
+    let held = running
+        .finish()
+        .declaring("I meant to compare a warm arm with a cold one");
+    let finding = held.finding(FIVE);
+    assert_eq!(
+        finding.withheld(),
+        Some(Withheld::MixedReuse),
+        "a declaration answers A8's question and not §6.13's: {finding}"
+    );
+    assert!(finding.verdict().is_none());
+}
+
+/// And a uniform run gives its delta, whichever uniform state it was in.
+#[test]
+fn a_uniform_run_gives_its_delta() {
+    let (left, right) = arms();
+    for found in [Warmth::Cold, Warmth::Warm, Warmth::Unstated] {
+        let mut running = interleaving(&left, &right, 29);
+        for _ in 0..30 {
+            let _ran = running.round(|arm, _drew| {
+                (
+                    ns(if *arm == left {
+                        SECOND.saturating_mul(2)
+                    } else {
+                        SECOND
+                    }),
+                    found,
+                )
+            });
+        }
+        let finding = running.finish().finding(FIVE);
+        assert_eq!(finding.withheld(), None, "{found}: {finding}");
+        assert!(finding.verdict().is_some(), "{found}: {finding}");
+    }
 }
 
 /// **And it has teeth.** A comparison whose arms differ in the thing under test

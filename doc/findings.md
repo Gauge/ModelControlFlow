@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 68 |
+| **Version** | 69 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -92,6 +92,7 @@ forward as one.
 | 62 | [F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)](#62--f62--the-seed-set-is-shown-representative-and-the-sampler-that-would-have-cleared-it-for-nothing-b-291-d19-616-713-b65) |
 | 63 | [F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)](#63--f63--the-recommendation-is-in-a-different-repository-from-the-weights-b-281-b60-d18-a21-315) |
 | 64 | [F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)](#64--f64--every-benchmark-trial-was-cold-and-three-fifths-of-it-was-process-start-b-081-613-b-376-f59-d41-f35) |
+| 65 | [F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)](#65--f65--one-resident-model-and-paired-interleaving-cannot-both-be-had-b-090-b-081-b-250-dec-001-613-b53-f64) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4962,7 +4963,87 @@ item's: it means tokenizing MCF-side and sending identifiers so the request
 reaches the server path, which changes what is measured and belongs with
 B-376 and B-090.
 
+## 65 · F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)
+
+**What was tried.** F64 established that every benchmark trial was cold and
+that three fifths of a default trial was process start, because a *prompt*
+routes to the provisioned engine's completion tool — a fresh process each time
+— while a *turn of identifiers* routes to its server, which stays up (B-376).
+The obvious fix: tokenize the prompt MCF-side, once per arm, and send
+identifiers.
+
+**It made the benchmark worse, and the condition said so immediately.**
+
+```
+reuse   MIXED: 294 trial(s) loaded the model, 106 found it resident,
+        0 unstated — this is not one measurement (§6.13)
+```
+
+The server holds **one** model at a time (DEC-001: *two make every latency
+figure depend on what else was loaded*), and a paired comparison alternates
+two. So a trial is warm exactly when the previous request used the same model —
+which happens only where the drawn order puts two runs of one arm next to each
+other across a pair boundary. About a third of trials, and **which third is a
+property of the order the run drew**.
+
+That is a collision between two rules that are each right:
+
+- **B53** randomizes which arm goes first in each pair, so that going first is
+  not an advantage.
+- **§6.13** forbids a measurement whose result depends on hidden history.
+
+Randomizing the order *is* the hidden history here. Strict alternation would
+make every trial cold and uniform — and would give going first a fixed
+position, which B53 forbids for a different and equally good reason.
+
+**So: with one resident model, a paired interleaved comparison of two models
+cannot be warm.** It can be uniformly cold, or it can be mixed. There is no
+third option on MCF's current serving design, and that is an architectural
+consequence rather than a defect in any of the three rules.
+
+**What was built, given that.** The delta is withheld from a mixed run, exactly
+as it is from a confound: `Withheld::MixedReuse`, and the rendering leads with
+*no delta* rather than a number. A mixed run is **not declarable** — an
+operator can say *I know these two variables moved together*, which answers
+A8's question, and cannot say *I know some of my trials loaded the model*,
+because that is a statement about the instrument rather than about the
+question. And the run stops as soon as it goes mixed rather than spending its
+ceiling to arrive at the same refusal.
+
+Two ways out, and the refusal names both:
+
+```
+--cold, two models      reuse  cold: every trial loaded the model for itself
+                        no difference as large as 5.0%, after 9 paired trial(s)
+
+one model against       reuse  warm: the model was already resident for every trial
+itself, warm path       no difference as large as 5.0%, after 15 paired trial(s)
+```
+
+`--cold` sends text, which is a fresh process per request and therefore
+uniform: a measurement that includes F64's forty-six milliseconds as a stated
+condition, which is a measurement. Comparing a model with *itself* — the noise
+floor, and the control every comparison should be able to run — never changes
+the resident model and is uniformly warm.
+
+**Uniform and honest beats warm and mixed**, and the point of B-081's condition
+is that MCF can now tell which it has.
+
+**What was not established.** Whether a warm two-model comparison is worth
+having is DEC-001's question and not answered here: it would need two resident
+models, which DEC-001 refused for serving and did not consider for measuring.
+The nine and fifteen paired trials above are single runs and F53 applies —
+those counts are properties of the sitting. And `--cold` measures generation
+*plus* process start; separating them would need the server path, which is the
+thing that cannot be uniform.
+
 ## Changelog
+
+### Version 69 — one resident model, or paired interleaving
+
+F65. Making the benchmark warm made it mixed, because one model is resident at
+a time and a paired comparison alternates two. A mixed run has no delta to
+give; `--cold` and comparing a model with itself are the two uniform ways.
 
 ### Version 68 — every trial was cold
 

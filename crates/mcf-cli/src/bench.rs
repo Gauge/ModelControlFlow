@@ -83,6 +83,11 @@ const RESOLVING: PartsPerMillion = PartsPerMillion(50_000);
 const PATIENCE: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Compares two models, and says what it found.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every one is a condition of the measurement, and a struct of them \
+              would be the same list with a name (§3.4)"
+)]
 pub(crate) fn bench(
     left: &str,
     right: &str,
@@ -91,6 +96,7 @@ pub(crate) fn bench(
     seed: u64,
     engine: Option<&str>,
     resolving: Option<PartsPerMillion>,
+    cold: bool,
 ) -> Response {
     bench_where(
         crate::serve::socket_path(),
@@ -101,6 +107,7 @@ pub(crate) fn bench(
         seed,
         engine,
         resolving,
+        cold,
     )
 }
 
@@ -124,6 +131,7 @@ pub(crate) fn bench_where(
     seed: u64,
     engine: Option<&str>,
     resolving: Option<PartsPerMillion>,
+    cold: bool,
 ) -> Response {
     let resolving = resolving.unwrap_or(RESOLVING);
     // D19's timing discipline, made explicit: the seed is held still and the
@@ -154,50 +162,152 @@ pub(crate) fn bench_where(
         };
     };
 
+    // The prompt as each model's own vocabulary produces it, done **once**
+    // rather than per trial: tokenizing is not generating, and a benchmark that
+    // paid for it every trial would be timing MCF's tokenizer alongside the
+    // engine (B-090, F64).
+    //
+    // Unless the operator asked for a cold run. **Why that option exists**
+    // (F65): the provisioned engine's server holds one model at a time
+    // (DEC-001), and a paired comparison of two models alternates them — so
+    // most trials reload and some do not, which is a *mixed* run and not one
+    // measurement (§6.13). The text path is uniformly cold, because it is a
+    // fresh process per request, and uniformly cold is a measurement even
+    // though it includes what F64 measured as forty-six milliseconds of
+    // overhead. Uniform and honest beats warm and mixed.
+    let (left_identifiers, right_identifiers) = if cold {
+        (None, None)
+    } else {
+        (
+            as_identifiers(&left_path, prompt),
+            as_identifiers(&right_path, prompt),
+        )
+    };
+
     // B65, asked rather than assumed. One request per arm, and the account
     // says which engine ran.
-    for path in [&left_path, &right_path] {
-        match engine_of(&socket, path, prompt, seed, engine) {
-            Err(text) => {
-                return Response {
-                    text,
-                    served: false,
-                };
-            }
-            Ok(named) if is_a_stand_in(&named) => {
-                return Response {
-                    text: format!(
-                        "mcf: {} would run on {named}, and a stand-in's answer can never be a \
-                         speed (B65, D31)\n  MCF's own engine is written to be read rather than \
-                         to be fast, so a timing taken from it measures the stand-in.\n  \
-                         `mcf provision llama.cpp` builds an engine that can be timed; \
-                         `mcf run` answers behaviour questions on this one",
-                        path.display()
-                    ),
-                    served: false,
-                };
-            }
-            Ok(_) => {}
-        }
+    if let Err(text) = timeable(
+        &socket,
+        [
+            (&left_path, left_identifiers.as_ref()),
+            (&right_path, right_identifiers.as_ref()),
+        ],
+        prompt,
+        seed,
+        engine,
+    ) {
+        return Response {
+            text,
+            served: false,
+        };
     }
 
+    let held = interleave(
+        &socket,
+        Arms {
+            left: (&left_path, left_identifiers.as_ref()),
+            right: (&right_path, right_identifiers.as_ref()),
+        },
+        &discipline,
+        Asked {
+            prompt,
+            limit,
+            seed,
+            engine,
+            resolving,
+        },
+    );
+    let held = match held {
+        Ok(held) => held,
+        Err(text) => {
+            return Response {
+                text,
+                served: false,
+            };
+        }
+    };
+
+    let finding = held.finding(resolving);
+    let written = keep(&held, mcf_core::time::Timestamp::now());
+    // Every verdict is served. A18: a benchmark has no pass condition, and a
+    // command that exited non-zero on *not decided* would be a pass condition
+    // wearing an exit status.
+    Response {
+        text: report(&finding, &held, &written),
+        served: true,
+    }
+}
+
+/// The two arms of a comparison: where each model is, and the prompt as each
+/// one's own vocabulary produces it.
+#[derive(Clone, Copy)]
+struct Arms<'a> {
+    left: (&'a Path, Option<&'a Vec<usize>>),
+    right: (&'a Path, Option<&'a Vec<usize>>),
+}
+
+/// What the operator asked for, held together so that the runner's signature
+/// is about the run rather than about its options.
+#[derive(Clone, Copy)]
+struct Asked<'a> {
+    prompt: &'a str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&'a str>,
+    resolving: PartsPerMillion,
+}
+
+/// Runs the pairs until the comparison decides or the ceiling is reached.
+///
+/// The comparison is built the only way one can be (B-250) and finished here,
+/// which is where what the run reused becomes a condition of both arms (§6.13,
+/// B-081): known only once the run is over, because it is a fact about what
+/// happened rather than about what MCF intended.
+fn interleave(
+    socket: &Path,
+    arms: Arms<'_>,
+    discipline: &Discipline,
+    asked: Asked<'_>,
+) -> Result<Comparison<Monotonic>, String> {
     let mut failed: Option<String> = None;
     let mut running = Interleaving::<Monotonic>::new(
-        arm(&left_path, engine, limit, seed, &discipline),
-        arm(&right_path, engine, limit, seed, &discipline),
+        arm(
+            arms.left.0,
+            asked.engine,
+            asked.limit,
+            asked.seed,
+            discipline,
+            arms.left.1,
+        ),
+        arm(
+            arms.right.0,
+            asked.engine,
+            asked.limit,
+            asked.seed,
+            discipline,
+            arms.right.1,
+        ),
         SessionId::new(format!("bench-{}", std::process::id())),
-        seed,
+        asked.seed,
         discipline.clone(),
     );
-    let named = Arm::new(left_path.display().to_string());
+    let named = Arm::new(arms.left.0.display().to_string());
     for _ in 0..CEILING {
         let ran = running.round(|which, _drew| {
-            let path = if *which == named {
-                &left_path
+            let (path, identifiers) = if *which == named {
+                arms.left
             } else {
-                &right_path
+                arms.right
             };
-            match timed(&socket, path, prompt, limit, seed, engine) {
+            match timed(
+                socket,
+                path,
+                asked.prompt,
+                identifiers,
+                asked.limit,
+                asked.seed,
+                asked.engine,
+            ) {
                 Ok(held) => held,
                 Err(text) => {
                     failed.get_or_insert(text);
@@ -209,33 +319,52 @@ pub(crate) fn bench_where(
             break;
         }
         if let Some(text) = failed {
-            return Response {
-                text,
-                served: false,
-            };
+            return Err(text);
+        }
+        // A run whose trials have stopped being alike cannot produce a delta
+        // however long it goes on (§6.13), so it stops as soon as that is
+        // true rather than spending the ceiling to arrive at the same refusal.
+        if !running.comparison().reuse().is_uniform() {
+            break;
         }
         if running
-            .finding(resolving)
+            .finding(asked.resolving)
             .verdict()
             .is_some_and(|verdict| !matches!(verdict, mcf_bench::enough::Verdict::NotYet { .. }))
         {
             break;
         }
     }
+    Ok(running.finish())
+}
 
-    // Finishing writes what the run reused into both arms' conditions (§6.13,
-    // B-081): known only once the run is over, because it is a fact about what
-    // happened rather than about what MCF intended.
-    let held = running.finish();
-    let finding = held.finding(resolving);
-    let written = keep(&held, mcf_core::time::Timestamp::now());
-    // Every verdict is served. A18: a benchmark has no pass condition, and a
-    // command that exited non-zero on *not decided* would be a pass condition
-    // wearing an exit status.
-    Response {
-        text: report(&finding, &held, &written),
-        served: true,
+/// Whether both arms would run on an engine that can be timed (B65, D31).
+///
+/// Asked rather than assumed: one request per arm, and the daemon's account
+/// says which engine actually ran. A stand-in is refused **by name** rather
+/// than marked, because a marked number is a number somebody will quote
+/// without its mark.
+fn timeable(
+    socket: &Path,
+    arms: [(&Path, Option<&Vec<usize>>); 2],
+    prompt: &str,
+    seed: u64,
+    engine: Option<&str>,
+) -> Result<(), String> {
+    for (path, identifiers) in arms {
+        let named = engine_of(socket, path, prompt, identifiers, seed, engine)?;
+        if is_a_stand_in(&named) {
+            return Err(format!(
+                "mcf: {} would run on {named}, and a stand-in's answer can never be a speed \
+                 (B65, D31)\n  MCF's own engine is written to be read rather than to be fast, so \
+                 a timing taken from it measures the stand-in.\n  `mcf provision llama.cpp` \
+                 builds an engine that can be timed; `mcf run` answers behaviour questions on \
+                 this one",
+                path.display()
+            ));
+        }
     }
+    Ok(())
 }
 
 /// One arm, as a configuration.
@@ -250,6 +379,7 @@ fn arm(
     limit: Option<usize>,
     seed: u64,
     discipline: &Discipline,
+    identifiers: Option<&Vec<usize>>,
 ) -> UnderTest {
     let mut floor = Floor::nothing_known();
     floor.mcf_configuration = Attested::Known(ConditionValue::text(format!(
@@ -272,10 +402,69 @@ fn arm(
     // and here is what it pinned instead* — which is a thing MCF knows rather
     // than a thing it failed to read (B-290).
     floor.seed_set = Attested::Known(ConditionValue::text(discipline.seed_set()));
+    // How long the prompt actually was, in this model's own identifiers. Two
+    // models given the same text may receive different numbers of tokens, and
+    // that is a condition of what each was asked rather than a fault (§3.4).
+    floor.batch_shape = match identifiers {
+        Some(held) => Attested::Known(ConditionValue::integer(
+            i64::try_from(held.len()).unwrap_or(i64::MAX),
+        )),
+        None => Attested::Unknown,
+    };
     UnderTest::new(
         Arm::new(path.display().to_string()),
         Conditions::new(BuildIdentity::current(), floor),
     )
+}
+
+/// The prompt, as identifiers this model's own vocabulary produces.
+///
+/// **Why a benchmark sends identifiers rather than text** (B-090, F64). A
+/// prompt routes to the provisioned engine's *completion tool*, which is a
+/// fresh process per request; a turn of identifiers routes to its **server**,
+/// which stays up and holds the model (B-376). F64 measured what the
+/// difference is worth: forty-six milliseconds of process start and model load
+/// against a quarter of a millisecond per token, which was three fifths of
+/// every default trial.
+///
+/// Each arm is tokenized by **its own** vocabulary, because that is what
+/// giving two models the same prompt means. The identifier counts may
+/// therefore differ, and that is a condition rather than a problem — it is
+/// recorded.
+///
+/// `None` where the file will not parse or the vocabulary will not encode the
+/// prompt, which is not a refusal: the run falls back to sending text, comes
+/// out cold, and says so in its own conditions (§6.13).
+fn as_identifiers(path: &Path, prompt: &str) -> Option<Vec<usize>> {
+    let bytes = read_prefix(path)?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).ok()?;
+    vocabulary.encode(prompt, true).ok()
+}
+
+/// Enough of a model file to hold its directory and vocabulary.
+///
+/// The same three sizes `run` uses, because reading sixteen gigabytes to
+/// tokenize four words would make a benchmark's first act its slowest
+/// (B-372).
+fn read_prefix(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .ok()?;
+        if mcf_standin::gguf::parse(&prefix).is_ok() {
+            return Some(prefix);
+        }
+        if take >= held {
+            return None;
+        }
+    }
+    None
 }
 
 /// How a model file's weights are encoded, counted by kind.
@@ -287,23 +476,9 @@ fn arm(
 /// guess (A7): the benchmark still runs, and reports that it could not tell
 /// what it isolated.
 fn quantization_of(path: &Path) -> Option<String> {
-    use std::io::Read as _;
-
-    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
-    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
-        let take = cap.min(held);
-        let mut prefix = Vec::new();
-        let opened =
-            std::fs::File::open(path).and_then(|handle| handle.take(take).read_to_end(&mut prefix));
-        opened.ok()?;
-        if let Ok(file) = mcf_standin::gguf::parse(&prefix) {
-            return Some(crate::explain::quantizations(&file));
-        }
-        if take >= held {
-            return None;
-        }
-    }
-    None
+    let bytes = read_prefix(path)?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    Some(crate::explain::quantizations(&file))
 }
 
 /// Resolves a model reference, or the sentence explaining why it did not.
@@ -323,10 +498,11 @@ fn engine_of(
     socket: &Path,
     path: &Path,
     prompt: &str,
+    identifiers: Option<&Vec<usize>>,
     seed: u64,
     engine: Option<&str>,
 ) -> Result<String, String> {
-    let account = generate(socket, path, prompt, Some(1), seed, engine)?.1;
+    let account = generate(socket, path, prompt, identifiers, Some(1), seed, engine)?.1;
     Ok(account
         .get("conditions")
         .and_then(|conditions| conditions.get("engine"))
@@ -349,11 +525,12 @@ fn timed(
     socket: &Path,
     path: &Path,
     prompt: &str,
+    identifiers: Option<&Vec<usize>>,
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
 ) -> Result<(Duration<Monotonic>, Warmth), String> {
-    generate(socket, path, prompt, limit, seed, engine).map(|(took, account)| {
+    generate(socket, path, prompt, identifiers, limit, seed, engine).map(|(took, account)| {
         // §6.13: what the trial reused is a condition of it, and the daemon
         // already says so in its account. Reading it is what makes a warm
         // measurement distinguishable from a cold one (B-081).
@@ -377,6 +554,7 @@ fn generate(
     socket: &Path,
     path: &Path,
     prompt: &str,
+    identifiers: Option<&Vec<usize>>,
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
@@ -390,12 +568,19 @@ fn generate(
     let _deadline = connection.set_read_timeout(Some(PATIENCE));
     let _writing = connection.set_write_timeout(Some(PATIENCE));
 
+    // Identifiers where MCF could produce them, because that is what reaches
+    // the provisioned engine's server rather than a fresh process per request
+    // (B-376, F64). Where it could not, the text goes and the run says it was
+    // cold.
     let request = Ask::Generate {
         model: path.display().to_string(),
-        prompt: prompt.to_owned(),
+        prompt: match identifiers {
+            Some(_) => String::new(),
+            None => prompt.to_owned(),
+        },
         limit,
         seed,
-        tokens: None,
+        tokens: identifiers.cloned(),
         engine: engine.map(str::to_owned),
     };
     let clock = SystemClock;
@@ -486,6 +671,20 @@ fn report(
         // is said rather than swallowed.
         Err(why) => format!("  NOT RECORDED — {why}"),
     });
+    if !held.reuse().is_uniform() {
+        lines.push(String::new());
+        for said in [
+            "  The trials were not alike, so there is no delta (§6.13). One model is",
+            "  resident at a time and a paired comparison alternates them, so most",
+            "  trials reload and some do not — which of them is a property of the",
+            "  drawn order rather than of either arm (F65).",
+            "",
+            "  `--cold` makes every trial load the model, which is uniform and",
+            "  measurable; comparing a model with itself is uniform too.",
+        ] {
+            lines.push(said.to_owned());
+        }
+    }
     lines.push(String::new());
     lines.push(
         "  A benchmark has no pass condition (A18): every verdict above is\n  something this \
