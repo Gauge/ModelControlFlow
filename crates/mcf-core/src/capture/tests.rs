@@ -64,7 +64,7 @@ fn the_characterization_verdict_is_part_of_the_conditions() {
 fn a_machine_with_no_accelerator_captures_a_complete_honest_floor() {
     let machine = Machine::read_through(&[]);
     let captured = floor(&machine, None, "the tests", "full", None);
-    assert_eq!(captured.entries().len(), 11);
+    assert_eq!(captured.entries().len(), 12);
     // No accelerator means no thermal reading and no driver version, and both
     // say so rather than reporting zero.
     assert!(!captured.thermal_state.is_known());

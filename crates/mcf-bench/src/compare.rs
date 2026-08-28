@@ -53,7 +53,7 @@ use core::fmt;
 
 use mcf_core::measurement::{Conditions, Isolation, PartsPerMillion};
 use mcf_core::time::{ClockKind, Duration};
-use mcf_core::trial::{Arm, Position, SessionId, Trial, Trials};
+use mcf_core::trial::{Arm, Draw, Position, SeedSet, SessionId, Trial, Trials};
 
 use super::enough::{self, Verdict};
 
@@ -127,18 +127,107 @@ impl UnderTest {
     }
 }
 
+/// Which discipline a comparison's trials are taken under (B61, D19, B-290).
+///
+/// D19 splits laboratories in two and gives them opposite rules, and the
+/// division is here rather than in a comment because a run that got it wrong
+/// would report an artefact as a spread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Discipline {
+    /// A timing run: the seed is held still and the generation length is
+    /// **pinned**.
+    ///
+    /// D19's own words: *a seed changes which tokens are produced and
+    /// therefore possibly how many, and a timing that varies because one run
+    /// stopped earlier is measuring the stop, not the speed.* A timing
+    /// comparison that let its arms stop where they liked would be reporting
+    /// the models' verbosity as the machine's throughput.
+    Timing {
+        /// The seed held still, which is a condition and not a choice about
+        /// quality — D19: there is no systematically better seed.
+        seed: u64,
+        /// The generation length pinned, in tokens.
+        tokens: u32,
+    },
+    /// A behaviour run: trial *i* draws seed *i* from a declared set.
+    ///
+    /// Both arms of a pair draw the **same** seed, because what must differ
+    /// between them is the arm and not the trajectory — the same reasoning
+    /// that makes the pairing worth having at all (§3.27).
+    Behaviour {
+        /// The set, which travels as a condition and is checked before two
+        /// comparisons are put side by side (A8, D19).
+        seeds: SeedSet,
+    },
+}
+
+impl Discipline {
+    /// What trial `round` draws under this discipline.
+    ///
+    /// `None` only where a declared behaviour set has run out, which is a fact
+    /// to report rather than to wrap around: repeating the list would repeat a
+    /// trajectory, which is the whole failure B61 names.
+    #[must_use]
+    pub fn draw_for(&self, round: usize) -> Option<Draw> {
+        match self {
+            Self::Timing { seed, tokens } => Some(Draw::LengthPinned {
+                seed: *seed,
+                tokens: *tokens,
+            }),
+            Self::Behaviour { seeds } => Some(Draw::Seeded {
+                seed: seeds.seed_for(round)?,
+                from: seeds.identifier(),
+            }),
+        }
+    }
+
+    /// How the seed set is recorded as a condition.
+    ///
+    /// **A timing run answers this, and the answer is *none*.** A7 governs
+    /// values MCF *could not read*; a run that held its seed still knows
+    /// perfectly well what it did, and recording that as `Unknown` would put a
+    /// deliberate discipline in the same box as a failure to look — and would
+    /// make every timing comparison's isolation undetermined for ever, which
+    /// is a wrong answer rather than a cautious one.
+    #[must_use]
+    pub fn seed_set(&self) -> String {
+        match self {
+            Self::Timing { seed, tokens } => {
+                format!("none: seed {seed} held still, {tokens} token(s) pinned")
+            }
+            Self::Behaviour { seeds } => seeds.identifier(),
+        }
+    }
+}
+
+impl fmt::Display for Discipline {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Timing { seed, tokens } => write!(
+                form,
+                "a timing run: seed {seed} held still and {tokens} token(s) pinned, because a \
+                 timing that varies because one run stopped earlier is measuring the stop (D19)"
+            ),
+            Self::Behaviour { seeds } => {
+                write!(form, "a behaviour run: trial i draws seed i from {seeds}")
+            }
+        }
+    }
+}
+
 /// Two runs of the two arms, adjacent in one session.
 ///
 /// Adjacent is the whole content of the word *paired*: the two saw the same
 /// thermal state, the same contention and the same second, so what differs
 /// between them is the arm and whatever happened in the gap between two
 /// consecutive runs — which is as small as this instrument can make it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pair<K: ClockKind> {
     left: Duration<K>,
     right: Duration<K>,
     first: Side,
     at: (Position, Position),
+    drew: Draw,
 }
 
 impl<K: ClockKind> Pair<K> {
@@ -164,6 +253,16 @@ impl<K: ClockKind> Pair<K> {
     #[must_use]
     pub const fn positions(&self) -> (Position, Position) {
         self.at
+    }
+
+    /// What both runs of this pair drew.
+    ///
+    /// One draw for the pair rather than two, because both arms must draw the
+    /// same thing: what differs between them has to be the arm and not the
+    /// trajectory (§3.27, D19).
+    #[must_use]
+    pub const fn drew(&self) -> &Draw {
+        &self.drew
     }
 
     /// This pair's difference.
@@ -343,6 +442,26 @@ pub enum NotComparable {
         /// The sessions seen, sorted.
         seen: Vec<SessionId>,
     },
+    /// The two arms drew from different seed sets.
+    ///
+    /// **D19's own requirement:** *comparisons require matching seed sets the
+    /// way they require matching hardware — recorded, checked, and refused
+    /// when they differ.* Two arms on different sets took different
+    /// trajectories, so a difference between them is a difference between the
+    /// draws as much as between the arms, and no repeat count separates the
+    /// two (A8).
+    SeedSetsDiffer {
+        /// What the left arm drew from.
+        left: String,
+        /// What the right arm drew from.
+        right: String,
+    },
+    /// One arm took its trials under a discipline the other did not.
+    ///
+    /// A timing trial holds its seed still and pins its length; a behaviour
+    /// trial draws seed *i* at trial *i* (D19). An arm of each is two runs of
+    /// two different experiments put side by side.
+    DisciplinesDiffer,
     /// The arms are from one session after all, so the weaker construction was
     /// asked for when the stronger one is available.
     OneSession {
@@ -377,6 +496,16 @@ impl fmt::Display for NotComparable {
                 "{} sessions among these trials — a comparison across sessions is built with \
                  `from_separate_sessions`, which labels it",
                 seen.len()
+            ),
+            Self::SeedSetsDiffer { left, right } => write!(
+                form,
+                "the arms drew from different seed sets ({left} and {right}): a difference \
+                 between them is a difference between the draws as much as between the arms, and \
+                 no repeat count separates the two (D19, A8)"
+            ),
+            Self::DisciplinesDiffer => form.write_str(
+                "one arm's trials pinned their generation length and the other's drew seeds, \
+                 which are two different experiments put side by side (D19)",
             ),
             Self::OneSession { session } => write!(
                 form,
@@ -462,6 +591,7 @@ pub struct Comparison<K: ClockKind> {
     left: UnderTest,
     right: UnderTest,
     declared: Option<String>,
+    discipline: Discipline,
     body: Body<K>,
 }
 
@@ -487,6 +617,12 @@ impl<K: ClockKind> Comparison<K> {
     #[must_use]
     pub const fn arms(&self) -> (&UnderTest, &UnderTest) {
         (&self.left, &self.right)
+    }
+
+    /// Which discipline the trials were taken under (B61, D19).
+    #[must_use]
+    pub const fn discipline(&self) -> &Discipline {
+        &self.discipline
     }
 
     /// What separates the two arms' configurations (A8, B-085).
@@ -696,20 +832,31 @@ impl<K: ClockKind> Comparison<K> {
             } else {
                 (other, one)
             };
+            // D19, checked pair by pair rather than once at the end: the two
+            // runs of a pair must have drawn the same thing, since what differs
+            // between them has to be the arm and not the trajectory.
+            if l.drew() != r.drew() {
+                return Err(disagreement(l.drew(), r.drew()));
+            }
             pairs.push(Pair {
                 left: l.value(),
                 right: r.value(),
                 first,
                 at: (l.position(), r.position()),
+                drew: l.drew().clone(),
             });
         }
         if pairs.len() < 2 {
             return Err(NotComparable::TooFew { have: pairs.len() });
         }
+        let Some(discipline) = discipline_of(&pairs) else {
+            return Err(NotComparable::DisciplinesDiffer);
+        };
         Ok(Self {
             left: left_under_test.clone(),
             right: right_under_test.clone(),
             declared: None,
+            discipline,
             body: Body::Paired { session, pairs },
         })
     }
@@ -743,6 +890,11 @@ impl<K: ClockKind> Comparison<K> {
             left: left.clone(),
             right: right.clone(),
             declared: None,
+            // Two arms that were never paired have no pairs to read a
+            // discipline off, and §3.27 already calls the construction weaker.
+            // A timing run with no length pinned is what it is: a set of
+            // durations whose stop nobody controlled.
+            discipline: Discipline::Timing { seed: 0, tokens: 0 },
             body: Body::Separate {
                 left_session,
                 right_session,
@@ -774,6 +926,69 @@ fn one_arm<K: ClockKind>(
     Ok((session, found.into_iter().map(Trial::value).collect()))
 }
 
+/// Why two draws in one pair disagree.
+///
+/// Named apart so that *the arms drew from different sets* and *the arms were
+/// under different disciplines* are two answers rather than one vague one.
+fn disagreement(left: &Draw, right: &Draw) -> NotComparable {
+    match (left, right) {
+        (Draw::Seeded { from: one, .. }, Draw::Seeded { from: other, .. }) if one != other => {
+            NotComparable::SeedSetsDiffer {
+                left: one.clone(),
+                right: other.clone(),
+            }
+        }
+        (Draw::Seeded { from, .. }, Draw::LengthPinned { .. }) => NotComparable::SeedSetsDiffer {
+            left: from.clone(),
+            right: "no set: the other arm pinned its length instead".to_owned(),
+        },
+        (Draw::LengthPinned { .. }, Draw::Seeded { from, .. }) => NotComparable::SeedSetsDiffer {
+            left: "no set: this arm pinned its length instead".to_owned(),
+            right: from.clone(),
+        },
+        // Same set, different seed within the pair; or two timing draws that
+        // pinned different lengths. Both are one experiment run two ways.
+        _ => NotComparable::DisciplinesDiffer,
+    }
+}
+
+/// The discipline every pair agrees on, or `None` where they do not.
+fn discipline_of<K: ClockKind>(pairs: &[Pair<K>]) -> Option<Discipline> {
+    let first = pairs.first()?;
+    match first.drew() {
+        Draw::LengthPinned { seed, tokens } => {
+            let same = pairs.iter().all(|pair| {
+                matches!(pair.drew(), Draw::LengthPinned { tokens: held, .. } if held == tokens)
+            });
+            same.then_some(Discipline::Timing {
+                seed: *seed,
+                tokens: *tokens,
+            })
+        }
+        Draw::Seeded { from, .. } => {
+            // Every pair from one set, and — B61's own violation — no two
+            // pairs on the same seed, which would be one trajectory counted
+            // twice.
+            let mut seen: Vec<u64> = Vec::new();
+            for pair in pairs {
+                let Draw::Seeded { seed, from: held } = pair.drew() else {
+                    return None;
+                };
+                if held != from || seen.contains(seed) {
+                    return None;
+                }
+                seen.push(*seed);
+            }
+            // The set is named rather than reconstructed: a comparison read
+            // back out of the record knows which set was drawn from and not
+            // what else was in it.
+            Some(Discipline::Behaviour {
+                seeds: SeedSet::declared(from.clone(), seen).ok()?,
+            })
+        }
+    }
+}
+
 /// How many of these trials belong to an arm.
 fn count<K: ClockKind>(merged: &[&Trial<Duration<K>>], arm: &Arm) -> usize {
     merged.iter().filter(|trial| trial.arm() == arm).count()
@@ -801,12 +1016,19 @@ impl<K: ClockKind> Interleaving<K> {
     /// the same inputs to give the same run, and an order drawn from the time
     /// of day is one more thing that differs between two sittings.
     #[must_use]
-    pub fn new(left: UnderTest, right: UnderTest, session: SessionId, seed: u64) -> Self {
+    pub fn new(
+        left: UnderTest,
+        right: UnderTest,
+        session: SessionId,
+        seed: u64,
+        discipline: Discipline,
+    ) -> Self {
         Self {
             comparison: Comparison {
                 left,
                 right,
                 declared: None,
+                discipline,
                 body: Body::Paired {
                     session,
                     pairs: Vec::new(),
@@ -826,10 +1048,26 @@ impl<K: ClockKind> Interleaving<K> {
 
     /// Runs both arms once, in an order this pair draws for itself.
     ///
-    /// `run` is called with the arm to run and returns what it took. It is
-    /// called exactly twice, back to back, which is what makes the pair a
-    /// pair.
-    pub fn round(&mut self, mut run: impl FnMut(&Arm) -> Duration<K>) {
+    /// `run` is called with the arm to run and what this pair drew, and returns
+    /// what it took. It is called exactly twice, back to back, which is what
+    /// makes the pair a pair — and with the *same* draw both times, because
+    /// what must differ between the two runs is the arm and not the trajectory
+    /// (§3.27, D19).
+    ///
+    /// Returns `false` where a declared behaviour set has run out, which is the
+    /// end of what this comparison can honestly do: repeating the list would
+    /// repeat a trajectory (B61).
+    pub fn round(&mut self, mut run: impl FnMut(&Arm, &Draw) -> Duration<K>) -> bool {
+        let Some(drew) = self
+            .comparison
+            .discipline
+            .draw_for(self.comparison.pairs().len())
+        else {
+            // A declared behaviour set has run out. Reported rather than
+            // wrapped around, because repeating the list would repeat a
+            // trajectory and that is the failure B61 names.
+            return false;
+        };
         let first = if self.next().is_multiple_of(2) {
             Side::Left
         } else {
@@ -843,15 +1081,17 @@ impl<K: ClockKind> Interleaving<K> {
         let second_position = Position(self.next_position.saturating_add(1));
         self.next_position = self.next_position.saturating_add(2);
 
+        // Both runs of the pair are handed the *same* draw: what must differ
+        // between them is the arm and not the trajectory (§3.27, D19).
         let (left, right, at) = match first {
             Side::Left => {
-                let l = run(&left_arm);
-                let r = run(&right_arm);
+                let l = run(&left_arm, &drew);
+                let r = run(&right_arm, &drew);
                 (l, r, (first_position, second_position))
             }
             Side::Right => {
-                let r = run(&right_arm);
-                let l = run(&left_arm);
+                let r = run(&right_arm, &drew);
+                let l = run(&left_arm, &drew);
                 (l, r, (second_position, first_position))
             }
         };
@@ -861,8 +1101,10 @@ impl<K: ClockKind> Interleaving<K> {
                 right,
                 first,
                 at,
+                drew,
             });
         }
+        true
     }
 
     /// What the comparison says so far.

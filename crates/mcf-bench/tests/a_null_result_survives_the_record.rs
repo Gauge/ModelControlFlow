@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use mcf_bench::compare::{Interleaving, UnderTest};
+use mcf_bench::compare::{Discipline, Interleaving, UnderTest};
 use mcf_bench::record;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
@@ -65,6 +65,7 @@ fn under_test(name: &str, quantization: &str) -> UnderTest {
         realized_placement: Attested::Known(ConditionValue::text("host")),
         instrumentation: Attested::Known(ConditionValue::text("recording")),
         artifact_storage: Attested::Known(ConditionValue::text("tmpfs")),
+        seed_set: Attested::Unknown,
     };
     UnderTest::new(
         Arm::new(name),
@@ -80,9 +81,14 @@ fn a_null_comparison() -> (Value, usize) {
         under_test("q2_k", "q2_k"),
         SessionId::new("2026-08-27T09-00-00Z"),
         21,
+        // A timing run (D19): the seed is held still and the length pinned.
+        Discipline::Timing {
+            seed: 0,
+            tokens: 128,
+        },
     );
     for round in 0..40_u64 {
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             // Two wobbles, and neither is a property of an arm. The first
             // belongs to the *round* — both runs of a pair see it, which is
             // what pairing is for. The second is a millisecond that lands on

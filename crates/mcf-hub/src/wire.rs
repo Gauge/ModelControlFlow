@@ -21,7 +21,7 @@
 //! it — a listener on the loopback address, answering from a script — a
 //! substitution rather than a simulation of MCF's own code (D26).
 
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs as _};
 use std::time::Duration;
 
@@ -529,8 +529,7 @@ fn once(
             )
             .with_context("ceiling", HEADER_CEILING.to_string()));
         }
-        let read = connection
-            .read(&mut buffer)
+        let read = patiently(&mut connection, &mut buffer)
             .map_err(|error| stalled("the answer stopped arriving", &error))?;
         if read == 0 {
             // The connection closed before the headers ended. Whatever this
@@ -562,8 +561,7 @@ fn once(
         bytes = bytes.saturating_add(leftover.len().try_into().unwrap_or(u64::MAX));
     }
     loop {
-        let read = connection
-            .read(&mut buffer)
+        let read = patiently(&mut connection, &mut buffer)
             .map_err(|error| stalled("the body stopped arriving", &error))?;
         if read == 0 {
             break;
@@ -575,6 +573,36 @@ fn once(
     into.flush().map_err(|error| unwritable(&error))?;
 
     Ok((response, bytes))
+}
+
+/// One read, retrying the one error kind that means *ask again*.
+///
+/// `ErrorKind::Interrupted` is EINTR: a signal arrived while the thread was
+/// blocked in the kernel, and the read did not happen. It is the one io error
+/// whose contract is *retry* — `std` says so, and every other reader in the
+/// standard library does exactly this.
+///
+/// **MCF was classifying it as `transfer.interrupted`**, which is a different
+/// sentence entirely: *the far end stopped sending*. An operator on a busy
+/// machine would have been told their download was cut off by something that
+/// was not there. A2 forbids the wrong answer stated confidently as firmly as
+/// it forbids silence, and a misclassification is exactly that.
+///
+/// Found while characterizing a rare divergence in the stall scenario under
+/// load ([findings.md](../../../doc/findings.md) F61). It is not established
+/// that this was the cause — the divergence was seen once and not reproduced
+/// in three and a half thousand attempts — and it is a defect either way, by
+/// reading the contract of `read` rather than by measurement.
+fn patiently(
+    connection: &mut impl std::io::Read,
+    buffer: &mut [u8],
+) -> std::result::Result<usize, std::io::Error> {
+    loop {
+        match connection.read(buffer) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            other => return other,
+        }
+    }
 }
 
 fn stalled(what: &str, error: &std::io::Error) -> Failure {

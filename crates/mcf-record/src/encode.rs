@@ -30,7 +30,7 @@ use mcf_core::provenance::{
     TransformationKind,
 };
 use mcf_core::time::Timestamp;
-use mcf_core::trial::{Series, Trial, Trials};
+use mcf_core::trial::{Draw, Series, Trial, Trials};
 
 use crate::json::Value;
 
@@ -384,7 +384,38 @@ pub fn trial<Q: Quantity>(trial: &Trial<Q>, as_integer: impl Fn(Q) -> i64) -> Va
         ("arm", Value::text(trial.arm().as_str())),
         ("position", Value::Integer(i64::from(trial.position().0))),
         ("session", Value::text(trial.session().as_str())),
+        ("drew", draw(trial.drew())),
     ])
+}
+
+/// What a trial drew, and under which discipline (B61, D19, B-290).
+///
+/// **The seed is written as text, and that is not laziness.** A seed is a
+/// `u64` and this record's integers are `i64`, so half the seed space would
+/// wrap or saturate on the way in — losing a *condition*, which is the one
+/// thing §3.4 will not have. It is also not a quantity: nothing orders,
+/// subtracts or averages a seed, so the argument for a numeric type does not
+/// apply to it. Decimal rather than hexadecimal, because that is how every
+/// language will print it back.
+#[must_use]
+pub fn draw(drew: &Draw) -> Value {
+    match drew {
+        Draw::Seeded { seed, from } => Value::map([
+            ("discipline", Value::text("seeded")),
+            ("seed", Value::text(seed.to_string())),
+            ("from", Value::text(from.clone())),
+            ("tokens", Value::Null),
+        ]),
+        Draw::LengthPinned { seed, tokens } => Value::map([
+            // A timing trial, which D19 has hold its seed still and pin the
+            // generation length instead. Named as its own discipline so that a
+            // reader cannot mistake it for a behaviour trial's fixed seed.
+            ("discipline", Value::text("length_pinned")),
+            ("seed", Value::text(seed.to_string())),
+            ("from", Value::Null),
+            ("tokens", Value::Integer(i64::from(*tokens))),
+        ]),
+    }
 }
 
 /// A session's trials, and the conditions they were taken under.

@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 172 |
+| **Version** | 173 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (89 done, 1 dropped, 11 in progress,
-36 blocked on a decision, 80 open).** Every item cites
+decided, 23 resolved) and 217 build items (90 done, 1 dropped, 11 in progress,
+36 blocked on a decision, 79 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -264,7 +264,7 @@ first and importance second.
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
 | B-089 | Environment pinning to the tolerance DEC-006 sets | §3.12, §7.6 | Every result carries enough environment to be reproduced to the stated tolerance | blocked (DEC-006) |
 | B-280 | A reported improvement traces to a workload split that was not used to select it; a winner failing validation reports *no improvement found* | B59, D18, A10 | Sweep results cannot be published from the selection split | open |
-| B-290 | A trial cannot be constructed without its seed, and a run cannot declare one seed for every trial; the seed set is published and recorded as a condition | B61, D19, §3.4 | Identical-output runs are unrepresentable; comparisons refuse mismatched seed sets | open |
+| B-290 | A trial cannot be constructed without its seed, and a run cannot declare one seed for every trial; the seed set is published and recorded as a condition | B61, D19, §3.4 | Identical-output runs are unrepresentable; comparisons refuse mismatched seed sets | **done** (F61). `Trial` has a fifth field with no default, so a trial that does not say what it drew does not exist. It is a `Draw` with two variants, because D19 gives the two laboratories opposite rules — a behaviour trial draws seed *i* at trial *i*, a timing trial holds its seed still and pins its generation length — and two variants rather than one with a flag, so a timing run's fixed seed can never be mistaken for a behaviour run's mistake. **The published set is arithmetic, not a list**: D19 assumed a trial count and F55 removed it, so a fixed list would run out and have only bad answers for what happens next. Six lines, unbounded, identical on every machine, and a bijection — two trials cannot draw the same seed by construction. A declared set is admitted, refused if it repeats a seed or holds fewer than two, and runs out rather than wrapping around. The set is the floor's twelfth condition, so it renders everywhere and enters the isolation check for free; `Comparison::from_trials` refuses two arms that drew from different sets, pair by pair, because the two runs of a pair must have drawn the same thing. And `mcf bench` pins a length now: it did not, which made every timing include the models' verbosity |
 | B-291 | Seed-set validation: periodically compare the fixed set's distribution against a larger random set; divergence replaces the set and records a break in comparability | D19, §6.16, §7.13 | The standard set is shown to be representative rather than assumed | open |
 | B-281 | Recommended sampling renders as *declared* until a sweep promotes it; a lab that pins its own sampling declares it and its results stay apart | B60, D18, A21 | No global default sampling exists; divergence between recommended and best-measured is surfaced | open |
 | B-091 | Quantization frontier on the reference model: one model, one machine, the full GGUF quantization range — the cleanest available §3.4 comparison, a single variable across many points | §XII, §3.4, §IV | A frontier is produced across quantizations with one variable differing, and results state they characterize the instrument, not models in general | open |
@@ -394,6 +394,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 173 — a trial says what it drew
+
+B-290 done (F61). A trial cannot exist without its seed; the published set is
+stated as arithmetic rather than as a list, because F55 removed the trial count
+D19 assumed and a list that runs out has only bad answers; a timing run's fixed
+seed is a different variant from a behaviour run's, not the same one with a
+flag; and a comparison refuses arms that drew from different sets. Along the
+way, EINTR was found to be classified as a cut-off transfer and is retried now.
 
 ### Version 172 — a simulated timing cannot be written down
 

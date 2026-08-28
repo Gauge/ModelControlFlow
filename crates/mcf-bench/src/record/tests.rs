@@ -17,7 +17,7 @@ use mcf_core::time::{Duration, Monotonic};
 use mcf_core::trial::{Arm, SessionId};
 use mcf_record::json::Value;
 
-use crate::compare::{Comparison, Interleaving, UnderTest};
+use crate::compare::{Comparison, Discipline, Interleaving, UnderTest};
 
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const SECOND: u64 = 1_000_000_000;
@@ -39,6 +39,7 @@ fn everything_known() -> Floor {
         realized_placement: known("host"),
         instrumentation: known("recording"),
         artifact_storage: known("tmpfs"),
+        seed_set: known("none: seed 0 held still, 128 token(s) pinned"),
     }
 }
 
@@ -67,9 +68,20 @@ fn run(
     rounds: usize,
 ) -> Comparison<Monotonic> {
     let named = left.arm().clone();
-    let mut running = Interleaving::<Monotonic>::new(left, right, SessionId::new("s"), 5);
+    let mut running = Interleaving::<Monotonic>::new(
+        left,
+        right,
+        SessionId::new("s"),
+        5,
+        Discipline::Timing {
+            seed: 0,
+            tokens: 128,
+        },
+    );
     for _ in 0..rounds {
-        running.round(|arm| Duration::from_nanos(if *arm == named { left_ns } else { right_ns }));
+        let _ran = running.round(|arm, _drew| {
+            Duration::from_nanos(if *arm == named { left_ns } else { right_ns })
+        });
     }
     running.finish()
 }

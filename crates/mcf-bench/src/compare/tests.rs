@@ -11,7 +11,11 @@ use mcf_core::measurement::{ConditionValue, Conditions, Floor, Isolation, PartsP
 use mcf_core::time::{Duration, Simulated};
 use mcf_core::trial::{Arm, Position, SessionId, Trial, Trials};
 
-use super::{Comparison, Difference, Interleaving, NotComparable, Side, Strength, UnderTest};
+use mcf_core::trial::{Draw, SeedSet};
+
+use super::{
+    Comparison, Difference, Discipline, Interleaving, NotComparable, Side, Strength, UnderTest,
+};
 use crate::enough::Verdict;
 
 /// Five percent, as this module spells it.
@@ -50,6 +54,7 @@ fn everything_known() -> Floor {
         realized_placement: known("host"),
         instrumentation: known("recording"),
         artifact_storage: known("tmpfs"),
+        seed_set: known("none: seed 0 held still, 128 token(s) pinned"),
     }
 }
 
@@ -108,7 +113,16 @@ fn from_separate_sessions(
 /// A runner over two isolated arms.
 fn interleaving(left: &Arm, right: &Arm, seed: u64) -> Interleaving<Simulated> {
     let (one, other) = isolated(left, right);
-    Interleaving::new(one, other, session(), seed)
+    Interleaving::new(
+        one,
+        other,
+        session(),
+        seed,
+        Discipline::Timing {
+            seed: 0,
+            tokens: 128,
+        },
+    )
 }
 
 /// Trials laid out in a stated order of arms, positions counting up from zero.
@@ -119,8 +133,20 @@ fn laid_out(order: &[&Arm], values: &[u64], session: &SessionId) -> Trials<Durat
             (*arm).clone(),
             Position(u32::try_from(at).unwrap_or(0)),
             session.clone(),
+            // A timing run, which is what these are: the seed is held still and
+            // the length pinned (D19). Both runs of a pair draw the same thing,
+            // so this does not vary with the position.
+            timing(),
         )
     }))
+}
+
+/// The timing discipline these tests take their trials under.
+fn timing() -> Draw {
+    Draw::LengthPinned {
+        seed: 0,
+        tokens: 128,
+    }
 }
 
 /// **The finding B-250 exists for.** Six of A then six of B, recorded in one
@@ -250,10 +276,10 @@ fn trials_from_two_sessions_are_not_paired() {
     let one = session();
     let other = SessionId::new("2026-08-27T14-00-00Z");
     let trials = Trials::from([
-        Trial::new(ns(10), left.clone(), Position(0), one.clone()),
-        Trial::new(ns(20), right.clone(), Position(1), other),
-        Trial::new(ns(10), left.clone(), Position(2), one.clone()),
-        Trial::new(ns(20), right.clone(), Position(3), one),
+        Trial::new(ns(10), left.clone(), Position(0), one.clone(), timing()),
+        Trial::new(ns(20), right.clone(), Position(1), other, timing()),
+        Trial::new(ns(10), left.clone(), Position(2), one.clone(), timing()),
+        Trial::new(ns(20), right.clone(), Position(3), one, timing()),
     ]);
     assert!(matches!(
         from_trials(&trials, &left, &right),
@@ -317,7 +343,7 @@ fn the_runner_interleaves_and_randomizes() {
     let mut order = Vec::new();
     let mut running = interleaving(&left, &right, 7);
     for _ in 0..40 {
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             order.push(arm.clone());
             ns(if *arm == left {
                 SECOND.saturating_mul(2)
@@ -354,7 +380,7 @@ fn the_same_seed_draws_the_same_order() {
         let mut seen = Vec::new();
         let mut running = interleaving(&left, &right, 99);
         for _ in 0..12 {
-            running.round(|arm| {
+            let _ran = running.round(|arm, _drew| {
                 seen.push(arm.clone());
                 ns(SECOND)
             });
@@ -379,7 +405,7 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
             .wrapping_mul(37)
             .wrapping_rem(11)
             .wrapping_mul(5_000_000);
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             ns(if *arm == left {
                 1_300_000_000_u64.saturating_add(drift)
             } else {
@@ -590,7 +616,7 @@ fn an_isolated_comparison_names_its_variable() {
     let (left, right) = arms();
     let mut running = interleaving(&left, &right, 11);
     for _ in 0..30 {
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             ns(if *arm == left {
                 SECOND.saturating_mul(2)
             } else {
@@ -622,9 +648,18 @@ fn unread_conditions_report_the_delta_and_the_doubt() {
             Conditions::new(BuildIdentity::current(), Floor::nothing_known()),
         )
     };
-    let mut running = Interleaving::<Simulated>::new(unread(&left), unread(&right), session(), 13);
+    let mut running = Interleaving::<Simulated>::new(
+        unread(&left),
+        unread(&right),
+        session(),
+        13,
+        Discipline::Timing {
+            seed: 0,
+            tokens: 128,
+        },
+    );
     for _ in 0..30 {
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             ns(if *arm == left {
                 SECOND.saturating_mul(2)
             } else {
@@ -641,5 +676,209 @@ fn unread_conditions_report_the_delta_and_the_doubt() {
     assert!(
         format!("{finding}").contains("isolation is undetermined"),
         "the doubt is printed beside the delta: {finding}"
+    );
+}
+
+/// A behaviour comparison: trial *i* draws seed *i*, and both arms of a pair
+/// draw the same one so that what differs between them is the arm and not the
+/// trajectory (D19, §3.27).
+#[test]
+fn both_arms_of_a_pair_draw_the_same_seed() {
+    let (left, right) = arms();
+    let (one, other) = isolated(&left, &right);
+    let mut running = Interleaving::<Simulated>::new(
+        one,
+        other,
+        session(),
+        5,
+        Discipline::Behaviour {
+            seeds: SeedSet::Standard,
+        },
+    );
+    let mut handed: Vec<(Arm, u64)> = Vec::new();
+    for _ in 0..8 {
+        let ran = running.round(|arm, drew| {
+            handed.push((arm.clone(), drew.seed()));
+            ns(SECOND)
+        });
+        assert!(ran, "the published set never runs out");
+    }
+    let held = running.finish();
+
+    for (at, pair) in held.pairs().iter().enumerate() {
+        let expected = SeedSet::Standard.seed_for(at).expect("unbounded");
+        assert_eq!(
+            pair.drew(),
+            &Draw::Seeded {
+                seed: expected,
+                from: mcf_core::trial::STANDARD.to_owned(),
+            },
+            "trial {at} draws seed {at}"
+        );
+    }
+    for couple in handed.as_chunks::<2>().0 {
+        let (Some(one), Some(other)) = (couple.first(), couple.last()) else {
+            continue;
+        };
+        assert_ne!(one.0, other.0, "the two runs of a pair are different arms");
+        assert_eq!(one.1, other.1, "and they draw the same seed");
+    }
+    let mut drawn: Vec<u64> = handed.iter().map(|(_, seed)| *seed).collect();
+    drawn.sort_unstable();
+    drawn.dedup();
+    assert_eq!(drawn.len(), 8, "eight pairs, eight distinct seeds (B61)");
+}
+
+/// **B61's violation, refused at the comparison.** A run that gave every trial
+/// the same seed is `n=1` wearing the costume of `n=8`, and the comparison
+/// will not read it back as a behaviour run.
+#[test]
+fn one_seed_repeated_is_not_a_behaviour_comparison() {
+    let (left, right) = arms();
+    let (one, other) = isolated(&left, &right);
+    let fixed = Draw::Seeded {
+        seed: 42,
+        from: mcf_core::trial::STANDARD.to_owned(),
+    };
+    let trials = Trials::from((0..8_usize).map(|at| {
+        Trial::new(
+            ns(SECOND),
+            if at % 2 == 0 {
+                left.clone()
+            } else {
+                right.clone()
+            },
+            Position(u32::try_from(at).unwrap_or(0)),
+            session(),
+            fixed.clone(),
+        )
+    }));
+    assert_eq!(
+        Comparison::from_trials(&trials, &one, &other),
+        Err(NotComparable::DisciplinesDiffer),
+        "eight trials on one seed are one trajectory counted four times"
+    );
+}
+
+/// **D19's refusal.** Two arms that drew from different sets are not
+/// comparable: a difference between them is a difference between the draws as
+/// much as between the arms.
+#[test]
+fn arms_from_different_seed_sets_are_refused() {
+    let (left, right) = arms();
+    let (one, other) = isolated(&left, &right);
+    let mine = SeedSet::declared("mine", vec![1, 2, 3, 4]).expect("a set");
+    let trials = Trials::from((0..8_usize).map(|at| {
+        let round = at.wrapping_div(2);
+        let of_left = at % 2 == 0;
+        Trial::new(
+            ns(SECOND),
+            if of_left { left.clone() } else { right.clone() },
+            Position(u32::try_from(at).unwrap_or(0)),
+            session(),
+            Draw::Seeded {
+                seed: if of_left {
+                    SeedSet::Standard.seed_for(round).unwrap_or(0)
+                } else {
+                    mine.seed_for(round).unwrap_or(0)
+                },
+                from: if of_left {
+                    SeedSet::Standard.identifier()
+                } else {
+                    mine.identifier()
+                },
+            },
+        )
+    }));
+    let held = Comparison::from_trials(&trials, &one, &other);
+    let Err(NotComparable::SeedSetsDiffer { left: a, right: b }) = &held else {
+        panic!("two seed sets must be refused: {held:?}")
+    };
+    assert_eq!(a, &SeedSet::Standard.identifier());
+    assert_eq!(b, "declared:mine");
+    assert!(
+        format!("{}", held.unwrap_err()).contains("no repeat count separates"),
+        "the refusal says why a longer run does not fix it"
+    );
+}
+
+/// A behaviour arm and a timing arm are two different experiments put side by
+/// side, and the refusal says so.
+#[test]
+fn a_behaviour_arm_and_a_timing_arm_are_not_a_comparison() {
+    let (left, right) = arms();
+    let (one, other) = isolated(&left, &right);
+    let trials = Trials::from((0..8_usize).map(|at| {
+        let of_left = at % 2 == 0;
+        Trial::new(
+            ns(SECOND),
+            if of_left { left.clone() } else { right.clone() },
+            Position(u32::try_from(at).unwrap_or(0)),
+            session(),
+            if of_left {
+                Draw::Seeded {
+                    seed: SeedSet::Standard.seed_for(at.wrapping_div(2)).unwrap_or(0),
+                    from: SeedSet::Standard.identifier(),
+                }
+            } else {
+                timing()
+            },
+        )
+    }));
+    assert!(
+        matches!(
+            Comparison::from_trials(&trials, &one, &other),
+            Err(NotComparable::SeedSetsDiffer { .. })
+        ),
+        "one arm drew from a set and the other pinned its length"
+    );
+}
+
+/// A declared set runs out, and the runner stops rather than repeating a
+/// trajectory (B61).
+#[test]
+fn a_run_stops_when_its_declared_set_runs_out() {
+    let (left, right) = arms();
+    let (one, other) = isolated(&left, &right);
+    let mut running = Interleaving::<Simulated>::new(
+        one,
+        other,
+        session(),
+        5,
+        Discipline::Behaviour {
+            seeds: SeedSet::declared("three", vec![10, 20, 30]).expect("a set"),
+        },
+    );
+    let mut rounds = 0;
+    for _ in 0..10 {
+        if !running.round(|_arm, _drew| ns(SECOND)) {
+            break;
+        }
+        rounds += 1;
+    }
+    assert_eq!(rounds, 3, "three seeds, three pairs, and then it stops");
+    assert_eq!(running.comparison().pairs().len(), 3);
+}
+
+/// A timing comparison reads back as a timing one, with the length it pinned.
+#[test]
+fn a_timing_comparison_names_what_it_pinned() {
+    let (left, right) = arms();
+    let order: Vec<&Arm> = (0..8)
+        .map(|at| if at % 2 == 0 { &left } else { &right })
+        .collect();
+    let trials = laid_out(&order, &[SECOND; 8], &session());
+    let held = from_trials(&trials, &left, &right).expect("paired");
+    assert_eq!(
+        held.discipline(),
+        &Discipline::Timing {
+            seed: 0,
+            tokens: 128
+        }
+    );
+    assert!(
+        format!("{}", held.discipline()).contains("measuring the stop"),
+        "the discipline says why it pinned a length: {}",
+        held.discipline()
     );
 }

@@ -154,11 +154,17 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
         as_configuration(&right_arm),
         mcf_core::trial::SessionId::new(format!("timing-noise-{}", std::process::id())),
         seed,
+        // A timing run: the seed is held still and the generation length is
+        // pinned by whatever command the operator named (D19, B-290). The
+        // prototype cannot pin a length it does not control, so it records
+        // zero — *nothing pinned* — which is what a comparison of two opaque
+        // commands honestly is.
+        mcf_bench::compare::Discipline::Timing { seed, tokens: 0 },
     );
 
     let mut failed = false;
     for round in 0..ceiling {
-        running.round(|arm| {
+        let _ran = running.round(|arm, _drew| {
             let command = if *arm == left_arm { one } else { other };
             // Nanoseconds, because the crate counts in integers — a shipped
             // type there may not hold a float, since that is how a NaN reaches

@@ -74,6 +74,12 @@ pub fn floor(
             Attested::Known(storage) => Attested::Known(ConditionValue::text(storage.to_string())),
             Attested::Unknown => Attested::Unknown,
         }),
+        // Which seed set a run drew from is a property of the run, not of the
+        // machine, and this function reads the machine. A run that took seeded
+        // trials fills it in from its own `SeedSet`; a timing laboratory has
+        // no answer to give, because D19 has it hold the seed still and pin the
+        // generation length instead (B-290).
+        seed_set: Attested::Unknown,
     }
 }
 

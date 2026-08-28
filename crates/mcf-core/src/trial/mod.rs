@@ -13,7 +13,7 @@
 //! rule here; it has no representation. The check in
 //! `checks/tests/no_summary_is_persisted.rs` is what keeps it that way.
 //!
-//! **Why the three fields.** §3.27 makes the paired comparison the durable
+//! **Why the four fields.** §3.27 makes the paired comparison the durable
 //! output: arms are interleaved within one session so that drift in thermal
 //! state, contention and clock affects both equally, and the reported quantity
 //! is the paired difference rather than the difference of two summaries. That
@@ -21,15 +21,21 @@
 //! where it sat in the interleaving, and which session it belonged to — so
 //! those are fields a [`Trial`] cannot be built without.
 //!
-//! **What is not here yet.** The seed each trial drew from is B61's and arrives
-//! with B-290; the comparison type that consumes these is B53's and arrives
-//! with B-250. What this module owes them is that the record already contains
-//! what they will need.
+//! **And what it drew** (B61, D19, B-290). Thirty trials at one fixed seed
+//! produce thirty identical outputs, which is `n=1` reported as `n=30` with a
+//! spread of zero that reads as remarkable consistency. So a trial carries a
+//! [`Draw`]: either the seed it took from a declared set, or — for a timing
+//! laboratory, which D19 says must ignore seeds and pin generation length
+//! instead — the seed it held still and the length it pinned. The two are
+//! different variants precisely so that a reader can never mistake the second
+//! for the first's mistake.
 //!
 //! [`Quantity`]: crate::measurement::Quantity
 
+mod seed;
 mod series;
 
+pub use seed::{Draw, NotASeedSet, STANDARD, SeedSet, published};
 pub use series::{Series, Thinning};
 
 use core::fmt;
@@ -113,22 +119,31 @@ pub struct Trial<Q: Quantity> {
     arm: Arm,
     position: Position,
     session: SessionId,
+    drew: Draw,
 }
 
 impl<Q: Quantity> Trial<Q> {
     /// Records a trial.
     ///
-    /// All four are arguments and none has a default. A trial with no arm is a
+    /// All five are arguments and none has a default. A trial with no arm is a
     /// number; a trial with no position cannot be checked for order effects; a
     /// trial with no session can be compared with one from a different
-    /// afternoon without anybody noticing (B53).
+    /// afternoon without anybody noticing (B53); and a trial with no draw is
+    /// one whose spread nobody can tell from an artefact (B61, B-290).
     #[must_use]
-    pub const fn new(value: Q, arm: Arm, position: Position, session: SessionId) -> Self {
+    pub const fn new(
+        value: Q,
+        arm: Arm,
+        position: Position,
+        session: SessionId,
+        drew: Draw,
+    ) -> Self {
         Self {
             value,
             arm,
             position,
             session,
+            drew,
         }
     }
 
@@ -155,14 +170,20 @@ impl<Q: Quantity> Trial<Q> {
     pub const fn session(&self) -> &SessionId {
         &self.session
     }
+
+    /// What it drew, and under which discipline.
+    #[must_use]
+    pub const fn drew(&self) -> &Draw {
+        &self.drew
+    }
 }
 
 impl<Q: Quantity> fmt::Display for Trial<Q> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} arm={} {} session={}",
-            self.value, self.arm, self.position, self.session
+            "{} arm={} {} session={} {}",
+            self.value, self.arm, self.position, self.session, self.drew
         )
     }
 }
@@ -239,6 +260,42 @@ impl<Q: Quantity> Trials<Q> {
                 .count()
                 .saturating_sub(pairs.saturating_mul(2)),
         }
+    }
+
+    /// Whether any two trials of one arm drew the same seed (B61, B-290).
+    ///
+    /// **The artefact this exists to name.** Two trials of one arm on the same
+    /// seed are one trajectory counted twice: they produce the same output,
+    /// contribute a difference of zero to the spread, and make `n` larger
+    /// without making the evidence larger. Returned rather than refused,
+    /// because a *timing* laboratory holds its seed still on purpose (D19) and
+    /// this is how a reader tells the two apart — a repeat among
+    /// [`Draw::Seeded`] trials is the defect, and a repeat among
+    /// [`Draw::LengthPinned`] ones is the discipline.
+    ///
+    /// The arm matters: two arms of a paired comparison *should* draw the same
+    /// seed at the same position, since what differs between them must be the
+    /// arm and not the trajectory.
+    #[must_use]
+    pub fn seeds_repeated_within_an_arm(&self) -> Vec<(Arm, u64)> {
+        let mut found = Vec::new();
+        for arm in self.arms() {
+            let mut seen: Vec<u64> = Vec::new();
+            for trial in self.of_arm(&arm) {
+                if !trial.drew.is_seeded() {
+                    continue;
+                }
+                let drawn = trial.drew.seed();
+                if seen.contains(&drawn) {
+                    found.push((arm.clone(), drawn));
+                } else {
+                    seen.push(drawn);
+                }
+            }
+        }
+        found.sort();
+        found.dedup();
+        found
     }
 
     /// Whether every arm has the same number of trials.

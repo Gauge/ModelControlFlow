@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 63 |
+| **Version** | 64 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -88,6 +88,7 @@ forward as one.
 | 58 | [F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)](#58--f58--a-null-result-reaches-the-disk-as-a-result-a9-b-086-b-213-63-d16-f56) |
 | 59 | [F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)](#59--f59--the-benchmark-runner-and-the-first-real-comparison-it-refused-to-over-report-b-080-a18-67-b65-b-091-f53-f57) |
 | 60 | [F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)](#60--f60--the-clock-in-the-type-stopped-a-comparison-not-a-record-a11-b-082-d9-f59) |
+| 61 | [F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)](#61--f61--the-seed-set-had-to-become-arithmetic-and-eintr-was-being-called-a-cut-off-transfer-b-290-b61-d19-a2-f53-f55) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4592,7 +4593,111 @@ simulated one — so a test can fabricate a monotonic duration on purpose. That
 is deliberate and is the one seam; what it cannot do is fabricate one by
 accident from the laboratory's clock.
 
+## 61 · F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)
+
+**What B61 forbids.** Thirty trials at one fixed seed with identical inputs
+produce thirty identical outputs: `n=1` wearing the costume of `n=30`, with a
+spread of zero that reads as remarkable consistency and is an artefact. Fixing a
+seed does not reduce variance; it conceals it, at the exact point §3.4 requires
+uncertainty to be reported.
+
+**A trial now cannot exist without saying what it drew.** `Trial` has a fifth
+field with no default, so the artefact is not something a run can produce
+quietly. The field is a `Draw` and it has two variants, because D19 gives the
+two kinds of laboratory opposite rules: a behaviour trial draws seed *i* at
+trial *i* from a declared set, and a timing trial **holds its seed still and
+pins its generation length instead** — *a timing that varies because one run
+stopped earlier is measuring the stop, not the speed.* Two variants rather than
+one with a flag, so that a reader can never mistake a timing trial's fixed seed
+for a behaviour trial's mistake.
+
+**D19 assumed a trial count, and F55 had already taken it away.** *"The set's
+size is the trial count"* was written when a benchmark was expected to declare
+its repeats. It cannot: F53 measured the same command needing seven repeats in
+one sitting and over a hundred in another, and F55 replaced the count with a
+stopping condition that finds out as it goes. A fixed list of thirty seeds runs
+out on the thirty-first trial, and *what happens then* has only bad answers —
+wrap around and repeat a trajectory, or stop measuring because the list ended.
+
+So MCF's published set is **stated as arithmetic rather than as a list**: a
+stride and two mix rounds, six lines, unbounded, identical on every machine.
+Everything D19 asked of a list it gives, and one thing more — **every step is a
+bijection on `u64`**, so two trials cannot draw the same seed. A list of
+literals could only promise that by being checked; here it is the arithmetic.
+A test walks the first hundred thousand seeds and finds no collision, which is
+not a proof and would catch a mistranscribed constant; the first four seeds are
+pinned in a test because changing them breaks comparability with every
+measurement already recorded against `mcf-standard-v1`.
+
+A declared set is still admitted — a laboratory may need to reproduce somebody
+else's run, and refusing would make MCF unable to check another tool's work.
+It is refused if it repeats a seed, holds fewer than two, or has no name, and it
+**runs out rather than wrapping around**: the runner stops, because repeating
+the list would repeat a trajectory.
+
+**The seed set is a condition, and comparisons check it.** D19: *comparisons
+require matching seed sets the way they require matching hardware — recorded,
+checked, and refused when they differ.* It is the floor's twelfth question, so
+it renders on every surface and enters the isolation check for free (F56); and
+`Comparison::from_trials` refuses two arms that drew from different sets by
+name, with a refusal that says why a longer run does not fix it. The check runs
+pair by pair rather than once at the end, because the two runs of a pair must
+have drawn the *same* thing — what differs between them has to be the arm and
+not the trajectory.
+
+**A timing run answers the seed-set question, and the answer is *none*.** A7
+governs values MCF could not read; a run that held its seed still knows
+perfectly well what it did. Recording that as `Unknown` would have put a
+deliberate discipline in the same box as a failure to look, and would have made
+every timing comparison's isolation undetermined for ever — a wrong answer
+rather than a cautious one.
+
+**And `mcf bench` now pins a length.** It did not: `--limit` was optional and
+defaulted to *as the daemon chooses*, which is a benchmark whose arms stop where
+they like and whose timing therefore includes the models' verbosity. It pins
+128 tokens when nobody says, states the discipline in its own report, and
+records it.
+
+---
+
+**The second half of this finding is a defect the suite found under load, and
+it is not the one it looked like.** A full workspace run on a machine at load
+sixty produced one divergence: the stall scenario, which exists to show that
+*MCF's deadline ends the wait rather than the far end*, came back
+`transfer.interrupted` instead of `transfer.stalled`.
+
+**It did not reproduce**: three thousand four hundred targeted runs, the last
+three thousand under ninety-six deliberate burners, all produced what the
+scenario declares. So what caused it is **not established**, and saying
+otherwise would be inventing a mechanism to fit one observation.
+
+What the investigation did find, by reading the contract of `read` rather than
+by measurement, is a real misclassification on the same path.
+`ErrorKind::Interrupted` is EINTR: a signal arrived while the thread was blocked
+in the kernel and the read did not happen. It is the one io error whose contract
+is *retry*, and MCF was classifying it as `transfer.interrupted` — telling an
+operator on a busy machine that their download had been cut off by something
+that was not there. A2 forbids the wrong answer stated confidently as firmly as
+it forbids silence. Reads on the wire now retry it and classify everything else
+exactly as before, with two tests: one reader that is interrupted twice and then
+answers, and one that resets and must still be reported.
+
+Whether that was the divergence is unknown. It is a defect either way, and it
+removes one candidate.
+
+**What was not established.** The published set's bijectivity is argued from the
+structure of its three steps and checked over a prefix, not proved. The
+divergence above has one observation and no mechanism. And nothing yet validates
+the standard set against a larger random one, which D19 requires periodically
+and which is B-291's.
+
 ## Changelog
+
+### Version 64 — a trial says what it drew
+
+F61. A trial cannot exist without its seed, and the published set became
+arithmetic rather than a list because F55 removed the trial count D19 assumed.
+Along the way: EINTR was being classified as a cut-off transfer.
 
 ### Version 63 — the clock in the type, applied to writing
 

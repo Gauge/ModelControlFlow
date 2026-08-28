@@ -21,6 +21,7 @@ fn everything_known() -> Floor {
         realized_placement: known("host"),
         instrumentation: known("recording"),
         artifact_storage: known("tmpfs"),
+        seed_set: known("mcf-standard-v1"),
     }
 }
 
@@ -196,6 +197,7 @@ fn every_condition_in_the_floor_can_be_the_isolated_one() {
             ("realized_placement", &mut floor.realized_placement),
             ("instrumentation", &mut floor.instrumentation),
             ("artifact_storage", &mut floor.artifact_storage),
+            ("seed_set", &mut floor.seed_set),
         ] {
             if name == question {
                 *slot = known("something else entirely");

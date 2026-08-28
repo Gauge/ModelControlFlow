@@ -36,7 +36,7 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use mcf_bench::compare::{Comparison, Interleaving, UnderTest};
+use mcf_bench::compare::{Comparison, Discipline, Interleaving, UnderTest};
 use mcf_bench::record;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
@@ -56,6 +56,20 @@ use crate::Response;
 /// which is a result about this machine and this half-hour rather than about
 /// the two arms (A7, F53).
 const CEILING: usize = 200;
+
+/// The generation length a benchmark pins when nobody says.
+///
+/// **Pinned rather than left to the model** (D19, B-290): *a seed changes which
+/// tokens are produced and therefore possibly how many, and a timing that
+/// varies because one run stopped earlier is measuring the stop, not the
+/// speed.* A benchmark whose arms stopped where they liked would report the
+/// models' verbosity as the machine's throughput. So `mcf bench` always pins a
+/// length, and where the operator did not name one it uses this and says so.
+///
+/// A chosen number, stated in one line: long enough that process start does not
+/// dominate on a small model, short enough that a hundred paired trials is
+/// minutes rather than an afternoon.
+const TOKENS: u32 = 128;
 
 /// The difference a benchmark looks for when nobody says.
 ///
@@ -111,6 +125,15 @@ pub(crate) fn bench_where(
     resolving: Option<PartsPerMillion>,
 ) -> Response {
     let resolving = resolving.unwrap_or(RESOLVING);
+    // D19's timing discipline, made explicit: the seed is held still and the
+    // generation length is pinned. Both travel into every trial and into the
+    // record, so a reader can never mistake this run's fixed seed for a
+    // behaviour run's mistake (B61, B-290).
+    let tokens = limit
+        .and_then(|held| u32::try_from(held).ok())
+        .unwrap_or(TOKENS);
+    let limit = Some(usize::try_from(tokens).unwrap_or(usize::MAX));
+    let discipline = Discipline::Timing { seed, tokens };
     let (left_path, right_path) = match (located(left), located(right)) {
         (Ok(one), Ok(other)) => (one, other),
         (Err(text), _) | (_, Err(text)) => {
@@ -159,14 +182,15 @@ pub(crate) fn bench_where(
 
     let mut failed: Option<String> = None;
     let mut running = Interleaving::<Monotonic>::new(
-        arm(&left_path, engine, limit, seed),
-        arm(&right_path, engine, limit, seed),
+        arm(&left_path, engine, limit, seed, &discipline),
+        arm(&right_path, engine, limit, seed, &discipline),
         SessionId::new(format!("bench-{}", std::process::id())),
         seed,
+        discipline.clone(),
     );
     let named = Arm::new(left_path.display().to_string());
     for _ in 0..CEILING {
-        running.round(|which| {
+        let ran = running.round(|which, _drew| {
             let path = if *which == named {
                 &left_path
             } else {
@@ -180,6 +204,9 @@ pub(crate) fn bench_where(
                 }
             }
         });
+        if !ran {
+            break;
+        }
         if let Some(text) = failed {
             return Response {
                 text,
@@ -213,7 +240,13 @@ pub(crate) fn bench_where(
 /// for, and the budget. What it cannot read is `Unknown` rather than filled in
 /// (A7), so the comparison reports its isolation as undetermined until the
 /// condition producers exist (B-007, B-013) — which is the truth (F56).
-fn arm(path: &Path, engine: Option<&str>, limit: Option<usize>, seed: u64) -> UnderTest {
+fn arm(
+    path: &Path,
+    engine: Option<&str>,
+    limit: Option<usize>,
+    seed: u64,
+    discipline: &Discipline,
+) -> UnderTest {
     let mut floor = Floor::nothing_known();
     floor.mcf_configuration = Attested::Known(ConditionValue::text(format!(
         "engine={}, limit={}, seed={seed}",
@@ -231,6 +264,10 @@ fn arm(path: &Path, engine: Option<&str>, limit: Option<usize>, seed: u64) -> Un
         Some(held) => Attested::Known(ConditionValue::text(held)),
         None => Attested::Unknown,
     };
+    // D19 makes the seed set a condition, and a timing run's answer is *none,
+    // and here is what it pinned instead* — which is a thing MCF knows rather
+    // than a thing it failed to read (B-290).
+    floor.seed_set = Attested::Known(ConditionValue::text(discipline.seed_set()));
     UnderTest::new(
         Arm::new(path.display().to_string()),
         Conditions::new(BuildIdentity::current(), floor),
@@ -414,6 +451,7 @@ fn report(
         format!("{finding}"),
         String::new(),
         "── how it was taken ─────────────────────────────────────────".to_owned(),
+        format!("  {}", held.discipline()),
         format!(
             "  pairs    {} interleaved, order drawn per pair",
             held.pairs().len()

@@ -35,6 +35,7 @@ use mcf_core::provenance::{
     Revision, ToolIdentity, Transformation, TransformationKind,
 };
 use mcf_core::time::{Timestamp, UtcOffset};
+use mcf_core::trial::Draw;
 
 use crate::json::Value;
 
@@ -59,7 +60,31 @@ pub fn floor(value: &Value) -> Option<Floor> {
         realized_placement: condition(value, "realized_placement")?,
         instrumentation: condition(value, "instrumentation")?,
         artifact_storage: condition(value, "artifact_storage")?,
+        seed_set: condition(value, "seed_set")?,
     })
+}
+
+/// Reads what a trial drew back (B-290).
+///
+/// `None` where the record does not say — an entry from a version that did not
+/// ask, which is a different thing from a trial that drew nothing. Deciding
+/// what to do about that belongs to the reader with the context (§7.30), and a
+/// decoder that invented a seed would be inventing a condition.
+#[must_use]
+pub fn draw(value: &Value) -> Option<Draw> {
+    let held = value.get("drew")?;
+    let seed = held.get("seed")?.as_text()?.parse::<u64>().ok()?;
+    match held.get("discipline")?.as_text()? {
+        "seeded" => Some(Draw::Seeded {
+            seed,
+            from: held.get("from")?.as_text()?.to_owned(),
+        }),
+        "length_pinned" => Some(Draw::LengthPinned {
+            seed,
+            tokens: u32::try_from(held.get("tokens")?.as_integer()?).ok()?,
+        }),
+        _ => None,
+    }
 }
 
 /// Reads a condition set back, instrument included.

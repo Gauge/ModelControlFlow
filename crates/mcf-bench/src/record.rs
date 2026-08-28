@@ -39,7 +39,7 @@ use mcf_core::time::{ClockKind, Measurable};
 use mcf_record::encode;
 use mcf_record::json::Value;
 
-use super::compare::{Comparison, Difference, Finding, Side, Strength, UnderTest};
+use super::compare::{Comparison, Difference, Discipline, Finding, Side, Strength, UnderTest};
 use super::enough::Verdict;
 
 /// Everything one comparison established, and everything it established it on.
@@ -68,8 +68,34 @@ pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Fin
                 ("right_first", count(right_first)),
             ]),
         ),
+        ("discipline", discipline(held.discipline())),
         ("pairs", Value::List(pairs(held))),
     ])
+}
+
+/// Which discipline the trials were taken under (B61, D19, B-290).
+///
+/// The seed set travels here because D19 makes it a condition and A8 makes a
+/// condition something a later comparison checks: two measurements on
+/// different sets are not comparable, and the record is where that is found
+/// out.
+fn discipline(held: &Discipline) -> Value {
+    match held {
+        Discipline::Timing { seed, tokens } => Value::map([
+            ("kind", Value::text("timing")),
+            // Text, for the reason `mcf_record::encode::draw` gives: a seed is
+            // a `u64` and the record's integers are `i64`.
+            ("seed", Value::text(seed.to_string())),
+            ("tokens_pinned", Value::Integer(i64::from(*tokens))),
+            ("seed_set", Value::text(held.seed_set())),
+        ]),
+        Discipline::Behaviour { seeds } => Value::map([
+            ("kind", Value::text("behaviour")),
+            ("seed", Value::Null),
+            ("tokens_pinned", Value::Null),
+            ("seed_set", Value::text(seeds.identifier())),
+        ]),
+    }
 }
 
 /// One arm: what it is called, and what it was measured under.
@@ -192,6 +218,7 @@ fn pairs<K: ClockKind + Measurable>(held: &Comparison<K>) -> Vec<Value> {
                 ("left_position", Value::Integer(i64::from(left_at.0))),
                 ("right_position", Value::Integer(i64::from(right_at.0))),
                 ("first", Value::text(side(pair.first()))),
+                ("drew", encode::draw(pair.drew())),
                 ("difference", difference(pair.difference())),
             ])
         })
