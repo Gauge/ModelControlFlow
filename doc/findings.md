@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 72 |
+| **Version** | 73 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -96,6 +96,7 @@ forward as one.
 | 66 | [F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)](#66--f66--fifty-eight-of-a-hundred-trials-is-fifty-eight-data-points-and-the-fifty-ninth-was-not-one-a4-b-087-31-a1-a6) |
 | 67 | [F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)](#67--f67--the-first-frontier-and-what-it-is-mostly-a-frontier-of-b-091-xii-34-327-f64-f65) |
 | 68 | [F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii) |
+| 69 | [F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)](#69--f69--a-band-predicted-before-the-measurement-and-the-measurement-landed-in-it-b-214-b-215-pr3-a20-b46-616-f67) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5252,7 +5253,101 @@ a bundle for a claim about a model acquired on another machine, or moved by
 hand, will carry no provenance and does not currently say so. And re-running the
 method on another machine is `mcf verify`, which is B-212 and not this.
 
+## 69 · F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)
+
+**PR3's question, asked before a byte is fetched:** *how fast would this be
+here?* MCF cannot measure a model it does not have, and refusing to say
+anything makes choosing between twenty published quantizations cost tens of
+gigabytes a guess. A20 admits the middle answer and then walls it off: *an
+estimate can never be mistaken for a measurement, never promoted into one, and
+never compared with one. It can only be replaced by one.*
+
+**The prediction, made first.** A quantization this machine had never
+benchmarked — `SmolLM2-135M-Instruct-Q4_K_S`, 102,039,904 bytes — was projected
+from the record with itself excluded, by reading between the two measured sizes
+it sits between:
+
+```
+ 91,893,088 bytes   381.3 .. 395.9 ms   (measured)
+105,454,432 bytes   387.2 .. 407.4 ms   (measured)
+
+PREDICTION for 102,039,904 bytes:  between 385.7 and 404.5 ms
+```
+
+**Then measured.** `mcf bench` on the file, `--cold`, 128 tokens:
+
+```
+medians  397.3 ms and 471.4 ms
+```
+
+**397.3 ms, inside a band of 385.7 to 404.5** — about three fifths of the way
+across it. One prediction, made before the measurement and not adjusted after.
+
+**What makes it defensible is what it refuses to do.** It reads *between*
+measured points and never past them. F67 established the relationship this
+rests on — latency monotone in file size, because every trial loads the model —
+and F67 also measured where it stops being straight: a line through the
+extremes predicted the largest point eleven percent low. So a file outside the
+measured range gets no band at all, and the refusal says why. It is
+band-shaped, because a duration predicted from a rate is a range and one number
+is *the smallest possible version of a confident wrong number* (B46). It is
+from local history only, because there is no corpus and B34 would let one
+advise rather than decide. And a budget this machine has no history at gets
+nothing, because two requests of different lengths are two different things.
+
+The surface says the word: *this is an ESTIMATE read between two measured
+sizes, and A20 forbids it standing beside a measurement or being promoted into
+one.* A20's *clearly-labelled* is not satisfied by a type name nobody sees.
+
+---
+
+**And then §6.16 turned on it** (B-215). *The instrument does not get to grade
+itself*, and a projection nobody scores is a claim MCF makes for ever without
+finding out whether it was any good. `mcf doctor` now says:
+
+```
+PROJECTION, SCORED AGAINST WHAT WAS LATER MEASURED
+  42 of 49 measured points fall inside the band that would have been
+  projected for them; the worst miss is 150.1% (5 could not be scored:
+  nothing measured on one side of them)
+```
+
+**Scored by leaving each point out**, which needs no stored predictions and no
+new record kind: for every measurement in the history, the band its neighbours
+would have given is computed and compared with what it actually was. It is
+recomputed from the record each time it is asked, so it moves as the history
+does — which is what *over time* means when the history is the thing changing.
+A stored score would be a score about a record that has since changed.
+
+The points at the ends are **not scored and not counted as misses**: with them
+left out there is nothing to read between, so there is no projection to score,
+and counting them would be scoring the refusal to extrapolate — the thing the
+model gets right.
+
+**Eighty-six percent, and a worst miss of 150%.** That is a finding about the
+model rather than a reassurance: the misses are real and the largest is large.
+The history includes points taken while this shared machine was at a load
+average of sixty, whose slowest trials ran to thirteen seconds against a
+fastest of seventy-nine milliseconds — a band that wide is not a band, and a
+neighbour interpolated from it is not a prediction. The score says so instead
+of hiding it.
+
+**What was not established.** One prediction checked against one measurement,
+on one family, at one budget, in one sitting. The relationship is F67's and is
+principally about file size because every trial loads the model — a projection
+built on a warm engine would be projecting something else. The band's width is
+the fastest and slowest trials seen, which is honest and crude: it inherits
+every outlier the history has, and the 150% miss is one of them arriving. And
+nothing prunes the history: a measurement taken under contention stays a point
+for ever, which is a decision nobody has made (DEC-013).
+
 ## Changelog
+
+### Version 73 — a band predicted before the measurement
+
+F69. A quantization this machine had never benchmarked was projected from the
+record at 385.7–404.5 ms and then measured at 397.3. And MCF now scores its own
+projection against every measurement it has: 42 of 49 inside, worst miss 150%.
 
 ### Version 72 — one file that reproduces one claim
 

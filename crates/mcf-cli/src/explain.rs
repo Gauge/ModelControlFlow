@@ -24,6 +24,7 @@
 use std::path::Path;
 
 use mcf_core::digest::sha256;
+use mcf_core::time::{Duration, Monotonic};
 use mcf_hub::store;
 use mcf_standin::gguf::{self, Model, TensorKind, Value};
 use mcf_standin::recommended::Recommendation;
@@ -261,6 +262,71 @@ fn declared(file: &Model) -> Vec<(&'static str, String)> {
 
 /// How the weights are encoded, counted by kind.
 ///
+/// What this machine's own history says a request here would take (B-214,
+/// PR3, A20).
+///
+/// **An estimate, and it says so in the sentence rather than only in the type.**
+/// A20 permits the middle answer and then draws the line absolutely: an
+/// estimate can never be mistaken for a measurement. The type wall is
+/// `Estimate`'s; what this owes is that a reader meets the word.
+///
+/// Where there is no history to read between, the answer is the one that was
+/// here before — *unmeasured, and here is what would measure it*. A band with
+/// nothing under it would be worse than no band.
+fn how_fast(path: &Path) -> String {
+    let held = crate::history::read();
+    let bytes = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    // The budget `mcf run` would use, which is what this page describes. A
+    // projection at a budget nothing on this page mentions would be an answer
+    // to a question the reader did not ask.
+    let budget = run::TOKENS;
+    let projected = mcf_bench::project::band(
+        &held.points,
+        bytes,
+        u32::try_from(budget).unwrap_or(u32::MAX),
+    );
+    let unmeasured = "Unmeasured. Through MCF's own stand-in it is unanswerable in principle — \
+                      B65 forbids a speed from it (D31). Through a provisioned engine it is \
+                      answerable: `mcf bench <a> --against <b>` takes it, under conditions and \
+                      with its uncertainty.";
+    match projected {
+        Ok(band) => format!(
+            "Unmeasured *for this file*. From {} comparison arm(s) this machine has measured at \
+             {budget} tokens, a request here would probably take {} — which is an ESTIMATE \
+             read between two measured sizes, and A20 forbids it standing beside a measurement \
+             or being promoted into one. `mcf bench` measures it.{}",
+            held.points.len(),
+            millisecond_band(&band),
+            if held.unreadable == 0 {
+                String::new()
+            } else {
+                format!(
+                    " ({} earlier arm(s) could not be used: their files are not here now.)",
+                    held.unreadable
+                )
+            }
+        ),
+        Err(why) => format!("{unmeasured} There is no projection either: {why}."),
+    }
+}
+
+/// A band as a person reads it, without a float (A6).
+///
+/// Milliseconds and tenths from integer arithmetic. The word *estimate* is in
+/// the sentence around it rather than here, because a reader who sees only a
+/// range of numbers has been shown a measurement (A20).
+fn millisecond_band(held: &mcf_core::measurement::Estimate<Duration<Monotonic>>) -> String {
+    let tenths = |at: Duration<Monotonic>| {
+        let held = at.as_nanos().wrapping_div(100_000);
+        format!("{}.{}", held.wrapping_div(10), held.wrapping_rem(10))
+    };
+    format!(
+        "between {} and {} ms",
+        tenths(held.low()),
+        tenths(held.high())
+    )
+}
+
 /// Whose choice the sampler is (B60, B-281).
 ///
 /// B60 has MCF adopt what the artifact recommends rather than imposing a house
@@ -484,13 +550,7 @@ fn unanswered(path: &Path) -> Vec<(&'static str, String)> {
              and the measurements are M5–M7 (§6.5)."
                 .to_owned(),
         ),
-        (
-            "How fast is it on this machine?",
-            "Unmeasured. Through MCF's own stand-in it is unanswerable in principle — B65 \
-             forbids a speed from it (D31). Through a provisioned engine it is answerable and \
-             nobody has: that is M5's `mcf bench`, under conditions and with its uncertainty."
-                .to_owned(),
-        ),
+        ("How fast is it on this machine?", how_fast(path)),
         (
             "What is it good at?",
             if probed {

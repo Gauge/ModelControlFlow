@@ -17,6 +17,7 @@
 
 pub mod compare;
 pub mod enough;
+pub mod project;
 pub mod record;
 pub mod seeds;
 pub mod warmth;

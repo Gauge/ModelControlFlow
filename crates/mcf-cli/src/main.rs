@@ -17,6 +17,7 @@ mod crosscheck;
 mod doctor;
 mod embed;
 mod explain;
+mod history;
 mod licence;
 mod log;
 mod models;

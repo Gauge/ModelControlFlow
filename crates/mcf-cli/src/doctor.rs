@@ -673,7 +673,33 @@ fn where_models_go() -> String {
         ));
     }
     lines.push(String::new());
+    lines.push(scored_projection());
+    lines.push(String::new());
     lines.join("\n")
+}
+
+/// How well MCF's own projection has done against what it later measured
+/// (B-215, §6.16).
+///
+/// **The instrument does not get to grade itself**, so this is MCF grading it:
+/// every measurement in the record is checked against the band that *would
+/// have been* projected for it from the others. Nothing is stored — it is
+/// recomputed from the history each time, so it tracks as the history grows,
+/// which is what B-215 means by *over time*. A stored score would be a score
+/// about a record that has since changed.
+///
+/// It sits in `doctor` because that is the surface that says what MCF costs
+/// here and what it promises, and *how often my own guesses were right* is one
+/// of those.
+fn scored_projection() -> String {
+    let held = crate::history::read();
+    let scored = mcf_bench::project::score(&held.points);
+    format!(
+        "PROJECTION, SCORED AGAINST WHAT WAS LATER MEASURED  (B-215, §6.16)\n  {scored}\n  \
+         Recomputed from this machine's record every time it is asked, so it moves as the\n  \
+         history does. A projection nobody scores is a claim MCF makes for ever without\n  \
+         ever finding out whether it was any good."
+    )
 }
 
 /// How much room a store has, or would have.
