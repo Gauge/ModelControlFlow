@@ -472,3 +472,104 @@ impl Field {
             .collect())
     }
 }
+
+/// What a field's ordering rested on, and what it did not (B-202, B41,
+/// §6.36, §3.23).
+///
+/// **A recommendation resting on two of eleven laboratories says so.** The
+/// ranking is the part a reader takes away and the coverage is the part that
+/// tells them how much it is worth, so they travel together or the second one
+/// does not travel at all. B41 requires coverage with *every* answer, and the
+/// half most likely to be dropped is the negative one: which laboratories the
+/// candidates were inapplicable to, and which nobody ran.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Coverage {
+    /// The laboratory the ordering was made on.
+    pub on: LabId,
+    /// How many candidates it measured.
+    pub measured: usize,
+    /// How many candidates were considered in all.
+    pub considered: usize,
+    /// Laboratories some candidate was verified inapplicable to, sorted.
+    pub inapplicable: Vec<LabId>,
+    /// Laboratories that appear in some profile but measured nothing here.
+    pub silent: Vec<LabId>,
+}
+
+impl fmt::Display for Coverage {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            form,
+            "on {} alone, which measured {} of {} candidate(s)",
+            self.on, self.measured, self.considered
+        )?;
+        let named = |held: &[LabId]| {
+            held.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<String>>()
+                .join(", ")
+        };
+        if !self.inapplicable.is_empty() {
+            write!(
+                form,
+                "; inapplicable to {} (verified absent, which is not a low score — B40)",
+                named(&self.inapplicable)
+            )?;
+        }
+        if !self.silent.is_empty() {
+            write!(
+                form,
+                "; {} informed nothing here, which is *not run* rather than *no difference* \
+                 (A7)",
+                named(&self.silent)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Field {
+    /// What an ordering on `lab` rests on (B-202).
+    ///
+    /// Computed rather than stored, and computed from the same field the
+    /// ordering came from, so the two cannot drift apart into a ranking whose
+    /// coverage describes a different set of candidates.
+    #[must_use]
+    pub fn coverage(&self, lab: &LabId) -> Coverage {
+        let mut inapplicable = Vec::new();
+        let mut silent = Vec::new();
+        let mut measured = 0_usize;
+        for candidate in &self.candidates {
+            for (named, graded) in candidate.profile().all() {
+                match graded {
+                    Graded::Measured(_) if named == lab => measured = measured.saturating_add(1),
+                    Graded::NotApplicable { .. } => inapplicable.push(named.clone()),
+                    Graded::Unknown { .. } | Graded::Failed(_) => silent.push(named.clone()),
+                    Graded::Measured(_) => {}
+                }
+            }
+        }
+        for held in [&mut inapplicable, &mut silent] {
+            held.sort();
+            held.dedup();
+        }
+        // A laboratory that both measured something and was silent elsewhere
+        // is not silent: what a reader needs is *nothing came from here at
+        // all*, and a laboratory with one reading is not that.
+        let reading: Vec<LabId> = self
+            .candidates
+            .iter()
+            .flat_map(|candidate| candidate.profile().measured())
+            .cloned()
+            .collect();
+        silent.retain(|named| !reading.contains(named));
+        inapplicable.retain(|named| !reading.contains(named));
+        Coverage {
+            on: lab.clone(),
+            measured,
+            considered: self.candidates.len(),
+            inapplicable,
+            silent,
+        }
+    }
+}

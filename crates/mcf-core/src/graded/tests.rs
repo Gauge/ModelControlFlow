@@ -199,3 +199,109 @@ mod fields {
         );
     }
 }
+
+/// A ranking says what it rested on and what it did not (B-202).
+mod coverage {
+    use crate::graded::{Candidate, Field, Graded, LabId, Profile, Score};
+    use crate::origin::LocallyMeasured;
+
+    fn candidate(name: &str, entries: Vec<(&str, Graded)>) -> Candidate {
+        let mut profile = Profile::empty();
+        for (lab, graded) in entries {
+            profile = profile.and(LabId::new(lab), graded);
+        }
+        Candidate::new(name, LocallyMeasured::new(profile))
+    }
+
+    fn measured(lab: &str, parts: u64) -> Graded {
+        Graded::Measured(Score::new(LabId::new(lab), parts))
+    }
+
+    #[test]
+    fn a_ranking_on_two_of_eleven_laboratories_says_so() {
+        let field = Field::empty()
+            .and(candidate(
+                "a",
+                vec![
+                    ("agentic", measured("agentic", 800_000)),
+                    (
+                        "tools",
+                        Graded::NotApplicable {
+                            capability: "tool calling".to_owned(),
+                        },
+                    ),
+                    (
+                        "vision",
+                        Graded::Unknown {
+                            why: "not probed".to_owned(),
+                        },
+                    ),
+                ],
+            ))
+            .and(candidate(
+                "b",
+                vec![("agentic", measured("agentic", 200_000))],
+            ));
+        let held = field.coverage(&LabId::new("agentic"));
+        assert_eq!(held.measured, 2);
+        assert_eq!(held.considered, 2);
+        assert_eq!(held.inapplicable, [LabId::new("tools")]);
+        assert_eq!(held.silent, [LabId::new("vision")]);
+
+        let shown = held.to_string();
+        assert!(shown.contains("measured 2 of 2 candidate(s)"), "{shown}");
+        assert!(
+            shown.contains("inapplicable to tools"),
+            "the negative half is the one most likely to be dropped (B41): {shown}"
+        );
+        assert!(
+            shown.contains("informed nothing here"),
+            "and *not run* is not *no difference* (A7): {shown}"
+        );
+    }
+
+    #[test]
+    fn a_laboratory_with_one_reading_is_not_silent() {
+        let field = Field::empty()
+            .and(candidate("a", vec![("agentic", measured("agentic", 1))]))
+            .and(candidate(
+                "b",
+                vec![(
+                    "agentic",
+                    Graded::Unknown {
+                        why: "not probed".to_owned(),
+                    },
+                )],
+            ));
+        let held = field.coverage(&LabId::new("agentic"));
+        assert!(
+            held.silent.is_empty(),
+            "what a reader needs is *nothing came from here at all*, and a laboratory with one \
+             reading is not that: {:?}",
+            held.silent
+        );
+        assert_eq!(held.measured, 1);
+    }
+
+    #[test]
+    fn coverage_counts_every_candidate_considered_not_only_the_ranked_ones() {
+        let field = Field::empty()
+            .and(candidate("a", vec![("agentic", measured("agentic", 1))]))
+            .and(candidate("b", vec![("agentic", measured("agentic", 2))]))
+            .and(candidate(
+                "c",
+                vec![(
+                    "agentic",
+                    Graded::Unknown {
+                        why: "not probed".to_owned(),
+                    },
+                )],
+            ));
+        let held = field.coverage(&LabId::new("agentic"));
+        assert_eq!(
+            (held.measured, held.considered),
+            (2, 3),
+            "*two of three* is the claim; *two* alone hides the one that was not measured (A1)"
+        );
+    }
+}

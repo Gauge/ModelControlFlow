@@ -184,6 +184,29 @@ fn a_single_candidate_produces_a_refusal_with_its_reasoning() {
     );
 }
 
+/// A ranking cannot be rendered without what it rested on (B-202).
+#[test]
+fn coverage_is_computed_from_the_field_it_describes() {
+    let held = source();
+    assert!(
+        held.contains("pub fn coverage(&self, lab: &LabId) -> Coverage"),
+        "B41 requires coverage with every answer: a ranking is what a reader takes away and \
+         the coverage is what tells them how much it is worth"
+    );
+    for stored in ["coverage: Coverage", "struct Field {\n    coverage"] {
+        assert!(
+            !held.contains(stored),
+            "a stored coverage can describe a different set of candidates than the ranking it \
+             sits beside; computing it from the field is what keeps the two together"
+        );
+    }
+    assert!(
+        held.contains("verified absent, which is not a low score"),
+        "and the rendering must keep B40's distinction, or the coverage reintroduces the \
+         failure the outcome type exists to prevent"
+    );
+}
+
 /// Coverage travels, which is the half a reader is least likely to be shown.
 #[test]
 fn a_profile_renders_what_it_did_not_measure() {

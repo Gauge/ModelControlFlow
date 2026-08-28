@@ -6211,6 +6211,23 @@ so, and names the laboratory and the count. Asking a laboratory nobody ran
 gets the same refusal rather than an empty ranking, because an empty list reads
 as *nothing is any good* rather than *nothing was asked*.
 
+**And the coverage is computed, not stored** (B-202). `Field::coverage` says
+which laboratory the ordering was made on, how many of the candidates it
+measured against how many were considered, which laboratories some candidate
+was verified inapplicable to, and which informed nothing at all:
+
+```
+on agentic alone, which measured 2 of 3 candidate(s); inapplicable to tools
+(verified absent, which is not a low score — B40); vision informed nothing
+here, which is *not run* rather than *no difference* (A7)
+```
+
+*Two of three* rather than *two*, because the bare count hides the candidate
+that was not measured. Computed from the same field the ordering came from, so
+a ranking cannot end up beside coverage describing a different set of
+candidates. And a laboratory with one reading is not *silent*: what a reader
+needs from that word is *nothing came from here at all*.
+
 **Unmeasured candidates are absent from the ordering, not last.** A missing
 reading is not a low one, which is [F77](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39)'s
 rule showing up one layer higher — and ordering is stable, so two candidates a

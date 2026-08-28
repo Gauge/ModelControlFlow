@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 199 |
+| **Version** | 200 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (119 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 55 open).** Every item cites
+decided, 23 resolved) and 224 build items (120 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 54 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -337,7 +337,7 @@ first and importance second.
 | B-123 | Refusal to manufacture a distinction: "the differences here are within noise, pick either" is a supported output | §3.9 | The recommender returns it when the statistics warrant | blocked (B-106) |
 | B-124 | Construct the configuration, not merely name it: compose base model, quantization, format, context size, runtime and sampling parameters, then validate the result | §6.6, §IV | A recommended configuration is materialized and re-measured to confirm it performs as predicted | open |
 | B-125 | Anti-overfitting guard: MCF must not tune toward whatever it measures | §3.4 | The selection suite and the validation suite are structurally separate | blocked (DEC-023) |
-| B-202 | Every recommendation renders its coverage: which laboratories informed it, which the candidates were inapplicable to | B41, §6.36, §3.23 | A recommendation resting on two of eleven laboratories says so | open |
+| B-202 | Every recommendation renders its coverage: which laboratories informed it, which the candidates were inapplicable to | B41, §6.36, §3.23 | A recommendation resting on two of eleven laboratories says so | done `Field::coverage` — the laboratory the ordering was made on, how many of the candidates it measured against how many were considered, which laboratories some candidate was verified inapplicable to, and which informed nothing at all. Computed from the field the ordering came from, never stored, so a ranking cannot sit beside coverage describing a different set. A laboratory with one reading is not *silent*, since what a reader needs is *nothing came from here at all*. F86. |
 | B-127 | The recommender refuses a field of one: a frontier with a single point is not a frontier, and a single-model recommendation is a claim MCF has no basis for | §6.23, §3.9 | A single-candidate field produces a refusal with its reasoning, never a ranking | done `Field::ordered_by` returns `NoRecommendation` by name — a field of none, a field of one (naming the one, since the next move is to name a second), or a laboratory with fewer than two readings, which is a field of one wearing six names (B40). Unmeasured candidates are absent from an ordering rather than last. F86. |
 | B-128 | Expand the reference set to the breadth DEC-026 requires before any §IV recommendation is published | §7.26, §6.23 | No generality claim is made until the set exists; results before that say so on every surface | blocked (DEC-026) |
 | B-167 | Recommender inputs are locally-originated measurements, enforced at the type level; no foreign number reaches a recommendation | B34, §6.28, §5 | A contributed or imported measurement cannot be an input to a recommendation | done `Candidate` holds a `LocallyMeasured<Profile>` and has no other constructor; `origin` offers no conversion in either direction, so a `FromCorpus` value cannot arrive by any route. Built ahead of the recommender, which is when a type is cheapest to get right. F86. |
@@ -396,6 +396,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 200 — coverage travels with the ranking
+
+B-202 done. The ranking is what a reader takes away and the coverage is what
+tells them how much it is worth, so it is computed from the same field rather
+than stored beside it. F86.
 
 ### Version 199 — a field of one, refused by name
 
