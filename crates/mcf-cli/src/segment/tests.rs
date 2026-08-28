@@ -94,3 +94,44 @@ mod contributions {
         assert_eq!(added_by("日本", "日本"), "");
     }
 }
+
+/// Markers are found by shape and then asked about, never by a table.
+mod markers {
+    use super::super::marker_shaped;
+
+    #[test]
+    fn the_shapes_models_use_are_found() {
+        let found = marker_shaped("<|im_start|>user [INST] <s> <start_of_turn>");
+        assert_eq!(
+            found,
+            [
+                "<|im_start|>".to_owned(),
+                "<s>".to_owned(),
+                "<start_of_turn>".to_owned(),
+                "[INST]".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ordinary_prose_containing_a_less_than_is_not_a_marker() {
+        // An unbounded scan would call half a sentence a marker.
+        assert!(marker_shaped("a < b and c > d").is_empty());
+        assert!(marker_shaped("if x < y then").is_empty());
+    }
+
+    #[test]
+    fn the_same_marker_twice_is_reported_once() {
+        assert_eq!(marker_shaped("<s> and <s>").len(), 1);
+    }
+
+    #[test]
+    fn a_prompt_with_no_markers_produces_no_section() {
+        assert!(marker_shaped("just some ordinary text").is_empty());
+    }
+
+    #[test]
+    fn an_unclosed_marker_is_not_one() {
+        assert!(marker_shaped("<|im_start").is_empty());
+    }
+}

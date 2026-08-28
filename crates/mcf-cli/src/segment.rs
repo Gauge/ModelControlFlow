@@ -158,6 +158,9 @@ fn render(
     }
     lines.push(String::new());
     lines.push(whole_or_shattered(prompt, fragments));
+    for said in marker_fidelity(prompt, vocabulary) {
+        lines.push(said);
+    }
     if decoded != prompt {
         // A1 and §3.15: what the model receives is not always what was typed,
         // and the difference is the reader's to see rather than MCF's to
@@ -171,6 +174,100 @@ fn render(
         ));
     }
     lines.join("\n")
+}
+
+/// Which of the markers somebody wrote are real control tokens here (B-383).
+///
+/// **The measured cost behind this** (F37): `<|im_start|>` written into a
+/// prompt reaches the model as **eight ordinary tokens**, and the table that
+/// produced was the most decisive-looking wrong answer in this repository. A
+/// person tuning a prompt has, until now, had strictly less visibility than
+/// the probe that was fooled by it.
+///
+/// **The two questions are separate, and both matter.** Whether the vocabulary
+/// *has* a token spelled that way, and what the text *becomes* when typed.
+/// They have different answers, and the second is always the same one: text a
+/// person types never becomes a control token. That is D46 and F26's safety
+/// property, deliberate and load-bearing — a surface that let typed characters
+/// become the token a chat template uses to start a turn would let anyone
+/// forge a turn boundary. So a vocabulary that *has* `<|im_start|>` and a
+/// prompt that *contains* `<|im_start|>` still do not meet, and the reader is
+/// told exactly that rather than left to infer it from a token count.
+///
+/// **No judgement** (§3.15). Writing a marker into a prompt is not a mistake;
+/// it is a thing whose effect is invisible, and this makes it visible.
+fn marker_fidelity(prompt: &str, vocabulary: &mcf_standin::tokenizer::Vocabulary) -> Vec<String> {
+    let found = marker_shaped(prompt);
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![String::new(), "Markers written into the prompt:".to_owned()];
+    for marker in &found {
+        let spelled = vocabulary.encode(marker, false).map_or_else(
+            |_| "no tokens at all".to_owned(),
+            |held| format!("{} ordinary token(s)", held.len()),
+        );
+        lines.push(if vocabulary.has_token(marker) {
+            format!(
+                "  {marker:?} → {spelled}. This vocabulary HAS a token spelled exactly that, \
+                 and typed text still does not become it: nothing a person writes can produce \
+                 a control token (D46, F26)."
+            )
+        } else {
+            format!(
+                "  {marker:?} → {spelled}. This vocabulary has no such token at all, so it is \
+                 ordinary text here however it is spelled."
+            )
+        });
+    }
+    lines.push(
+        "  A template whose markers do not survive is a template that does not do what it \
+         looks like it does (F37, B-383)."
+            .to_owned(),
+    );
+    lines
+}
+
+/// Substrings shaped like the markers models use.
+///
+/// `<...>` and `[...]`, which covers `<|im_start|>`, `<s>`, `<bos>`,
+/// `<start_of_turn>` and `[INST]`. Bounded in length and stopped by
+/// whitespace, because an unbounded scan would call half an English sentence
+/// containing *a < b* a marker.
+///
+/// Shape and not a list: MCF does not keep a table of every family's markers,
+/// and one would be out of date the week it was written. What it does is
+/// notice the shape and then ask *this* vocabulary about it, which is the only
+/// authority that matters.
+fn marker_shaped(prompt: &str) -> Vec<String> {
+    const LONGEST: usize = 48;
+
+    let mut found: Vec<String> = Vec::new();
+    for (open, close) in [('<', '>'), ('[', ']')] {
+        let mut rest = prompt;
+        while let Some(at) = rest.find(open) {
+            let after = rest.get(at.saturating_add(1)..).unwrap_or_default();
+            let taken = after
+                .char_indices()
+                .take_while(|(offset, letter)| {
+                    *offset < LONGEST && !letter.is_whitespace() && *letter != open
+                })
+                .map(|(offset, letter)| offset.saturating_add(letter.len_utf8()))
+                .last()
+                .unwrap_or(0);
+            let window = after.get(..taken).unwrap_or_default();
+            if let Some(end) = window.find(close) {
+                let marker = rest
+                    .get(at..at.saturating_add(end).saturating_add(2))
+                    .unwrap_or_default();
+                if !marker.is_empty() && !found.iter().any(|held| held == marker) {
+                    found.push(marker.to_owned());
+                }
+            }
+            rest = after;
+        }
+    }
+    found
 }
 
 /// Which words survived whole, and which were broken up.

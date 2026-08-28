@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 82 |
+| **Version** | 83 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -106,6 +106,7 @@ forward as one.
 | 76 | [F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)](#76--f76--a-run-that-reports-as-it-goes-shows-what-moves-not-what-has-not-decided-b-227-a4-31-a18) |
 | 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
 | 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
+| 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5882,7 +5883,57 @@ derivation is A2's silent failure with a friendly name: the code kept going,
 the output looked plausible, and only text in a script the author had not tried
 made it visible.
 
+## 79 · F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)
+
+**The measured cost behind the item.** F37: `<|im_start|>` written into a
+prompt reaches the model as ordinary tokens, and the table that produced was
+the most decisive-looking wrong answer in this repository. Until now a person
+tuning a prompt had strictly *less* visibility than the probe that was fooled
+by it.
+
+**`mcf segment` now answers two separate questions about every marker-shaped
+thing in the prompt**, and keeping them separate is the whole point:
+
+```
+Markers written into the prompt:
+  "<|im_start|>" → 7 ordinary token(s). This vocabulary HAS a token spelled
+    exactly that, and typed text still does not become it: nothing a person
+    writes can produce a control token (D46, F26).
+  "<|nope|>" → 6 ordinary token(s). This vocabulary has no such token at all,
+    so it is ordinary text here however it is spelled.
+  "[INST]" → 3 ordinary token(s). This vocabulary has no such token at all,
+    so it is ordinary text here however it is spelled.
+  A template whose markers do not survive is a template that does not do what
+  it looks like it does (F37, B-383).
+```
+
+*Does this vocabulary have such a token* and *does typing it produce one* have
+different answers, and the second is always **no**. That is D46 and F26's
+safety property, deliberate and load-bearing: a surface that let typed
+characters become the token a chat template uses to start a turn would let
+anybody forge a turn boundary. So a vocabulary that has `<|im_start|>` and a
+prompt that contains `<|im_start|>` still do not meet — and the reader is told
+that in a sentence rather than left to infer it from a token count.
+
+**Found by shape, then asked of the vocabulary.** MCF keeps no table of every
+family's markers; one would be out of date the week it was written. It notices
+`<…>` and `[…]`, bounded in length and stopped by whitespace so that *a < b*
+in prose is not a marker, and then asks *this* file — the only authority that
+matters.
+
+**Measured here.** On SmolLM2's vocabulary `<|im_start|>` costs seven ordinary
+tokens and `[INST]` costs three. Neither does anything. Nothing in the output
+says a person was wrong to write them: §3.15's job is to make the effect
+visible, not to grade the prompt.
+
 ## Changelog
+
+### Version 83 — a marker is shown as what it becomes
+
+F79. B-383: every marker-shaped thing in a prompt, with the two questions kept
+apart — whether the vocabulary has such a token, and what typing it actually
+produces. The second answer is always *ordinary text*, which is D46's safety
+property and was F37's expensive surprise.
 
 ### Version 82 — the prompt as the model receives it
 
