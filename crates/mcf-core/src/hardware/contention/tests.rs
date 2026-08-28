@@ -137,3 +137,67 @@ fn it_costs_the_interval_it_states_and_no_more() {
         "and reading /proc twice must not dominate the interval: {took:?}"
     );
 }
+
+/// **Steady against its own baseline, not quiet against a number** (B-217,
+/// DEC-007). The reading is a spread against the middle of what was competing,
+/// wherever that middle sits — a machine idling at forty percent has a
+/// baseline of forty percent, and refusing to measure below an absolute quiet
+/// would deny most people a result while telling them nothing.
+#[test]
+fn steadiness_is_measured_against_the_machines_own_middle() {
+    let held = super::steadiness(2);
+    assert_eq!(held.readings, 2, "two is the fewest that can show a spread");
+    if held.middle > 0 {
+        assert!(
+            held.spread.is_some(),
+            "a machine with something competing has a baseline to be steady against"
+        );
+    }
+    // The rendering says both halves: where it sat and how far it moved.
+    let text = format!("{held}");
+    assert!(
+        text.contains("competing") || text.contains("no baseline"),
+        "{text}"
+    );
+}
+
+/// **A machine with nothing competing has no baseline**, and the spread is a
+/// state rather than an infinity: dividing by a zero middle is exactly what A7
+/// turns into an answer instead of a number.
+#[test]
+fn nothing_competing_has_no_baseline_rather_than_a_perfect_one() {
+    let held = super::Steadiness {
+        middle: 0,
+        spread: None,
+        readings: 3,
+    };
+    assert!(
+        format!("{held}").contains("no baseline"),
+        "a zero baseline must not read as perfect steadiness: {held}"
+    );
+}
+
+/// Fewer than two readings cannot show a spread, so two is what it takes.
+#[test]
+fn one_reading_is_raised_to_two() {
+    assert_eq!(super::steadiness(0).readings, 2);
+    assert_eq!(super::steadiness(1).readings, 2);
+}
+
+/// It measures and does not judge: there is no threshold here, because what
+/// spread is too much is the band DEC-007 leaves open, and inventing one here
+/// would be the figure that decision exists to derive from measurement.
+#[test]
+fn it_reports_a_number_and_no_verdict() {
+    let held = super::steadiness(2);
+    // The type carries a number and no judgement — asserted on the rendering,
+    // because a value would be about the machine running the suite.
+    let said = format!("{held}");
+    for judgement in ["too ", "quiet", "unusable", "refus"] {
+        assert!(
+            !said.contains(judgement),
+            "no rendering here may judge a spread — what is too much is DEC-007's open band: \
+             `{judgement}` in {said}"
+        );
+    }
+}

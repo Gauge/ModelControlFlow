@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use mcf_bench::compare::{Discipline, Interleaving, Method, UnderTest};
+use mcf_bench::compare::{Discipline, Interleaving, MachineHeld, Method, UnderTest};
 use mcf_bench::record;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
@@ -35,6 +35,20 @@ const SECOND: u64 = 1_000_000_000;
 /// Stated rather than defaulted: §II asks that somebody else be able to repeat
 /// a measurement, and a `Method` a fixture left blank would be a fixture
 /// asserting that a blank one is enough (PR2, B30).
+/// What the machine was doing either side of these runs.
+///
+/// Stated rather than omitted: B-217 makes the machine's own movement a
+/// condition of a result, and a fixture that left it out would be a fixture
+/// asserting a run needs no such condition.
+fn watched() -> MachineHeld {
+    MachineHeld {
+        before: 4_000,
+        after: 4_200,
+        steady_before: Some(20_000),
+        steady_after: Some(30_000),
+    }
+}
+
 fn asked() -> Method {
     Method {
         prompt: "Once upon a time".to_owned(),
@@ -127,7 +141,7 @@ fn a_null_comparison() -> (Value, usize) {
     }
     let held = running.finish();
     let finding = held.finding(FIVE);
-    let body = record::comparison(&held, &finding, &asked());
+    let body = record::comparison(&held, &finding, &asked(), Some(&watched()));
     (body, held.pairs().len())
 }
 

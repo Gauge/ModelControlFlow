@@ -34,7 +34,9 @@ mod space;
 mod storage;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
-pub use contention::{Competitor, NAMED, OVER, Snapshot, sample as contention};
+pub use contention::{
+    Competitor, NAMED, OVER, Snapshot, Steadiness, sample as contention, steadiness,
+};
 pub use load::{LoadAverage, load_average};
 pub use processor::{Memory, PowerProfile, Processor};
 pub use scheduling::{Attributability, Scheduling, TOLERATED_DELAY_PPM, Watch, scheduling};

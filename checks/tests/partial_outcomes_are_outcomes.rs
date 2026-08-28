@@ -132,7 +132,7 @@ fn read(relative: &str) -> String {
 fn the_record_keeps_the_verdict_the_operator_was_shown() {
     let source = code_only(&read("crates/mcf-cli/src/bench.rs"));
     assert!(
-        source.contains("let body = record::comparison(held, finding, method);"),
+        source.contains("let body = record::comparison(held, finding, method, machine);"),
         "the record must be written from the finding the operator saw (A6)"
     );
     assert!(

@@ -36,7 +36,7 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use mcf_bench::compare::{Comparison, Discipline, Interleaving, Method, UnderTest};
+use mcf_bench::compare::{Comparison, Discipline, Interleaving, MachineHeld, Method, UnderTest};
 use mcf_bench::record;
 use mcf_bench::warmth::Warmth;
 use mcf_core::attested::Attested;
@@ -71,6 +71,62 @@ const CEILING: usize = 200;
 /// dominate on a small model, short enough that a hundred paired trials is
 /// minutes rather than an afternoon.
 const TOKENS: u32 = 128;
+
+/// The discipline, the method and the pinned budget, from what was asked.
+///
+/// D19's timing discipline made explicit — the seed is held still and the
+/// generation length is pinned, both travelling into every trial and into the
+/// record so a reader can never mistake this run's fixed seed for a behaviour
+/// run's mistake (B61, B-290). And the *method*, which the conditions do not
+/// say: §II asks that somebody else be able to repeat this, and a floor full
+/// of hardware does not tell them what to run (PR2, B30, B-211).
+fn asked_for(
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&str>,
+    resolving: PartsPerMillion,
+    cold: bool,
+) -> (Discipline, Method, Option<usize>) {
+    let tokens = limit
+        .and_then(|held| u32::try_from(held).ok())
+        .unwrap_or(TOKENS);
+    (
+        Discipline::Timing { seed, tokens },
+        Method {
+            prompt: prompt.to_owned(),
+            resolving,
+            ceiling: CEILING,
+            engine: engine.map(str::to_owned),
+            cold,
+        },
+        Some(usize::try_from(tokens).unwrap_or(usize::MAX)),
+    )
+}
+
+/// The machine either side of the run, from the reading taken before it and
+/// one taken now (B-217).
+///
+/// Taken here rather than at the top so that the second reading is genuinely
+/// after the last trial: a reading interleaved with the run would be MCF
+/// measuring itself measuring (§3.8, B3).
+fn watched(before: &mcf_core::hardware::Steadiness) -> MachineHeld {
+    let after = mcf_core::hardware::steadiness(WATCHED);
+    MachineHeld {
+        before: before.middle,
+        after: after.middle,
+        steady_before: before.spread,
+        steady_after: after.spread,
+    }
+}
+
+/// How many readings the machine is watched for, either side of a run.
+///
+/// Two, which is the fewest that can show a spread at all, and costs two
+/// stated intervals each side. A chosen number, stated in one line: more
+/// readings buy a firmer answer about the machine and are paid for in wall
+/// clock the operator is waiting through.
+const WATCHED: usize = 2;
 
 /// The difference a benchmark looks for when nobody says.
 ///
@@ -134,25 +190,7 @@ pub(crate) fn bench_where(
     cold: bool,
 ) -> Response {
     let resolving = resolving.unwrap_or(RESOLVING);
-    // D19's timing discipline, made explicit: the seed is held still and the
-    // generation length is pinned. Both travel into every trial and into the
-    // record, so a reader can never mistake this run's fixed seed for a
-    // behaviour run's mistake (B61, B-290).
-    let tokens = limit
-        .and_then(|held| u32::try_from(held).ok())
-        .unwrap_or(TOKENS);
-    let limit = Some(usize::try_from(tokens).unwrap_or(usize::MAX));
-    let discipline = Discipline::Timing { seed, tokens };
-    // What the question was, which the conditions do not say: §II asks that
-    // somebody else be able to repeat this, and a floor full of hardware does
-    // not tell them what to run (PR2, B30, B-211).
-    let method = Method {
-        prompt: prompt.to_owned(),
-        resolving,
-        ceiling: CEILING,
-        engine: engine.map(str::to_owned),
-        cold,
-    };
+    let (discipline, method, limit) = asked_for(prompt, limit, seed, engine, resolving, cold);
     let (left_path, right_path) = match (located(left), located(right)) {
         (Ok(one), Ok(other)) => (one, other),
         (Err(text), _) | (_, Err(text)) => {
@@ -212,6 +250,11 @@ pub(crate) fn bench_where(
         };
     }
 
+    // What the machine was doing before the first trial (B-217, §3.8). Two
+    // readings, because two is the fewest that can show a spread — and neither
+    // during the run, because sampling while measuring would make MCF one of
+    // the competitors it reports.
+    let before = mcf_core::hardware::steadiness(WATCHED);
     let held = interleave(
         &socket,
         Arms {
@@ -241,6 +284,7 @@ pub(crate) fn bench_where(
         };
     }
 
+    let machine = watched(&before);
     let finding = held.finding(resolving);
     // B24, PR5: a run that could not decide is one whose next question is
     // *what was competing with it*, and MCF is the only thing positioned to
@@ -252,7 +296,13 @@ pub(crate) fn bench_where(
         Some(mcf_bench::enough::Verdict::NotYet { .. })
     )
     .then(mcf_core::hardware::contention);
-    let written = keep(&held, &finding, &method, mcf_core::time::Timestamp::now());
+    let written = keep(
+        &held,
+        &finding,
+        &method,
+        Some(&machine),
+        mcf_core::time::Timestamp::now(),
+    );
     let competing_written = competing
         .as_ref()
         .map(|held| keep_contention(held, mcf_core::time::Timestamp::now()));
@@ -264,6 +314,7 @@ pub(crate) fn bench_where(
             &finding,
             &held,
             &written,
+            &machine,
             competing.as_ref(),
             competing_written.as_ref(),
         ),
@@ -699,6 +750,7 @@ fn keep(
     held: &Comparison<Monotonic>,
     finding: &mcf_bench::compare::Finding,
     method: &Method,
+    machine: Option<&MachineHeld>,
     at: Timestamp,
 ) -> Result<PathBuf, String> {
     let Some(path) = mcf_record::journal::default_path() else {
@@ -710,7 +762,7 @@ fn keep(
     // it took the *default* resolution rather than the one they asked about, so
     // a caller who asked about half a percent was shown one verdict and the
     // record kept another — two answers to one question (A6).
-    let body = record::comparison(held, finding, method);
+    let body = record::comparison(held, finding, method, machine);
     journal
         .append(&Record::new(EntryKind::Comparison, at, body))
         .map(|_id| path)
@@ -731,6 +783,7 @@ fn report(
     finding: &mcf_bench::compare::Finding,
     held: &Comparison<Monotonic>,
     written: &Result<PathBuf, String>,
+    machine: &MachineHeld,
     competing: Option<&mcf_core::hardware::Snapshot>,
     competing_written: Option<&Result<PathBuf, String>>,
 ) -> String {
@@ -741,6 +794,7 @@ fn report(
         "── how it was taken ─────────────────────────────────────────".to_owned(),
         format!("  {}", held.discipline()),
         format!("  reuse    {}", held.reuse()),
+        format!("  machine  {machine}"),
         format!(
             "  pairs    {} interleaved, order drawn per pair",
             held.pairs().len()

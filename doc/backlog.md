@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 184 |
+| **Version** | 185 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (101 done, 1 dropped, 12 in progress,
-36 blocked on a decision, 67 open).** Every item cites
+decided, 23 resolved) and 217 build items (101 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 66 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -318,7 +318,7 @@ first and importance second.
 | B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
 | B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [PR1](proposals.md#pr1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
 | B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
-| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | open Reshaped: not *refuse on a contended machine* but *refuse on a machine that is not in its own steady state*, and refuse again if it leaves that state mid-run. An absolute threshold would be a figure MCF chose, and would deny a result to anyone whose baseline sits above it (DEC-007). |
+| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | in progress The measurement is built and the refusal is not (F71). `contention::steadiness` reports a machine's own spread across successive readings, and every comparison now records the competing processor time before it and after it, rendered as a condition: *the level moved N% across the run, which is a condition and not a verdict*. Exercised both ways on this machine — 0.0% quiet, 1740% with load started mid-run, the latter still reporting its verdict beside the fact that the floor moved. The refusal itself stays blocked on DEC-007, which now has measurements to be decided from: a threshold invented here would be exactly the figure that decision exists to derive. |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
@@ -394,6 +394,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 185 — the machine either side of a run
+
+B-217 in progress. The quiet-machine pre-flight built as a measurement rather
+than a gate: `contention::steadiness`, a `MachineHeld` on every comparison, and
+the movement across a run rendered and recorded as a condition. The refusal
+stays with DEC-007, which now has something measured to decide from. F71.
 
 ### Version 184 — a run that could not decide names what it competed with
 

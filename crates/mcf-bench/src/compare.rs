@@ -1217,6 +1217,85 @@ pub struct Method {
     pub cold: bool,
 }
 
+/// How much the machine's own load moved across a run (B-217, D8, §3.8).
+///
+/// **Two readings, one either side.** F51 measured contention shifting a run's
+/// whole distribution by sixty-six percent, and interleaving is what cancels
+/// it — but only where the shift is common to both arms. A machine that was
+/// one thing when a run began and another when it ended is a condition of the
+/// result, and this is where it stops being invisible.
+///
+/// **Neither reading is taken during the run**, because sampling while
+/// measuring would make MCF one of the competitors it reports (§3.8, B3). What
+/// they can show is a level that moved; what they cannot show is a level that
+/// moved and moved back.
+///
+/// **It carries no verdict.** What movement is too much is the band DEC-007
+/// leaves open. A threshold here would be the figure that decision exists to
+/// derive from measurement, so this is recorded and reported and refuses
+/// nothing (B-217).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MachineHeld {
+    /// What was competing before the first trial, in thousandths of a core.
+    pub before: u64,
+    /// And after the last.
+    pub after: u64,
+    /// How far the readings before the run spread, in parts per million of
+    /// their middle, or `None` where nothing measurable was competing.
+    pub steady_before: Option<u64>,
+    /// The same, after.
+    pub steady_after: Option<u64>,
+}
+
+impl MachineHeld {
+    /// How far the level moved across the run, in parts per million of the
+    /// smaller of the two.
+    ///
+    /// `None` where either end had nothing measurable competing: a move from
+    /// nothing to something is not a ratio, and reporting one would be
+    /// dividing by a zero A7 turns into a state.
+    #[must_use]
+    pub fn moved(&self) -> Option<u64> {
+        let smaller = self.before.min(self.after);
+        if smaller == 0 {
+            return None;
+        }
+        u64::try_from(
+            u128::from(self.before.abs_diff(self.after))
+                .saturating_mul(1_000_000)
+                .wrapping_div(u128::from(smaller)),
+        )
+        .ok()
+    }
+}
+
+impl fmt::Display for MachineHeld {
+    #[allow(clippy::integer_division)]
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            form,
+            "{}.{:02} core(s) competing before, {}.{:02} after",
+            self.before / 1000,
+            (self.before % 1000) / 10,
+            self.after / 1000,
+            (self.after % 1000) / 10
+        )?;
+        match self.moved() {
+            Some(moved) => write!(
+                form,
+                " — the level moved {}.{}% across the run, which is a condition and not a \
+                 verdict: what movement is too much is DEC-007's open band",
+                moved / 10_000,
+                (moved / 1_000) % 10
+            ),
+            None => form.write_str(
+                " — one end had nothing measurable competing, so there is no ratio between them \
+                 (A7)",
+            ),
+        }
+    }
+}
+
 /// Runs two arms alternately, randomizing which goes first in each pair.
 ///
 /// This is the constructor that makes B53 structural rather than advisory:

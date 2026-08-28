@@ -17,7 +17,7 @@ use mcf_core::time::{Duration, Monotonic};
 use mcf_core::trial::{Arm, SessionId};
 use mcf_record::json::Value;
 
-use crate::compare::{Comparison, Discipline, Interleaving, Method, UnderTest};
+use crate::compare::{Comparison, Discipline, Interleaving, MachineHeld, Method, UnderTest};
 use crate::warmth::Warmth;
 
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
@@ -28,6 +28,20 @@ const SECOND: u64 = 1_000_000_000;
 /// Stated rather than defaulted: §II asks that somebody else be able to repeat
 /// a measurement, and a `Method` a fixture left blank would be a fixture
 /// asserting that a blank one is enough (PR2, B30).
+/// What the machine was doing either side of these runs.
+///
+/// Stated rather than omitted: B-217 makes the machine's own movement a
+/// condition of a result, and a fixture that left it out would be a fixture
+/// asserting a run needs no such condition.
+fn watched() -> MachineHeld {
+    MachineHeld {
+        before: 4_000,
+        after: 4_200,
+        steady_before: Some(20_000),
+        steady_after: Some(30_000),
+    }
+}
+
 fn asked() -> Method {
     Method {
         prompt: "Once upon a time".to_owned(),
@@ -96,7 +110,7 @@ fn an_interruption_reaches_the_record() {
     running.stopped_short("the daemon stopped answering");
     let held = running.finish();
 
-    let body = super::comparison(&held, &held.finding(FIVE), &asked());
+    let body = super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched()));
     assert_eq!(
         body.get("cut_short").and_then(Value::as_text),
         Some("the daemon stopped answering")
@@ -122,7 +136,7 @@ fn a_finished_run_records_no_interruption() {
         4,
     );
     assert_eq!(
-        super::comparison(&held, &held.finding(FIVE), &asked()).get("cut_short"),
+        super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched())).get("cut_short"),
         Some(&Value::Null)
     );
 }
@@ -186,7 +200,7 @@ fn a_null_result_is_written_as_a_result() {
         40,
     );
     let finding = held.finding(FIVE);
-    let body = super::comparison(&held, &finding, &asked());
+    let body = super::comparison(&held, &finding, &asked(), Some(&watched()));
 
     assert_eq!(text(&body, &["outcome", "kind"]), "same");
     assert_eq!(
@@ -208,7 +222,7 @@ fn the_distribution_is_written_and_not_only_the_verdict() {
         SECOND,
         12,
     );
-    let body = super::comparison(&held, &held.finding(FIVE), &asked());
+    let body = super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched()));
     let pairs = body
         .get("pairs")
         .and_then(Value::as_list)
@@ -245,7 +259,7 @@ fn a_refused_comparison_is_written_as_an_outcome() {
         SECOND,
         12,
     );
-    let body = super::comparison(&held, &held.finding(FIVE), &asked());
+    let body = super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched()));
     assert_eq!(text(&body, &["outcome", "kind"]), "not_comparable");
     assert_eq!(
         body.get("outcome").and_then(|held| held.get("difference")),
@@ -275,7 +289,7 @@ fn a_declared_confound_is_written_with_its_reason() {
         12,
     )
     .declaring("the second arm could only be run once the machine was warm");
-    let body = super::comparison(&held, &held.finding(FIVE), &asked());
+    let body = super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched()));
     assert_eq!(text(&body, &["outcome", "kind"]), "differ");
     assert_eq!(
         text(&body, &["declared_confound"]),
@@ -294,7 +308,7 @@ fn both_arms_conditions_are_written() {
         SECOND,
         4,
     );
-    let body = super::comparison(&held, &held.finding(FIVE), &asked());
+    let body = super::comparison(&held, &held.finding(FIVE), &asked(), Some(&watched()));
     assert_eq!(text(&body, &["left", "conditions", "quantization"]), "q8_0");
     assert_eq!(
         text(&body, &["right", "conditions", "quantization"]),

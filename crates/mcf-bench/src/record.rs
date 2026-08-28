@@ -40,7 +40,7 @@ use mcf_record::encode;
 use mcf_record::json::Value;
 
 use super::compare::{
-    Comparison, Difference, Discipline, Finding, Method, Side, Strength, UnderTest,
+    Comparison, Difference, Discipline, Finding, MachineHeld, Method, Side, Strength, UnderTest,
 };
 use super::enough::Verdict;
 
@@ -54,6 +54,7 @@ pub fn comparison<K: ClockKind + Measurable>(
     held: &Comparison<K>,
     finding: &Finding,
     method: &Method,
+    machine: Option<&MachineHeld>,
 ) -> Value {
     let (left, right) = held.arms();
     let (left_first, right_first) = held.order_balance();
@@ -79,6 +80,10 @@ pub fn comparison<K: ClockKind + Measurable>(
         // that somebody else be able to repeat this, and a floor full of
         // hardware does not tell them what to run (PR2, B30, B-211).
         ("method", self::method(method)),
+        // What the machine was doing either side of the run (B-217, §3.8). A
+        // level that moved is a condition of the result; it carries no verdict,
+        // because what movement is too much is DEC-007's open band.
+        ("machine", machine.map_or(Value::Null, held_machine)),
         // §6.13, B-081: what the run reused. A mixed run is not one
         // measurement, and this is where that stops being invisible.
         ("reuse", Value::text(held.reuse().condition())),
@@ -90,6 +95,28 @@ pub fn comparison<K: ClockKind + Measurable>(
             held.cut_short().map_or(Value::Null, Value::text),
         ),
         ("pairs", Value::List(pairs(held))),
+    ])
+}
+
+/// How much the machine's own load moved across the run (B-217).
+fn held_machine(held: &MachineHeld) -> Value {
+    let fraction = |value: Option<u64>| {
+        value.map_or(Value::Null, |held| {
+            Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+        })
+    };
+    Value::map([
+        (
+            "competing_before_thousandths",
+            Value::Integer(i64::try_from(held.before).unwrap_or(i64::MAX)),
+        ),
+        (
+            "competing_after_thousandths",
+            Value::Integer(i64::try_from(held.after).unwrap_or(i64::MAX)),
+        ),
+        ("steady_before_ppm", fraction(held.steady_before)),
+        ("steady_after_ppm", fraction(held.steady_after)),
+        ("moved_ppm", fraction(held.moved())),
     ])
 }
 

@@ -124,6 +124,88 @@ impl fmt::Display for Snapshot {
     }
 }
 
+/// How much this machine's own load moved while it was watched (B-217, D8,
+/// §3.8, DEC-007).
+///
+/// **Steady against its own baseline, not quiet against a number.** The
+/// operator's answer of 2026-08-27 is explicit: a user's machine may idle at
+/// thirty or forty percent and that is *its* normal, and refusing to measure
+/// below an absolute quiet would deny most people a result while telling them
+/// nothing. So what is asked here is whether the machine held still, wherever
+/// it was sitting — the spread of what was competing, against the middle of it.
+///
+/// **This measures; it does not judge.** What spread is too much is the band
+/// DEC-007 leaves open, and a threshold invented here would be exactly the
+/// figure that decision exists to derive from measurement. So the number is
+/// reported and carried as a condition, and the refusal B-217 eventually wants
+/// waits for somebody to have measured what it should be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Steadiness {
+    /// The middle of what was competing, in thousandths of a core.
+    pub middle: u64,
+    /// How far the readings spread, in parts per million of that middle.
+    ///
+    /// `None` where the middle is zero — a machine with nothing competing has
+    /// no baseline to be steady against, and dividing by it would be an
+    /// infinity where A7 wants a state (§3.4).
+    pub spread: Option<u64>,
+    /// How many readings it rests on.
+    pub readings: usize,
+}
+
+impl fmt::Display for Steadiness {
+    #[allow(clippy::integer_division)]
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.spread {
+            Some(spread) => write!(
+                form,
+                "{}.{:02} core(s) competing, holding to {}.{}% over {} reading(s)",
+                self.middle / 1000,
+                (self.middle % 1000) / 10,
+                spread / 10_000,
+                (spread / 1_000) % 10,
+                self.readings
+            ),
+            None => write!(
+                form,
+                "nothing measurable competing over {} reading(s), so there is no baseline to be \
+                 steady against",
+                self.readings
+            ),
+        }
+    }
+}
+
+/// Watches this machine hold still, or not.
+///
+/// Blocks for `readings` times [`OVER`]. Two is the fewest that can show a
+/// spread at all; a caller wanting a firmer answer pays for more readings, and
+/// that cost is theirs to spend.
+#[must_use]
+pub fn steadiness(readings: usize) -> Steadiness {
+    let mut seen: Vec<u64> = (0..readings.max(2)).map(|_| sample().cores_taken).collect();
+    seen.sort_unstable();
+    let middle = seen.get(seen.len().wrapping_div(2)).copied().unwrap_or(0);
+    let spread = seen
+        .last()
+        .zip(seen.first())
+        .map(|(most, least)| most.saturating_sub(*least))
+        .filter(|_| middle > 0)
+        .map(|held| {
+            u64::try_from(
+                u128::from(held)
+                    .saturating_mul(1_000_000)
+                    .wrapping_div(u128::from(middle)),
+            )
+            .unwrap_or(u64::MAX)
+        });
+    Steadiness {
+        middle,
+        spread,
+        readings: seen.len(),
+    }
+}
+
 /// Samples what is competing for this machine, now.
 ///
 /// Blocks for [`OVER`], because a rate needs two readings. Callers take this

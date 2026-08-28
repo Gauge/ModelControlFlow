@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 74 |
+| **Version** | 75 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -98,6 +98,7 @@ forward as one.
 | 68 | [F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii) |
 | 69 | [F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)](#69--f69--a-band-predicted-before-the-measurement-and-the-measurement-landed-in-it-b-214-b-215-pr3-a20-b46-616-f67) |
 | 70 | [F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)](#70--f70--a-run-that-cannot-decide-names-what-it-competed-with-and-i-could-not-make-one-b-216-pr5-38-b24-b4-d25-f55) |
+| 71 | [F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5422,7 +5423,61 @@ numbers, each stated in one line. And the command lines go into the operator's
 own record — §3.20's gate is on whatever *sends* a record, and `mcf bundle`
 already lists what leaves.
 
+## 71 · F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)
+
+**The item as written, and why it could not be built that way.** B-217 asked
+for a *quiet-machine pre-flight*: a laboratory that refuses to begin on a
+contended machine rather than producing an invalid result. Reshaping it in the
+register already moved it once — not *refuse on a contended machine* but
+*refuse on a machine that is not in its own steady state* — because a machine
+with a baseline load of two cores is not a broken machine, it is somebody's
+machine. Building even the reshaped version stops at the same wall: **refusing
+requires a threshold, and a threshold is a figure MCF would be choosing.**
+DEC-007 leaves that band open on purpose. A number invented here would deny a
+result to every operator whose ordinary baseline sits above it, and would be
+exactly the kind of figure that decision exists to derive from measurement
+rather than from taste.
+
+**So the measurement was built and the refusal was not.**
+`mcf_core::hardware::contention::steadiness(readings)` takes *n* successive
+contention samples and reports the middle reading, the spread between the
+extremes as parts-per-million of that middle, and how many readings it took.
+Its doc comment says the thing outright: *this measures; it does not judge.*
+`Comparison` gained a `MachineHeld` — competing processor time before the run
+and after it, with room for the steady-state readings on either side — and
+`moved()` reports the shift as parts-per-million of the smaller figure. It is
+recorded as a condition (§3.4, A6) and rendered as one:
+
+```
+machine  0.15 core(s) competing before, 0.15 after — the level moved 0.0%
+         across the run, which is a condition and not a verdict: what movement
+         is too much is DEC-007's open band
+```
+
+**Both halves were exercised on the real machine.** A run on the quiet machine
+reported 0.15 cores before and 0.15 after, a movement of 0.0%. A run with forty
+spinning processes started eight seconds *into* it reported 0.25 cores before
+and 4.60 after — a movement of 1740% — and still produced its verdict, which
+now arrives next to the fact that the floor moved by a factor of eighteen
+underneath it. That is A7 rather than A5: MCF does not know that this verdict
+is wrong, and saying so would be a claim it cannot support. It knows the
+conditions were not held, and it says that instead.
+
+**What this leaves open, deliberately.** The reader of such a record can
+discard it; MCF cannot discard it for them. The gate B-217 originally wanted is
+still the right eventual behaviour, and it stays blocked on DEC-007 — which now
+has something to be decided *from*, since every comparison recorded from here
+carries the movement its own machine showed. That is the intended direction of
+travel: the measurement precedes the threshold, and B-217 stays in progress
+until the threshold has a measured basis rather than an assumed one.
+
 ## Changelog
+
+### Version 75 — the machine either side of a run
+
+F71. B-217's pre-flight, built as a measurement and not as a gate: a comparison
+now carries what the machine was doing before it and after it, because the
+threshold that would justify a refusal is the figure DEC-007 exists to derive.
 
 ### Version 74 — a run that cannot decide names what it competed with
 

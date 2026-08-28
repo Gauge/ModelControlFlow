@@ -183,11 +183,21 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
         &finding,
         &held,
         &Err("nowhere to write".to_owned()),
+        &mcf_bench::compare::MachineHeld {
+            before: 4_000,
+            after: 41_000,
+            steady_before: Some(10_000),
+            steady_after: Some(300_000),
+        },
         Some(&snapshot),
         Some(&Err("nor the snapshot".to_owned())),
     );
 
     assert!(said.contains("what was competing"), "{said}");
+    assert!(
+        said.contains("the level moved") && said.contains("not a verdict"),
+        "the machine's own movement is a condition and never a judgement (B-217, DEC-007): {said}"
+    );
     assert!(said.contains("a burner somebody left running"), "{said}");
     assert!(
         said.contains("must not attribute that"),
