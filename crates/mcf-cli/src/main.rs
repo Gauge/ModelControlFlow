@@ -26,6 +26,7 @@ mod provision;
 mod pull;
 mod run;
 mod say;
+mod segment;
 mod serve;
 mod show;
 mod verify;
@@ -162,6 +163,13 @@ enum Request<'a> {
         /// many they have. What MCF owes in return is a proposal naming what
         /// fits and what does not, rather than a quietly smaller run (§3.1).
         within: Option<u64>,
+    },
+    /// Show how a model's vocabulary segments a prompt.
+    Segment {
+        /// The model whose vocabulary does the segmenting.
+        model: &'a str,
+        /// The text to segment.
+        prompt: &'a str,
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
@@ -494,6 +502,19 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["stop", argument, ..] => Request::UnexpectedArgument {
             command: "stop",
+            argument,
+        },
+        ["segment", model, "--prompt", prompt] => Request::Segment { model, prompt },
+        ["segment", _model] | ["segment", _model, "--prompt"] => Request::MissingArgument {
+            command: "segment",
+            needs: "--prompt <text>",
+        },
+        ["segment"] => Request::MissingArgument {
+            command: "segment",
+            needs: "<model> --prompt <text>",
+        },
+        ["segment", _, argument, ..] => Request::UnexpectedArgument {
+            command: "segment",
             argument,
         },
         ["list"] => Request::List,
@@ -1108,6 +1129,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
                  \x20                                     what MCF would choose, and what\n\
                  \x20                                     it cannot tell you\n\
+                 \x20 mcf segment <model>                 the prompt as the model actually\n\
+                 \x20             --prompt <text>         receives it, fragment by fragment:\n\
+                 \x20                                     where text breaks, and where this\n\
+                 \x20                                     vocabulary has no word for it\n\
                  \x20 mcf status                          ask a running daemon what it is\n\
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -1214,6 +1239,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Embed { model, text } => embed::run(model, text),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
+        Request::Segment { model, prompt } => segment::run(model, prompt),
         Request::List => models::list(),
         Request::Remove {
             names,
@@ -1306,6 +1332,10 @@ mod tests {
         // And `mcf bench`, which compares two models on an engine that can be
         // timed and has no pass condition (B-080, A18).
         assert!(text.contains("mcf bench"), "{text}");
+        // And `mcf segment`, which shows a prompt as the model's own
+        // vocabulary produces it, with no generation and no judgement
+        // (B-381, PR11, §3.15).
+        assert!(text.contains("mcf segment"), "{text}");
         for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),

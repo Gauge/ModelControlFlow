@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 190 |
+| **Version** | 191 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **273 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 218 build items (108 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 60 open).** Every item cites
+decided, 23 resolved) and 218 build items (109 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 59 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -224,7 +224,7 @@ first and importance second.
 | B-378 | A gate test whose result depends on whether a daemon happens to be running on the machine | §3.12, B-003 | Every test in the gating tier reports on what it was given, not on ambient machine state | **done** (F47) — `run_where` takes where the daemon is as an argument and `run` looks it up and passes it in; the tests call a helper named `without_a_daemon`, so what they assume is in the name rather than in the environment. Shown in the direction that matters: the tests now pass identically with a daemon running and with none, where before it was pass-without and fail-with. A table-driven check keeps the shape from coming back and was shown to fire; a second test asserts every alternative it names exists. The table watches one call in one file — the regression is mechanical, the class is not |
 | B-379 | What a language costs this model: tokens spent per character of the same text, per language, from the vocabulary alone | §3.15, §X, B-057, B49 | `mcf explain` states what each of a stated set of languages costs on this model's vocabulary, as a ratio against its cheapest, with no generation and no judgement | open — measured already and worth surfacing: on one sentence, SmolLM2 spends 52 tokens on Japanese where gemma3 spends 20, which is 2.6x the money, 2.6x the context and 2.6x the time. It is the operator's *expose the meaningful values so people learn to read them* (DEC-002) in its cheapest form, and it is a fact about the vocabulary rather than a claim about the model's fluency — which is the distinction that must survive into the wording |
 | B-380 | Touchstones: every measured value MCF shows a non-technical reader carries a plain-language note on what a high or low reading tends to mean, marked as guidance rather than as a result | DEC-002, A21, §3.15, §3.18 | No touchstone is phrased as a measurement; each names what MCF has *not* measured about the relation it describes; a laboratory that measures one replaces it and the replacement is visible as a change | open — the operator's addition to DEC-002. The hazard is the whole of the design: a rule of thumb printed beside a measured number in the same typeface becomes a measured number to a reader who is not looking for the difference, and the readers this is *for* are exactly those readers. The three states MCF already applies to a model's declarations are the shape — declared, verified, unknown — turned on MCF's own sentences **Where first, operator's answer 2026-08-27: the comparison view, and `mcf explain` second.** A number teaches by contrast — 0.77 tokens per character means nothing alone and everything beside 2.00 — so a reader placed in front of two values *sees* the difference the touchstone describes instead of being asked to believe it. `mcf explain` then serves the curious reader for a single model, having already learned what the column means. `mcf run`'s footer stays conditions only: it is the wrong moment to teach, and a footer that grows is the one people stop reading. |
-| B-381 | Segmentation: the prompt shown as the tokens the model actually receives, fragment by fragment | PR11, §3.15, §X | A person can see where their text breaks into pieces, where a vocabulary has no word for what they wrote, and where a term survives whole; no generation and no judgement is involved | open — accepted from PR11. The observation the idea came from: a vocabulary handles text it does not contain by shattering it, and *where it has to* is where a model's grip is weakest. Nothing in an editor distinguishes a term that survives as one token from one that becomes six |
+| B-381 | Segmentation: the prompt shown as the tokens the model actually receives, fragment by fragment | PR11, §3.15, §X | A person can see where their text breaks into pieces, where a vocabulary has no word for what they wrote, and where a term survives whole; no generation and no judgement is involved | done `mcf segment <model> --prompt <text>`: every token, the text it contributed exactly, whether the vocabulary reached for a raw byte, and how many whitespace-separated words survived whole. No generation and no judgement (§3.15). Contributions are byte-differences of successive decodes rather than per-token decodes, which is the only correct method for a byte-level vocabulary (F19) — the naive one reported a whole Japanese phrase as one token's work, and that string is now a test. F78. |
 | B-382 | Prompt cost: what a prompt spends, against what this model can actually take | PR11, B-055, §3.8 | The token count of a prompt is stated against the *usable* context measured for this model rather than the declared one, so that a guidance document too long for a model is known before it is sent | open — accepted from PR11. Arithmetic, plus the usable context B-055 already measures. The same document is a rounding error on one model's window and a tenth of another's, and the difference is the vocabulary rather than the word count |
 | B-383 | Marker fidelity: which of the markers a person wrote are real control tokens for this model, and which are ordinary text | PR11, F26, F37, F38, §3.7 | A marker typed into a prompt is shown as what it becomes; a template whose markers do not survive is visible as such before it is relied on | open — accepted from PR11, and the one with a measured cost behind it. F37: `<|im_start|>` written into a prompt reaches the model as **eight ordinary tokens**, and the table that produced was the most decisive-looking wrong answer in this repository. A person tuning a prompt today has strictly less visibility than the probe that was fooled. The machinery exists — the marker check was built because F37 forced it |
 | B-384 | How large a model MCF's own engine can usefully read: the size at which its answer stops arriving in a useful time, measured rather than assumed | PR12, B-366, B-372, D31, B49 | A stated size, measured across the models held, with the cost per token at each; the reference role's *validation* half is chosen by that number rather than by convenience | open — accepted from PR12 and sequenced after B-366, which moves the number. Nothing between 0.6 billion and 27 billion has been tried: the small end is 0.9 s a forward pass and the large end is refused outright, and the whole middle is unmeasured. Until it is measured, *how big a model can MCF check itself on* is answered by whatever happens to be on the disk |
@@ -395,6 +395,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 191 — the prompt as the model receives it
+
+B-381 done. And a silent `unwrap_or` found in the process, which had been
+reporting a whole Japanese phrase as the contribution of its last token: A2's
+silent failure with a friendly name. F78.
 
 ### Version 190 — four outcomes and no total
 

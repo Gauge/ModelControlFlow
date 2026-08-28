@@ -744,8 +744,19 @@ impl Vocabulary {
     }
 
     /// Whether an identifier names a raw byte rather than a piece.
+    ///
+    /// **The strongest available signal that a vocabulary has no word for
+    /// what somebody wrote** (B-381). A byte token is the fallback a
+    /// segmentation reaches for when nothing in the vocabulary covers the
+    /// text, so a run of them is text this model has never seen spelled that
+    /// way — a fact about the vocabulary, not about the writing.
+    ///
+    /// `false` where the file carries no token-type array, which is *not
+    /// known to be a byte* rather than *known not to be*: the spelling
+    /// `<0xNN>` is what such a vocabulary's byte tokens look like, and a
+    /// caller needing certainty has the spelling to read.
     #[must_use]
-    fn is_byte(&self, identifier: usize) -> bool {
+    pub fn is_byte(&self, identifier: usize) -> bool {
         self.byte_tokens.get(identifier).copied().unwrap_or(false)
     }
 

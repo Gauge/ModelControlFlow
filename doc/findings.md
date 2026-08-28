@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 81 |
+| **Version** | 82 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -105,6 +105,7 @@ forward as one.
 | 75 | [F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7) |
 | 76 | [F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)](#76--f76--a-run-that-reports-as-it-goes-shows-what-moves-not-what-has-not-decided-b-227-a4-31-a18) |
 | 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
+| 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5807,7 +5808,88 @@ code without the comments now — the second time this repository has met that
 shape, and the rule is the same as it was: a check that blocks the correct work
 teaches people to write around it.
 
+## 78 · F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)
+
+**The observation PR11 came from.** A vocabulary handles text it does not
+contain by shattering it, and *where* it shatters is invisible to the person
+who wrote the text. A token count answers *how much*; it cannot answer *where*,
+and a word that survives whole and a word broken into seven bytes add the same
+amount to the same total.
+
+**`mcf segment <model> --prompt <text>`.** No generation, no judgement: it
+reads the vocabulary out of the file and shows what that vocabulary does.
+
+```
+$ mcf segment SmolLM2-135M-Instruct-Q4_K_M.gguf --prompt "The antidisestablishmentarianism debate"
+7 token(s) for 39 character(s) of text, on a vocabulary of 49152 token(s)
+
+  #0        504  "The"
+  #1       1598  " ant"
+  #2      17889  "idis"
+  #3      30834  "establish"
+  #4        358  "ment"
+  #5      35050  "arianism"
+  #6       6866  " debate"
+
+2 of 3 whitespace-separated word(s) survived as a single token; the rest were
+broken into pieces. Where a word breaks is a property of this model's
+vocabulary and not of the writing, and nothing here rates it (§3.15).
+```
+
+**And the same eight characters on two vocabularies.** SmolLM2's byte-level
+BPE spends **fifteen** tokens on `日本語のテキスト`, alternating an incomplete
+byte with the token that completes the character:
+
+```
+  #7      11100  "�"
+  #8        224  "テ"
+  #9      10391  "�"
+  #10       251  "キ"
+```
+
+Llama's SentencePiece vocabulary spends **two** tokens on `日本` where
+SmolLM2 spends five. Neither is a defect and MCF says so about neither: it is
+what these two vocabularies contain, and the reader who is choosing a model for
+Japanese now has the fact in front of them rather than a total they cannot
+decompose.
+
+**A round trip that is not one is said out loud.** On the Llama vocabulary the
+same command reports: *What came back is not what was typed: `"<s> 日本 hello"`
+against `"日本 hello"`* — the beginning-of-text token the file asks for and the
+space `SentencePiece` was trained with. A surface that quietly stripped those
+would be hiding two things the model definitely receives (A1, F19).
+
+**A bug this found, which is the part worth keeping.** The first version took
+each token's contribution as `decode(k).strip_prefix(decode(k-1))`, with a
+fallback to the whole string when the prefix did not match. On English it was
+correct everywhere. On Japanese it reported:
+
+```
+  #14       226  "日本語のテキスト"
+```
+
+— the last token of the phrase appearing to have produced the entire phrase.
+The cause is F19's: a byte-level vocabulary spells one character across
+several tokens, so the decode of *k* tokens is **not** the decode of *k-1* with
+something appended. The replacement mark standing in for the incomplete
+character is *replaced* by the character it stood for, the prefix strip fails,
+and `unwrap_or` supplied a confident wrong answer. Comparing **bytes** and
+taking what follows the common run is correct in both cases, and the failing
+string is now a test.
+
+The general lesson is not about tokenizers. `unwrap_or` on a fallible
+derivation is A2's silent failure with a friendly name: the code kept going,
+the output looked plausible, and only text in a script the author had not tried
+made it visible.
+
 ## Changelog
+
+### Version 82 — the prompt as the model receives it
+
+F78. B-381: `mcf segment` shows where a prompt breaks, fragment by fragment,
+with no generation and no judgement. Fifteen tokens for eight Japanese
+characters on one vocabulary and four on another — and a silent `unwrap_or`
+that had been reporting a whole phrase as one token's work.
 
 ### Version 81 — four outcomes and no total
 

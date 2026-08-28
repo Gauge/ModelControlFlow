@@ -810,7 +810,7 @@ fn as_identifiers(path: &Path, prompt: &str) -> Option<Vec<usize>> {
 /// The same three sizes `run` uses, because reading sixteen gigabytes to
 /// tokenize four words would make a benchmark's first act its slowest
 /// (B-372).
-fn read_prefix(path: &Path) -> Option<Vec<u8>> {
+pub(crate) fn read_prefix(path: &Path) -> Option<Vec<u8>> {
     use std::io::Read as _;
 
     let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
@@ -845,7 +845,7 @@ fn quantization_of(path: &Path) -> Option<String> {
 }
 
 /// Resolves a model reference, or the sentence explaining why it did not.
-fn located(model: &str) -> Result<PathBuf, String> {
+pub(crate) fn located(model: &str) -> Result<PathBuf, String> {
     match crate::run::resolve(model) {
         Ok(Some(path)) => Ok(path),
         Ok(None) => Err(format!(

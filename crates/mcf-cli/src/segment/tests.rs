@@ -1,0 +1,96 @@
+//! A segmentation shows where text breaks, and rates nothing.
+
+use super::{Fragment, whole_or_shattered};
+
+fn fragment(text: &str, byte: bool) -> Fragment {
+    Fragment {
+        identifier: 1,
+        text: text.to_owned(),
+        byte,
+    }
+}
+
+#[test]
+fn a_word_that_is_one_token_survives_whole() {
+    let said = whole_or_shattered(
+        "hello world",
+        &[fragment(" hello", false), fragment(" world", false)],
+    );
+    assert!(said.contains("2 of 2"), "{said}");
+}
+
+#[test]
+fn a_word_broken_into_pieces_is_counted_as_broken() {
+    let said = whole_or_shattered(
+        "antidisestablishmentarianism",
+        &[
+            fragment(" antid", false),
+            fragment("isestab", false),
+            fragment("lishmentarianism", false),
+        ],
+    );
+    assert!(said.contains("0 of 1"), "{said}");
+}
+
+#[test]
+fn raw_bytes_are_named_as_the_vocabulary_having_no_piece() {
+    let said = whole_or_shattered("日本", &[fragment("日", true), fragment("本", true)]);
+    assert!(
+        said.contains("2 token(s) are raw bytes"),
+        "a byte fallback is the strongest signal that this vocabulary has no word for the \
+         text, and hiding it in a count would lose it: {said}"
+    );
+}
+
+#[test]
+fn nothing_here_rates_the_segmentation() {
+    let said = whole_or_shattered("hello", &[fragment(" hello", false)]);
+    assert!(
+        said.contains("nothing here rates it"),
+        "§3.15: MCF shows where text breaks and does not say whether that is good: {said}"
+    );
+    for judgement in ["poor", "bad", "inefficient", "wasteful", "should"] {
+        assert!(!said.contains(judgement), "{judgement} in {said}");
+    }
+}
+
+#[test]
+fn text_with_no_words_says_so_rather_than_dividing_by_nothing() {
+    assert!(whole_or_shattered("   ", &[]).contains("No whitespace-separated words"));
+}
+
+/// **The bug the Japanese case found.** A byte-level vocabulary spells one
+/// character across several tokens, so the decode of *k* tokens is not the
+/// decode of *k-1* with something appended: the replacement mark standing in
+/// for an incomplete character is *replaced* by the character. A prefix strip
+/// fails there, and with a fallback it reports the whole text as one token's
+/// contribution — the last token of a Japanese phrase appearing to have
+/// produced the entire phrase.
+mod contributions {
+    use super::super::added_by;
+
+    #[test]
+    fn a_token_that_appends_contributes_what_it_appended() {
+        assert_eq!(added_by("hello", "hello world"), " world");
+    }
+
+    #[test]
+    fn a_token_that_completes_a_character_contributes_the_character() {
+        // The first token left an incomplete sequence, which decodes as a
+        // replacement mark; the second completes it.
+        assert_eq!(added_by("日本語の\u{fffd}", "日本語のテ"), "テ");
+    }
+
+    #[test]
+    fn nothing_is_ever_reported_as_the_whole_text() {
+        // The failing case, pinned: before B-381's byte comparison this
+        // returned "日本語のテキスト" for a token that contributed one
+        // character.
+        assert_eq!(added_by("日本語のテキス\u{fffd}", "日本語のテキスト"), "ト");
+    }
+
+    #[test]
+    fn a_token_that_adds_nothing_visible_adds_nothing() {
+        assert_eq!(added_by("日本", "日本"), "");
+    }
+}
