@@ -161,6 +161,25 @@ fn report(timings: &[f64], loads: &[f64]) {
     println!("    load average at the start of a run ranged {least_load:.2} to {most_load:.2}");
     println!("    which is the state to hold steady, not a number to be under");
 
+    // Whether the timings moved *with* the machine. This is the criterion the
+    // operator set — stability against this machine's own baseline — asked in
+    // the one way that needs no threshold: if a run's duration tracks the load
+    // at its start, the measurement is of a machine that changed, and no
+    // repeat count fixes that (F51's level shift, seen from inside).
+    let together = correlation(loads, timings);
+    println!("    duration tracked that load at {together:+.2}");
+    let contaminated = together.abs() >= 0.5;
+    if contaminated {
+        println!();
+        println!("  THIS MEASUREMENT IS OF A MACHINE THAT CHANGED, NOT OF THE COMMAND.");
+        println!("    The runs got slower as the machine got busier, so the spread below is the");
+        println!("    machine's movement wearing the command's clothes. A repeat count derived");
+        println!("    from it would be derived from the wrong thing. Take it again when the");
+        println!("    machine is in one state — any state — rather than passing through several.");
+    }
+
+    warm_up(timings);
+
     println!();
     println!("  how many repeats before noise stops manufacturing a difference");
     println!("    (two groups drawn from these same timings, {RESAMPLINGS} times each)");
@@ -185,6 +204,99 @@ fn report(timings: &[f64], loads: &[f64]) {
                 effect * 100.0
             ),
         }
+    }
+}
+
+/// How strongly two series move together, between -1 and 1.
+///
+/// Ordinary linear correlation. It is used here for one narrow purpose: to ask
+/// whether a run's duration tracked the machine's load, which is the operator's
+/// stability criterion asked without choosing a threshold for *how much load is
+/// too much*. Half is where this calls it contaminated, and that half is the
+/// one number here that was chosen rather than measured — stated so, and worth
+/// replacing when there is a measurement to replace it with.
+fn correlation(one: &[f64], other: &[f64]) -> f64 {
+    let n = one.len().min(other.len());
+    if n < 3 {
+        return 0.0;
+    }
+    let count = f64::from(u32::try_from(n).unwrap_or(u32::MAX));
+    let mean = |held: &[f64]| held.iter().take(n).sum::<f64>() / count;
+    let (mean_one, mean_other) = (mean(one), mean(other));
+    let mut top = 0.0;
+    let mut left = 0.0;
+    let mut right = 0.0;
+    for at in 0..n {
+        let (Some(a), Some(b)) = (one.get(at), other.get(at)) else {
+            continue;
+        };
+        let (da, db) = (a - mean_one, b - mean_other);
+        top += da * db;
+        left += da * da;
+        right += db * db;
+    }
+    if left <= 0.0 || right <= 0.0 {
+        return 0.0;
+    }
+    top / (left * right).sqrt()
+}
+
+/// Whether the runs got faster as they went, by more than this noise
+/// produces.
+///
+/// The other half of what DEC-007 leaves open. A machine, a cache, an engine
+/// holding a model — any of them can make the first runs slower than the rest,
+/// and a benchmark that averages over a warm-up reports something that happened
+/// once as though it happens always.
+///
+/// It is asked *against the measured noise* rather than against a threshold:
+/// the first quarter and last quarter are compared, and the same resampling
+/// says how often a gap that size appears between two groups drawn from the
+/// same timings. A gap the noise produces routinely is not a warm-up.
+fn warm_up(timings: &[f64]) {
+    let quarter = timings.len().wrapping_div(4).max(1);
+    let Some(first) = timings.get(..quarter) else {
+        return;
+    };
+    let Some(last) = timings.get(timings.len().saturating_sub(quarter)..) else {
+        return;
+    };
+    let sort = |held: &[f64]| {
+        let mut held = held.to_vec();
+        held.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        held
+    };
+    let early = quantile(&sort(first), 0.5);
+    let late = quantile(&sort(last), 0.5);
+    let base = early.min(late);
+    let gap = if base > 0.0 {
+        (early - late).abs() / base
+    } else {
+        0.0
+    };
+    // How often the noise alone produces a gap this size between two groups of
+    // this size. If that is common, the gap says nothing.
+    let by_chance = false_alarm_rate(timings, quarter, gap.max(f64::EPSILON));
+
+    println!();
+    println!("  did the runs settle as they went");
+    println!("    first {quarter} runs, median   {early:.3} s");
+    println!("    last  {quarter} runs, median   {late:.3} s");
+    if by_chance > FALSE_ALARMS_ALLOWED {
+        println!(
+            "    a gap of {:.1}% — the noise produces one that big {:.0}% of the time, so this \
+             is not a warm-up",
+            gap * 100.0,
+            by_chance * 100.0
+        );
+    } else {
+        println!(
+            "    a gap of {:.1}% — the noise produces one that big only {:.1}% of the time, so \
+             the early runs really were {}",
+            gap * 100.0,
+            by_chance * 100.0,
+            if early > late { "slower" } else { "faster" }
+        );
     }
 }
 

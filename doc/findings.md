@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 55 |
+| **Version** | 56 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -79,6 +79,7 @@ forward as one.
 | 49 | [F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)](#49--f49--mcf-can-check-its-own-engine-against-the-one-it-built-on-a-users-machine-b-362-b-376-d31-d39-a12-a19-ii) |
 | 50 | [F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)](#50--f50--the-privileged-helper-could-be-told-where-the-machine-is-b-190-d35-632-xvii-a2-a26) |
 | 51 | [F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)](#51--f51--contention-moves-the-level-not-the-spread-and-that-decides-how-a-benchmark-must-be-built-dec-007-b-250-b-181-34-a19-f2-f3) |
+| 52 | [F52 — The engine benchmarks will use is three times noisier than the one they will not (DEC-007, B-366, B-376, §3.4, A19, F51)](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3940,7 +3941,87 @@ here is a *speed* — B65 forbids one from MCF's own engine, and these are
 durations under stated conditions used to characterize the *machine*, which is
 what the engine is a fixed load for.
 
+## 52 · F52 — The engine benchmarks will use is three times noisier than the one they will not, and two guesses about why were both wrong (DEC-007, B-366, B-376, §3.4, A19, F51)
+
+**Why this was measured.** F51 derived a repeat count — seven, for a five
+percent claim — from MCF's *own* engine, and said plainly that this was the
+wrong engine: benchmarks will use the provisioned one. This is that gap closed,
+and the answer changes the number.
+
+**Every figure below was taken with the machine holding still.** The instrument
+now asks whether a run's duration tracked the machine's load, which is the
+operator's stability criterion put in the one form that needs no threshold. Any
+measurement where it did is reported as being *of a machine that changed*
+rather than of the command.
+
+| engine | path | run | middle half | 5% needs | 10% needs |
+|---|---|---|---|---|---|
+| MCF's own | in-process | 3.2 s | **3.6%** | 5 | 3 |
+| MCF's own | through the daemon | 4.9 s | **3.6%** | 7 | 3 |
+| provisioned | through the daemon | 0.23 s | 13.7% | 50 | 15 |
+| provisioned | through the daemon | 2.0 s | **9.9%** | 50 | 10 |
+| provisioned, **one thread** | through the daemon | 4.8 s | **45.8%** | >100 | >100 |
+
+**The engine that will be measured is about three times noisier than the one
+that will not.** Fifty repeats for a five percent claim, against seven. That is
+the number DEC-007 actually needs, and F51's seven was an answer about the
+wrong subject.
+
+**Two guesses, both wrong, both caught by measuring.**
+
+*The path.* The obvious suspect was the daemon and its socket — a round trip
+and a subprocess between the timer and the work. It contributes **nothing**:
+MCF's engine measures 3.6% in-process and 3.6% through the daemon. Ruled out.
+
+*The threads.* The next guess was that llama.cpp is multi-threaded and MCF's
+engine is not, and that a process wanting sixteen cores on a machine already at
+load ten finishes when it is given them. Pinning the server to one thread
+should then have tightened it. **It made it five times worse** — 45.8% against
+9.9% — on a clean measurement. The prediction was exactly backwards and the
+mechanism is not established.
+
+**So thread count is a condition, not a detail.** It moves benchmark noise by a
+factor of five, in a direction that is not obvious from reasoning, and a timing
+that does not record it is a timing nobody can reproduce (§3.4). This also
+bears on B-366: giving MCF's own engine threads will change its noise
+characteristics, and the change must be re-measured rather than predicted —
+this finding is what says predicting it does not work.
+
+**A measurement of mine was contaminated and I did not notice until the
+instrument was taught to.** An earlier reading of the same command reported a
+middle half spanning 121.6% and nothing detectable at any effect size. The load
+average had gone from 9.9 to 19.6 *during* it. That is precisely the condition
+the operator's criterion invalidates, and the instrument reported the range and
+drew no conclusion from it — leaving the conclusion to me, which is the wrong
+division of labour. It now computes whether duration tracked load and says so
+in a sentence nobody can read past.
+
+**What was not established.** Why the provisioned engine is noisier, which is
+now an open question rather than an answered one — two mechanisms were tested
+and neither holds. Whether the one-thread result generalises or is particular
+to this model and this machine. Anything about energy, memory or thermal state.
+And whether pinning the frequency governor narrows any of these, which is the
+last of DEC-007's open pieces and needs the privileged helper that F50 has only
+just made safe to grant.
+
 ## Changelog
+
+### Version 56 — the engine that will be measured is the noisier one
+
+F52. F51 derived seven repeats from MCF's own engine and said that was the
+wrong engine. It was: the provisioned one needs fifty for the same claim, being
+about three times noisier.
+
+Two guesses about why, both wrong and both caught by measuring. The daemon path
+contributes nothing — 3.6% either side of it. And pinning the server to one
+thread, which should have tightened it if threads were the cause, made it five
+times worse. Thread count is therefore a condition that must be recorded, and
+B-366 cannot predict its own effect on noise.
+
+An earlier reading was contaminated by the machine changing under it and the
+instrument reported the range without drawing the conclusion. It now asks
+whether duration tracked load and refuses the reading in a sentence nobody can
+read past.
 
 ### Version 55 — contention moves the level, not the spread
 

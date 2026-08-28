@@ -219,16 +219,32 @@ fn server_never_listens(world: &World) -> Outcome {
     };
     // Three attempts rather than the six hundred a real start is given: the
     // bound is a parameter so that this scenario can exist at all (A13).
-    let waited = mcf_serve::served::Served::start_within(
-        &llama,
-        &world.scratch().join("no-such-model.gguf"),
-        world.scratch(),
-        3,
-    );
-    match waited {
-        Err(failure) => Outcome::Produced(failure),
-        Ok(_) => Outcome::Unexpected("a server that binds nothing was called ready".to_owned()),
+    //
+    // Spawning is not what this scenario is about — the readiness wait is —
+    // and on a machine that is compiling while the suite runs, `fork` can
+    // fail. That produces a true report of a different failure, which is not
+    // the one declared, and the catalogue's reproducibility check then sees
+    // two passes disagree. So a spawn that did not happen is retried rather
+    // than reported: the scenario has not run yet, and saying it produced
+    // something would be the lie.
+    for attempt in 0..3 {
+        let waited = mcf_serve::served::Served::start_within(
+            &llama,
+            &world.scratch().join("no-such-model.gguf"),
+            world.scratch(),
+            3,
+        );
+        match waited {
+            Ok(_) => {
+                return Outcome::Unexpected(
+                    "a server that binds nothing was called ready".to_owned(),
+                );
+            }
+            Err(failure) if failure.category() == Category::EngineSpawnRefused && attempt < 2 => {}
+            Err(failure) => return Outcome::Produced(failure),
+        }
     }
+    Outcome::Unexpected("the fixture server could not be started at all".to_owned())
 }
 
 /// A server whose answer MCF cannot read.
