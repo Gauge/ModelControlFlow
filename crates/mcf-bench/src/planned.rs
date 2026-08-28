@@ -232,3 +232,165 @@ impl fmt::Display for Proposal {
         }
     }
 }
+
+/// What class of laboratory a run belongs to, and what it may be bounded by
+/// (B-230, B49, D8, §3.8).
+///
+/// **The rule, and why it is a type.** A *behaviour* laboratory asks what a
+/// model does; a *timing* laboratory asks how fast. B-230: a behaviour lab
+/// cannot express a wall-clock deadline, and its deadlines are token budgets.
+///
+/// **Why a wall clock is wrong there specifically.** A behaviour run bounded
+/// by minutes gives a model on a busy machine fewer attempts than the same
+/// model on a quiet one, so a result that is supposed to be about the model
+/// becomes partly about the afternoon — and, worse, silently: the run
+/// completes, reports fewer outcomes, and nothing on the page says the machine
+/// is why. A token budget is the same budget everywhere. It is the same
+/// argument as B-224's, one level up: the *bound* must be countable for the
+/// same reason the *work* must be.
+///
+/// **A timing lab is the opposite case** and is allowed a wall clock, because
+/// a timing lab's whole subject is elapsed time — a run that will not finish
+/// is a measurement about this machine (§3.8), which is what was being asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bound {
+    /// A behaviour laboratory's bound: tokens, which count the same on any
+    /// machine.
+    ///
+    /// There is no variant here that carries a duration, and that is the whole
+    /// enforcement: a wall-clock deadline in a behaviour lab does not compile
+    /// because there is nowhere to put one.
+    Tokens(u64),
+    /// A timing laboratory's bound, which may be a wall clock because elapsed
+    /// time is what it measures.
+    Elapsed(Duration<Monotonic>),
+}
+
+impl Bound {
+    /// The token budget, where this is one.
+    #[must_use]
+    pub const fn tokens(&self) -> Option<u64> {
+        match self {
+            Self::Tokens(held) => Some(*held),
+            Self::Elapsed(_) => None,
+        }
+    }
+
+    /// Whether a behaviour laboratory may use this bound.
+    ///
+    /// The check a constructor makes, kept as a method so a caller can ask
+    /// before building something that will be refused.
+    #[must_use]
+    pub const fn suits_behaviour(&self) -> bool {
+        matches!(self, Self::Tokens(_))
+    }
+}
+
+impl fmt::Display for Bound {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokens(held) => write!(form, "{held} token(s), which count the same anywhere"),
+            Self::Elapsed(held) => write!(
+                form,
+                "{} ns of wall clock, which is a bound only a timing laboratory may use (B-230)",
+                held.as_nanos()
+            ),
+        }
+    }
+}
+
+/// A laboratory run that has everything it needs to be a measurement
+/// (B-223, B-230, B45, D13, D8, §X).
+///
+/// **The tier ordering as a type property, not a convention** (B-223, B45,
+/// D13). Calibration precedes measurement: an evaluation taken on a
+/// configuration nobody calibrated is a measurement of an arbitrary sampling
+/// setting wearing a model's name. A convention that says so is a convention
+/// somebody skips at four in the afternoon; a constructor that demands a
+/// [`Calibrated`] cannot be skipped at all, because there is no other way to
+/// make one of these.
+///
+/// **And a behaviour run cannot carry a wall clock** (B-230). The constructor
+/// refuses a [`Bound::Elapsed`] for a behaviour discipline, which is the
+/// closest a type can get to *does not compile* while keeping one type for
+/// both classes — and one type is worth having, since the alternative is two
+/// that drift.
+///
+/// [`Calibrated`]: mcf_core::configuration::Calibrated
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Planned {
+    work: Work,
+    bound: Bound,
+    calibrated: mcf_core::configuration::Calibrated,
+    behaviour: bool,
+}
+
+/// Why a run cannot be planned (B-223, B-230).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotPlannable {
+    /// A behaviour run was given a wall-clock deadline.
+    BehaviourCannotWatchTheClock,
+}
+
+impl fmt::Display for NotPlannable {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BehaviourCannotWatchTheClock => form.write_str(
+                "a behaviour laboratory's deadline is a token budget, never a wall clock: \
+                 minutes give a model on a busy machine fewer attempts than the same model on \
+                 a quiet one, and the result stops being about the model without saying so \
+                 (B-230, D8, §3.8)",
+            ),
+        }
+    }
+}
+
+impl Planned {
+    /// Plans a run, or says why it cannot be one.
+    ///
+    /// # Errors
+    ///
+    /// [`NotPlannable::BehaviourCannotWatchTheClock`] where a behaviour run
+    /// was handed a wall clock.
+    pub fn new(
+        work: Work,
+        bound: Bound,
+        calibrated: mcf_core::configuration::Calibrated,
+        behaviour: bool,
+    ) -> Result<Self, NotPlannable> {
+        if behaviour && !bound.suits_behaviour() {
+            return Err(NotPlannable::BehaviourCannotWatchTheClock);
+        }
+        Ok(Self {
+            work,
+            bound,
+            calibrated,
+            behaviour,
+        })
+    }
+
+    /// What it will do, counted.
+    #[must_use]
+    pub const fn work(&self) -> &Work {
+        &self.work
+    }
+
+    /// What bounds it.
+    #[must_use]
+    pub const fn bound(&self) -> &Bound {
+        &self.bound
+    }
+
+    /// The calibration it rests on, which it could not have been built
+    /// without.
+    #[must_use]
+    pub const fn calibrated(&self) -> &mcf_core::configuration::Calibrated {
+        &self.calibrated
+    }
+
+    /// Whether this is a behaviour run.
+    #[must_use]
+    pub const fn is_behaviour(&self) -> bool {
+        self.behaviour
+    }
+}

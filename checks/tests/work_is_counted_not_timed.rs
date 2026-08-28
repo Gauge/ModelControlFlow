@@ -128,6 +128,56 @@ fn the_operator_is_shown_counts_and_a_marked_estimate() {
     );
 }
 
+/// A behaviour laboratory's bound is countable, and a run needs a calibration
+/// to exist (B-230, B-223, B45, D13, D8).
+#[test]
+fn a_behaviour_bound_has_nowhere_to_put_a_wall_clock() {
+    let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
+    let (_, bound) = source
+        .split_once("pub enum Bound {")
+        .expect("`Bound` is what a run is bounded by");
+    let (bound, _) = bound.split_once('}').expect("and it ends somewhere");
+    assert!(
+        bound.contains("Tokens(u64)"),
+        "a behaviour laboratory's deadline is a token budget, which counts the same on a busy \
+         machine and a quiet one (B-230)"
+    );
+    assert_eq!(
+        bound.matches("Duration").count(),
+        1,
+        "exactly one variant may carry a duration — the timing one, whose whole subject is \
+         elapsed time (§3.8). A second would be the wall clock B-230 forbids, wearing a \
+         different name"
+    );
+    assert!(
+        source.contains("if behaviour && !bound.suits_behaviour()"),
+        "and the refusal must be in the constructor: a rule enforced anywhere else is a rule \
+         somebody skips at four in the afternoon"
+    );
+}
+
+/// Calibration precedes measurement, in the type (B-223, B45, D13).
+#[test]
+fn a_run_cannot_be_built_without_a_calibration() {
+    let source = code_only(&read("crates/mcf-bench/src/planned.rs"));
+    assert!(
+        source.contains("calibrated: mcf_core::configuration::Calibrated"),
+        "an evaluation on a configuration nobody calibrated is a measurement of an arbitrary \
+         sampling setting wearing a model's name (B45, D13)"
+    );
+    for escape in [
+        "impl Default for Planned",
+        "fn without_calibration",
+        "calibrated: Option<",
+    ] {
+        assert!(
+            !source.contains(escape),
+            "`{escape}` would make the tier ordering a convention again, and a convention is \
+             what B-223 exists to replace"
+        );
+    }
+}
+
 /// Doc comments carry the reasoning and would otherwise trip every check
 /// above; the rules are about the code.
 fn code_only(source: &str) -> String {

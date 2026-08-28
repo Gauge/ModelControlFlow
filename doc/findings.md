@@ -114,6 +114,7 @@ forward as one.
 | 85 | [F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)](#85--f85--an-idle-daemon-took-zero-processor-ticks-and-issued-zero-reads-in-ninety-seconds-b-187-b-108-b4-d5-313-618) |
 | 86 | [F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)](#86--f86--a-field-of-one-is-refused-by-name-and-a-foreign-number-has-no-route-in-b-167-b-127-b34-b43-623-5) |
 | 87 | [F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)](#87--f87--a-contribution-has-nowhere-to-put-a-task-and-no-way-to-be-unsent-b-171-b-203-b-251-b-310-b42-b54-d21-630-320) |
+| 88 | [F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)](#88--f88--a-behaviour-laboratorys-bound-has-nowhere-to-put-a-wall-clock-b-230-b-223-b45-d8-d13-38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6309,6 +6310,40 @@ why it passes — the third time in this session (F81 was the second). The check
 skips the terms now. The pattern is stable enough to name: *a rule and the
 prose describing the rule cannot be distinguished by substring search*, and a
 check that does not account for it blocks the correct work.
+
+## 88 · F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)
+
+**B-230, and it is [F72](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7)'s
+argument one level up.** F72 established that a laboratory declares its *work*
+in countable units. This says the same of its *bound*: a behaviour laboratory's
+deadline is a token budget, never a wall clock.
+
+**The specific harm.** A behaviour run bounded by minutes gives a model on a
+busy machine fewer attempts than the same model on a quiet one. The result is
+supposed to be about the model and becomes partly about the afternoon — and it
+happens *silently*: the run completes, reports fewer outcomes, and nothing on
+the page says the machine is why. A token budget counts the same everywhere.
+
+**A timing laboratory is the opposite case** and keeps its wall clock, because
+elapsed time is its whole subject: a timing run that will not finish is a
+measurement about this machine (§3.8), which is what was being asked. So
+`Bound` has exactly two variants, one of which carries a `Duration`, and a
+check pins the count at one — a second would be the forbidden wall clock
+wearing a different name.
+
+**B-223 in the same constructor.** `Planned::new` takes a `Calibrated` and
+there is no `Default`, no second constructor, and no `Option` around it. B45's
+tier ordering — calibration precedes measurement — becomes a property of the
+type rather than a convention, and the difference matters because a convention
+is what somebody skips at four in the afternoon. An evaluation on a
+configuration nobody calibrated is a measurement of an arbitrary sampling
+setting wearing a model's name.
+
+**One type for both classes, rather than two.** The refusal is a `Result` from
+the constructor rather than two separate types that cannot express each other's
+bound. Two types would be stricter on paper and would drift: every feature
+added to one has to be added to the other, and the second copy is where the
+rule quietly stops being enforced.
 
 ## Changelog
 

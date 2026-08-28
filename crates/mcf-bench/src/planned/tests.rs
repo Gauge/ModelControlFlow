@@ -164,3 +164,77 @@ mod budgets {
         assert_eq!(held.running().map(|work| work.trials), Some(6));
     }
 }
+
+/// A behaviour lab counts tokens; a run needs a calibration to exist at all.
+mod bounds {
+    use crate::planned::{Bound, NotPlannable, Planned, Work};
+    use mcf_core::configuration::{Calibrated, Sampling};
+    use mcf_core::time::Duration;
+
+    fn calibrated() -> Calibrated {
+        Calibrated::measured_here(Sampling::nothing_set(), "a sweep")
+    }
+
+    fn work() -> Work {
+        Work {
+            trials: 20,
+            arms: 2,
+            tokens: 128,
+        }
+    }
+
+    #[test]
+    fn a_behaviour_run_refuses_a_wall_clock() {
+        let held = Planned::new(
+            work(),
+            Bound::Elapsed(Duration::from_nanos(600_000_000_000)),
+            calibrated(),
+            true,
+        );
+        assert_eq!(held.err(), Some(NotPlannable::BehaviourCannotWatchTheClock));
+    }
+
+    #[test]
+    fn the_refusal_says_what_a_wall_clock_would_do_to_the_result() {
+        let shown = NotPlannable::BehaviourCannotWatchTheClock.to_string();
+        assert!(
+            shown.contains("fewer attempts") && shown.contains("without saying so"),
+            "the harm is that the result stops being about the model silently, and a refusal \
+             that does not say that reads as bureaucracy: {shown}"
+        );
+    }
+
+    #[test]
+    fn a_behaviour_run_takes_a_token_budget() {
+        let held = Planned::new(work(), Bound::Tokens(50_000), calibrated(), true)
+            .expect("tokens count the same anywhere");
+        assert_eq!(held.bound().tokens(), Some(50_000));
+        assert!(held.is_behaviour());
+    }
+
+    #[test]
+    fn a_timing_run_may_watch_the_clock() {
+        // §3.8: a timing lab's whole subject is elapsed time, and a run that
+        // will not finish is a measurement about this machine.
+        let held = Planned::new(
+            work(),
+            Bound::Elapsed(Duration::from_nanos(1)),
+            calibrated(),
+            false,
+        );
+        assert!(held.is_ok());
+    }
+
+    #[test]
+    fn an_elapsed_bound_has_no_token_budget_to_offer() {
+        assert_eq!(Bound::Elapsed(Duration::from_nanos(1)).tokens(), None);
+        assert!(!Bound::Elapsed(Duration::from_nanos(1)).suits_behaviour());
+        assert!(Bound::Tokens(1).suits_behaviour());
+    }
+
+    #[test]
+    fn a_run_carries_the_calibration_it_could_not_have_been_built_without() {
+        let held = Planned::new(work(), Bound::Tokens(1), calibrated(), true).expect("planned");
+        assert_eq!(held.calibrated(), &calibrated());
+    }
+}
