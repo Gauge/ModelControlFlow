@@ -194,7 +194,15 @@ fn server_never_listens(world: &World) -> Outcome {
         return Outcome::Unexpected("the fixture prefix could not be made".to_owned());
     }
     let server = bin.join("llama-server");
-    if std::fs::write(&server, b"#!/bin/sh\nexec sleep 600\n").is_err() {
+    // Five seconds, not six hundred. The wait under test is three attempts of
+    // a tenth of a second, so five is ample — and this scenario is run a
+    // hundred times by the reproducibility test, on a machine that is also
+    // compiling. A sleeper that outlives the run by ten minutes is a process
+    // MCF left behind, and enough of them make `fork` fail, at which point
+    // this scenario reports *could not start* — true, and not what it claims
+    // to produce. It is killed on drop either way; this makes the drop
+    // unnecessary rather than load-bearing.
+    if std::fs::write(&server, b"#!/bin/sh\nexec sleep 5\n").is_err() {
         return Outcome::Unexpected("the fixture server could not be written".to_owned());
     }
     #[cfg(unix)]
