@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 197 |
+| **Version** | 198 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (115 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 59 open).** Every item cites
+decided, 23 resolved) and 224 build items (117 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 57 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -289,7 +289,7 @@ first and importance second.
 | B-105 | Model failure taxonomy: wrong tool, malformed call, loop, early stop, gave up — more informative than the pass rate | §6.17, §7.10 | Every failed trial is classified, and the classification is the primary output | blocked (DEC-023) |
 | B-106 | Statistical test for "is this a real difference": §3.9's "within noise, pick either" said honestly | §3.9, §6.17 | Two indistinguishable models produce a refusal to rank, not a ranking | blocked (DEC-023) |
 | B-107 | Contamination strategy: private, rotated or procedurally generated tasks, per DEC-023 | §7.3, §3.4 | The strategy is stated, implemented and re-checkable as the suite ages | blocked (DEC-023) |
-| B-108 | Zero cost when idle: the benchmark subsystem consumes nothing during ordinary serving | §6.18, §3.13 | Measured serving footprint is identical with the harness compiled in and no benchmark running | open |
+| B-108 | Zero cost when idle: the benchmark subsystem consumes nothing during ordinary serving | §6.18, §3.13 | Measured serving footprint is identical with the harness compiled in and no benchmark running | done Structural rather than measured, which is stronger: `mcf-serve` does not depend on `mcf-bench`, so the daemon cannot start a benchmark because it cannot name one. The identical-footprint criterion is met trivially — there is nothing to compile in. Measured anyway (F85): zero ticks, zero reads, ninety seconds. |
 | B-109 | Harness minimality guard: each addition must make the measurement more valid, not the harness more capable | §6.18, §5 | Additions cite validity; capability-only additions are refused and the refusal is recorded | open |
 | B-181 | Exclusive window for timing-class work: announced, bounded by a declared maximum, schedulable, interruptible, closed automatically; drains the serving path by explicit decision | B35, D8, §6.33 | A timing result cannot be constructed from a run that overlapped serving or another lab | open Shaped by the operator's answer on DEC-007: the window's precondition is not an absolute quiet but **stability against this machine's own baseline**, because a machine that idles at forty percent is a machine whose normal is forty percent. What the window guarantees is that conditions did not *change* under the run, and a disturbance partway through invalidates the result rather than skewing it. **What a window may do to the machine (operator, 2026-08-27): this project has priority over whatever else the machine is doing, and may change what it needs to — bounded absolutely by *the user must never lose control of their own system*, no freezing, no locking them out of ordinary use.** That is a sharper rule than politeness to other tenants and it has three mechanical consequences, none of which is a preference. **(1) Never take a card that is driving a display.** Exclusive compute mode on the display adapter is the freeze itself; on this machine the card reports `display_active: Enabled` with two processes already holding contexts on it, which is the desktop. The card is asked before it is taken, and one carrying a display is declined by that fact. **(2) What is taken must come back even if MCF does not.** The safety cannot rest on MCF working correctly, because the case that distresses a user is the one where MCF has hung — so a window expires by construction and the restoration ledger (B-220) is what makes a governor survive a kill. **(3) A run yields immediately when asked**, not at the end of the current trial: `mcf stop` (B-210) must return the machine, and a partial result is a result (A4). |
 | B-230 | Behaviour-class labs cannot express a wall-clock deadline; deadlines are token budgets | B49, D8, §3.8 | A wall-clock timeout in a behaviour lab does not compile | open |
@@ -303,7 +303,7 @@ first and importance second.
 | B-242 | Degradation curves are produced rather than assumed: L24's dose-response sweep and L25's contention sweep | B52, §3.26, §6.41 | Both curves exist for the reference model before yielding is claimed to be unobtrusive | blocked (DEC-029) |
 | B-235 | Scheduling: an exclusive window may be deferred to a stated time or to a stated period of machine idleness | B35, §6.40, §3.26 | A user can say "overnight" or "after ten minutes idle" and the window opens then | open |
 | B-182 | Suspension is declared: a request during a lab receives an immediate refusal naming the lab and the expected remaining time, never a queue or a timeout; a lab is bounded and interruptible with its partial result preserved | B35, §6.33, §3.1 | Requests during a lab are refused within one round trip; interrupting preserves and marks the partial result | open |
-| B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | open |
+| B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | done Measured: an idle daemon took **zero** processor ticks and issued **zero** read syscalls across ninety seconds (F85). The one counter MCF reads at all is a GPU temperature inside `Machine::read_through`, reached only from commands somebody typed. Held by `checks/tests/idle_mcf_reads_nothing.rs`: no spawned loop in the serving path, and no reader of the machine outside a command. |
 | B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
 | B-189 | Energy laboratory: energy per token, sustained power draw and thermal behaviour under load, with fidelity stated per platform | D11, §3.9, §XIII | The lab reports joules per token with its measurement provenance, or states that this platform cannot supply it | blocked (DEC-029) |
 | B-223 | An evaluation run cannot be constructed from an uncalibrated configuration handle | B45, D13, §X | The tier ordering is a type property, not a convention | open |
@@ -396,6 +396,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 198 — an idle daemon does nothing
+
+B-187 and B-108 done. Zero ticks and zero reads across ninety idle seconds, and
+the structure behind it: no timer anywhere, and no path from the daemon to the
+benchmark crate. F85.
 
 ### Version 197 — the branch is read from the attribution
 

@@ -111,6 +111,7 @@ forward as one.
 | 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
 | 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
 | 84 | [F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)](#84--f84--the-branch-is-read-from-the-attribution-and-reading-it-from-the-category-is-the-obvious-wrong-design-b-233-b24-710-34) |
+| 85 | [F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)](#85--f85--an-idle-daemon-took-zero-processor-ticks-and-issued-zero-reads-in-ninety-seconds-b-187-b-108-b4-d5-313-618) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6129,6 +6130,47 @@ evidence about the check first. This is the second time in this session that
 running a new rule against the existing codebase is what showed the rule was
 wrong — the first being the register's parser (F80), where the code was right
 and the reader was not.
+
+## 85 · F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)
+
+**Two items, one measurement.** B-187: *counter reads are zero outside a lab
+run.* B-108: *the benchmark subsystem consumes nothing during ordinary
+serving.* Both were open and both are the same discipline seen from two sides.
+
+**Measured on this machine.** A running `mcf serve`, with nothing asked of it,
+read from `/proc` before and after ninety seconds:
+
+```
+ticks:  336 -> 336   (0 of 100/s over 90 s)
+syscr:  290824 -> 290824
+rchar:  2294781810 -> 2294781810
+```
+
+Not *small*. **Zero** processor time and **zero** read syscalls — the process
+did not execute. That is the difference between a daemon that polls quietly and
+one that genuinely waits, and it is only visible because the counters are
+integers that either moved or did not.
+
+**Why it matters beyond tidiness.** A daemon that polls thermal counters to
+look responsive is a daemon that is one of the competitors it reports (§3.8) —
+which [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34)
+showed is not hypothetical: something *was* stealing this machine, and MCF's
+value there depended on not being part of the problem. And a benchmark
+subsystem with an idle cost makes every serving measurement conditional on
+whether it was compiled in.
+
+**What holds it.** B4's discipline — a reading exists because somebody asked
+for it, never because a clock came round — plus one structural fact:
+`mcf-serve` does not depend on `mcf-bench`. The daemon cannot start a benchmark
+because it cannot name one, which is a stronger guarantee than any measurement
+of its idle cost. `checks/tests/idle_mcf_reads_nothing.rs` pins all three:
+no spawned loop in the serving path, no reader of the machine outside a command
+the operator ran, and no path from the daemon to the benchmark crate.
+
+**The one counter MCF does read** is a GPU temperature through NVML, inside
+`Machine::read_through`, reached only from `mcf doctor`, `mcf run`'s fitment
+check, `mcf pull`'s, and `mcf verify`. Every one of those is something a person
+typed.
 
 ## Changelog
 
