@@ -38,6 +38,7 @@ use std::path::{Path, PathBuf};
 
 use mcf_bench::compare::{Comparison, Discipline, Interleaving, UnderTest};
 use mcf_bench::record;
+use mcf_bench::warmth::Warmth;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, PartsPerMillion};
@@ -197,10 +198,10 @@ pub(crate) fn bench_where(
                 &right_path
             };
             match timed(&socket, path, prompt, limit, seed, engine) {
-                Ok(took) => took,
+                Ok(held) => held,
                 Err(text) => {
                     failed.get_or_insert(text);
-                    Duration::from_nanos(0)
+                    (Duration::from_nanos(0), Warmth::Unstated)
                 }
             }
         });
@@ -222,6 +223,9 @@ pub(crate) fn bench_where(
         }
     }
 
+    // Finishing writes what the run reused into both arms' conditions (§6.13,
+    // B-081): known only once the run is over, because it is a fact about what
+    // happened rather than about what MCF intended.
     let held = running.finish();
     let finding = held.finding(resolving);
     let written = keep(&held, mcf_core::time::Timestamp::now());
@@ -348,8 +352,19 @@ fn timed(
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
-) -> Result<Duration<Monotonic>, String> {
-    generate(socket, path, prompt, limit, seed, engine).map(|(took, _)| took)
+) -> Result<(Duration<Monotonic>, Warmth), String> {
+    generate(socket, path, prompt, limit, seed, engine).map(|(took, account)| {
+        // §6.13: what the trial reused is a condition of it, and the daemon
+        // already says so in its account. Reading it is what makes a warm
+        // measurement distinguishable from a cold one (B-081).
+        let warmth = Warmth::from_account(
+            account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("loaded"))
+                .and_then(Value::as_text),
+        );
+        (took, warmth)
+    })
 }
 
 /// One generation: how long the whole request took, and its account.
@@ -452,6 +467,7 @@ fn report(
         String::new(),
         "── how it was taken ─────────────────────────────────────────".to_owned(),
         format!("  {}", held.discipline()),
+        format!("  reuse    {}", held.reuse()),
         format!(
             "  pairs    {} interleaved, order drawn per pair",
             held.pairs().len()

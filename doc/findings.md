@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 67 |
+| **Version** | 68 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -91,6 +91,7 @@ forward as one.
 | 61 | [F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)](#61--f61--the-seed-set-had-to-become-arithmetic-and-eintr-was-being-called-a-cut-off-transfer-b-290-b61-d19-a2-f53-f55) |
 | 62 | [F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)](#62--f62--the-seed-set-is-shown-representative-and-the-sampler-that-would-have-cleared-it-for-nothing-b-291-d19-616-713-b65) |
 | 63 | [F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)](#63--f63--the-recommendation-is-in-a-different-repository-from-the-weights-b-281-b60-d18-a21-315) |
+| 64 | [F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)](#64--f64--every-benchmark-trial-was-cold-and-three-fifths-of-it-was-process-start-b-081-613-b-376-f59-d41-f35) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4886,7 +4887,89 @@ its base repository to find the recommendation there: doing so would mean MCF
 deciding which repository a file came from, which is a claim about provenance
 it has no basis for (A21, §3.6).
 
+## 64 · F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)
+
+**§6.13's rule.** *Caching, reuse and adaptation are permitted — but anything
+that could change a result must be visible in that result's conditions. A
+measurement taken with a warm cache is a different measurement from one taken
+cold, and MCF must know which it produced.* The corollary is sharper: **the
+benchmark path may not adapt.**
+
+MCF had the information and was not using it. The daemon's account has said
+`loaded: resident_in_server` or `loaded_for_this_request` or
+`per_request_subprocess` for some time; nothing read it, so nothing recorded it,
+and every timing MCF has ever reported was silent about what it reused.
+
+**What was built.** `mcf_bench::warmth`: each trial's warmth, read from the
+daemon's own words rather than parsed loosely — a state this build has not been
+taught is *unstated* rather than whichever of the two it superficially
+resembles, and the wrong guess there would silently make a mixed run look
+uniform. A run is `Uniform` or **`Mixed`**, and a mixed run says *this is not
+one measurement (§6.13)* rather than averaging over it. **One warm trial among
+a hundred and ninety-nine cold ones is a mixed run**: §6.13's concern is not
+proportion, it is that the result depends on hidden history.
+
+It becomes the condition floor's thirteenth question, written by
+`Interleaving::finish` — the runner is what saw each trial's warmth, so the
+runner is what records it and a caller cannot forget. From there it flows into
+`Isolation` for nothing: **a warm arm against a cold one is confounded, and A8
+withholds the delta.** §6.13's *must be visible in the conditions*, enforced
+rather than printed.
+
+**What it made visible, immediately.** Two runs on the provisioned engine:
+
+```
+q4_0 against q8_0     reuse   cold: every trial loaded the model for itself
+q4_0 against itself   reuse   cold: every trial loaded the model for itself
+```
+
+Even comparing a model with *itself* — where residency should obviously hold —
+every trial was cold. The account says why: `loaded: per_request_subprocess`.
+The provisioned engine has a server path, and `mcf bench` **cannot reach it**:
+a turn of identifiers goes to the server, a prompt goes to the completion tool,
+and a prompt is what `mcf bench` sends (B-376). So the benchmark path is
+uniformly cold **by construction**, which is at least reproducible and is not
+what anybody would have assumed.
+
+**How much of a trial that is.** The same model at two token budgets,
+interleaved:
+
+```
+--limit   8    median 0.048 s
+--limit 256    median 0.109 s
+```
+
+Two points on `t(n) = overhead + n × cost`: **about 46 ms of overhead and
+0.25 ms per token**. At the benchmark's default of 128 tokens that is **60% of
+every trial spent on process start and model load**; at the 64 tokens F59's
+comparison used, **74%**.
+
+**Which explains F59.** Two quantizations differ in the dequantization work
+done *during generation* — the 40% — and are identical in the 60%. A real
+difference of, say, ten percent in generation shows up as four percent of the
+measured total, which is under the five percent that comparison was asking
+about. F59's null result is not evidence that the quantizations run alike; it
+is a measurement of a quantity three fifths of which cannot differ between the
+arms. **The condition was there all along and nothing was reading it.**
+
+**What was not established.** The 46 ms includes `mcf run`'s own process start,
+because the instrument spawns it — the daemon-side share is a subset and is not
+separated here. Two points fit a straight line and two points cannot show it is
+one; a third budget would. Warm behaviour is untested against a real engine
+because the benchmark cannot currently produce it, so `Warmth::Warm` is
+exercised against constructed runs. And making the benchmark warm is not this
+item's: it means tokenizing MCF-side and sending identifiers so the request
+reaches the server path, which changes what is measured and belongs with
+B-376 and B-090.
+
 ## Changelog
+
+### Version 68 — every trial was cold
+
+F64. What a trial reused is now a condition, and reading it showed that every
+benchmark trial loads the model for itself — three fifths of a default trial is
+process start, which is why F59's comparison could not see a difference between
+two quantizations.
 
 ### Version 67 — the recommendation is somewhere else
 

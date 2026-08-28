@@ -17,6 +17,7 @@ use super::{
     Comparison, Difference, Discipline, Interleaving, NotComparable, Side, Strength, UnderTest,
 };
 use crate::enough::Verdict;
+use crate::warmth::{Reuse, Warmth};
 
 /// Five percent, as this module spells it.
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
@@ -39,6 +40,15 @@ fn ns(nanos: u64) -> Duration<Simulated> {
     Duration::from_nanos(nanos)
 }
 
+/// A run of a stated length that found the model already loaded.
+///
+/// Every fixture here is a warm run, stated rather than defaulted: §6.13 makes
+/// what a trial reused a condition, and a test that let it be inferred would
+/// be testing the inference.
+fn warm(nanos: u64) -> (Duration<Simulated>, Warmth) {
+    (ns(nanos), Warmth::Warm)
+}
+
 /// A floor in which every condition is known, so that a test changes exactly
 /// what it means to change.
 fn everything_known() -> Floor {
@@ -55,6 +65,7 @@ fn everything_known() -> Floor {
         instrumentation: known("recording"),
         artifact_storage: known("tmpfs"),
         seed_set: known("none: seed 0 held still, 128 token(s) pinned"),
+        reuse: known("warm: the model was already resident for every trial"),
     }
 }
 
@@ -345,7 +356,7 @@ fn the_runner_interleaves_and_randomizes() {
     for _ in 0..40 {
         let _ran = running.round(|arm, _drew| {
             order.push(arm.clone());
-            ns(if *arm == left {
+            warm(if *arm == left {
                 SECOND.saturating_mul(2)
             } else {
                 SECOND
@@ -382,7 +393,7 @@ fn the_same_seed_draws_the_same_order() {
         for _ in 0..12 {
             let _ran = running.round(|arm, _drew| {
                 seen.push(arm.clone());
-                ns(SECOND)
+                warm(SECOND)
             });
         }
         orders.push(seen);
@@ -406,7 +417,7 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
             .wrapping_rem(11)
             .wrapping_mul(5_000_000);
         let _ran = running.round(|arm, _drew| {
-            ns(if *arm == left {
+            warm(if *arm == left {
                 1_300_000_000_u64.saturating_add(drift)
             } else {
                 SECOND.saturating_add(drift)
@@ -617,7 +628,7 @@ fn an_isolated_comparison_names_its_variable() {
     let mut running = interleaving(&left, &right, 11);
     for _ in 0..30 {
         let _ran = running.round(|arm, _drew| {
-            ns(if *arm == left {
+            warm(if *arm == left {
                 SECOND.saturating_mul(2)
             } else {
                 SECOND
@@ -660,7 +671,7 @@ fn unread_conditions_report_the_delta_and_the_doubt() {
     );
     for _ in 0..30 {
         let _ran = running.round(|arm, _drew| {
-            ns(if *arm == left {
+            warm(if *arm == left {
                 SECOND.saturating_mul(2)
             } else {
                 SECOND
@@ -699,7 +710,7 @@ fn both_arms_of_a_pair_draw_the_same_seed() {
     for _ in 0..8 {
         let ran = running.round(|arm, drew| {
             handed.push((arm.clone(), drew.seed()));
-            ns(SECOND)
+            warm(SECOND)
         });
         assert!(ran, "the published set never runs out");
     }
@@ -851,7 +862,7 @@ fn a_run_stops_when_its_declared_set_runs_out() {
     );
     let mut rounds = 0;
     for _ in 0..10 {
-        if !running.round(|_arm, _drew| ns(SECOND)) {
+        if !running.round(|_arm, _drew| warm(SECOND)) {
             break;
         }
         rounds += 1;
@@ -880,5 +891,127 @@ fn a_timing_comparison_names_what_it_pinned() {
         format!("{}", held.discipline()).contains("measuring the stop"),
         "the discipline says why it pinned a length: {}",
         held.discipline()
+    );
+}
+
+/// **B-081's condition.** A run whose trials were all warm records that, and a
+/// run that mixed warm and cold records *that* — in both arms' conditions, so
+/// a measurement taken warm is distinguishable in the record from one taken
+/// cold (§6.13).
+#[test]
+fn what_a_run_reused_becomes_a_condition_of_both_arms() {
+    let (left, right) = arms();
+    let mut running = interleaving(&left, &right, 17);
+    for _ in 0..6 {
+        let _ran = running.round(|_arm, _drew| warm(SECOND));
+    }
+    let held = running.finish();
+
+    assert_eq!(held.reuse(), Reuse::Uniform(Warmth::Warm));
+    for arm in [held.arms().0, held.arms().1] {
+        let stated = arm
+            .conditions()
+            .floor()
+            .reuse
+            .known()
+            .map(ToString::to_string)
+            .expect("what the run reused is a condition of the arm");
+        assert!(stated.starts_with("warm:"), "{stated}");
+    }
+}
+
+/// A run that loaded the model for some trials and not others is **not one
+/// measurement**, and the condition says so rather than averaging over it.
+#[test]
+fn a_mixed_run_says_it_is_not_one_measurement() {
+    let (left, right) = arms();
+    let mut round = 0_usize;
+    let mut running = interleaving(&left, &right, 19);
+    for _ in 0..6 {
+        let _ran = running.round(|_arm, _drew| {
+            round = round.saturating_add(1);
+            // The engine finds the model resident for some trials and not for
+            // others, which is what alternating arms against a daemon that
+            // holds one model at a time actually does.
+            let found = if round.is_multiple_of(3) {
+                Warmth::Cold
+            } else {
+                Warmth::Warm
+            };
+            (ns(SECOND), found)
+        });
+    }
+    let held = running.finish();
+
+    assert!(!held.reuse().is_uniform());
+    let stated = held
+        .arms()
+        .0
+        .conditions()
+        .floor()
+        .reuse
+        .known()
+        .map(ToString::to_string)
+        .expect("a mixed run states its mixture");
+    assert!(stated.contains("MIXED"), "{stated}");
+    assert!(stated.contains("not one measurement"), "{stated}");
+}
+
+/// **And it has teeth.** A comparison whose arms differ in the thing under test
+/// *and* in what they reused is confounded, so A8 withholds the delta — which
+/// is §6.13's *anything that could change a result must be visible in that
+/// result's conditions*, enforced rather than printed.
+#[test]
+fn a_warm_arm_against_a_cold_one_is_confounded() {
+    let (left, right) = arms();
+    let order: Vec<&Arm> = (0..12)
+        .map(|at| if at % 2 == 0 { &left } else { &right })
+        .collect();
+    let trials = laid_out(&order, &[SECOND; 12], &session());
+
+    // Two arms differing in quantization, and in what each found loaded.
+    let mut cold = everything_known();
+    cold.reuse = known("cold: every trial loaded the model for itself");
+    let mut hot = everything_known();
+    hot.quantization = known("q2_k");
+    hot.reuse = known("warm: the model was already resident for every trial");
+    let one = UnderTest::new(
+        left.clone(),
+        Conditions::new(BuildIdentity::current(), cold),
+    );
+    let other = UnderTest::new(
+        right.clone(),
+        Conditions::new(BuildIdentity::current(), hot),
+    );
+
+    let held = Comparison::from_trials(&trials, &one, &other).expect("still paired");
+    assert!(held.isolation().is_confounded());
+    let finding = held.finding(FIVE);
+    assert!(
+        finding.verdict().is_none(),
+        "a warm arm against a cold one has no delta to give (§6.13, A8): {finding}"
+    );
+    assert!(
+        format!("{finding}").contains("reuse"),
+        "and the refusal names what differed: {finding}"
+    );
+}
+
+/// A comparison read back out of the record cannot say what its trials
+/// reused — a `Trial` carries the value, not the engine's account of it — and
+/// says *unstated* rather than guessing (A7).
+#[test]
+fn a_comparison_rebuilt_from_trials_does_not_claim_to_know_what_it_reused() {
+    let (left, right) = arms();
+    let order: Vec<&Arm> = (0..8)
+        .map(|at| if at % 2 == 0 { &left } else { &right })
+        .collect();
+    let held =
+        from_trials(&laid_out(&order, &[SECOND; 8], &session()), &left, &right).expect("paired");
+    assert_eq!(held.reuse(), Reuse::Uniform(Warmth::Unstated));
+    assert!(
+        held.reuse().condition().contains("did not say"),
+        "{}",
+        held.reuse()
     );
 }

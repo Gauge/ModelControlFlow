@@ -18,6 +18,7 @@ use mcf_core::trial::{Arm, SessionId};
 use mcf_record::json::Value;
 
 use crate::compare::{Comparison, Discipline, Interleaving, UnderTest};
+use crate::warmth::Warmth;
 
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const SECOND: u64 = 1_000_000_000;
@@ -40,6 +41,7 @@ fn everything_known() -> Floor {
         instrumentation: known("recording"),
         artifact_storage: known("tmpfs"),
         seed_set: known("none: seed 0 held still, 128 token(s) pinned"),
+        reuse: known("warm: the model was already resident for every trial"),
     }
 }
 
@@ -80,7 +82,13 @@ fn run(
     );
     for _ in 0..rounds {
         let _ran = running.round(|arm, _drew| {
-            Duration::from_nanos(if *arm == named { left_ns } else { right_ns })
+            (
+                Duration::from_nanos(if *arm == named { left_ns } else { right_ns }),
+                // Stated rather than defaulted: §6.13 makes what a trial reused
+                // a condition, and a fixture that let it be inferred would be
+                // testing the inference.
+                Warmth::Warm,
+            )
         });
     }
     running.finish()

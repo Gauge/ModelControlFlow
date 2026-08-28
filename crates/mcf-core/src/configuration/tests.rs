@@ -165,7 +165,7 @@ fn the_realized_layout_is_a_condition() {
         ..Floor::nothing_known()
     };
     assert_eq!(floor.known_count(), 1);
-    assert_eq!(floor.entries().len(), 12);
+    assert_eq!(floor.entries().len(), 13);
     assert!(
         floor
             .entries()

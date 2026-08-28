@@ -80,6 +80,10 @@ pub fn floor(
         // no answer to give, because D19 has it hold the seed still and pin the
         // generation length instead (B-290).
         seed_set: Attested::Unknown,
+        // What a measurement reused is a property of the run, not of the
+        // machine, and this function reads the machine. A benchmark fills it
+        // in from what the engine said about each trial (B-081, §6.13).
+        reuse: Attested::Unknown,
     }
 }
 

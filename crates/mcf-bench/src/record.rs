@@ -69,6 +69,9 @@ pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Fin
             ]),
         ),
         ("discipline", discipline(held.discipline())),
+        // §6.13, B-081: what the run reused. A mixed run is not one
+        // measurement, and this is where that stops being invisible.
+        ("reuse", Value::text(held.reuse().condition())),
         ("pairs", Value::List(pairs(held))),
     ])
 }
@@ -218,6 +221,8 @@ fn pairs<K: ClockKind + Measurable>(held: &Comparison<K>) -> Vec<Value> {
                 ("left_position", Value::Integer(i64::from(left_at.0))),
                 ("right_position", Value::Integer(i64::from(right_at.0))),
                 ("first", Value::text(side(pair.first()))),
+                ("left_found", Value::text(pair.warmth().0.to_string())),
+                ("right_found", Value::text(pair.warmth().1.to_string())),
                 ("drew", encode::draw(pair.drew())),
                 ("difference", difference(pair.difference())),
             ])

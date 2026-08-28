@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 175 |
+| **Version** | 176 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (91 done, 1 dropped, 12 in progress,
-36 blocked on a decision, 77 open).** Every item cites
+decided, 23 resolved) and 217 build items (92 done, 1 dropped, 12 in progress,
+36 blocked on a decision, 76 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -252,7 +252,7 @@ first and importance second.
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
 | B-080 | Benchmark runner distinct from the test suite: no pass condition, never a gate on correctness | §6.7 | Benchmarks cannot fail CI; correctness tests cannot produce measurements | **done** (F59). `mcf bench <model> --against <model>`: it builds the comparison the only way one can be built (B-250), stops when this run's own arithmetic decides (F55, F57), and records what it found whichever way that was (B-086). No verdict sets a failing exit status — *differ*, *same to a stated resolution* and *not decided* all exit zero, because all three are things the machine said. The refusals are about being unable to measure: no such model, no daemon, an engine that cannot report a speed. **The engine is asked rather than assumed** — one request per arm, and the account says which engine ran, so a stand-in is refused by name rather than marked (B65, D31). `checks/tests/benchmarks_never_gate.rs` holds both halves: no verdict reaches a failing status, no gating test bounds a wall-clock reading, no gating test writes to the machine's own record, and the gating tier does not run the benchmark. The tiers that may assert on a timing are named there, because an exemption written down is one somebody can argue with |
-| B-081 | Non-adaptive measurement path: caching, reuse and adaptation are disabled while measuring, and warm-versus-cold is a recorded condition | §6.13, §6.2 | A measurement taken warm is distinguishable in the record from one taken cold | open |
+| B-081 | Non-adaptive measurement path: caching, reuse and adaptation are disabled while measuring, and warm-versus-cold is a recorded condition | §6.13, §6.2 | A measurement taken warm is distinguishable in the record from one taken cold | **done** (F64). `mcf_bench::warmth` reads each trial's warmth from the daemon's own account — a state this build has not been taught is *unstated* rather than whichever of the two it resembles — and a run is `Uniform` or **`Mixed`**, where mixed says *this is not one measurement* rather than averaging over it. One warm trial among a hundred and ninety-nine cold ones is mixed: §6.13's concern is hidden history, not proportion. It is the floor's thirteenth condition, written by `Interleaving::finish` so a caller cannot forget, and it flows into `Isolation` for nothing — a warm arm against a cold one is confounded and A8 withholds the delta. **What it made visible at once**: every benchmark trial is cold, even comparing a model with itself, because a prompt routes to a per-request subprocess and only a turn of identifiers reaches the server (B-376). Measured, that is 46 ms of overhead against 0.25 ms per token — **60% of a default trial and 74% of F59's** — which explains why that comparison could not see a difference between two quantizations. What remains is §6.13's corollary that the benchmark path may not *adapt*: making it warm needs the server path, which is B-376 and B-090 |
 | B-082 | Real-hardware only for performance numbers: no performance figure may originate in simulation | §6.16 | The type system or the record prevents a simulated timing being published | **done** (F60). Putting the clock in the type stopped a simulated duration being *compared* with a real one, which nobody was attempting, and not being *written down* as one, which F59's encoder did in three lines. `mcf_core::time::Measurable` closes it: implemented for `Monotonic` and nothing else, and the comparison encoder is bounded by it, so encoding a laboratory comparison is a compile error. It bit at once — three of the encoder's own tests were on the simulated clock and stopped compiling. Checked three ways: the trait has exactly one implementation, the encoder keeps its bound, and no crate that writes to the record names the laboratory's clock at all |
 | B-083 | Repeated trials with reported spread and sample count; single-shot timings are refused as anecdotes | §3.4 | No result is publishable with n=1 | **done** (F54, F55). Unblocked by DEC-007's first answer and F51: no result from one run, and seven repeats is what a five-percent claim needs on this machine measured rather than assumed. The count travels with the machine — `prototypes/timing-noise` is the instrument, and it is the instrument that ships rather than the number **Reshaped by F53:** the row's *no result with n=1* stands, but a fixed count does not. Six readings of one command needed seven to over a hundred repeats for the same claim, so a benchmark carries a stopping condition rather than a count, and reports the number it actually needed as part of the result **Built (F54):** `mcf_bench::enough` carries the rule. Three outcomes — differ, same to a stated resolution, not yet — with arms paired by construction and unequal ones refused rather than truncated. Its first real comparison stopped itself at seventeen paired trials, which is neither of the counts previously derived, and reported the count as part of the answer **Corrected by F55:** the *same to a stated resolution* branch was asking a circular question — *would a difference this big have shown?* of a null built out of the very differences such a difference would have moved — and on four real paired trials it declared a null result at a count where `Differ` was arithmetically unreachable, since a sign flip over four pairs cannot reach one in twenty. It asks about power now: centre this run's differences, add an effect of exactly the resolution asked for, and ask whether *that* would have been declared. The same correction went into the pooled path The row's condition — *no result is publishable with n=1* — is now held in two places at once: a `Measurement` cannot be built from one sample, and a comparison of fewer than two pairs is `NotYet` rather than an answer **And the test itself changed (F57):** the resampling could not recognize two arms with identical timings — flipping the signs of equal magnitudes cannot move the median's size — so the paired verdict is an exact sign test now, computed in whole numbers with no seed. Six pairs is the fewest that can reach one in twenty at all, which is F55's four-pair defect in its general form **And a third correction (F59):** `Differ` now requires the effect to be real *and* at least as large as the resolution the caller asked about. The first real benchmark reported *they differ by 0.8%* to a caller who had said five percent — a true statement answering a question nobody asked. Below the resolution the verdict is the null one, and the measured difference travels inside it (A1) |
 | B-084 | Warm-up and thermal steady state per DEC-007's acceptance criteria | §3.4, §7.7 | Runs that fail the criteria are marked invalid, not silently included | blocked (DEC-007) |
@@ -394,6 +394,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 176 — every trial was cold
+
+B-081 done (F64). What a trial reused is the floor's thirteenth condition, and
+reading it showed that every benchmark trial loads the model for itself —
+because a prompt routes to a per-request subprocess. Three fifths of a default
+trial is process start, which is why F59's comparison of two quantizations
+could not see a difference: three fifths of what it timed could not differ
+between the arms.
 
 ### Version 175 — whose choice the sampler is
 

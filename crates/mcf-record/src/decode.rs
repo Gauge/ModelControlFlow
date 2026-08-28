@@ -61,6 +61,7 @@ pub fn floor(value: &Value) -> Option<Floor> {
         instrumentation: condition(value, "instrumentation")?,
         artifact_storage: condition(value, "artifact_storage")?,
         seed_set: condition(value, "seed_set")?,
+        reuse: condition(value, "reuse")?,
     })
 }
 

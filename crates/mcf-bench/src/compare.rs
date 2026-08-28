@@ -51,11 +51,13 @@
 
 use core::fmt;
 
-use mcf_core::measurement::{Conditions, Isolation, PartsPerMillion};
+use mcf_core::attested::Attested;
+use mcf_core::measurement::{ConditionValue, Conditions, Isolation, PartsPerMillion};
 use mcf_core::time::{ClockKind, Duration};
 use mcf_core::trial::{Arm, Draw, Position, SeedSet, SessionId, Trial, Trials};
 
 use super::enough::{self, Verdict};
+use super::warmth::{Reuse, Warmth};
 
 /// A million, as the ratios here are expressed.
 const MILLION: i128 = 1_000_000;
@@ -124,6 +126,17 @@ impl UnderTest {
     #[must_use]
     pub const fn conditions(&self) -> &Conditions {
         &self.conditions
+    }
+
+    /// Records what this arm's trials reused (§6.13, B-081).
+    ///
+    /// The one condition a benchmark can only fill in afterwards, and the
+    /// reason `UnderTest` is not otherwise mutable: everything else about a
+    /// configuration is known before it runs.
+    fn state_reuse(&mut self, held: ConditionValue) {
+        let mut floor = self.conditions.floor().clone();
+        floor.reuse = Attested::Known(held);
+        self.conditions = Conditions::new(self.conditions.mcf(), floor);
     }
 }
 
@@ -228,6 +241,7 @@ pub struct Pair<K: ClockKind> {
     first: Side,
     at: (Position, Position),
     drew: Draw,
+    warmth: (Warmth, Warmth),
 }
 
 impl<K: ClockKind> Pair<K> {
@@ -253,6 +267,17 @@ impl<K: ClockKind> Pair<K> {
     #[must_use]
     pub const fn positions(&self) -> (Position, Position) {
         self.at
+    }
+
+    /// What each run of this pair found already loaded, left then right.
+    ///
+    /// Per run rather than per pair, because the two are not alike: only one
+    /// model is resident at a time (DEC-001), so a pair that alternates arms
+    /// may have one warm run and one cold — which is precisely the hidden
+    /// state §6.13 requires be visible.
+    #[must_use]
+    pub const fn warmth(&self) -> (Warmth, Warmth) {
+        self.warmth
     }
 
     /// What both runs of this pair drew.
@@ -705,6 +730,43 @@ impl<K: ClockKind> Comparison<K> {
         }
     }
 
+    /// What the whole run reused, over both arms (§6.13, B-081).
+    ///
+    /// A run that mixed warm and cold trials is not one measurement, and this
+    /// is where that stops being invisible. It goes into the arms' conditions,
+    /// so `Isolation` sees it: two arms that differ in warmth *and* in the
+    /// thing under test are confounded, and A8 withholds the delta.
+    #[must_use]
+    pub fn reuse(&self) -> Reuse {
+        Reuse::over(
+            self.pairs()
+                .iter()
+                .flat_map(|pair| [pair.warmth.0, pair.warmth.1]),
+        )
+    }
+
+    /// Writes what the run reused into both arms' conditions (§6.13, B-081).
+    ///
+    /// Done at the end rather than at the start, because it is a fact about
+    /// what happened: a floor filled in before the first trial would state what
+    /// MCF intended. Both arms get the same value because reuse is a property
+    /// of the *run* — one model is resident at a time, so what one arm found
+    /// depends on what the other did.
+    ///
+    /// From here it flows into `Isolation` for nothing: two arms that differ in
+    /// warmth and in the thing under test are confounded, and A8 withholds the
+    /// delta.
+    ///
+    /// Called by [`Interleaving::finish`] rather than by the caller: the runner
+    /// is what learns the warmth, so the runner is what records it, and a
+    /// caller cannot forget.
+    fn state_reuse(&mut self) {
+        let held = ConditionValue::text(self.reuse().condition());
+        for arm in [&mut self.left, &mut self.right] {
+            arm.state_reuse(held.clone());
+        }
+    }
+
     /// How many pairs ran the left arm first, and how many the right.
     ///
     /// B53 randomizes the order so that going first is not an advantage; this
@@ -844,6 +906,12 @@ impl<K: ClockKind> Comparison<K> {
                 first,
                 at: (l.position(), r.position()),
                 drew: l.drew().clone(),
+                // A trial read back out of the record does not say what it
+                // reused: the runner learns that from the engine as it goes,
+                // and a `Trial` carries the value rather than the engine's
+                // account of it. Unstated is the honest answer and is not a
+                // guess in either direction (A7).
+                warmth: (Warmth::Unstated, Warmth::Unstated),
             });
         }
         if pairs.len() < 2 {
@@ -1049,7 +1117,7 @@ impl<K: ClockKind> Interleaving<K> {
     /// Runs both arms once, in an order this pair draws for itself.
     ///
     /// `run` is called with the arm to run and what this pair drew, and returns
-    /// what it took. It is called exactly twice, back to back, which is what
+    /// what it took **and what it found already loaded** (§6.13, B-081). It is called exactly twice, back to back, which is what
     /// makes the pair a pair — and with the *same* draw both times, because
     /// what must differ between the two runs is the arm and not the trajectory
     /// (§3.27, D19).
@@ -1057,7 +1125,7 @@ impl<K: ClockKind> Interleaving<K> {
     /// Returns `false` where a declared behaviour set has run out, which is the
     /// end of what this comparison can honestly do: repeating the list would
     /// repeat a trajectory (B61).
-    pub fn round(&mut self, mut run: impl FnMut(&Arm, &Draw) -> Duration<K>) -> bool {
+    pub fn round(&mut self, mut run: impl FnMut(&Arm, &Draw) -> (Duration<K>, Warmth)) -> bool {
         let Some(drew) = self
             .comparison
             .discipline
@@ -1095,6 +1163,8 @@ impl<K: ClockKind> Interleaving<K> {
                 (l, r, (second_position, first_position))
             }
         };
+        let warmth = (left.1, right.1);
+        let (left, right) = (left.0, right.0);
         if let Body::Paired { pairs, .. } = &mut self.comparison.body {
             pairs.push(Pair {
                 left,
@@ -1102,6 +1172,7 @@ impl<K: ClockKind> Interleaving<K> {
                 first,
                 at,
                 drew,
+                warmth,
             });
         }
         true
@@ -1120,8 +1191,13 @@ impl<K: ClockKind> Interleaving<K> {
     }
 
     /// The comparison, finished.
+    ///
+    /// Finishing is where what the run reused becomes a condition (§6.13,
+    /// B-081): the runner is what saw each trial's warmth, so the runner is
+    /// what writes it down, and a caller cannot forget to.
     #[must_use]
-    pub fn finish(self) -> Comparison<K> {
+    pub fn finish(mut self) -> Comparison<K> {
+        self.comparison.state_reuse();
         self.comparison
     }
 
