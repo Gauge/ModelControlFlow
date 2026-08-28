@@ -135,3 +135,61 @@ mod markers {
         assert!(marker_shaped("<|im_start").is_empty());
     }
 }
+
+/// What a prompt spends is stated against a context that says where it came
+/// from (B-382, A21).
+mod cost {
+    use super::super::what_it_spends;
+
+    #[test]
+    fn a_prompt_that_fits_says_what_is_left() {
+        let said = what_it_spends(100, Some(8192));
+        assert!(said.contains("leaving 8092 token(s)"), "{said}");
+        assert!(
+            said.contains("for everything else"),
+            "the share alone hides that the answer needs room too: {said}"
+        );
+    }
+
+    #[test]
+    fn a_prompt_that_does_not_fit_says_so_before_anything_is_sent() {
+        let said = what_it_spends(1185, Some(128));
+        assert!(
+            said.contains("does not fit, before a single token of answer"),
+            "the question B-382 exists to answer is whether this can be sent at all: {said}"
+        );
+    }
+
+    #[test]
+    fn the_context_is_marked_as_declared() {
+        let said = what_it_spends(10, Some(4096));
+        assert!(
+            said.contains("DECLARED"),
+            "A21: a declared figure presented as a measured one is the failure: {said}"
+        );
+        assert!(
+            said.contains("`mcf probe`"),
+            "and the command that would verify it must be named, or the marking is a \
+             disclaimer rather than a route: {said}"
+        );
+    }
+
+    #[test]
+    fn no_declared_context_is_unknown_and_not_unlimited() {
+        let said = what_it_spends(10, None);
+        assert!(said.contains("unknown rather than unlimited"), "{said}");
+        for wrong in ["0 token(s) of context", "no limit", "unlimited context"] {
+            assert!(!said.contains(wrong), "{wrong} in {said}");
+        }
+    }
+
+    #[test]
+    fn a_declared_zero_is_treated_as_no_declaration() {
+        // A file declaring zero has declared nothing usable, and dividing by
+        // it would be the arithmetic deciding what the sentence says.
+        assert!(
+            what_it_spends(10, Some(0)).contains("unknown rather than unlimited"),
+            "a zero context must not become a division"
+        );
+    }
+}

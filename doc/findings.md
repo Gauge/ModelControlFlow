@@ -108,6 +108,7 @@ forward as one.
 | 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
 | 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
 | 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
+| 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5982,6 +5983,52 @@ about a string that never appears. It joins continuations first now. That is
 the fourth variant this repository has met of *a check that passes without
 checking* (F80), and the second where the fix was to read the source the way a
 compiler does rather than the way a text editor shows it.
+
+## 82 · F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)
+
+**The question, answered before anything is sent.** Is this guidance document,
+this transcript, this file too long for this model? The same text is a rounding
+error on one model's window and does not fit at all on another's, and there was
+no surface that said so. `mcf segment` now does:
+
+```
+1185 token(s) of prompt against a DECLARED context of 128 token(s) — 925.7%
+of it: this prompt does not fit, before a single token of answer.
+```
+
+and, where it does fit, what is left:
+
+```
+8 token(s) of prompt against a DECLARED context of 8192 token(s) — 0.0% of
+it, leaving 8184 token(s) for everything else — the answer, and anything else
+in the window.
+```
+
+*Leaving N for everything else* rather than only a percentage, because a share
+of the window hides that the answer needs room in it too.
+
+**Declared, and said to be declared** (A21). The number is the file's claim
+about itself, and F42 measured that an engine on a real machine can take fewer.
+So the word is in capitals, and the sentence names `mcf probe` as what would
+verify it — a marking with no route attached is a disclaimer.
+
+**Which is where the item stops, and why.** B-382 asks for the count against
+the **usable** context *measured* for this model. That measurement exists —
+F42 took it — and it is **not in the record**. `mcf probe` prints its findings
+and writes only `--apply`'s configuration change, so the usable context this
+machine established for a model lives on a terminal that has since scrolled.
+
+**A1's plainest case.** *A measurement nobody can find later is the same as one
+not taken.* Every surface that wants a measured figure rather than a declared
+one is blocked behind this, and the fix is not in B-382's scope: it is that a
+probe's outcome should be written down. That is B-386, opened here, and B-382
+stays in progress until it exists. Building a reader for a record that is never
+written would be dead code pretending to be a feature.
+
+**No declaration is unknown, not unlimited** (A7). A file that declares no
+context length gets *there is nothing to state it against — which is unknown
+rather than unlimited*, and a declared zero is treated as no declaration rather
+than as a division.
 
 ## Changelog
 

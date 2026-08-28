@@ -115,7 +115,13 @@ fn segmented(path: &Path, prompt: &str) -> Result<String, String> {
         });
     }
 
-    Ok(render(prompt, &fragments, &before, &vocabulary))
+    Ok(render(
+        prompt,
+        &fragments,
+        &before,
+        &vocabulary,
+        mcf_serve::probes::declared_context(&file),
+    ))
 }
 
 /// What a reader sees.
@@ -124,6 +130,7 @@ fn render(
     fragments: &[Fragment],
     decoded: &str,
     vocabulary: &mcf_standin::tokenizer::Vocabulary,
+    context: Option<usize>,
 ) -> String {
     let mut lines = vec![
         format!(
@@ -156,6 +163,8 @@ fn render(
             }
         ));
     }
+    lines.push(String::new());
+    lines.push(what_it_spends(fragments.len(), context));
     lines.push(String::new());
     lines.push(whole_or_shattered(prompt, fragments));
     for said in marker_fidelity(prompt, vocabulary) {
@@ -268,6 +277,55 @@ fn marker_shaped(prompt: &str) -> Vec<String> {
         }
     }
     found
+}
+
+/// What the prompt spends, against what this model says it can take
+/// (B-382, PR11, B-055, A21, §3.8).
+///
+/// **The question it answers before anything is sent**: is this guidance
+/// document, this transcript, this file, too long for this model? The same
+/// text is a rounding error on one model's window and does not fit at all on
+/// another's, and there is no surface today that says so.
+///
+/// **Declared, and said to be declared** (A21). The number in the file is the
+/// model's claim about itself. What an engine on *this* machine actually
+/// accepts is a different number — F42 measured a divergence and B-055 exists
+/// because of it — and MCF has no measurement of it here, because a probe's
+/// outcome is not yet written to the record (B-386). So this states the
+/// declaration, names it as one, and names the command that would verify it.
+/// A declared figure presented as a measured one is exactly A21's failure.
+fn what_it_spends(tokens: usize, context: Option<usize>) -> String {
+    let Some(context) = context.filter(|held| *held > 0) else {
+        return format!(
+            "{tokens} token(s) of prompt. This file declares no context length, so there is \
+             nothing to state it against — which is unknown rather than unlimited (A7)."
+        );
+    };
+    let share = tokens
+        .saturating_mul(1_000)
+        .checked_div(context)
+        .unwrap_or(0);
+    let fits = if tokens < context {
+        format!(
+            "{}.{}% of it, leaving {} token(s) for everything else — the answer, and anything \
+             else in the window",
+            share.wrapping_div(10),
+            share.wrapping_rem(10),
+            context.saturating_sub(tokens)
+        )
+    } else {
+        format!(
+            "{}.{}% of it: this prompt does not fit, before a single token of answer",
+            share.wrapping_div(10),
+            share.wrapping_rem(10)
+        )
+    };
+    format!(
+        "{tokens} token(s) of prompt against a DECLARED context of {context} token(s) — \
+         {fits}. Declared is the file's claim about itself and not a measurement: what this \
+         engine on this machine actually accepts is what `mcf probe` asks, and F42 found the \
+         two can disagree (A21, B-055)."
+    )
 }
 
 /// Which words survived whole, and which were broken up.
