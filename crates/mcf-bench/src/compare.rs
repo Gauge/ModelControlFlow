@@ -51,7 +51,7 @@
 
 use core::fmt;
 
-use mcf_core::measurement::PartsPerMillion;
+use mcf_core::measurement::{Conditions, Isolation, PartsPerMillion};
 use mcf_core::time::{ClockKind, Duration};
 use mcf_core::trial::{Arm, Position, SessionId, Trial, Trials};
 
@@ -86,6 +86,44 @@ impl fmt::Display for Side {
             Self::Left => "left",
             Self::Right => "right",
         })
+    }
+}
+
+/// One arm of a comparison: a configuration, and the name it is called by.
+///
+/// The two travel together because A8's question is about the configuration
+/// rather than about the name — *a comparison is only meaningful when one
+/// thing differs*, and what differs is a condition. An arm that carried only a
+/// name would leave [`Comparison::isolation`] with nothing to read, and a
+/// comparison that cannot say what it isolated is one whose delta a reader
+/// will over-read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnderTest {
+    arm: Arm,
+    conditions: Conditions,
+}
+
+impl UnderTest {
+    /// An arm, and the conditions it is measured under.
+    ///
+    /// Both are arguments and neither has a default. `Conditions` built on
+    /// `Floor::nothing_known()` is the honest answer where MCF cannot yet read
+    /// them, and it produces [`Isolation::Undetermined`] rather than a claim.
+    #[must_use]
+    pub const fn new(arm: Arm, conditions: Conditions) -> Self {
+        Self { arm, conditions }
+    }
+
+    /// What it is called.
+    #[must_use]
+    pub const fn arm(&self) -> &Arm {
+        &self.arm
+    }
+
+    /// What it was measured under.
+    #[must_use]
+    pub const fn conditions(&self) -> &Conditions {
+        &self.conditions
     }
 }
 
@@ -352,16 +390,28 @@ impl fmt::Display for NotComparable {
 /// What two arms were found to do, and how much the construction is worth.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    verdict: Verdict,
+    verdict: Option<Verdict>,
     strength: Strength,
+    isolation: Isolation,
+    declared: Option<String>,
     arms: (Arm, Arm),
 }
 
 impl Finding {
-    /// The statistical outcome.
+    /// The statistical outcome — **`None` where there is none to give.**
+    ///
+    /// A8: *when more than one thing differs, the honest output is "these are
+    /// not comparable", not a delta.* This is that sentence with a type behind
+    /// it. The arithmetic difference between two confounded arms exists and
+    /// says nothing about which of the differences produced it, so it is not
+    /// computed and not returned — a caller cannot print it by forgetting to
+    /// check [`Finding::isolation`], because there is nothing to print.
+    ///
+    /// A confound the operator *declares* is science (A8), and comes back with
+    /// its verdict, its variables and its declaration together.
     #[must_use]
-    pub const fn verdict(&self) -> &Verdict {
-        &self.verdict
+    pub const fn verdict(&self) -> Option<&Verdict> {
+        self.verdict.as_ref()
     }
 
     /// How the comparison was built.
@@ -369,24 +419,49 @@ impl Finding {
     pub const fn strength(&self) -> &Strength {
         &self.strength
     }
+
+    /// What the comparison isolated, if anything.
+    #[must_use]
+    pub const fn isolation(&self) -> &Isolation {
+        &self.isolation
+    }
+
+    /// The operator's declaration of a confound, where one was made.
+    #[must_use]
+    pub fn declared(&self) -> Option<&str> {
+        self.declared.as_deref()
+    }
 }
 
 impl fmt::Display for Finding {
     fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (left, right) = &self.arms;
-        write!(
-            form,
-            "{left} vs {right}: {} — {}",
-            self.verdict, self.strength
-        )
+        write!(form, "{left} vs {right}: ")?;
+        match &self.verdict {
+            Some(verdict) => write!(form, "{verdict}")?,
+            None => write!(form, "{}", self.isolation)?,
+        }
+        write!(form, " — {}", self.strength)?;
+        if let Some(because) = &self.declared {
+            write!(
+                form,
+                " — confound declared by the operator ({because}): {} differ, and MCF reports \
+                 what was asked for rather than judging the declaration",
+                self.isolation.differing().join(", ")
+            )?;
+        } else if self.verdict.is_some() && !self.isolation.isolates_a_variable() {
+            write!(form, " — {}", self.isolation)?;
+        }
+        Ok(())
     }
 }
 
 /// Two arms, and the trials that compare them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comparison<K: ClockKind> {
-    left: Arm,
-    right: Arm,
+    left: UnderTest,
+    right: UnderTest,
+    declared: Option<String>,
     body: Body<K>,
 }
 
@@ -410,8 +485,36 @@ enum Body<K: ClockKind> {
 impl<K: ClockKind> Comparison<K> {
     /// The arms, left then right.
     #[must_use]
-    pub const fn arms(&self) -> (&Arm, &Arm) {
+    pub const fn arms(&self) -> (&UnderTest, &UnderTest) {
         (&self.left, &self.right)
+    }
+
+    /// What separates the two arms' configurations (A8, B-085).
+    ///
+    /// Computed from the conditions rather than remembered, and computed from
+    /// [`Floor::entries`] rather than from a list written out here, so a
+    /// condition added to the floor becomes a condition this comparison
+    /// isolates on.
+    ///
+    /// [`Floor::entries`]: mcf_core::measurement::Floor::entries
+    #[must_use]
+    pub fn isolation(&self) -> Isolation {
+        Isolation::between(self.left.conditions(), self.right.conditions())
+    }
+
+    /// Declares a confound, which A8 makes the difference between science and
+    /// an error.
+    ///
+    /// *A confound the operator declares is science; a confound nobody
+    /// declared is an error.* MCF does not judge the declaration — it cannot,
+    /// since whether two variables may honestly move together is a statement
+    /// about the question being asked — so it records the reason and prints it
+    /// beside every variable that differs, wherever the finding is rendered.
+    /// What it will not do is let the delta out without them.
+    #[must_use]
+    pub fn declaring(mut self, because: impl Into<String>) -> Self {
+        self.declared = Some(because.into());
+        self
     }
 
     /// How the arms were brought together.
@@ -502,10 +605,16 @@ impl<K: ClockKind> Comparison<K> {
                 resolving,
             ),
         };
+        let isolation = self.isolation();
+        // A8's refusal, and the only place a delta is withheld. A declared
+        // confound is not withheld: it is reported with its declaration.
+        let withheld = isolation.is_confounded() && self.declared.is_none();
         Finding {
-            verdict,
+            verdict: if withheld { None } else { Some(verdict) },
             strength: self.strength(),
-            arms: (self.left.clone(), self.right.clone()),
+            isolation,
+            declared: self.declared.clone(),
+            arms: (self.left.arm().clone(), self.right.arm().clone()),
         }
     }
 
@@ -523,9 +632,10 @@ impl<K: ClockKind> Comparison<K> {
     /// Every way the trials are not a paired comparison, by name.
     pub fn from_trials(
         trials: &Trials<Duration<K>>,
-        left: &Arm,
-        right: &Arm,
+        left_under_test: &UnderTest,
+        right_under_test: &UnderTest,
     ) -> Result<Self, NotComparable> {
+        let (left, right) = (left_under_test.arm(), right_under_test.arm());
         let mut merged: Vec<&Trial<Duration<K>>> = trials
             .all()
             .iter()
@@ -597,8 +707,9 @@ impl<K: ClockKind> Comparison<K> {
             return Err(NotComparable::TooFew { have: pairs.len() });
         }
         Ok(Self {
-            left: left.clone(),
-            right: right.clone(),
+            left: left_under_test.clone(),
+            right: right_under_test.clone(),
+            declared: None,
             body: Body::Paired { session, pairs },
         })
     }
@@ -617,12 +728,12 @@ impl<K: ClockKind> Comparison<K> {
     /// sessions of its own — and where both arms share a session.
     pub fn from_separate_sessions(
         left_trials: &Trials<Duration<K>>,
-        left: &Arm,
+        left: &UnderTest,
         right_trials: &Trials<Duration<K>>,
-        right: &Arm,
+        right: &UnderTest,
     ) -> Result<Self, NotComparable> {
-        let (left_session, of_left) = one_arm(left_trials, left)?;
-        let (right_session, of_right) = one_arm(right_trials, right)?;
+        let (left_session, of_left) = one_arm(left_trials, left.arm())?;
+        let (right_session, of_right) = one_arm(right_trials, right.arm())?;
         if left_session == right_session {
             return Err(NotComparable::OneSession {
                 session: left_session,
@@ -631,6 +742,7 @@ impl<K: ClockKind> Comparison<K> {
         Ok(Self {
             left: left.clone(),
             right: right.clone(),
+            declared: None,
             body: Body::Separate {
                 left_session,
                 right_session,
@@ -689,11 +801,12 @@ impl<K: ClockKind> Interleaving<K> {
     /// the same inputs to give the same run, and an order drawn from the time
     /// of day is one more thing that differs between two sittings.
     #[must_use]
-    pub fn new(left: Arm, right: Arm, session: SessionId, seed: u64) -> Self {
+    pub fn new(left: UnderTest, right: UnderTest, session: SessionId, seed: u64) -> Self {
         Self {
             comparison: Comparison {
                 left,
                 right,
+                declared: None,
                 body: Body::Paired {
                     session,
                     pairs: Vec::new(),
@@ -722,7 +835,10 @@ impl<K: ClockKind> Interleaving<K> {
         } else {
             Side::Right
         };
-        let (left_arm, right_arm) = (self.comparison.left.clone(), self.comparison.right.clone());
+        let (left_arm, right_arm) = (
+            self.comparison.left.arm().clone(),
+            self.comparison.right.arm().clone(),
+        );
         let first_position = Position(self.next_position);
         let second_position = Position(self.next_position.saturating_add(1));
         self.next_position = self.next_position.saturating_add(2);

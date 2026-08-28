@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 59 |
+| **Version** | 60 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -83,6 +83,7 @@ forward as one.
 | 53 | [F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)](#53--f53--the-noise-floor-is-a-property-of-the-moment-not-of-the-machine-dec-007-b-083-b-181-d35-a19-f51-f52) |
 | 54 | [F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)](#54--f54--the-stopping-condition-and-the-first-comparison-that-stopped-itself-b-083-b-086-b-250-dec-007-f51-f52-f53) |
 | 55 | [F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)](#55--f55--the-pairing-is-worth-eighty-eight-percent-and-the-stopping-condition-could-only-answer-one-way-b-250-b-083-b53-327-dec-007-f51-f53-f54) |
+| 56 | [F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)](#56--f56--a-confounded-comparison-has-no-delta-to-give-a8-b-085-34-a7-f55) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4258,7 +4259,99 @@ unpredictability — nothing here needs the latter. And the eighty pairs above i
 this sitting's number: F53's finding stands, and the count is still a property
 of the half-hour.
 
+## 56 · F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)
+
+**What was asked.** A8 says *a comparison is only meaningful when one thing
+differs; when more than one did, the honest output is "these are not
+comparable", not a delta.* F55 made a comparison a type that knows how it was
+built. This makes it a type that knows what it is a comparison **of** — and
+refuses to answer when it is a comparison of nothing in particular.
+
+**An arm is a configuration, not a name.** `UnderTest` carries an `Arm` and the
+`Conditions` it is measured under, and every constructor of a `Comparison`
+takes two of them. An arm that carried only a name would leave the question
+unanswerable, and a comparison that cannot say what it isolated is one whose
+delta a reader will over-read.
+
+**Four answers, computed from the floor itself.** `mcf_core::measurement::Isolation`
+walks `Floor::entries()` rather than a list of field names written out again,
+which matters more than it looks: §3.3 says the floor never shrinks and does
+not say it never grows, and a second copy of the list would be the thing that
+quietly stopped growing with it — the comparison would go on reporting
+*isolated* about a condition it had stopped looking at. A check enforces that
+the isolation module names no condition of its own.
+
+- *Same configuration.* Nothing differs. Not a failure and not a confound: two
+  arms of one configuration measure the machine's own noise, which is the
+  control every comparison should be able to run against itself — and is
+  exactly the null run F55 used.
+- *Isolated.* Exactly one condition differs, and it is named.
+- *Confounded.* More than one differs. **The verdict is `None`.**
+- *Undetermined.* A condition is `Unknown` on one side or the other.
+
+**Two unknowns are not a match**, which is A7 pointed at a comparison. *They
+were probably the same* is a plausible value substituted for something MCF did
+not read, and it is the substitution that would make this whole check
+worthless: today almost every condition producer is unbuilt, so a rule that
+counted unknown-against-unknown as agreement would report *isolated* about
+every comparison MCF can currently take.
+
+**Ordering, stated because it is a judgement.** Two known differences are a
+confound whatever else is unread. A comparison that has already lost its
+meaning does not recover it by MCF failing to read a twelfth condition, and
+reporting *undetermined* there would be the softer of two answers where A8
+wants the harder one.
+
+**The refusal is in the type.** `Finding::verdict()` returns
+`Option<&Verdict>`, and it is `None` exactly when the arms are confounded and
+the operator has not declared it. Not a flag beside the number and not a
+warning in the rendering — there is no number, so a caller cannot print one by
+forgetting to ask. On twelve interleaved trials in which one arm takes twice as
+long, with quantization *and* thermal state differing, the rendering is *these
+are not comparable: 2 conditions differ (thermal\_state, quantization)* and the
+words *they differ by* appear nowhere in it.
+
+**A confound the operator declares is science** (A8), so `declaring(because)`
+exists and returns the delta with the declaration and every differing variable
+printed beside it. MCF does not judge the declaration and cannot: whether two
+variables may honestly move together is a statement about the question being
+asked, not about the machine. What it will not do is let the delta out without
+them.
+
+**What this immediately says about MCF's own instrument.** The timing prototype
+compares two shell commands. It can state one condition — the command line, as
+`mcf_configuration` — and cannot state the other ten, so its findings now read:
+
+```
+they differ by 76.4%, after 10 paired trial(s) … — isolation is undetermined:
+mcf_configuration differs, and 10 condition(s) could not be compared
+(hardware_state, thermal_state, driver_versions, runtime_versions,
+quantization, context_length, batch_shape, realized_placement,
+instrumentation, artifact_storage)
+```
+
+That sentence is longer than the number it qualifies, and it is the honest
+description of what a prototype timing two opaque commands has established.
+Every one of those ten is a producer that does not exist yet (B-007, B-013),
+so the sentence shortens as MCF learns to read its own machine — which is the
+point of asking the question in a form that can be answered later.
+
+**What was not established.** The comparison is of *values*, so two conditions
+recorded in different words — `q8_0` against `Q8_0` — read as a difference.
+Normalizing them would be MCF deciding two strings mean the same thing, which
+is a judgement it has no basis for; the producers that will write these fields
+are what makes the values comparable, and until they exist the strings are the
+caller's to keep consistent. Nothing here checks that a *declared* confound is
+a reasonable one, and nothing can.
+
 ## Changelog
+
+### Version 60 — a confounded comparison has no delta
+
+F56. An arm is a configuration; `Isolation` says whether a comparison isolated
+one variable, none, several, or something MCF has not read enough to judge; and
+a confounded comparison's verdict is `None` rather than a number with a warning
+beside it.
 
 ### Version 59 — the pairing is structural, and it is worth eighty-eight percent
 

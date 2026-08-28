@@ -5,11 +5,13 @@
 //! keeps the two kinds of duration apart in the type system. A test that
 //! reached for the monotonic clock would be measuring the test machine.
 
-use mcf_core::measurement::PartsPerMillion;
+use mcf_core::attested::Attested;
+use mcf_core::build_identity::BuildIdentity;
+use mcf_core::measurement::{ConditionValue, Conditions, Floor, Isolation, PartsPerMillion};
 use mcf_core::time::{Duration, Simulated};
 use mcf_core::trial::{Arm, Position, SessionId, Trial, Trials};
 
-use super::{Comparison, Difference, Interleaving, NotComparable, Side, Strength};
+use super::{Comparison, Difference, Interleaving, NotComparable, Side, Strength, UnderTest};
 use crate::enough::Verdict;
 
 /// Five percent, as this module spells it.
@@ -31,6 +33,82 @@ fn session() -> SessionId {
 
 fn ns(nanos: u64) -> Duration<Simulated> {
     Duration::from_nanos(nanos)
+}
+
+/// A floor in which every condition is known, so that a test changes exactly
+/// what it means to change.
+fn everything_known() -> Floor {
+    Floor {
+        hardware_state: known("this machine"),
+        thermal_state: known("steady"),
+        driver_versions: known("none"),
+        runtime_versions: known("stand-in 0.1"),
+        quantization: known("q8_0"),
+        context_length: Attested::Known(ConditionValue::integer(2048)),
+        batch_shape: Attested::Known(ConditionValue::integer(1)),
+        mcf_configuration: known("default"),
+        realized_placement: known("host"),
+        instrumentation: known("recording"),
+        artifact_storage: known("tmpfs"),
+    }
+}
+
+fn known(value: &str) -> Attested<ConditionValue> {
+    Attested::Known(ConditionValue::text(value))
+}
+
+/// An arm as a configuration, optionally differing in one named condition.
+fn under_test(arm: &Arm, differing: &[(&str, &str)]) -> UnderTest {
+    let mut floor = everything_known();
+    for (question, value) in differing {
+        match *question {
+            "quantization" => floor.quantization = known(value),
+            "thermal_state" => floor.thermal_state = known(value),
+            "context_length" => floor.context_length = known(value),
+            other => panic!("this helper does not set {other}"),
+        }
+    }
+    UnderTest::new(
+        arm.clone(),
+        Conditions::new(BuildIdentity::current(), floor),
+    )
+}
+
+/// The two arms as configurations differing in exactly one condition, which is
+/// the only shape A8 admits a delta from. Most tests here are about the
+/// *pairing* rather than about isolation, so they take this and say no more.
+fn isolated(left: &Arm, right: &Arm) -> (UnderTest, UnderTest) {
+    (
+        under_test(left, &[]),
+        under_test(right, &[("quantization", "q2_k")]),
+    )
+}
+
+/// A comparison of two arms read back out of one session's trials, isolated.
+fn from_trials(
+    trials: &Trials<Duration<Simulated>>,
+    left: &Arm,
+    right: &Arm,
+) -> Result<Comparison<Simulated>, NotComparable> {
+    let (one, other) = isolated(left, right);
+    Comparison::from_trials(trials, &one, &other)
+}
+
+/// A cross-session comparison of two arms, isolated.
+fn from_separate_sessions(
+    left_trials: &Trials<Duration<Simulated>>,
+    left: &Arm,
+    right_trials: &Trials<Duration<Simulated>>,
+    right: &Arm,
+) -> Result<Comparison<Simulated>, NotComparable> {
+    let (one, other) = isolated(left, right);
+    Comparison::from_separate_sessions(left_trials, &one, right_trials, &other)
+}
+
+/// A runner over two isolated arms.
+fn interleaving(left: &Arm, right: &Arm, seed: u64) -> Interleaving<Simulated> {
+    let (one, other) = isolated(left, right);
+    Interleaving::new(one, other, session(), seed)
 }
 
 /// Trials laid out in a stated order of arms, positions counting up from zero.
@@ -58,7 +136,7 @@ fn block_then_subtract_is_refused_by_name() {
         .map(|at| SECOND.saturating_add(at * 1_000_000))
         .collect();
     let trials = laid_out(&order, &values, &session());
-    match Comparison::from_trials(&trials, &left, &right) {
+    match from_trials(&trials, &left, &right) {
         Err(NotComparable::RanInBlocks { arm, at }) => {
             assert_eq!(arm, left);
             assert_eq!(at, Position(0), "the first couple is where it shows");
@@ -85,7 +163,7 @@ fn interleaved_trials_are_a_comparison() {
         })
         .collect();
     let trials = laid_out(&order, &values, &session());
-    let held = Comparison::from_trials(&trials, &left, &right).expect("interleaved trials pair");
+    let held = from_trials(&trials, &left, &right).expect("interleaved trials pair");
     assert_eq!(held.pairs().len(), 6);
     assert!(held.strength().is_paired());
     assert_eq!(held.trials_per_arm(), (6, 6));
@@ -117,7 +195,7 @@ fn a_randomized_order_within_pairs_still_pairs() {
         &[SECOND, doubled, doubled, SECOND, SECOND, doubled],
         &session(),
     );
-    let held = Comparison::from_trials(&trials, &left, &right).expect("three pairs");
+    let held = from_trials(&trials, &left, &right).expect("three pairs");
     assert_eq!(held.pairs().len(), 3);
     assert_eq!(
         held.order_balance(),
@@ -148,7 +226,7 @@ fn unequal_arms_are_reported_not_truncated() {
     let order = [&left, &right, &left, &right, &left];
     let trials = laid_out(&order, &[10, 20, 10, 20, 10], &session());
     assert_eq!(
-        Comparison::from_trials(&trials, &left, &right),
+        from_trials(&trials, &left, &right),
         Err(NotComparable::Unbalanced { left: 3, right: 2 })
     );
 }
@@ -159,7 +237,7 @@ fn a_single_pair_is_not_a_comparison() {
     let (left, right) = arms();
     let trials = laid_out(&[&left, &right], &[10, 20], &session());
     assert_eq!(
-        Comparison::from_trials(&trials, &left, &right),
+        from_trials(&trials, &left, &right),
         Err(NotComparable::TooFew { have: 1 })
     );
 }
@@ -178,7 +256,7 @@ fn trials_from_two_sessions_are_not_paired() {
         Trial::new(ns(20), right.clone(), Position(3), one),
     ]);
     assert!(matches!(
-        Comparison::from_trials(&trials, &left, &right),
+        from_trials(&trials, &left, &right),
         Err(NotComparable::SeveralSessions { .. })
     ));
 }
@@ -196,7 +274,7 @@ fn a_cross_session_comparison_is_constructible_and_weaker() {
         &morning,
     );
     let other = laid_out(&[&right, &right, &right, &right], &[SECOND; 4], &afternoon);
-    let held = Comparison::from_separate_sessions(&one, &left, &other, &right)
+    let held = from_separate_sessions(&one, &left, &other, &right)
         .expect("two sessions may be put side by side");
     assert!(!held.strength().is_paired());
     assert!(
@@ -226,7 +304,7 @@ fn one_session_may_not_be_weakened_on_purpose() {
     );
     let other = laid_out(&[&right, &right, &right, &right], &[SECOND; 4], &held);
     assert_eq!(
-        Comparison::from_separate_sessions(&one, &left, &other, &right),
+        from_separate_sessions(&one, &left, &other, &right),
         Err(NotComparable::OneSession { session: held })
     );
 }
@@ -237,7 +315,7 @@ fn one_session_may_not_be_weakened_on_purpose() {
 fn the_runner_interleaves_and_randomizes() {
     let (left, right) = arms();
     let mut order = Vec::new();
-    let mut running = Interleaving::<Simulated>::new(left.clone(), right, session(), 7);
+    let mut running = interleaving(&left, &right, 7);
     for _ in 0..40 {
         running.round(|arm| {
             order.push(arm.clone());
@@ -274,8 +352,7 @@ fn the_same_seed_draws_the_same_order() {
     let mut orders = Vec::new();
     for _ in 0..2 {
         let mut seen = Vec::new();
-        let mut running =
-            Interleaving::<Simulated>::new(left.clone(), right.clone(), session(), 99);
+        let mut running = interleaving(&left, &right, 99);
         for _ in 0..12 {
             running.round(|arm| {
                 seen.push(arm.clone());
@@ -295,9 +372,9 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
     // A wobble that lands on both arms of a pair — which is what pairing is
     // for — plus a true thirty-percent gap between the arms.
     let mut round = 0_u64;
-    let mut running = Interleaving::<Simulated>::new(left.clone(), right.clone(), session(), 3);
+    let mut running = interleaving(&left, &right, 3);
     let mut finding = running.finding(FIVE);
-    while matches!(finding.verdict(), Verdict::NotYet { .. }) && round < 200 {
+    while matches!(finding.verdict(), Some(Verdict::NotYet { .. })) && round < 200 {
         let drift = round
             .wrapping_mul(37)
             .wrapping_rem(11)
@@ -312,7 +389,7 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
         round = round.saturating_add(1);
         finding = running.finding(FIVE);
     }
-    let Verdict::Differ { by, after, .. } = finding.verdict() else {
+    let Some(Verdict::Differ { by, after, .. }) = finding.verdict() else {
         panic!("a thirty-percent difference was never found: {finding}");
     };
     assert!(
@@ -372,7 +449,7 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     let paired_order: Vec<&Arm> = (0..48)
         .map(|at| if at % 2 == 0 { &left } else { &right })
         .collect();
-    let paired = Comparison::from_trials(
+    let paired = from_trials(
         &laid_out(&paired_order, &machine, &session()),
         &left,
         &right,
@@ -381,7 +458,7 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     let honest = paired.finding(TWENTY);
     println!("  interleaved: {honest}");
     assert!(
-        matches!(honest.verdict(), Verdict::Same { .. }),
+        matches!(honest.verdict(), Some(Verdict::Same { .. })),
         "the paired comparison reports no difference, which is the truth: {honest}"
     );
 
@@ -392,7 +469,7 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     };
     let morning = SessionId::new("blocks-first-half");
     let afternoon = SessionId::new("blocks-second-half");
-    let assembled = Comparison::from_separate_sessions(
+    let assembled = from_separate_sessions(
         &laid_out(&[&left; 24], blocked_left, &morning),
         &left,
         &laid_out(&[&right; 24], blocked_right, &afternoon),
@@ -401,7 +478,7 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     .expect("two sessions may be put side by side");
     let invented = assembled.finding(TWENTY);
     println!("  blocked:     {invented}");
-    let Verdict::Differ { by, by_chance, .. } = invented.verdict() else {
+    let Some(Verdict::Differ { by, by_chance, .. }) = invented.verdict() else {
         panic!("the blocked arrangement of the very same timings invents no difference: {invented}")
     };
     assert!(
@@ -411,5 +488,158 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     assert!(
         by_chance.0 < 10_000,
         "and it is confident about it, which is the danger: {invented}"
+    );
+}
+
+/// **A8's condition, and B-085's done-when.** A comparison in which two
+/// conditions differ has no delta to give: the verdict is `None` and the
+/// rendering says *these are not comparable* instead of a number.
+#[test]
+fn a_confounded_comparison_reports_no_delta() {
+    let (left, right) = arms();
+    let order: Vec<&Arm> = (0..12)
+        .map(|at| if at % 2 == 0 { &left } else { &right })
+        .collect();
+    let values: Vec<u64> = (0..12)
+        .map(|at| {
+            if at % 2 == 0 {
+                SECOND.saturating_mul(2)
+            } else {
+                SECOND
+            }
+        })
+        .collect();
+    let trials = laid_out(&order, &values, &session());
+
+    // Two variables moved: the quantization under test, and the machine's
+    // thermal state — which is A8's own example of the violation.
+    let one = under_test(&left, &[]);
+    let other = under_test(
+        &right,
+        &[("quantization", "q2_k"), ("thermal_state", "hot")],
+    );
+    let held = Comparison::from_trials(&trials, &one, &other).expect("the trials are still paired");
+
+    assert!(held.isolation().is_confounded());
+    let finding = held.finding(FIVE);
+    assert!(
+        finding.verdict().is_none(),
+        "a doubling is plainly there arithmetically, and it says nothing: {finding}"
+    );
+    let rendered = format!("{finding}");
+    assert!(
+        rendered.contains("not comparable") && rendered.contains("thermal_state"),
+        "the refusal names what differed: {rendered}"
+    );
+    assert!(
+        !rendered.contains("they differ by"),
+        "no delta may reach a reader from a confounded comparison: {rendered}"
+    );
+}
+
+/// A confound the operator declares is science (A8): the delta comes back,
+/// with the declaration and every variable that differed beside it.
+#[test]
+fn a_declared_confound_is_reported_with_its_declaration() {
+    let (left, right) = arms();
+    let order: Vec<&Arm> = (0..12)
+        .map(|at| if at % 2 == 0 { &left } else { &right })
+        .collect();
+    let values: Vec<u64> = (0..12)
+        .map(|at| {
+            if at % 2 == 0 {
+                SECOND.saturating_mul(2)
+            } else {
+                SECOND
+            }
+        })
+        .collect();
+    let trials = laid_out(&order, &values, &session());
+    let one = under_test(&left, &[]);
+    let other = under_test(
+        &right,
+        &[("quantization", "q2_k"), ("context_length", "4096")],
+    );
+    let held = Comparison::from_trials(&trials, &one, &other)
+        .expect("paired")
+        .declaring("a smaller quantization is the only way to reach this context here");
+
+    let finding = held.finding(FIVE);
+    assert!(
+        finding.verdict().is_some(),
+        "a declared confound is science, not a refusal: {finding}"
+    );
+    let rendered = format!("{finding}");
+    for expected in [
+        "confound declared",
+        "only way to reach this context",
+        "quantization",
+        "context_length",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "a declared confound travels with what it declared — no `{expected}` in: {rendered}"
+        );
+    }
+}
+
+/// An isolated comparison says which variable it was about, and the rendering
+/// does not repeat itself about it.
+#[test]
+fn an_isolated_comparison_names_its_variable() {
+    let (left, right) = arms();
+    let mut running = interleaving(&left, &right, 11);
+    for _ in 0..30 {
+        running.round(|arm| {
+            ns(if *arm == left {
+                SECOND.saturating_mul(2)
+            } else {
+                SECOND
+            })
+        });
+    }
+    let held = running.finish();
+    assert_eq!(
+        held.isolation(),
+        Isolation::Isolated {
+            variable: "quantization"
+        }
+    );
+    let finding = held.finding(FIVE);
+    assert!(finding.verdict().is_some());
+    assert_eq!(finding.isolation().differing(), ["quantization"]);
+}
+
+/// **A7 applied here.** A comparison whose conditions MCF has not read is
+/// neither confounded nor isolated: the delta is reported, and so is the fact
+/// that nobody established what it is a delta *of*.
+#[test]
+fn unread_conditions_report_the_delta_and_the_doubt() {
+    let (left, right) = arms();
+    let unread = |arm: &Arm| {
+        UnderTest::new(
+            arm.clone(),
+            Conditions::new(BuildIdentity::current(), Floor::nothing_known()),
+        )
+    };
+    let mut running = Interleaving::<Simulated>::new(unread(&left), unread(&right), session(), 13);
+    for _ in 0..30 {
+        running.round(|arm| {
+            ns(if *arm == left {
+                SECOND.saturating_mul(2)
+            } else {
+                SECOND
+            })
+        });
+    }
+    let finding = running.finish().finding(FIVE);
+    assert!(
+        finding.verdict().is_some(),
+        "an unread condition is not a confound: {finding}"
+    );
+    assert!(!finding.isolation().isolates_a_variable());
+    assert!(
+        format!("{finding}").contains("isolation is undetermined"),
+        "the doubt is printed beside the delta: {finding}"
     );
 }

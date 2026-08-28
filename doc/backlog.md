@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 168 |
+| **Version** | 169 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (85 done, 1 dropped, 11 in progress,
-36 blocked on a decision, 84 open).** Every item cites
+decided, 23 resolved) and 217 build items (86 done, 1 dropped, 11 in progress,
+36 blocked on a decision, 83 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -258,7 +258,7 @@ first and importance second.
 | B-084 | Warm-up and thermal steady state per DEC-007's acceptance criteria | §3.4, §7.7 | Runs that fail the criteria are marked invalid, not silently included | blocked (DEC-007) |
 | B-250 | Comparisons are constructed only from paired, interleaved, order-randomized trials sharing a session id; the reported quantity is the paired difference distribution | B53, §3.27, §3.4 | Block-then-subtract does not compile; a cross-session comparison is constructible but labelled weaker | **done** (F55). `mcf_bench::compare`: a `Comparison` has three constructors and no fourth — the `Interleaving` runner, which alternates the arms itself and draws which goes first per pair from a stated seed; `from_trials`, which reads a session back out of the record and *verifies* the interleaving from the positions, so blocked trials come back as `RanInBlocks` naming the arm and where it repeated; and `from_separate_sessions`, which is §3.27's *it may be all that exists*. The statistics moved behind that door and are `pub(super)`, because a function taking two slices cannot tell an interleaved comparison from two blocks — that is the *does not compile* half, held by `checks/tests/a_comparison_is_paired.rs` against a fourth way in. The cross-session half is weaker **in the type**: it answers `None` to `paired_differences()`, and the reverse is refused too, since two arms that share a session may not be assembled the weak way when the strong construction is available. The reported quantity is the paired difference distribution and the null is a sign flip rather than F54's pooled redraw, which was an unpaired test on paired data. **Now has both numbers behind it:** the blocked arrangement of one command against itself invents **88%** on this machine (0.233 s quiet against 0.439 s loaded), and the interleaved arrangement reports *no difference as large as 2%* across a run containing a seventy-percent load spike (F55, and F51 for why the shift is coherent rather than random) |
 | B-252 | Every generalized statement resolves on demand to the measurements, conditions and spread behind it; no summary is written in place of its evidence | B55, §3.28, §3.15 | A recommendation expands to its evidence without leaving the interface; the record retains full precision | open |
-| B-085 | Isolation check: a comparison in which more than one variable differed reports "these are not comparable" rather than a delta | §3.4 | An intentionally confounded comparison is refused by the tooling | open |
+| B-085 | Isolation check: a comparison in which more than one variable differed reports "these are not comparable" rather than a delta | §3.4 | An intentionally confounded comparison is refused by the tooling | **done** (F56). An arm is a configuration rather than a name — `compare::UnderTest` carries the `Conditions` it was measured under, and every constructor takes two of them — and `mcf_core::measurement::Isolation` says what separates them, walking `Floor::entries()` rather than a second copy of the list so that a condition added to the floor is isolated on without anybody editing the check. Four answers: nothing differs (a control, which measures the machine), one does (the only shape a delta means what a reader takes it to mean), several do, or MCF has not read enough to say — because two unknowns are not a match (A7). **The refusal is in the type**: `Finding::verdict()` is `None` for a confounded comparison, so a caller cannot print a number by forgetting to ask. A confound the operator *declares* is science and comes back with its declaration and every differing variable beside it (A8), which MCF records rather than judges |
 | B-086 | Null and negative results are stored and surfaced as results — "does not fit here", "no measurable speedup" | §3.4 | Both appear in the record and in the window as outcomes, not failures | open |
 | B-087 | Partial success representation: nine of ten tasks completing is nine data points | §3.1 | Partial runs are queryable as partial, with their per-unit outcomes intact | open |
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
@@ -394,6 +394,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 169 — a comparison knows what it is a comparison of
+
+B-085 done (F56). An arm carries its conditions; `Isolation` reports whether
+one variable differs, none, several, or something MCF has not read enough to
+judge; and a confounded comparison's verdict is `None` rather than a number
+with a warning beside it. Two unknowns are not a match, which matters because
+almost every condition producer is still unbuilt.
 
 ### Version 168 — the pairing is structural
 

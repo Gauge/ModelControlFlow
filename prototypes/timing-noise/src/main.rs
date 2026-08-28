@@ -148,9 +148,10 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
     // here rather than parsed back out of the name, because a command holds
     // spaces and an arm's name is not a place to encode one.
     let left_arm = mcf_core::trial::Arm::new(one.join(" "));
+    let right_arm = mcf_core::trial::Arm::new(other.join(" "));
     let mut running = mcf_bench::compare::Interleaving::<Monotonic>::new(
-        left_arm.clone(),
-        mcf_core::trial::Arm::new(other.join(" ")),
+        as_configuration(&left_arm),
+        as_configuration(&right_arm),
         mcf_core::trial::SessionId::new(format!("timing-noise-{}", std::process::id())),
         seed,
     );
@@ -174,7 +175,10 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
         let said = running.finding(resolving_ppm);
-        if !matches!(said.verdict(), mcf_bench::enough::Verdict::NotYet { .. }) {
+        if !matches!(
+            said.verdict(),
+            None | Some(mcf_bench::enough::Verdict::NotYet { .. })
+        ) {
             report_comparison(&said, running.comparison());
             return std::process::ExitCode::SUCCESS;
         }
@@ -187,6 +191,28 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
          machine and not about the two commands (A7)"
     );
     std::process::ExitCode::SUCCESS
+}
+
+/// An arm as the configuration it is, which for a shell command is one
+/// condition MCF can state and ten it cannot.
+///
+/// The command line goes in `mcf_configuration`, because that is what actually
+/// differs between the arms here. Everything else is `Unknown` rather than
+/// filled in with something plausible (A7), so the comparison reports its
+/// isolation as *undetermined* — which is the truth about a prototype timing
+/// two opaque commands, and is what B-085 exists to make visible.
+fn as_configuration(arm: &mcf_core::trial::Arm) -> mcf_bench::compare::UnderTest {
+    let mut floor = mcf_core::measurement::Floor::nothing_known();
+    floor.mcf_configuration = mcf_core::attested::Attested::Known(
+        mcf_core::measurement::ConditionValue::text(arm.as_str()),
+    );
+    mcf_bench::compare::UnderTest::new(
+        arm.clone(),
+        mcf_core::measurement::Conditions::new(
+            mcf_core::build_identity::BuildIdentity::current(),
+            floor,
+        ),
+    )
 }
 
 /// What a decided comparison has to say, including how it was constructed.

@@ -38,12 +38,14 @@
 
 mod conditions;
 mod estimate;
+mod isolation;
 mod quantity;
 mod spread;
 
 pub use crate::attested::Attested;
 pub use conditions::{ConditionValue, Conditions, Floor};
 pub use estimate::{Basis, Estimate};
+pub use isolation::{INSTRUMENT, Isolation};
 pub use quantity::{Bytes, Count, PartsPerMillion, Quantity};
 pub use spread::{Percentile, Spread};
 

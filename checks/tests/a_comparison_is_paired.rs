@@ -96,10 +96,18 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
                 None => break,
             }
         }
+        // A constructor makes a comparison out of trials; a method that takes
+        // `self` transforms one that already exists and cannot be a way in.
+        // `Interleaving::finish` and `Comparison::declaring` are the two, and
+        // neither can conjure a pairing that was not already established.
+        let takes_self = signature.contains("(self")
+            || signature.contains("(&self")
+            || signature.contains("(mut self")
+            || signature.contains("(&mut self");
         let returns_one = signature.contains("-> Self")
             || signature.contains("-> Result<Self, NotComparable>")
             || signature.contains("-> Comparison");
-        if returns_one {
+        if returns_one && !takes_self {
             found.push(signature);
         }
     }
@@ -113,8 +121,7 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
             ADMITTED.iter().any(|name| constructor.contains(name))
                 // `Interleaving::new` and `Interleaving::finish` are the
                 // alternating constructor, which is admitted above by name.
-                || constructor.contains("fn new(")
-                || constructor.contains("fn finish("),
+                || constructor.contains("fn new("),
             "a way to build a comparison that neither establishes nor disclaims the pairing: \
              {constructor} (B53, B-250)"
         );
