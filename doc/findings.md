@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 62 |
+| **Version** | 63 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -87,6 +87,7 @@ forward as one.
 | 57 | [F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)](#57--f57--the-sign-test-and-the-resampling-that-could-not-see-identical-arms-b-086-b-083-dec-007-a9-f51-f55) |
 | 58 | [F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)](#58--f58--a-null-result-reaches-the-disk-as-a-result-a9-b-086-b-213-63-d16-f56) |
 | 59 | [F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)](#59--f59--the-benchmark-runner-and-the-first-real-comparison-it-refused-to-over-report-b-080-a18-67-b65-b-091-f53-f57) |
+| 60 | [F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)](#60--f60--the-clock-in-the-type-stopped-a-comparison-not-a-record-a11-b-082-d9-f59) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4547,7 +4548,58 @@ under two settings is a different argument shape the command does not have. And
 the ceiling of two hundred paired trials and the default five-percent
 resolution are chosen numbers, each stated in one line.
 
+## 60 · F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)
+
+**What was found.** `ClockKind` has put the clock in the type since the first
+week: `Duration<Monotonic>` and `Duration<Simulated>` are different types, so a
+simulated interval cannot be compared with a real one, stored where one is
+expected, or averaged into a set of them. That was taken to satisfy A11 —
+*nothing reported as a performance number may originate in simulation*.
+
+It did not. F59's benchmark encoder was written generic over the clock, and a
+generic encoder will happily put the laboratory's arithmetic into the record,
+where it becomes a measurement with nothing on it to say otherwise. **The type
+system was stopping the wrong operation**: comparison, which nobody was
+attempting, rather than *writing down*, which the new code did in three lines.
+
+**What closed it.** `Measurable`, a trait implemented for `Monotonic` and for
+nothing else, and the comparison encoder is bounded by it. Encoding a
+laboratory comparison is now a compile error, which is B-082's *the type system
+prevents a simulated timing being published* in the strongest available form.
+It bit immediately: three of the encoder's own tests were written on the
+simulated clock — the shape questions do not care which clock they use — and
+stopped compiling. They state monotonic durations now, which is the documented
+seam and is in one place.
+
+A trait somebody has to write, rather than a boolean somebody can set: adding a
+clock to the publishable set is a decision about what MCF is willing to call a
+measurement, and a check asserts that `Monotonic` is still the only member.
+
+**And the same question asked of the whole tree.** No crate that writes to the
+record names `Simulated` at all — not `mcf-record`, `mcf-serve`, `mcf-cli`,
+`mcf-hub`, `mcf-standin` or `mcf-helper` — and the laboratory does not depend on
+the crate that encodes comparisons, so the edge that would carry one does not
+exist. Both are checked, because both are true today and neither is true by
+construction.
+
+**What was not established.** The bound is on the comparison encoder because
+that is the only path that writes timings *as measurements* today; `self_cost`
+and the record's clock-anomaly detector hold `Monotonic` concretely rather than
+generically, which is the same guarantee reached a different way and is not
+enforced by a bound. `Duration::from_nanos` remains available for any clock —
+it is how a test states a known interval and how the laboratory states a
+simulated one — so a test can fabricate a monotonic duration on purpose. That
+is deliberate and is the one seam; what it cannot do is fabricate one by
+accident from the laboratory's clock.
+
 ## Changelog
+
+### Version 63 — the clock in the type, applied to writing
+
+F60. Putting the clock in the type stopped a simulated duration being compared
+with a real one and not being written down as one. `Measurable` closes it: the
+comparison encoder will not take the laboratory's clock, and three of its own
+tests stopped compiling.
 
 ### Version 62 — a benchmark that cannot fail
 

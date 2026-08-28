@@ -34,6 +34,28 @@ impl ClockKind for Monotonic {
     const IS_SIMULATED: bool = false;
 }
 
+/// A clock whose readings may be published as performance figures (A11,
+/// B-082).
+///
+/// **The other half of the clock's being in the type.** [`ClockKind`] already
+/// stops a simulated interval being compared with a real one; this stops one
+/// being *written down* as a measurement. Every path that puts a duration into
+/// the record is bounded by this trait, so encoding a simulated timing does not
+/// compile — which is what B-082 asks for in place of a review comment.
+///
+/// It is implemented for [`Monotonic`] and for nothing else. [`Simulated`]
+/// deliberately does not implement it: D9 gives the laboratory a clock so that
+/// it can reproduce *behaviour* deterministically, and A11 forbids a
+/// performance number originating there. A laboratory that wanted to publish a
+/// timing would be a laboratory reporting how fast its own arithmetic is.
+///
+/// Adding an implementation is a decision about what MCF is willing to call a
+/// measurement, which is why it is a trait somebody has to write rather than a
+/// boolean somebody can set.
+pub trait Measurable: ClockKind {}
+
+impl Measurable for Monotonic {}
+
 /// The laboratory's clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Simulated;

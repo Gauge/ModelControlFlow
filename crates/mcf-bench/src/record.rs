@@ -16,6 +16,17 @@
 //! recompute — the stopping condition's own rule has already changed once
 //! (F55).
 //!
+//! **A simulated timing cannot be written** (A11, B-082). The encoder is
+//! bounded by [`Measurable`], which [`Monotonic`] implements and [`Simulated`]
+//! does not, so `record::comparison` of a laboratory comparison is a compile
+//! error rather than a review comment. D9 gives the laboratory a clock to
+//! reproduce *behaviour* deterministically; a performance figure taken from it
+//! would be MCF reporting how fast its own arithmetic is.
+//!
+//! [`Measurable`]: mcf_core::time::Measurable
+//! [`Monotonic`]: mcf_core::time::Monotonic
+//! [`Simulated`]: mcf_core::time::Simulated
+//!
 //! **The encoder lives here rather than in `mcf-record`.** `mcf-bench` depends
 //! on `mcf-record` and the reverse edge does not exist, so the crate that owns
 //! the type owns the shape it is written in. That is also where the knowledge
@@ -24,7 +35,7 @@
 //! [`EntryKind::Comparison`]: mcf_record::journal::EntryKind::Comparison
 
 use mcf_core::measurement::{Isolation, PartsPerMillion};
-use mcf_core::time::ClockKind;
+use mcf_core::time::{ClockKind, Measurable};
 use mcf_record::encode;
 use mcf_record::json::Value;
 
@@ -37,7 +48,7 @@ use super::enough::Verdict;
 /// conditions of both arms, and every pair — both durations, which ran first,
 /// and the difference. Nothing is summarized away.
 #[must_use]
-pub fn comparison<K: ClockKind>(held: &Comparison<K>, finding: &Finding) -> Value {
+pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Finding) -> Value {
     let (left, right) = held.arms();
     let (left_first, right_first) = held.order_balance();
     Value::map([
@@ -170,7 +181,7 @@ fn strength(held: &Strength) -> Value {
 ///
 /// Empty for a comparison assembled from separate sessions, which has none —
 /// and the emptiness is the record of that, not a gap in it.
-fn pairs<K: ClockKind>(held: &Comparison<K>) -> Vec<Value> {
+fn pairs<K: ClockKind + Measurable>(held: &Comparison<K>) -> Vec<Value> {
     held.pairs()
         .iter()
         .map(|pair| {

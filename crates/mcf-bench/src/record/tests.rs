@@ -1,9 +1,19 @@
 //! A null result reaches the record as a result (A9, B-086).
+//!
+//! **The clock here is [`Monotonic`], and it has to be.** B-082 bounds the
+//! encoder by `Measurable`, which the laboratory's clock does not implement, so
+//! `record::comparison` of a simulated comparison does not compile. The
+//! durations below are stated rather than read — `Duration::from_nanos` is how
+//! a test states a known interval — and that is the documented seam: the type
+//! stops a *simulated* timing being written, and a test that fabricates a
+//! monotonic one is fabricating it on purpose and in one place.
+//!
+//! [`Monotonic`]: mcf_core::time::Monotonic
 
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, PartsPerMillion};
-use mcf_core::time::{Duration, Simulated};
+use mcf_core::time::{Duration, Monotonic};
 use mcf_core::trial::{Arm, SessionId};
 use mcf_record::json::Value;
 
@@ -55,9 +65,9 @@ fn run(
     left_ns: u64,
     right_ns: u64,
     rounds: usize,
-) -> Comparison<Simulated> {
+) -> Comparison<Monotonic> {
     let named = left.arm().clone();
-    let mut running = Interleaving::<Simulated>::new(left, right, SessionId::new("s"), 5);
+    let mut running = Interleaving::<Monotonic>::new(left, right, SessionId::new("s"), 5);
     for _ in 0..rounds {
         running.round(|arm| Duration::from_nanos(if *arm == named { left_ns } else { right_ns }));
     }

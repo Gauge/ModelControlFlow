@@ -21,7 +21,7 @@ use mcf_bench::record;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{ConditionValue, Conditions, Floor, PartsPerMillion};
-use mcf_core::time::{Duration, Simulated, Timestamp};
+use mcf_core::time::{Duration, Monotonic, Timestamp};
 use mcf_core::trial::{Arm, SessionId};
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
@@ -75,7 +75,7 @@ fn under_test(name: &str, quantization: &str) -> UnderTest {
 /// Two arms that take the same time, compared honestly forty times.
 fn a_null_comparison() -> (Value, usize) {
     let named = Arm::new("q8_0");
-    let mut running = Interleaving::<Simulated>::new(
+    let mut running = Interleaving::<Monotonic>::new(
         under_test("q8_0", "q8_0"),
         under_test("q2_k", "q2_k"),
         SessionId::new("2026-08-27T09-00-00Z"),
