@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 206 |
+| **Version** | 207 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**281 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 226 build items (131 done, 1 dropped, 14 in progress,
+**282 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
+decided, 23 resolved) and 227 build items (132 done, 1 dropped, 14 in progress,
 36 blocked on a decision, 44 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -232,6 +232,7 @@ first and importance second.
 | B-386 | A probe's outcome is written to the record, not only printed | §3.4, A1, B-055, D42 | A probe run yesterday can be read back today; a surface that needs a measured capability finds it or finds nothing, never a re-run | done `EntryKind::ModelProbed`, written whichever way the measurement came out — *agrees* is as much a measurement as *diverges* (A9) — and distinct from `ModelConfigured`, which is the act D43 requires rather than the observation it may follow from. A write that fails says so (A2). F83. |
 | B-387 | Temperature and occupancy for the common hardware vendors, with a support request where MCF cannot read the machine | B-084, DEC-007, §3.4, A7, A2 | Every sensor a machine publishes is read and labelled; a processor die reading is told from a package one and from a board zone; an accelerator MCF cannot poll reports *unknown* with its reason and never zero; hardware MCF does not recognise produces a support report the operator reads before sending | in progress Linux is built (F91): `hardware::thermal` reads every `hwmon` sensor with its chip and label, classifies the drivers of AMD, Intel, the common ARM SoCs, Apple, the super-I/O and vendor-EC chips, accelerators and drives, and treats an out-of-range limit as the sentinel it is. `hardware::utilisation` reads AMD occupancy from sysfs and reports NVIDIA and Intel as unknown-with-reason. `mcf support --into <path>` writes the report and `mcf doctor` offers it where a gap is found. **What remains: Windows and macOS.** Windows' `MSAcpi_ThermalZoneTemperature` is the same ACPI zone that reads 16.8 °C here and the per-die registers need a kernel driver MCF does not ship; macOS needs SMC or IOKit. Both should report *unknown* rather than substitute a board sensor, which is the mistake F91 corrects. |
 | B-388 | An interval on the effect size for arms that were never paired | B54, B53, §3.27, A20, F92 | An assembled comparison states a range, not a point; the range comes from a rank-sum distribution computed exactly, in whole numbers, as the paired one is | open Opened by F92. The paired interval is an order statistic of the paired differences and the machinery for it was already here. Two independent samples need the Hodges–Lehmann estimator with bounds from the exact rank-sum distribution, which this crate does not have — so `Verdict::Apart` reports a point and says plainly that it is one. Inventing a range from the two arms' own ranges would be exactly the confident wrong number the interval exists to prevent. |
+| B-389 | A measurement identifies the instrument that took it, and a corrected instrument leaves an erratum | §3.4, A1, A2, A7, §6.16, F93 | Two measurements taken by binaries that measure differently are distinguishable in the record; a measurement taken before an instrument was corrected renders with what was wrong and what it did to the reading | done Every measurement carries the digest of the running binary (`build_identity::instrument`), which no build environment can forget to supply and which works for a binary with no `.git` — `MCF_BUILD_COMMIT` exists for this and was set in one script and never in the binary an operator builds, so `revision` was `null` on all 52 comparisons. `mcf_core::errata` carries each instrument defect keyed on the moment it was corrected, and every surface rendering a measurement renders the errata that apply to it. Nothing is rewritten (A1). F93. |
 | B-376 | The provisioned engine cannot be probed: it takes text on a command line and prints text back, so a turn built from token identifiers has nowhere to go, and it does not say why a generation ended | B-032, B-052, B-374, D42, F38 | A probe can name any engine MCF can drive, and its result belongs to that engine; a turn of identifiers reaches a provisioned engine unaltered, and the stop reason is observable through it | **done** (F39) — the same provisioned prefix's *server* rather than its completion tool, on a Unix socket under MCF's runtime directory so nothing listens on the network and no port is contended (§XVII). The model stays loaded between requests, which is F36's open residency. `mcf probe --engine <name>` names one, and the default is the server where there is one — changed only after both engines were shown to return the same verdict, not on the twentyfold speed alone (B29). A 270M model probes in eight seconds where it took tens of minutes |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | **done** (F43) — `mcf probe --apply` is the act D43 requires, and it is the only thing that writes a configuration. What it writes carries the probe, the moment, the build and the conditions; the daemon applies it and puts the provenance in the account; `mcf run` prints it on every run (§3.15). Inconclusive refuses to apply, and raw refuses too — a provenance on a default would make it look derived. The winning addressing is carried out of the probe rather than rebuilt from its name, and a test asserts the turn a configuration builds is the turn the probe sent, identifier for identifier |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | **done** — `Outcome` offers `observed() -> Option<&T>` and nothing else, and `checks/tests/inconclusive_is_never_defaulted.rs` holds it: the type may not grow a fallback accessor, and no shipped caller may build one from the accessor it has. Shown to fail against a planted `.observed().unwrap_or_else(\|\| "raw")` and to pass without it (B-003's negative control). In a test file `expect` is an assertion that the probe decided, and is allowed there and nowhere else |
@@ -398,6 +399,14 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 207 — an instrument identifies itself
+
+B-389 done. The condition that was supposed to identify the instrument
+identified nothing: three instruments changed in one working day and every
+record on either side of all three said `0.1.0-m0`. A binary's own digest
+cannot be forgotten, and the measurements already taken carry errata keyed on
+time. F93.
 
 ### Version 206 — an effect size is a range
 

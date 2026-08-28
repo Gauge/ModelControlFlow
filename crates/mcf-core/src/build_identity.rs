@@ -14,6 +14,10 @@
 //! `git` installed to build.
 
 use core::fmt;
+use std::io::Read as _;
+
+use crate::attested::Attested;
+use crate::digest::{Digest, Sha256};
 
 /// The revision of the source tree a binary was built from.
 ///
@@ -87,6 +91,66 @@ impl fmt::Display for BuildIdentity {
             self.version, self.revision, self.rustc, self.target, self.profile
         )
     }
+}
+
+/// The digest of the running binary, computed once.
+static INSTRUMENT: std::sync::OnceLock<Attested<Digest>> = std::sync::OnceLock::new();
+
+/// What took this measurement, identified exactly (F93, §3.4).
+///
+/// **Why a digest and not a version.** §3.4 makes MCF's own version part of
+/// every measurement's conditions, and the premise is that a reader who knows
+/// what took a number can judge it. A version string does not change when an
+/// instrument does: three measuring instruments changed in this repository in
+/// one working day — the contention reading, the processor temperature, the
+/// effect size — and every record on either side of all three says
+/// `0.1.0-m0`. The condition that was supposed to identify the instrument
+/// identified nothing.
+///
+/// `MCF_BUILD_COMMIT` exists for this and is honest about being absent (A7),
+/// but it is set in exactly one script in the repository and never in the
+/// binary an operator builds and runs. A field that is always `Unknown` is not
+/// a mechanism.
+///
+/// **A binary's own contents cannot be forgotten.** No build cooperation, no
+/// git, no environment variable, and it works for a binary shipped in a
+/// tarball. Two builds that measure differently have different digests by
+/// construction, which is the only property needed to partition a record
+/// correctly.
+///
+/// **What it does not do**: say *what* changed. It says *that* the instrument
+/// differs, which is enough to know two measurements are not comparable
+/// instruments — and the erratum record is where a defect is described.
+///
+/// `Unknown` where the executable cannot be located or read, which is a
+/// capability of the platform rather than a fact about the instrument, and
+/// A7 keeps it from becoming a placeholder.
+#[must_use]
+pub fn instrument() -> Attested<Digest> {
+    INSTRUMENT
+        .get_or_init(|| {
+            let Ok(path) = std::env::current_exe() else {
+                return Attested::Unknown;
+            };
+            let Ok(file) = std::fs::File::open(path) else {
+                return Attested::Unknown;
+            };
+            let mut reader = std::io::BufReader::new(file);
+            let mut hasher = Sha256::new();
+            let mut buffer = vec![0_u8; 64 * 1024];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(taken) => match buffer.get(..taken) {
+                        Some(held) => hasher.update(held),
+                        None => return Attested::Unknown,
+                    },
+                    Err(_) => return Attested::Unknown,
+                }
+            }
+            Attested::Known(hasher.finish())
+        })
+        .to_owned()
 }
 
 #[cfg(test)]

@@ -29,6 +29,7 @@ pub mod degradation;
 pub mod digest;
 pub mod energy;
 pub mod engine;
+pub mod errata;
 pub mod failure;
 pub mod graded;
 pub mod hardware;

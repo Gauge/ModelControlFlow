@@ -119,6 +119,7 @@ forward as one.
 | 90 | [F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38) |
 | 91 | [F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)](#91--f91--the-sensors-were-there-the-whole-time-one-directory-across-b-084-dec-007-a7-a2-34) |
 | 92 | [F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327) |
+| 93 | [F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)](#93--f93--every-measurement-mcf-has-taken-is-attributed-to-an-instrument-it-cannot-identify-34-a1-a2-a7-616) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6640,6 +6641,101 @@ pairs always supported. Nothing on disk was rewritten; the summary is derived
 each time it is asked for, which is the rule that made this recoverable at all.
 The oldest entries in this machine's record gained their intervals without a
 byte changing.
+
+## 93 · F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)
+
+**The premise.** §3.4 makes MCF's own version part of the condition set of
+every measurement, because a number is only interpretable if you know what took
+it. The instrument is the first condition.
+
+**What the condition actually said.** All 52 comparisons in this machine's
+record, without exception:
+
+```json
+{ "version": "0.1.0-m0", "revision": null,
+   "rustc": "rustc 1.98.0", "profile": "release",
+   "target": "x86_64-unknown-linux-gnu" }
+```
+
+Identical. And they span one day during which three measuring instruments
+changed:
+
+| corrected | instrument | what it did to readings |
+|---|---|---|
+| 21:39 UTC | contention (F90) | competing-processor readings **~22 % high** under load |
+| 22:27 UTC | thermal (F91) | **no processor temperature at all** |
+| 23:02 UTC | effect size (F92) | headline was a **point estimate** with no measure of itself |
+
+Nothing in any of the 52 records says which side of any of those three it falls
+on. A comparison taken at 07:00 and one taken at 22:00 are, as far as the
+condition set is concerned, the work of the same instrument.
+
+**The mechanism existed and had never fired.** `build.rs` reruns on
+`MCF_BUILD_COMMIT`; `build_identity.rs` reads it through `option_env!` and — per
+A7 — refuses to invent one when absent; `licence.rs` explains the absence to
+the operator. Careful work. And the variable is set in exactly one place in the
+repository:
+
+```
+scripts/check-reproducible-build.sh:79:  export MCF_BUILD_COMMIT="$revision"
+```
+
+The binary an operator builds with `cargo build --release` never has it, so the
+honest field honestly reports `Unknown`, every time, for ever. **A field that is
+always unknown is not a mechanism.**
+
+**Why this is worse than the three defects it hides.** F90 and F91 were
+*fixable* because their extent could be reasoned about — from git, from memory,
+and from a physically impossible reading of 44 cores on a 32-thread machine.
+None of that reasoning came from the record. The next defect will be subtler and
+there will be nothing to reason from. This is the defect that makes the others
+unrecoverable, and a repository that found three in one day will find more.
+
+**The fix, going forward: the binary's own digest.** MCF hashes its own
+executable once and records it with every measurement. No build cooperation, no
+git, nothing an environment can forget to supply, and it works for a binary
+shipped in a tarball with no `.git`. Two builds that measure differently have
+different digests by construction, which is the only property needed to
+partition a record correctly. This machine's records now carry
+`"instrument": "12ce9405…"`. It says *that* the instrument differs rather than
+*what* changed — and what changed is the erratum's job.
+
+**The fix, backwards: an erratum keyed on time.** The 52 already written cannot
+be attributed by digest. But `recorded_at` is on all 3391 entries, precise and
+trustworthy, and the correction times are known. So `mcf_core::errata` carries
+each defect — the instrument, what was wrong, **what it did to the readings**,
+and the moment it was corrected — and every surface that renders a measurement
+renders the errata that apply to it:
+
+```
+comparison_2026-08-28T17-20-03Z…  compared … 
+  ⚠ ERRATUM mcf_core::hardware::contention: the rate divided accumulated
+    processor ticks by the interval the sampler intended to wait …
+  ⚠ ERRATUM mcf_core::hardware::thermal: no processor temperature was read …
+  ⚠ ERRATUM mcf_bench::enough: the effect size was a point estimate …
+```
+
+The entry recorded at 22:59 UTC gets **only** the effect-size erratum, because
+the other two were already fixed by then. That is per-entry attribution from
+timestamps alone.
+
+**Nothing is rewritten** (A1). The measurements stay exactly as taken — they are
+what the instrument said. A record that edits its own history to look better is
+not a record. And each erratum states its *effect*, not merely that something
+was wrong: a reader told only *distrust this* cannot decide what to do, while a
+reader told *high by about a fifth under load* can.
+
+**A defect inside the fix, caught by its own test.** The first version of the
+errata list carried nanosecond constants **two days** from the dates written
+beside them — computed by hand, entirely plausible on sight, and silently
+wrong, so no erratum applied to any entry and the whole mechanism did nothing
+while appearing to work. Two spellings of one fact drift. The test now
+cross-checks the nanoseconds against the readable moment through `Timestamp`,
+which is A19: a reported quantity checked against an independently known value.
+
+That is the sixth time in this session that a thing which looked correct was
+wrong, and the second where the failure mode was *doing nothing while appearing
+to work*.
 
 ## Changelog
 

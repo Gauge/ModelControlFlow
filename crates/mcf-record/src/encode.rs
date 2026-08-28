@@ -43,6 +43,23 @@ pub fn build_identity(identity: BuildIdentity) -> Value {
         ("rustc", Value::text(identity.rustc)),
         ("target", Value::text(identity.target)),
         ("profile", Value::text(identity.profile)),
+        // **What actually took the measurement** (F93). The four fields above
+        // are identical across builds whose instruments differ: three
+        // measuring instruments changed in this repository in one working
+        // day and every record on either side of all three says `0.1.0-m0`.
+        // A binary's own digest cannot be forgotten by a build environment
+        // and differs exactly when the instrument does.
+        (
+            "instrument",
+            match mcf_core::build_identity::instrument() {
+                mcf_core::attested::Attested::Known(digest) => Value::text(digest.hex()),
+                // A7: a platform that will not let MCF read its own
+                // executable is a capability of the platform, and a
+                // placeholder here would be the very thing this field exists
+                // to stop.
+                mcf_core::attested::Attested::Unknown => Value::Null,
+            },
+        ),
     ])
 }
 

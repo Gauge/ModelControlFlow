@@ -159,6 +159,20 @@ fn counted(entries: usize, kind: Option<EntryKind>) -> String {
 /// and what a reader wants from an acquisition is not what they want from a
 /// failure.
 pub(crate) fn summarize(entry: &Entry) -> String {
+    let said = described(entry);
+    // Any instrument defect that applies to this entry, beside it (F93). A
+    // measurement whose instrument was later found wrong must say so where it
+    // is read, not in a document the reader has no reason to open.
+    let errata = errata_for(entry.recorded_at());
+    if errata.is_empty() {
+        said
+    } else {
+        format!("{said}\n{}", errata.join("\n"))
+    }
+}
+
+/// The entry, as one line, before any erratum is attached.
+fn described(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
         EntryKind::MachineProfile => text(body, "processor")
@@ -265,6 +279,22 @@ pub(crate) fn summarize(entry: &Entry) -> String {
 /// Three of the four outcomes are things a reader will call *it didn't work*,
 /// and none of them is a failure. The line says which it was rather than
 /// leaving anyone to infer it from a missing number.
+/// Any instrument defect that applies to something recorded at this moment
+/// (F93).
+///
+/// **Rendered beside the entry rather than left in a findings document.** A
+/// reader meeting a measurement is the person who needs to know the instrument
+/// that took it was later found wrong, and they will not go looking. A2: no
+/// silent failure, and an uncorrected reading rendered as though nothing were
+/// known about it is exactly that.
+fn errata_for(at: mcf_core::time::Timestamp) -> Vec<String> {
+    let nanos = i64::try_from(at.utc_nanos()).unwrap_or(i64::MAX);
+    mcf_core::errata::affecting(nanos)
+        .iter()
+        .map(|held| format!("  ⚠ ERRATUM {held}"))
+        .collect()
+}
+
 /// The interval on the size, recomputed from the pairs the entry carries.
 ///
 /// **Derived on read, never stored** (B55, B56, F92). The trials are kept, so
