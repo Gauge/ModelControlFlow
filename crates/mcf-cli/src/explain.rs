@@ -263,7 +263,7 @@ fn declared(file: &Model) -> Vec<(&'static str, String)> {
 /// The *file's* quantization rather than a name somebody gave it: a repository
 /// calls a file `Q4_K_M` and what is inside it is whatever is inside it, which
 /// is the same distinction A21 draws everywhere else.
-fn quantizations(file: &Model) -> String {
+pub(crate) fn quantizations(file: &Model) -> String {
     let mut counted: Vec<(String, usize)> = Vec::new();
     for tensor in &file.tensors {
         let name = match tensor.kind {

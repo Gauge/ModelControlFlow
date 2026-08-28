@@ -10,6 +10,7 @@
 //! and what MCF will and will not promise here, and writes the whole thing to
 //! the record.
 
+mod bench;
 mod check;
 mod crosscheck;
 mod doctor;
@@ -113,6 +114,24 @@ enum Request<'a> {
         seed: u64,
         /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
+    },
+    /// Compare two models on a timeable engine, with no pass condition.
+    Bench {
+        /// The left arm: a path, or something `mcf list` names.
+        left: &'a str,
+        /// The right arm.
+        right: &'a str,
+        /// What to ask both of them.
+        prompt: &'a str,
+        /// How many tokens to produce at most.
+        limit: Option<usize>,
+        /// The seed, which is a condition of the answer and of the order the
+        /// arms were drawn in (D19, B53).
+        seed: u64,
+        /// Which engine, where the operator says (B-032).
+        engine: Option<&'a str>,
+        /// The difference the caller cares about, in parts per million.
+        resolving: Option<u64>,
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
@@ -392,6 +411,13 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
+        ["bench", rest @ ..] => match bench_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "bench",
+                argument,
+            },
+        },
         ["status"] => Request::Status,
         ["status", argument, ..] => Request::UnexpectedArgument {
             command: "status",
@@ -594,6 +620,132 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             needs: "--prompt <text>",
         }),
     }
+}
+
+/// Reads `bench`'s own arguments.
+///
+/// `--resolving` is a percentage to one decimal place, read into parts per
+/// million, because *how much is a difference* is the caller's question and
+/// this is where they answer it (F55).
+fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut left = None;
+    let mut right = None;
+    let mut prompt = None;
+    let mut limit = None;
+    let mut seed = 0_u64;
+    let mut engine = None;
+    let mut resolving = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--against" => match rest.next() {
+                Some(other) => right = Some(*other),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--against <model>",
+                    });
+                }
+            },
+            "--prompt" => match rest.next() {
+                Some(asked) => prompt = Some(*asked),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--prompt <text>",
+                    });
+                }
+            },
+            "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(tokens) => limit = Some(tokens),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--limit <tokens>, a number",
+                    });
+                }
+            },
+            "--engine" => match rest.next() {
+                Some(named) => engine = Some(*named),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--engine <stand-in|provisioned>",
+                    });
+                }
+            },
+            "--seed" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(chosen) => seed = chosen,
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--seed <number>",
+                    });
+                }
+            },
+            "--resolving" => match rest.next().and_then(|value| per_cent(value)) {
+                Some(held) => resolving = Some(held),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--resolving <per-cent>, such as 5 or 2.5",
+                    });
+                }
+            },
+            other if other.starts_with("--") => return Err(other),
+            other if left.is_none() => left = Some(other),
+            other => return Err(other),
+        }
+    }
+
+    match (left, right, prompt) {
+        (Some(left), Some(right), Some(prompt)) => Ok(Request::Bench {
+            left,
+            right,
+            prompt,
+            limit,
+            seed,
+            engine,
+            resolving,
+        }),
+        (None, _, _) => Ok(Request::MissingArgument {
+            command: "bench",
+            needs: "<model>",
+        }),
+        (Some(_), None, _) => Ok(Request::MissingArgument {
+            command: "bench",
+            needs: "--against <model>",
+        }),
+        (Some(_), Some(_), None) => Ok(Request::MissingArgument {
+            command: "bench",
+            needs: "--prompt <text>",
+        }),
+    }
+}
+
+/// A percentage to one decimal place, as parts per million.
+///
+/// Parsed by hand rather than through a float: this crate holds no
+/// floating-point number, and a percentage with one decimal place is two
+/// integers (A6).
+pub(crate) fn per_cent(written: &str) -> Option<u64> {
+    let (whole, tenths) = match written.split_once('.') {
+        Some((whole, rest)) => {
+            let mut digits = rest.chars();
+            let tenth = digits.next()?.to_digit(10)?;
+            if digits.next().is_some() {
+                // More precision than the unit admits, refused rather than
+                // silently rounded (A7).
+                return None;
+            }
+            (whole.parse::<u64>().ok()?, u64::from(tenth))
+        }
+        None => (written.parse::<u64>().ok()?, 0),
+    };
+    let held = whole
+        .checked_mul(10_000)?
+        .checked_add(tenths.checked_mul(1_000)?)?;
+    (held > 0).then_some(held)
 }
 
 /// Reads `pull`'s own arguments.
@@ -808,6 +960,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf bench <model> --against <model> compare two models on an engine\n\
+                 \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
+                 \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
+                 \x20       [--engine <name>]              something the machine said (A18)\n\
                  \x20 mcf cross-check <model>              read one engine's tokens with the\n\
                  \x20                                       other, and say whether they agree\n\
                  \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -889,6 +1045,23 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
+        Request::Bench {
+            left,
+            right,
+            prompt,
+            limit,
+            seed,
+            engine,
+            resolving,
+        } => bench::bench(
+            left,
+            right,
+            prompt,
+            *limit,
+            *seed,
+            *engine,
+            resolving.map(mcf_core::measurement::PartsPerMillion),
+        ),
         Request::CrossCheck { model } => crosscheck::run(model),
         Request::Probe {
             model,
@@ -994,7 +1167,10 @@ mod tests {
         // controlled environment (B-367).
         assert!(text.contains("mcf probe"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
-        for unbuilt in ["mcf bench", "mcf lab", "mcf recommend"] {
+        // And `mcf bench`, which compares two models on an engine that can be
+        // timed and has no pass condition (B-080, A18).
+        assert!(text.contains("mcf bench"), "{text}");
+        for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which nothing has built"

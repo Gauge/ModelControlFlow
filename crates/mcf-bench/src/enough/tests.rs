@@ -65,9 +65,18 @@ fn a_real_paired_effect_is_found() {
 #[test]
 fn no_paired_difference_is_a_result_and_says_what_it_could_have_seen() {
     match over_paired_differences(&differences(0, 10_000, 40), TWENTY) {
-        Verdict::Same { resolving, after } => {
+        Verdict::Same {
+            resolving,
+            by,
+            after,
+        } => {
             assert_eq!(resolving, TWENTY);
             assert_eq!(after, 40);
+            assert!(
+                by < TWENTY,
+                "the measured difference travels inside the null result, and is smaller than \
+                 the resolution by construction: {by:?}"
+            );
         }
         other => panic!("arms with no difference were not called the same: {other}"),
     }
@@ -304,4 +313,48 @@ fn ties_leave_the_count_but_not_the_record_of_having_run() {
         panic!("eight pairs won by one arm separate them: {differences:?}");
     };
     assert_eq!(after, 12, "every pair that ran is counted in what it cost");
+}
+
+/// **The defect F59 found on a provisioned engine.** A difference must be real
+/// *and* as large as the caller said they care about.
+///
+/// Two quantizations of one model, asked about at five percent, were reported
+/// as *they differ by 0.8%* after a hundred and thirteen paired trials — a
+/// real difference, found honestly, and an answer to a question nobody asked.
+/// A caller who says five percent has said that eight tenths of one is beneath
+/// notice; reporting it invites acting on it (§3.28).
+///
+/// The honest verdict below the resolution is the null one, and the
+/// measurement travels inside it so nothing is lost (A1).
+#[test]
+fn a_real_difference_smaller_than_the_question_is_a_null_result() {
+    // A consistent eight-tenths-of-a-percent difference, over enough pairs
+    // that the sign test finds it easily: forty of forty is one chance in
+    // five hundred billion.
+    let tiny = vec![8_000_i64; 40];
+    match over_paired_differences(&tiny, FIVE) {
+        Verdict::Same { resolving, by, .. } => {
+            assert_eq!(resolving, FIVE);
+            assert_eq!(
+                by,
+                PartsPerMillion(8_000),
+                "the measured difference is kept, because a reader who later cares about a \
+                 smaller resolution needs it"
+            );
+        }
+        other => {
+            panic!("a difference below the resolution asked about is not a difference: {other}")
+        }
+    }
+
+    // And the same data, asked about at a resolution it exceeds, is a
+    // difference — the size test is against the caller's question and not
+    // against a number this module chose.
+    assert!(
+        matches!(
+            over_paired_differences(&tiny, PartsPerMillion(5_000)),
+            Verdict::Differ { .. }
+        ),
+        "asked about at half a percent, eight tenths of one is a difference"
+    );
 }

@@ -99,6 +99,14 @@ pub enum Verdict {
     Same {
         /// The difference that would have been detected.
         resolving: PartsPerMillion,
+        /// The difference actually measured, which is smaller.
+        ///
+        /// Kept rather than discarded, because A1 forbids losing what was
+        /// observed and because *no difference as large as five percent* and
+        /// *a measured difference of nought point eight percent* are two true
+        /// statements about one run. A reader who later cares about a smaller
+        /// resolution needs the second.
+        by: PartsPerMillion,
         /// How many paired trials it took.
         after: usize,
     },
@@ -124,11 +132,16 @@ impl fmt::Display for Verdict {
                 percent(*by),
                 percent(*by_chance)
             ),
-            Self::Same { resolving, after } => write!(
+            Self::Same {
+                resolving,
+                by,
+                after,
+            } => write!(
                 form,
                 "no difference as large as {}, after {after} paired trial(s) — one that big \
-                 would have shown",
-                percent(*resolving)
+                 would have shown; the measured difference was {}",
+                percent(*resolving),
+                percent(*by)
             ),
             Self::NotYet { so_far } => write!(
                 form,
@@ -181,7 +194,17 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
     let observed = magnitude(median_signed(&sorted_signed(differences)));
     let by_chance = one_sided_luck(differences);
 
-    if observed > 0 && by_chance <= FALSE_ALARMS_ALLOWED {
+    // **Both halves, and the second was missing.** A difference must be real
+    // *and* as large as the caller said they care about. Without the size
+    // test, a long enough run reports every real difference however small —
+    // and a caller who asked about five percent was told *they differ by 0.8%*
+    // after a hundred and thirteen paired trials, which answers a question
+    // nobody asked and invites acting on it (F59, §3.28).
+    //
+    // Below the resolution, the honest verdict is the null one: *no difference
+    // as large as five percent* is true of a measured eight tenths of one, and
+    // the measurement travels inside it so nothing is lost (A1).
+    if observed >= resolving.0 && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
             by: PartsPerMillion(observed),
             by_chance,
@@ -189,11 +212,13 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
         };
     }
 
-    // They have not separated. That is only an answer if a difference worth
-    // caring about would have shown — otherwise more pairs are owed.
+    // They have not separated by as much as was asked about. That is only an
+    // answer if a difference worth caring about would have shown — otherwise
+    // more pairs are owed.
     if a_paired_effect_would_show(differences, resolving) {
         Verdict::Same {
             resolving,
+            by: PartsPerMillion(observed),
             after: pairs,
         }
     } else {
@@ -363,7 +388,8 @@ pub(super) fn over_separate_arms(
     };
 
     let by_chance = manufactured(one, other, observed, each);
-    if by_chance <= FALSE_ALARMS_ALLOWED {
+    // The same two halves as the paired path, for the same reason (F59).
+    if observed >= resolving && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
             by: observed,
             by_chance,
@@ -374,6 +400,7 @@ pub(super) fn over_separate_arms(
     if a_separate_effect_would_show(one, other, resolving, each) {
         Verdict::Same {
             resolving,
+            by: observed,
             after: each,
         }
     } else {

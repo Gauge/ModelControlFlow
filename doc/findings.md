@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 61 |
+| **Version** | 62 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -86,6 +86,7 @@ forward as one.
 | 56 | [F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)](#56--f56--a-confounded-comparison-has-no-delta-to-give-a8-b-085-34-a7-f55) |
 | 57 | [F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)](#57--f57--the-sign-test-and-the-resampling-that-could-not-see-identical-arms-b-086-b-083-dec-007-a9-f51-f55) |
 | 58 | [F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)](#58--f58--a-null-result-reaches-the-disk-as-a-result-a9-b-086-b-213-63-d16-f56) |
+| 59 | [F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)](#59--f59--the-benchmark-runner-and-the-first-real-comparison-it-refused-to-over-report-b-080-a18-67-b65-b-091-f53-f57) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4465,7 +4466,96 @@ that is B-217's. And a comparison entry is written by whoever holds a
 `Comparison`; no surface produces one yet, because the benchmark runner is
 B-080.
 
+## 59 · F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)
+
+**What was built.** `mcf bench <model> --against <model>` — the runner A18 says
+must exist and must never gate. It builds the comparison the only way one can
+be built (B-250), stops when this run's own arithmetic decides (F55, F57), and
+writes what it found to the record whichever way that was (B-086).
+
+**It has no verdict that fails.** *They differ*, *they are the same to a stated
+resolution* and *not decided* all exit zero, because all three are things the
+machine said and none of them is MCF being wrong. What does fail is MCF being
+unable to run the benchmark: no such model, no daemon, an engine that cannot
+report a speed, an engine that refused. `checks/tests/benchmarks_never_gate.rs`
+holds both halves of A18 — no verdict reaches a failing exit status, no gating
+test bounds a wall-clock reading, no gating test writes to the machine's own
+record, and the gating tier does not run the benchmark at all. The measured
+tiers that *may* assert on timings are named in that file, because an exemption
+written down is one somebody can argue with.
+
+**The engine is asked, not assumed.** B65 and D31: MCF's own stand-in is
+written to be read rather than to be fast. So before a trial is timed, one
+request goes to each arm and the *account* is read for which engine actually
+ran. A stand-in is refused by name rather than marked, because a marked number
+is a number somebody will quote without its mark. On this machine, before
+anything was provisioned:
+
+```
+mcf: …/stories260K.gguf would run on MCF's own stand-in, build 0.1.0-m0, and a
+stand-in's answer can never be a speed (B65, D31)
+```
+
+**Then a real engine, and a real comparison.** `mcf provision llama.cpp` built
+the pinned reference in a container; `mcf pull` acquired `stories15M-q4_0.gguf`
+and `stories15M-q8_0.gguf` from `ggml-org/tiny-llamas` — two quantizations of
+one model, which is exactly the single-variable comparison §3.4 wants and
+B-091's shape in miniature. At 256 tokens, three consecutive runs:
+
+```
+no difference as large as 5.0%, after 20 paired trial(s) — the measured difference was 3.2%
+no difference as large as 5.0%, after 25 paired trial(s) — the measured difference was 3.3%
+no difference as large as 5.0%, after 12 paired trial(s) — the measured difference was 1.6%
+```
+
+Twenty, twenty-five, twelve — F53 again, the count is a property of the
+sitting. **This is a null result, and it is the point**: a real benchmark on a
+real engine, reported as a finding rather than as a failure to find one, and
+recorded (A9, B-086).
+
+**The defect the real run found.** Before the size test existed, the same
+comparison at 64 tokens came back *they differ by 0.8%, after 113 paired
+trials* — a real difference, found honestly by the sign test, and **an answer
+to a question nobody asked**. A caller who says *resolving five percent* has
+said that eight tenths of one is beneath notice; reporting it invites acting on
+it, which is the §3.28 failure from the other direction. `Differ` now requires
+the effect to be **real and at least as large as the resolution asked about**,
+and below that the verdict is the null one — *no difference as large as five
+percent* is true of a measured eight tenths. The measurement travels inside the
+null result rather than being discarded (A1), so a reader who later cares about
+a smaller resolution has it.
+
+That the sign test could find 0.8% at all is F57's stated cost arriving as
+designed: it uses only which arm won each pair, so a small consistent
+difference becomes significant with enough pairs. The fix is not a weaker test;
+it is asking the caller's question rather than the test's.
+
+**The first unread condition read.** F56 left `mcf bench` reporting *isolation
+is undetermined* over ten conditions. It now reads each file's **own tensor
+types** — the file's quantization rather than the name a repository gave it
+(A21) — so the sentence has become *quantization differs, and nine conditions
+could not be compared*, and the comparison names what it isolated. Nine to go,
+and each is a producer that does not exist yet (B-007, B-013).
+
+**What was not established.** A 15-million-parameter model at 64 to 256 tokens
+is dominated by process start and request overhead, so *q4\_0 and q8\_0 are the
+same here to five percent* is a finding about this configuration and not about
+quantization — B-091 is the frontier and this is not it. Only one prompt, one
+machine, one engine build, and both arms served by the same daemon. The
+benchmark compares two *models* under identical settings; comparing one model
+under two settings is a different argument shape the command does not have. And
+the ceiling of two hundred paired trials and the default five-percent
+resolution are chosen numbers, each stated in one line.
+
 ## Changelog
+
+### Version 62 — a benchmark that cannot fail
+
+F59. `mcf bench` compares two models on an engine that can be timed, refuses a
+stand-in by name, and has no verdict that sets a failing exit status. Its first
+real comparison — two quantizations of one model on a provisioned llama.cpp —
+found a defect: a difference smaller than the resolution asked about was being
+reported as a difference.
 
 ### Version 61 — the sign test, and a null result on the disk
 

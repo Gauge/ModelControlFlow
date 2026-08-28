@@ -96,12 +96,19 @@ fn outcome(finding: &Finding) -> Value {
             ("by_chance", parts_per_million(*by_chance)),
             ("pairs", count(*after)),
         ]),
-        Some(Verdict::Same { resolving, after }) => Value::map([
+        Some(Verdict::Same {
+            resolving,
+            by,
+            after,
+        }) => Value::map([
             // Named for what it is. A9: this is a finding, and a reader
             // filtering for results must not have to know that `same` is one.
             ("kind", Value::text("same")),
             ("resolution", parts_per_million(*resolving)),
-            ("difference", Value::Null),
+            // The measured difference, which is smaller than the resolution
+            // and is not nothing. A reader who later cares about a smaller
+            // resolution needs it, and A1 forbids dropping it.
+            ("difference", parts_per_million(*by)),
             ("by_chance", Value::Null),
             ("pairs", count(*after)),
         ]),
