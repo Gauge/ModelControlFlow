@@ -42,6 +42,9 @@
 #   --with-reproducibility  (B-001) rebuilds the workspace twice under the
 #                           release profile and compares the bytes.
 #   --with-corpus           (B-370) runs the conformance corpus through the engine
+#   --with-seed-set         (B-291) shows the published seed set representative
+#                           of the stream it is a prefix of, rather than
+#                           assuming it
 #   --with-oracle           (B-368) compares MCF's engine against a reference
 #   --with-online           (B-029) acquires a real model from the real hub
 #                           over TLS, verifies it, lists it and removes it.
@@ -77,6 +80,7 @@ with_soak=false
 with_mutation=false
 with_from_scratch=false
 with_corpus=false
+with_seed_set=false
 with_oracle=false
 with_online=false
 for argument in "$@"; do
@@ -89,6 +93,7 @@ for argument in "$@"; do
         --with-mutation) with_mutation=true ;;
         --with-from-scratch) with_from_scratch=true ;;
         --with-corpus) with_corpus=true ;;
+        --with-seed-set) with_seed_set=true ;;
         --with-oracle) with_oracle=true ;;
         --with-online) with_online=true ;;
         --all)
@@ -100,6 +105,7 @@ for argument in "$@"; do
             with_mutation=true
             with_from_scratch=true
             with_corpus=true
+            with_seed_set=true
             with_oracle=true
             with_online=true
             ;;
@@ -108,7 +114,8 @@ for argument in "$@"; do
             printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
             printf '[--with-budget] [--with-mutation]\n' >&2
             printf '                     [--with-from-scratch] [--with-reproducibility] ' >&2
-            printf '[--with-corpus] [--with-oracle] [--with-online] | --all\n' >&2
+            printf '[--with-corpus] [--with-seed-set] [--with-oracle] ' >&2
+            printf '[--with-online] | --all\n' >&2
             exit 2
             ;;
     esac
@@ -275,6 +282,20 @@ if [ "$with_corpus" = true ]; then
     fi
 fi
 
+if [ "$with_seed_set" = true ]; then
+    step "the seed set is representative (B-291)"
+    # No exclusive window: nothing here is timed and nothing here may be
+    # (B65). The quantity is a count of distinct tokens, which is a behaviour
+    # statistic, and a tier that took the window to produce no number would be
+    # taking it from work that has one.
+    seed_set=0
+    "$root/scripts/check-seed-set.sh" || seed_set=$?
+    if [ "$seed_set" -eq 1 ]; then
+        printf 'ci: the published seed set was not shown representative (B-291, D19)\n' >&2
+        exit 1
+    fi
+fi
+
 if [ "$with_oracle" = true ]; then
     step "against a reference implementation (B-368)"
     # No exclusive window: what runs here is two tokenizers over six short
@@ -335,6 +356,7 @@ report_absent "$with_budget" "performance budget (B-011)   — scripts/ci.sh --w
 report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh --with-mutation"
 report_absent "$with_from_scratch" "from-scratch conformance     — scripts/ci.sh --with-from-scratch"
 report_absent "$with_corpus" "conformance corpus (B-370)   — scripts/ci.sh --with-corpus"
+report_absent "$with_seed_set" "the seed set (B-291)         — scripts/ci.sh --with-seed-set"
 report_absent "$with_oracle" "against a reference (B-368)  — scripts/ci.sh --with-oracle"
 report_absent "$with_online" "the real hub (B-029)         — scripts/ci.sh --with-online"
 report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 43 |
+| **Version** | 44 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -399,7 +399,30 @@ $ scripts/check-tier-ages.sh [--release]     # ages, and the release refusal
 ```
 
 Reproducibility (§5) is a scheduled check rather than one of D10's tiers, and
-keeps its own flag.
+keeps its own flag. So do the checks that need something on the disk: the
+conformance corpus (`--with-corpus`), the reference comparison
+(`--with-oracle`), the real hub (`--with-online`), the from-scratch container
+(`--with-from-scratch`) and the seed set (`--with-seed-set`).
+
+### The seed-set check
+
+`scripts/check-seed-set.sh` (B-291, D19). MCF's published seed set is the first
+thirty-two draws of a stated stream; this runs three hundred and twenty more
+from a million indices further along and asks whether the prefix behaves like
+the body. §6.16's *the instrument does not get to grade itself*, turned on the
+instrument: a set that is assumed representative is a set nobody checked.
+
+Two things about it are easy to get wrong and are therefore written into the
+types. Its polarity is inverted — *the same* is the clearance and
+*distinguishable* is the finding — so `mcf_bench::seeds::Representative` is a
+type of its own rather than a reused verdict, and a green result cannot render
+as a discovery. And **not decided is not clearance**: a run that could not
+separate the two has not cleared the set, and the tier fails on it.
+
+It samples with nucleus and has to. MCF's shipped generation is greedy, and
+greedy ignores the seed entirely: a validation against it would compare a
+constant with a constant and clear the set for a reason that has nothing to do
+with the set.
 
 ### The property tier
 
@@ -994,6 +1017,12 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 44 — the seed set is checked rather than trusted
+
+`scripts/check-seed-set.sh` (B-291). A scheduled check that runs the published
+seed set against a draw ten times larger from the same stream. Its polarity is
+inverted and its type says so; *not decided* is not clearance.
 
 ### Version 43 — the register counts itself
 

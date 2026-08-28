@@ -155,6 +155,11 @@ pub const MEMBERS: &[Member] = &[
         // examine `mcf_record`'s codec and journal and `mcf_standin`'s model
         // reader. Nothing this crate builds ships.
         depends_on: &[
+            // `mcf-bench` so that the seed-set tier can ask whether two
+            // distributions differ with the same arithmetic every other
+            // comparison uses (B-291, D19). A second implementation of that
+            // question inside the checks would be a second answer to it (A6).
+            "mcf-bench",
             "mcf-core",
             // `mcf-helper` so that `the_daemon_holds_no_privilege` can compare
             // the helper's surface against D35 in both directions. Nothing in

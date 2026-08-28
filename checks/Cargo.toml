@@ -29,3 +29,7 @@ mcf-standin = { path = "../crates/mcf-standin" }
 # A reference is the first untrusted input MCF meets: a string a user typed or a
 # script produced, which becomes paths and requests (B-020, §3.7).
 mcf-hub = { path = "../crates/mcf-hub" }
+# The seed-set validation tier compares two distributions, and the arithmetic
+# that decides whether two distributions differ lives with the measurements
+# (B-291, D19).
+mcf-bench = { path = "../crates/mcf-bench" }

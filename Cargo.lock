@@ -76,6 +76,7 @@ dependencies = [
 name = "mcf-checks"
 version = "0.1.0-m0"
 dependencies = [
+ "mcf-bench",
  "mcf-core",
  "mcf-helper",
  "mcf-hub",

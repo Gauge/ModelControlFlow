@@ -18,3 +18,4 @@
 pub mod compare;
 pub mod enough;
 pub mod record;
+pub mod seeds;

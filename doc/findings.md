@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 65 |
+| **Version** | 66 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -89,6 +89,7 @@ forward as one.
 | 59 | [F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)](#59--f59--the-benchmark-runner-and-the-first-real-comparison-it-refused-to-over-report-b-080-a18-67-b65-b-091-f53-f57) |
 | 60 | [F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)](#60--f60--the-clock-in-the-type-stopped-a-comparison-not-a-record-a11-b-082-d9-f59) |
 | 61 | [F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)](#61--f61--the-seed-set-had-to-become-arithmetic-and-eintr-was-being-called-a-cut-off-transfer-b-290-b61-d19-a2-f53-f55) |
+| 62 | [F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)](#62--f62--the-seed-set-is-shown-representative-and-the-sampler-that-would-have-cleared-it-for-nothing-b-291-d19-616-713-b65) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4718,7 +4719,87 @@ divergence above has one observation and no mechanism. And nothing yet validates
 the standard set against a larger random one, which D19 requires periodically
 and which is B-291's.
 
+## 62 · F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)
+
+**What was asked.** D19 gives MCF a published seed set and then puts §6.16 on
+it: *the instrument does not get to grade itself.* The set is the first
+thirty-two draws of a stated stream (F61); the question is whether that prefix
+behaves like the stream at large, or whether MCF has been drawing from an
+unlucky corner of it since the day it was written.
+
+**What was run.** Thirty-two seeds from the head of the stream against three
+hundred and twenty from a million indices further along — two draws from one
+space, which is exactly what *is the prefix representative* means, and
+reproducible in a way a genuinely random draw would not be (§3.12). The
+per-trial outcome is how many distinct tokens the generation used: a behaviour
+statistic, never a speed, which is what a stand-in may legitimately produce
+(B65, D31). One prompt, held still, so that what varies between trials is the
+seed and nothing else (A8).
+
+```
+sampler: Nucleus { temperature: 1.0, top_p: 0.95 }, 48 tokens, stories15M-q4_0
+the standard set is indistinguishable from a draw 10 times larger,
+to within 10.0% — 32 trials against 320
+```
+
+Three hundred and fifty-two generations, eleven and a half minutes in release
+on this machine. **The set stays**, and it stays because it was shown rather
+than because nobody looked.
+
+**The defect this nearly had.** The first version of the tier was going to use
+MCF's shipped generation, which is `Settings::Greedy` — and **greedy ignores
+the seed entirely**. Every seed produces the same tokens, so both draws would
+have been three hundred and fifty-two copies of one number, the pooled null
+would have found no difference between two constants, and the tier would have
+cleared the seed set *for a reason that has nothing to do with the seed set*.
+A green check that cannot fail is worse than no check, because it is read as
+evidence.
+
+The tier therefore names a stochastic sampler explicitly, and says in its own
+header that this is the line to change when MCF ships a stochastic default.
+Which brings out something worth stating plainly: **today the seed set changes
+nothing about any MCF generation**, because the sampler MCF ships is greedy. It
+is recorded as a condition, it is checked before two comparisons are put side
+by side, and it will start mattering the day a sweep picks a sampler that draws
+(D18, B-281).
+
+**The polarity is inverted, and the type says so.** Everywhere else in
+`mcf-bench`, *they differ* is the interesting answer and *the same* is a null
+result. Here the clearance is *the same to within a stated resolution* and the
+finding is *distinguishable*. `Representative` is its own type rather than a
+reused `Verdict` for that reason: a green result must not be able to render as
+a discovery, and a test asserts that neither rendering contains the other's
+word.
+
+**And *not decided* is not clearance.** A run that could not separate the two
+has not shown anything, and treating it as clearance is precisely how an
+unvalidated instrument stays unvalidated. `clears_the_set` is true for one
+variant only, and the tier fails on the other two.
+
+**The two draws cannot be paired**, and the module says so: trial *i* of each
+shares nothing but its index. So it uses the pooled null — the construction
+§3.27 calls weaker everywhere else — which is the honest one here, because
+there is genuinely nothing to pair. A test also asserts the two draws share no
+seed, which the stream's bijectivity gives and which would otherwise be
+comparing part of the set with itself.
+
+**What was not established.** One model, one prompt, one sampler setting, one
+statistic. *Representative* here means *the distinct-token count of a 48-token
+generation from this model does not differ by more than ten percent between the
+prefix and the body* — a different statistic or a different model could give a
+different answer, and D19 asks for this periodically rather than once for
+exactly that reason. The larger draw is ten times the set, which is a chosen
+ratio; the resolution of ten percent is chosen too, and both are one line each.
+Eleven and a half minutes is the cost on a fifteen-million-parameter model, and
+it scales with the model.
+
 ## Changelog
+
+### Version 66 — the seed set is shown, not assumed
+
+F62. The published set is indistinguishable from a draw ten times larger from
+the same stream. The tier nearly cleared it for nothing: MCF's shipped
+generation is greedy, and greedy ignores the seed.
 
 ### Version 65 — five runs of one comparison
 
