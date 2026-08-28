@@ -72,6 +72,13 @@ pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Fin
         // §6.13, B-081: what the run reused. A mixed run is not one
         // measurement, and this is where that stops being invisible.
         ("reuse", Value::text(held.reuse().condition())),
+        // A4, B-087: a run that was interrupted keeps every pair it completed
+        // and says what was lost. `null` is *it finished*, which is a
+        // different fact from an interruption nobody recorded.
+        (
+            "cut_short",
+            held.cut_short().map_or(Value::Null, Value::text),
+        ),
         ("pairs", Value::List(pairs(held))),
     ])
 }

@@ -548,6 +548,7 @@ pub struct Finding {
     strength: Strength,
     isolation: Isolation,
     reuse: Reuse,
+    cut_short: Option<String>,
     withheld: Option<Withheld>,
     declared: Option<String>,
     arms: (Arm, Arm),
@@ -618,6 +619,12 @@ impl Finding {
         &self.reuse
     }
 
+    /// Why the run stopped before it was done, where it did (A4, B-087).
+    #[must_use]
+    pub fn cut_short(&self) -> Option<&str> {
+        self.cut_short.as_deref()
+    }
+
     /// Why there is no delta, where there is none.
     #[must_use]
     pub const fn withheld(&self) -> Option<Withheld> {
@@ -641,6 +648,11 @@ impl fmt::Display for Finding {
             (None, _) => write!(form, "{}", self.isolation)?,
         }
         write!(form, " — {}", self.strength)?;
+        if let Some(because) = &self.cut_short {
+            // A4: what was produced is reported, and what was lost is said
+            // rather than implied by a smaller number.
+            write!(form, " — CUT SHORT: {because}")?;
+        }
         if let Some(because) = &self.declared {
             write!(
                 form,
@@ -662,6 +674,7 @@ pub struct Comparison<K: ClockKind> {
     right: UnderTest,
     declared: Option<String>,
     discipline: Discipline,
+    cut_short: Option<String>,
     body: Body<K>,
 }
 
@@ -693,6 +706,22 @@ impl<K: ClockKind> Comparison<K> {
     #[must_use]
     pub const fn discipline(&self) -> &Discipline {
         &self.discipline
+    }
+
+    /// Why the run stopped before it was done, where it did (A4, B-087).
+    ///
+    /// **Nine of ten trials completing is nine data points.** A4 is absolute
+    /// and its violation is *an all-or-nothing return type on anything that
+    /// can partially succeed* — so a run that was interrupted keeps every pair
+    /// it completed, the verdict over them stands, and what was lost is said
+    /// rather than thrown away with the evidence.
+    ///
+    /// The pairs are not diminished by it: each one is two runs of two arms
+    /// taken back to back under the same conditions, and an interruption
+    /// afterwards does not reach back and unmake them.
+    #[must_use]
+    pub fn cut_short(&self) -> Option<&str> {
+        self.cut_short.as_deref()
     }
 
     /// What separates the two arms' configurations (A8, B-085).
@@ -873,6 +902,7 @@ impl<K: ClockKind> Comparison<K> {
             strength: self.strength(),
             isolation,
             reuse,
+            cut_short: self.cut_short.clone(),
             withheld,
             declared: self.declared.clone(),
             arms: (self.left.arm().clone(), self.right.arm().clone()),
@@ -988,6 +1018,7 @@ impl<K: ClockKind> Comparison<K> {
             right: right_under_test.clone(),
             declared: None,
             discipline,
+            cut_short: None,
             body: Body::Paired { session, pairs },
         })
     }
@@ -1021,6 +1052,7 @@ impl<K: ClockKind> Comparison<K> {
             left: left.clone(),
             right: right.clone(),
             declared: None,
+            cut_short: None,
             // Two arms that were never paired have no pairs to read a
             // discipline off, and §3.27 already calls the construction weaker.
             // A timing run with no length pinned is what it is: a set of
@@ -1160,6 +1192,7 @@ impl<K: ClockKind> Interleaving<K> {
                 right,
                 declared: None,
                 discipline,
+                cut_short: None,
                 body: Body::Paired {
                     session,
                     pairs: Vec::new(),
@@ -1185,10 +1218,18 @@ impl<K: ClockKind> Interleaving<K> {
     /// what must differ between the two runs is the arm and not the trajectory
     /// (§3.27, D19).
     ///
-    /// Returns `false` where a declared behaviour set has run out, which is the
-    /// end of what this comparison can honestly do: repeating the list would
-    /// repeat a trajectory (B61).
-    pub fn round(&mut self, mut run: impl FnMut(&Arm, &Draw) -> (Duration<K>, Warmth)) -> bool {
+    /// `run` answers `None` where the run did not happen, and then **no pair
+    /// is recorded**: a run that did not happen is not a trial, and a
+    /// zero-duration stand-in for it would put a number nobody measured into
+    /// the distribution (A4, A1). The pairs already taken are kept.
+    ///
+    /// Returns `false` where a declared behaviour set has run out — repeating
+    /// the list would repeat a trajectory (B61) — or where a run did not
+    /// happen. Either way the caller records what stopped it.
+    pub fn round(
+        &mut self,
+        mut run: impl FnMut(&Arm, &Draw) -> Option<(Duration<K>, Warmth)>,
+    ) -> bool {
         let Some(drew) = self
             .comparison
             .discipline
@@ -1217,14 +1258,25 @@ impl<K: ClockKind> Interleaving<K> {
         let (left, right, at) = match first {
             Side::Left => {
                 let l = run(&left_arm, &drew);
-                let r = run(&right_arm, &drew);
+                // The second run is not attempted where the first did not
+                // happen: a pair is two runs taken back to back, and one of
+                // them alone is not half a pair.
+                let r = l.as_ref().and_then(|_| run(&right_arm, &drew));
                 (l, r, (first_position, second_position))
             }
             Side::Right => {
                 let r = run(&right_arm, &drew);
-                let l = run(&left_arm, &drew);
+                let l = r.as_ref().and_then(|_| run(&left_arm, &drew));
                 (l, r, (second_position, first_position))
             }
+        };
+        // **A run that did not happen is not a trial** (A4, A1). Pushing a
+        // zero-duration pair here would put a number nobody measured into the
+        // distribution, which is worse than losing the pair — the pairs
+        // already taken are kept, and the caller records what stopped it.
+        let (Some(left), Some(right)) = (left, right) else {
+            self.next_position = first_position.0;
+            return false;
         };
         let warmth = (left.1, right.1);
         let (left, right) = (left.0, right.0);
@@ -1251,6 +1303,15 @@ impl<K: ClockKind> Interleaving<K> {
     #[must_use]
     pub const fn comparison(&self) -> &Comparison<K> {
         &self.comparison
+    }
+
+    /// Records why the run stopped before it was done (A4, B-087).
+    ///
+    /// Every pair already taken is kept: an interruption afterwards does not
+    /// reach back and unmake trials that happened, and A4 forbids the
+    /// all-or-nothing return that would discard them.
+    pub fn stopped_short(&mut self, because: impl Into<String>) {
+        self.comparison.cut_short = Some(because.into());
     }
 
     /// The comparison, finished.

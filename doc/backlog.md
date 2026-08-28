@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 177 |
+| **Version** | 178 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (93 done, 1 dropped, 12 in progress,
-36 blocked on a decision, 75 open).** Every item cites
+decided, 23 resolved) and 217 build items (94 done, 1 dropped, 12 in progress,
+36 blocked on a decision, 74 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -260,7 +260,7 @@ first and importance second.
 | B-252 | Every generalized statement resolves on demand to the measurements, conditions and spread behind it; no summary is written in place of its evidence | B55, §3.28, §3.15 | A recommendation expands to its evidence without leaving the interface; the record retains full precision | open |
 | B-085 | Isolation check: a comparison in which more than one variable differed reports "these are not comparable" rather than a delta | §3.4 | An intentionally confounded comparison is refused by the tooling | **done** (F56). An arm is a configuration rather than a name — `compare::UnderTest` carries the `Conditions` it was measured under, and every constructor takes two of them — and `mcf_core::measurement::Isolation` says what separates them, walking `Floor::entries()` rather than a second copy of the list so that a condition added to the floor is isolated on without anybody editing the check. Four answers: nothing differs (a control, which measures the machine), one does (the only shape a delta means what a reader takes it to mean), several do, or MCF has not read enough to say — because two unknowns are not a match (A7). **The refusal is in the type**: `Finding::verdict()` is `None` for a confounded comparison, so a caller cannot print a number by forgetting to ask. A confound the operator *declares* is science and comes back with its declaration and every differing variable beside it (A8), which MCF records rather than judges |
 | B-086 | Null and negative results are stored and surfaced as results — "does not fit here", "no measurable speedup" | §3.4 | Both appear in the record and in the window as outcomes, not failures | **done** (F58). Two record kinds, neither of them a failure: `comparison` and `fitment_planned`. A comparison writes all four outcomes — differ, same to a stated resolution, not yet decided, not comparable — with the paired difference distribution and both arms' conditions beside them, so the verdict can be re-asked from the record rather than trusted (D16, B56; the stopping condition's own rule has changed twice, F55 and F57). A plan writes every variant whichever way it came out, because a record of only the refusals cannot answer *when was this last known to fit* (A1). `mcf log` reads a null result as a result in as many words, and a refused comparison as an outcome with no delta anywhere in the line. A test asserts of both kinds that they are not `Failure` and do not render as one |
-| B-087 | Partial success representation: nine of ten tasks completing is nine data points | §3.1 | Partial runs are queryable as partial, with their per-unit outcomes intact | open |
+| B-087 | Partial success representation: nine of ten tasks completing is nine data points | §3.1 | Partial runs are queryable as partial, with their per-unit outcomes intact | **done** (F66). The benchmark runner had A4's own violation in it — *an all-or-nothing return type on anything that can partially succeed* — and threw away every completed pair when one request failed. It keeps them now, and `Comparison::cut_short` carries why it stopped: an `Option`, so that *it finished* and *it was interrupted and nobody recorded why* stay different facts (A7). It reaches the record, where `null` means the run finished. Demonstrated by stopping the daemon five seconds into a run: fifty-eight pairs kept, the verdict over them standing, and what was lost said. **Two more defects fell out**: the interrupted request was being recorded as a trial of zero nanoseconds — a number nobody measured, entering the distribution — and the record was written from a finding recomputed at the *default* resolution, so a caller asking about half a percent was shown one verdict and the record kept another (A6) |
 | B-088 | Contention governance: MCF knows the difference between a slow model and a busy machine, and says so when it cannot tell | §3.8, §7.9 | A deliberately contended run is marked unattributable rather than reported | blocked (DEC-009) |
 | B-089 | Environment pinning to the tolerance DEC-006 sets | §3.12, §7.6 | Every result carries enough environment to be reproduced to the stated tolerance | blocked (DEC-006) |
 | B-280 | A reported improvement traces to a workload split that was not used to select it; a winner failing validation reports *no improvement found* | B59, D18, A10 | Sweep results cannot be published from the selection split | open |
@@ -394,6 +394,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 178 — a partial run keeps what it produced
+
+B-087 done (F66). The benchmark runner had A4's own violation in it and threw
+away every completed pair when one request failed. It keeps them, says what
+stopped it, and records no trial for a run that did not happen — a
+zero-duration stand-in had been entering the distribution. And the record now
+carries the verdict the operator was shown rather than one recomputed at the
+default resolution.
 
 ### Version 177 — a defensible number, and the two ways to get one
 

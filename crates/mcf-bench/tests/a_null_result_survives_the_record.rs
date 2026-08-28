@@ -104,10 +104,10 @@ fn a_null_comparison() -> (Value, usize) {
             let wobble = round.wrapping_rem(7).wrapping_mul(3_000_000);
             let slower = (*arm == named) == round.is_multiple_of(2);
             let own = if slower { 1_000_000 } else { 0 };
-            (
+            Some((
                 Duration::from_nanos(SECOND.saturating_add(wobble).saturating_add(own)),
                 mcf_bench::warmth::Warmth::Warm,
-            )
+            ))
         });
     }
     let held = running.finish();

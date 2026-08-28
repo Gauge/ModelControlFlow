@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 69 |
+| **Version** | 70 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -93,6 +93,7 @@ forward as one.
 | 63 | [F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)](#63--f63--the-recommendation-is-in-a-different-repository-from-the-weights-b-281-b60-d18-a21-315) |
 | 64 | [F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)](#64--f64--every-benchmark-trial-was-cold-and-three-fifths-of-it-was-process-start-b-081-613-b-376-f59-d41-f35) |
 | 65 | [F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)](#65--f65--one-resident-model-and-paired-interleaving-cannot-both-be-had-b-090-b-081-b-250-dec-001-613-b53-f64) |
+| 66 | [F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)](#66--f66--fifty-eight-of-a-hundred-trials-is-fifty-eight-data-points-and-the-fifty-ninth-was-not-one-a4-b-087-31-a1-a6) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5037,7 +5038,80 @@ those counts are properties of the sitting. And `--cold` measures generation
 *plus* process start; separating them would need the server path, which is the
 thing that cannot be uniform.
 
+## 66 · F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)
+
+**A4 is absolute and names its own violation:** *an all-or-nothing return type
+on anything that can partially succeed.* MCF had written exactly that three
+days earlier. `mcf bench`'s runner returned `Result<Comparison, String>` and
+discarded every completed pair the moment one request failed — a hundred paired
+trials thrown away because the hundred-and-first did not answer.
+
+Nothing about it looked wrong. A loop that gives up on an error and returns it
+is the natural thing to write, which is why A4 is absolute and why the check is
+about the *shape* rather than about any particular loop.
+
+**What was built.** The runner always yields the comparison it built, however
+far it got, and the reason it stopped travels **with** the trials rather than
+instead of them: `Comparison::cut_short`, an `Option<String>` so that *it
+finished* and *it was interrupted and nobody recorded why* stay different facts
+(A7). It reaches the record as `cut_short`, where `null` means the run
+finished — so six weeks later a short run that was interrupted is
+distinguishable from a short run that decided quickly.
+
+**Demonstrated by interrupting one.** The daemon was stopped five seconds into
+a benchmark:
+
+```
+not decided after 58 paired trial(s): the arms have not separated …
+  reuse    warm: the model was already resident for every trial
+  pairs    58 interleaved, order drawn per pair
+  CUT SHORT after 58 pair(s)
+           the stream from the daemon ended before its account …
+```
+
+Fifty-eight pairs kept, the verdict over them standing, and what was lost said
+rather than implied by a smaller number. Each pair is two runs of two arms
+taken back to back under the same conditions, and an interruption afterwards
+does not reach back and unmake them.
+
+**The second defect, which the first run of the fix exposed.** The interrupted
+request was being recorded as a trial with a duration of **zero nanoseconds**.
+It showed up as the run going `MIXED` — the failed request's warmth was
+*unstated*, so ninety-three warm trials plus one unknown was not one
+measurement — and behind that flag was something worse: a number nobody
+measured had entered the distribution.
+
+A4 says a partial outcome is preserved. It does not say a non-outcome is one.
+**A run that did not happen is not a trial**, and a zero-duration stand-in for
+it is A1's forbidden loss wearing a data point's clothes. The runner now
+records no pair at all where a run did not happen, and does not attempt the
+second run of a pair whose first did not happen — one run alone is not half a
+pair (§3.27). After the fix the same interruption leaves fifty-eight *warm*
+pairs and no fabricated zero.
+
+**And a third, found while writing the check for the first two.** The record
+was written from a finding **recomputed at the default resolution** rather than
+the one the operator asked about. A caller asking about half a percent was
+shown one verdict and the record kept another: two answers to one question
+(A6), in the worst possible place to have them. The record now carries the
+finding that was displayed.
+
+**What was not established.** The interruption tested here is the daemon
+stopping; a trial that fails for another reason takes the same path but has not
+been run. `checks/tests/partial_outcomes_are_outcomes.rs` checks the shape
+rather than the behaviour — the behaviour is in `mcf-bench`'s own tests, and
+the shape is what stops the natural all-or-nothing return coming back. And A4's
+other example, *eleven tokens before a runtime died are eleven tokens*, was
+already held by the generation path and is asserted rather than newly built.
+
 ## Changelog
+
+### Version 70 — a partial run keeps what it produced
+
+F66. `mcf bench`'s runner was discarding every completed pair when one request
+failed — A4's own description of its violation. It keeps them now, says what
+stopped it, and records no trial for a run that did not happen: a zero-duration
+stand-in had been entering the distribution.
 
 ### Version 69 — one resident model, or paired interleaving
 

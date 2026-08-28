@@ -45,9 +45,16 @@ fn ns(nanos: u64) -> Duration<Simulated> {
 ///
 /// Every fixture here is a warm run, stated rather than defaulted: §6.13 makes
 /// what a trial reused a condition, and a test that let it be inferred would
-/// be testing the inference.
-fn warm(nanos: u64) -> (Duration<Simulated>, Warmth) {
-    (ns(nanos), Warmth::Warm)
+/// be testing the inference. The `Option` is the runner's shape and is always
+/// `Some` here — a run that did not happen is a separate fixture, because it
+/// is a separate thing (A4).
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the runner's closure returns None for a run that did not happen, and this is the \
+              one that did"
+)]
+fn warm(nanos: u64) -> Option<(Duration<Simulated>, Warmth)> {
+    Some((ns(nanos), Warmth::Warm))
 }
 
 /// A floor in which every condition is known, so that a test changes exactly
@@ -939,7 +946,7 @@ fn a_mixed_run_says_it_is_not_one_measurement() {
             } else {
                 Warmth::Warm
             };
-            (ns(SECOND), found)
+            Some((ns(SECOND), found))
         });
     }
     let held = running.finish();
@@ -987,7 +994,7 @@ fn a_mixed_run_cannot_be_declared_away() {
             } else {
                 Warmth::Warm
             };
-            (ns(SECOND.saturating_mul(2)), found)
+            Some((ns(SECOND.saturating_mul(2)), found))
         });
     }
     let held = running
@@ -1010,14 +1017,14 @@ fn a_uniform_run_gives_its_delta() {
         let mut running = interleaving(&left, &right, 29);
         for _ in 0..30 {
             let _ran = running.round(|arm, _drew| {
-                (
+                Some((
                     ns(if *arm == left {
                         SECOND.saturating_mul(2)
                     } else {
                         SECOND
                     }),
                     found,
-                )
+                ))
             });
         }
         let finding = running.finish().finding(FIVE);
@@ -1082,5 +1089,119 @@ fn a_comparison_rebuilt_from_trials_does_not_claim_to_know_what_it_reused() {
         held.reuse().condition().contains("did not say"),
         "{}",
         held.reuse()
+    );
+}
+
+/// **A4, which is absolute.** Nine of ten trials completing is nine data
+/// points: a run cut short keeps every pair it took, the verdict over them
+/// stands, and what was lost is said rather than thrown away with the evidence.
+#[test]
+fn a_run_cut_short_keeps_what_it_produced() {
+    let (left, right) = arms();
+    let mut running = interleaving(&left, &right, 31);
+    for _ in 0..9 {
+        let _ran = running.round(|arm, _drew| {
+            warm(if *arm == left {
+                SECOND.saturating_mul(2)
+            } else {
+                SECOND
+            })
+        });
+    }
+    running.stopped_short("the tenth trial's engine died");
+    let held = running.finish();
+
+    assert_eq!(held.pairs().len(), 9, "nine pairs are nine pairs");
+    assert_eq!(held.cut_short(), Some("the tenth trial's engine died"));
+
+    // And the verdict over them stands: each pair is two runs of two arms
+    // taken back to back, and an interruption afterwards does not reach back.
+    let finding = held.finding(FIVE);
+    assert!(
+        matches!(finding.verdict(), Some(Verdict::Differ { after: 9, .. })),
+        "the nine pairs still separate a doubling: {finding}"
+    );
+    assert_eq!(finding.cut_short(), Some("the tenth trial's engine died"));
+    assert!(
+        format!("{finding}").contains("CUT SHORT"),
+        "and the rendering says what was lost: {finding}"
+    );
+}
+
+/// A run that was **not** cut short says so by saying nothing — *it finished*
+/// and *it was interrupted and nobody recorded why* are different facts.
+#[test]
+fn a_run_that_finished_carries_no_reason() {
+    let (left, right) = arms();
+    let mut running = interleaving(&left, &right, 37);
+    for _ in 0..4 {
+        let _ran = running.round(|_arm, _drew| warm(SECOND));
+    }
+    let held = running.finish();
+    assert_eq!(held.cut_short(), None);
+    assert!(!format!("{}", held.finding(FIVE)).contains("CUT SHORT"));
+}
+
+/// **A run that did not happen is not a trial** (A4, A1). A failed request
+/// records no pair — a zero-duration stand-in would put a number nobody
+/// measured into the distribution, which is worse than losing the pair.
+#[test]
+fn a_run_that_did_not_happen_is_not_a_trial() {
+    let (left, right) = arms();
+    let mut attempts = 0_usize;
+    let mut running = interleaving(&left, &right, 47);
+    for _ in 0..10 {
+        let ran = running.round(|_arm, _drew| {
+            attempts = attempts.saturating_add(1);
+            // The eighth run does not happen, which is the middle of the
+            // fourth pair.
+            (attempts != 8).then(|| (ns(SECOND), Warmth::Warm))
+        });
+        if !ran {
+            break;
+        }
+    }
+    let held = running.finish();
+    assert_eq!(
+        held.pairs().len(),
+        3,
+        "three pairs completed; the fourth did not, and half a pair is not a pair"
+    );
+    assert_eq!(
+        attempts, 8,
+        "and the run stopped there rather than going on without it"
+    );
+    for pair in held.pairs() {
+        assert_ne!(
+            pair.left().as_nanos(),
+            0,
+            "no fabricated zero reached the distribution"
+        );
+        assert_ne!(pair.right().as_nanos(), 0);
+    }
+}
+
+/// And where the *first* run of a pair does not happen, the second is not
+/// attempted: a pair is two runs taken back to back, and one of them alone is
+/// not half a pair (§3.27).
+#[test]
+fn the_second_run_of_a_pair_is_not_attempted_without_the_first() {
+    let (left, right) = arms();
+    let mut attempts = 0_usize;
+    let mut running = interleaving(&left, &right, 53);
+    for _ in 0..4 {
+        let ran = running.round(|_arm, _drew| {
+            attempts = attempts.saturating_add(1);
+            // The fifth run — the first of the third pair — does not happen.
+            (attempts != 5).then(|| (ns(SECOND), Warmth::Warm))
+        });
+        if !ran {
+            break;
+        }
+    }
+    assert_eq!(running.comparison().pairs().len(), 2);
+    assert_eq!(
+        attempts, 5,
+        "the pair's second run was never asked for, because its first did not happen"
     );
 }

@@ -171,19 +171,17 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
             // a record. A prototype is not shipped and may; the conversion is
             // the boundary (F54).
             if let Some(seconds) = timed(command) {
-                (
+                Some((
                     mcf_core::time::Duration::from_nanos(whole(seconds * 1e9)),
                     // The prototype runs opaque commands and cannot see what
                     // any of them reused. Unstated is the honest answer, and
                     // is not a guess in either direction (§6.13, A7).
                     mcf_bench::warmth::Warmth::Unstated,
-                )
+                ))
             } else {
+                // A command that did not run is not a trial (A4).
                 failed = true;
-                (
-                    mcf_core::time::Duration::from_nanos(0),
-                    mcf_bench::warmth::Warmth::Unstated,
-                )
+                None
             }
         });
         if failed {

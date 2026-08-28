@@ -60,6 +60,58 @@ fn under_test(name: &str, differing: &[(&str, &str)]) -> UnderTest {
     )
 }
 
+/// The partiality reaches the record, so a reader six weeks later can tell a
+/// short run that was interrupted from a short run that decided quickly
+/// (A4, B-087, B-086).
+#[test]
+fn an_interruption_reaches_the_record() {
+    let mut running = Interleaving::<Monotonic>::new(
+        under_test("q8_0", &[]),
+        under_test("q2_k", &[("quantization", "q2_k")]),
+        SessionId::new("s"),
+        7,
+        Discipline::Timing {
+            seed: 0,
+            tokens: 128,
+        },
+    );
+    for _ in 0..3 {
+        let _ran = running.round(|_arm, _drew| Some((Duration::from_nanos(SECOND), Warmth::Warm)));
+    }
+    running.stopped_short("the daemon stopped answering");
+    let held = running.finish();
+
+    let body = super::comparison(&held, &held.finding(FIVE));
+    assert_eq!(
+        body.get("cut_short").and_then(Value::as_text),
+        Some("the daemon stopped answering")
+    );
+    assert_eq!(
+        body.get("pairs")
+            .and_then(Value::as_list)
+            .map(<[Value]>::len),
+        Some(3),
+        "and the pairs it did take are all there: nine of ten is nine data points (A4)"
+    );
+}
+
+/// A run that finished writes `null` there, which is *it finished* rather than
+/// an interruption nobody recorded.
+#[test]
+fn a_finished_run_records_no_interruption() {
+    let held = run(
+        under_test("q8_0", &[]),
+        under_test("q2_k", &[("quantization", "q2_k")]),
+        SECOND,
+        SECOND,
+        4,
+    );
+    assert_eq!(
+        super::comparison(&held, &held.finding(FIVE)).get("cut_short"),
+        Some(&Value::Null)
+    );
+}
+
 /// Runs `rounds` pairs where the left arm takes `left_ns` and the right
 /// `right_ns`.
 fn run(
@@ -82,13 +134,13 @@ fn run(
     );
     for _ in 0..rounds {
         let _ran = running.round(|arm, _drew| {
-            (
+            Some((
                 Duration::from_nanos(if *arm == named { left_ns } else { right_ns }),
                 // Stated rather than defaulted: §6.13 makes what a trial reused
                 // a condition, and a fixture that let it be inferred would be
                 // testing the inference.
                 Warmth::Warm,
-            )
+            ))
         });
     }
     running.finish()

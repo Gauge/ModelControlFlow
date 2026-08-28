@@ -217,18 +217,22 @@ pub(crate) fn bench_where(
             resolving,
         },
     );
-    let held = match held {
-        Ok(held) => held,
-        Err(text) => {
-            return Response {
-                text,
-                served: false,
-            };
-        }
-    };
+    // A4: a run that was interrupted before it had two pairs has no comparison
+    // to report, and *that* is a refusal. One with two or more has a result,
+    // and the interruption travels with it rather than replacing it.
+    if held.pairs().len() < 2 {
+        return Response {
+            text: format!(
+                "mcf: the benchmark produced {} paired trial(s), which is not a comparison\n  {}",
+                held.pairs().len(),
+                held.cut_short().unwrap_or("no reason was recorded")
+            ),
+            served: false,
+        };
+    }
 
     let finding = held.finding(resolving);
-    let written = keep(&held, mcf_core::time::Timestamp::now());
+    let written = keep(&held, &finding, mcf_core::time::Timestamp::now());
     // Every verdict is served. A18: a benchmark has no pass condition, and a
     // command that exited non-zero on *not decided* would be a pass condition
     // wearing an exit status.
@@ -268,7 +272,7 @@ fn interleave(
     arms: Arms<'_>,
     discipline: &Discipline,
     asked: Asked<'_>,
-) -> Result<Comparison<Monotonic>, String> {
+) -> Comparison<Monotonic> {
     let mut failed: Option<String> = None;
     let mut running = Interleaving::<Monotonic>::new(
         arm(
@@ -308,18 +312,32 @@ fn interleave(
                 asked.seed,
                 asked.engine,
             ) {
-                Ok(held) => held,
+                Ok(held) => Some(held),
                 Err(text) => {
+                    // A run that did not happen is not a trial (A4, A1): no
+                    // pair is recorded, the pairs already taken are kept, and
+                    // what stopped the run is written down below.
                     failed.get_or_insert(text);
-                    (Duration::from_nanos(0), Warmth::Unstated)
+                    None
                 }
             }
         });
         if !ran {
+            // The declared seed set ran out. Every pair taken is kept, and
+            // what stopped the run is said rather than left as a smaller
+            // number nobody can explain (A4, B-087, B61).
+            running.stopped_short(
+                "the declared seed set ran out, and repeating it would repeat a trajectory (B61)",
+            );
             break;
         }
-        if let Some(text) = failed {
-            return Err(text);
+        if let Some(text) = &failed {
+            // **Nine of ten trials completing is nine data points** (A4). The
+            // pairs already taken are two runs of two arms under the same
+            // conditions apiece, and a trial failing afterwards does not reach
+            // back and unmake them.
+            running.stopped_short(text.clone());
+            break;
         }
         // A run whose trials have stopped being alike cannot produce a delta
         // however long it goes on (§6.13), so it stops as soon as that is
@@ -335,7 +353,7 @@ fn interleave(
             break;
         }
     }
-    Ok(running.finish())
+    running.finish()
 }
 
 /// Whether both arms would run on an engine that can be timed (B65, D31).
@@ -627,13 +645,21 @@ fn generate(
 }
 
 /// Writes the comparison to the record, and says where or why not.
-fn keep(held: &Comparison<Monotonic>, at: Timestamp) -> Result<PathBuf, String> {
+fn keep(
+    held: &Comparison<Monotonic>,
+    finding: &mcf_bench::compare::Finding,
+    at: Timestamp,
+) -> Result<PathBuf, String> {
     let Some(path) = mcf_record::journal::default_path() else {
         return Err("there is nowhere to write a record on this machine".to_owned());
     };
     let mut journal =
         Journal::open(&path).map_err(|failure| format!("the record would not open — {failure}"))?;
-    let body = record::comparison(held, &held.finding(RESOLVING));
+    // The finding the operator was shown, not one recomputed here. Recomputing
+    // it took the *default* resolution rather than the one they asked about, so
+    // a caller who asked about half a percent was shown one verdict and the
+    // record kept another — two answers to one question (A6).
+    let body = record::comparison(held, finding);
     journal
         .append(&Record::new(EntryKind::Comparison, at, body))
         .map(|_id| path)
@@ -664,6 +690,17 @@ fn report(
         for (at, difference) in differences.iter().enumerate() {
             lines.push(format!("    #{at}: {difference}"));
         }
+    }
+    if let Some(because) = held.cut_short() {
+        lines.push(format!("  CUT SHORT after {} pair(s)", held.pairs().len()));
+        lines.push(format!("           {because}"));
+        lines.push(
+            "           The pairs above are kept: each is two runs of two arms taken".to_owned(),
+        );
+        lines.push(
+            "           back to back, and an interruption afterwards does not reach".to_owned(),
+        );
+        lines.push("           back and unmake them (A4).".to_owned());
     }
     lines.push(match written {
         Ok(path) => format!("  recorded {}", path.display()),
