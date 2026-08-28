@@ -36,7 +36,7 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use mcf_bench::compare::{Comparison, Discipline, Interleaving, UnderTest};
+use mcf_bench::compare::{Comparison, Discipline, Interleaving, Method, UnderTest};
 use mcf_bench::record;
 use mcf_bench::warmth::Warmth;
 use mcf_core::attested::Attested;
@@ -143,6 +143,16 @@ pub(crate) fn bench_where(
         .unwrap_or(TOKENS);
     let limit = Some(usize::try_from(tokens).unwrap_or(usize::MAX));
     let discipline = Discipline::Timing { seed, tokens };
+    // What the question was, which the conditions do not say: §II asks that
+    // somebody else be able to repeat this, and a floor full of hardware does
+    // not tell them what to run (PR2, B30, B-211).
+    let method = Method {
+        prompt: prompt.to_owned(),
+        resolving,
+        ceiling: CEILING,
+        engine: engine.map(str::to_owned),
+        cold,
+    };
     let (left_path, right_path) = match (located(left), located(right)) {
         (Ok(one), Ok(other)) => (one, other),
         (Err(text), _) | (_, Err(text)) => {
@@ -232,7 +242,7 @@ pub(crate) fn bench_where(
     }
 
     let finding = held.finding(resolving);
-    let written = keep(&held, &finding, mcf_core::time::Timestamp::now());
+    let written = keep(&held, &finding, &method, mcf_core::time::Timestamp::now());
     // Every verdict is served. A18: a benchmark has no pass condition, and a
     // command that exited non-zero on *not decided* would be a pass condition
     // wearing an exit status.
@@ -648,6 +658,7 @@ fn generate(
 fn keep(
     held: &Comparison<Monotonic>,
     finding: &mcf_bench::compare::Finding,
+    method: &Method,
     at: Timestamp,
 ) -> Result<PathBuf, String> {
     let Some(path) = mcf_record::journal::default_path() else {
@@ -659,7 +670,7 @@ fn keep(
     // it took the *default* resolution rather than the one they asked about, so
     // a caller who asked about half a percent was shown one verdict and the
     // record kept another — two answers to one question (A6).
-    let body = record::comparison(held, finding);
+    let body = record::comparison(held, finding, method);
     journal
         .append(&Record::new(EntryKind::Comparison, at, body))
         .map(|_id| path)

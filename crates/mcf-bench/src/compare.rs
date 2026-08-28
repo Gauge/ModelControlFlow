@@ -1185,6 +1185,38 @@ fn count<K: ClockKind>(merged: &[&Trial<Duration<K>>], arm: &Arm) -> usize {
     merged.iter().filter(|trial| trial.arm() == arm).count()
 }
 
+/// What a comparison was asked to do (PR2, B30, B-211).
+///
+/// **The conditions say what the machine was; this says what the question
+/// was.** §II requires that somebody else be able to repeat a measurement, and
+/// a floor full of hardware does not tell them what to run. B30 makes a
+/// laboratory declare its method; this is that declaration for a comparison,
+/// and a repro bundle is unusable without it.
+///
+/// It is deliberately not part of [`Conditions`]: the floor is *everything
+/// that varies and could change a result* about the machine and the
+/// configuration, and what a caller asked is neither — two people asking
+/// different questions of one machine are not two conditions, they are two
+/// experiments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Method {
+    /// What both arms were asked.
+    ///
+    /// **This is the operator's text**, and a bundle carrying it is carrying
+    /// something they wrote. PR2 requires the method travel and A24 requires
+    /// what leaves be shown first; the surface that writes a bundle names this
+    /// among its contents rather than leaving it to be discovered.
+    pub prompt: String,
+    /// The difference the caller cared about.
+    pub resolving: PartsPerMillion,
+    /// The most paired trials the run would have taken.
+    pub ceiling: usize,
+    /// Which engine the run asked for, where it asked.
+    pub engine: Option<String>,
+    /// Whether every trial was made to load the model for itself (§6.13).
+    pub cold: bool,
+}
+
 /// Runs two arms alternately, randomizing which goes first in each pair.
 ///
 /// This is the constructor that makes B53 structural rather than advisory:

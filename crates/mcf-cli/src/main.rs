@@ -11,6 +11,7 @@
 //! the record.
 
 mod bench;
+mod bundle;
 mod check;
 mod crosscheck;
 mod doctor;
@@ -115,6 +116,13 @@ enum Request<'a> {
         seed: u64,
         /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
+    },
+    /// Write one file that reproduces one claim.
+    Bundle {
+        /// The claim's identifier, as `mcf log` prints it.
+        id: &'a str,
+        /// Where to write it.
+        into: Option<&'a str>,
     },
     /// Expand one recorded entry into the evidence behind it.
     Show {
@@ -425,6 +433,19 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 command: "bench",
                 argument,
             },
+        },
+        ["bundle", id] => Request::Bundle { id, into: None },
+        ["bundle", id, "--into", path] => Request::Bundle {
+            id,
+            into: Some(path),
+        },
+        ["bundle"] => Request::MissingArgument {
+            command: "bundle",
+            needs: "<entry-id>, which `mcf log --kind comparison` prints first on each line",
+        },
+        ["bundle", _, argument, ..] => Request::UnexpectedArgument {
+            command: "bundle",
+            argument,
         },
         ["show", id] => Request::Show { id },
         ["show"] => Request::MissingArgument {
@@ -996,6 +1017,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
+                 \x20 mcf bundle <entry-id>               one file that reproduces one\n\
+                 \x20        [--into <path>]              claim: the method, the conditions,\n\
+                 \x20                                     every trial and the provenance (PR2)\n\
                  \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
                  \x20                                     the measurements and conditions it\n\
                  \x20                                     rests on (B55)\n\
@@ -1087,6 +1111,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             resolving.map(mcf_core::measurement::PartsPerMillion),
             *cold,
         ),
+        Request::Bundle { id, into } => bundle::run(id, *into),
         Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
         Request::Probe {

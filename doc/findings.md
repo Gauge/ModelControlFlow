@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 71 |
+| **Version** | 72 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -95,6 +95,7 @@ forward as one.
 | 65 | [F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)](#65--f65--one-resident-model-and-paired-interleaving-cannot-both-be-had-b-090-b-081-b-250-dec-001-613-b53-f64) |
 | 66 | [F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)](#66--f66--fifty-eight-of-a-hundred-trials-is-fifty-eight-data-points-and-the-fifty-ninth-was-not-one-a4-b-087-31-a1-a6) |
 | 67 | [F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)](#67--f67--the-first-frontier-and-what-it-is-mostly-a-frontier-of-b-091-xii-34-327-f64-f65) |
+| 68 | [F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5178,7 +5179,86 @@ shape. Seven of the twenty variants this repository publishes. And the script
 is not a step of `scripts/ci.sh` and never will be: it has no pass condition,
 and A18 forbids a benchmark gating a change.
 
+## 68 · F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)
+
+**§II's fourth obligation, built.** *Every measurement carries a stated method,
+stated conditions, stated uncertainty, and the ability for someone else to
+repeat it.* Three were built; the fourth was a property of the design rather
+than a thing anybody could hand over. `mcf bundle <entry-id>` is that thing: one
+file holding a claim and everything it rests on, selected out of the record
+rather than assembled beside it.
+
+```
+wrote /tmp/comparison_2026-08-28T12-48-45Z_f67204b1_0000.mcf-bundle
+  5 entr(ies), sha256 3075435016fa04…
+
+  the claim   … the left arm is quicker by 26.2%, after 6 paired trial(s)
+  rests on    component_provisioned_2026-08-28T06-39-11Z_ef027fef_0000
+  rests on    artifact_acquired_2026-08-28T12-22-48Z_e105a153_0000
+  rests on    artifact_acquired_2026-08-28T12-23-32Z_4ce3df53_0000
+  rests on    machine_profile_2026-08-28T12-47-38Z_a1171665_0000
+```
+
+**One mechanism, not a fourth.** B-302 requires export, contribution and repro
+bundle be one thing, because three serializations of the same evidence
+eventually disagree about what the evidence was. `export::write_selected` is
+`write` with a predicate, and the module's own claim — *the kinds differ in
+what is selected, never in how it is written* — stopped being a sentence in a
+header and became a function signature.
+
+**The method had to start being recorded.** A comparison's conditions say what
+the machine was; nothing said what the *question* was. A floor full of hardware
+does not tell somebody what to run, so `Method` — the prompt, the resolution
+asked about, the ceiling, the engine asked for, whether every trial was made to
+load the model — is written with every comparison now. It is deliberately not
+part of `Conditions`: two people asking different questions of one machine are
+not two conditions, they are two experiments.
+
+**And that made the header lie.** The bundle's `contains_user_content` was a
+constant `false`, on reasoning that was correct when it was written: *this
+module reads the journal, and the journal is not the content store* (A25,
+B-161). The journal still is not the content store. But **the method of a
+measurement is text the operator wrote**, and it has to travel or the bundle
+reproduces nothing — so the first bundle produced carried a prompt under a
+header saying it carried no user content.
+
+A `false` that is sometimes wrong is worse than no field at all: a reader
+deciding whether to send a file is entitled to know what leaves with it (A24,
+§3.20), and that field is the one they will read. It is computed from the
+entries now, over a named list of the places operator text reaches the record —
+named rather than guessed, because guessing gets it wrong in the direction that
+matters, and a check requires the list stay complete.
+
+**What leaves with it is printed before it leaves.** Producing a bundle is not
+publication and is not gated — writing a file to a path the operator named is
+not sending it. What the surface owes is the other half of A24: the list a
+person should read first, which names the two things they would not expect —
+the prompt they wrote, and this machine's **full hardware identity**, which a
+*contribution* strips and a bundle deliberately keeps. That difference is what
+makes a bundle checkable rather than aggregable, and it is the reason the two
+artifacts are opposites.
+
+**What is missing is said too.** The first bundle produced had no machine
+profile, because nothing had written one on this machine — so it says *NOT in
+it: what this machine is*, and names the command that would fix it. A bundle
+whose conditions lack the machine is a weaker artifact than one whose do not,
+and that is the reader's to weigh rather than to discover later (A7).
+
+**What was not established.** The bundle carries the identifiers of what it
+rests on and not the weights: PR2 anticipated that, and it makes verification
+depend on fetching them, which §7.11 cares about. The join between a claim and
+an acquisition is the artifact's path, because the record holds no foreign key —
+a bundle for a claim about a model acquired on another machine, or moved by
+hand, will carry no provenance and does not currently say so. And re-running the
+method on another machine is `mcf verify`, which is B-212 and not this.
+
 ## Changelog
+
+### Version 72 — one file that reproduces one claim
+
+F68. `mcf bundle` builds §II's fourth obligation out of the record. Producing
+the first one found that the header's `contains_user_content` had been a
+constant `false` since before a comparison recorded the prompt it was asked.
 
 ### Version 71 — the first frontier
 

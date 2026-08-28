@@ -108,12 +108,44 @@ pub struct Manifest {
 /// many entries that was — A4 keeps a partial outcome, and B62 requires the
 /// extent be stated rather than the history quietly shortened.
 pub fn write(journal: &Path, to: &Path, kind: Kind) -> Result<Manifest> {
+    write_selected(journal, to, kind, |_| true)
+}
+
+/// The same, carrying only the entries a selector keeps.
+///
+/// **The kinds differ in what is selected, never in how it is written**, and
+/// this is where that stops being a sentence in the module header. A repro
+/// bundle is one claim and what it rests on (PR2); a contribution is the rows
+/// §XIV permits to leave; an export is everything. All three are this function
+/// with a different predicate, so a reader that understands one understands
+/// all three.
+///
+/// The selector sees each entry as the record holds it, and the lines are still
+/// copied **verbatim**: re-encoding a kept line would make a bundle's digest
+/// depend on the version that wrote it.
+///
+/// # Errors
+///
+/// As [`write()`].
+pub fn write_selected(
+    journal: &Path,
+    to: &Path,
+    kind: Kind,
+    keep: impl Fn(&Value) -> bool,
+) -> Result<Manifest> {
     let replayed = crate::journal::replay(journal)?;
     let text = std::fs::read_to_string(journal).map_err(|error| unreadable(journal, &error))?;
 
     // The entry lines, verbatim. The header is line one and is not an entry;
     // anything after a loss is not carried, because it could not be read.
-    let lines: Vec<&str> = text.lines().skip(1).take(replayed.entries.len()).collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .skip(1)
+        .take(replayed.entries.len())
+        .zip(replayed.entries.iter())
+        .filter(|(_, entry)| keep(&entry.to_value()))
+        .map(|(line, _)| line)
+        .collect();
 
     let mut hasher = Sha256::new();
     for line in &lines {
@@ -126,7 +158,16 @@ pub fn write(journal: &Path, to: &Path, kind: Kind) -> Result<Manifest> {
     };
 
     let mut out = String::new();
-    out.push_str(&header(kind, &manifest, replayed.loss.is_some()).to_line());
+    // Whether anything carried holds text the operator wrote. Asked of the
+    // entries rather than assumed from the kind: a bundle's honesty about this
+    // has to survive somebody adding a field to an entry.
+    let written = replayed
+        .entries
+        .iter()
+        .zip(text.lines().skip(1))
+        .filter(|(_, line)| lines.contains(line))
+        .any(|(entry, _)| holds_written_text(&entry.to_value()));
+    out.push_str(&header(kind, &manifest, replayed.loss.is_some(), written).to_line());
     out.push('\n');
     for line in &lines {
         out.push_str(line);
@@ -224,7 +265,7 @@ pub fn read(from: &Path) -> Result<(Kind, Manifest, Vec<Value>)> {
     Ok((kind, stated, entries))
 }
 
-fn header(kind: Kind, manifest: &Manifest, partial: bool) -> Value {
+fn header(kind: Kind, manifest: &Manifest, partial: bool, carries_written_text: bool) -> Value {
     Value::map([
         ("format", Value::Integer(FORMAT_VERSION)),
         ("kind", Value::text(kind.as_str())),
@@ -247,11 +288,48 @@ fn header(kind: Kind, manifest: &Manifest, partial: bool) -> Value {
         // be fully replayed says so, rather than being a shorter history nobody
         // can tell from a complete one.
         ("source_was_complete", Value::Bool(!partial)),
-        // A25, stated as well as structural. A reader of a bundle deserves to
-        // know what is *not* in it, and the guarantee is that this module reads
-        // the journal and the journal is not the content store.
-        ("contains_user_content", Value::Bool(false)),
+        // A25, stated as well as structural — and **not a constant**. It was
+        // one, and the claim stopped being true the day a comparison began
+        // recording the prompt both arms were asked as part of its method
+        // (PR2, B-211): the journal is still not the content store, and the
+        // *method* of a measurement is text the operator wrote.
+        //
+        // The header says what the bundle holds rather than what this module
+        // hopes it holds. A reader deciding whether to send a file is entitled
+        // to the first (A24, §3.20), and a `false` that is sometimes wrong is
+        // worse than no field at all.
+        ("contains_user_content", Value::Bool(carries_written_text)),
     ])
+}
+
+/// Whether an entry holds text the operator wrote.
+///
+/// The fields are named rather than guessed at, because guessing is how this
+/// gets it wrong in the direction that matters: an unrecognized field read as
+/// *not user content* is a bundle telling somebody it is safe to send.
+///
+/// A field added later that holds written text and is not named here is a
+/// defect, and `checks/tests/a_bundle_says_what_it_holds.rs` is what catches
+/// it — by requiring that every place a surface writes operator text into the
+/// record be one of these.
+fn holds_written_text(entry: &Value) -> bool {
+    /// Where operator text reaches the record today.
+    const WRITTEN: [&[&str]; 2] = [
+        // A comparison's method: what both arms were asked (PR2, B-211).
+        &["body", "method", "prompt"],
+        // A generation: what was asked, where a surface recorded it.
+        &["body", "prompt"],
+    ];
+    WRITTEN.iter().any(|path| {
+        let mut held = entry;
+        for step in *path {
+            let Some(next) = held.get(step) else {
+                return false;
+            };
+            held = next;
+        }
+        held.as_text().is_some_and(|text| !text.is_empty())
+    })
 }
 
 fn unreadable(path: &Path, error: &std::io::Error) -> Failure {

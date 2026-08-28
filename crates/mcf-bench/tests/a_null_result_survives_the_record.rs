@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use mcf_bench::compare::{Discipline, Interleaving, UnderTest};
+use mcf_bench::compare::{Discipline, Interleaving, Method, UnderTest};
 use mcf_bench::record;
 use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
@@ -29,6 +29,21 @@ use mcf_record::json::Value;
 const AT: Timestamp = Timestamp::from_utc_nanos(1_756_058_651_442_000_000, Attested::Unknown);
 const FIVE: PartsPerMillion = PartsPerMillion(50_000);
 const SECOND: u64 = 1_000_000_000;
+
+/// What these comparisons were asked to do.
+///
+/// Stated rather than defaulted: §II asks that somebody else be able to repeat
+/// a measurement, and a `Method` a fixture left blank would be a fixture
+/// asserting that a blank one is enough (PR2, B30).
+fn asked() -> Method {
+    Method {
+        prompt: "Once upon a time".to_owned(),
+        resolving: FIVE,
+        ceiling: 200,
+        engine: Some("provisioned".to_owned()),
+        cold: true,
+    }
+}
 
 struct Scratch(PathBuf);
 
@@ -112,7 +127,7 @@ fn a_null_comparison() -> (Value, usize) {
     }
     let held = running.finish();
     let finding = held.finding(FIVE);
-    let body = record::comparison(&held, &finding);
+    let body = record::comparison(&held, &finding, &asked());
     (body, held.pairs().len())
 }
 

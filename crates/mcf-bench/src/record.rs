@@ -39,7 +39,9 @@ use mcf_core::time::{ClockKind, Measurable};
 use mcf_record::encode;
 use mcf_record::json::Value;
 
-use super::compare::{Comparison, Difference, Discipline, Finding, Side, Strength, UnderTest};
+use super::compare::{
+    Comparison, Difference, Discipline, Finding, Method, Side, Strength, UnderTest,
+};
 use super::enough::Verdict;
 
 /// Everything one comparison established, and everything it established it on.
@@ -48,7 +50,11 @@ use super::enough::Verdict;
 /// conditions of both arms, and every pair — both durations, which ran first,
 /// and the difference. Nothing is summarized away.
 #[must_use]
-pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Finding) -> Value {
+pub fn comparison<K: ClockKind + Measurable>(
+    held: &Comparison<K>,
+    finding: &Finding,
+    method: &Method,
+) -> Value {
     let (left, right) = held.arms();
     let (left_first, right_first) = held.order_balance();
     Value::map([
@@ -69,6 +75,10 @@ pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Fin
             ]),
         ),
         ("discipline", discipline(held.discipline())),
+        // What the *question* was, which the conditions do not say. §II asks
+        // that somebody else be able to repeat this, and a floor full of
+        // hardware does not tell them what to run (PR2, B30, B-211).
+        ("method", self::method(method)),
         // §6.13, B-081: what the run reused. A mixed run is not one
         // measurement, and this is where that stops being invisible.
         ("reuse", Value::text(held.reuse().condition())),
@@ -80,6 +90,22 @@ pub fn comparison<K: ClockKind + Measurable>(held: &Comparison<K>, finding: &Fin
             held.cut_short().map_or(Value::Null, Value::text),
         ),
         ("pairs", Value::List(pairs(held))),
+    ])
+}
+
+/// What the comparison was asked to do (PR2, B30, B-211).
+fn method(held: &Method) -> Value {
+    Value::map([
+        ("prompt", Value::text(held.prompt.clone())),
+        ("resolving_ppm", parts_per_million(held.resolving)),
+        ("ceiling", count(held.ceiling)),
+        (
+            "engine_asked",
+            held.engine
+                .as_ref()
+                .map_or(Value::Null, |named| Value::text(named.clone())),
+        ),
+        ("cold", Value::Bool(held.cold)),
     ])
 }
 
