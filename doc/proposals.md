@@ -1405,13 +1405,11 @@ whether lifting the ceiling is worth anything. **Then measure how large a model
 MCF's own engine can usefully read**, which is a fact nobody has and which
 would tell us whether 27B is the target or whether it never was.
 
-**Accepted in part, 2026-08-27.** The static half is taken and enters the
-backlog as B-381 (segmentation), B-382 (cost against the usable context) and
-B-383 (marker fidelity). The behavioural half is **deferred, not refused**: it
-needs an engine that can be driven cheaply enough to run variants, it wants a
-view that can show a shape rather than a column, and it is the half that could
-drift into scoring a prompt — which has no judgement-free measure, and which
-the answer on soft qualities has since ruled out for the same reason.
+**Accepted, 2026-08-27.** The ceiling is not lifted. B-366 goes first — it
+needs no decision, does not touch the numerics, and moves the number that
+decides whether the rest is worth attempting — and **B-384** then measures how
+large a model MCF's own engine can usefully read, which nobody knows and which
+is the fact that says whether twenty-seven billion was ever the target.
 
 ## Changelog
 
