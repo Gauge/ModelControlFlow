@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 57 |
+| **Version** | 58 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -81,6 +81,7 @@ forward as one.
 | 51 | [F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)](#51--f51--contention-moves-the-level-not-the-spread-and-that-decides-how-a-benchmark-must-be-built-dec-007-b-250-b-181-34-a19-f2-f3) |
 | 52 | [F52 — The engine benchmarks will use is three times noisier than the one they will not (DEC-007, B-366, B-376, §3.4, A19, F51)](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51) |
 | 53 | [F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)](#53--f53--the-noise-floor-is-a-property-of-the-moment-not-of-the-machine-dec-007-b-083-b-181-d35-a19-f51-f52) |
+| 54 | [F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)](#54--f54--the-stopping-condition-and-the-first-comparison-that-stopped-itself-b-083-b-086-b-250-dec-007-f51-f52-f53) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4071,7 +4072,81 @@ unanswerable. And whether the sevenfold variation in the noise floor narrows
 inside an exclusive window, which is the argument *for* the window and has not
 been tested because the window is not built.
 
+## 54 · F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)
+
+**What was built.** `mcf_bench::enough` — the rule a comparison carries instead
+of a repeat count. F53 established that a count cannot be the rule, because the
+same command on the same machine needed seven repeats in one sitting and over a
+hundred in another. So a comparison repeats until *its own* resampling
+separates the difference it is looking at from the noise it is measuring, and
+reports how many that took. **The count becomes part of the result rather than
+part of the policy.**
+
+**Three outcomes, because two would be a lie.** *They differ*, *they are the
+same to within a stated resolution*, and *not yet decided*. The middle one is a
+real answer — B-086 says a null result is a result — and it carries the size of
+the difference that would have shown, so *no difference* never means *we
+stopped looking*. The third is D42's honesty applied to a comparison: arms that
+have not separated, with noise still wider than the question, must not be
+rounded to either answer.
+
+**Paired by construction, because the pairing is the defence.** F51 measured
+contention moving a run's whole distribution by sixty-six percent while
+widening it only from four to nine, so *all of A then all of B* carries any
+drift as an error landing on every repeat in one direction. Arms of unequal
+length are refused rather than truncated: a caller who has run one arm more
+than the other has not run a paired trial, and truncating would silently
+produce the shape B-250 exists to prevent.
+
+**The first comparison that stopped itself**, on the question the first
+benchmark is actually for — two quantizations of one model, 150 tokens each,
+alternating. Twice, an hour apart:
+
+```
+not decided after 10 paired trial(s)
+they differ by 9.6%, after 17 paired trial(s) — noise alone produced a gap
+that big 4.5% of the time      · medians 1.130 s and 1.031 s
+
+they differ by 36.2%, after 8 paired trial(s) — noise alone produced a gap
+that big 3.9% of the time      · medians 1.129 s and 0.829 s
+```
+
+Seventeen, then eight. Not the seven F51 derived, nor the fifty F52 derived —
+**the number was found by the run rather than brought to it**, which is the
+whole of what F53 asked for. And the two sittings disagree about the *size* of
+the difference — 9.6% against 36.2%, from a slower second arm rather than a
+faster first — which is F53's point arriving again: what a single sitting
+measures is what that sitting had.
+
+**A shipped crate here may not hold a floating-point number**, because that is
+how a NaN reaches a record — a rule this module broke on its first draft and
+that the gate caught. It counts in nanoseconds and parts per million now, which
+is not merely compliance: a ratio of integers cannot be a NaN, a zero duration
+is *not yet decided* rather than an infinity, and the existing measurement
+vocabulary already had the type for it.
+
+**What was not established.** One machine, one pair of files, one prompt
+length, and two sittings that disagree by a factor of four about the size of
+the gap: that Q2_K is faster than Q8_0 here is a demonstration that the
+instrument works, not a finding about quantization — the frontier is B-091 and
+this is not it. The ceiling of a hundred and twenty paired trials is a chosen
+number, as is the one-in-twenty false-alarm rate; both are stated in one line
+each. And the resampling seed is fixed, so re-asking the same data gives the
+same verdict — which is reproducibility (§3.12) and not certainty, and the two
+are easy to confuse when a number comes back identical twice.
+
 ## Changelog
+
+### Version 58 — the first comparison that stopped itself
+
+F54. `mcf_bench::enough`: the rule a comparison carries instead of a repeat
+count, since F53 showed a count is a property of the sitting. Three outcomes,
+arms paired by construction, and the count reported as part of the answer.
+
+Validated on the question the first benchmark is for — two quantizations of one
+model, alternating. Undecided at ten paired trials, decided at seventeen. Not
+F51's seven nor F52's fifty: the number was found by the run rather than
+brought to it.
 
 ### Version 57 — the noise floor is a property of the moment
 

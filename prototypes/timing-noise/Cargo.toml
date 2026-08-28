@@ -15,3 +15,5 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+mcf-bench = { path = "../../crates/mcf-bench" }
+mcf-core = { path = "../../crates/mcf-core" }

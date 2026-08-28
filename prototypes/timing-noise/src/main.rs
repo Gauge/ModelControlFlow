@@ -55,7 +55,12 @@ const FALSE_ALARMS_ALLOWED: f64 = 0.05;
 const RESAMPLINGS: usize = 4000;
 
 fn main() -> std::process::ExitCode {
-    let mut arguments = std::env::args().skip(1);
+    // Two commands separated by `vs` is a comparison; one is a noise floor.
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(at) = all.iter().position(|held| held == "vs") {
+        return compare(&all, at);
+    }
+    let mut arguments = all.into_iter();
     let Some(repeats) = arguments.next().and_then(|held| held.parse::<usize>().ok()) else {
         eprintln!("usage: timing-noise <repeats> <command> [args…]");
         return std::process::ExitCode::FAILURE;
@@ -101,6 +106,110 @@ fn main() -> std::process::ExitCode {
 
     report(&timings, &loads, &speeds);
     std::process::ExitCode::SUCCESS
+}
+
+/// Two commands, interleaved, until the stopping condition decides.
+///
+/// The shape F51 requires: alternating rather than one arm then the other, so
+/// that anything drifting under the comparison lands on both and cancels. The
+/// count is not chosen — it stops when this run's own resampling separates the
+/// difference from its own noise, which is what F53 established a count cannot
+/// do.
+fn compare(all: &[String], at: usize) -> std::process::ExitCode {
+    let Some(resolving) = all.first().and_then(|held| held.parse::<f64>().ok()) else {
+        eprintln!("usage: timing-noise <resolving-fraction> <command…> vs <command…>");
+        return std::process::ExitCode::FAILURE;
+    };
+    let (Some(one), Some(other)) = (all.get(1..at), all.get(at.saturating_add(1)..)) else {
+        eprintln!("usage: timing-noise <resolving-fraction> <command…> vs <command…>");
+        return std::process::ExitCode::FAILURE;
+    };
+    let ceiling: usize = 120;
+
+    println!(
+        "  comparing, alternately, looking for a {:.0}% difference",
+        resolving * 100.0
+    );
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for round in 0..ceiling {
+        let Some(a) = timed(one) else {
+            return std::process::ExitCode::FAILURE;
+        };
+        let Some(b) = timed(other) else {
+            return std::process::ExitCode::FAILURE;
+        };
+        left.push(a);
+        right.push(b);
+        // Nanoseconds, because the crate counts in integers — a shipped type
+        // here may not hold a float, since that is how a NaN reaches a record.
+        // The prototype is not shipped and may; the boundary is where the
+        // conversion happens (F54).
+        let said = mcf_bench::enough::verdict(
+            &as_nanos(&left),
+            &as_nanos(&right),
+            mcf_core::measurement::PartsPerMillion(whole(resolving * 1e6)),
+        );
+        if !matches!(said, mcf_bench::enough::Verdict::NotYet { .. }) {
+            println!("    {said}");
+            println!(
+                "    medians: {:.3} s and {:.3} s",
+                middle(&left),
+                middle(&right)
+            );
+            return std::process::ExitCode::SUCCESS;
+        }
+        if round.saturating_add(1) % 10 == 0 {
+            println!("    {said}");
+        }
+    }
+    println!(
+        "    still undecided after {ceiling} paired trials — which is a result about this \
+         machine and not about the two commands (A7)"
+    );
+    std::process::ExitCode::SUCCESS
+}
+
+/// Seconds as nanoseconds, because the crate counts in integers — a shipped
+/// type there may not hold a float, since that is how a NaN reaches a record.
+/// A prototype is not shipped and may; the conversion is the boundary (F54).
+fn as_nanos(held: &[f64]) -> Vec<u64> {
+    held.iter().map(|seconds| whole(seconds * 1e9)).collect()
+}
+
+/// A non-negative float as the nearest whole number, saturating.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a duration in seconds, bounded below by zero and above by the run itself"
+)]
+fn whole(held: f64) -> u64 {
+    if held.is_finite() && held > 0.0 {
+        held.round() as u64
+    } else {
+        0
+    }
+}
+
+/// One run, timed, or nothing if it failed.
+fn timed(command: &[String]) -> Option<f64> {
+    let (program, rest) = command.split_first()?;
+    let began = Instant::now();
+    let ran = Command::new(program)
+        .args(rest)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    ran.success().then(|| began.elapsed().as_secs_f64())
+}
+
+/// The median of an unsorted slice.
+fn middle(held: &[f64]) -> f64 {
+    let mut out = held.to_vec();
+    out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    quantile(&out, 0.5)
 }
 
 /// What the machine said it was doing, at the moment a run began.

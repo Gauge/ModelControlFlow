@@ -11,4 +11,8 @@
 //! — and that division is expected to be visible in this crate's types rather
 //! than in its documentation.
 //!
-//! Empty at M0 beyond this statement of what it is for; M5 and M6 fill it.
+//! M5 has begun to fill it: [`enough`] holds the stopping condition a
+//! comparison carries instead of a repeat count, because the count turned out
+//! not to be a constant (F53).
+
+pub mod enough;

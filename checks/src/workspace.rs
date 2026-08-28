@@ -138,10 +138,13 @@ pub const MEMBERS: &[Member] = &[
         name: "mcf-prototype-timing-noise",
         path: "prototypes/timing-noise",
         // The DEC-007 evidence: how much an identical run's timing varies on a
-        // machine, and how many repeats that implies. Ships nothing, nothing
-        // depends on it, and it depends on nothing — it runs a command and
-        // times it, which is deliberately the whole of its reach (F51).
-        depends_on: &[],
+        // machine, and how many repeats that implies (F51, F52, F53). Ships
+        // nothing and nothing depends on it. It reaches for `mcf-bench`
+        // because the second half of its job is demonstrating that crate's
+        // stopping condition against real timings rather than against a
+        // fixture — an instrument that proved the rule on invented numbers
+        // would have proved nothing (B-083).
+        depends_on: &["mcf-bench", "mcf-core"],
     },
     Member {
         name: "mcf-checks",
