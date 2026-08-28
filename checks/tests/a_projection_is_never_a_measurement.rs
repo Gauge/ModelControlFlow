@@ -29,8 +29,10 @@
 fn a_projection_is_a_band_from_local_history() {
     let source = code_only(&read("crates/mcf-bench/src/project.rs"));
     assert!(
-        source.contains("-> Result<Estimate<Duration<Monotonic>>, NoBand>"),
-        "a projection must be an `Estimate`, which is the type A20's wall is built from"
+        source.contains("-> Result<Projection, NoBand>")
+            && source.contains("band: Estimate<Duration<Monotonic>>"),
+        "a projection must carry an `Estimate`, which is the type A20's wall is built from — \
+         and only an `Estimate`, whatever else travels beside it (B-385)"
     );
     assert!(
         source.contains("Estimate::band("),

@@ -70,8 +70,24 @@ pub(crate) fn read() -> History {
         {
             continue;
         }
+        // B-385: what else the machine was doing while this was measured, so
+        // that a band read between two points can say what it rested on. The
+        // larger of the two readings, because a projection should inherit the
+        // worse of the conditions rather than the flattering one.
+        let competing = [
+            "competing_before_thousandths",
+            "competing_after_thousandths",
+        ]
+        .iter()
+        .filter_map(|named| {
+            body.get("machine")
+                .and_then(|held| held.get(named))
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+        })
+        .max();
         for (side, take) in [("left", "left_ns"), ("right", "right_ns")] {
-            match point(body, side, take, tokens) {
+            match point(body, side, take, tokens, competing) {
                 Some(one) => held.points.push(one),
                 None => held.unreadable = held.unreadable.saturating_add(1),
             }
@@ -81,7 +97,13 @@ pub(crate) fn read() -> History {
 }
 
 /// One arm of one comparison, as a point.
-fn point(body: &Value, side: &str, take: &str, tokens: u32) -> Option<Point> {
+fn point(
+    body: &Value,
+    side: &str,
+    take: &str,
+    tokens: u32,
+    competing: mcf_bench::project::Competing,
+) -> Option<Point> {
     let named = body
         .get(side)
         .and_then(|arm| arm.get("arm"))
@@ -105,5 +127,6 @@ fn point(body: &Value, side: &str, take: &str, tokens: u32) -> Option<Point> {
         tokens,
         fastest: seen.first().copied().unwrap_or(0),
         slowest: seen.last().copied().unwrap_or(0),
+        competing,
     })
 }

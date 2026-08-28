@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 187 |
+| **Version** | 188 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **273 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 218 build items (104 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 64 open).** Every item cites
+decided, 23 resolved) and 218 build items (105 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 63 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -228,7 +228,7 @@ first and importance second.
 | B-382 | Prompt cost: what a prompt spends, against what this model can actually take | PR11, B-055, §3.8 | The token count of a prompt is stated against the *usable* context measured for this model rather than the declared one, so that a guidance document too long for a model is known before it is sent | open — accepted from PR11. Arithmetic, plus the usable context B-055 already measures. The same document is a rounding error on one model's window and a tenth of another's, and the difference is the vocabulary rather than the word count |
 | B-383 | Marker fidelity: which of the markers a person wrote are real control tokens for this model, and which are ordinary text | PR11, F26, F37, F38, §3.7 | A marker typed into a prompt is shown as what it becomes; a template whose markers do not survive is visible as such before it is relied on | open — accepted from PR11, and the one with a measured cost behind it. F37: `<|im_start|>` written into a prompt reaches the model as **eight ordinary tokens**, and the table that produced was the most decisive-looking wrong answer in this repository. A person tuning a prompt today has strictly less visibility than the probe that was fooled. The machinery exists — the marker check was built because F37 forced it |
 | B-384 | How large a model MCF's own engine can usefully read: the size at which its answer stops arriving in a useful time, measured rather than assumed | PR12, B-366, B-372, D31, B49 | A stated size, measured across the models held, with the cost per token at each; the reference role's *validation* half is chosen by that number rather than by convenience | open — accepted from PR12 and sequenced after B-366, which moves the number. Nothing between 0.6 billion and 27 billion has been tried: the small end is 0.9 s a forward pass and the large end is refused outright, and the whole middle is unmeasured. Until it is measured, *how big a model can MCF check itself on* is answered by whatever happens to be on the disk |
-| B-385 | A projection carries the conditions of the history it rests on: how many of its points were taken while the machine was not in its own steady state, and how far it moved | §3.4, A6, B34, B-217, DEC-007 | A band reads *from 68 measured arms, 4 of which were taken while the machine was not steady* rather than *from 68 measured arms*; no point is filtered, because filtering needs the threshold DEC-007 has not set | open Found by F74: thirty-three cores of an unrelated workload made a 400 ms generation take eighteen seconds, `B-217`'s machine field caught it in the record, and every projection reading that history inherited it in silence. Deleting the entries is forbidden (A1) and filtering them needs a figure MCF may not choose — carrying the condition needs neither. |
+| B-385 | A projection carries the conditions of the history it rests on: how many of its points were taken while the machine was not in its own steady state, and how far it moved | §3.4, A6, B34, B-217, DEC-007 | A band reads *from 68 measured arms, 4 of which were taken while the machine was not steady* rather than *from 68 measured arms*; no point is filtered, because filtering needs the threshold DEC-007 has not set | done `Point` carries what else the machine was doing (thousandths of a processor, the larger of the two readings), `band` returns a `Projection` that cannot be separated from its `Rested`, and both surfaces that render a band render it. Nothing is filtered — that needs DEC-007's figure — and *nothing recorded* renders as unknown rather than as quiet (A7). F75. |
 | B-376 | The provisioned engine cannot be probed: it takes text on a command line and prints text back, so a turn built from token identifiers has nowhere to go, and it does not say why a generation ended | B-032, B-052, B-374, D42, F38 | A probe can name any engine MCF can drive, and its result belongs to that engine; a turn of identifiers reaches a provisioned engine unaltered, and the stop reason is observable through it | **done** (F39) — the same provisioned prefix's *server* rather than its completion tool, on a Unix socket under MCF's runtime directory so nothing listens on the network and no port is contended (§XVII). The model stays loaded between requests, which is F36's open residency. `mcf probe --engine <name>` names one, and the default is the server where there is one — changed only after both engines were shown to return the same verdict, not on the twentyfold speed alone (B29). A 270M model probes in eight seconds where it took tens of minutes |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | **done** (F43) — `mcf probe --apply` is the act D43 requires, and it is the only thing that writes a configuration. What it writes carries the probe, the moment, the build and the conditions; the daemon applies it and puts the provenance in the account; `mcf run` prints it on every run (§3.15). Inconclusive refuses to apply, and raw refuses too — a provenance on a default would make it look derived. The winning addressing is carried out of the probe rather than rebuilt from its name, and a test asserts the turn a configuration builds is the turn the probe sent, identifier for identifier |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | **done** — `Outcome` offers `observed() -> Option<&T>` and nothing else, and `checks/tests/inconclusive_is_never_defaulted.rs` holds it: the type may not grow a fallback accessor, and no shipped caller may build one from the accessor it has. Shown to fail against a planted `.observed().unwrap_or_else(|| "raw")` and to pass without it (B-003's negative control). In a test file `expect` is an assertion that the probe decided, and is allowed there and nowhere else |
@@ -395,6 +395,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 188 — a band says what it rested on
+
+B-385 done, the day it was opened. A projection carries the machine conditions
+of the two points it was read between; the expected duration and `mcf explain`
+both render them. F75.
 
 ### Version 187 — a budget proposes, and a projection is found to be silent
 

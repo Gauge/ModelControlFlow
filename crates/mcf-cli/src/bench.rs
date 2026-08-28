@@ -214,17 +214,33 @@ fn declared(
         mcf_bench::project::band(&history.points, sized(left), tokens),
         mcf_bench::project::band(&history.points, sized(right), tokens),
     ];
-    let widest = match bands {
-        [Ok(one), Ok(other)] => mcf_core::measurement::Estimate::band(
-            one.low().min(other.low()),
-            one.high().max(other.high()),
-            one.basis().clone(),
-        ),
+    let (one, other) = match &bands {
+        [Ok(one), Ok(other)] => (one, other),
         [Err(why), _] | [_, Err(why)] => return unplannable(why.to_string()),
+    };
+    let widest = mcf_core::measurement::Estimate::band(
+        one.band().low().min(other.band().low()),
+        one.band().high().max(other.band().high()),
+        one.band().basis().clone(),
+    );
+    // B-385: the band inherits the conditions of what it was read between, and
+    // says so. A projection that drops them is the defect F74 found.
+    //
+    // The two arms are usually read between the same two points, in which case
+    // the sentence is the same sentence and printing it twice tells a reader
+    // nothing except that MCF is repeating itself.
+    let rested = if one.rested_on() == other.rested_on() {
+        one.rested_on().to_string()
+    } else {
+        format!(
+            "{}; and the other arm {}",
+            one.rested_on(),
+            other.rested_on()
+        )
     };
     let expected = format!(
         "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local history, \
-         never a measurement and never a declaration (B-224, A20)",
+         never a measurement and never a declaration (B-224, A20); {rested}",
         span(&work.expected(&widest)),
         history.points.len()
     );
@@ -245,7 +261,8 @@ fn declared(
             |held| {
                 format!(
                     "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local \
-                     history, never a measurement and never a declaration (B-224, A20)",
+                     history, never a measurement and never a declaration (B-224, A20); \
+                     {rested}",
                     span(&held.expected(&widest)),
                     history.points.len()
                 )

@@ -13,18 +13,21 @@ fn history() -> Vec<Point> {
             tokens: 128,
             fastest: 1_000,
             slowest: 1_200,
+            competing: None,
         },
         Point {
             bytes: 200,
             tokens: 128,
             fastest: 2_000,
             slowest: 2_400,
+            competing: None,
         },
         Point {
             bytes: 400,
             tokens: 128,
             fastest: 4_000,
             slowest: 4_800,
+            competing: None,
         },
     ]
 }
@@ -34,17 +37,17 @@ fn history() -> Vec<Point> {
 #[test]
 fn a_projection_is_a_band_read_between_measured_points() {
     let held = band(&history(), 150, 128).expect("150 sits between 100 and 200");
-    assert_eq!(held.low().as_nanos(), 1_500);
-    assert_eq!(held.high().as_nanos(), 1_800);
-    assert_eq!(held.basis(), &Basis::LocalHistory);
+    assert_eq!(held.band().low().as_nanos(), 1_500);
+    assert_eq!(held.band().high().as_nanos(), 1_800);
+    assert_eq!(held.band().basis(), &Basis::LocalHistory);
 }
 
 /// It lands exactly on a measured point where the file *is* one.
 #[test]
 fn a_measured_size_projects_to_what_was_measured() {
     let held = band(&history(), 200, 128).expect("200 is measured");
-    assert_eq!(held.low().as_nanos(), 2_000);
-    assert_eq!(held.high().as_nanos(), 2_400);
+    assert_eq!(held.band().low().as_nanos(), 2_000);
+    assert_eq!(held.band().high().as_nanos(), 2_400);
 }
 
 /// **Absent where there is no history** — and absent where the history is all
@@ -154,15 +157,48 @@ fn reading_between_two_points_is_exact_at_them() {
 fn a_projection_is_an_estimate_and_carries_its_basis() {
     let held = band(&history(), 300, 128).expect("300 sits between 200 and 400");
     assert_eq!(
-        held.basis(),
+        held.band().basis(),
         &Basis::LocalHistory,
         "and says so, because A20's *clearly-labelled* is not satisfied by a type name nobody sees"
     );
-    assert!(held.low() <= held.high(), "a band is ordered");
+    assert!(held.band().low() <= held.band().high(), "a band is ordered");
     assert!(
-        format!("{held}").contains("estimate"),
-        "and renders as one: {held}"
+        format!("{}", held.band()).contains("estimate"),
+        "and renders as one: {}",
+        held.band()
     );
+}
+
+/// **B-385.** A band says what it was read between, and *nothing recorded* is
+/// not *nothing competing*.
+#[test]
+fn a_band_carries_the_conditions_of_what_it_rests_on() {
+    let held = band(&history(), 300, 128).expect("300 sits between 200 and 400");
+    assert_eq!(
+        held.rested_on().busiest(),
+        None,
+        "history that recorded no machine reading yields no figure, not a zero"
+    );
+    assert!(
+        held.rested_on()
+            .to_string()
+            .contains("unknown and not quiet"),
+        "and says so: {}",
+        held.rested_on()
+    );
+
+    let busy: Vec<Point> = history()
+        .iter()
+        .enumerate()
+        .map(|(at, point)| Point {
+            competing: (at == 0).then_some(33_050).or(Some(150)),
+            ..*point
+        })
+        .collect();
+    let held = band(&busy, 300, 128).expect("300 sits between 200 and 400");
+    let shown = held.rested_on().to_string();
+    assert!(shown.contains("0.15 core(s)"), "{shown}");
+    assert_eq!(held.rested_on().busiest(), Some(150));
 }
 
 /// **§6.16 turned on the projection** (B-215). Every measurement is checked

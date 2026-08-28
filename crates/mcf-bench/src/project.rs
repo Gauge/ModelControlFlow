@@ -42,6 +42,17 @@
 use mcf_core::measurement::{Basis, Estimate, PartsPerMillion};
 use mcf_core::time::{Duration, Monotonic};
 
+/// How busy the machine was while a point was measured.
+///
+/// Thousandths of a processor, the larger of the readings taken either side of
+/// the run — the larger because a band planned from history should inherit the
+/// worse of the two conditions rather than the flattering one.
+///
+/// `None` where the entry recorded nothing about the machine, which is not
+/// *zero* and must never render as it: A7 keeps unknown unknown, and the
+/// entries written before `B-217` existed are exactly that case.
+pub type Competing = Option<u64>;
+
 /// One thing this machine has measured.
 ///
 /// The bounds are the fastest and slowest trials of that arm, not a summary of
@@ -57,6 +68,18 @@ pub struct Point {
     pub fastest: u64,
     /// The slowest.
     pub slowest: u64,
+    /// What else the machine was doing while it was measured (B-385, §3.4).
+    ///
+    /// **Why a point carries this.** F74: an unrelated test suite held
+    /// twenty-six cores of this machine, and a generation that takes 400 ms
+    /// quiet took eighteen seconds. Those measurements are true and stay in
+    /// the record (A1), and a band read between them is not wrong — but a band
+    /// that does not say what it rested on has dropped the conditions, which
+    /// is what §3.4 and A6 exist to prevent.
+    ///
+    /// Carried rather than filtered: filtering needs a threshold, and the
+    /// threshold is DEC-007's to set.
+    pub competing: Competing,
 }
 
 /// Why there is no projection.
@@ -127,16 +150,83 @@ impl core::fmt::Display for NoBand {
     }
 }
 
+/// A band, and the conditions of the two measurements it was read between.
+///
+/// The two travel together because separating them is the defect B-385 names:
+/// a caller holding only the band has no way to say what it rested on, and
+/// every surface that renders it drops the conditions silently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Projection {
+    band: Estimate<Duration<Monotonic>>,
+    rested_on: Rested,
+}
+
+impl Projection {
+    /// The band.
+    #[must_use]
+    pub const fn band(&self) -> &Estimate<Duration<Monotonic>> {
+        &self.band
+    }
+
+    /// What it was read between.
+    #[must_use]
+    pub const fn rested_on(&self) -> &Rested {
+        &self.rested_on
+    }
+}
+
+/// The conditions of the two measurements a band was read between (B-385).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rested {
+    /// How busy the machine was for each of the two, in thousandths of a
+    /// processor, in size order.
+    pub competing: [Competing; 2],
+}
+
+impl Rested {
+    /// The busier of the two, where either is known.
+    #[must_use]
+    pub fn busiest(&self) -> Competing {
+        self.competing.iter().copied().flatten().max()
+    }
+}
+
+impl core::fmt::Display for Rested {
+    fn fmt(&self, form: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let cores = |held: u64| {
+            format!(
+                "{}.{:02} core(s)",
+                held.wrapping_div(1_000),
+                held.wrapping_rem(1_000).wrapping_div(10)
+            )
+        };
+        match (self.competing[0], self.competing[1]) {
+            (None, None) => form.write_str(
+                "neither of the two runs it was read between recorded what the machine was \
+                 doing, which is unknown and not quiet (A7)",
+            ),
+            (Some(one), Some(other)) => write!(
+                form,
+                "read between two runs with {} and {} competing",
+                cores(one),
+                cores(other)
+            ),
+            (Some(one), None) | (None, Some(one)) => write!(
+                form,
+                "read between one run with {} competing and one that recorded nothing about \
+                 the machine",
+                cores(one)
+            ),
+        }
+    }
+}
+
 /// What a request of `tokens` on a file of `bytes` would probably take here.
 ///
 /// # Errors
 ///
 /// Every reason there is no band, by name.
-pub fn band(
-    history: &[Point],
-    bytes: u64,
-    tokens: u32,
-) -> Result<Estimate<Duration<Monotonic>>, NoBand> {
+pub fn band(history: &[Point], bytes: u64, tokens: u32) -> Result<Projection, NoBand> {
     let mut at_budget: Vec<&Point> = history
         .iter()
         .filter(|point| point.tokens == tokens)
@@ -177,25 +267,31 @@ pub fn band(
         }
     }
 
-    Ok(Estimate::band(
-        Duration::from_nanos(between(
-            below.bytes,
-            below.fastest,
-            above.bytes,
-            above.fastest,
-            bytes,
-        )),
-        Duration::from_nanos(between(
-            below.bytes,
-            below.slowest,
-            above.bytes,
-            above.slowest,
-            bytes,
-        )),
-        // B34: the corpus advises and never decides, and there is no corpus.
-        // Every point behind this is a comparison this machine took.
-        Basis::LocalHistory,
-    ))
+    Ok(Projection {
+        rested_on: Rested {
+            competing: [below.competing, above.competing],
+        },
+        band: Estimate::band(
+            Duration::from_nanos(between(
+                below.bytes,
+                below.fastest,
+                above.bytes,
+                above.fastest,
+                bytes,
+            )),
+            Duration::from_nanos(between(
+                below.bytes,
+                below.slowest,
+                above.bytes,
+                above.slowest,
+                bytes,
+            )),
+            // B34: the corpus advises and never decides, and there is no
+            // corpus. Every point behind this is a comparison this machine
+            // took.
+            Basis::LocalHistory,
+        ),
+    })
 }
 
 /// How well the projection has done against what it was later measured to be
@@ -295,7 +391,8 @@ pub fn score(history: &[Point]) -> Scored {
             .collect();
         match band(&others, point.bytes, point.tokens) {
             Err(_) => held.unscorable = held.unscorable.saturating_add(1),
-            Ok(said) => {
+            Ok(projection) => {
+                let said = projection.band();
                 // The measured value is the point itself, and *inside* means
                 // the bands overlap: a point whose own fastest-to-slowest range
                 // meets the projected one was not missed.

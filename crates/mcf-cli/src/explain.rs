@@ -294,9 +294,11 @@ fn how_fast(path: &Path) -> String {
             "Unmeasured *for this file*. From {} comparison arm(s) this machine has measured at \
              {budget} tokens, a request here would probably take {} — which is an ESTIMATE \
              read between two measured sizes, and A20 forbids it standing beside a measurement \
-             or being promoted into one. `mcf bench` measures it.{}",
+             or being promoted into one. It was {}, which is a condition of the estimate and \
+             not a footnote (B-385, §3.4). `mcf bench` measures it.{}",
             held.points.len(),
-            millisecond_band(&band),
+            millisecond_band(band.band()),
+            band.rested_on(),
             if held.unreadable == 0 {
                 String::new()
             } else {

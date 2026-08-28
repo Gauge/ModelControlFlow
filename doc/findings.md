@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 78 |
+| **Version** | 79 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -102,6 +102,7 @@ forward as one.
 | 72 | [F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7) |
 | 73 | [F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)](#73--f73--a-budget-proposes-and-what-it-excluded-is-on-the-page-b-226-b47-31-a7) |
 | 74 | [F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) |
+| 75 | [F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5650,7 +5651,61 @@ record instead of being adjusted until it looked right, and the record had the
 answer in a field added the previous day for an unrelated reason. That is what
 §3.8 is for.
 
+## 75 · F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)
+
+**Built to close what [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) found.**
+`project::band` read this machine's history without reading the conditions the
+history was taken under, so four contended entries sat in it beside seventy
+quiet ones and every surface rendering a band inherited them in silence.
+
+**A `Point` now carries what else the machine was doing** — thousandths of a
+processor, the larger of the readings taken either side of that run, because a
+projection should inherit the worse of the two conditions rather than the
+flattering one. `band` returns a `Projection`, which is a band *and* a
+`Rested`, and the two cannot be separated by a caller: holding only the band is
+the defect, so the type no longer offers it.
+
+**Carried, never filtered.** Filtering contended history needs a threshold and
+the threshold is DEC-007's, still open — the same wall [F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+stopped at. Saying what the band rested on needs no threshold at all, which is
+why this could be built today and the refusal could not.
+
+**And unknown is not quiet** (A7). Entries written before B-217 recorded
+nothing about the machine; that renders as *neither of the two runs it was read
+between recorded what the machine was doing, which is unknown and not quiet*,
+and a zero there would be a claim MCF cannot support.
+
+**What it looks like on the machine that has the problem.** The same command
+that produced F72's clean expectation now says:
+
+```
+expected 7m 4s to 89m 8s at that ceiling — an ESTIMATE from 74 measured
+arm(s) of local history, never a measurement and never a declaration
+(B-224, A20); read between two runs with 33.10 core(s) and 33.10 core(s)
+competing
+```
+
+Seven minutes to eighty-nine is a useless-looking band, and that is the
+finding: it is the *correct* band for this history, and the clause after the
+semicolon is the whole reason. Before B-385 the same estimate would have read
+*from 74 measured arms of local history* and nothing else — the same numbers,
+with no way to tell they came from an afternoon when somebody else's test suite
+owned the machine. And `mcf explain`, projecting at a budget whose history is
+clean, says the same thing in the other direction: *read between two runs with
+0.15 core(s) and 0.15 core(s) competing*.
+
+**The general shape.** Twice now the honest move has been the same one:
+measure the condition, attach it to the claim, and leave the judgement to the
+decision that has not been made (F71, and this). Neither needed a threshold to
+be useful, and both would have needed one to refuse.
+
 ## Changelog
+
+### Version 79 — a band says what it rested on
+
+F75. B-385 closed: a projection carries the machine conditions of the two
+points it was read between, on every surface that renders one. Nothing is
+filtered, because filtering needs DEC-007's figure and carrying does not.
 
 ### Version 78 — the record caught somebody else's workload
 
