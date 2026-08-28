@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 54 |
+| **Version** | 55 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -78,6 +78,7 @@ forward as one.
 | 48 | [F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)](#48--f48--the-tie-was-mcfs-not-the-models-a-template-that-names-a-role-in-order-to-rename-it-b-375-b-376-d42-d46-37-f38-f39-f40) |
 | 49 | [F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)](#49--f49--mcf-can-check-its-own-engine-against-the-one-it-built-on-a-users-machine-b-362-b-376-d31-d39-a12-a19-ii) |
 | 50 | [F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)](#50--f50--the-privileged-helper-could-be-told-where-the-machine-is-b-190-d35-632-xvii-a2-a26) |
+| 51 | [F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)](#51--f51--contention-moves-the-level-not-the-spread-and-that-decides-how-a-benchmark-must-be-built-dec-007-b-250-b-181-34-a19-f2-f3) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3870,7 +3871,94 @@ And the grant itself has still not been made, so nothing here is a claim that
 energy is measurable — only that the program which would measure it is no
 longer a way to read anything else.
 
+## 51 · F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)
+
+**What was measured.** The first thing the operator's answer on DEC-007 asked
+for: not a chosen repeat count but a measured one. One deterministic run —
+MCF's own engine, eight tokens, greedy from a fixed seed, so that only the
+timing varies — repeated on this machine as it is, and again under sixteen
+deliberate burners. `prototypes/timing-noise` is the instrument.
+
+| | machine as it is | under sixteen burners |
+|---|---|---|
+| load average during | 9.8 – 10.8 | 10.5 – 22.5 |
+| median | **3.202 s** | **5.322 s** |
+| middle half of runs spans | 4.2% of the median | 9.1% |
+| slowest ÷ fastest | 1.11 | 1.16 |
+
+**The finding is the shape of the difference, not its size.** Contention made
+the run **66% slower** and made the spread **twice as wide**. Those are not
+comparable magnitudes. A busy machine does not mainly add noise — it moves the
+whole distribution, coherently, and keeps it nearly as tight as before.
+
+**Which decides how a comparison must be built, and it is not by repeating
+more.** If two configurations are measured one after the other and the
+machine's load changes in between, the error is the *level shift* — up to 66%
+here — and no repeat count removes it, because every repeat of the second
+configuration is wrong in the same direction. If the two are interleaved, a
+level shift lands on both arms equally and cancels. B-250 already asks for
+paired, interleaved, order-randomized trials as a principle; this is the number
+behind it, and it says the principle matters roughly **fifteen times more** than
+the repeat count does.
+
+**How many repeats, derived.** The samples were resampled against themselves —
+two groups drawn from the *same* measured timings, four thousand times — and
+each candidate count asked how often two such groups differ by more than the
+effect being looked for. Every difference found that way is noise pretending to
+be one, since there is no real difference by construction. No assumption is
+made about the distribution's shape, which matters because a wall time has a
+floor at the work itself and a tail made of whatever else the machine did.
+
+| to detect | on this machine as it is | under load |
+|---|---|---|
+| 2% | 50 repeats | more than 100 — the noise is larger than the effect |
+| 5% | **7 repeats** | 50 |
+| 10% | 3 | 7 |
+| 20% | 3 | 3 |
+
+**Seven repeats is the answer for a five-percent claim on this machine in its
+normal state**, and 2% is not honestly reachable at any repeat count a person
+will wait for. That is a fact about this machine and this workload, not a
+constant — which is why the instrument travels rather than the number.
+
+**It also settles the argument it was built to settle.** The as-is column was
+taken at a load average of ten on sixteen cores — the machine was not quiet,
+and the numbers are perfectly usable. An absolute quiet threshold would have
+refused that measurement and would have been wrong. What the baseline actually
+consists of here is other projects' tooling: language servers nine hours old,
+and another project's process. **It is not going away**, so a rule that waits
+for it to go away never fires. The operator's criterion — stability against the
+machine's own baseline — is the one the data supports.
+
+**What was not established.** One workload, one model, one machine, one engine —
+MCF's own, which is not the engine benchmarks will use; the provisioned server
+is faster and its noise has not been measured, and a shorter run may well be
+noisier in relative terms. Wall time only: no energy, no memory, no
+thermal state, and the processor's frequency governor was left as it was, so
+part of the 4.2% may be frequency scaling that pinning would remove. Nothing
+here is a *speed* — B65 forbids one from MCF's own engine, and these are
+durations under stated conditions used to characterize the *machine*, which is
+what the engine is a fixed load for.
+
 ## Changelog
+
+### Version 55 — contention moves the level, not the spread
+
+F51. The first measurement the operator's DEC-007 answer asked for: a repeat
+count derived rather than chosen. Seven repeats detect a five percent
+difference on this machine in its normal state; two percent is not honestly
+reachable.
+
+The finding is the shape rather than the size. Sixteen burners made the run
+sixty-six percent slower and the spread only twice as wide — so a busy machine
+moves the whole distribution coherently rather than mainly adding noise, and no
+repeat count removes an error that lands on every repeat in the same direction.
+Interleaving does. B-250 asked for that as a principle and now has a number
+saying it matters about fifteen times more than the repeat count.
+
+And it settles what it was built to settle: the usable column was taken at a
+load average of ten on sixteen cores. An absolute quiet threshold would have
+refused a perfectly good measurement.
 
 ### Version 54 — the privileged helper could be told where the machine is
 

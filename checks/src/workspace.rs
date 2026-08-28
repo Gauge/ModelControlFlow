@@ -135,6 +135,15 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-prototype-timing-noise",
+        path: "prototypes/timing-noise",
+        // The DEC-007 evidence: how much an identical run's timing varies on a
+        // machine, and how many repeats that implies. Ships nothing, nothing
+        // depends on it, and it depends on nothing — it runs a command and
+        // times it, which is deliberately the whole of its reach (F51).
+        depends_on: &[],
+    },
+    Member {
         name: "mcf-checks",
         path: "checks",
         // Development dependencies only: the taxonomy agreement check reads
