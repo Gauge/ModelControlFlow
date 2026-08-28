@@ -113,6 +113,7 @@ forward as one.
 | 84 | [F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)](#84--f84--the-branch-is-read-from-the-attribution-and-reading-it-from-the-category-is-the-obvious-wrong-design-b-233-b24-710-34) |
 | 85 | [F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)](#85--f85--an-idle-daemon-took-zero-processor-ticks-and-issued-zero-reads-in-ninety-seconds-b-187-b-108-b4-d5-313-618) |
 | 86 | [F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)](#86--f86--a-field-of-one-is-refused-by-name-and-a-foreign-number-has-no-route-in-b-167-b-127-b34-b43-623-5) |
+| 87 | [F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)](#87--f87--a-contribution-has-nowhere-to-put-a-task-and-no-way-to-be-unsent-b-171-b-203-b-251-b-310-b42-b54-d21-630-320) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6233,6 +6234,61 @@ reading is not a low one, which is [F77](#77--f77--four-outcomes-and-no-total-bu
 rule showing up one layer higher — and ordering is stable, so two candidates a
 laboratory could not tell apart keep the order they were considered in rather
 than one the sort invented.
+
+## 87 · F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)
+
+**Four items, one shape, built ahead of M9** for the reason F77 and F86 give:
+each specifies a property of the format, and a format is cheapest to get right
+before there is anything in it.
+
+**Outcomes, never artifacts** (B-171). A contribution that *strips* task
+content on the way out is one line away from not stripping it, and the line
+lives in the export path where nobody looks twice. A contribution with nowhere
+to *put* task content cannot leak it however the export is written. There is no
+field here that can hold a prompt, a completion, a document or a path, and a
+check forbids each by name.
+
+The stakes are not only privacy. A benchmark task that travels ends up in
+somebody's training data, and a corpus that leaks its own tasks measures
+memorization from then on.
+
+**Comparisons in preference to absolutes** (B-251, B54, §3.27). *This arm was
+12% quicker than that one over forty pairs* survives travel: both arms met the
+same afternoon, so what differs between them is the arm. *This took 380 ms*
+does not: it is a fact about somebody else's hardware that the reader cannot
+scale. So `Absolute::new` is **fallible** — it refuses unless all thirteen of
+the condition floor's questions are answered — while a `Comparison` needs the
+conditions it was taken under and not a complete floor. The preference is in
+what is easy to construct, not in a docstring.
+
+**A custom workload is refused, and refused early** (B-203, B42, A25). The
+marking is on the row from production. A marking applied at export is a marking
+that can be forgotten at export, in the one place under time pressure with the
+operator watching a progress bar. Both routes in refuse it, and a complete
+condition set does not rescue it — the objection is not that the conditions are
+unknown, it is that nobody else has the workload.
+
+**And nothing retracts** (B-310, B63, D21). There is no `retract`, `unsend`,
+`withdraw`, `recall` or `revoke`, and a check forbids all five by name so that
+adding one is a deliberate act against a test rather than a helpful-looking
+commit. Once something has left, it has left; an affordance suggesting
+otherwise would be the most consequential false promise MCF could make, because
+a person would rely on it. What exists instead is the terms, which say so
+*before* anything is sent:
+
+```
+What leaves is outcomes only: scores, classifications, conditions and effect
+sizes. No prompt, no completion, no task, no fixture and no file leaves —
+there is nowhere in the format to put one. Publication cannot be undone: MCF
+offers no retraction, because there is no such act (D21, B63).
+```
+
+**A small recurrence.** Those terms name every forbidden thing in order to say
+it is absent, so the check that forbids them failed on the sentence explaining
+why it passes — the third time in this session (F81 was the second). The check
+skips the terms now. The pattern is stable enough to name: *a rule and the
+prose describing the rule cannot be distinguished by substring search*, and a
+check that does not account for it blocks the correct work.
 
 ## Changelog
 

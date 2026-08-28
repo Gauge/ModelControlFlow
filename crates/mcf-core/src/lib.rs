@@ -24,6 +24,7 @@ pub mod build_identity;
 pub mod capability;
 pub mod capture;
 pub mod configuration;
+pub mod contribution;
 pub mod degradation;
 pub mod digest;
 pub mod engine;

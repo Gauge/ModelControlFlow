@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 200 |
+| **Version** | 201 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (120 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 54 open).** Every item cites
+decided, 23 resolved) and 224 build items (124 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 50 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -317,7 +317,7 @@ first and importance second.
 | B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour), declares its capability gate and its workload slot, and states what it does and does not establish | §XIII, §3.17, §6.26, B40, B42 | A lab that cannot state its class, gate, slot or validity boundary fails to register | blocked (DEC-029) |
 | B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | done `mcf_core::graded::Graded`. The three non-readings have nowhere to put a score; the only way out is `score() -> Option<&Score>`, fallible so that a caller meets them where they were about to flatten them. *Not applicable* and *unknown* stay distinct, because one is resolvable by probing and the other is not. Built before M6's laboratories exist, which is when a type is cheapest to get right. F77. |
 | B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | done `Score` carries the laboratory it is on and compares only within one; `Profile` holds one outcome per laboratory with no arithmetic across them and no `Ord`. Coverage travels instead — *measured by 1 of 3; inapplicable to tools* (B41). A check names each escape hatch by the string that would add it. F77. |
-| B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
+| B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | done The marking is on the row from production (`Workload::Custom`), and both routes into a contribution refuse it — a complete condition set does not rescue it, because the objection is that nobody else has the workload. A marking applied at export is one that can be forgotten at export. F87. |
 | B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [PR1](proposals.md#pr1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
 | B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
 | B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | in progress The measurement is built and the refusal is not (F71). `contention::steadiness` reports a machine's own spread across successive readings, and every comparison now records the competing processor time before it and after it, rendered as a condition: *the level moved N% across the run, which is a condition and not a verdict*. Exercised both ways on this machine — 0.0% quiet, 1740% with load started mid-run, the latter still reporting its verdict beside the fact that the floor moved. The refusal itself stays blocked on DEC-007, which now has measurements to be decided from: a threshold invented here would be exactly the figure that decision exists to derive. |
@@ -366,15 +366,15 @@ first and importance second.
 
 | ID | Title | Cites | Done when | Status |
 |---|---|---|---|---|
-| B-310 | The share confirmation renders the contribution terms; no code path offers a retraction | B63, D21, §3.20 | Terms appear before anything is sent; no retraction affordance exists | open |
+| B-310 | The share confirmation renders the contribution terms; no code path offers a retraction | B63, D21, §3.20 | Terms appear before anything is sent; no retraction affordance exists | done `Contribution::terms()` states what leaves and that publication cannot be undone, before anything is sent. No `retract`, `unsend`, `withdraw`, `recall` or `revoke` exists, and a check forbids all five by name: an affordance suggesting a retraction would be the most consequential false promise MCF could make. F87. |
 | B-160 | Share flow: per-share, opt-in, renders the rows that leave rather than a description of them, states the terms (D21) and that publication cannot be undone; whether MCF may ever prompt is DEC-031 | A24, §3.20, §6.27, DEC-031 | No egress path exists that is not user-initiated per share; the confirmation shows the payload | open |
 | B-168 | De-identification: fields coarsened, withheld or sent per DEC-027, with MCF stating plainly what a contribution does and does not protect | §7.27, §6.27, §3.10 | A contribution's identifying content is enumerated and the honest claim about anonymity is displayed at the moment of sharing | blocked (DEC-027) |
 | B-169 | Identifier: emit one for a configuration MCF holds, and resolve one it is given | §XV, §7.28 | Round-trip on this machine: emit, wipe, resolve, and reproduce the identical configuration | blocked (DEC-028) |
 | B-166 | An imported configuration reads as `declared` until a local probe or benchmark verifies it; numbers that travelled with it are attributed elsewhere | B33, §3.21, §6.29 | No imported figure renders as though MCF measured it; verification promotes it and records the divergence | open |
 | B-172 | Failure to reproduce an identifier is a first-class outcome, and divergence between imported and local numbers is a recorded finding about how far results travel | §6.29, §6.3, §3.4 | "This identifier needs 48 GiB and you have 24" is a complete answer; a numeric divergence is stored as evidence, not an error | open |
 | B-170 | Contribution schema versioning: a contribution declares the schema and MCF version that wrote it, and a reader that cannot fully interpret one says so | §7.30, §3.1, §3.4 | An older contribution is read, marked, or refused — never silently misinterpreted | blocked (DEC-030) |
-| B-251 | A contribution carries comparisons in preference to absolutes: both arms, the pairing, and the effect size; absolute rows carry the full §3.4 condition set or are not contributable | B54, §3.27, §XIV | The corpus accumulates ratios that survive travel rather than bare numbers that do not | open |
-| B-171 | Contribution carries outcomes, never artifacts: scores, classifications, conditions and distributions leave; tasks, tools, fixtures and model outputs do not | §6.30, §3.19 | An audit of a contribution finds no task content; contamination exposure is recorded per task | open |
+| B-251 | A contribution carries comparisons in preference to absolutes: both arms, the pairing, and the effect size; absolute rows carry the full §3.4 condition set or are not contributable | B54, §3.27, §XIV | The corpus accumulates ratios that survive travel rather than bare numbers that do not | done `Absolute::new` is fallible and refuses unless all thirteen of the condition floor's questions are answered; a `Comparison` carries both arms, the pairing and the effect size and needs no complete floor. The preference is in what is easy to construct rather than in a docstring. F87. |
+| B-171 | Contribution carries outcomes, never artifacts: scores, classifications, conditions and distributions leave; tasks, tools, fixtures and model outputs do not | §6.30, §3.19 | An audit of a contribution finds no task content; contamination exposure is recorded per task | done `mcf_core::contribution`: there is no field in the format that can hold a prompt, a completion, a document or a path, so an audit finds no task content because there was never anywhere to put it. Stripping on the way out would be one line away from not stripping. F87. |
 | B-335 | Publication constraints from model licences: a per-artifact publication flag alongside the per-artifact use flag, where terms require one | DEC-036, §7.36, §III | A contribution excludes rows whose artifact's terms forbid publishing measurements, and says so | blocked (DEC-036) |
 | B-336 | Machine similarity classes: the relation by which "hardware like yours" is computed, and what happens to a machine outside every class | DEC-040, §7.40, §6.38 | A corpus statement names the class it rests on and its sample; an unclassifiable machine gets no corpus guidance rather than wrong guidance | blocked (DEC-040) |
 | B-173 | `mcf share` / `mcf import`: the M9 product — evidence leaves deliberately, and a configuration found elsewhere reproduces here or explains why not | §XIV, §XV | A contribution is produced, inspected and sent; an identifier from that contribution reproduces the configuration on a second machine | open |
@@ -396,6 +396,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 201 — a contribution with nowhere to put a task
+
+B-171, B-203, B-251 and B-310 done, ahead of M9's share flow. A format is
+cheapest to get right before there is anything in it. F87.
 
 ### Version 200 — coverage travels with the ranking
 
