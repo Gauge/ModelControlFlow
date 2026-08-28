@@ -18,9 +18,30 @@
 //! widening it only from four to nine — so a comparison built as *all of A,
 //! then all of B* carries any drift between them as an error landing on every
 //! repeat in the same direction, and no repeat count removes it. Interleaved,
-//! it lands on both arms and cancels. This module takes the two arms as equal
-//! sequences and will not accept them otherwise, because the shape is the
-//! defence.
+//! it lands on both arms and cancels.
+//!
+//! That shape is not this module's to enforce and never could be, because a
+//! function taking two slices cannot tell an interleaved pair of arms from two
+//! blocks. It is [`compare`]'s: a [`Comparison`] can only be
+//! built by a runner that alternates the arms, or from record positions that
+//! prove they alternated. **Nothing here is public** — the entry point is
+//! [`Comparison::finding`], and that is B-250's *block-then-subtract does not
+//! compile*.
+//!
+//! **Two nulls, because there are two data shapes.** A paired comparison is
+//! decided by flipping the signs of its own paired differences: under *the
+//! arms are the same*, which arm came out ahead in a given pair is a coin
+//! toss, so re-tossing the coins gives the distribution of medians that noise
+//! alone produces. That test uses the pairing, which is the point of having
+//! it. A comparison assembled from separate sessions has no pairs, so its null
+//! is the older and weaker one — the two arms' timings pooled and redrawn as
+//! independent groups — and the [`Strength`] travelling beside the verdict is
+//! what stops the two being read as the same claim.
+//!
+//! [`compare`]: super::compare
+//! [`Comparison`]: super::compare::Comparison
+//! [`Comparison::finding`]: super::compare::Comparison::finding
+//! [`Strength`]: super::compare::Strength
 //!
 //! **Nanoseconds and parts per million, not floats.** A shipped crate here may
 //! not hold a floating-point number, because that is how a NaN reaches a
@@ -54,7 +75,7 @@ pub const FALSE_ALARMS_ALLOWED: PartsPerMillion = PartsPerMillion(50_000);
 const RESAMPLINGS: usize = 4000;
 
 /// What a comparison concluded, and after how many paired trials.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
     /// The two arms differ by more than this run's own noise produces.
     Differ {
@@ -114,55 +135,242 @@ impl fmt::Display for Verdict {
     }
 }
 
-/// Asks whether two arms have separated, and whether they have been repeated
-/// enough to say they have not.
+/// The verdict over a paired comparison's own differences.
 ///
-/// `resolving` is the difference the caller cares about — the size below which
-/// they are content to call two things the same. It is the caller's, because
-/// *how much is a difference* is a question about their purpose and not about
-/// the machine: two percent matters to somebody choosing between builds of one
-/// engine and matters to nobody choosing between quantizations.
+/// `differences` is one signed ratio per pair, in parts per million against
+/// the quicker arm, positive where the left arm was quicker. The statistic is
+/// their median — the median *of the differences*, which is what B53 means by
+/// the reported quantity, and not the difference of two medians.
 ///
-/// # Panics
+/// The null is a sign flip. Under *these two arms are the same*, the sign of
+/// each paired difference is a coin toss, because whatever made one pair's
+/// left run slower was the arm or was the noise and the null says it was the
+/// noise. Re-tossing every sign four thousand times gives the medians noise
+/// alone produces, and the observed median is believed when it is bigger than
+/// all but one in twenty of them.
 ///
-/// Never. Unequal arms return [`Verdict::NotYet`] with what was seen, because
-/// a caller that has run one arm more than the other has not yet run a paired
-/// trial (and the pairing is the point).
-#[must_use]
-pub fn verdict(one: &[u64], other: &[u64], resolving: PartsPerMillion) -> Verdict {
-    let paired = one.len().min(other.len());
-    if paired < 2 || one.len() != other.len() {
-        return Verdict::NotYet { so_far: paired };
+/// This throws away nothing the pairing bought: each difference keeps the
+/// conditions it was taken under, because both its runs were taken under them.
+pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMillion) -> Verdict {
+    let pairs = differences.len();
+    if pairs < 2 {
+        return Verdict::NotYet { so_far: pairs };
     }
+    let observed = magnitude(median_signed(&sorted_signed(differences)));
 
-    let (a, b) = (median(&sorted(one)), median(&sorted(other)));
-    let Some(observed) = ratio(a, b) else {
-        return Verdict::NotYet { so_far: paired };
-    };
-
-    // How often the noise *within* these arms produces a gap this size.
-    // Within, not across: this is the run measuring its own noise, which is
-    // the whole idea — a floor borrowed from another sitting is a floor from
-    // another machine's afternoon (F53).
-    let by_chance = manufactured(one, other, observed, paired);
-    if by_chance <= FALSE_ALARMS_ALLOWED {
+    let by_chance = flipped(differences, observed);
+    if observed > 0 && by_chance <= FALSE_ALARMS_ALLOWED {
         return Verdict::Differ {
-            by: observed,
+            by: PartsPerMillion(observed),
             by_chance,
-            after: paired,
+            after: pairs,
         };
     }
 
     // They have not separated. That is only an answer if a difference worth
-    // caring about would have shown — otherwise more trials are owed.
-    if manufactured(one, other, resolving, paired) <= FALSE_ALARMS_ALLOWED {
+    // caring about would have shown — otherwise more pairs are owed.
+    if a_paired_effect_would_show(differences, resolving) {
         Verdict::Same {
             resolving,
-            after: paired,
+            after: pairs,
         }
     } else {
-        Verdict::NotYet { so_far: paired }
+        Verdict::NotYet { so_far: pairs }
     }
+}
+
+/// The verdict over two arms that were never paired.
+///
+/// The weaker test, for the weaker construction (§3.27's *it may be all that
+/// exists*). With no pairing there is nothing to flip, so the null is built by
+/// pooling both arms' timings and drawing two independent groups from them:
+/// under it there is no difference between the arms, and every gap it finds is
+/// the noise pretending to be one.
+///
+/// What it cannot see is the thing pairing exists for. A level shift between
+/// the two sessions is, to this test, indistinguishable from a difference
+/// between the arms — which is why [`Strength::Assembled`] travels with every
+/// verdict it produces.
+///
+/// [`Strength::Assembled`]: super::compare::Strength::Assembled
+pub(super) fn over_separate_arms(
+    one: &[u64],
+    other: &[u64],
+    resolving: PartsPerMillion,
+) -> Verdict {
+    let each = one.len().min(other.len());
+    if each < 2 {
+        return Verdict::NotYet { so_far: each };
+    }
+
+    let (a, b) = (median(&sorted(one)), median(&sorted(other)));
+    let Some(observed) = ratio(a, b) else {
+        return Verdict::NotYet { so_far: each };
+    };
+
+    let by_chance = manufactured(one, other, observed, each);
+    if by_chance <= FALSE_ALARMS_ALLOWED {
+        return Verdict::Differ {
+            by: observed,
+            by_chance,
+            after: each,
+        };
+    }
+
+    if a_separate_effect_would_show(one, other, resolving, each) {
+        Verdict::Same {
+            resolving,
+            after: each,
+        }
+    } else {
+        Verdict::NotYet { so_far: each }
+    }
+}
+
+/// Whether a paired effect of `resolving` would have been declared, on this
+/// run's own noise.
+///
+/// **This is a question about power, and the first draft asked a different
+/// one.** It asked whether *these* differences' sign flips reach `resolving`
+/// — which is circular, because the null is built out of the very differences
+/// an effect would have moved. On four real paired trials it declared *no
+/// difference as large as five percent* from differences of thirteen and seven
+/// percent, and a sign-flip test on four pairs has sixteen assignments and so
+/// **cannot ever** produce a p-value below one in sixteen: `Differ` was
+/// unreachable at that count, and a rule that can only answer one way is not a
+/// test (F55).
+///
+/// What is asked instead: take this run's differences, remove whatever effect
+/// they already carry by centring them on their median, add an effect of
+/// exactly `resolving`, and ask whether *that* would have been declared. If it
+/// would, the arms are the same to that resolution and B-086's null result is
+/// earned. If it would not, more pairs are owed.
+///
+/// Both directions are asked although the statistic and the null are both
+/// symmetric under negation, so they agree — the cost is one more resampling
+/// and the gain is that the symmetry is asserted rather than assumed.
+fn a_paired_effect_would_show(differences: &[i64], resolving: PartsPerMillion) -> bool {
+    let centre = median_signed(&sorted_signed(differences));
+    let effect = i64::try_from(resolving.0).unwrap_or(i64::MAX);
+    [effect, effect.saturating_neg()].into_iter().all(|shift| {
+        let moved: Vec<i64> = differences
+            .iter()
+            .map(|held| held.saturating_sub(centre).saturating_add(shift))
+            .collect();
+        let observed = magnitude(median_signed(&sorted_signed(&moved)));
+        observed > 0 && flipped(&moved, observed) <= FALSE_ALARMS_ALLOWED
+    })
+}
+
+/// Whether an effect of `resolving` would have been declared between two arms
+/// that were never paired.
+///
+/// The same question as [`a_paired_effect_would_show`], asked of the pooled
+/// null: scale one arm by `resolving` — which is what *an effect that big*
+/// means when there are no differences to shift — and ask whether the pooled
+/// redraw would then have separated them.
+fn a_separate_effect_would_show(
+    one: &[u64],
+    other: &[u64],
+    resolving: PartsPerMillion,
+    each: usize,
+) -> bool {
+    let scaled: Vec<u64> = other
+        .iter()
+        .map(|held| {
+            let grown = u128::from(*held)
+                .saturating_mul(u128::from(MILLION.saturating_add(resolving.0)))
+                .wrapping_div(u128::from(MILLION));
+            u64::try_from(grown).unwrap_or(u64::MAX)
+        })
+        .collect();
+    let Some(observed) = ratio(median(&sorted(one)), median(&sorted(&scaled))) else {
+        return false;
+    };
+    observed.0 > 0 && manufactured(one, &scaled, observed, each) <= FALSE_ALARMS_ALLOWED
+}
+
+/// How often re-tossing the sign of every paired difference produces a median
+/// at least this big.
+fn flipped(differences: &[i64], effect: u64) -> PartsPerMillion {
+    if differences.is_empty() {
+        return PartsPerMillion(MILLION);
+    }
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut tossed = vec![0_i64; differences.len()];
+    let mut alarms = 0_u64;
+    for _ in 0..RESAMPLINGS {
+        let mut bits = next();
+        for (slot, held) in differences.iter().enumerate() {
+            // A fresh word every sixty-four signs; the generator is cheap but
+            // not free, and a sign needs one bit.
+            if slot % 64 == 0 && slot > 0 {
+                bits = next();
+            }
+            if let Some(into) = tossed.get_mut(slot) {
+                *into = if bits >> (slot % 64) & 1 == 0 {
+                    *held
+                } else {
+                    held.saturating_neg()
+                };
+            }
+        }
+        if magnitude(median_signed(&sorted_signed(&tossed))) >= effect {
+            alarms = alarms.saturating_add(1);
+        }
+    }
+    PartsPerMillion(
+        alarms
+            .saturating_mul(MILLION)
+            .wrapping_div(u64::try_from(RESAMPLINGS).unwrap_or(1).max(1)),
+    )
+}
+
+/// A signed ratio's size, whichever way it pointed.
+fn magnitude(held: i64) -> u64 {
+    held.unsigned_abs()
+}
+
+/// A sorted copy of signed differences.
+fn sorted_signed(held: &[i64]) -> Vec<i64> {
+    let mut out = held.to_vec();
+    out.sort_unstable();
+    out
+}
+
+/// The middle of a sorted slice of signed differences.
+///
+/// **Symmetric under negation, which the upper-middle element is not.** With
+/// an even number of pairs the two middles are averaged toward zero, so
+/// negating every difference negates the statistic exactly. That is not a
+/// nicety: the null here is a sign flip, and a statistic that reported a
+/// different size depending on which arm was called *left* would make the
+/// verdict depend on the order the caller named the arms — a defect the
+/// symmetry test in this module's `tests` caught on the first draft.
+///
+/// It is still an order statistic and still not a mean: it is a function of
+/// the two middle values only, and it discards nothing (B56).
+fn median_signed(sorted: &[i64]) -> i64 {
+    let count = sorted.len();
+    if count == 0 {
+        return 0;
+    }
+    let upper = count.wrapping_div(2);
+    let above = sorted.get(upper).copied().unwrap_or(0);
+    if count % 2 == 1 {
+        return above;
+    }
+    let below = sorted
+        .get(upper.saturating_sub(1))
+        .copied()
+        .unwrap_or(above);
+    i64::midpoint(below, above)
 }
 
 /// The gap between two durations, against the smaller of them.

@@ -15,4 +15,5 @@
 //! comparison carries instead of a repeat count, because the count turned out
 //! not to be a constant (F53).
 
+pub mod compare;
 pub mod enough;

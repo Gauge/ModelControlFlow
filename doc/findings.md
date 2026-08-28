@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 58 |
+| **Version** | 59 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -82,6 +82,7 @@ forward as one.
 | 52 | [F52 — The engine benchmarks will use is three times noisier than the one they will not (DEC-007, B-366, B-376, §3.4, A19, F51)](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51) |
 | 53 | [F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)](#53--f53--the-noise-floor-is-a-property-of-the-moment-not-of-the-machine-dec-007-b-083-b-181-d35-a19-f51-f52) |
 | 54 | [F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)](#54--f54--the-stopping-condition-and-the-first-comparison-that-stopped-itself-b-083-b-086-b-250-dec-007-f51-f52-f53) |
+| 55 | [F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)](#55--f55--the-pairing-is-worth-eighty-eight-percent-and-the-stopping-condition-could-only-answer-one-way-b-250-b-083-b53-327-dec-007-f51-f53-f54) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4135,7 +4136,137 @@ each. And the resampling seed is fixed, so re-asking the same data gives the
 same verdict — which is reproducibility (§3.12) and not certainty, and the two
 are easy to confuse when a number comes back identical twice.
 
+## 55 · F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)
+
+**What was asked.** B-250's condition is that *block-then-subtract does not
+compile*. F51 had measured why it should not — contention moves a run's whole
+distribution rather than widening it — but the number that mattered was never
+taken directly: **how large a difference does the blocked arrangement invent
+between two things that are identical?** And whatever the answer, the type had
+to stop it being expressible.
+
+**The blocked arrangement invents eighty-eight percent.** One command,
+`mcf run` over a real model file, two hundred tokens, run twenty times and then
+twenty times again. Nothing about the command changed between the two blocks;
+forty-eight busy loops started on this thirty-two-core machine did.
+
+```
+arm A, quiet          median 0.233 s   middle half spans  4.4%
+arm B, under load     median 0.439 s   middle half spans 43.2%
+```
+
+Subtract those two blocks and MCF would report **one configuration 88% slower
+than an identical one**, with a spread that looks like evidence rather than
+like a warning. That is the failure B53 calls *thirty runs of A, then thirty of
+B, subtracted*, priced on this machine.
+
+**Interleaved, the same machine change costs nothing.** The paired runner —
+alternating the arms, drawing which goes first per pair — was asked the same
+null question while sixteen burners arrived a third of the way through. The
+load episode is visible in the raw trials, four pairs at 0.24–0.27 s among
+thirty at 0.15 s, and the verdict is unmoved:
+
+```
+no difference as large as 2.0%, after 30 paired trial(s) — one that big would
+have shown          · medians 0.149 s and 0.149 s
+order: 16 pair(s) ran the left arm first, 14 the right
+  …
+  #19: 0.169 s  0.145 s  right first  right quicker by 16.5%
+  #20: 0.242 s  0.257 s  left first   left quicker by  6.4%
+  #21: 0.267 s  0.256 s  left first   right quicker by 4.0%
+  #22: 0.193 s  0.205 s  left first   left quicker by  6.0%
+  #23: 0.172 s  0.158 s  left first   right quicker by 8.3%
+  #24: 0.148 s  0.149 s  right first  left quicker by  1.0%
+```
+
+Pairs #20 to #23 are seventy percent above the rest of the run and contribute
+nothing to the answer, because the load landed on *both* arms of each of them.
+That is the whole of §3.27 in six lines of a real run.
+
+**And the mechanism is provable exactly, without a machine.** A test on the
+simulated clock builds forty-eight timings — a level that steps up halfway
+through, a wobble belonging to the round, a jitter belonging to the run — and
+arranges *the same forty-eight numbers* two ways. Interleaved: *no difference
+as large as 20.0%*. Blocked: *they differ by 50.0%, noise alone produced a gap
+that big 0.0% of the time*. Only the arrangement differs, and it is the whole
+of the answer. A fixture whose jitter cycled with period six failed this first
+— its noise was confounded with the even/odd positions the pairing uses, and
+the paired comparison correctly found the three-percent difference the fixture
+had accidentally built. The fixture was wrong, and the instrument said so.
+
+**What was built.** `mcf_bench::compare`. A `Comparison` has three
+constructors and there is no fourth: `Interleaving`, which runs the arms
+alternately itself and draws the order per pair from a stated seed;
+`from_trials`, which reads a session back out of the record and **verifies the
+interleaving from the positions** — the merged trials are taken two at a time
+and every couple must hold one of each arm, so blocked trials come back as
+`RanInBlocks` naming the arm and where it repeated; and
+`from_separate_sessions`, which is §3.27's *it may be all that exists*.
+
+The statistics moved behind that door. `enough`'s two entry points are
+`pub(super)`, because a function taking two slices of timings cannot tell an
+interleaved comparison from two blocks and never could — that is B-250's *does
+not compile*, and `checks/tests/a_comparison_is_paired.rs` is what keeps it
+true when somebody adds a fourth way in.
+
+**The weaker claim is weaker in the type, not in a label.** A comparison
+assembled from separate sessions answers `None` to `paired_differences()`:
+there is no pairing, so there is no paired difference, and a difference of two
+summaries cannot be handed out wearing this one's name. The label exists as
+well, in every rendering. The reverse is refused too — two arms that turn out
+to share a session may not be assembled the weak way, because the strong
+construction is available and choosing the weak one would be discarding
+evidence.
+
+**The reported quantity changed, and so did the null.** F54 pooled both arms
+and redrew independent groups, which is an unpaired test on paired data: it
+throws away the very structure that makes the comparison durable. The statistic
+is now the median of the *paired differences* and the null is a sign flip —
+under *these arms are the same*, which arm came out ahead in a given pair is a
+coin toss. That change also exposed a defect the pooled version hid.
+
+**The defect: the stopping condition could only ever answer one way.** The
+first real run of the new instrument, one command against itself, stopped after
+**four paired trials** and declared *no difference as large as five percent* —
+from differences of 12.9%, 7.4%, 0.2% and 1.4%. It cannot be. A sign flip over
+four pairs has sixteen assignments, so the smallest false-alarm rate reachable
+is one in sixteen, above the one in twenty the module requires: `Differ` was
+**unreachable at that count whatever the data**, and a rule that can only
+answer one way is not a test.
+
+The cause was a circular question. *Would a five-percent difference have
+shown?* was being asked of a null built out of the very differences a
+five-percent difference would have moved. It is now asked as power: centre this
+run's differences on their own median, add an effect of exactly the resolution
+asked for, and ask whether *that* would have been declared. On the same four
+real differences the answer is *not yet*; on noise of the same size, centred, a
+five-percent null result arrives at **eighty pairs** — not four.
+
+The same correction went into the pooled path, which asks it by scaling one arm
+rather than shifting a difference. Both are `Same`-branch questions only: the
+`Differ` branch was never circular.
+
+**What was not established.** The eighty-eight percent is one machine, one
+command, one load pattern; a different machine and a lighter load give a
+smaller number, and the point is the *shape* rather than the size — F51 already
+showed the shift is coherent rather than random, and this shows what
+subtracting two blocks does with it. The machine also hosts other projects'
+workloads, so the *quiet* arm is quiet relative to its own baseline (§3.4,
+DEC-007) rather than absolutely. The order-randomization generator is a
+xorshift with a stated seed, which is reproducibility and not
+unpredictability — nothing here needs the latter. And the eighty pairs above is
+this sitting's number: F53's finding stands, and the count is still a property
+of the half-hour.
+
 ## Changelog
+
+### Version 59 — the pairing is structural, and it is worth eighty-eight percent
+
+F55. `mcf_bench::compare`: a comparison can only be built from paired,
+interleaved, order-randomized trials, and the blocked arrangement is priced at
+88% on a real machine. The stopping condition's `Same` branch was asking a
+circular question and could only answer one way at small counts; it asks about
+power now.
 
 ### Version 58 — the first comparison that stopped itself
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 42 |
+| **Version** | 43 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -348,6 +348,18 @@ matter claimed version 24, a citation written without its hyphen so that it
 named a rule that does not exist, and — before it was written — a register whose
 front matter was two versions behind its own changelog and whose header counts
 were three revisions stale.
+
+**The register also counts itself.** `checks/tests/the_register_counts_itself.rs`
+totals the backlog's rows by state and compares them with the headline sentence
+the file opens with, because that sentence is written by hand and the table
+under it is edited every working day. Its first run found the header claiming
+204 build items of which 54 were done against a table holding 217 of which 84
+were, one decision row whose milestone and status had been overwritten by a
+pasted copy of a build row, and one build row whose status began with prose
+rather than with a state — none of which reading had caught, which is this
+section's whole argument. The status column is a light format contract for the
+same reason: a status that does not begin with one of the register's own words
+is a row nobody can total.
 
 **One clause is deliberately not fully checked.** The contract asks for present
 tense outside changelogs, and that resists a machine. Only the constructions the
@@ -982,6 +994,13 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 43 — the register counts itself
+
+`checks/tests/the_register_counts_itself.rs` (B-041). The backlog's headline
+sentence is now computed rather than asserted, and its first run found the
+header thirty items behind its own table, a decision row overwritten by a
+pasted build row, and a status that began with prose.
 
 ### Version 30 — where the models go
 

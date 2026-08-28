@@ -35,6 +35,7 @@
 //! cargo run -p mcf-prototype-timing-noise -- <repeats> <command> [args…]
 //! ```
 
+use mcf_core::time::Monotonic;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -110,11 +111,17 @@ fn main() -> std::process::ExitCode {
 
 /// Two commands, interleaved, until the stopping condition decides.
 ///
-/// The shape F51 requires: alternating rather than one arm then the other, so
-/// that anything drifting under the comparison lands on both and cancels. The
-/// count is not chosen — it stops when this run's own resampling separates the
-/// difference from its own noise, which is what F53 established a count cannot
-/// do.
+/// The shape F51 requires and B-250 now makes structural: the two arms are run
+/// alternately rather than one after the other, so that anything drifting
+/// under the comparison lands on both and cancels — and **which one goes first
+/// is drawn per pair**, so that going first is not an advantage. Neither is
+/// this function's discipline any more. `mcf_bench::compare::Interleaving` is
+/// the only way to build a comparison at all, and a caller that wanted to run
+/// thirty of one and then thirty of the other could not express it.
+///
+/// The count is not chosen either — it stops when this run's own resampling
+/// separates the difference from its own noise, which is what F53 established
+/// a count cannot do.
 fn compare(all: &[String], at: usize) -> std::process::ExitCode {
     let Some(resolving) = all.first().and_then(|held| held.parse::<f64>().ok()) else {
         eprintln!("usage: timing-noise <resolving-fraction> <command…> vs <command…>");
@@ -125,38 +132,50 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
         return std::process::ExitCode::FAILURE;
     };
     let ceiling: usize = 120;
+    let resolving_ppm = mcf_core::measurement::PartsPerMillion(whole(resolving * 1e6));
 
     println!(
-        "  comparing, alternately, looking for a {:.0}% difference",
+        "  comparing, alternately and in a drawn order, looking for a {:.0}% difference",
         resolving * 100.0
     );
-    let mut left = Vec::new();
-    let mut right = Vec::new();
+
+    // The seed is stated rather than taken from the clock, so that the order
+    // this run drew is the order a re-run draws (§3.12). It is printed for the
+    // same reason.
+    let seed = 0x5DEE_CE66_D125_u64;
+    println!("  order seed: {seed:#x}");
+    // The arms are named for the reader; which command each names is kept
+    // here rather than parsed back out of the name, because a command holds
+    // spaces and an arm's name is not a place to encode one.
+    let left_arm = mcf_core::trial::Arm::new(one.join(" "));
+    let mut running = mcf_bench::compare::Interleaving::<Monotonic>::new(
+        left_arm.clone(),
+        mcf_core::trial::Arm::new(other.join(" ")),
+        mcf_core::trial::SessionId::new(format!("timing-noise-{}", std::process::id())),
+        seed,
+    );
+
+    let mut failed = false;
     for round in 0..ceiling {
-        let Some(a) = timed(one) else {
+        running.round(|arm| {
+            let command = if *arm == left_arm { one } else { other };
+            // Nanoseconds, because the crate counts in integers — a shipped
+            // type there may not hold a float, since that is how a NaN reaches
+            // a record. A prototype is not shipped and may; the conversion is
+            // the boundary (F54).
+            if let Some(seconds) = timed(command) {
+                mcf_core::time::Duration::from_nanos(whole(seconds * 1e9))
+            } else {
+                failed = true;
+                mcf_core::time::Duration::from_nanos(0)
+            }
+        });
+        if failed {
             return std::process::ExitCode::FAILURE;
-        };
-        let Some(b) = timed(other) else {
-            return std::process::ExitCode::FAILURE;
-        };
-        left.push(a);
-        right.push(b);
-        // Nanoseconds, because the crate counts in integers — a shipped type
-        // here may not hold a float, since that is how a NaN reaches a record.
-        // The prototype is not shipped and may; the boundary is where the
-        // conversion happens (F54).
-        let said = mcf_bench::enough::verdict(
-            &as_nanos(&left),
-            &as_nanos(&right),
-            mcf_core::measurement::PartsPerMillion(whole(resolving * 1e6)),
-        );
-        if !matches!(said, mcf_bench::enough::Verdict::NotYet { .. }) {
-            println!("    {said}");
-            println!(
-                "    medians: {:.3} s and {:.3} s",
-                middle(&left),
-                middle(&right)
-            );
+        }
+        let said = running.finding(resolving_ppm);
+        if !matches!(said.verdict(), mcf_bench::enough::Verdict::NotYet { .. }) {
+            report_comparison(&said, running.comparison());
             return std::process::ExitCode::SUCCESS;
         }
         if round.saturating_add(1) % 10 == 0 {
@@ -170,11 +189,72 @@ fn compare(all: &[String], at: usize) -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 
-/// Seconds as nanoseconds, because the crate counts in integers — a shipped
-/// type there may not hold a float, since that is how a NaN reaches a record.
-/// A prototype is not shipped and may; the conversion is the boundary (F54).
-fn as_nanos(held: &[f64]) -> Vec<u64> {
-    held.iter().map(|seconds| whole(seconds * 1e9)).collect()
+/// What a decided comparison has to say, including how it was constructed.
+fn report_comparison(
+    said: &mcf_bench::compare::Finding,
+    held: &mcf_bench::compare::Comparison<Monotonic>,
+) {
+    println!("    {said}");
+    // A duration as a person reads it. The prototype may hold a float where a
+    // shipped crate may not; the milliseconds are taken with an integer
+    // division first so that the conversion cannot lose a nanosecond it was
+    // never going to print.
+    let seconds = |held: mcf_core::time::Duration<Monotonic>| {
+        let millis = held.as_nanos().wrapping_div(1_000_000);
+        f64::from(u32::try_from(millis).unwrap_or(u32::MAX)) / 1000.0
+    };
+    println!(
+        "    medians: {:.3} s and {:.3} s",
+        middle(
+            &held
+                .pairs()
+                .iter()
+                .map(|p| seconds(p.left()))
+                .collect::<Vec<f64>>()
+        ),
+        middle(
+            &held
+                .pairs()
+                .iter()
+                .map(|p| seconds(p.right()))
+                .collect::<Vec<f64>>()
+        )
+    );
+    let (left_first, right_first) = held.order_balance();
+    println!("    order: {left_first} pair(s) ran the left arm first, {right_first} the right");
+    // The paired difference *distribution* is the reported quantity (B53), so
+    // it is printed rather than summarized away.
+    if let Some(differences) = held.paired_differences() {
+        let mut left_ahead = 0_usize;
+        for held in &differences {
+            if matches!(
+                held,
+                mcf_bench::compare::Difference::Quicker {
+                    side: mcf_bench::compare::Side::Left,
+                    ..
+                }
+            ) {
+                left_ahead = left_ahead.saturating_add(1);
+            }
+        }
+        println!(
+            "    pairs: the left arm was quicker in {left_ahead} of {}",
+            differences.len()
+        );
+        // The raw trials as well as the differences: D16 keeps every trial
+        // because a summary is a question nobody can ask again, and the
+        // blocked arrangement of these same timings is exactly such a
+        // question.
+        println!("    pairs, in interleaving order (left, right, first, difference):");
+        for (at, (pair, held)) in held.pairs().iter().zip(&differences).enumerate() {
+            println!(
+                "      #{at}: {:.3} s  {:.3} s  {} first  {held}",
+                seconds(pair.left()),
+                seconds(pair.right()),
+                pair.first()
+            );
+        }
+    }
 }
 
 /// A non-negative float as the nearest whole number, saturating.
