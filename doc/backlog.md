@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 203 |
+| **Version** | 204 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **279 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 224 build items (128 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 46 open).** Every item cites
+decided, 23 resolved) and 224 build items (131 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 43 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -304,7 +304,7 @@ first and importance second.
 | B-235 | Scheduling: an exclusive window may be deferred to a stated time or to a stated period of machine idleness | B35, §6.40, §3.26 | A user can say "overnight" or "after ten minutes idle" and the window opens then | open |
 | B-182 | Suspension is declared: a request during a lab receives an immediate refusal naming the lab and the expected remaining time, never a queue or a timeout; a lab is bounded and interruptible with its partial result preserved | B35, §6.33, §3.1 | Requests during a lab are refused within one round trip; interrupting preserves and marks the partial result | open |
 | B-187 | Idle MCF reads no power or thermal counters | B39, D5, §3.13 | Counter reads are zero outside a lab run | done Measured: an idle daemon took **zero** processor ticks and issued **zero** read syscalls across ninety seconds (F85). The one counter MCF reads at all is a GPU temperature inside `Machine::read_through`, reached only from commands somebody typed. Held by `checks/tests/idle_mcf_reads_nothing.rs`: no spawned loop in the serving path, and no reader of the machine outside a command. |
-| B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
+| B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | done `mcf_core::energy::Energy`: `Measured` carries its sampling rate and its counter, `Modelled` says so where a reader sees it, and `Unknown` is *not zero and not derived from utilization*. The only way joules leave is an `Option`, and the word *utilization* appears exactly once — in the sentence refusing it, with a check pinning the count. F89. |
 | B-189 | Energy laboratory: energy per token, sustained power draw and thermal behaviour under load, with fidelity stated per platform | D11, §3.9, §XIII | The lab reports joules per token with its measurement provenance, or states that this platform cannot supply it | blocked (DEC-029) |
 | B-223 | An evaluation run cannot be constructed from an uncalibrated configuration handle | B45, D13, §X | The tier ordering is a type property, not a convention | done `Planned::new` takes a `Calibrated` and there is no other constructor, no `Default`, and no `Option` around it. Calibration precedes measurement as a type property rather than a convention, because a convention is what somebody skips at four in the afternoon (B45, D13). F88. |
 | B-224 | A laboratory declares its work in countable units — trials, sweep points, tokens, documents — never in minutes | B46, D14 | No lab declares a duration; duration is derived from work × the machine's measured rate | done `mcf_bench::planned::Work` carries trials, arms and tokens and has no fourth field: no duration, no deadline, no timeout, because a type with one would let a lab declare in minutes. The duration is multiplied out of a per-generation band this machine measured, arrives as an `Estimate`, and is absent by name where there is no history — measured both ways (F72). Held by `checks/tests/work_is_counted_not_timed.rs`, since Rust cannot say *no field here means a duration*. |
@@ -322,8 +322,8 @@ first and importance second.
 | B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
 | B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | in progress The measurement is built and the refusal is not (F71). `contention::steadiness` reports a machine's own spread across successive readings, and every comparison now records the competing processor time before it and after it, rendered as a condition: *the level moved N% across the run, which is a condition and not a verdict*. Exercised both ways on this machine — 0.0% quiet, 1740% with load started mid-run, the latter still reporting its verdict beside the fact that the floor moved. The refusal itself stays blocked on DEC-007, which now has measurements to be decided from: a threshold invented here would be exactly the figure that decision exists to derive. |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
-| B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | open |
-| B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | open |
+| B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | done `mcf_core::instrumentation::Timed` cannot be constructed without a `Profile`: the profile is a field, not a possibility. The condition floor's free-text entry was enough to note a profile and not enough to refuse on one. F89. |
+| B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | done `Timed::new` is fallible and refuses `Profile::Deep`. `Light` is admitted because it carries a measured residual — characterized against the same run unwatched — which makes the perturbation a condition; `Deep` has no single residual to carry, since tracing overhead is a distribution that depends on what the model did. No threshold anywhere: B31 asks that the overhead be characterized, not that it be small. F89. |
 | B-165 | Lab admission: each lab answers what claim it enables, and refusals are recorded rather than forgotten | B32, §6.26 | Every registered lab documents its admitting answer; the refusal list is maintained | open |
 | B-110 | `mcf eval`: the M6 product — whether a model can do the work, measured here, as a distribution | §IX | Two models are evaluated on the suite unattended, and the output distinguishes them or honestly declines to | open |
 
@@ -396,6 +396,10 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 204 — energy says where it came from
+
+B-188, B-163 and B-164 done. F89.
 
 ### Version 203 — a behaviour lab counts tokens
 

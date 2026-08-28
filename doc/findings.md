@@ -115,6 +115,7 @@ forward as one.
 | 86 | [F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)](#86--f86--a-field-of-one-is-refused-by-name-and-a-foreign-number-has-no-route-in-b-167-b-127-b34-b43-623-5) |
 | 87 | [F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)](#87--f87--a-contribution-has-nowhere-to-put-a-task-and-no-way-to-be-unsent-b-171-b-203-b-251-b-310-b42-b54-d21-630-320) |
 | 88 | [F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)](#88--f88--a-behaviour-laboratorys-bound-has-nowhere-to-put-a-wall-clock-b-230-b-223-b45-d8-d13-38) |
+| 89 | [F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)](#89--f89--a-figure-with-a-unit-and-nothing-behind-it-is-the-most-convincing-kind-of-wrong-b-188-b-163-b-164-b39-b31-a20-a7) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6344,6 +6345,51 @@ the constructor rather than two separate types that cannot express each other's
 bound. Two types would be stricter on paper and would drift: every feature
 added to one has to be added to the other, and the second copy is where the
 rule quietly stops being enforced.
+
+## 89 · F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)
+
+**B39's violation, stated exactly.** A platform with no power interface yields
+a number derived from processor utilization. Multiply a percentage by a
+nameplate wattage and you have a figure with the right unit, a plausible
+magnitude, and no measurement in it at all. It is more dangerous than an
+obviously wrong number because nothing about it looks wrong.
+
+`Energy` has three variants — `Measured`, `Modelled`, `Unknown` — and the only
+way joules leave is `measured_millijoules() -> Option<u64>`, fallible so that a
+caller reaching for a number meets the other two where they were about to
+flatten them. There is no `unwrap_or`, no `Default`, no `millijoules_or_zero`,
+and the word *utilization* appears exactly once in the module: inside the
+sentence that refuses it. A check pins the count at one, because a second
+occurrence would mean it had become an implementation rather than a warning.
+
+**The sampling rate is in the type** (B-188, §3.4). Energy read at one hertz
+across a two-second run has seen two samples, and what it missed is most of the
+run. A reading whose rate does not travel cannot be compared with one taken at
+another rate, and nobody can tell that from the number — so `comparable_with`
+requires the same rate *and* the same counter, since a package-level figure is
+not a device-level one. A modelled figure compares with nothing at all, not
+even another model: two models are two authors' opinions rather than two
+readings.
+
+**And what was watching** (B-163, B-164). The condition floor has carried an
+`instrumentation` entry as free text since it was written, which is enough to
+*note* a profile and not enough to *refuse* on one. `Timed::new` is fallible
+and refuses a `Profile::Deep`: a timing taken while a profiler was attached is
+a timing of the profiler as much as of the model.
+
+**`Light` is admitted, and that is the interesting case.** It carries a
+measured residual — how much the watcher moved the measurement, characterized
+against the same run unwatched — so the perturbation is a condition and A6 lets
+the measurement travel with it. `Deep` is refused not because it is worse but
+because there is *no single residual to carry*: tracing overhead depends on
+what the model did, so it is a distribution rather than a number.
+
+**No threshold anywhere.** B31 asks that the overhead be characterized, not
+that it be small. A cutoff here would be MCF deciding how much perturbation is
+acceptable for somebody else's measurement — the same kind of figure DEC-007
+exists to derive rather than assume, and the same wall
+[F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+stopped at. A check forbids the words.
 
 ## Changelog
 
