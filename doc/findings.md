@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 64 |
+| **Version** | 65 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -4539,6 +4539,33 @@ types** — the file's quantization rather than the name a repository gave it
 could not be compared*, and the comparison names what it isolated. Nine to go,
 and each is a producer that does not exist yet (B-007, B-013).
 
+**A later run, and what five of them together say.** The same comparison was
+run twice more at a hundred and twenty-eight tokens, once while this shared
+machine sat at a load average of sixty-eight and twice at thirty-five:
+
+```
+load 68   they differ by 29.2%, after 74 paired trial(s) — noise alone produced
+          a gap that big 4.7% of the time      · 46 pairs one way, 28 the other
+load 35   no difference as large as 5.0%, after 12 paired trial(s) — measured 2.7%
+load 35   no difference as large as  5.0%, after  9 paired trial(s) — measured 2.9%
+```
+
+Five runs now: four say *no difference as large as five percent*, with a
+consistent lean of 1.6% to 3.3% in the same direction, and one says 29.2% at a
+false-alarm rate of 4.7% — three tenths of a percent inside the threshold it
+had to clear. **One run at one-in-twenty is what one-in-twenty means**, and
+nothing here distinguishes that from §3.27's own caveat, which predicts exactly
+this: *a ratio measured at one level of contention need not hold at another,
+because degradation is not uniform.* The loaded run's raw pairs include one at
+a factor of thirty-seven, which is the machine being savaged rather than either
+model being slow.
+
+So the honest statement is the weaker one: **on this machine, at these token
+budgets, q4\_0 and q8\_0 of stories15M differ by less than five percent, with a
+small consistent lean; and one run under heavy contention crossed the threshold
+in a way one run cannot tell from luck.** Which of the two it was is L25's
+question and B-091's, and neither is answered here.
+
 **What was not established.** A 15-million-parameter model at 64 to 256 tokens
 is dominated by process start and request overhead, so *q4\_0 and q8\_0 are the
 same here to five percent* is a finding about this configuration and not about
@@ -4692,6 +4719,14 @@ the standard set against a larger random one, which D19 requires periodically
 and which is B-291's.
 
 ## Changelog
+
+### Version 65 — five runs of one comparison
+
+F59 amended. Four of five runs of the same comparison say *no difference as
+large as five percent*; the fifth, under a load average of sixty-eight, says
+29.2% at a false-alarm rate of 4.7%. One run at one-in-twenty is what
+one-in-twenty means, and nothing distinguishes it from §3.27's contention
+caveat.
 
 ### Version 64 — a trial says what it drew
 
