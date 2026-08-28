@@ -250,3 +250,26 @@ fn server_answer_unreadable(_world: &World) -> Outcome {
         Ok(_) => Outcome::Unexpected("text that is not JSON was read as a completion".to_owned()),
     }
 }
+
+/// A cross-check with nothing to check against.
+pub(super) const NOTHING_TO_CROSS_CHECK: Scenario = Scenario {
+    id: "engine/nothing-to-cross-check",
+    produces: Category::ProbeInconclusive,
+    summary: "an engine that produced no tokens gives a cross-check nothing to read, which is \
+              *could not tell* and never *the engines disagree*",
+    run: nothing_to_cross_check,
+};
+
+fn nothing_to_cross_check(_world: &World) -> Outcome {
+    // The bytes are deliberately not a model, and are never reached: the
+    // emptiness is noticed first. That ordering is the thing under test as
+    // much as the category — a comparison against nothing must not be reported
+    // as a comparison that found nothing wrong (A7, D42), and it must not cost
+    // a model load to say so (F44).
+    match mcf_serve::crosscheck::against(b"not a model either", &[1], &[]) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => {
+            Outcome::Unexpected("a comparison against no tokens was called an agreement".to_owned())
+        }
+    }
+}

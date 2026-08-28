@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 52 |
+| **Version** | 53 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -76,6 +76,7 @@ forward as one.
 | 46 | [F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38) |
 | 47 | [F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46) |
 | 48 | [F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)](#48--f48--the-tie-was-mcfs-not-the-models-a-template-that-names-a-role-in-order-to-rename-it-b-375-b-376-d42-d46-37-f38-f39-f40) |
+| 49 | [F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)](#49--f49--mcf-can-check-its-own-engine-against-the-one-it-built-on-a-users-machine-b-362-b-376-d31-d39-a12-a19-ii) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -3722,7 +3723,97 @@ that `model` is *right* for gemma beyond the model ending its turns under it:
 that is the same observation as before, on a candidate set that is no longer
 wrong.
 
+## 49 · F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)
+
+**What was built.** `mcf cross-check <model>` — the two engines a *user* has,
+compared on the same input, on their machine, about their model.
+
+**Why it is not the oracle.** `scripts/check-oracle.sh` compares MCF against a
+reference implementation and needs a checkout of somebody else's source; it
+runs when this repository is being changed. This asks the same question of
+MCF's own engine and the one **MCF built into a prefix** (B-367, D39) — which
+is a thing a user has. §II is why it exists: MCF makes claims about models, and
+a claim computed by an engine nobody has checked is a claim about the engine.
+A12 says MCF may not ask to be trusted, and this is the shape of not asking.
+
+**It was unbuildable until B-376.** Comparing two engines requires giving both
+the same input in the same form and getting comparable output back. A
+completion tool takes a command line and prints text; the server takes
+identifiers and hands them back. The whole comparison rests on the second.
+
+**Teacher forcing, because texts cannot be compared.** Two correct
+implementations agree until two tokens are close enough that summation order
+picks a different winner, and after that they are writing different sentences
+(F27, F40). MCF reads the *other* engine's tokens and at each position is asked
+what it would have chosen.
+
+**The rank, not the margin.** F40 measured both rules and F41 measured the gap.
+The margin threshold was calibrated on one parting step per file and raises
+false alarms at every position of a long comparison; the rank separates by two
+orders of magnitude. The line is **8**, and this run confirms where the clean
+side of it sits:
+
+| | agreed | worst rank |
+|---|---|---|
+| SmolLM2-135M Q8_0 | 116 of 120 | 2 |
+| gemma-3-270m Q6_K | 111 of 120 | 3 |
+| TinyMixtral-4x248M Q5_K_M | 117 of 120 | 2 |
+| Qwen3-0.6B Q4_K_M | 113 of 120 | 2 |
+| SmolLM2-135M **Q2_K** | 117 of 120 | 1 |
+
+Four architectures including a mixture of experts, and the quantization F33
+found the widest arithmetic gap on. Every one within rank 3 of a line at 8.
+
+**Shown to fail, and the first mutation was again the wrong one.** Swapping the
+rotation's pairing changed nothing — because the arm edited was one llama never
+takes; the family falls through to the default. That is F41's lesson arriving
+again in the same session, and it is worth writing down twice: **a negative
+control that does not touch the subject demonstrates nothing, and looks
+identical to one that does.** Mutating the arm the family *does* take:
+
+```
+clean               agreed 116 of 120   worst rank    2   AGREE     exit 0
+rotation swapped    agreed  37 of 120   worst rank 3388   DIVERGE   exit 1
+```
+
+**What it refuses to say.** Not *which* engine is wrong. Neither is the
+authority — what is compared is two readings of one file, and a disagreement is
+a finding about one of them. Saying which would need a third reading, and
+claiming it from two would be exactly the manufactured certainty A19 forbids.
+
+**A precondition checked before a model is loaded.** *Nothing to compare
+against* is a fact about the other engine's answer and needs no model at all.
+The first version parsed the file first and a laboratory scenario caught it —
+the same shape as F44, where a probe paid eight thousand forward passes to
+learn its instrument could not answer.
+
+**What the gate caught.** `probe.inconclusive` claimed with no scenario able to
+produce it (A13), and then a failure carrying no context. Both are checks that
+have now fired on four consecutive pieces of work, which is either a very good
+suite or a very consistent author.
+
+**What was not established.** Whether 120 positions is enough: F40 used 700 and
+found agreement improving with position, so a short comparison is the
+conservative direction, but *enough* is not measured. Nothing about a model too
+large for MCF's own engine — the reference model cannot be cross-checked at
+all, because MCF cannot read it (B-372), which is precisely the case where a
+user would most want the check. And the threshold is provisional in the
+direction all of them here are: a defect that only ever swaps the top two
+tokens passes.
+
 ## Changelog
+
+### Version 53 — MCF can check its own engine on a user's machine
+
+F49. `mcf cross-check`: the two engines a user has, compared by teacher forcing
+so that the comparison survives the point where their generations part. Four
+architectures and a Q2_K file agree within rank 3 of a line at 8; the rotation
+deliberately swapped diverges at rank 3388.
+
+The first mutation was the wrong one again — an arm the family never takes —
+which is F41's lesson twice in one session and worth the second telling: a
+negative control that does not touch the subject looks exactly like one that
+does.
 
 ### Version 52 — the tie was MCF's, not the model's
 

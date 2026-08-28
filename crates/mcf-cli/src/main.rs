@@ -11,6 +11,7 @@
 //! the record.
 
 mod check;
+mod crosscheck;
 mod doctor;
 mod embed;
 mod explain;
@@ -133,6 +134,11 @@ enum Request<'a> {
         because: Option<&'a str>,
         /// A prefix root other than the default.
         into: Option<&'a str>,
+    },
+    /// Compare MCF's own engine against the one it provisioned.
+    CrossCheck {
+        /// The model both engines read.
+        model: &'a str,
     },
     /// Ask a model to do the thing, and report what it did.
     Probe {
@@ -281,6 +287,11 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["explain", _, argument, ..] => Request::UnexpectedArgument {
             command: "explain",
             argument,
+        },
+        ["cross-check", model] => Request::CrossCheck { model },
+        ["cross-check"] => Request::MissingArgument {
+            command: "cross-check",
+            needs: "<model>",
         },
         ["probe", model] => Request::Probe {
             model,
@@ -797,6 +808,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
+                 \x20 mcf cross-check <model>              read one engine's tokens with the\n\
+                 \x20                                       other, and say whether they agree\n\
                  \x20 mcf probe <model> [--engine <name>] [--apply]\n\
                  \x20                                       ask a model to do the thing, and\n\
                  \x20                                     report what it did — configuring\n\
@@ -876,6 +889,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
+        Request::CrossCheck { model } => crosscheck::run(model),
         Request::Probe {
             model,
             engine,

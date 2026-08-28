@@ -104,6 +104,12 @@ pub struct Completed {
     pub evaluated: usize,
     /// Why it stopped.
     pub stop: Stop,
+    /// The identifiers it produced, where it was asked for them.
+    ///
+    /// Text cannot be compared between two engines once their generations
+    /// part — they are writing different sentences by then — so a cross-check
+    /// needs the tokens themselves to feed the other engine (B-362, F40).
+    pub produced: Vec<usize>,
 }
 
 /// A running `llama-server`, holding one model.
@@ -286,6 +292,10 @@ impl Served {
                 Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
             ),
             ("temperature", Value::Integer(0)),
+            // The identifiers as well as the text. They cost nothing to ask
+            // for and are the only form in which two engines can be compared
+            // past the point where their generations part (B-362).
+            ("return_tokens", Value::Bool(true)),
             // Every request starts from the same state, or a trial would be
             // measuring what the previous trial left behind (§3.12).
             ("cache_prompt", Value::Bool(false)),
@@ -435,6 +445,14 @@ pub fn interpret(answer: &str) -> Result<Completed, Failure> {
         predicted: number("tokens_predicted"),
         evaluated: number("tokens_evaluated"),
         stop,
+        produced: match value.get("tokens") {
+            Some(Value::List(tokens)) => tokens
+                .iter()
+                .filter_map(Value::as_integer)
+                .filter_map(|token| usize::try_from(token).ok())
+                .collect(),
+            _ => Vec::new(),
+        },
     })
 }
 

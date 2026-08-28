@@ -17,6 +17,7 @@ pub mod adapters;
 pub mod configured;
 pub mod control;
 pub mod cost;
+pub mod crosscheck;
 pub mod daemon;
 mod generation;
 pub mod probes;

@@ -340,6 +340,20 @@ fn through_served(
         ),
         ("stopped", Value::text(completed.stop.written())),
         ("text", Value::text(completed.text)),
+        // The identifiers as well as the text, so that another engine can be
+        // asked what it would have chosen at each one (B-362). Text cannot
+        // answer that: past the first disagreement the two are writing
+        // different sentences.
+        (
+            "produced_tokens",
+            Value::List(
+                completed
+                    .produced
+                    .iter()
+                    .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                    .collect(),
+            ),
+        ),
         ("conditions", conditions),
     ]))
 }
