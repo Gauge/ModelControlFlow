@@ -199,7 +199,60 @@ fn outcome(finding: &Finding) -> Value {
                 Value::text(if *left_quicker { "left" } else { "right" }),
             ),
             ("resolution", Value::Null),
+            // **A range, and the coverage it was computed at** (F92). The old
+            // `difference` was a point estimate with nothing qualifying it;
+            // the three fields together are what a later reader needs to know
+            // how much the size is worth. The name is kept for the low bound
+            // so that a record written before this can still be read: what
+            // was one number is now the bottom of the range it always was.
+            ("difference", parts_per_million(by.low)),
+            ("difference_high", parts_per_million(by.high)),
+            ("coverage", parts_per_million(by.coverage)),
+            ("by_chance", parts_per_million(*by_chance)),
+            ("pairs", count(*after)),
+        ]),
+        Some(Verdict::Ordered {
+            left_quicker,
+            by,
+            resolving,
+            by_chance,
+            after,
+        }) => Value::map([
+            // A kind of its own, because it is the marking: a reader
+            // filtering the record for results whose size is established must
+            // be able to exclude these without knowing anything else (F92).
+            ("kind", Value::text("ordered")),
+            (
+                "quicker",
+                Value::text(if *left_quicker { "left" } else { "right" }),
+            ),
+            ("resolution", parts_per_million(*resolving)),
+            ("difference", parts_per_million(by.low)),
+            ("difference_high", parts_per_million(by.high)),
+            ("coverage", parts_per_million(by.coverage)),
+            ("by_chance", parts_per_million(*by_chance)),
+            ("pairs", count(*after)),
+        ]),
+        Some(Verdict::Apart {
+            by,
+            left_quicker,
+            by_chance,
+            after,
+        }) => Value::map([
+            // Its own kind, so that a reader can exclude sizes that carry no
+            // interval without knowing why they do not (F92, B53).
+            ("kind", Value::text("apart")),
+            (
+                "quicker",
+                Value::text(if *left_quicker { "left" } else { "right" }),
+            ),
+            ("resolution", Value::Null),
             ("difference", parts_per_million(*by)),
+            // Null rather than absent: a reader comparing this row with a
+            // paired one must see that the interval is missing rather than
+            // have to notice that a field is (A7).
+            ("difference_high", Value::Null),
+            ("coverage", Value::Null),
             ("by_chance", parts_per_million(*by_chance)),
             ("pairs", count(*after)),
         ]),

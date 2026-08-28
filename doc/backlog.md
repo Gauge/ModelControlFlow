@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 205 |
+| **Version** | 206 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
-**280 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 225 build items (131 done, 1 dropped, 14 in progress,
-36 blocked on a decision, 43 open).** Every item cites
+**281 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
+decided, 23 resolved) and 226 build items (131 done, 1 dropped, 14 in progress,
+36 blocked on a decision, 44 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -231,6 +231,7 @@ first and importance second.
 | B-385 | A projection carries the conditions of the history it rests on: how many of its points were taken while the machine was not in its own steady state, and how far it moved | §3.4, A6, B34, B-217, DEC-007 | A band reads *from 68 measured arms, 4 of which were taken while the machine was not steady* rather than *from 68 measured arms*; no point is filtered, because filtering needs the threshold DEC-007 has not set | done `Point` carries what else the machine was doing (thousandths of a processor, the larger of the two readings), `band` returns a `Projection` that cannot be separated from its `Rested`, and both surfaces that render a band render it. Nothing is filtered — that needs DEC-007's figure — and *nothing recorded* renders as unknown rather than as quiet (A7). F75. |
 | B-386 | A probe's outcome is written to the record, not only printed | §3.4, A1, B-055, D42 | A probe run yesterday can be read back today; a surface that needs a measured capability finds it or finds nothing, never a re-run | done `EntryKind::ModelProbed`, written whichever way the measurement came out — *agrees* is as much a measurement as *diverges* (A9) — and distinct from `ModelConfigured`, which is the act D43 requires rather than the observation it may follow from. A write that fails says so (A2). F83. |
 | B-387 | Temperature and occupancy for the common hardware vendors, with a support request where MCF cannot read the machine | B-084, DEC-007, §3.4, A7, A2 | Every sensor a machine publishes is read and labelled; a processor die reading is told from a package one and from a board zone; an accelerator MCF cannot poll reports *unknown* with its reason and never zero; hardware MCF does not recognise produces a support report the operator reads before sending | in progress Linux is built (F91): `hardware::thermal` reads every `hwmon` sensor with its chip and label, classifies the drivers of AMD, Intel, the common ARM SoCs, Apple, the super-I/O and vendor-EC chips, accelerators and drives, and treats an out-of-range limit as the sentinel it is. `hardware::utilisation` reads AMD occupancy from sysfs and reports NVIDIA and Intel as unknown-with-reason. `mcf support --into <path>` writes the report and `mcf doctor` offers it where a gap is found. **What remains: Windows and macOS.** Windows' `MSAcpi_ThermalZoneTemperature` is the same ACPI zone that reads 16.8 °C here and the per-die registers need a kernel driver MCF does not ship; macOS needs SMC or IOKit. Both should report *unknown* rather than substitute a board sensor, which is the mistake F91 corrects. |
+| B-388 | An interval on the effect size for arms that were never paired | B54, B53, §3.27, A20, F92 | An assembled comparison states a range, not a point; the range comes from a rank-sum distribution computed exactly, in whole numbers, as the paired one is | open Opened by F92. The paired interval is an order statistic of the paired differences and the machinery for it was already here. Two independent samples need the Hodges–Lehmann estimator with bounds from the exact rank-sum distribution, which this crate does not have — so `Verdict::Apart` reports a point and says plainly that it is one. Inventing a range from the two arms' own ranges would be exactly the confident wrong number the interval exists to prevent. |
 | B-376 | The provisioned engine cannot be probed: it takes text on a command line and prints text back, so a turn built from token identifiers has nowhere to go, and it does not say why a generation ended | B-032, B-052, B-374, D42, F38 | A probe can name any engine MCF can drive, and its result belongs to that engine; a turn of identifiers reaches a provisioned engine unaltered, and the stop reason is observable through it | **done** (F39) — the same provisioned prefix's *server* rather than its completion tool, on a Unix socket under MCF's runtime directory so nothing listens on the network and no port is contended (§XVII). The model stays loaded between requests, which is F36's open residency. `mcf probe --engine <name>` names one, and the default is the server where there is one — changed only after both engines were shown to return the same verdict, not on the twentyfold speed alone (B29). A 270M model probes in eight seconds where it took tens of minutes |
 | B-059 | Derived configuration carries the provenance of the capability that set it: which probe, when, under what conditions | §3.18, §6.19 | Every auto-set parameter answers "why this value" with a probe reference or a declared default | **done** (F43) — `mcf probe --apply` is the act D43 requires, and it is the only thing that writes a configuration. What it writes carries the probe, the moment, the build and the conditions; the daemon applies it and puts the provenance in the account; `mcf run` prints it on every run (§3.15). Inconclusive refuses to apply, and raw refuses too — a provenance on a default would make it look derived. The winning addressing is carried out of the probe rather than rebuilt from its name, and a test asserts the turn a configuration builds is the turn the probe sent, identifier for identifier |
 | B-060 | Inconclusive handling: a probe that neither confirms nor denies leaves the capability unknown and says so | §3.18, §7.24 | No inconclusive probe result is ever coerced to a working default | **done** — `Outcome` offers `observed() -> Option<&T>` and nothing else, and `checks/tests/inconclusive_is_never_defaulted.rs` holds it: the type may not grow a fallback accessor, and no shipped caller may build one from the accessor it has. Shown to fail against a planted `.observed().unwrap_or_else(\|\| "raw")` and to pass without it (B-003's negative control). In a test file `expect` is an assertion that the probe decided, and is allowed there and nowhere else |
@@ -397,6 +398,15 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 206 — an effect size is a range
+
+The headline of every benchmark was a point estimate beside a sign test that
+knows nothing about magnitude, in a sentence claiming it did. It is a range
+now, exact and from the machinery already here, and a range that straddles the
+caller's resolution reports the order and says the size is not established.
+B-388 opened for the unpaired case, whose interval needs mathematics MCF does
+not have. F92.
 
 ### Version 205 — the sensors were there the whole time
 

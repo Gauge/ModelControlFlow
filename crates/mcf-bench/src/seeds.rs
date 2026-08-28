@@ -156,12 +156,26 @@ pub fn representative(
         };
     }
     match enough::over_separate_arms(standard, larger, resolving) {
-        Verdict::Same { resolving, .. } => Representative::Yes {
-            resolving,
+        // *Same* and *ordered but unsized* answer this question the same way:
+        // neither has shown the standard set unrepresentative at the
+        // resolution asked about (F92).
+        Verdict::Same { resolving, .. } | Verdict::Ordered { resolving, .. } => {
+            Representative::Yes {
+                resolving,
+                standard: standard.len(),
+                larger: larger.len(),
+            }
+        }
+        Verdict::Differ { by, by_chance, .. } => Representative::No {
+            by: by.low,
+            by_chance,
             standard: standard.len(),
             larger: larger.len(),
         },
-        Verdict::Differ { by, by_chance, .. } => Representative::No {
+        // The unpaired path's answer (F92). For this question — *is the
+        // standard set representative* — the point estimate is what there is,
+        // and its lack of an interval is stated where the verdict is rendered.
+        Verdict::Apart { by, by_chance, .. } => Representative::No {
             by,
             by_chance,
             standard: standard.len(),

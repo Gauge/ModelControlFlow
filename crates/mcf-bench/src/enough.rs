@@ -83,8 +83,15 @@ const RESAMPLINGS: usize = 4000;
 pub enum Verdict {
     /// The two arms differ by more than this run's own noise produces.
     Differ {
-        /// The difference, against the smaller median.
-        by: PartsPerMillion,
+        /// How large the difference is, as a range (F92).
+        ///
+        /// A range and not a number, for the reason B46 gives about every
+        /// other derived figure in MCF: one number is the smallest possible
+        /// version of a confident wrong number. The sign test beside it
+        /// governs the *direction* only — it discards magnitudes before it
+        /// computes anything — so without this the size carried no measure of
+        /// its own reliability at all.
+        by: Spread,
         /// Whether the left arm was the quicker one.
         ///
         /// **A size without a direction is not a comparison.** The first
@@ -96,6 +103,60 @@ pub enum Verdict {
         /// How often the noise alone produced one that big.
         by_chance: PartsPerMillion,
         /// How many paired trials it took.
+        after: usize,
+    },
+    /// Which arm is quicker is established; how much by is not, at the
+    /// resolution the caller asked about (F92).
+    ///
+    /// **Both halves are true and they are different claims.** The sign test
+    /// establishes the order and does it rigorously. The interval on the size
+    /// runs from below the caller's resolution to above it, so the question
+    /// *is the difference one I would care about* has not been answered —
+    /// however certain the ordering is.
+    ///
+    /// A distinct verdict rather than a flag on [`Verdict::Differ`], so that
+    /// nothing downstream can render it as a measurement by forgetting to look
+    /// at a boolean. It is the marking: a result in this state is not fit to
+    /// contribute, and the record says which state it was in.
+    ///
+    /// MCF invents no threshold here. The resolution came from the caller.
+    Ordered {
+        /// Whether the left arm was the quicker one.
+        left_quicker: bool,
+        /// What the size might be, which is the point: it spans the
+        /// resolution rather than clearing it.
+        ///
+        by: Spread,
+        /// The resolution the caller asked about, carried so the sentence can
+        /// name the bar that was not cleared.
+        resolving: PartsPerMillion,
+        /// How often noise alone puts them in this order.
+        by_chance: PartsPerMillion,
+        /// How many paired trials it took.
+        after: usize,
+    },
+    /// Two arms that were never paired are apart, by a point estimate that
+    /// carries no interval (F92, B53, B-388).
+    ///
+    /// **Why this is not [`Verdict::Differ`].** The interval `Differ` carries
+    /// is an order statistic of *paired* differences, and there are no pairs
+    /// here. The unpaired equivalent needs a rank-sum distribution this crate
+    /// does not have, and inventing a range from the two arms' own ranges
+    /// would be precisely the confident wrong number the interval exists to
+    /// prevent. So the size is reported as what it is — a point, with no
+    /// measure of its own reliability — in a variant that cannot be mistaken
+    /// for the paired one by anything reading the record.
+    ///
+    /// B53 already makes an assembled comparison the weaker claim. This is
+    /// where the weakness stops being a label.
+    Apart {
+        /// The difference between the two arms' medians.
+        by: PartsPerMillion,
+        /// Whether the left arm was the quicker one.
+        left_quicker: bool,
+        /// How often noise alone manufactured a gap this big.
+        by_chance: PartsPerMillion,
+        /// How many trials each arm had.
         after: usize,
     },
     /// They did not differ, and the noise was tight enough that a difference
@@ -136,8 +197,40 @@ impl fmt::Display for Verdict {
                 after,
             } => write!(
                 form,
-                "the {} arm is quicker by {}, after {after} paired trial(s) — noise alone \
-                 produced a gap that big {} of the time",
+                "the {} arm is quicker by {by}, after {after} paired trial(s) — noise alone \
+                 put them in this order {} of the time",
+                if *left_quicker { "left" } else { "right" },
+                percent(*by_chance)
+            ),
+            Self::Ordered {
+                left_quicker,
+                by,
+                resolving,
+                by_chance,
+                after,
+            } => write!(
+                form,
+                "the {} arm is quicker — noise alone put them in this order {} of the time \
+                 after {after} paired trial(s). HOW MUCH quicker is NOT established at the {} \
+                 you asked about: the evidence spans {}. The order is a result; the size is \
+                 not, and this comparison is not fit to contribute (F92)",
+                if *left_quicker { "left" } else { "right" },
+                percent(*by_chance),
+                percent(*resolving),
+                by
+            ),
+            Self::Apart {
+                by,
+                left_quicker,
+                by_chance,
+                after,
+            } => write!(
+                form,
+                "the {} arm is quicker by {}, after {after} trial(s) each — noise alone \
+                 manufactured a gap that big {} of the time. These arms were never paired, so \
+                 this size is a point with no interval: MCF has no method to bound it without \
+                 pairs, and B53 already makes an assembled comparison the weaker claim \
+                 (F92, B-388)",
                 if *left_quicker { "left" } else { "right" },
                 percent(*by),
                 percent(*by_chance)
@@ -216,13 +309,34 @@ pub(super) fn over_paired_differences(differences: &[i64], resolving: PartsPerMi
     // as large as five percent* is true of a measured eight tenths of one, and
     // the measurement travels inside it so nothing is lost (A1).
     if observed >= resolving.0 && by_chance <= FALSE_ALARMS_ALLOWED {
-        return Verdict::Differ {
-            by: PartsPerMillion(observed),
-            // Positive is the left arm quicker, which is how a paired
-            // difference is signed throughout this crate.
-            left_quicker: middle > 0,
-            by_chance,
-            after: pairs,
+        // Positive is the left arm quicker, which is how a paired difference
+        // is signed throughout this crate.
+        let left_quicker = middle > 0;
+        // **The size, with its own measure of reliability** (F92). The sign
+        // test above settled the direction and knows nothing about the
+        // magnitude, so the magnitude brings its own interval or it is not
+        // stated as a measurement.
+        return match spread_of(differences) {
+            Some(by) if by.clears(resolving) => Verdict::Differ {
+                by,
+                left_quicker,
+                by_chance,
+                after: pairs,
+            },
+            // The interval runs from below the caller's resolution to above
+            // it: the order is established and the size is not, at the bar
+            // they set. Both are said.
+            Some(by) => Verdict::Ordered {
+                left_quicker,
+                by,
+                resolving,
+                by_chance,
+                after: pairs,
+            },
+            // Too few pairs to bound the size at all. That is not a verdict
+            // about the arms, it is a statement about how much evidence there
+            // is, and `NotYet` is where MCF says so.
+            None => Verdict::NotYet { so_far: pairs },
         };
     }
 
@@ -404,7 +518,15 @@ pub(super) fn over_separate_arms(
     let by_chance = manufactured(one, other, observed, each);
     // The same two halves as the paired path, for the same reason (F59).
     if observed >= resolving && by_chance <= FALSE_ALARMS_ALLOWED {
-        return Verdict::Differ {
+        // **And a third half this path cannot supply** (F92). `Differ` now
+        // carries an interval on the size, and the interval MCF computes is an
+        // order statistic of paired differences — of which there are none
+        // here. So an assembled comparison reports the order it established
+        // and says the size is unbounded, rather than reporting a point
+        // estimate that would look exactly like a paired one. B53 already
+        // makes this the weaker claim; this is where the weakness becomes
+        // visible instead of being a label.
+        return Verdict::Apart {
             by: observed,
             left_quicker: a < b,
             by_chance,
@@ -585,3 +707,132 @@ fn median(sorted: &[u64]) -> u64 {
 
 #[cfg(test)]
 mod tests;
+
+/// How wide the effect really is, and how sure that width is (F92).
+///
+/// **What this exists to correct.** The verdict used to carry a single number
+/// — *quicker by 356.0%* — beside a sign test's probability, in a sentence
+/// that read as though the probability qualified the size. It never did: the
+/// sign test discards magnitudes before it computes anything, so its answer is
+/// identical for six pairs spanning fifteen points and six spanning a
+/// thousand. One number to one decimal place, from evidence that varied in
+/// quality by a factor of sixty-nine, all wearing the same 3.1%.
+///
+/// B46 has said all along that a duration predicted from a rate is a range and
+/// that one number is *the smallest possible version of a confident wrong
+/// number*. Every estimated figure in MCF is banded. The one **measured**
+/// figure — the headline the whole benchmark exists to produce — was not.
+///
+/// **Exact, and from the machinery already here.** The bounds are order
+/// statistics of the paired differences: with the differences sorted, the
+/// *k*-th and *(n+1-k)*-th bracket the true median with a probability that is
+/// a binomial tail, which the sign test beside it already computes in whole numbers.
+/// No resampling, no floats, no distributional assumption beyond the
+/// exchangeability the interleaving is there to provide.
+///
+/// **The coverage is reported, not aimed at.** Six pairs cannot express 95%;
+/// the widest interval available covers 96.9%. Saying *96.9%* rather than
+/// *95%* is the same discipline as reporting the count a run actually needed
+/// rather than the one it hoped for (F53).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spread {
+    /// The smallest effect the evidence is consistent with.
+    pub low: PartsPerMillion,
+    /// The largest.
+    pub high: PartsPerMillion,
+    /// How often an interval built this way contains the true value.
+    pub coverage: PartsPerMillion,
+}
+
+impl Spread {
+    /// Whether the whole interval clears a resolution the caller asked about.
+    ///
+    /// The question that decides whether a magnitude was established *for this
+    /// caller*: an interval running from below their threshold to far above it
+    /// does not answer *is the difference one I care about*, however tight the
+    /// direction is.
+    #[must_use]
+    pub const fn clears(&self, resolving: PartsPerMillion) -> bool {
+        self.low.0 >= resolving.0
+    }
+}
+
+impl fmt::Display for Spread {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            form,
+            "{} to {} ({} of such intervals contain the true value)",
+            percent(self.low),
+            percent(self.high),
+            percent(self.coverage)
+        )
+    }
+}
+
+/// The exact distribution-free interval for the median of `differences`.
+///
+/// Public so that a surface reading the record can recompute it from the
+/// trials rather than from a stored summary — which is what B55 and B56 have
+/// always required, and what lets a comparison recorded before F92 gain the
+/// interval its own pairs always supported.
+///
+/// `None` where no interval reaching [`WANTED_COVERAGE`] exists, which is
+/// every run of fewer than six pairs — the same floor at which the sign test
+/// cannot reach one in twenty either (F57). That is a fact about how much
+/// evidence there is, and it is reported rather than filled in.
+///
+/// **Where the interval on the signed difference contains zero**, the
+/// magnitude is not bounded away from nothing and the low bound is zero. A run
+/// whose pairs disagree that much has established a direction it cannot put a
+/// floor under, and pretending otherwise by taking absolute values first would
+/// manufacture a floor out of the disagreement itself.
+#[must_use]
+pub fn spread_of(differences: &[i64]) -> Option<Spread> {
+    let sorted = sorted_signed(differences);
+    let n = u32::try_from(sorted.len()).ok()?;
+    let total = two_to_the(n)?;
+    let mut best: Option<(usize, u64)> = None;
+    for k in 1..=n.wrapping_div(2) {
+        // The mass below the k-th order statistic: P(X < k) for X ~ B(n, 1/2),
+        // which by symmetry is the upper tail from `n - k + 1`. `binomial_tail`
+        // sums from its argument upwards, so that index is what it is given —
+        // and getting it wrong by one silently widens every interval MCF
+        // reports, which is why the coverage is checked against hand-computed
+        // values in the tests rather than only against itself.
+        let below = binomial_tail(n, n.checked_sub(k)?.checked_add(1)?)
+            .unwrap_or(0)
+            .min(total);
+        let missed = below
+            .checked_mul(2)?
+            .checked_mul(u128::from(MILLION))?
+            .checked_div(total)?;
+        let coverage = u64::try_from(u128::from(MILLION).saturating_sub(missed)).ok()?;
+        if coverage >= WANTED_COVERAGE.0 {
+            best = Some((usize::try_from(k).ok()?, coverage));
+        }
+    }
+    let (k, coverage) = best?;
+    let low = *sorted.get(k.checked_sub(1)?)?;
+    let high = *sorted.get(sorted.len().checked_sub(k)?)?;
+    // An interval spanning zero puts no floor under the magnitude.
+    let (near, far) = if (low <= 0 && high >= 0) || (low >= 0 && high <= 0) {
+        (0, magnitude(low).max(magnitude(high)))
+    } else {
+        (
+            magnitude(low).min(magnitude(high)),
+            magnitude(low).max(magnitude(high)),
+        )
+    };
+    Some(Spread {
+        low: PartsPerMillion(near),
+        high: PartsPerMillion(far),
+        coverage: PartsPerMillion(coverage),
+    })
+}
+
+/// The coverage an interval must reach to be worth reporting.
+///
+/// The complement of [`FALSE_ALARMS_ALLOWED`], so that the interval and the
+/// sign test are asking for the same standard of evidence rather than two
+/// numbers that happen to sit near each other.
+pub const WANTED_COVERAGE: PartsPerMillion = PartsPerMillion(MILLION - FALSE_ALARMS_ALLOWED.0);

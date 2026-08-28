@@ -438,7 +438,7 @@ fn the_runner_finds_a_real_difference_and_says_what_it_cost() {
         panic!("a thirty-percent difference was never found: {finding}");
     };
     assert!(
-        (250_000..350_000).contains(&by.0),
+        (250_000..350_000).contains(&by.low.0),
         "the paired difference is about thirty percent: {by:?}"
     );
     assert_eq!(
@@ -523,7 +523,10 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
     .expect("two sessions may be put side by side");
     let invented = assembled.finding(TWENTY);
     println!("  blocked:     {invented}");
-    let Some(Verdict::Differ { by, by_chance, .. }) = invented.verdict() else {
+    // `Apart` rather than `Differ`: never paired, so the size is a point with
+    // no interval behind it (F92, B53). The invention is still visible, which
+    // is the whole demonstration.
+    let Some(Verdict::Apart { by, by_chance, .. }) = invented.verdict() else {
         panic!("the blocked arrangement of the very same timings invents no difference: {invented}")
     };
     assert!(

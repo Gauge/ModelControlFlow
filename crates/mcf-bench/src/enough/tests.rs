@@ -53,7 +53,10 @@ fn differences(effect_ppm: i64, wobble_ppm: i64, count: usize) -> Vec<i64> {
 fn a_real_paired_effect_is_found() {
     match over_paired_differences(&differences(300_000, 40_000, 20), FIVE) {
         Verdict::Differ { by, by_chance, .. } => {
-            assert!(by.0 > 250_000, "a thirty-percent effect: {by:?}");
+            // The low bound: a thirty-percent effect must be established as
+            // *at least* something near it, not merely centred there (F92).
+            assert!(by.low.0 > 250_000, "a thirty-percent effect: {by:?}");
+            assert!(by.high.0 >= by.low.0, "an interval is ordered: {by:?}");
             assert!(by_chance <= super::FALSE_ALARMS_ALLOWED, "{by_chance:?}");
         }
         other => panic!("a thirty-percent paired effect was not seen: {other}"),
@@ -102,10 +105,24 @@ fn repeating_resolves_what_a_few_pairs_could_not() {
         matches!(early, Verdict::NotYet { .. }),
         "four pairs should not settle it: {early}"
     );
+    // Sixty settle the *order*. They do not settle the *size* at five
+    // percent, and F92 is the reason that is now visible: a six-percent effect
+    // under fifteen-percent noise has a magnitude interval that still reaches
+    // zero at sixty pairs. The old assertion here was `Differ`, which was the
+    // point estimate standing in for evidence it did not have.
     let later = over_paired_differences(&differences(60_000, 150_000, 60), FIVE);
     assert!(
-        matches!(later, Verdict::Differ { .. }),
-        "sixty should: {later}"
+        matches!(later, Verdict::Ordered { .. }),
+        "sixty should settle the order: {later}"
+    );
+    // And a cleaner effect settles both, which is what `Differ` now means.
+    let clean = over_paired_differences(&differences(300_000, 20_000, 30), FIVE);
+    let Verdict::Differ { by, .. } = clean else {
+        panic!("a thirty-percent effect under two-percent noise settles the size: {clean}");
+    };
+    assert!(
+        by.clears(FIVE),
+        "and the whole interval clears the resolution asked about: {by:?}"
     );
 }
 
@@ -181,7 +198,11 @@ fn the_pooled_null_finds_a_real_difference() {
     let slow = around(2_000_000_000, 20_000, 20);
     let fast = around(1_000_000_000, 20_000, 20);
     match over_separate_arms(&slow, &fast, FIVE) {
-        Verdict::Differ { by, .. } => assert!(by.0 > 500_000, "a doubling: {by:?}"),
+        // An assembled comparison establishes the order and cannot bound the
+        // size without pairs (F92, B53, B-388).
+        // Assembled arms report a size with no interval, in a variant that
+        // cannot be mistaken for a paired one (F92, B53).
+        Verdict::Apart { by, .. } => assert!(by.0 > 500_000, "a doubling: {by:?}"),
         other => panic!("a doubling was not seen: {other}"),
     }
 }
@@ -339,10 +360,19 @@ fn five_pairs_cannot_reach_the_threshold_and_six_can() {
 fn ties_leave_the_count_but_not_the_record_of_having_run() {
     let mut differences = vec![100_000_i64; 8];
     differences.extend([0, 0, 0, 0]);
-    let Verdict::Differ { after, .. } = over_paired_differences(&differences, FIVE) else {
+    // The order is settled — eight wins and no losses. The *size* is not: a
+    // third of the pairs showed nothing at all, so the interval on the median
+    // reaches zero, and F92 makes that visible rather than reporting the
+    // point median of 10% as though the ties had not happened.
+    let Verdict::Ordered { after, by, .. } = over_paired_differences(&differences, FIVE) else {
         panic!("eight pairs won by one arm separate them: {differences:?}");
     };
     assert_eq!(after, 12, "every pair that ran is counted in what it cost");
+    assert_eq!(
+        by.low,
+        mcf_core::measurement::PartsPerMillion(0),
+        "four ties in twelve put no floor under the size: {by:?}"
+    );
 }
 
 /// **The defect F59 found on a provisioned engine.** A difference must be real
@@ -387,4 +417,85 @@ fn a_real_difference_smaller_than_the_question_is_a_null_result() {
         ),
         "asked about at half a percent, eight tenths of one is a difference"
     );
+}
+
+/// The interval is checked against an independent computation of the same
+/// textbook quantity, on this machine's own recorded runs (F92).
+mod spreads {
+    use super::super::{Spread, WANTED_COVERAGE, spread_of};
+    use mcf_core::measurement::PartsPerMillion;
+
+    /// Six unanimous pairs: the widest interval is the extremes, covering
+    /// `1 - 2/64` = 96.875%.
+    #[test]
+    fn six_pairs_reach_the_extremes_at_ninety_six_point_nine() {
+        let held = spread_of(&[
+            -1_508_000, -1_400_000, -1_332_000, -1_300_000, -1_200_000, -1_281_000,
+        ])
+        .expect("six pairs support an interval");
+        assert_eq!(held.coverage, PartsPerMillion(968_750));
+        assert_eq!(held.low, PartsPerMillion(1_200_000));
+        assert_eq!(held.high, PartsPerMillion(1_508_000));
+    }
+
+    /// Fewer than six cannot reach the coverage asked for, and say so rather
+    /// than reporting a narrower claim.
+    #[test]
+    fn under_six_pairs_there_is_no_interval() {
+        for count in 0..6_usize {
+            let differences: Vec<i64> = (0..count)
+                .map(|at| 100_000 + i64::try_from(at).unwrap_or(0))
+                .collect();
+            assert!(
+                spread_of(&differences).is_none(),
+                "{count} pairs cannot reach {} coverage, and a narrower one stated as this one \
+                 would be a weaker claim wearing a stronger label",
+                WANTED_COVERAGE.0
+            );
+        }
+    }
+
+    /// An interval straddling zero puts no floor under the magnitude.
+    #[test]
+    fn disagreeing_pairs_get_a_floor_of_nothing() {
+        let held = spread_of(&[-400_000, -300_000, -100_000, 50_000, 200_000, 300_000])
+            .expect("six pairs");
+        assert_eq!(
+            held.low,
+            PartsPerMillion(0),
+            "pairs that disagree about direction cannot bound the size away from nothing, and \
+             taking absolute values first would manufacture a floor out of the disagreement"
+        );
+    }
+
+    /// What `clears` is for: an interval that starts below the caller's
+    /// resolution has not answered the caller's question.
+    #[test]
+    fn an_interval_starting_below_the_resolution_does_not_clear_it() {
+        let straddling = Spread {
+            low: PartsPerMillion(42_000),
+            high: PartsPerMillion(3_494_000),
+            coverage: PartsPerMillion(968_750),
+        };
+        assert!(!straddling.clears(PartsPerMillion(50_000)));
+        assert!(straddling.clears(PartsPerMillion(40_000)));
+    }
+
+    /// The recorded run that motivated all of this: nine pairs from a
+    /// saturated machine, reported as *by 114.0%*.
+    #[test]
+    fn the_saturated_run_is_wide_and_says_so() {
+        let held = spread_of(&[
+            -4_717_000, -1_820_000, -1_450_000, -1_378_000, -1_140_000, -1_090_000, -750_000,
+            -335_000, 1_445_000,
+        ])
+        .expect("nine pairs");
+        assert_eq!(held.coverage, PartsPerMillion(960_938));
+        assert_eq!(
+            (held.low, held.high),
+            (PartsPerMillion(335_000), PartsPerMillion(1_820_000)),
+            "reported as a flat *by 114.0%*, the evidence actually spans 33.5% to 182% — a \
+             fivefold range presented as one number to a decimal place"
+        );
+    }
 }

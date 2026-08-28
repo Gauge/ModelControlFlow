@@ -118,6 +118,7 @@ forward as one.
 | 89 | [F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)](#89--f89--a-figure-with-a-unit-and-nothing-behind-it-is-the-most-convincing-kind-of-wrong-b-188-b-163-b-164-b39-b31-a20-a7) |
 | 90 | [F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38) |
 | 91 | [F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)](#91--f91--the-sensors-were-there-the-whole-time-one-directory-across-b-084-dec-007-a7-a2-34) |
+| 92 | [F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6529,6 +6530,116 @@ ACPI zone that reads 16.8 °C here, and is frequently absent. The real per-die
 registers need a kernel driver, which MCF does not ship. A Windows build should
 expect `Unknown` for the processor and say so, rather than substituting a board
 sensor for a die one — which is precisely the mistake this finding corrects.
+
+## 92 · F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)
+
+**Every benchmark ended in this sentence:**
+
+> *the right arm is quicker by **356.0%**, after 6 paired trial(s) — noise alone
+> produced a gap that big **3.1%** of the time*
+
+Two numbers, the second looking like it qualifies the first. It does not.
+`one_sided_luck` is an exact sign test and its entire input is the count of
+positive and negative differences:
+
+```rust
+let ahead  = differences.iter().filter(|held| **held > 0).count();
+let behind = differences.iter().filter(|held| **held < 0).count();
+```
+
+Magnitudes are discarded before the statistic is computed. So *3.1%* answers
+*did the right arm win more often than a coin would* — correctly, exactly, in
+whole numbers — and says nothing whatever about **356.0%**. The clause *"noise
+alone produced a gap that big"* asserted that it did. That sentence was false,
+and it was on the front of every comparison MCF has ever produced.
+
+**How blind it was, measured.** Every comparison on this machine carrying a
+machine reading:
+
+| competing | n | reported | luck | what the pairs spanned |
+|---|---|---|---|---|
+| 0.15 c | 6 | by 13.9 % | 3.12 % | 15 points |
+| 0.35 c | 6 | by 133.2 % | 3.12 % | 23 points |
+| 33.05 c | 6 | by 356.0 % | 3.12 % | **1040 points** |
+| 33.25 c | 12 | by 206.5 % | 3.86 % | 954 points |
+| 44.05 c | 9 | by 114.0 % | 3.91 % | 616 points |
+
+The confidence figure is pinned near three percent across evidence differing in
+quality by a factor of **sixty-nine**, because 3.125 % is simply 2/2⁶ — what six
+unanimous pairs give regardless of what they contain. And each magnitude
+carried a decimal place: *356.0 %* is a claim of one part in a thousand made
+from six numbers spanning tenfold.
+
+**The inconsistency this exposes.** B46 has always said that a number predicted
+from a rate is a range and that one number is *the smallest possible version of
+a confident wrong number*. Every **estimated** figure in MCF is banded — the
+projection, the expected duration, `Estimate` itself. The one **measured**
+figure, the headline the whole benchmark product exists to produce, was a bare
+point.
+
+**Fixed with the machinery already present.** The bounds are order statistics of
+the paired differences: sorted, the *k*-th and *(n+1−k)*-th bracket the median
+with a probability that is a binomial tail, which `binomial_tail` already
+computed for the sign test. Exact, integer, no resampling, no floats, and no
+distributional assumption beyond the exchangeability the interleaving exists to
+provide. The same records now read:
+
+| competing | was | is |
+|---|---|---|
+| 0.35 c | by 133.2 % | **128.0 % to 150.7 %** (96.8 %) |
+| 44.05 c | by 114.0 % | 33.4 % to 181.9 % (96.0 %) |
+| 33.70 c | by 102.3 % | **4.1 % to 349.4 %** (96.8 %) |
+| 33.05 c | by 356.0 % | **118.6 % to 1158.8 %** (96.8 %) |
+
+The quiet run's interval is 23 points wide — a real measurement. The 33.70 c run
+reported *102.3 %* from evidence consistent with **4.1 %**, very nearly nothing
+at all. Nothing on the page had distinguished them.
+
+**The coverage is reported, not aimed at.** Six pairs cannot express 95 %; the
+widest interval available covers 96.875 %. Saying so is the same discipline as
+reporting the count a run actually needed rather than the one it hoped for
+(F53).
+
+**A third verdict, because the two claims are different.** When the interval
+runs from below the caller's resolution to above it, the order is established
+and the size is not. `Verdict::Ordered` says both:
+
+> *the left arm is quicker — noise alone put them in this order 0.1 % of the
+> time after 60 paired trial(s). HOW MUCH quicker is NOT established at the
+> 5.0 % you asked about: the evidence spans 0.0 % to 12.0 %. The order is a
+> result; the size is not, and this comparison is not fit to contribute*
+
+A variant rather than a flag, so nothing downstream can render it as a
+measurement by forgetting to check a boolean — and MCF invents no threshold,
+because the resolution came from the caller.
+
+**What the change caught in MCF's own tests.** Three existing tests encoded the
+old, weaker claim and failed:
+
+- A six-percent effect under fifteen-percent noise at **sixty pairs** had been
+  reported as *differ by 6 %*. Its interval reaches zero. Sixty pairs settle the
+  order and do not settle the size, and now say so.
+- Eight wins and four ties had been *differ*. A third of the pairs showed
+  nothing, so the interval on the median reaches zero — the point median of
+  10 % had been standing in for evidence that was not there.
+
+Neither was a regression. Both were the point estimate having concealed how
+little it rested on.
+
+**And one place MCF cannot do this yet.** The interval is an order statistic of
+*paired* differences. For arms assembled from separate sessions there are no
+pairs, and the two-sample equivalent needs a rank-sum distribution this crate
+does not have. `Verdict::Apart` therefore reports a point and **says that it is
+one** — a distinct variant, so nothing can mistake it for a paired interval.
+Inventing a range from the two arms' own ranges would be exactly the confident
+wrong number the whole finding is about. That is B-388.
+
+**Recomputed on read, and the record untouched** (B55, B56, A1). The trials are
+kept, so every comparison already written renders with the interval its own
+pairs always supported. Nothing on disk was rewritten; the summary is derived
+each time it is asked for, which is the rule that made this recoverable at all.
+The oldest entries in this machine's record gained their intervals without a
+byte changing.
 
 ## Changelog
 

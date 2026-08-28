@@ -265,6 +265,32 @@ pub(crate) fn summarize(entry: &Entry) -> String {
 /// Three of the four outcomes are things a reader will call *it didn't work*,
 /// and none of them is a failure. The line says which it was rather than
 /// leaving anyone to infer it from a missing number.
+/// The interval on the size, recomputed from the pairs the entry carries.
+///
+/// **Derived on read, never stored** (B55, B56, F92). The trials are kept, so
+/// every comparison in the record — including one written before the interval
+/// existed — renders with the range its own pairs always supported. Nothing is
+/// rewritten: the entry on disk is what it was, and the summary is computed
+/// each time it is asked for, which is the rule that made this possible.
+fn recomputed_spread(body: &Value) -> Option<mcf_bench::enough::Spread> {
+    let pairs = body.get("pairs").and_then(Value::as_list)?;
+    let differences: Vec<i64> = pairs
+        .iter()
+        .filter_map(|pair| {
+            let left = pair.get("left_ns").and_then(Value::as_integer)?;
+            let right = pair.get("right_ns").and_then(Value::as_integer)?;
+            let smaller = left.min(right);
+            (smaller > 0).then(|| {
+                right
+                    .saturating_sub(left)
+                    .saturating_mul(1_000_000)
+                    .wrapping_div(smaller)
+            })
+        })
+        .collect();
+    mcf_bench::enough::spread_of(&differences)
+}
+
 fn comparison(body: &Value) -> String {
     let arm = |side: &str| {
         body.get(side)
@@ -290,15 +316,29 @@ fn comparison(body: &Value) -> String {
     let said = match kind {
         // A size without a direction is not a comparison (F67), and the log's
         // one line is where most readers meet the verdict.
-        "differ" => match quicker {
-            Some(side) => format!(
-                "the {} arm ({}) is quicker by {}",
-                side,
-                arm(side),
-                per_cent(of("difference"))
-            ),
-            None => format!("they differ by {}", per_cent(of("difference"))),
-        },
+        // The size as a range, recomputed from the pairs (F92). A record
+        // written before the interval existed renders with one anyway,
+        // because the trials it kept are what the interval is made of.
+        "differ" | "ordered" | "apart" => {
+            let sized = recomputed_spread(body)
+                .map_or_else(|| per_cent(of("difference")), |held| format!("{held}"));
+            let unsettled = if kind == "ordered" {
+                format!(
+                    " — which does not settle the size at the {} asked about",
+                    per_cent(of("resolution"))
+                )
+            } else {
+                String::new()
+            };
+            match quicker {
+                Some(side) => format!(
+                    "the {} arm ({}) is quicker by {sized}{unsettled}",
+                    side,
+                    arm(side)
+                ),
+                None => format!("they differ by {sized}{unsettled}"),
+            }
+        }
         "same" => format!(
             "no difference as large as {} — which is a result, not a failure to find one",
             per_cent(of("resolution"))
