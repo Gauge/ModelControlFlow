@@ -158,7 +158,7 @@ fn counted(entries: usize, kind: Option<EntryKind>) -> String {
 /// log readable is that the interesting thing is in the same place every time,
 /// and what a reader wants from an acquisition is not what they want from a
 /// failure.
-fn summarize(entry: &Entry) -> String {
+pub(crate) fn summarize(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
         EntryKind::MachineProfile => text(body, "processor")
@@ -281,8 +281,21 @@ fn comparison(body: &Value) -> String {
         .and_then(|held| held.get("kind"))
         .and_then(Value::as_text)
         .unwrap_or("an unrecorded outcome");
+    let quicker = outcome
+        .and_then(|held| held.get("quicker"))
+        .and_then(Value::as_text);
     let said = match kind {
-        "differ" => format!("they differ by {}", per_cent(of("difference"))),
+        // A size without a direction is not a comparison (F67), and the log's
+        // one line is where most readers meet the verdict.
+        "differ" => match quicker {
+            Some(side) => format!(
+                "the {} arm ({}) is quicker by {}",
+                side,
+                arm(side),
+                per_cent(of("difference"))
+            ),
+            None => format!("they differ by {}", per_cent(of("difference"))),
+        },
         "same" => format!(
             "no difference as large as {} — which is a result, not a failure to find one",
             per_cent(of("resolution"))

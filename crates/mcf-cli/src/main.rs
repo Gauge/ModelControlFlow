@@ -25,6 +25,7 @@ mod pull;
 mod run;
 mod say;
 mod serve;
+mod show;
 
 use std::process::ExitCode;
 
@@ -114,6 +115,11 @@ enum Request<'a> {
         seed: u64,
         /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
+    },
+    /// Expand one recorded entry into the evidence behind it.
+    Show {
+        /// The entry's identifier, as `mcf log` prints it.
+        id: &'a str,
     },
     /// Compare two models on a timeable engine, with no pass condition.
     Bench {
@@ -419,6 +425,15 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 command: "bench",
                 argument,
             },
+        },
+        ["show", id] => Request::Show { id },
+        ["show"] => Request::MissingArgument {
+            command: "show",
+            needs: "<entry-id>, which `mcf log` prints first on each line",
+        },
+        ["show", _, argument, ..] => Request::UnexpectedArgument {
+            command: "show",
+            argument,
         },
         ["status"] => Request::Status,
         ["status", argument, ..] => Request::UnexpectedArgument {
@@ -981,6 +996,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
+                 \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
+                 \x20                                     the measurements and conditions it\n\
+                 \x20                                     rests on (B55)\n\
                  \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
                  \x20         [--last <n>] [--full]       read back out of the record\n\
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
@@ -1069,6 +1087,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             resolving.map(mcf_core::measurement::PartsPerMillion),
             *cold,
         ),
+        Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
         Request::Probe {
             model,
