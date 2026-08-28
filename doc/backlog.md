@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 189 |
+| **Version** | 190 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **273 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 218 build items (106 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 62 open).** Every item cites
+decided, 23 resolved) and 218 build items (108 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 60 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -314,8 +314,8 @@ first and importance second.
 | B-222 | Every corpus statement renders its sample count; no filter removes a candidate from a listing | B44, §3.24 | An unreported option is ranked lower and annotated, never hidden | open |
 | B-273 | Lab setup and teardown: each lab owns both, may use its own tooling, and leaves nothing behind — asserted by running two labs back to back, including after the first is killed mid-run | B58, A27, §XIII | The second lab sees no trace of the first, warm caches included | open |
 | B-111 | Lab framework: a lab is named, versioned, reproducible, declares its class (timing or behaviour), declares its capability gate and its workload slot, and states what it does and does not establish | §XIII, §3.17, §6.26, B40, B42 | A lab that cannot state its class, gate, slot or validity boundary fails to register | blocked (DEC-029) |
-| B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | open |
-| B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | open |
+| B-200 | Lab results are a sum type: *measured*, *not applicable*, *unknown*, *failed* — the middle two carry no score and cannot be averaged | B40, §3.23 | An absent capability cannot render as a low number anywhere | done `mcf_core::graded::Graded`. The three non-readings have nowhere to put a score; the only way out is `score() -> Option<&Score>`, fallible so that a caller meets them where they were about to flatten them. *Not applicable* and *unknown* stay distinct, because one is resolvable by probing and the other is not. Built before M6's laboratories exist, which is when a type is cheapest to get right. F77. |
+| B-201 | No type combines results from two laboratories into a scalar | B41, D2, §3.9 | An overall quality score is unrepresentable | done `Score` carries the laboratory it is on and compares only within one; `Profile` holds one outcome per laboratory with no arithmetic across them and no `Ord`. Coverage travels instead — *measured by 1 of 3; inapplicable to tools* (B41). A check names each escape hatch by the string that would add it. F77. |
 | B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | open |
 | B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [PR1](proposals.md#pr1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
 | B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
@@ -395,6 +395,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 190 — four outcomes and no total
+
+B-200 and B-201 done, ahead of the laboratories that will produce them: the
+shape is what makes *not measured* impossible to render as a low number, and a
+shape is cheapest to get right before there are results to retrofit it around.
+F77.
 
 ### Version 189 — a run reports as it goes
 

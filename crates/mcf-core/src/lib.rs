@@ -28,6 +28,7 @@ pub mod degradation;
 pub mod digest;
 pub mod engine;
 pub mod failure;
+pub mod graded;
 pub mod hardware;
 pub mod integrity;
 pub mod measurement;

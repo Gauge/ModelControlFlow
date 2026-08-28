@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 80 |
+| **Version** | 81 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -104,6 +104,7 @@ forward as one.
 | 74 | [F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) |
 | 75 | [F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7) |
 | 76 | [F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)](#76--f76--a-run-that-reports-as-it-goes-shows-what-moves-not-what-has-not-decided-b-227-a4-31-a18) |
+| 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5753,7 +5754,66 @@ by shared reference and contains no `break`, no exit and no error path; a check
 holds all of that. A benchmark has no pass condition, and a progress line that
 could stop a run would be one.
 
+## 77 · F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)
+
+**The failure, in B40's own words.** *A model with no tool-calling that scores
+4% on an agentic suite has not been measured badly — it has not been measured.*
+The four percent is the wrong instrument's reading, and once it is a number in
+a column nothing downstream can tell it from a real one. It sorts. It averages.
+It loses a comparison. It becomes a verdict about a model, arrived at by
+grading it on a capability it does not have.
+
+**Both rules name `compiler` as their check**, which means the shape has to do
+the work. `mcf_core::graded::Graded` has four variants: `Measured` carries a
+`Score`, and `NotApplicable`, `Unknown` and `Failed` have nowhere to put one.
+The only way a number leaves is `score() -> Option<&Score>` — fallible on
+purpose, so that a caller reaching for a number meets the three cases with none
+at exactly the point where they were about to flatten them. There is no
+`unwrap_or`, no `Default`, no `score_or_zero`.
+
+**`NotApplicable` and `Unknown` are different claims**, and keeping them apart
+is the part that would be easiest to lose. *MCF looked and the capability is
+absent* and *MCF has not looked* are not the same statement: the second is
+resolvable by running a probe and the first is not, and collapsing them would
+make a laboratory's silence indistinguishable from a model's limitation (A7).
+
+**`Score` is not a number type.** It carries the laboratory it is on, and
+`against` compares two scores only where they share one — returning `None`
+otherwise, which is not a failure to compare but the absence of anything to
+compare. There is no `PartialOrd`, no `Add`, no `Sum`. Two readings of one
+instrument are comparable because that is what an instrument is for; two
+readings of different instruments are not, and a type that permitted it would
+be an invitation.
+
+**And no total** (B-201). `Profile` holds one outcome per laboratory and offers
+no arithmetic across them — no `overall`, no `average`, no `rank`, no `Ord`.
+*Which model is better* has no referent once quality is plural, and an
+*overall* column is §5's leaderboard wearing local clothes. What a profile does
+offer is coverage: `measured by 1 of 3 laboratory(ies); inapplicable to tools`,
+because B41 makes coverage travel with every answer and *inapplicable to* is
+the half a reader is least likely to be shown.
+
+**Built before the laboratories exist, deliberately.** M6's evaluation labs are
+not written yet. The type is the thing that makes the failure unrepresentable,
+so it is cheaper — and much more likely to hold — built first than retrofitted
+around results that already exist as numbers. A check names each escape hatch
+by the string that would introduce it, since what a compiler cannot enforce is
+that nobody *adds* the hatch later.
+
+**A note on the check that nearly blocked itself.** The module's prose names
+`unwrap_or` and `Default` in order to say they are absent, so a check reading
+the whole file failed on the sentence explaining why it passes. It reads the
+code without the comments now — the second time this repository has met that
+shape, and the rule is the same as it was: a check that blocks the correct work
+teaches people to write around it.
+
 ## Changelog
+
+### Version 81 — four outcomes and no total
+
+F77. B-200 and B-201: a laboratory result is a sum type whose three
+non-readings have nowhere to put a score, a score knows which laboratory it is
+on and will not compare across two, and a profile has coverage but no total.
 
 ### Version 80 — a run reports as it goes
 
