@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 56 |
+| **Version** | 57 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -80,6 +80,7 @@ forward as one.
 | 50 | [F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)](#50--f50--the-privileged-helper-could-be-told-where-the-machine-is-b-190-d35-632-xvii-a2-a26) |
 | 51 | [F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)](#51--f51--contention-moves-the-level-not-the-spread-and-that-decides-how-a-benchmark-must-be-built-dec-007-b-250-b-181-34-a19-f2-f3) |
 | 52 | [F52 — The engine benchmarks will use is three times noisier than the one they will not (DEC-007, B-366, B-376, §3.4, A19, F51)](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51) |
+| 53 | [F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)](#53--f53--the-noise-floor-is-a-property-of-the-moment-not-of-the-machine-dec-007-b-083-b-181-d35-a19-f51-f52) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -4004,7 +4005,93 @@ And whether pinning the frequency governor narrows any of these, which is the
 last of DEC-007's open pieces and needs the privileged helper that F50 has only
 just made safe to grant.
 
+## 53 · F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)
+
+**What was asked.** The last of DEC-007's open pieces: whether pinning the
+processor's frequency would narrow the noise F51 and F52 measured. It was
+expected to need the privileged helper F50 has just made safe to grant. It did
+not.
+
+**The governor grant buys nothing here, and that was answerable without any
+privilege.** This machine's governor is already `performance`, and the only
+other one it offers is `powersave`. There is nothing to pin. D35 lists setting
+the governor as one of three privileged operations, and it remains right to
+have — on a machine that is *not* already at performance it would matter — but
+on this one the answer is that the reading which decides it costs nothing.
+
+**Frequency moves anyway, and a governor cannot stop it.** Boost is on, the
+range is **0.62 to 5.76 GHz**, and at any instant the cores are spread across
+most of it — idle ones at 0.62 while busy ones sit at 5.5. Across runs the mean
+moved 4.26 to 5.36 GHz. So a run's clock depends on which core it lands on and
+what else is running, and no governor setting removes that.
+
+**But frequency does not explain the noise, and neither does load.** The
+correlations between duration and each of them, across five clean rounds of the
+same command: **−0.36, +0.09, +0.56, +0.15, −0.17** for frequency and
+**+0.32, +0.21, −0.07, −0.42, −0.18** for load. They change sign between
+rounds. A permutation test says why: at twenty samples, a coefficient of
+±0.15 is what chance produces **48% of the time**, and ±0.42 about **5%**.
+None of these is evidence of a mechanism. **F52's question stays open**, and
+this closes two candidates rather than answering it.
+
+**The finding is what happened while looking.** Six clean measurements of the
+*same command, the same engine, the same machine*:
+
+| middle half spans | 2.6% | 7.4% | 7.4% | 7.9% | 8.5% | 9.9% |
+|---|---|---|---|---|---|---|
+| repeats for a 5% claim | 7 | 20 | 30 | >100 | 50 | 50 |
+
+**The noise floor is not a property of the machine. It is a property of the
+half-hour.** A number derived from one sitting and written into a document is a
+number about that sitting. F51 published seven, F52 published fifty, and both
+were honest reports of what was in front of them.
+
+**Which changes what an acceptance criterion can be.** *At least N repeats*
+cannot be the rule, because N is not stable — it varied sevenfold here with
+nothing changed but the time of day. The rule has to be a **stopping condition
+rather than a count**: a benchmark repeats until its *own* resampling says the
+difference it is looking at is bigger than the noise it is measuring, and
+reports how many that took. That is the same principle the operator already
+set — measure, do not choose — applied one level deeper than it was meant, to
+the measurement of the measurement.
+
+**And my own instrument had a chosen number in it.** Contamination was called
+at a correlation of 0.5, picked because it sounded like a lot. At twenty
+samples it is barely above what chance produces, so it would have flagged clean
+runs and missed dirty ones. It now shuffles the pairing four thousand times and
+reports how often chance alone is that tight — no threshold, and the reader
+sees the same figure the decision is made on.
+
+**What was not established.** Why the provisioned engine is noisier than MCF's
+own; two more candidates are eliminated and the question is still open.
+Thermal state — the only sensor this machine exposes reads sixteen degrees,
+which is not a processor temperature, so thermal steady state cannot currently
+be observed at all here and is the one piece of DEC-007 that stays genuinely
+unanswerable. And whether the sevenfold variation in the noise floor narrows
+inside an exclusive window, which is the argument *for* the window and has not
+been tested because the window is not built.
+
 ## Changelog
+
+### Version 57 — the noise floor is a property of the moment
+
+F53. The last of DEC-007's open pieces, answered without the privilege it was
+expected to need: this machine's governor is already at performance and offers
+only powersave, so there is nothing to pin. Frequency still moves — nine to one
+across cores — but neither it nor load explains the noise; their correlations
+with duration change sign between rounds, and a permutation test says a
+coefficient that size is what chance gives half the time at twenty samples.
+
+The finding is what happened while looking. Six clean measurements of the same
+command gave repeat counts from seven to over a hundred. The noise floor is not
+a property of the machine but of the half-hour, which means *at least N
+repeats* cannot be the rule. The rule has to be a stopping condition: repeat
+until this run's own resampling separates the effect from its own noise, and
+report what that took.
+
+And the instrument had a chosen number in it — contamination called at a
+correlation of 0.5, which at twenty samples is barely above chance. It is a
+permutation test now.
 
 ### Version 56 — the engine that will be measured is the noisier one
 

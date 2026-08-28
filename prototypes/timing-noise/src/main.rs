@@ -73,8 +73,10 @@ fn main() -> std::process::ExitCode {
     println!("  running {program} {repeats} times");
     let mut timings = Vec::with_capacity(repeats);
     let mut loads = Vec::with_capacity(repeats);
+    let mut speeds = Vec::with_capacity(repeats);
     for index in 0..repeats {
         loads.push(load_average());
+        let before = mean_frequency();
         let began = Instant::now();
         let ran = Command::new(program)
             .args(rest)
@@ -83,6 +85,7 @@ fn main() -> std::process::ExitCode {
             .stderr(Stdio::null())
             .status();
         let took = began.elapsed().as_secs_f64();
+        speeds.push(f64::midpoint(before, mean_frequency()));
         match ran {
             Ok(status) if status.success() => timings.push(took),
             Ok(status) => {
@@ -96,7 +99,7 @@ fn main() -> std::process::ExitCode {
         }
     }
 
-    report(&timings, &loads);
+    report(&timings, &loads, &speeds);
     std::process::ExitCode::SUCCESS
 }
 
@@ -117,7 +120,7 @@ fn load_average() -> f64 {
 }
 
 /// The distribution, and what it implies.
-fn report(timings: &[f64], loads: &[f64]) {
+fn report(timings: &[f64], loads: &[f64], speeds: &[f64]) {
     let sorted = {
         let mut held = timings.to_vec();
         held.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
@@ -167,8 +170,13 @@ fn report(timings: &[f64], loads: &[f64]) {
     // at its start, the measurement is of a machine that changed, and no
     // repeat count fixes that (F51's level shift, seen from inside).
     let together = correlation(loads, timings);
-    println!("    duration tracked that load at {together:+.2}");
-    let contaminated = together.abs() >= 0.5;
+    let by_chance = correlation_by_chance(loads, timings);
+    println!(
+        "    duration tracked that load at {together:+.2}  (chance alone gives one that big \
+         {:.0}% of the time here)",
+        by_chance * 100.0
+    );
+    let contaminated = by_chance <= FALSE_ALARMS_ALLOWED;
     if contaminated {
         println!();
         println!("  THIS MEASUREMENT IS OF A MACHINE THAT CHANGED, NOT OF THE COMMAND.");
@@ -177,6 +185,26 @@ fn report(timings: &[f64], loads: &[f64]) {
         println!("    from it would be derived from the wrong thing. Take it again when the");
         println!("    machine is in one state — any state — rather than passing through several.");
     }
+
+    // Whether the runs tracked the *frequency* the processor was actually
+    // running at, which is a different question from whether they tracked the
+    // load. On this machine the governor is already `performance` and the only
+    // alternative is `powersave`, so there is nothing a governor could pin —
+    // and the frequency still spans nearly nine to one, because boost and idle
+    // states move it whatever the governor says. If duration tracks it, that
+    // is a noise source no privilege can remove.
+    let (slowest, fastest) = speeds
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(low, high), one| {
+            (low.min(*one), high.max(*one))
+        });
+    println!("    processor ran at {slowest:.2} to {fastest:.2} GHz across the runs");
+    println!(
+        "    duration tracked that frequency at {:+.2}  (chance alone gives one that big \
+         {:.0}% of the time here)",
+        correlation(speeds, timings),
+        correlation_by_chance(speeds, timings) * 100.0
+    );
 
     warm_up(timings);
 
@@ -204,6 +232,75 @@ fn report(timings: &[f64], loads: &[f64]) {
                 effect * 100.0
             ),
         }
+    }
+}
+
+/// How often chance alone pairs these two series as tightly as they are
+/// actually paired.
+///
+/// A correlation is not evidence until it is compared against what shuffling
+/// produces. At twenty samples, coefficients of four-tenths arise readily from
+/// unrelated series — which is roughly the size of every correlation this
+/// instrument has reported, and is why a fixed threshold on the coefficient
+/// was barely above chance (F53). The pairing is broken and remade many times;
+/// the answer is how often the shuffled version is at least as tight.
+fn correlation_by_chance(one: &[f64], other: &[f64]) -> f64 {
+    let n = one.len().min(other.len());
+    if n < 4 {
+        return 1.0;
+    }
+    let observed = correlation(one, other).abs();
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut shuffled: Vec<f64> = other.iter().take(n).copied().collect();
+    let mut at_least = 0_usize;
+    for _ in 0..RESAMPLINGS {
+        // Fisher-Yates, so every ordering is equally likely.
+        for index in (1..n).rev() {
+            let swap = usize::try_from(next() % (index as u64 + 1)).unwrap_or(0);
+            shuffled.swap(index, swap);
+        }
+        if correlation(one, &shuffled).abs() >= observed {
+            at_least = at_least.saturating_add(1);
+        }
+    }
+    f64::from(u32::try_from(at_least).unwrap_or(u32::MAX))
+        / f64::from(u32::try_from(RESAMPLINGS).unwrap_or(u32::MAX))
+}
+
+/// What the processor was actually running at, averaged over every core it
+/// reports.
+///
+/// In gigahertz, and it is a *mean over cores* rather than the frequency of
+/// the core that did the work — which is not knowable from outside without
+/// following the thread. It is enough for the question being asked: whether
+/// the machine's clock moved while the runs did.
+fn mean_frequency() -> f64 {
+    let Ok(cores) = std::fs::read_dir("/sys/devices/system/cpu") else {
+        return f64::NAN;
+    };
+    let mut total = 0.0;
+    let mut seen = 0_u32;
+    for core in cores.flatten() {
+        let at = core.path().join("cpufreq/scaling_cur_freq");
+        let Ok(held) = std::fs::read_to_string(at) else {
+            continue;
+        };
+        let Ok(kilohertz) = held.trim().parse::<f64>() else {
+            continue;
+        };
+        total += kilohertz / 1_000_000.0;
+        seen = seen.saturating_add(1);
+    }
+    if seen == 0 {
+        f64::NAN
+    } else {
+        total / f64::from(seen)
     }
 }
 
