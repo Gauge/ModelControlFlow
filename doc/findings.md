@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 75 |
+| **Version** | 76 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -99,6 +99,7 @@ forward as one.
 | 69 | [F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)](#69--f69--a-band-predicted-before-the-measurement-and-the-measurement-landed-in-it-b-214-b-215-pr3-a20-b46-616-f67) |
 | 70 | [F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)](#70--f70--a-run-that-cannot-decide-names-what-it-competed-with-and-i-could-not-make-one-b-216-pr5-38-b24-b4-d25-f55) |
 | 71 | [F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7) |
+| 72 | [F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5471,7 +5472,84 @@ carries the movement its own machine showed. That is the intended direction of
 travel: the measurement precedes the threshold, and B-217 stays in progress
 until the threshold has a measured basis rather than an assumed one.
 
+## 72 · F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)
+
+**The rule and the reason.** B-224: *a laboratory declares its work in
+countable units — trials, sweep points, tokens, documents — never in minutes.*
+A lab that declares twenty minutes has declared a property of the machine it
+was written on. Move it to a slower machine and the declaration is wrong; move
+it to a faster one and it is wrong the other way; in neither case has anything
+about the work changed. And it is wrong *silently* — nothing on the page says
+the number was a guess about somebody else's hardware.
+
+**What was built.** `mcf_bench::planned::Work` carries three counts — trials,
+arms, tokens — and no fourth field. There is deliberately no duration, no
+deadline and no timeout on it, because a type with one would let a laboratory
+declare in minutes, and B-224 is a statement about what *may* be declared
+rather than about what is usually declared. `checks/tests/work_is_counted_not_timed.rs`
+holds that shut: Rust cannot say *no field of this struct means a duration*,
+since a `usize` is a `usize` whether it counts trials or seconds, so the check
+is on the source of the declaration, its rendering, and the derivation.
+
+**The minutes, derived rather than refused.** Refusing to tell an operator what
+a run will cost them is not honesty, it is unhelpfulness with a rule attached.
+So the duration is computed: the declared count multiplied by a per-generation
+band this machine measured, which makes it an `Estimate` and puts A20's wall
+between it and any measurement in the type system. Banded, because a rate has a
+spread and a single number is B46's *smallest possible version of a confident
+wrong number*. Where two arms have two bands the enclosing one is used — the
+faster arm's floor to the slower arm's ceiling — because widening is the
+direction an estimate is allowed to be wrong in.
+
+**Measured on this machine.** A run of two SmolLM2 quantizations at 128 tokens
+declared and expected:
+
+```
+work     at most 200 paired trial(s) across 2 arm(s) — 400 generation(s) of
+         128 token(s), 51200 token(s) in all
+         expected 1m 6s to 2m 49s at that ceiling — an ESTIMATE from 68
+         measured arm(s) of local history, never a measurement and never a
+         declaration (B-224, A20)
+```
+
+The counts are the same sentence on any machine. The minutes are this
+machine's, and say so.
+
+**And absent where there is nothing to derive from** (A7). Asked for the same
+two files at ninety-seven tokens, a budget this machine has never used:
+
+```
+work     at most 200 paired trial(s) across 2 arm(s) — 400 generation(s) of
+         97 token(s), 38800 token(s) in all
+         no expected duration: nothing has been measured at 97 tokens here;
+         this machine has history at 1, 32, 64, 128, 400, 2000 — two requests
+         of different lengths are two different things
+```
+
+The declaration still stands, and the absence names what history there *is*, so
+the operator can pick a budget that has one. A figure MCF chose instead would
+be indistinguishable on the page from one it measured.A behaviour
+run gets the same treatment for a different reason: it pins no generation
+length by design (D19), so it has no budget to project at.
+
+**B-225 needed no second bookkeeping path.** The register asks that estimates
+be scored against actuals and their error tracked, so that a lab whose
+estimates are persistently wrong surfaces as a finding. An expectation here is
+exactly the per-trial band multiplied by a count both sides agree on, so it
+contains the truth if and only if the per-trial band did — which is what
+`project::score` already scores, by leaving each measured point out and
+projecting it from the others, and what `mcf doctor` already reports (F68: 42
+of 49 inside, worst miss 150.1%). A separate score of the derived figure would
+be a second number that could disagree with the first about the same history.
+
 ## Changelog
+
+### Version 76 — work is counted, and minutes are derived
+
+F72. B-224 and B-225: a laboratory's declaration is trials, arms and tokens,
+with no field that could hold a duration; the minutes are multiplied out of a
+measured band, marked as an estimate, and absent by name where there is no
+history.
 
 ### Version 75 — the machine either side of a run
 

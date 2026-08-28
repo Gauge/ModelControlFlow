@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 185 |
+| **Version** | 186 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **272 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 217 build items (101 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 66 open).** Every item cites
+decided, 23 resolved) and 217 build items (103 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 64 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -305,8 +305,8 @@ first and importance second.
 | B-188 | Every energy value carries its provenance — measured, estimated or unknown — and its sampling rate as a condition | B39, D11, A20, A7 | A modelled figure cannot render as a reading; a platform with no interface yields `unknown` | open |
 | B-189 | Energy laboratory: energy per token, sustained power draw and thermal behaviour under load, with fidelity stated per platform | D11, §3.9, §XIII | The lab reports joules per token with its measurement provenance, or states that this platform cannot supply it | blocked (DEC-029) |
 | B-223 | An evaluation run cannot be constructed from an uncalibrated configuration handle | B45, D13, §X | The tier ordering is a type property, not a convention | open |
-| B-224 | A laboratory declares its work in countable units — trials, sweep points, tokens, documents — never in minutes | B46, D14 | No lab declares a duration; duration is derived from work × the machine's measured rate | open |
-| B-225 | Duration estimates are banded, marked as estimates, scored against actuals, and their error is tracked and reported | B46, D14, A20 | A lab whose estimates are persistently wrong surfaces as a finding | open |
+| B-224 | A laboratory declares its work in countable units — trials, sweep points, tokens, documents — never in minutes | B46, D14 | No lab declares a duration; duration is derived from work × the machine's measured rate | done `mcf_bench::planned::Work` carries trials, arms and tokens and has no fourth field: no duration, no deadline, no timeout, because a type with one would let a lab declare in minutes. The duration is multiplied out of a per-generation band this machine measured, arrives as an `Estimate`, and is absent by name where there is no history — measured both ways (F72). Held by `checks/tests/work_is_counted_not_timed.rs`, since Rust cannot say *no field here means a duration*. |
+| B-225 | Duration estimates are banded, marked as estimates, scored against actuals, and their error is tracked and reported | B46, D14, A20 | A lab whose estimates are persistently wrong surfaces as a finding | done Banded and marked at the point of rendering (F72). Scored by `project::score` and reported by `mcf doctor` (F68): an expectation is the per-trial band multiplied by a count both sides agree on, so it is inside its band exactly when the per-trial band contained the truth, and a second bookkeeping path could only disagree with the first about the same history. |
 | B-226 | A time budget produces a proposal naming what will run and what is excluded and why; never a silent truncation | B47, D14, §3.1 | "Ran 6 of 20" is always accompanied by the fourteen | open |
 | B-227 | Anytime results: every lab reports as it goes; a run stopped early keeps what it produced, marked incomplete | B47, A4, §3.1 | A multi-day lab interrupted at hour three yields three hours of marked data | open |
 | B-228 | Environment ladder: report, wait for quiet, suspend-and-restore only with per-run approval of a named list, never terminate; scope granted per DEC-041 | B48, §6.39, A27, DEC-041 | A scenario asserts nothing outside the approved list is touched and every suspension resumes, including when MCF is killed | open |
@@ -394,6 +394,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 186 — work is counted, and minutes are derived
+
+B-224 and B-225 done. A laboratory's declaration is trials, arms and tokens,
+in a type with no field that could hold a duration; the minutes are multiplied
+out of a measured band, marked as an estimate, and absent by name where this
+machine has no history at that budget. F72.
 
 ### Version 185 — the machine either side of a run
 

@@ -104,6 +104,105 @@ fn asked_for(
     )
 }
 
+/// What a run declared it would do, and what that was expected to take.
+///
+/// The two are separate fields on purpose (B-224). The work is a fact about
+/// the run and is true on any machine; the expectation is a derived
+/// [`Estimate`] about *this* machine, and lives or dies with the history it
+/// came from.
+///
+/// [`Estimate`]: mcf_core::measurement::Estimate
+pub(crate) struct Planned {
+    /// The declaration, in countable units.
+    work: mcf_bench::planned::Work,
+    /// What that much work was expected to take here, already rendered — or
+    /// why there was nothing to derive it from.
+    expected: String,
+}
+
+/// Declares the work, and derives what it should take from local history.
+///
+/// **The band brackets both arms.** Two files of different sizes have two
+/// per-generation bands, and the run alternates between them; the enclosing
+/// band — the faster arm's floor to the slower arm's ceiling — is wider than
+/// either and contains what the run will actually do. Widening rather than
+/// splitting the difference is the direction an estimate is allowed to be
+/// wrong in (B46).
+///
+/// **Absent rather than invented.** A machine with no history at this budget
+/// gets the reason it has no expectation, and still gets the declaration:
+/// B-224's countable units are what a laboratory owes, and the minutes are the
+/// part MCF may be unable to supply.
+fn declared(left: &Path, right: &Path, tokens: Option<u32>) -> Planned {
+    let work = mcf_bench::planned::Work {
+        trials: CEILING,
+        arms: 2,
+        tokens: tokens.unwrap_or(0),
+    };
+    let Some(tokens) = tokens else {
+        return Planned {
+            work,
+            expected: "no expected duration: a behaviour run pins no generation length, so                        there is no budget to project at (D19)"
+                .to_owned(),
+        };
+    };
+    let history = crate::history::read();
+    let sized = |path: &Path| std::fs::metadata(path).map_or(0, |meta| meta.len());
+    let bands = [
+        mcf_bench::project::band(&history.points, sized(left), tokens),
+        mcf_bench::project::band(&history.points, sized(right), tokens),
+    ];
+    let expected = match bands {
+        [Ok(one), Ok(other)] => {
+            let widest = mcf_core::measurement::Estimate::band(
+                one.low().min(other.low()),
+                one.high().max(other.high()),
+                one.basis().clone(),
+            );
+            format!(
+                "expected {} at that ceiling — an ESTIMATE from {} measured arm(s) of local \
+                 history, never a measurement and never a declaration (B-224, A20)",
+                span(&work.expected(&widest)),
+                history.points.len()
+            )
+        }
+        [Err(why), _] | [_, Err(why)] => {
+            format!("no expected duration: {why}")
+        }
+    };
+    Planned { work, expected }
+}
+
+/// A duration band as a person reads it, without a float (A6).
+///
+/// Scaled to the size of the thing: a whole run's expected duration in
+/// milliseconds is six digits nobody reads, and *two and a half minutes* is
+/// the answer to the question actually being asked. The scale is chosen from
+/// the value and never rounded away — a figure under a minute keeps its
+/// tenths, because that is where a benchmark's differences live.
+fn span(held: &mcf_core::measurement::Estimate<Duration<Monotonic>>) -> String {
+    format!("{} to {}", scaled(held.low()), scaled(held.high()))
+}
+
+/// One duration, at whichever scale reads.
+fn scaled(at: Duration<Monotonic>) -> String {
+    const SECOND: u64 = 1_000_000_000;
+    let nanos = at.as_nanos();
+    if nanos < SECOND {
+        return milliseconds(at);
+    }
+    let seconds = nanos.wrapping_div(SECOND);
+    if seconds < 60 {
+        let tenths = nanos.wrapping_div(SECOND.wrapping_div(10)).wrapping_rem(10);
+        return format!("{seconds}.{tenths} s");
+    }
+    format!(
+        "{}m {}s",
+        seconds.wrapping_div(60),
+        seconds.wrapping_rem(60)
+    )
+}
+
 /// The machine either side of the run, from the reading taken before it and
 /// one taken now (B-217).
 ///
@@ -255,6 +354,10 @@ pub(crate) fn bench_where(
     // during the run, because sampling while measuring would make MCF one of
     // the competitors it reports.
     let before = mcf_core::hardware::steadiness(WATCHED);
+    // B-224: what this run will do, counted, and — separately and derived —
+    // what that would take here. Taken *before* the run: an expectation formed
+    // afterwards is hindsight wearing the word *expected*.
+    let planned = declared(&left_path, &right_path, discipline.pinned_tokens());
     let held = interleave(
         &socket,
         Arms {
@@ -315,6 +418,7 @@ pub(crate) fn bench_where(
             &held,
             &written,
             &machine,
+            &planned,
             competing.as_ref(),
             competing_written.as_ref(),
         ),
@@ -784,6 +888,7 @@ fn report(
     held: &Comparison<Monotonic>,
     written: &Result<PathBuf, String>,
     machine: &MachineHeld,
+    planned: &Planned,
     competing: Option<&mcf_core::hardware::Snapshot>,
     competing_written: Option<&Result<PathBuf, String>>,
 ) -> String {
@@ -795,6 +900,8 @@ fn report(
         format!("  {}", held.discipline()),
         format!("  reuse    {}", held.reuse()),
         format!("  machine  {machine}"),
+        format!("  work     {}", planned.work),
+        format!("           {}", planned.expected),
         format!(
             "  pairs    {} interleaved, order drawn per pair",
             held.pairs().len()

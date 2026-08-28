@@ -189,11 +189,23 @@ fn a_run_that_could_not_decide_renders_what_competed_with_it() {
             steady_before: Some(10_000),
             steady_after: Some(300_000),
         },
+        &super::Planned {
+            work: mcf_bench::planned::Work {
+                trials: 200,
+                arms: 2,
+                tokens: 128,
+            },
+            expected: "no expected duration: nothing has been measured".to_owned(),
+        },
         Some(&snapshot),
         Some(&Err("nor the snapshot".to_owned())),
     );
 
     assert!(said.contains("what was competing"), "{said}");
+    assert!(
+        said.contains("400 generation(s)"),
+        "B-224: the work is declared in countable units: {said}"
+    );
     assert!(
         said.contains("the level moved") && said.contains("not a verdict"),
         "the machine's own movement is a condition and never a judgement (B-217, DEC-007): {said}"

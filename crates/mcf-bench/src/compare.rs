@@ -194,6 +194,19 @@ impl Discipline {
         }
     }
 
+    /// The generation length pinned, where one is.
+    ///
+    /// `None` under a behaviour discipline, which pins no length by design
+    /// (D19) — and therefore has no countable token budget to declare work in
+    /// tokens with (B-224). That is an absence to report, not a zero.
+    #[must_use]
+    pub const fn pinned_tokens(&self) -> Option<u32> {
+        match self {
+            Self::Timing { tokens, .. } => Some(*tokens),
+            Self::Behaviour { .. } => None,
+        }
+    }
+
     /// How the seed set is recorded as a condition.
     ///
     /// **A timing run answers this, and the answer is *none*.** A7 governs
