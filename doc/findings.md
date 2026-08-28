@@ -117,6 +117,7 @@ forward as one.
 | 88 | [F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)](#88--f88--a-behaviour-laboratorys-bound-has-nowhere-to-put-a-wall-clock-b-230-b-223-b45-d8-d13-38) |
 | 89 | [F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)](#89--f89--a-figure-with-a-unit-and-nothing-behind-it-is-the-most-convincing-kind-of-wrong-b-188-b-163-b-164-b39-b31-a20-a7) |
 | 90 | [F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38) |
+| 91 | [F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)](#91--f91--the-sensors-were-there-the-whole-time-one-directory-across-b-084-dec-007-a7-a2-34) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6455,6 +6456,79 @@ and [F75](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-num
 — turn out to have been protecting against this without knowing it. *Measure
 the instrument before you calibrate anything against it* is §6.16 with a number
 attached.
+
+## 91 · F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)
+
+**A recorded finding was wrong, and it had closed a question.** F53 concluded
+that *the only sensor this machine exposes reads sixteen degrees, which is not
+a processor temperature*, and DEC-007's thermal half has been blocked on that
+ever since. It was reading `/sys/class/thermal`, where this board publishes one
+ACPI zone that does read 16.8 °C. One directory across, `/sys/class/hwmon`
+carries `k10temp`:
+
+```
+k10temp/Tccd1 82.8 °C (processor die)
+k10temp/Tccd2 77.5 °C (processor die)
+k10temp/Tctl  87.7 °C (processor package)
+acpitz        16.8 °C (board)          ← the sensor F53 found
+```
+
+Sixteen degrees against eighty-eight. **The operator was right that the
+real-time information was accessible somewhere**, and a wrong finding is worse
+than an open question: an open question gets revisited.
+
+**MCF was reading no processor temperature at all.** The `thermal_state`
+condition reported accelerator temperatures and nothing else, so every
+measurement in the record carries no trace of how hot the thing doing the work
+was — which is exactly the half of the condition DEC-007's open question is
+about. It now reads: `thermal_state=processor k10temp/Tccd1 66.8 °C (processor
+die), critical point not published by this chip, accel#0 30 °C`.
+
+**Everything is reported and nothing is chosen.** A machine has many
+thermometers measuring different things. MCF reads all of them, labels each
+with the chip that published it, classifies the ones it recognises, and neither
+averages them nor picks a headline. A die reading is preferred to a package one
+where both exist, because a control temperature can carry a vendor offset —
+even when the die reads *lower*.
+
+**A second sentinel, caught by the same discipline as [F90](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38).**
+An NVMe drive publishes `temp2_max` as `65261850`, which rendered as *critical
+at 65261.8 °C* beside real limits. A number no thermometer produced, presented
+with the confidence of one that was measured. A limit outside −50 °C to 200 °C
+is a chip's way of saying nothing, and absent is what it means (A7).
+
+**The critical point is often absent entirely, and that is not a default.**
+Intel's `coretemp` publishes one; the `k10temp` here publishes none. So MCF
+cannot compute *how close to throttling* universally, and does not pretend to:
+the rendering says *critical point not published by this chip*, because a
+reader who is not told the limit is missing will assume there is headroom.
+
+**Occupancy has the same shape.** AMD publishes `gpu_busy_percent` in sysfs —
+readable by any process. NVIDIA publishes nothing there and requires NVML.
+Intel's `i915` derives occupancy from perf counters needing privilege. So a
+card MCF cannot poll reports `unknown` **with the reason**, never zero: an
+operator must be able to tell *nothing was competing* from *MCF could not see*.
+
+**And the table problem, answered properly.** Classifying sensors means a table
+of driver names, and this repository has already said tables go stale the week
+they are written (F79). The honest answer is not a longer list but a route:
+`mcf support --into <path>` writes what a maintainer would need — driver names,
+kernel, architecture, every sensor with its label and reading, and a section
+naming exactly what MCF could not account for. It is a **file**, not an upload;
+nothing here contacts anybody, which is the simplest way to satisfy §3.20's
+gate. It carries no prompt, no model output and no file content, on the same
+reasoning as `contribution` (B-171, A25). And the offer appears where the gap
+is found — `mcf doctor` says so — because a gap nobody is told about is a gap
+nobody reports.
+
+On this machine it correctly names `r8169_0_f00:00`, a network chip this build
+does not classify, and `nvidia`, whose occupancy sysfs does not carry.
+
+**Windows, honestly.** `MSAcpi_ThermalZoneTemperature` through WMI is the same
+ACPI zone that reads 16.8 °C here, and is frequently absent. The real per-die
+registers need a kernel driver, which MCF does not ship. A Windows build should
+expect `Unknown` for the processor and say so, rather than substituting a board
+sensor for a die one — which is precisely the mistake this finding corrects.
 
 ## Changelog
 

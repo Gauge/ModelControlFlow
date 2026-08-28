@@ -32,6 +32,8 @@ mod route_files;
 mod scheduling;
 mod space;
 mod storage;
+pub mod thermal;
+pub mod utilisation;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
 pub use contention::{

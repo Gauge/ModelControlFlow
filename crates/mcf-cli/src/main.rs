@@ -29,6 +29,7 @@ mod say;
 mod segment;
 mod serve;
 mod show;
+mod support;
 mod verify;
 
 use std::process::ExitCode;
@@ -163,6 +164,11 @@ enum Request<'a> {
         /// many they have. What MCF owes in return is a proposal naming what
         /// fits and what does not, rather than a quietly smaller run (§3.1).
         within: Option<u64>,
+    },
+    /// Write what a maintainer would need to read this machine's hardware.
+    Support {
+        /// Where to write it.
+        into: Option<&'a str>,
     },
     /// Show how a model's vocabulary segments a prompt.
     Segment {
@@ -502,6 +508,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["stop", argument, ..] => Request::UnexpectedArgument {
             command: "stop",
+            argument,
+        },
+        ["support"] => Request::Support { into: None },
+        ["support", "--into", path] => Request::Support { into: Some(path) },
+        ["support", argument, ..] => Request::UnexpectedArgument {
+            command: "support",
             argument,
         },
         ["segment", model, "--prompt", prompt] => Request::Segment { model, prompt },
@@ -1129,6 +1141,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
                  \x20                                     what MCF would choose, and what\n\
                  \x20                                     it cannot tell you\n\
+                 \x20 mcf support [--into <path>]         what a maintainer would need to\n\
+                 \x20                                     read this machine's sensors, as a\n\
+                 \x20                                     file you read before you send it\n\
                  \x20 mcf segment <model>                 the prompt as the model actually\n\
                  \x20             --prompt <text>         receives it, fragment by fragment:\n\
                  \x20                                     where text breaks, and where this\n\
@@ -1239,6 +1254,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Embed { model, text } => embed::run(model, text),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
+        Request::Support { into } => support::run(*into),
         Request::Segment { model, prompt } => segment::run(model, prompt),
         Request::List => models::list(),
         Request::Remove {
@@ -1336,6 +1352,9 @@ mod tests {
         // vocabulary produces it, with no generation and no judgement
         // (B-381, PR11, §3.15).
         assert!(text.contains("mcf segment"), "{text}");
+        // And `mcf support`, the route by which hardware MCF cannot read
+        // reaches somebody who can add it (F91).
+        assert!(text.contains("mcf support"), "{text}");
         for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),
