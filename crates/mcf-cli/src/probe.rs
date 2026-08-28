@@ -587,6 +587,19 @@ fn context_lines(
                     lines.push(format!(" the engine's own words: {because}"));
                 }
             }
+            // B-386: written down, whichever way it came out. *Agrees* is as
+            // much a measurement as *diverges*, and a record that kept only
+            // the surprising half could not answer *what does this machine
+            // take* (A1, A9).
+            lines.push(
+                match crate::log::record_probed_context(path, context, engine) {
+                    Ok(journal) => format!(" recorded in {}", journal.display()),
+                    Err(failure) => format!(
+                        " BUT NOT RECORDED — {failure}; a measurement nobody can find later is the \
+                     same as one not taken (A1, A2)"
+                    ),
+                },
+            );
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));

@@ -433,3 +433,69 @@ pub(crate) fn record_configured(
     ))?;
     Ok(path)
 }
+
+/// Writes what a probe observed about a model's usable context (B-386, B-055).
+///
+/// **Why this exists at all.** A probe printed its findings and wrote none of
+/// them down, so a figure this machine established lived on a terminal until
+/// the terminal scrolled. A1: a measurement nobody can find later is the same
+/// as one not taken. B-382 is where it surfaced — a prompt's cost could only
+/// be stated against the file's claim, because MCF's own measurement of what
+/// the engine actually takes existed nowhere readable.
+///
+/// **What travels with it.** The conditions, because a context measured
+/// through one engine on one machine is not a fact about the model (§3.4); and
+/// the engine's own words where it refused, because a refusal for an unrelated
+/// reason would otherwise be read back as a short context (A1).
+///
+/// # Errors
+///
+/// `record.unwritable` where there is nowhere to write, or the journal refuses
+/// the append. A probe whose result could not be kept says so rather than
+/// reading as kept (A2).
+pub(crate) fn record_probed_context(
+    model: &std::path::Path,
+    context: &mcf_serve::probes::Context,
+    engine: &str,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-cli::log"),
+            "there is nowhere to record what the probe observed",
+        ));
+    };
+    let mut body = vec![
+        ("model", Value::text(model.display().to_string())),
+        (
+            "method",
+            Value::text(mcf_serve::probes::USABLE_CONTEXT.name),
+        ),
+        (
+            "declared_tokens",
+            Value::Integer(as_integer(context.declared)),
+        ),
+        (
+            "accepted_tokens",
+            Value::Integer(as_integer(context.accepted)),
+        ),
+        ("engine", Value::text(engine.to_owned())),
+    ];
+    if let Some(because) = &context.because {
+        body.push(("because", Value::text(because.clone())));
+    }
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&Entry::new(
+        EntryKind::ModelProbed,
+        mcf_core::time::Timestamp::now(),
+        Value::map(body),
+    ))?;
+    Ok(path)
+}
+
+/// A count as the record's integer, saturating rather than wrapping.
+fn as_integer(held: usize) -> i64 {
+    i64::try_from(held).unwrap_or(i64::MAX)
+}

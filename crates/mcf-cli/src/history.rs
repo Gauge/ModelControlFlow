@@ -130,3 +130,35 @@ fn point(
         competing,
     })
 }
+
+/// What a probe measured this model's usable context to be (B-386, B-382).
+///
+/// The most recent reading for this exact file, or `None` where none has been
+/// taken. `None` is not *unlimited* and not *the declared figure*: it is
+/// *nobody has asked*, and the surface that renders it says so (A7).
+///
+/// **The path must match exactly.** A context measured for one file is not a
+/// fact about a differently quantized sibling — the conditions §3.4 requires
+/// include which artifact was asked.
+pub(crate) fn probed_context(model: &Path) -> Option<usize> {
+    let journal = mcf_record::journal::default_path()?;
+    let index = Index::over(&journal, &index::default_path(&journal)).ok()?;
+    let wanted = Some(EntryKind::ModelProbed);
+    for located in index.latest(wanted, index.count_matching(wanted)) {
+        let Ok(entry) = index.read(&located) else {
+            continue;
+        };
+        let body = entry.body();
+        if body.get("model").and_then(Value::as_text) != Some(&model.display().to_string()) {
+            continue;
+        }
+        if let Some(accepted) = body
+            .get("accepted_tokens")
+            .and_then(Value::as_integer)
+            .and_then(|held| usize::try_from(held).ok())
+        {
+            return Some(accepted);
+        }
+    }
+    None
+}

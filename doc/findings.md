@@ -109,6 +109,7 @@ forward as one.
 | 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
 | 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
 | 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
+| 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6029,6 +6030,55 @@ written would be dead code pretending to be a feature.
 context length gets *there is nothing to state it against — which is unknown
 rather than unlimited*, and a declared zero is treated as no declaration rather
 than as a division.
+
+## 83 · F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)
+
+**Closing [F82](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42)'s
+gap the day it was found.** A probe measured a model's usable context, printed
+it, and wrote nothing. `EntryKind::ModelProbed` now exists and `mcf probe`
+writes what it observed — the declared figure, the accepted one, the engine,
+and the engine's own words where it refused, because a refusal for an unrelated
+reason would otherwise be read back as a short context.
+
+**Recorded whichever way it came out** (A9). *Agrees* is as much a measurement
+as *diverges*, and a record that kept only the surprising half could not answer
+*what does this machine take*. A check requires the write to sit after both
+branches rather than inside the divergence one.
+
+**Distinct from the act it might lead to** (D42, D43). `ModelProbed` is an
+observation; `ModelConfigured` is somebody deciding to address a model
+differently. A probe that changes nothing still measured something, and
+collapsing the two would make *MCF looked* and *MCF changed* the same entry.
+
+**The loop, end to end on this machine.** `mcf probe` on `stories15M-q8_0`:
+
+```
+ declared 128 token(s)
+ accepted 127 token(s) of prompt, with one left to generate
+ agrees the file's claim holds
+ recorded in /home/gauge/.local/share/mcf/record.jsonl
+```
+
+and then, with no probe re-run and nothing passed between them:
+
+```
+$ mcf segment stories15M-q8_0.gguf --prompt "Once upon a time there was a small brave mouse."
+12 token(s) of prompt against a MEASURED context of 127 token(s) — 9.4% of it,
+and the file declares 128. Measured is what `mcf probe` found this engine on
+this machine actually accepts, which is the number a prompt has to fit
+(B-055, F42, §3.4).
+```
+
+**The declaration stays in the sentence.** A measurement supersedes a claim for
+the purpose of deciding whether a prompt fits — that is what taking one is for
+(A21) — but *this file claims 128 and this machine takes 127* is itself the
+finding, and dropping the claim would hide that the two can disagree. On a
+model where they diverge, that clause is the whole story.
+
+**And the reader will not answer about a different file.** A context measured
+for one artifact is not a fact about a differently quantized sibling; the path
+must match exactly, because the conditions §3.4 requires include which artifact
+was asked.
 
 ## Changelog
 

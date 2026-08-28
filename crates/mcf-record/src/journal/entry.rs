@@ -147,11 +147,30 @@ pub enum EntryKind {
     /// ambient sampling and there is no timer here: a snapshot exists because
     /// a run could not decide, or because somebody asked.
     ContentionSnapshot,
+    /// What a probe asked a model and what it observed (B-386, B-055, D42,
+    /// A1).
+    ///
+    /// **Because a measurement nobody can find later is the same as one not
+    /// taken.** `mcf probe` established figures — the usable context against
+    /// the declared one (F42), how a model wants to be addressed (F38) — and
+    /// printed them. A terminal scrolls. Every surface that wants a *measured*
+    /// figure rather than a declared one was blocked behind that, and B-382
+    /// is the item that found it: a prompt's cost could only be stated against
+    /// the file's claim, because MCF's own measurement of what the engine
+    /// takes existed nowhere it could be read.
+    ///
+    /// Distinct from [`Self::ModelConfigured`], which is the *act* D43
+    /// requires — somebody deciding to address a model differently. This is
+    /// the observation that act may or may not follow from. A probe that
+    /// changes nothing still measured something (A9), and D42 keeps the two
+    /// apart on purpose: a probe writes the verified half of a capability and
+    /// never a default.
+    ModelProbed,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -170,6 +189,7 @@ impl EntryKind {
         Self::Comparison,
         Self::FitmentPlanned,
         Self::ContentionSnapshot,
+        Self::ModelProbed,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -195,6 +215,7 @@ impl EntryKind {
             Self::Comparison => "comparison",
             Self::FitmentPlanned => "fitment_planned",
             Self::ContentionSnapshot => "contention_snapshot",
+            Self::ModelProbed => "model_probed",
         }
     }
 

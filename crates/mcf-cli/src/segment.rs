@@ -121,6 +121,7 @@ fn segmented(path: &Path, prompt: &str) -> Result<String, String> {
         &before,
         &vocabulary,
         mcf_serve::probes::declared_context(&file),
+        crate::history::probed_context(path),
     ))
 }
 
@@ -131,6 +132,7 @@ fn render(
     decoded: &str,
     vocabulary: &mcf_standin::tokenizer::Vocabulary,
     context: Option<usize>,
+    measured: Option<usize>,
 ) -> String {
     let mut lines = vec![
         format!(
@@ -164,7 +166,7 @@ fn render(
         ));
     }
     lines.push(String::new());
-    lines.push(what_it_spends(fragments.len(), context));
+    lines.push(what_it_spends(fragments.len(), context, measured));
     lines.push(String::new());
     lines.push(whole_or_shattered(prompt, fragments));
     for said in marker_fidelity(prompt, vocabulary) {
@@ -294,7 +296,29 @@ fn marker_shaped(prompt: &str) -> Vec<String> {
 /// outcome is not yet written to the record (B-386). So this states the
 /// declaration, names it as one, and names the command that would verify it.
 /// A declared figure presented as a measured one is exactly A21's failure.
-fn what_it_spends(tokens: usize, context: Option<usize>) -> String {
+fn what_it_spends(tokens: usize, context: Option<usize>, measured: Option<usize>) -> String {
+    // A measurement supersedes a declaration, which is the whole point of
+    // taking one (A21). The declared figure stays in the sentence, because
+    // *this file claims 8192 and this machine takes 4096* is the finding, and
+    // dropping the claim would hide that the two disagree.
+    if let Some(accepted) = measured.filter(|held| *held > 0) {
+        let declared = context.map_or_else(
+            || "the file declares none".to_owned(),
+            |held| format!("the file declares {held}"),
+        );
+        let share = tokens
+            .saturating_mul(1_000)
+            .checked_div(accepted)
+            .unwrap_or(0);
+        return format!(
+            "{tokens} token(s) of prompt against a MEASURED context of {accepted} token(s) — \
+             {}.{}% of it, and {declared}. Measured is what `mcf probe` found this engine on \
+             this machine actually accepts, which is the number a prompt has to fit (B-055, \
+             F42, §3.4).",
+            share.wrapping_div(10),
+            share.wrapping_rem(10)
+        );
+    }
     let Some(context) = context.filter(|held| *held > 0) else {
         return format!(
             "{tokens} token(s) of prompt. This file declares no context length, so there is \
