@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Proposals — features argued in full, not yet accepted |
-| **Version** | 11 |
+| **Version** | 12 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v14, governed by [rules.md](rules.md) |
 | **Feeds** | [backlog.md](backlog.md) on acceptance · [roadmap.md](roadmap.md) for placement |
@@ -43,6 +43,7 @@ A citation made before this change still resolves. Registered as B-353.
 | PR9 | [What serving looks like](#pr9--what-serving-looks-like) | **Accepted** — DEC-001 decided; B-032, B-033, B-034 build it | M2 |
 | PR10 | [What a probe is, and when configuration may change](#pr10--what-a-probe-is-and-when-configuration-may-change) | **Accepted** — DEC-024 and DEC-025 decided; B-051–B-060 build it | M3 |
 | PR11 | [Prompt analysis: what the model actually received](#pr11--prompt-analysis-what-the-model-actually-received) | Accept the static half; defer the behavioural half | M3 · M4 |
+| PR12 | [Lifting the stand-in's ceiling, and why the cheap version is worse](#pr12--lifting-the-stand-ins-ceiling-and-why-the-cheap-version-is-worse) | Do not lift it by dequantizing per use; take B-366 first, then measure | M5 |
 
 ---
 
@@ -1294,7 +1295,128 @@ the static half has shown what people do with it.
 **Not accepted; recorded.** Nothing here enters the backlog until that
 recommendation is taken.
 
+
+---
+
+## PR12 — Lifting the stand-in's ceiling, and why the cheap version is worse
+
+**One line.** MCF's own engine cannot read the model §XII names, and the
+obvious fix — dequantize per use instead of on load — buys the memory back by
+spending time the engine does not have; the two halves are one problem and
+should be decided together.
+
+**Why this is a proposal.** B-372's open half reads as an increment: hold the
+weights quantized, dequantize as you go, ceiling lifted. It is not. It changes
+a design choice `llama.rs` documents as deliberate — *dequantizing on load
+rather than per token is the one memory-for-time trade here, and it is made for
+legibility* — and it changes it in the direction that makes the resulting
+capability unusable. B15 admits weight only against a stated cost, and this is
+the cost stated.
+
+### What is actually blocked
+
+**The reference model.** 27,320,697,856 parameters dequantized to `f32` is
+109.3 GB, against a machine with 91 GiB. `mcf run` refuses up front, naming
+both numbers, and the refusal is honest and fast (0.16 s, from a bounded prefix
+of the directory). But the artifact §XII names is the one MCF's own engine
+cannot touch — and F49's cross-check, which compares MCF against the engine it
+provisioned, is therefore unavailable at exactly the size where somebody would
+most want it.
+
+### The arithmetic that decides it
+
+MCF's own engine, measured on this machine: **Qwen3-0.6B at Q4_K_M, load plus
+nine forward passes, 11.0 s** — call it 0.9 s a pass. The reference model is
+**forty-five times larger**, and a forward pass is roughly linear in
+parameters:
+
+| | Qwen3-0.6B | the reference model |
+|---|---|---|
+| forward pass | ~0.9 s | ~40 s |
+| one token | ~0.9 s | ~40 s |
+| F49's 120-position cross-check | 30 s | **~80 minutes** |
+
+**Dequantize-per-use makes the second column worse, not better.** The current
+design pays the dequantization once, at load. Per-use pays it *on every token*,
+for every weight — which is the memory-for-time trade run in the direction the
+engine can least afford. It would lift the ceiling and produce a capability
+nobody can run.
+
+That is the finding: **the memory ceiling and the speed are not two items, they
+are one.** B-372 and B-366 (work split across processors without changing the
+answer) are the same question asked twice.
+
+### What would actually work
+
+**Quantized arithmetic** — multiply the stored weights against quantized
+activations without materializing floats, which is what the provisioned engine
+does. It is the only option that improves both halves: the weights stay at
+16.5 GB and the multiply gets *cheaper* rather than dearer.
+
+It also collides with something MCF has measured. F29 and F33 record that MCF
+multiplies floats where the reference multiplies in quantized arithmetic, and
+that this is **why their numbers differ** — the widest arithmetic gap observed
+was on a Q2_K file, for exactly this reason. Adopting quantized arithmetic
+would narrow the gap MCF's own oracle was calibrated against. That is not an
+objection; it is a reason the change must be measured before it ships, and
+F49's cross-check is now the instrument for measuring it.
+
+### What it costs
+
+Large, and larger than it looks. `ops::matmul_vec` is a single function and the
+call sites are few, which makes the *shape* of the change contained — but the
+numerics are the engine, and every threshold in this repository (F27's 0.40
+margin, F41's rank of 8, F29's 0.999596 cosine floor) was measured against the
+current arithmetic. Changing it invalidates the calibration of every
+comparison MCF makes about itself, and re-establishing them is the real cost.
+
+There is also a boundary question. D31 and B65 make the stand-in *slow by
+design* and forbid a speed from it, on the reasoning that a legible engine is
+worth more than a fast one. Quantized arithmetic is the thing that makes real
+engines fast. A stand-in that adopts it is a stand-in drifting toward being an
+engine, and §5 refuses features whose justification is a comparison table.
+
+### What is unanswered
+
+- **Is the reference model the right target at all?** D39 already gives MCF a
+  provisioned engine that runs it, and F36 measured it doing so. What MCF's own
+  engine buys is the *cross-check*, and a cross-check that takes eighty minutes
+  may be worth having as a scheduled tier and worth nothing as a command.
+- **Would a smaller ceiling do?** Nothing between 0.6B and 27B has been tried.
+  A 7B model at Q4 is 4 GB quantized and 28 GB dequantized — under the
+  ceiling, and forty seconds a token is a tenth of that. The interesting
+  question may be *how large a model can MCF's own engine usefully read*, which
+  is a measurement nobody has taken.
+- **Does B-366 change the arithmetic?** Threads across sixteen cores could take
+  40 s a token toward 3 s, which changes whether any of this is worth doing —
+  and B-366 is open and independently justified.
+
+### Recommendation
+
+**Do not lift the ceiling by dequantizing per use.** It is the cheap version
+and it makes the capability worse. **Take B-366 first** — it is independently
+justified, it does not touch the numerics, and it moves the number that decides
+whether lifting the ceiling is worth anything. **Then measure how large a model
+MCF's own engine can usefully read**, which is a fact nobody has and which
+would tell us whether 27B is the target or whether it never was.
+
+**Not accepted; recorded.** Nothing here enters the backlog until that
+recommendation is taken.
+
 ## Changelog
+
+### Version 12 — the stand-in's ceiling
+
+PR12. B-372's open half reads as an increment and is not: dequantizing per use
+lifts the memory ceiling by spending time the engine does not have. Measured
+here — 0.9 s a forward pass on a 0.6B model, so roughly forty on the reference
+model, so eighty minutes for the cross-check that is the point of lifting the
+ceiling at all. The cheap fix makes that worse rather than better.
+
+The memory ceiling and the speed are one problem. The recommendation is to take
+B-366 first, because it moves the number that decides whether the rest is worth
+doing, and then to measure how large a model MCF's own engine can usefully
+read — which nobody knows.
 
 ### Version 11 — prompt analysis
 
