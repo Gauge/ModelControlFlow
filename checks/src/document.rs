@@ -196,6 +196,13 @@ pub struct Identifiers {
     pub proposals: BTreeSet<String>,
     /// Milestone identifiers from the roadmap: `M0`.
     pub milestones: BTreeSet<String>,
+    /// Finding identifiers from `findings.md`: `F42`.
+    ///
+    /// They were the one citable namespace nothing resolved, and `F80` was
+    /// cited four times while its section did not exist (F108). A finding is
+    /// what a decision cites when it rests on evidence; a citation that
+    /// resolves to nothing is a decision resting on nothing.
+    pub findings: BTreeSet<String>,
     /// Clause references from the intent document: `3.4`, `7.16`, `VII`, `5`.
     pub clauses: BTreeSet<String>,
 }
@@ -240,6 +247,11 @@ impl Identifiers {
                     "doc/roadmap.md" => {
                         identifiers.milestones.extend(milestone_identifiers(line));
                     }
+                    "doc/findings.md" => {
+                        if let Some(id) = finding_identifier(line) {
+                            identifiers.findings.insert(id);
+                        }
+                    }
                     "doc/document-of-intent.md" => {
                         if let Some(id) = heading_identifier(line) {
                             identifiers.resolutions.insert(id);
@@ -253,6 +265,22 @@ impl Identifiers {
         }
         Ok(identifiers)
     }
+}
+
+/// `## 80 · F80 — …` → `F80`
+///
+/// The section heading rather than the contents table, because the heading is
+/// what a citation has to reach: a row in the contents that links to nothing is
+/// exactly the state F80 was in.
+fn finding_identifier(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("## ")?;
+    let (_, after) = rest.split_once(" · ")?;
+    let (token, _) = after.split_once(' ')?;
+    let digits = token.strip_prefix('F')?;
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token.to_owned())
 }
 
 /// `| B-001 | …` → `B-001`
