@@ -210,9 +210,9 @@ fn the_property_itself_is_asserted_on_bits() {
 /// The body of a function, from its signature to the closing brace at column
 /// zero.
 fn body<'a>(source: &'a str, signature: &str) -> &'a str {
-    let after = source
-        .split_once(signature)
-        .map(|(_, rest)| rest)
-        .unwrap_or_else(|| panic!("`{signature}` is where this check looks and it is gone"));
+    let after = source.split_once(signature).map_or_else(
+        || panic!("`{signature}` is where this check looks and it is gone"),
+        |(_, rest)| rest,
+    );
     after.split_once("\n}").map_or(after, |(body, _)| body)
 }
