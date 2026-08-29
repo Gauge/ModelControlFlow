@@ -1,16 +1,25 @@
-//! The four, and what each says about itself.
+//! The five, and what each says about itself.
+//!
+//! Four for most of this project's life, because §6.14 names four and the fifth
+//! comes from §3.20 — which A16 absorbs and which nothing enumerated (F115).
 
 use super::{Asking, GATED, Gated};
 
-/// Four, and the four §6.14 names.
+/// Five, and the five A16 names.
+///
+/// A16 says *the five categories are enumerable in code*, and for a long time
+/// four were: publication is the one §6.14 does not name, A16 absorbs from
+/// §3.20, and A24 exists as its own rule because it is the only one of the five
+/// that cannot be undone (F115).
 #[test]
-fn the_four_are_the_four() {
-    assert_eq!(GATED.len(), 4);
+fn the_five_are_the_five() {
+    assert_eq!(GATED.len(), 5);
     for gate in [
         Gated::UntrustedExecution,
         Gated::LargeIrrecoverableUse,
         Gated::NetworkExposure,
         Gated::Destruction,
+        Gated::Publication,
     ] {
         assert!(GATED.contains(&gate), "{gate} is not in the list");
     }

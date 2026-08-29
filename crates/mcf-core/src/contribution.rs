@@ -265,8 +265,84 @@ impl Contribution {
     }
 }
 
-impl fmt::Display for Contribution {
+impl fmt::Display for Comparison {
+    /// The row itself: both arms, the direction, the size, and what it rests
+    /// on.
+    ///
+    /// A24 requires that a person be shown **the rows that leave** rather than
+    /// a description of them, so a comparison has to be able to render itself.
+    /// The effect is a ratio in per cent because that is what travels (§3.27),
+    /// and the conditions are named rather than counted: a reader deciding
+    /// whether to publish is entitled to see what they would be publishing.
     fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (quicker, slower) = if self.left_quicker {
+            (&self.left, &self.right)
+        } else {
+            (&self.right, &self.left)
+        };
+        write!(
+            form,
+            "comparison · {} quicker than {} by {}, over {} pair(s) · workload {} · under {}",
+            quicker.as_str(),
+            slower.as_str(),
+            per_cent(self.effect),
+            self.pairs,
+            self.workload,
+            self.conditions
+        )
+    }
+}
+
+impl fmt::Display for Absolute {
+    /// The row itself, for the same reason.
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            form,
+            "absolute · {} took {} ns · workload {} · under {}",
+            self.arm.as_str(),
+            self.nanoseconds,
+            self.workload,
+            self.conditions
+        )
+    }
+}
+
+impl fmt::Display for Row {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Compared(compared) => compared.fmt(form),
+            Self::Measured(measured) => measured.fmt(form),
+        }
+    }
+}
+
+/// A ratio as a person reads it, from integers (A6).
+#[allow(
+    clippy::integer_division,
+    reason = "a percentage to one decimal place, from parts per million, as every other ratio \
+              in this workspace is rendered"
+)]
+fn per_cent(ppm: PartsPerMillion) -> String {
+    let held = ppm.0;
+    format!("{}.{}%", held / 10_000, (held % 10_000) / 1_000)
+}
+
+impl fmt::Display for Contribution {
+    /// **Every row, in full, and the count after them** (A24, B-160).
+    ///
+    /// This was a count and nothing else — *2 row(s): 1 comparison(s) and 1
+    /// absolute(s)* — which is precisely the description A24 forbids being
+    /// shown *instead of* the rows. A person deciding whether to publish
+    /// something that cannot be unpublished is entitled to read what it says,
+    /// and a summary is what they would have been given.
+    ///
+    /// There is no other rendering. A surface that wanted the count alone would
+    /// have to count the rows itself, which is a thing somebody has to write
+    /// and a reviewer can see.
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for row in &self.rows {
+            writeln!(form, "{row}")?;
+        }
         let compared = self
             .rows
             .iter()
