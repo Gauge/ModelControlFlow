@@ -189,10 +189,7 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
     );
 
     for path in paths {
-        match one_rung(path, threads, TOKENS, CROSS_CHECK_POSITIONS) {
-            Ok(line) => println!("{line}"),
-            Err(reason) => println!("{:>52}  {reason}", short(path)),
-        }
+        println!("{}", one_rung(path, threads, TOKENS, CROSS_CHECK_POSITIONS));
     }
     println!();
     println!(
@@ -203,52 +200,104 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 
-/// One model of the ladder, or the reason it produced no number.
-fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Result<String, String> {
-    let bytes = std::fs::read(path).map_err(|error| format!("unreadable: {error}"))?;
-    let file = gguf::parse(&bytes).map_err(|failure| failure.to_string())?;
-    // **Tensor elements, not "parameters" as a publisher counts them.** This is
-    // every number in every tensor the file carries, embedding table included,
-    // which is what the engine actually multiplies and stores. A model sold as
-    // 15M reads as 24M here because its vocabulary is nine million of them, and
-    // calling that a parameter count would be a number that disagrees with the
-    // publisher's for a reason nobody could see.
-    let elements: u64 = file
-        .dequantized_bytes()
-        .map(|bytes| bytes.checked_div(4).unwrap_or(0))
-        .ok_or_else(|| "the directory does not say how large its tensors are".to_owned())?;
-    let dequantized = file
-        .dequantized_bytes()
-        .ok_or_else(|| "the directory does not say".to_owned())?;
-    let vocabulary = Vocabulary::read(&file).map_err(|failure| failure.to_string())?;
-    let prompt = vocabulary
-        .encode(PROMPT, true)
-        .map_err(|failure| failure.to_string())?;
+/// One model of the ladder — every column that could be filled, and the reason
+/// for any that could not.
+///
+/// **A rung that did not run still reports what was read.** A4: a partial
+/// outcome is an outcome. The size of a model MCF refuses is exactly the
+/// interesting thing about it — the reference model this project is named
+/// around is refused for its *architecture*, and a table that printed only the
+/// refusal would have hidden that its size was never the blocker.
+fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> String {
+    let mut row = Rung::new(short(path));
+    let Ok(bytes) = std::fs::read(path) else {
+        return row.refused("the file could not be read");
+    };
+    let file = match gguf::parse(&bytes) {
+        Ok(file) => file,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    // Tensor elements, not "parameters" as a publisher counts them: every
+    // number in every tensor the file carries, embedding table included, which
+    // is what the engine multiplies and stores. A model sold as 15M reads as
+    // 24M here because nine million of them are its vocabulary.
+    if let Some(dequantized) = file.dequantized_bytes() {
+        row.elements = dequantized.checked_div(4);
+        row.dequantized = Some(dequantized);
+    }
+
+    let vocabulary = match Vocabulary::read(&file) {
+        Ok(vocabulary) => vocabulary,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    let prompt = match vocabulary.encode(PROMPT, true) {
+        Ok(prompt) => prompt,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
 
     let loading = Instant::now();
-    let model = load(&file, &bytes)
-        .map_err(|failure| failure.to_string())?
-        .across(threads);
-    let loaded = loading.elapsed().as_secs_f64();
+    let model = match load(&file, &bytes) {
+        Ok(model) => model.across(threads),
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    row.loaded = Some(loading.elapsed().as_secs_f64());
 
     let started = Instant::now();
-    run_once(&model, &prompt, tokens)?;
+    if let Err(reason) = run_once(&model, &prompt, tokens) {
+        return row.refused(&reason);
+    }
     let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    let per_token = u64::try_from(tokens)
+    row.per_token = u64::try_from(tokens)
         .ok()
-        .and_then(|tokens| took.checked_div(tokens))
-        .unwrap_or(0);
-    let projected = per_token.saturating_mul(positions);
+        .and_then(|tokens| took.checked_div(tokens));
+    row.projected = row.per_token.map(|each| each.saturating_mul(positions));
+    row.render()
+}
 
-    Ok(format!(
-        "{:>52}{:>13}M{:>10}MB{:>9.1}s{:>10} ms{:>13}",
-        short(path),
-        elements.checked_div(1_000_000).unwrap_or(0),
-        dequantized.checked_div(1_000_000).unwrap_or(0),
-        loaded,
-        per_token,
-        as_duration(projected)
-    ))
+/// One row of the ladder, filled as far as the model got.
+struct Rung {
+    name: String,
+    elements: Option<u64>,
+    dequantized: Option<u64>,
+    loaded: Option<f64>,
+    per_token: Option<u64>,
+    projected: Option<u64>,
+}
+
+impl Rung {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            elements: None,
+            dequantized: None,
+            loaded: None,
+            per_token: None,
+            projected: None,
+        }
+    }
+
+    /// The columns that were filled, and then why the rest were not.
+    fn refused(&self, why: &str) -> String {
+        format!("{}\n{:>52}  {why}", self.render(), "")
+    }
+
+    fn render(&self) -> String {
+        format!(
+            "{:>52}{:>14}{:>12}{:>10}{:>13}{:>14}",
+            self.name,
+            self.elements
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}M")),
+            self.dequantized
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}MB")),
+            self.loaded
+                .map_or_else(|| "-".to_owned(), |value| format!("{value:.1}s")),
+            self.per_token
+                .map_or_else(|| "-".to_owned(), |value| format!("{value} ms")),
+            self.projected.map_or_else(|| "-".to_owned(), as_duration),
+        )
+    }
 }
 
 /// Milliseconds as something a person reads without counting zeros.
