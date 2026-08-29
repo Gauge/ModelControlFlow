@@ -227,7 +227,20 @@ fn server_never_listens(world: &World) -> Outcome {
     // two passes disagree. So a spawn that did not happen is retried rather
     // than reported: the scenario has not run yet, and saying it produced
     // something would be the lie.
-    for attempt in 0..3 {
+    //
+    // **Twenty attempts, and the number came from a measurement** (F113). At
+    // three, the load tier failed: of 1,024 concurrent runs, 1,018 produced the
+    // declared failure and **six produced `engine.spawn.refused` — `Text file
+    // busy`**. That is `ETXTBSY`, and it is not this machine being short of
+    // resources. It is the write-then-exec race every multi-threaded program
+    // that creates an executable has: this scenario writes its fixture server
+    // and execs it, and a *sibling* worker that forked while the file was open
+    // for writing holds an inherited copy of that descriptor until its own
+    // exec. The close-on-exec flag closes it *at* exec, not at fork, so the
+    // window is real and belongs to the other thread. Nothing this scenario can
+    // do from its own side removes it; retrying past it is the remedy, and
+    // three attempts landed inside one window six times in a thousand.
+    for attempt in 0..20 {
         let waited = mcf_serve::served::Served::start_within(
             &llama,
             &world.scratch().join("no-such-model.gguf"),
@@ -240,7 +253,9 @@ fn server_never_listens(world: &World) -> Outcome {
                     "a server that binds nothing was called ready".to_owned(),
                 );
             }
-            Err(failure) if failure.category() == Category::EngineSpawnRefused && attempt < 2 => {}
+            // Retried only while it is the transient race: a spawn refused
+            // for any other reason is a real observation and is reported.
+            Err(failure) if failure.category() == Category::EngineSpawnRefused && attempt < 19 => {}
             Err(failure) => return Outcome::Produced(failure),
         }
     }

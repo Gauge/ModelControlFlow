@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 97 |
+| **Version** | 98 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -140,6 +140,7 @@ forward as one.
 | 110 | [F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)](#110--f110--a-probe-for-each-modality-or-a-reason-what-a-language-costs-whether-an-artifact-embeds-and-three-declinations-in-writing-b-057-d42-f81-f106-a7-a21-x) |
 | 111 | [F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38) |
 | 112 | [F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)](#112--f112--two-absolute-rules-named-checks-that-did-not-exist-and-one-of-them-had-a-hole-on-a-shipped-surface-b-073-b-072-a6-a22-b16-d27) |
+| 113 | [F113 — The load tier found a race in the laboratory, and it was six runs in a thousand of a file being written and executed at once (B-191, B-009, §3.17, D26, A13)](#113--f113--the-load-tier-found-a-race-in-the-laboratory-and-it-was-six-runs-in-a-thousand-of-a-file-being-written-and-executed-at-once-b-191-b-009-317-d26-a13) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8353,7 +8354,73 @@ machine-checked *in name*; what changed is that the checks now exist. The
 number to watch is B16's, and the number this moved is a different one — four
 absolute rules still cite items that are open or blocked.
 
+## 113 · F113 — The load tier found a race in the laboratory, and it was six runs in a thousand of a file being written and executed at once (B-191, B-009, §3.17, D26, A13)
+
+**Found by running a stale tier.** The load tier had not run in three days;
+when it did, two of its six tests failed:
+
+```
+engine/server-never-listens diverged under load from what it produces alone
+a scenario stopped producing its category under load
+```
+
+§3.17 is the rule behind both: a failure found once must reproduce *exactly*,
+and the laboratory's own suite runs every scenario 64 ways at once to check that
+it does.
+
+**Diagnosed rather than guessed at.** The scenario was run 1,024 times across 64
+workers with every outcome counted:
+
+| runs | outcome |
+|---|---|
+| 1,018 | `engine.hang.no_output` — the declared one |
+| **6** | `engine.spawn.refused` — **`Text file busy`** |
+
+`ETXTBSY`, and it is not this machine being short of anything. It is the
+write-then-exec race that every multi-threaded program creating an executable
+has: the scenario writes its fixture server and execs it, and a **sibling
+worker** that forked while that file was open for writing holds an inherited
+copy of the descriptor until its own exec. Close-on-exec closes it *at* exec,
+not at fork, so the window is real, it belongs to another thread, and nothing
+the scenario can do from its own side removes it.
+
+**The first diagnosis was wrong in an instructive way.** Counting the *rendered*
+failures showed 1,024 identical lines and no divergence at all — because
+`Display` renders the category and the sentence, and the difference was in the
+failure's **context**. A comparison that reads what a person sees is not a
+comparison of what was produced; the second pass compared the whole structure
+and the six appeared immediately.
+
+**The remedy is retrying past a transient race, and the number came from the
+measurement.** The scenario already retried a refused spawn three times, with a
+comment reasoning that a spawn which did not happen means the scenario has not
+run yet — right, and three landed inside one window six times in a thousand. It
+is twenty now, retried only while the refusal is that transient kind, and a
+spawn refused for any other reason is still reported as the real observation it
+is. After the change: 1,024 runs, **one** distinct outcome, and the tier's
+135,680 scenario runs across 64 workers pass.
+
+**What this says about the tier.** A property that holds a thousand times and
+fails six is exactly what a scheduled tier is for and exactly what a gating one
+cannot afford to look for. It is also the second thing in one day that only ran
+because the exclusive window came free after four days —
+[F111](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38)
+was the first. Two of the five stale tiers had something to say the moment they
+were asked.
+
+**What this did not establish.** Whether twenty is enough on a machine busier
+than this one. The bound is stated where a reader will meet it, the failure past
+it is reported rather than swallowed, and what a *hundred*-way run does is not
+known — which is A7's answer rather than a number nobody measured.
+
 ## Changelog
+
+### Version 98 — the load tier found a race in the laboratory
+
+F113. Six runs in a thousand of `engine/server-never-listens` produced `Text
+file busy` instead of the failure they declare — the write-then-exec race
+against a sibling worker's fork. Diagnosed by counting whole outcomes rather
+than rendered ones, which is what hid it on the first pass.
 
 ### Version 97 — two absolute rules stop naming checks that do not exist
 
