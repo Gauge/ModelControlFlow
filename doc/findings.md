@@ -131,7 +131,7 @@ forward as one.
 | 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
 | 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
 | 104 | [F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6) |
-| 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f104-f103) |
+| 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7655,7 +7655,7 @@ not a wrong *answer*, so it is not this finding; it is a question about whose
 record a check's traffic belongs in, and it is written down here rather than
 guessed at.
 
-## 105 · F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F104, F103)
+## 105 · F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)
 
 **Found by looking at the record while auditing something else.** F104's work
 ended in the operator's journal, checking which build had produced which
@@ -7700,10 +7700,23 @@ the operator decides whether a file is safe to hand to somebody.
 **The guard that was there, and the half it covered.** `mcf_record::export`
 does not assert its header: it computes `contains_user_content` by walking a
 list of paths, and `checks/tests/a_bundle_says_what_it_holds.rs` exists to keep
-that list complete. Both were written the day a *prompt* first reached the
-record. The list named `body.method.prompt` and `body.prompt`; it never named
-`body.text`, because the whole guard was framed as *text the operator wrote*
-and A25's sentence has two clauses. So bundles carrying four thousand model
+that list complete. Both were written by
+[F68](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii),
+which found the *same claim* false for the *same reason* one field earlier: the
+header was a constant `false` on the reasoning that *this module reads the
+journal, and the journal is not the content store*, and a comparison had begun
+recording the prompt. F68 fixed the constant, named the two paths operator text
+took, and built the check that keeps the list complete. The list named
+`body.method.prompt` and `body.prompt`; it never named `body.text`, because the
+whole guard was framed as *text the operator wrote* and A25's sentence has two
+clauses.
+
+**So this is the second occurrence, and the first one is why it was invisible.**
+After F68 the claim was computed rather than asserted, the check existed, and
+`contains_user_content` came out `false` — which now looked like an answer
+somebody had verified rather than a question nobody had asked about the model's
+half. A guard that has been through one correction reads as trustworthy, and
+that is what made 4 018 completions comfortable where they were. So bundles carrying four thousand model
 completions answered `contains_user_content: false` — computed honestly, from a
 list that was asking about the other half. It is F103's lesson again: a guard
 covers the shape of the place it was written for.
