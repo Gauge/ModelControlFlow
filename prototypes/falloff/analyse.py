@@ -103,72 +103,92 @@ def arm_arrival(rows):
     print("  a measured deep point replaces an extrapolated one.\n")
     for model in sorted({r["model"] for r in pre}):
         print(f"  {model}")
-        print(f"    {'depth':>7} {'generated':>12} {'prefilled':>12} {'differ':>9}   {'prefill cost':>13}")
+        print(f"    {'depth':>7} {'generated':>12} {'prefilled':>12} {'differ':>9}"
+              f"   {'prefill':>9} {'vs generating':>14}")
         for d in sorted({r["depth"] for r in pre if r["model"] == model}):
             p = [r for r in pre if r["model"] == model and r["depth"] == d]
             # the generated band whose midpoint is nearest this depth
             g = [r for r in gen if r["model"] == model]
             if not g or not p:
                 continue
-            near = min({r["depth"] for r in g}, key=lambda x: abs(x - d))
-            if abs(near - d) > 0.35 * d:
+            # The generated readings are band midpoints and land nowhere near
+            # the prefilled depths. Comparing against the nearest band compares
+            # two different depths and manufactures a disagreement, so the
+            # generated curve is interpolated at the prefilled depth instead.
+            gd = np.array(sorted({r["depth"] for r in g}))
+            gy = np.array([np.median([r["ms"] for r in g if r["depth"] == x]) for x in gd])
+            if d < gd.min() or d > gd.max():
                 continue
-            gv = np.median([r["ms"] for r in g if r["depth"] == near])
+            gv = float(np.interp(d, gd, gy))
             pv = np.median([r["ms"] for r in p])
             pf = np.median([r["prefill_ns"] for r in p]) / 1e6
-            print(f"    {int(d):>7} {gv:>12.3f} {pv:>12.3f} {(pv - gv) / gv * 100:>+8.1f}%   {pf:>10.0f} ms")
+            # what it would have cost to GENERATE to this depth instead:
+            # every token below d, each at its own cost
+            fill = float(np.trapz(np.interp(np.arange(0, d), gd, gy), dx=1.0))
+            print(f"    {int(d):>7} {gv:>12.3f} {pv:>12.3f} {(pv - gv) / gv * 100:>+8.1f}%"
+                  f"   {pf:>7.0f}ms {fill / pf:>12.0f}x")
         print()
 
 
-def arm_corpus(rows):
-    """Fit the shallow readings, predict the deep anchor, and let the spread of
-    that error across models be the diagnostic's stated accuracy."""
-    by_model = defaultdict(list)
-    for r in rows:
-        by_model[r["model"]].append(r)
+def arm_corpus(rows, dram_gbs=55.8):
+    """The measured curve for every model, against the one computed from its
+    header — and what the whole diagnostic cost."""
+    import physics
+    import glob
+    import os
+
+    paths = {os.path.basename(q): q for q in
+             glob.glob(os.path.expanduser("~/.local/share/mcf/**/*.gguf"), recursive=True)}
+    pre = [r for r in rows if r["arrival"] == "prefill"]
+    if not pre:
+        return
+    print("\n" + "=" * 78)
+    print("CORPUS — the curve measured at every depth, against the header")
+    print("=" * 78)
+    print("\n  The slope is fitted only to depths past the L3 crossing, because")
+    print("  that is where a bandwidth argument applies at all. 'streams' is")
+    print("  whether each layer's read is big enough to be bound by bandwidth")
+    print("  rather than latency -- known from the header, before running.\n")
+    print(f"    {'model':<34}{'measured':>11}{'predicted':>11}{'ratio':>7}{'streams':>9}{'cost':>8}")
     scored = []
-    for model, mine in by_model.items():
-        deep = [r for r in mine if r["arrival"] == "prefill" and r["depth"] > 5000]
-        shallow = [r for r in mine if r["arrival"] == "generate" and r["depth"] <= 4096]
-        if not deep or len(shallow) < 4:
+    for model in sorted({r["model"] for r in pre}):
+        mine = [r for r in pre if r["model"] == model]
+        geo = physics.geometry(paths[model]) if model in paths else None
+        if geo is None:
             continue
+        crossing = physics.L3_PER_CCD / geo["bytes_per_depth_token"]
         pts = defaultdict(list)
-        for r in shallow:
+        for r in mine:
             pts[r["depth"]].append(r["ms"])
         d = np.array(sorted(pts))
         y = np.array([np.median(pts[k]) for k in d])
-        target_d = float(np.median([r["depth"] for r in deep]))
-        target_y = float(np.median([r["ms"] for r in deep]))
-        row = {"model": model, "reach": target_d / d.max()}
-        for form in ("linear", "saturating"):
-            got = curves.fit(form, d, y)
-            if got is None:
-                continue
-            pred = float(curves.predict(form, got[0], [target_d])[0])
-            row[form] = (pred - target_y) / target_y * 100
-        scored.append(row)
+        deep = d > crossing
+        if deep.sum() < 2:
+            continue
+        # a straight line through the bandwidth-bound part
+        slope = np.polyfit(d[deep], y[deep], 1)[0]
+        want = physics.predicted_slope_ms(geo["bytes_per_depth_token"], dram_gbs)
+        streams = geo["per_layer_read"] >= 2048
+        seconds = sum(r["prefill_ns"] for r in mine) / 1e9 + sum(
+            r["ms"] * 128 for r in mine) / 1e3
+        scored.append((model, slope, want, want / slope if slope else float("nan"), streams))
+        print(f"    {model[:33]:<34}{slope:>11.6f}{want:>11.6f}"
+              f"{want / slope if slope else float('nan'):>7.2f}"
+              f"{('yes' if streams else 'no'):>9}{seconds:>7.0f}s")
     if not scored:
         return
-    print("\n" + "=" * 72)
-    print("CORPUS — how wrong is a shallow fit, on models it has not seen?")
-    print("=" * 72)
-    print(f"\n  Fit on depths <= 4096, predict the prefilled anchor deeper.\n")
-    print(f"    {'model':<44}{'linear':>10}{'saturating':>12}")
-    for r in sorted(scored, key=lambda x: abs(x.get("linear", 0)), reverse=True):
-        lin = f"{r['linear']:+.1f}%" if "linear" in r else "—"
-        sat = f"{r['saturating']:+.1f}%" if "saturating" in r else "—"
-        print(f"    {r['model'][:43]:<44}{lin:>10}{sat:>12}")
-    for form in ("linear", "saturating"):
-        errs = [abs(r[form]) for r in scored if form in r]
-        if errs:
-            print(
-                f"\n  {form}: median {np.median(errs):.1f}%, "
-                f"90th percentile {np.percentile(errs, 90):.1f}%, worst {max(errs):.1f}%  "
-                f"(n={len(errs)} models)"
-            )
-    print("\n  That 90th percentile is the number a diagnostic may print beside")
-    print("  a projected rate. It is measured, not derived — the lab shows a")
-    print("  derived interval does not cover.")
+    for label, want_streaming in (("streams (bandwidth-bound)", True),
+                                  ("does not stream (latency-bound)", False)):
+        ratios = [r[3] for r in scored if r[4] is want_streaming]
+        if not ratios:
+            continue
+        print(f"\n  {label}: n={len(ratios)}, ratio median {np.median(ratios):.2f}, "
+              f"range {min(ratios):.2f}-{max(ratios):.2f}")
+    good = [r[3] for r in scored if r[4]]
+    if good:
+        print(f"\n  For the streaming models the header predicts the slope to within")
+        print(f"  {(1 - min(good)) * 100:.0f}-{(1 - max(good)) * 100:.0f}% once scaled by the fraction of peak")
+        print(f"  bandwidth the engine achieves -- a single constant for this machine.")
 
 
 if __name__ == "__main__":

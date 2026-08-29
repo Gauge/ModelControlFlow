@@ -20,19 +20,44 @@ much is in it and not how it got there.
 """
 
 import json
+import os
+import pathlib
 import sys
 import time
 import urllib.request
 
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from sampler import Sampler  # noqa: E402
+
+# The engine's pid, so the conditions recorded are the conditions the engine
+# was under and not this script's. run.sh knows it; nothing else does.
+SERVER_PID = int(os.environ.get("MCF_FALLOFF_SERVER_PID", "0")) or None
+
+# Columns appended to every reading. Named here so the header and the rows
+# cannot drift apart.
+CONDITIONS = [
+    "freq_max_mhz_min", "freq_max_mhz_max", "temp_Tccd1_first", "temp_Tccd1_last",
+    "proc_VmRSS_last", "proc_read_bytes_delta", "proc_majflt_delta", "n_samples",
+]
+
+
+def conditions(summary):
+    return "\t".join(str(summary.get(k, "unknown")) for k in CONDITIONS)
+
 
 def _stream(port, body):
-    """Sends one request; returns (first_token_seconds, gaps, final_json)."""
+    """Sends one request; returns (first_token_seconds, gaps, final_json, conditions).
+
+    The sampler runs for exactly the span of the request, so what it reports is
+    what held while this reading was taken rather than a session average."""
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/completion",
         data=body.encode(),
         headers={"Content-Type": "application/json"},
     )
     gaps, final = [], {}
+    watcher = Sampler(pid=SERVER_PID, interval=0.25)
+    watcher.start()
     started = time.perf_counter()
     first = None
     with urllib.request.urlopen(request) as response:
@@ -50,7 +75,7 @@ def _stream(port, body):
             previous = now
             if payload.get("stop"):
                 final = payload
-    return first, gaps, final
+    return first, gaps, final, watcher.stop() and watcher.summary()
 
 
 def _body(prompt, tokens):
@@ -73,7 +98,7 @@ def main():
 
     if mode == "generate":
         depth = int(sys.argv[3])
-        first, gaps, final = _stream(port, _body("A", depth))
+        first, gaps, final, held = _stream(port, _body("A", depth))
         rows = []
         band, start = 128, 0
         while start < len(gaps):
@@ -88,7 +113,8 @@ def main():
         with open(out, "a") as handle:
             for kind, lo, hi, ns in rows:
                 handle.write(
-                    f"{model}\t{allocation}\t{repeat}\tgenerate\t{kind}\t{lo}\t{hi}\t{ns}\t0\n"
+                    f"{model}\t{allocation}\t{repeat}\tgenerate\t{kind}\t{lo}\t{hi}\t{ns}\t0"
+                    f"\t{conditions(held)}\n"
                 )
         return
 
@@ -97,7 +123,7 @@ def main():
         # " the" is one token for every vocabulary MCF has looked at; the count
         # the engine reports is what is recorded, not this estimate.
         prompt = "A" + " the" * max(want - 1, 0)
-        first, gaps, final = _stream(port, _body(prompt, tokens))
+        first, gaps, final, held = _stream(port, _body(prompt, tokens))
         seeded = final.get("tokens_evaluated", -1)
         if not gaps:
             sys.stderr.write(f"    prefill {want}: no tokens generated\n")
@@ -113,7 +139,8 @@ def main():
             # reading and a generated one are comparable on the same axis.
             handle.write(
                 f"{model}\t{allocation}\t{repeat}\tprefill\tband\t{seeded}\t"
-                f"{seeded + len(gaps)}\t{int(total * 1e9)}\t{int(first * 1e9)}\n"
+                f"{seeded + len(gaps)}\t{int(total * 1e9)}\t{int(first * 1e9)}"
+                f"\t{conditions(held)}\n"
             )
         return
 

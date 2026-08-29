@@ -40,7 +40,10 @@ server=$(command -v llama-server || true)
 
 mkdir -p "$OUT"
 readings="$OUT/readings.tsv"
-[ -s "$readings" ] || printf 'model\tallocation\trepeat\tarrival\tkind\tfrom_token\tto_token\tnanoseconds\tprefill_ns\n' >"$readings"
+# The conditions columns come from depth_probe's CONDITIONS list, printed by
+# the probe itself so the header cannot drift from the rows.
+cond_header=$(python3 -c "import sys;sys.path.insert(0,'$root/prototypes/falloff');import depth_probe;print('\t'.join(depth_probe.CONDITIONS))")
+[ -s "$readings" ] || printf 'model\tallocation\trepeat\tarrival\tkind\tfrom_token\tto_token\tnanoseconds\tprefill_ns\t%s\n' "$cond_header" >"$readings"
 
 die() {
     for i in 1 2 3 4 5; do
@@ -59,6 +62,7 @@ start() { # start <model-path> <allocation>
     stop
     "$server" -m "$1" --host 127.0.0.1 --port "$PORT" -c "$2" -ngl 0 --no-warmup >/dev/null 2>&1 &
     server_pid=$!
+    export MCF_FALLOFF_SERVER_PID="$server_pid"
     for _ in $(seq 1 600); do
         curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"ok"' && {
             python3 "$probe" generate "$PORT" 8 warmup 0 0 /dev/null >/dev/null 2>&1 || true
@@ -117,21 +121,27 @@ if [ "$ARM" = arrival ] || [ "$ARM" = all ]; then
     done
 fi
 
-# ── corpus: the calibration, across every model here ─────────────────────────
+# ── corpus: the whole curve, measured, on every model here ───────────────────
+# The arrival arm settled that a prefilled depth costs what a generated one
+# costs (within 2.8%, inside the noise) and gets there 10-24x quicker. So the
+# curve is MEASURED at each depth rather than fitted at shallow depths and
+# extrapolated -- which the synthetic lab showed cannot state its own error.
+# This is why the long version of this test is not needed: it was not buying
+# accuracy, it was buying depth that prefill reaches for a twentieth of the
+# cost.
 if [ "$ARM" = corpus ] || [ "$ARM" = all ]; then
-    printf '\n=== corpus: how wrong is a shallow fit, across %d models?\n' "${#models[@]}" >&2
+    printf '\n=== corpus: the measured curve, %d models\n' "${#models[@]}" >&2
     for model in "${models[@]}"; do
         name=$(basename "$model")
-        start "$model" 8192 || { printf '  %-30s no server; skipped\n' "$name" >&2; continue; }
-        before=$(( $(die) / 1000 ))
+        case "$name" in ggml-vocab-*) continue;; esac
+        start "$model" 8192 || { printf '  %-34s no server; skipped\n' "$name" >&2; continue; }
+        printf '  %-34s\n' "$name" >&2
         for repeat in $(seq 1 "$REPEATS"); do
-            python3 "$probe" generate "$PORT" 4096 "$name" 8192 "$repeat" "$readings" 2>&1 | sed 's/^/  /' >&2
+            for depth in 512 1024 2048 4096 6144; do
+                timeout 900 python3 "$probe" prefill "$PORT" "$depth" 128 \
+                    "$name" 8192 "$repeat" "$readings" 2>&1 | sed 's/^/    /' >&2 || true
+            done
         done
-        # the deep anchor the shallow fit will be scored against
-        for repeat in $(seq 1 "$REPEATS"); do
-            python3 "$probe" prefill "$PORT" 7168 128 "$name" 8192 "$repeat" "$readings" 2>&1 | sed 's/^/  /' >&2
-        done
-        printf '  %-30s die %s->%s C\n' "$name" "$before" "$(( $(die) / 1000 ))" >&2
         stop
     done
 fi
