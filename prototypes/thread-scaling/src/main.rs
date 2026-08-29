@@ -59,6 +59,9 @@ const PROMPT: &str = "The capital of France is";
 
 fn main() -> std::process::ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().is_some_and(|first| first == "ladder") {
+        return ladder(arguments.get(1..).unwrap_or_default());
+    }
     if arguments.first().is_some_and(|first| first == "shapes") {
         let Some(path) = arguments.get(1) else {
             eprintln!("usage: mcf-prototype-thread-scaling shapes <model.gguf>");
@@ -146,6 +149,118 @@ fn main() -> std::process::ExitCode {
     report(&counts, &measured, tokens);
     println!("load     {} at the end", said_load());
     std::process::ExitCode::SUCCESS
+}
+
+/// What a token costs on MCF's own engine, across the models this machine holds
+/// (B-384).
+///
+/// **The question B-384 asks is not how fast the engine is.** It is *how large
+/// a model this engine can usefully read* — and "usefully" has to be tied to a
+/// purpose or it is a preference. The purpose is the one that justifies the
+/// engine existing at all: A19 and D31 put it here to be checked against an
+/// independent implementation, so the number that matters is how long that
+/// cross-check takes. F49's comparison is a hundred and twenty positions, so
+/// the last column is what that would cost on each model.
+///
+/// Every model is loaded, timed over a fixed token budget at the thread count
+/// the machine reports, and reported with its parameter count — so the shape of
+/// the relationship is visible rather than assumed to be linear.
+fn ladder(paths: &[String]) -> std::process::ExitCode {
+    /// How many tokens each model generates. Small, because the largest model
+    /// in a ladder decides how long the whole thing takes and the per-token
+    /// cost is what is wanted.
+    const TOKENS: usize = 4;
+    /// How many positions F49's cross-check compares — what the last column
+    /// projects (F49, B-368).
+    const CROSS_CHECK_POSITIONS: u64 = 120;
+
+    if paths.is_empty() {
+        eprintln!("usage: mcf-prototype-thread-scaling ladder <model.gguf>...");
+        return std::process::ExitCode::FAILURE;
+    }
+    let threads = Threads::what_the_machine_reports();
+    println!("machine  {}", threads.describe());
+    println!("run      {TOKENS} token(s) after a {PROMPT:?} prompt, greedy, seed 0");
+    println!("load     {} at the start", said_load());
+    println!();
+    println!(
+        "{:>52}{:>14}{:>12}{:>10}{:>12}{:>14}",
+        "model", "parameters", "dequantized", "load", "per token", "120 positions"
+    );
+
+    for path in paths {
+        match one_rung(path, threads, TOKENS, CROSS_CHECK_POSITIONS) {
+            Ok(line) => println!("{line}"),
+            Err(reason) => println!("{:>52}  {reason}", short(path)),
+        }
+    }
+    println!();
+    println!(
+        "`120 positions` is F49's cross-check projected from the measured per-token cost -\n\
+         an estimate and labelled one (A20), not a measurement of a run that happened."
+    );
+    println!("load     {} at the end", said_load());
+    std::process::ExitCode::SUCCESS
+}
+
+/// One model of the ladder, or the reason it produced no number.
+fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("unreadable: {error}"))?;
+    let file = gguf::parse(&bytes).map_err(|failure| failure.to_string())?;
+    let parameters: u64 = file
+        .dequantized_bytes()
+        .map(|bytes| bytes.checked_div(4).unwrap_or(0))
+        .ok_or_else(|| "the directory does not say how large its tensors are".to_owned())?;
+    let dequantized = file
+        .dequantized_bytes()
+        .ok_or_else(|| "the directory does not say".to_owned())?;
+    let vocabulary = Vocabulary::read(&file).map_err(|failure| failure.to_string())?;
+    let prompt = vocabulary
+        .encode(PROMPT, true)
+        .map_err(|failure| failure.to_string())?;
+
+    let loading = Instant::now();
+    let model = load(&file, &bytes)
+        .map_err(|failure| failure.to_string())?
+        .across(threads);
+    let loaded = loading.elapsed().as_secs_f64();
+
+    let started = Instant::now();
+    run_once(&model, &prompt, tokens)?;
+    let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let per_token = u64::try_from(tokens)
+        .ok()
+        .and_then(|tokens| took.checked_div(tokens))
+        .unwrap_or(0);
+    let projected = per_token.saturating_mul(positions);
+
+    Ok(format!(
+        "{:>52}{:>13}M{:>11}G{:>9.1}s{:>10} ms{:>13}",
+        short(path),
+        parameters.checked_div(1_000_000).unwrap_or(0),
+        dequantized.checked_div(1_000_000_000).unwrap_or(0),
+        loaded,
+        per_token,
+        as_duration(projected)
+    ))
+}
+
+/// Milliseconds as something a person reads without counting zeros.
+#[allow(clippy::integer_division)]
+fn as_duration(millis: u64) -> String {
+    if millis < 10_000 {
+        return format!("{millis} ms");
+    }
+    if millis < 600_000 {
+        return format!("{}.{} s", millis / 1000, (millis % 1000) / 100);
+    }
+    format!("{} min", millis / 60_000)
+}
+
+/// The last two path components, which is what tells two quantizations apart.
+fn short(path: &str) -> String {
+    let parts: Vec<&str> = path.rsplit('/').take(1).collect();
+    parts.join("/")
 }
 
 /// What a forward pass actually asks the partition to do, counted rather than
