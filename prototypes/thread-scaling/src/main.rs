@@ -59,6 +59,13 @@ const PROMPT: &str = "The capital of France is";
 
 fn main() -> std::process::ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().is_some_and(|first| first == "shapes") {
+        let Some(path) = arguments.get(1) else {
+            eprintln!("usage: mcf-prototype-thread-scaling shapes <model.gguf>");
+            return std::process::ExitCode::FAILURE;
+        };
+        return shapes(path);
+    }
     if arguments.first().is_some_and(|first| first == "products") {
         let repeats: usize = arguments.get(1).and_then(|a| a.parse().ok()).unwrap_or(9);
         return products(repeats);
@@ -138,6 +145,79 @@ fn main() -> std::process::ExitCode {
 
     report(&counts, &measured, tokens);
     println!("load     {} at the end", said_load());
+    std::process::ExitCode::SUCCESS
+}
+
+/// What a forward pass actually asks the partition to do, counted rather than
+/// timed.
+///
+/// **A count is not a timing and needs no quiet machine.** How many products a
+/// token costs, and of what shapes, is a fact about the model's own dimensions;
+/// it is what says whether the cost of starting workers is paid once per token
+/// or two hundred times. Reading it from the shape rather than instrumenting
+/// the pass keeps this honest about what it is: arithmetic on numbers the file
+/// states, not an observation of a run.
+fn shapes(path: &str) -> std::process::ExitCode {
+    let Ok(bytes) = std::fs::read(path) else {
+        eprintln!("could not read {path}");
+        return std::process::ExitCode::FAILURE;
+    };
+    let file = match gguf::parse(&bytes) {
+        Ok(file) => file,
+        Err(failure) => {
+            eprintln!("{path} is not a model MCF reads: {failure}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let model = match load(&file, &bytes) {
+        Ok(model) => model,
+        Err(failure) => {
+            eprintln!("the model would not load: {failure}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let shape = &model.shape;
+    let width = shape.embedding;
+    let head = shape.head_dimension();
+    let queries = shape.query_width();
+    let keys = shape.key_value_width();
+
+    // Per block: q, k, v, o, gate, up, down. Plus one output projection a token.
+    let per_block: [(&str, usize, usize); 7] = [
+        ("attn_q", queries, width),
+        ("attn_k", keys, width),
+        ("attn_v", keys, width),
+        ("attn_output", width, queries),
+        ("ffn_gate", shape.feed_forward, width),
+        ("ffn_up", shape.feed_forward, width),
+        ("ffn_down", width, shape.feed_forward),
+    ];
+
+    println!("model    {path}");
+    println!(
+        "shape    {} block(s), width {width}, head {head}, feed-forward {}, vocabulary {}",
+        shape.blocks, shape.feed_forward, shape.vocabulary
+    );
+    println!();
+    println!("{:>16}{:>12}{:>16}", "product", "rows", "rows x columns");
+    let mut per_token_products = 0_usize;
+    for (name, rows, columns) in per_block {
+        println!("{name:>16}{rows:>12}{:>16}", rows.saturating_mul(columns));
+        per_token_products = per_token_products.saturating_add(shape.blocks);
+    }
+    println!(
+        "{:>16}{:>12}{:>16}",
+        "output",
+        shape.vocabulary,
+        shape.vocabulary.saturating_mul(width)
+    );
+    per_token_products = per_token_products.saturating_add(1);
+    println!();
+    println!(
+        "{per_token_products} product(s) a token. Every one of them starts and joins its \
+         workers, so a\npartition that costs anything to start pays that cost {per_token_products} \
+         times per token."
+    );
     std::process::ExitCode::SUCCESS
 }
 
@@ -230,7 +310,10 @@ fn products(repeats: usize) -> std::process::ExitCode {
             medians.push(median(&taken).unwrap_or(0));
         }
 
-        print!("{rows:>10} x{columns:>4}{:>9}u", median(&before).unwrap_or(0));
+        print!(
+            "{rows:>10} x{columns:>4}{:>9}u",
+            median(&before).unwrap_or(0)
+        );
         for value in &medians {
             print!("{value:>9}u");
         }
