@@ -949,6 +949,9 @@ fn generate(
     // (B-376, F64). Where it could not, the text goes and the run says it was
     // cold.
     let request = Ask::Generate {
+        // `mcf bench --prompt` is the operator's own text, held still across
+        // both arms — theirs, not MCF's (§6.8, B-146).
+        whose: mcf_record::content::Whose::User,
         model: path.display().to_string(),
         prompt: match identifiers {
             Some(_) => String::new(),

@@ -358,6 +358,7 @@ impl Daemon {
                     model,
                     prompt,
                     limit,
+                    whose,
                     seed,
                     tokens,
                     engine,
@@ -371,6 +372,7 @@ impl Daemon {
                         seed,
                         tokens.as_deref(),
                         engine.as_deref(),
+                        whose,
                         &mut writer,
                     );
                     return None;
@@ -415,6 +417,7 @@ impl Daemon {
         seed: u64,
         tokens: Option<&[usize]>,
         engine: Option<&str>,
+        whose: mcf_record::content::Whose,
         writer: &mut &UnixStream,
     ) {
         let at = Timestamp::now();
@@ -447,12 +450,28 @@ impl Daemon {
         // many bytes were said with nothing filed under it, which
         // `disclose_kept` answers as absent. That is a state, and it is the one
         // A7 wants: *not kept* rather than a plausible empty string.
-        let Some(id) = self.note(EntryKind::Generated, at, produced.account) else {
+        // Whose text this was is a *condition* of the generation, not content:
+        // a turn MCF asked for is a different experiment from one a person
+        // asked for, and a reader of the record is entitled to tell them apart
+        // (§3.4, B-146).
+        let account = match produced.account {
+            Value::Map(mut fields) => {
+                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                    conditions.insert("asked_by".to_owned(), Value::text(whose.as_str()));
+                }
+                Value::Map(fields)
+            }
+            account => account,
+        };
+        let Some(id) = self.note(EntryKind::Generated, at, account) else {
             return;
         };
         let Some(said) = produced.said else { return };
-        let store = match mcf_record::content::ContentStore::open(
-            &mcf_record::content::ContentStore::beside(&self.places.journal),
+        // Filed in the store its category names: a person's text and MCF's own
+        // do not share a directory (§6.8, B-146, F114).
+        let store = match mcf_record::content::ContentStore::open_for(
+            &mcf_record::content::ContentStore::beside_for(&self.places.journal, whose),
+            whose,
         ) {
             Ok(store) => store,
             Err(failure) => {

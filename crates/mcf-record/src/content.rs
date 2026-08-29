@@ -48,6 +48,78 @@ use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Sub
 
 const WHERE: Subsystem = Subsystem::new("mcf-record::content");
 
+/// Whose text this is, decided where the text is made (B-146, §6.8).
+///
+/// **§6.8's split, as two types rather than a flag.** *Benchmark suites — whose
+/// content is fixture data, not user data — may be recorded in full, and this
+/// distinction is exactly why suite data and user traffic must be structurally
+/// separated rather than separated by convention.* A flag on one store is
+/// separation by convention: it is right until the day something forgets to set
+/// it, and what it protects is the user's most sensitive text.
+///
+/// So there are two types with no conversion between them and two stores in two
+/// directories. Which one a piece of text is is settled by *who asked for the
+/// generation*, at the point the request is made, and travels on the wire — not
+/// by a setting, which is what "cannot be defeated by configuration" means.
+///
+/// **It was not academic.** Seven hours after the content store began holding
+/// anything, 614 files were in it and most were MCF's own probe traffic — the
+/// chat-template probe's three constant questions and a model's answers to them
+/// — filed beside a person's `mcf run` and indistinguishable from it (F114).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Whose {
+    /// A person asked for this: their prompt, and the model's answer to it.
+    ///
+    /// The category §6.8 protects and DEC-005 will govern the retention of.
+    User,
+    /// MCF asked for this: a probe's constant question, a suite's held-still
+    /// prompt, and the model's answer to either.
+    ///
+    /// Fixture data, which §6.8 says may be recorded in full — and which is
+    /// nobody's private text, so an operator purging their own content should
+    /// not have to delete MCF's evidence to do it.
+    Fixture,
+}
+
+impl Whose {
+    /// The directory this kind of text lives in.
+    ///
+    /// Two directories rather than two files or one file with a column: an
+    /// operator can look at one of them, delete one of them, and back up one of
+    /// them without the other, which is what a separate category *is*.
+    #[must_use]
+    pub const fn directory(self) -> &'static str {
+        match self {
+            Self::User => "content",
+            Self::Fixture => "fixtures",
+        }
+    }
+
+    /// How it is written on the wire and in a record's conditions.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Fixture => "fixture",
+        }
+    }
+
+    /// The kind a written name refers to.
+    ///
+    /// `None` for a name this build does not know, which a caller must handle:
+    /// filing unknown text as the user's would put MCF's traffic under the
+    /// operator's retention, and filing it as fixture would put the operator's
+    /// under MCF's. Neither is safe to guess (A7).
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "user" => Some(Self::User),
+            "fixture" => Some(Self::Fixture),
+            _ => None,
+        }
+    }
+}
+
 /// Something a user wrote or a model generated.
 ///
 /// A newtype rather than a `String`, so that content cannot be passed where a
@@ -102,9 +174,16 @@ impl core::fmt::Debug for Content {
 /// separation is the feature: an export that walks the record cannot reach this
 /// store, because nothing in the record points at it and no function here takes
 /// or returns a record type.
+///
+/// **And there is one of these per [`Whose`]** (B-146, §6.8): a store is opened
+/// for a category and holds that category, so a caller cannot file a person's
+/// prompt where MCF keeps its own traffic by passing a different argument. The
+/// category is chosen when the store is opened, from a value that came off the
+/// wire with the request.
 #[derive(Debug)]
 pub struct ContentStore {
     path: PathBuf,
+    whose: Whose,
 }
 
 impl ContentStore {
@@ -114,6 +193,15 @@ impl ContentStore {
     ///
     /// `record.unwritable` when the directory cannot be created.
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_for(path, Whose::User)
+    }
+
+    /// Opens the store for one category of text.
+    ///
+    /// # Errors
+    ///
+    /// `record.unwritable` when the directory cannot be created.
+    pub fn open_for(path: &Path, whose: Whose) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 Failure::new(
@@ -129,7 +217,14 @@ impl ContentStore {
         }
         Ok(Self {
             path: path.to_path_buf(),
+            whose,
         })
+    }
+
+    /// Which category this store holds.
+    #[must_use]
+    pub const fn whose(&self) -> Whose {
+        self.whose
     }
 
     /// Where it lives.
@@ -249,15 +344,22 @@ impl ContentStore {
     /// halves of one machine's history in two places (F46's shape).
     #[must_use]
     pub fn beside(record: &Path) -> PathBuf {
-        record
-            .parent()
-            .map_or_else(|| PathBuf::from("content"), |dir| dir.join("content"))
+        Self::beside_for(record, Whose::User)
+    }
+
+    /// Where one category of text lives beside a record at a stated path.
+    #[must_use]
+    pub fn beside_for(record: &Path, whose: Whose) -> PathBuf {
+        record.parent().map_or_else(
+            || PathBuf::from(whose.directory()),
+            |dir| dir.join(whose.directory()),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Content, ContentStore};
+    use super::{Content, ContentStore, Whose};
 
     /// A25's guarantee is structural, and the structure is that these are
     /// different types with no conversion. The compiler enforces it; what is
@@ -300,6 +402,71 @@ mod tests {
         };
         assert_ne!(record, content);
         assert!(!content.ends_with("record.jsonl"));
+    }
+
+    /// The two categories are two directories, and neither is the other.
+    ///
+    /// §6.8's split is what makes a person able to purge their own text without
+    /// deleting MCF's evidence, and MCF able to keep its own in full without
+    /// keeping theirs (B-146).
+    #[test]
+    fn a_persons_text_and_mcfs_own_do_not_share_a_directory() {
+        let record = std::path::Path::new("/somewhere/record.jsonl");
+        let user = ContentStore::beside_for(record, Whose::User);
+        let fixture = ContentStore::beside_for(record, Whose::Fixture);
+        assert_ne!(user, fixture);
+        assert!(user.ends_with("content"));
+        assert!(fixture.ends_with("fixtures"));
+    }
+
+    /// A store holds the category it was opened for, and says which.
+    #[test]
+    fn a_store_knows_whose_text_it_holds() {
+        let root = std::env::temp_dir().join(format!("mcf-whose-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&root);
+        let user =
+            ContentStore::open_for(&root.join("content"), Whose::User).expect("a store opens");
+        let fixture =
+            ContentStore::open_for(&root.join("fixtures"), Whose::Fixture).expect("a store opens");
+        assert_eq!(user.whose(), Whose::User);
+        assert_eq!(fixture.whose(), Whose::Fixture);
+
+        // The same key in both stores is two different pieces of text, which is
+        // the point: one identifier, two categories, two files.
+        user.keep("k", &Content::new("what a person typed"))
+            .expect("kept");
+        fixture
+            .keep("k", &Content::new("what MCF asked"))
+            .expect("kept");
+        assert_eq!(
+            user.disclose_kept("k")
+                .expect("read")
+                .expect("there")
+                .disclose(),
+            "what a person typed"
+        );
+        assert_eq!(
+            fixture
+                .disclose_kept("k")
+                .expect("read")
+                .expect("there")
+                .disclose(),
+            "what MCF asked"
+        );
+        let _removed = std::fs::remove_dir_all(&root);
+    }
+
+    /// A name this build does not know is not guessed at.
+    ///
+    /// Filing unknown text as the user's puts MCF's traffic under their
+    /// retention; filing it as fixture puts theirs under MCF's. Neither is safe,
+    /// so `parse` returns nothing and the caller decides in the open (A7).
+    #[test]
+    fn an_unknown_category_is_not_guessed() {
+        assert_eq!(Whose::parse("user"), Some(Whose::User));
+        assert_eq!(Whose::parse("fixture"), Some(Whose::Fixture));
+        assert_eq!(Whose::parse("suite"), None);
+        assert_eq!(Whose::parse(""), None);
     }
 
     /// A7: MCF does not invent a place to write the user's content.

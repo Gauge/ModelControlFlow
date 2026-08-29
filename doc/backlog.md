@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 226 |
+| **Version** | 227 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **287 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 232 build items (147 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 35 open).** Every item cites
+decided, 23 resolved) and 232 build items (148 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 34 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -362,7 +362,7 @@ first and importance second.
 | B-143 | Bug-to-fixture discipline: an escaped bug becomes a permanent lab scenario before it becomes a fix | §3.5, §3.17 | Enforced in review and checkable from the commit record | open **An instance nobody could turn into a fixture, recorded so the next one has a precedent**: on 2026-08-29 one `whole_system` run failed while another project held this machine's exclusive window and 88% of it was busy; the failing test's name was lost to a pipe, and four runs since have passed. What is known is written down — the load, the date, the suite — because an escaped failure nobody records is one the next occurrence cannot be joined to (A1) |
 | B-144 | State migration across MCF versions, with comparability of historical measurements handled per DEC-013 | §7.13 | An upgrade either preserves comparability or invalidates the affected history explicitly | blocked (DEC-013) |
 | B-145 | Record retention, inspection and purge per DEC-005, including behaviour when the record's disk budget is exhausted | §7.5, §3.10 | The user can see and purge what MCF holds; budget exhaustion is a classified, loud outcome | blocked (DEC-005) |
-| B-146 | Content-versus-system separation enforced structurally: suite fixture data and user traffic are different categories with different retention, not the same store with a flag | §6.8 | The separation is structural and cannot be defeated by configuration | open |
+| B-146 | Content-versus-system separation enforced structurally: suite fixture data and user traffic are different categories with different retention, not the same store with a flag | §6.8 | The separation is structural and cannot be defeated by configuration | **done** (F114) for the structure, which is what this row is about; the *retention* half is DEC-005's and still blocked. **Found by opening the store**: seven hours after B-392 gave MCF one, it held 614 files and most were the chat-template probe's three constant questions with a model's answers — MCF's own traffic filed beside a person's `mcf run`. §6.8 names that conflation and says why the separation must be structural. It is two types with no conversion (`Whose::User`, `Whose::Fixture`) and two directories; a store is opened *for* a category and `keep` takes none, so a caller cannot aim it; and the category travels on the wire, because the daemon cannot tell a probe's question from a person's prompt by looking at them. Absent means the operator's, which is the safe direction. Adding the field failed the build in seven places, which is the list of everything that asks a model for anything, produced by the type system. Demonstrated on a fresh machine: one file in `content/`, fifty-one in `fixtures/`, and the record carries `asked_by` as a condition. The 614 that predate it stay where they are (A1) |
 | B-147 | Offline operation: as much as possible works with no network, loudly labelled; "no internet" and "no local network" are distinct conditions | §7.11, §3.2 | The offline scenario runs the whole of M1–M7 to the extent possible and labels every degradation | open — unblocked by D33, and half-built with it: everything but acquisition already runs in a container with no network (B-183), and a request that needs one reports which of three things it observed rather than guessing at a layer. What remains is the *labelling* across M2–M7's surfaces, which need those surfaces to exist |
 | B-148 | Long-run endurance scenario: days of simulated operation with faults, restarts, thermal excursions and upgrades | §I, §3.17 | MCF remains coherent, queryable and restartable throughout, with no unclassified outcome | open |
 | B-260 | Longitudinal regression detection: compare like with like, detect against historical spread rather than a threshold, correlate with the diff of everything that changed, report as a labelled hypothesis and never as a cause | [PR7](proposals.md#pr7--longitudinal-regression-detection), §6.7, A18 | A drop exceeding historical spread is surfaced with what changed alongside it; improvements are reported the same way | blocked (DEC-045, DEC-007) |
@@ -404,6 +404,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 227 — MCF's own traffic is not the operator's
+
+B-146 done for the structure; DEC-005 still owns the retention. The content
+store held 614 files seven hours after it began holding anything, and most were
+MCF's own probe traffic. Two types, two directories, and the category travels
+with the request. F114.
 
 ### Version 226 — the load tier found a race in the laboratory
 

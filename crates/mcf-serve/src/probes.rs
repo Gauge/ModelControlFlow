@@ -734,6 +734,10 @@ pub fn spoken(
     };
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(600)));
     let request = crate::control::Request::Generate {
+        // A probe's question is MCF's own constant and the answer is to that
+        // question, so this is fixture data rather than the operator's (§6.8,
+        // B-146).
+        whose: mcf_record::content::Whose::Fixture,
         model: model.display().to_string(),
         prompt: prompt.to_owned(),
         limit: Some(budget),
@@ -1076,6 +1080,10 @@ pub fn accepts(
     };
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
     let request = crate::control::Request::Generate {
+        // A probe's question is MCF's own constant and the answer is to that
+        // question, so this is fixture data rather than the operator's (§6.8,
+        // B-146).
+        whose: mcf_record::content::Whose::Fixture,
         model: model.display().to_string(),
         prompt: String::new(),
         limit: Some(1),

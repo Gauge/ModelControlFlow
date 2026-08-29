@@ -197,6 +197,9 @@ fn served(
     let mut connection = connection;
 
     let request = Ask::Generate {
+        // A person typed this prompt: their text, and the model's answer to
+        // it. The category §6.8 protects (B-146).
+        whose: mcf_record::content::Whose::User,
         model: path.display().to_string(),
         prompt: prompt.to_owned(),
         limit,

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 98 |
+| **Version** | 99 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -141,6 +141,7 @@ forward as one.
 | 111 | [F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38) |
 | 112 | [F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)](#112--f112--two-absolute-rules-named-checks-that-did-not-exist-and-one-of-them-had-a-hole-on-a-shipped-surface-b-073-b-072-a6-a22-b16-d27) |
 | 113 | [F113 — The load tier found a race in the laboratory, and it was six runs in a thousand of a file being written and executed at once (B-191, B-009, §3.17, D26, A13)](#113--f113--the-load-tier-found-a-race-in-the-laboratory-and-it-was-six-runs-in-a-thousand-of-a-file-being-written-and-executed-at-once-b-191-b-009-317-d26-a13) |
+| 114 | [F114 — MCF was keeping its own probe traffic in the store meant for the operator's private text (B-146, B-392, §6.8, A17, A25, B9)](#114--f114--mcf-was-keeping-its-own-probe-traffic-in-the-store-meant-for-the-operators-private-text-b-146-b-392-68-a17-a25-b9) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8413,7 +8414,79 @@ than this one. The bound is stated where a reader will meet it, the failure past
 it is reported rather than swallowed, and what a *hundred*-way run does is not
 known — which is A7's answer rather than a number nobody measured.
 
+## 114 · F114 — MCF was keeping its own probe traffic in the store meant for the operator's private text (B-146, B-392, §6.8, A17, A25, B9)
+
+**Found by opening the store.** [F105](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103)
+gave MCF a content store seven hours earlier. It held **614 files**, and most of
+them were not the operator's:
+
+```
+generated_2026-08-29T07-19-18Z…   <think> Okay, the user is asking for the capital of France…
+generated_2026-08-29T07-19-22Z…   <think> Okay, so the user is asking how many days are in a week…
+generated_2026-08-29T07-19-25Z…   <think> Okay, the user is asking me to name one colour of the rainbow…
+```
+
+Those are the chat-template probe's three constant questions — `probes.rs` lines
+629–631 — and a model's answers to them. MCF's own traffic, filed beside a
+person's `mcf run` and indistinguishable from it.
+
+**§6.8 names this exact conflation**, and it is the reason the rule is written
+the way it is: *benchmark suites — whose content is fixture data, not user data
+— may be recorded in full, and this distinction is exactly why suite data and
+user traffic must be structurally separated rather than separated by
+convention.* B-146 has said so since the register was written.
+
+**Why it matters in practice, before any retention policy exists.** An operator
+who purges *their* text would delete MCF's evidence with it; an operator
+auditing what MCF holds of theirs meets six hundred files that are not theirs
+and has to take somebody's word for which is which. DEC-005 will decide the
+retention of the first category and §6.8 already permits keeping the second in
+full — two different answers that cannot be given about one store.
+
+**The split, and why it is not a flag.** Two types with no conversion —
+`Whose::User`, `Whose::Fixture` — and two directories, `content/` and
+`fixtures/`. A store is opened *for* a category and writes only there: `keep`
+takes no category, so a caller cannot aim it. And the category **travels on the
+wire**, because the daemon cannot tell a probe's constant question from a
+person's prompt by looking at it — they arrive on the same socket in the same
+shape. A request that does not say is the operator's, which is the safe
+direction: MCF's traffic under a person's retention is untidy, and a person's
+under MCF's is the privacy failure §6.8 exists to prevent.
+
+**The compiler enumerated the callers.** Adding the field to `Request::Generate`
+failed the build in seven places — `mcf run`, `mcf bench`, `cross-check`, two
+probe paths, the self-cost measurement, and the daemon's own pattern — which is
+the whole list of things that ask a model for anything, produced by the type
+system rather than by grep.
+
+**Demonstrated on a fresh machine.** One `mcf run` and one `mcf probe` against
+an isolated data home:
+
+| | files |
+|---|---|
+| `content/` — the operator's | **1** |
+| `fixtures/` — MCF's own | **51** |
+
+and the record carries it as a condition rather than as content: 52 entries say
+`asked_by: fixture`, one says `asked_by: user`. Before the change all 52 would
+have been one heap.
+
+**The 614 that predate the split stay where they are.** A1 forbids rewriting the
+record's history and the same reasoning holds for what sits beside it: MCF could
+guess which of them are its own by matching prompts it recognises, and a guess
+that moves a person's text is exactly the thing this finding is about. They are
+in `content/`, they are mostly MCF's, and this paragraph is the only honest
+place to say so.
+
 ## Changelog
+
+### Version 99 — MCF's own traffic was in the operator's store
+
+F114. Seven hours after the content store began holding anything it held 614
+files, and most were the chat-template probe's three constant questions and a
+model's answers. §6.8's split is two types and two directories now, and the
+category travels with the request because the daemon cannot tell them apart by
+looking.
 
 ### Version 98 — the load tier found a race in the laboratory
 
