@@ -202,7 +202,7 @@ fn the_pooled_null_finds_a_real_difference() {
         // size without pairs (F92, B53, B-388).
         // Assembled arms report a size with no interval, in a variant that
         // cannot be mistaken for a paired one (F92, B53).
-        Verdict::Apart { by, .. } => assert!(by.0 > 500_000, "a doubling: {by:?}"),
+        Verdict::Apart { by, .. } => assert!(by.low.0 > 500_000, "a doubling: {by:?}"),
         other => panic!("a doubling was not seen: {other}"),
     }
 }
@@ -499,5 +499,103 @@ mod spreads {
             "reported as a flat *by 114.0%*, the evidence actually spans 33.5% to 182% — a \
              fivefold range presented as one number to a decimal place"
         );
+    }
+}
+
+/// The unpaired interval, and the distribution it is inverted from (B-388).
+mod unpaired {
+    use super::super::{rank_sum_counts, spread_of_separate};
+
+    /// **A19 on the distribution itself.** The counts are built by a
+    /// recurrence; this counts the same thing by generating every
+    /// interleaving of two arms and tallying the statistic directly. The two
+    /// share no arithmetic, which is the whole point (F94).
+    #[test]
+    fn the_distribution_matches_a_brute_force_enumeration() {
+        for n in 1_usize..=6 {
+            for m in 1_usize..=6 {
+                let held = rank_sum_counts(n, m).expect("small arms are countable");
+                // Every arrangement of n zeroes and m ones, as a bit pattern.
+                let total = n + m;
+                let mut counted = vec![0_u128; n * m + 1];
+                for pattern in 0_u32..(1 << total) {
+                    if usize::try_from(pattern.count_ones()).unwrap_or(0) != m {
+                        continue;
+                    }
+                    // Walking the arrangement, each value from the second arm
+                    // is out of order with every value of the first still to
+                    // come.
+                    let mut seen_first = 0_usize;
+                    let mut statistic = 0_usize;
+                    for at in 0..total {
+                        if pattern & (1 << at) == 0 {
+                            seen_first += 1;
+                        } else {
+                            statistic += n - seen_first;
+                        }
+                    }
+                    counted[statistic] += 1;
+                }
+                assert_eq!(
+                    held, counted,
+                    "at n={n}, m={m} the recurrence and the enumeration disagree"
+                );
+            }
+        }
+    }
+
+    /// The counts sum to every way the two arms could interleave.
+    #[test]
+    fn the_distribution_is_complete() {
+        for (n, m, expected) in [(3_usize, 3_usize, 20_u128), (4, 6, 210), (8, 8, 12_870)] {
+            let held: u128 = rank_sum_counts(n, m).expect("countable").iter().sum();
+            assert_eq!(held, expected, "n={n}, m={m} must sum to C(n+m, n)");
+        }
+    }
+
+    /// It is symmetric, as a null distribution over an ordering must be.
+    #[test]
+    fn the_distribution_is_symmetric() {
+        let held = rank_sum_counts(5, 7).expect("countable");
+        let reversed: Vec<u128> = held.iter().copied().rev().collect();
+        assert_eq!(held, reversed);
+    }
+
+    /// Two arms that plainly differ get an interval that excludes nothing
+    /// absurd, and one that clears a resolution.
+    #[test]
+    fn two_separated_arms_get_an_interval() {
+        let slow: Vec<u64> = (0..8).map(|at| 2_000_000_000 + at * 1_000_000).collect();
+        let quick: Vec<u64> = (0..8).map(|at| 1_000_000_000 + at * 1_000_000).collect();
+        let held = spread_of_separate(&slow, &quick).expect("sixteen values support an interval");
+        assert!(held.low.0 > 0, "the arms plainly differ: {held:?}");
+        assert!(
+            held.high.0 >= held.low.0,
+            "an interval is ordered: {held:?}"
+        );
+        assert!(
+            held.coverage.0 >= super::super::WANTED_COVERAGE.0,
+            "and reaches the standard asked for: {held:?}"
+        );
+    }
+
+    /// Arms drawn from the same place put no floor under the difference.
+    #[test]
+    fn two_alike_arms_reach_zero() {
+        let one: Vec<u64> = (0..8).map(|at| 1_000_000_000 + at * 1_000_000).collect();
+        let other: Vec<u64> = (0..8).map(|at| 1_000_500_000 + at * 1_000_000).collect();
+        let held = spread_of_separate(&one, &other).expect("sixteen values");
+        assert_eq!(
+            held.low,
+            mcf_core::measurement::PartsPerMillion(0),
+            "overlapping arms cannot bound the size away from nothing: {held:?}"
+        );
+    }
+
+    /// Too little evidence is an absence rather than a narrower claim.
+    #[test]
+    fn tiny_arms_get_no_interval() {
+        assert!(spread_of_separate(&[1_000], &[2_000]).is_none());
+        assert!(spread_of_separate(&[], &[1, 2, 3]).is_none());
     }
 }
