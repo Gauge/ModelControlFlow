@@ -124,6 +124,7 @@ forward as one.
 | 95 | [F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92) |
 | 96 | [F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)](#96--f96--the-pre-flight-marks-rather-than-refuses-and-the-band-it-uses-says-whose-machine-measured-it-b-217-dec-007-f95-a21-a20-a4) |
 | 97 | [F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)](#97--f97--five-modules-measure-something-and-are-checked-against-nothing-and-now-they-say-so-b-390-a19-a7-616) |
+| 98 | [F98 — The unpaired interval needed different mathematics, and the recurrence was checked against enumeration (B-388, B54, B53, §3.27, A19)](#98--f98--the-unpaired-interval-needed-different-mathematics-and-the-recurrence-was-checked-against-enumeration-b-388-b54-b53-327-a19) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6994,6 +6995,60 @@ written rather than guessed at.
 
 **Both negative controls were exercised.** A module whose marker was removed
 fails by name; a sixth module claiming the debt fails with *up from 5*.
+
+## 98 · F98 — The unpaired interval needed different mathematics, and the recurrence was checked against enumeration (B-388, B54, B53, §3.27, A19)
+
+**The gap [F92](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327)
+left open.** When the effect size became a range, the range was an order
+statistic of *paired* differences with coverage from a binomial tail. Arms
+assembled from separate sessions have no pairs, so `Verdict::Apart` reported a
+point and said so — because inventing a range from the two arms' own ranges
+would have been exactly the confident wrong number the interval exists to
+prevent.
+
+**What it needed.** Without pairs the estimator is the median of **every**
+pairwise comparison — `n·m` of them — and the coverage comes from the rank-sum
+distribution rather than from a coin. That distribution is exactly computable
+by a recurrence: the next value comes either from one arm, adding `m` to the
+statistic, or from the other, adding nothing.
+
+```
+f(n, m, u) = f(n-1, m, u-m) + f(n, m-1, u)
+```
+
+Whole numbers throughout, no resampling, no distributional assumption — the
+same standard the paired interval is held to, reached by different means.
+
+**On the quantity MCF already reports.** Each pairwise value is the signed
+difference in parts per million of the smaller of the two. That is a *monotone*
+function of the ratio between them — increasing in `y/x` on both sides of the
+crossover, which is what makes an order statistic of these values an order
+statistic of the ratio and the inversion valid.
+
+**The recurrence was checked against enumeration before it was used.** For
+every `n` and `m` up to six, a second implementation generates every
+interleaving of the two arms as a bit pattern, tallies the statistic directly,
+and compares. The two share no arithmetic. They agree, the counts sum to
+`C(n+m, n)`, and the distribution is symmetric — which is [F94](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93)'s
+discipline applied at the moment of writing rather than after a defect.
+
+**A cap, and which way it errs.** The table is `n·m + 1` counts built in `n·m`
+steps, so its cost grows as the square of the product. Forty a side is sixteen
+hundred pairwise values — far more evidence than any run here has produced —
+and beyond it both arms are scaled down in proportion. Scaling down **widens**
+the interval: an arm treated as smaller than it is claims less than it could,
+which is the direction an approximation is allowed to err in.
+
+**`Apart` stays its own verdict.** It now carries the same three fields the
+paired row does, so a reader comparing the two sees both stated the same way —
+and it remains a distinct kind in the record, because what these arms lack is
+the pairing that would have held the afternoon still, not an interval. B53's
+*weaker claim* is about the construction, and that has not changed.
+
+**And the debt is settled.** Of the five modules that measure something and are
+compared against nothing, `enough` was never one — it was cross-checked from
+the day the interval landed. This adds a second independent check to the same
+module rather than a sixth entry to the list.
 
 ## Changelog
 

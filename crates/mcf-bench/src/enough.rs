@@ -140,23 +140,27 @@ pub enum Verdict {
         /// How many paired trials it took.
         after: usize,
     },
-    /// Two arms that were never paired are apart, by a point estimate that
-    /// carries no interval (F92, B53, B-388).
+    /// Two arms that were never paired are apart, by a range built without
+    /// pairs (B-388, F92, B53).
     ///
     /// **Why this is not [`Verdict::Differ`].** The interval `Differ` carries
     /// is an order statistic of *paired* differences, and there are no pairs
-    /// here. The unpaired equivalent needs a rank-sum distribution this crate
-    /// does not have, and inventing a range from the two arms' own ranges
-    /// would be precisely the confident wrong number the interval exists to
-    /// prevent. So the size is reported as what it is — a point, with no
-    /// measure of its own reliability — in a variant that cannot be mistaken
-    /// for the paired one by anything reading the record.
+    /// here. This one is the median of every pairwise comparison with its
+    /// coverage taken from the exact rank-sum distribution — the same standard
+    /// of evidence reached by different mathematics, in a variant that cannot
+    /// be mistaken for the paired one by anything reading the record.
     ///
-    /// B53 already makes an assembled comparison the weaker claim. This is
-    /// where the weakness stops being a label.
+    /// B53 makes an assembled comparison the weaker claim and it still is:
+    /// what these arms lack is the pairing that would have held the afternoon
+    /// still, not an interval.
     Apart {
-        /// The difference between the two arms' medians.
-        by: PartsPerMillion,
+        /// How large the difference is, as a range (B-388).
+        ///
+        /// The paired interval's counterpart: the median of every pairwise
+        /// comparison, with coverage from the exact rank-sum distribution
+        /// rather than from a coin. B53 still makes an assembled comparison
+        /// the weaker claim — what it lacks is pairing, not an interval.
+        by: Spread,
         /// Whether the left arm was the quicker one.
         left_quicker: bool,
         /// How often noise alone manufactured a gap this big.
@@ -231,13 +235,11 @@ impl fmt::Display for Verdict {
                 after,
             } => write!(
                 form,
-                "the {} arm is quicker by {}, after {after} trial(s) each — noise alone \
+                "the {} arm is quicker by {by}, after {after} trial(s) each — noise alone \
                  manufactured a gap that big {} of the time. These arms were never paired, so \
-                 this size is a point with no interval: MCF has no method to bound it without \
-                 pairs, and B53 already makes an assembled comparison the weaker claim \
-                 (F92, B-388)",
+                 the interval is over every pairwise comparison rather than over pairs, and \
+                 B53 makes an assembled comparison the weaker claim (B-388, §3.27)",
                 if *left_quicker { "left" } else { "right" },
-                percent(*by),
                 percent(*by_chance)
             ),
             Self::Same {
@@ -523,19 +525,19 @@ pub(super) fn over_separate_arms(
     let by_chance = manufactured(one, other, observed, each);
     // The same two halves as the paired path, for the same reason (F59).
     if observed >= resolving && by_chance <= FALSE_ALARMS_ALLOWED {
-        // **And a third half this path cannot supply** (F92). `Differ` now
-        // carries an interval on the size, and the interval MCF computes is an
-        // order statistic of paired differences — of which there are none
-        // here. So an assembled comparison reports the order it established
-        // and says the size is unbounded, rather than reporting a point
-        // estimate that would look exactly like a paired one. B53 already
-        // makes this the weaker claim; this is where the weakness becomes
-        // visible instead of being a label.
-        return Verdict::Apart {
-            by: observed,
-            left_quicker: a < b,
-            by_chance,
-            after: each,
+        // **And an interval built without pairs** (B-388). The median of
+        // every pairwise comparison, with coverage from the exact rank-sum
+        // distribution. Where there is too little evidence to reach the
+        // standard, that is `NotYet` rather than a narrower claim wearing a
+        // wider label.
+        return match spread_of_separate(one, other) {
+            Some(by) => Verdict::Apart {
+                by,
+                left_quicker: a < b,
+                by_chance,
+                after: each,
+            },
+            None => Verdict::NotYet { so_far: each },
         };
     }
 
@@ -852,3 +854,142 @@ pub fn spread_of(differences: &[i64]) -> Option<Spread> {
 /// sign test are asking for the same standard of evidence rather than two
 /// numbers that happen to sit near each other.
 pub const WANTED_COVERAGE: PartsPerMillion = PartsPerMillion(MILLION - FALSE_ALARMS_ALLOWED.0);
+
+/// The largest sample either arm may contribute to an unpaired interval.
+///
+/// The exact rank-sum distribution is a table of `n·m + 1` counts built in
+/// `n·m` steps, so its cost grows as the square of the product. Forty a side
+/// is sixteen hundred pairwise values and a table of the same order — fast,
+/// and far more evidence than any run here has produced. Beyond it both arms
+/// are scaled down in proportion, which **widens** the interval: an arm
+/// treated as smaller than it is claims less than it could, and that is the
+/// direction an approximation is allowed to err in (A20's shape, applied to a
+/// count rather than to a value).
+const LARGEST_ARM: usize = 40;
+
+/// How many arrangements of `n` and `m` give each value of the rank-sum
+/// statistic, exactly.
+///
+/// **The distribution the unpaired interval is inverted from** (B-388). With
+/// `n` values from one arm and `m` from the other and no real difference
+/// between them, every one of the `C(n+m, n)` interleavings is equally likely.
+/// `U` counts how many pairs are out of order; this counts the interleavings
+/// giving each `U`, by the recurrence that either the next value comes from
+/// one arm — adding `m` to the count — or from the other, adding nothing:
+///
+/// ```text
+/// f(n, m, u) = f(n-1, m, u-m) + f(n, m-1, u)
+/// ```
+///
+/// Whole numbers throughout, no resampling and no distributional assumption,
+/// which is the same standard the paired interval is held to. `None` where the
+/// counts would leave `u128`.
+fn rank_sum_counts(n: usize, m: usize) -> Option<Vec<u128>> {
+    let span = n.checked_mul(m)?.checked_add(1)?;
+    // One row per value of `m`, rolled forward: `row[u]` is `f(i, j, u)` for
+    // the `i` and `j` reached so far.
+    let mut table = vec![vec![0_u128; span]; m.checked_add(1)?];
+    for row in &mut table {
+        *row.first_mut()? = 1;
+    }
+    for i in 1..=n {
+        let mut next = vec![vec![0_u128; span]; m.checked_add(1)?];
+        *next.first_mut()?.first_mut()? = 1;
+        for j in 1..=m {
+            for u in 0..span {
+                // From the arm that adds `j` to the statistic, and from the
+                // one that adds nothing.
+                let carried = u
+                    .checked_sub(j)
+                    .and_then(|less| table.get(j).and_then(|row| row.get(less)).copied());
+                let level = next
+                    .get(j.checked_sub(1)?)
+                    .and_then(|row| row.get(u))
+                    .copied();
+                let held = carried.unwrap_or(0).checked_add(level.unwrap_or(0))?;
+                *next.get_mut(j)?.get_mut(u)? = held;
+            }
+        }
+        table = next;
+        let _ = i;
+    }
+    table.into_iter().nth(m)
+}
+
+/// The exact interval for the difference between two arms that were never
+/// paired (B-388, B54, §3.27).
+///
+/// **The paired interval's counterpart, and why it needed different
+/// mathematics.** With pairs, the bounds are order statistics of the paired
+/// differences and the coverage is a binomial tail. Without pairs there are no
+/// paired differences — so the estimator is the median of **every** pairwise
+/// comparison, `n·m` of them, and the coverage comes from the rank-sum
+/// distribution above rather than from a coin.
+///
+/// **On the same quantity the paired path reports.** Each pairwise value is
+/// the signed difference in parts per million of the smaller of the two, which
+/// is a monotone function of the ratio between them — so an order statistic of
+/// these values is an order statistic of the ratio, and inverting the rank-sum
+/// distribution over them is valid.
+///
+/// `None` where no interval reaching [`WANTED_COVERAGE`] exists, which is any
+/// pair of arms small enough that the whole distribution is wider than the
+/// standard asked for. That is a statement about how much evidence there is.
+fn spread_of_separate(one: &[u64], other: &[u64]) -> Option<Spread> {
+    let (n, m) = (one.len().min(LARGEST_ARM), other.len().min(LARGEST_ARM));
+    if n == 0 || m == 0 {
+        return None;
+    }
+    let mut pairwise: Vec<i64> = Vec::new();
+    for left in one.iter().take(n) {
+        for right in other.iter().take(m) {
+            // Positive where the left arm was quicker, matching the paired
+            // path's convention throughout this crate.
+            let smaller = (*left).min(*right).max(1);
+            let signed = i128::from(*right).checked_sub(i128::from(*left))?;
+            pairwise.push(
+                i64::try_from(
+                    signed
+                        .checked_mul(i128::from(MILLION))?
+                        .checked_div(i128::from(smaller))?,
+                )
+                .ok()?,
+            );
+        }
+    }
+    pairwise.sort_unstable();
+
+    let counts = rank_sum_counts(n, m)?;
+    let total: u128 = counts.iter().copied().try_fold(0_u128, u128::checked_add)?;
+    let mut best: Option<(usize, u64)> = None;
+    let mut below: u128 = 0;
+    for (k, held) in counts.iter().enumerate() {
+        // `k` values fall strictly below this point of the distribution, so
+        // the interval that excludes them from each end covers what is left.
+        let missed = below
+            .checked_mul(2)?
+            .checked_mul(u128::from(MILLION))?
+            .checked_div(total)?;
+        let coverage = u64::try_from(u128::from(MILLION).saturating_sub(missed)).ok()?;
+        if coverage >= WANTED_COVERAGE.0 && k >= 1 && k <= pairwise.len().wrapping_div(2) {
+            best = Some((k, coverage));
+        }
+        below = below.checked_add(*held)?;
+    }
+    let (k, coverage) = best?;
+    let low = *pairwise.get(k.checked_sub(1)?)?;
+    let high = *pairwise.get(pairwise.len().checked_sub(k)?)?;
+    let (near, far) = if (low <= 0 && high >= 0) || (low >= 0 && high <= 0) {
+        (0, magnitude(low).max(magnitude(high)))
+    } else {
+        (
+            magnitude(low).min(magnitude(high)),
+            magnitude(low).max(magnitude(high)),
+        )
+    };
+    Some(Spread {
+        low: PartsPerMillion(near),
+        high: PartsPerMillion(far),
+        coverage: PartsPerMillion(coverage),
+    })
+}

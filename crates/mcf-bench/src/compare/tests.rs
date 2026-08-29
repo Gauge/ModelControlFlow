@@ -530,7 +530,7 @@ fn a_drift_invents_a_difference_in_blocks_and_cancels_in_pairs() {
         panic!("the blocked arrangement of the very same timings invents no difference: {invented}")
     };
     assert!(
-        (450_000..550_000).contains(&by.0),
+        (450_000..550_000).contains(&by.low.0),
         "the difference it invents is the drift, about fifty percent: {invented}"
     );
     assert!(

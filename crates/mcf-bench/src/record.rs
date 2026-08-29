@@ -249,12 +249,14 @@ fn outcome(finding: &Finding) -> Value {
                 Value::text(if *left_quicker { "left" } else { "right" }),
             ),
             ("resolution", Value::Null),
-            ("difference", parts_per_million(*by)),
-            // Null rather than absent: a reader comparing this row with a
-            // paired one must see that the interval is missing rather than
-            // have to notice that a field is (A7).
-            ("difference_high", Value::Null),
-            ("coverage", Value::Null),
+            // The same three fields the paired row carries (B-388). The kind
+            // is what tells a reader these arms were never paired; the
+            // interval itself is built to the same standard by different
+            // mathematics, and a reader comparing the two needs both stated
+            // the same way.
+            ("difference", parts_per_million(by.low)),
+            ("difference_high", parts_per_million(by.high)),
+            ("coverage", parts_per_million(by.coverage)),
             ("by_chance", parts_per_million(*by_chance)),
             ("pairs", count(*after)),
         ]),

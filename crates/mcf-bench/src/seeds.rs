@@ -169,21 +169,20 @@ pub fn representative(
                 larger: larger.len(),
             }
         }
-        Verdict::Differ { by, by_chance, .. } => Representative::No {
-            by: by.low,
-            by_chance,
-            standard: standard.len(),
-            larger: larger.len(),
-        },
-        // The unpaired path's answer (F92). For this question — *is the
-        // standard set representative* — the point estimate is what there is,
-        // and its lack of an interval is stated where the verdict is rendered.
-        Verdict::Apart { by, by_chance, .. } => Representative::No {
-            by,
-            by_chance,
-            standard: standard.len(),
-            larger: larger.len(),
-        },
+        // Both established differences answer this question the same way.
+        // The low bound is what matters: *at least this much* is what makes a
+        // standard set unrepresentative, and the interval's floor is that
+        // (B-388). `Differ` cannot arrive from this path — these arms are
+        // never paired — and is matched so that adding a pairing later does
+        // not silently change the answer.
+        Verdict::Differ { by, by_chance, .. } | Verdict::Apart { by, by_chance, .. } => {
+            Representative::No {
+                by: by.low,
+                by_chance,
+                standard: standard.len(),
+                larger: larger.len(),
+            }
+        }
         Verdict::NotYet { so_far } => Representative::NotYet { after: so_far },
     }
 }

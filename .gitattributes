@@ -1,0 +1,24 @@
+# What this repository is, as far as a forge is concerned.
+#
+# `vendor/` is 379,332 lines against MCF's own 79,000, and it is committed
+# deliberately: `.cargo/config.toml` replaces the registry with it so that
+# every build is offline and no dependency is resolved at build time (B-322,
+# §3.12). Left unmarked, a forge attributes all of it to this project and
+# reports MCF as a cryptography library.
+#
+# `linguist-vendored` keeps it out of the language statistics and collapses it
+# in diffs by default. It changes nothing about the build: the tree is still
+# there and still what cargo reads.
+vendor/** linguist-vendored
+
+# The documents are the project rather than an accompaniment to it — the rules
+# are enforced, the findings are evidence, and the register is what the work is
+# tracked in. They are marked as documentation so that a forge counts them as
+# what they are, and `linguist-detectable` so they are still counted at all.
+doc/** linguist-documentation
+doc/** linguist-detectable
+
+# Text is normalised on the way in and checked out with the platform's endings.
+# MCF runs on Linux, and a contributor reading it on another platform should
+# not see the whole tree as modified.
+* text=auto eol=lf
