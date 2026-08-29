@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 93 |
+| **Version** | 94 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -136,6 +136,7 @@ forward as one.
 | 106 | [F106 — A probe that asks for a shape, and the four whose results were never written down (B-054, B-386, D42, A1, A7, A9, F101, F103, F105)](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105) |
 | 107 | [F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)](#107--f107--the-oracles-first-disagreement-in-three-days-was-the-instruments-not-the-engines-b-393-b-368-b-373-f27-f34-f103-a19-a5) |
 | 108 | [F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)](#108--f108--two-rules-rested-on-somebody-remembering-and-one-identifier-had-been-cited-four-times-with-nothing-behind-it-b-394-c5-c6-b16-f80-730) |
+| 109 | [F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)](#109--f109--a-rule-of-thumb-that-cannot-be-read-as-a-result-cannot-be-recorded-and-expires-when-the-laboratory-lands-b-380-dec-002-a21-a25-315-318) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8060,7 +8061,76 @@ was wanted rather than an audit of the past.
 A1, *never lose information* — are not reducible to a mechanism. B16 asks for the
 number to fall, not to reach zero.
 
+## 109 · F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)
+
+**The item said the hazard is the whole of the design**, and it is: a rule of
+thumb printed beside a measured number *in the same typeface* becomes a measured
+number to a reader who is not looking for the difference — and the readers
+touchstones exist for are exactly those readers. MCF already has a shape for
+this. A21 gives a model's own claims three states, *declared*, *verified*,
+*unknown*, and forbids a fourth. Turned on MCF's own sentences, a touchstone is
+a fourth thing that is none of them: a statement about the world this machine
+has not measured.
+
+**Three structural properties, not three conventions.**
+
+1. **No digit, anywhere in a touchstone.** It describes a *relation* in words;
+   every number a reader sees came from a measurement, so a number in a
+   guidance sentence is a number somebody is entitled to check and cannot.
+2. **It cannot exist without its limits.** The constructor requires what MCF has
+   *not* measured about the relation, and no rendering omits it — there is one
+   `Display`, it is prefixed `RULE OF THUMB, not a result`, and it always ends
+   with *MCF has not measured …*. A surface that wants the words alone has to
+   call `bare()` and can be found by name.
+3. **It cannot reach the record.** No module of `mcf-record` may name the type.
+   This is A25's reasoning transferred exactly: a filter can be misconfigured,
+   and a sentence that was never written cannot be read back as data by somebody
+   who has forgotten where it came from. F105 is what happens when that property
+   is asserted and not held.
+
+**And it expires.** Each touchstone names the register item whose laboratory
+would replace it with a measurement — `B-110` for what a smaller quantization
+costs in quality, `B-122` for what a person notices, `B-205` for a workload
+unlike this one. When that item is done, offering a rule of thumb about
+something MCF can now measure is the defect, and the check fails until the
+touchstone is removed. That is B-380's *a laboratory that measures one replaces
+it and the replacement is visible as a change*, held by a machine rather than by
+whoever remembers. Both halves were exercised: a digit added to a touchstone
+fails by quoting it, and marking `B-110` done fails by naming the subject MCF
+could now measure.
+
+**Where they appear, and why not everywhere.** The operator's answer to DEC-002
+put the comparison view first, on the reasoning that a number teaches by
+contrast — *0.77 tokens per character means nothing alone and everything beside
+2.00* — so a reader in front of two values *sees* the difference the touchstone
+describes instead of being asked to believe it. Which ones appear is chosen by
+what the comparison isolated and what verdict it reached: a rule of thumb about
+quantization beside two unrelated models is a sentence about something the
+reader is not looking at, and a guidance section stops being read the moment it
+contains things that do not apply.
+
+**Demonstrated on a busy machine, which was not planned.** The comparison used
+to check the rendering ran while another project held this machine's exclusive
+window: 113 paired trials with 26 of 32 cores competing. MCF's own report says
+so — *NOT FIT TO CONTRIBUTE — 88.3% of this machine was already busy, OUTSIDE
+the band of 30.0%* — and the touchstones sat below it under their own rule. Two
+marks on one screen, each about a different thing: one says this measurement
+cannot travel, the other says this sentence is not a measurement. Neither
+diluted the other, which was the risk. It is also B-217's band firing on real
+contention rather than the synthetic load F95 measured it under.
+
+**What remains.** `mcf explain`, which the operator put second. And the
+catalogue is deliberately three: every entry is something MCF says on no
+evidence of its own, and §3.15's rule about choices the reader cannot see
+applies twice as hard to sentences the reader cannot check.
+
 ## Changelog
+
+### Version 94 — a rule of thumb that cannot be read as a result
+
+F109. B-380 for the comparison view: a touchstone carries no digit, cannot be
+built without saying what MCF has not measured, cannot reach the record, and
+expires when the laboratory that would replace it lands.
 
 ### Version 93 — an identifier is stable for life
 

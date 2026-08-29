@@ -41,6 +41,7 @@ pub mod probe;
 pub mod provenance;
 pub mod self_cost;
 pub mod time;
+pub mod touchstone;
 pub mod trial;
 
 pub use failure::{Failure, Result};

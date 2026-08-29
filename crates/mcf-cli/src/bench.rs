@@ -1053,6 +1053,65 @@ fn milliseconds(held: Duration<Monotonic>) -> String {
     format!("{}.{} ms", tenths.wrapping_div(10), tenths.wrapping_rem(10))
 }
 
+/// The rules of thumb that apply to what is on the screen (B-380, DEC-002).
+///
+/// **Placed here because a number teaches by contrast.** The operator's answer
+/// to DEC-002 put touchstones in the comparison view first: *0.77 tokens per
+/// character means nothing alone and everything beside 2.00*, so a reader
+/// placed in front of two values sees the difference a touchstone describes
+/// instead of being asked to believe it.
+///
+/// **Only where the subject is on the screen.** A rule of thumb about
+/// quantization beside a comparison of two unrelated models is a sentence about
+/// something the reader is not looking at, and the way a guidance section stops
+/// being read is by containing things that do not apply. So each is chosen by
+/// what this comparison actually isolated and what verdict it reached.
+///
+/// They are separated by their own rule and their own heading, and each renders
+/// through `Touchstone`'s `Display`, which cannot omit the mark or the limits.
+fn rules_of_thumb(finding: &mcf_bench::compare::Finding, planned: &Planned) -> Vec<String> {
+    use mcf_bench::enough::Verdict;
+    use mcf_core::touchstone::CATALOGUE;
+
+    let mut apt: Vec<&mcf_core::touchstone::Touchstone> = Vec::new();
+    let about = |subject: &str| CATALOGUE.iter().find(|held| held.subject() == subject);
+
+    // What the comparison isolated: a quantization frontier is the case this
+    // touchstone is for, and it is read from what the arms differ in rather
+    // than from what the caller called them.
+    let said = format!("{} {}", planned.work, finding.isolation()).to_lowercase();
+    if said.contains("quantization") {
+        apt.extend(about("a smaller quantization"));
+    }
+    match finding.verdict() {
+        // A difference that was established: the reader now has a size, and
+        // the size is the thing a rule of thumb is about.
+        Some(Verdict::Differ { .. } | Verdict::Apart { .. }) => {
+            apt.extend(about("a difference this small"));
+        }
+        // A null result, which is a result (A9) and the one most often
+        // over-read: *no difference* is about this prompt on this machine.
+        Some(Verdict::Same { .. }) => apt.extend(about("two arms that did not separate")),
+        Some(Verdict::Ordered { .. } | Verdict::NotYet { .. }) | None => {}
+    }
+    if apt.is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = vec![
+        String::new(),
+        "── rules of thumb, which are not results ────────────────────".to_owned(),
+    ];
+    for held in apt {
+        lines.push(format!("  {held}"));
+        lines.push(format!(
+            "    A laboratory would replace this with a measurement: {} (B-380)",
+            held.until()
+        ));
+    }
+    lines
+}
+
 /// What the operator reads.
 fn report(
     finding: &mcf_bench::compare::Finding,
@@ -1117,6 +1176,7 @@ fn report(
         );
         lines.push("           back and unmake them (A4).".to_owned());
     }
+    lines.extend(rules_of_thumb(finding, planned));
     lines.push(match written {
         Ok(path) => format!("  recorded {}", path.display()),
         // A6 and A2: the measurement stands, and the fact that it was not kept
