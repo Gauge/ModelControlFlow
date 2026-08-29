@@ -189,8 +189,10 @@ def arm_corpus(rows, dram_gbs=55.8):
             continue
         # a straight line through the bandwidth-bound part
         slope = np.polyfit(d[deep], y[deep], 1)[0]
-        growing = geo["growing_bytes_per_depth_token"]
+        growing = physics.growing_bytes_at(geo, float(np.median(d[deep])) if deep.any() else 0)
         if growing is None:
+            unscored.append((model, f"{geo['window_note']}: the depths measured "
+                                    f"are past a window whose interleave is unknown"))
             continue
         want = physics.predicted_slope_ms(growing, dram_gbs)
         streams = geo["per_layer_read"] >= 2048

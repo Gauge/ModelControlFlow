@@ -99,7 +99,15 @@ import physics
 geo = physics.geometry(sys.argv[1])
 trained = (geo or {}).get("trained") or 0
 if not trained:
-    print("")                      # no declared context: nothing to plan (A7)
+    # A state-space or recurrent model declares no context length, and
+    # correctly so: it keeps a fixed state rather than a growing cache. That
+    # is precisely the model whose curve should be FLAT, so it is the one
+    # most worth probing. The depths are assumed rather than declared, which
+    # the reading says (A21).
+    if (geo or {}).get("verdict") == "no-growing-cache":
+        print("4096 512 1024 2048 3584")
+    else:
+        print("")
     raise SystemExit
 allocation = min(int(trained), 16384)
 # 128 tokens are generated at each depth, and the engine needs headroom for
@@ -109,6 +117,13 @@ depths, d = [], 512
 while d <= ceiling:
     depths.append(d)
     d *= 2
+# One more depth as deep as the context allows. A doubling ladder stops at
+# the last power of two that fits, which for a model whose sliding window IS
+# a power of two means never probing past the window -- exactly the region
+# where the window changes the slope. gemma-2's window is 4096 and its
+# context 8192: without this it is measured only where it looks ordinary.
+if depths and ceiling >= depths[-1] * 1.4:
+    depths.append(ceiling)
 if not depths and ceiling >= 64:
     depths = [max(64, ceiling // 2)]   # a small-context model still has a curve
 print(" ".join(str(x) for x in [allocation] + depths))

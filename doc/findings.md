@@ -151,6 +151,7 @@ forward as one.
 | 121 | [F121 — The fall-off predicted from the file header on all 27 models, and the one outlier was an architecture the arithmetic did not describe (B-400, F120, A7, A21, B16)](#121-f121-the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16) |
 | 122 | [F122 — The predictor generalised by being made to refuse: two architectures agree to 8%, and every model it cannot describe now says so (B-400, F121, A2, A7, A9, A21)](#122-f122-the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21) |
 | 123 | [F123 — Counted rather than inferred: a token reads the whole model and the whole cache, so both halves of the curve are in the file (B-400, F121, F122, A11, A21, D19)](#123-f123-counted-rather-than-inferred-a-token-reads-the-whole-model-and-the-whole-cache-so-both-halves-of-the-curve-are-in-the-file-b-400-f121-f122-a11-a21-d19) |
+| 124 | [F124 — The whole curve from the file, on seven architectures, with a state-space model as the control that has no curve at all (B-400, F123, A6, A7, A12, A21)](#124-f124-the-whole-curve-from-the-file-on-seven-architectures-with-a-state-space-model-as-the-control-that-has-no-curve-at-all-b-400-f123-a6-a7-a12-a21) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9019,6 +9020,73 @@ a userspace benchmark that needs no privilege on any platform, and the cache
 topology it needs is world-readable — `index3: size=32768K shared_with=0-7,16-23`
 states the 32 MiB per core complex that a bandwidth cliff had been used to
 infer.
+
+## 124 · F124 — The whole curve from the file, on seven architectures, with a state-space model as the control that has no curve at all (B-400, F123, A6, A7, A12, A21)
+
+**The operator asked for an accurate measurement rather than a number
+calibrated on one family.** Five architectures were acquired — mamba, rwkv6,
+llama-3.2, gemma2, starcoder2 — bringing the corpus to seven, and the model
+was refitted against all of them. Four things were wrong with it and each was
+found by a model that did not fit.
+
+**The negative control has no curve, and that is the point.** A state-space
+model keeps a fixed state rather than a growing cache, so its cost per token
+should not rise with depth at all. Measured across depths 576 to 3648:
+
+| model | rise, shallowest to deepest |
+|---|---|
+| mamba-130m | **−0.1%** |
+| rwkv-6-world-1.6b | **+1.0%** |
+| gemma-3-270m | +29.8% |
+| gemma-2-2b | +36.5% |
+| starcoder2-3b | +64.0% |
+
+Both were refused by name as `no-growing-cache` from their real headers before
+being run, and neither declares a context length — correctly, since there is no
+cache to bound. The refusal that
+[F122](#122--f122--the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21)
+tested against a constructed header now has a measurement behind it.
+
+**A sliding window is piecewise in depth, not a property of the model.** Below
+the window a windowed layer has not filled it and grows exactly like a full one.
+gemma-2's window is 4096 and every depth first measured was under it, so its
+slope matched all 26 layers growing, ratio 1.01 — the window was invisible.
+Probed past it: 0.002297 below against 0.001234 past, a factor of 0.54. Half its
+layers keep growing, so one in two attends to the whole context, **derived from
+measurement rather than cited**.
+
+**The binary "streams or does not" split was the wrong shape.** It put
+Llama-3.2-1B on the wrong side of a step at exactly 2048 B. Achieved bandwidth
+is a curve in how much each layer reads contiguously, and a second term was
+needed: starcoder2 shares 2 KV heads across 24 query heads and was 62% out on
+read size alone. Grouped-query attention reads a cache entry once and uses it
+for several heads, so a high ratio means more arithmetic per byte:
+
+    achieved = 0.984 x read/(read + 433) / (1 + 0.0668 (query per KV head - 1))
+
+Median residual 4.8%, worst 17.8%, over 27 models and seven architectures. Both
+constants are this machine's and are refitted per machine.
+
+**And the weights do not pay the cache's penalty.** They are one long
+sequential stream whatever the architecture. Applying the cache's achieved
+fraction to the intercept made it worse — median ratio 1.49 against 0.90
+without. Two reads, two efficiencies.
+
+The whole curve, from the file, with nothing generated:
+
+    ms/token(d) = active weights / (BW x 0.90)
+                + d x growing KV bytes / (BW x achieved(read, sharing))
+
+| | n | median | 90th | worst |
+|---|---|---|---|---|
+| weights exceed 2× L3 | 96 | **3.6%** | 8.4% | **14.7%** |
+| weights fit near L3 — **declined** | 44 | 1.8% | 11.1% | 62.9% |
+
+The second row is the limit and it is the same cache boundary again. A model
+whose weights fit in L3 is re-read from cache, not memory, and an intercept at
+DRAM speed over-predicts it — Llama-160M holds about 100 MB against a 64 MiB L3
+and was out by a factor of two. The model is not wrong there; it is being
+applied where it does not hold, and it now says so instead.
 
 ## Changelog
 

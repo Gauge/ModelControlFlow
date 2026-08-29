@@ -47,7 +47,10 @@ L3_TOTAL = 64 * 1024 * 1024
 # was the only model in the corpus whose measured slope missed the prediction
 # by more than 3x -- and it missed it by close to 6x, in the direction of
 # being FLATTER than predicted.
-FULL_ATTENTION_EVERY = {"gemma3": 6}
+# gemma2 was DERIVED rather than cited. Measured either side of its own 4096
+# window: slope 0.002297 below, 0.001234 past, a factor of 0.54. Half the
+# layers keep growing, so one in two attends to the whole context.
+FULL_ATTENTION_EVERY = {"gemma3": 6, "gemma2": 2}
 
 # Architectures whose cost per token does NOT grow with depth, because they
 # keep no per-token cache to re-read. A recurrent or state-space model carries
@@ -149,6 +152,7 @@ def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
     layers = pick(".block_count")
     heads = pick(".attention.head_count")
     kv_heads = pick(".attention.head_count_kv")
+    query_heads = heads
     key_len = pick(".attention.key_length")
     val_len = pick(".attention.value_length")
     width = pick(".embedding_length")
@@ -184,27 +188,42 @@ def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
     architecture = next((k.split(".")[0] for k in kv), None)
     # Layers whose cost keeps growing with depth. Without a sliding window
     # that is all of them.
+    # A sliding window only flattens the curve PAST the window. Below it the
+    # window is not yet full, so a windowed layer grows with depth exactly
+    # like a full-attention one. gemma-2 has a 4096 window and its slope at
+    # depths under 4161 matched all 26 layers growing, ratio 1.01; gemma-3's
+    # window is 512, so every depth measured was past it and the flattening
+    # showed. The slope is therefore piecewise in depth, not one number.
     growing = layers
+    growing_past_window = layers
     window_note = None
     if window:
         every = FULL_ATTENTION_EVERY.get(architecture)
         if every:
-            growing = max(layers // every, 1)
+            growing_past_window = max(layers // every, 1)
             window_note = f"window {int(window)}, 1 full layer in {every}"
         else:
-            window_note = f"window {int(window)}, interleave unknown"
-            growing = None            # not predictable; say so rather than guess
+            growing_past_window = None
+            window_note = f"window {int(window)}, interleave unknown past the window"
 
     per_layer_read = kv_heads * (key_len + val_len) * cache_bytes
     return {
-        "verdict": "described" if growing is not None else "not-described",
+        # Below the window every architecture is describable; only the region
+        # past an unknown interleave is not.
+        "verdict": "described",
         "architecture": architecture,
         "why": window_note if growing is None else None,
         "cache_bytes": cache_bytes,
         "experts": experts, "experts_used": experts_used,
         "active_weight_fraction": active_fraction,
         "layers": layers, "kv_heads": kv_heads,
-        "growing_layers": growing, "window_note": window_note,
+        "query_per_kv_head": (
+            float(query_heads) / float(kv_heads) if query_heads and kv_heads else 1.0
+        ),
+        "growing_layers": growing,
+        "growing_layers_past_window": growing_past_window,
+        "sliding_window": int(window) if window else None,
+        "window_note": window_note,
         # How much of ONE layer's cache is read contiguously per token. A
         # bandwidth argument needs this to be big enough to stream; where it
         # is small the read is bound by latency instead and the prediction
@@ -219,8 +238,10 @@ def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
         "bytes_per_depth_token": int(layers * per_layer_read),
         "trained": trained,
         # what actually grows with depth, and so sets the slope
-        "growing_bytes_per_depth_token": (
-            int(growing * per_layer_read) if growing is not None else None
+        "growing_bytes_per_depth_token": int(growing * per_layer_read),
+        "growing_bytes_past_window": (
+            int(growing_past_window * per_layer_read)
+            if growing_past_window is not None else None
         ),
     }
 
@@ -236,6 +257,19 @@ def predicted_slope_ms(bytes_per_depth_token, dram_gbs):
     return bytes_per_depth_token / (dram_gbs * 1e9) * 1e3
 
 
+def weights_are_dram_bound(file_bytes, active_fraction=1.0):
+    """Whether the weights are big enough that reading them is a DRAM read.
+
+    A model whose active weights fit inside L3 is re-read from cache, not from
+    memory, and an intercept computed at DRAM speed over-predicts it. Llama-160M
+    holds about 100 MB against a 64 MiB L3 and was the worst prediction here by
+    a factor of two — not because the model is wrong but because it was applied
+    where it does not hold. The boundary is measured (a 53% bandwidth step
+    between 64 MB and 96 MB across sixteen threads), and a margin is kept
+    because partial residency is still partly cached."""
+    return file_bytes * active_fraction >= 2 * L3_TOTAL
+
+
 def predicted_intercept_ms(file_bytes, active_fraction, dram_gbs):
     """The depth-independent part: the weights, read once per generated token.
 
@@ -247,6 +281,51 @@ def predicted_intercept_ms(file_bytes, active_fraction, dram_gbs):
     return file_bytes * active_fraction / (dram_gbs * 1e9) * 1e3
 
 
+def growing_bytes_at(geo, depth):
+    """KV bytes that grow with depth, AT a depth — because a sliding window
+    changes the answer either side of itself. None where the region past an
+    unknown interleave is being asked about."""
+    window = geo.get("sliding_window")
+    if window and depth > window:
+        return geo.get("growing_bytes_past_window")
+    return geo.get("growing_bytes_per_depth_token")
+
+
+def achieved_fraction(per_layer_read, query_per_kv_head=1.0):
+    """The fraction of peak DRAM bandwidth the cache read actually reaches.
+
+    Two things hold it below peak, and both are in the header.
+
+    **How much each layer reads contiguously.** A big contiguous read streams;
+    a small one does not. This replaced a binary "streams or does not"
+    threshold that put Llama-3.2-1B on the wrong side of a step at exactly
+    2048 B.
+
+    **How many query heads share a KV head.** Grouped-query attention reads
+    each cache entry once and uses it for several heads, so a high ratio means
+    more arithmetic per byte and the read stops being what the time is spent
+    on. starcoder2 shares 2 KV heads across 24 query heads and was the worst
+    prediction here by a wide margin — 62% out on read size alone, 10% with
+    the ratio included.
+
+    Fitted on 27 models across seven architectures: median residual 4.8%,
+    worst 17.8%. The constants are THIS machine's, refitted per machine by
+    bandwidth.py and the corpus sweep. Nothing here is shipped as a number."""
+    read = ACHIEVED_MAX * per_layer_read / (per_layer_read + ACHIEVED_HALF)
+    return read / (1.0 + ACHIEVED_SHARING * (max(query_per_kv_head, 1.0) - 1.0))
+
+
+ACHIEVED_MAX = 0.984
+ACHIEVED_HALF = 433.0
+ACHIEVED_SHARING = 0.0668
+
+# The weights are read as one long sequential stream whatever the architecture,
+# so they do NOT pay the per-layer-read penalty the cache pays. Applying the
+# cache's achieved fraction to the intercept made it worse — median ratio 1.49
+# against 0.90 without it. Two reads, two efficiencies.
+ACHIEVED_WEIGHTS = 0.90
+
+
 def curve(file_bytes, geo, dram_gbs, achieved=1.0):
     """The whole curve from the file: ms/token as a function of depth.
 
@@ -254,9 +333,18 @@ def curve(file_bytes, geo, dram_gbs, achieved=1.0):
     number for this machine, measured, not shipped as a constant."""
     if geo.get("verdict") != "described":
         return None
-    a = predicted_intercept_ms(file_bytes, geo["active_weight_fraction"], dram_gbs * achieved)
-    b = predicted_slope_ms(geo["growing_bytes_per_depth_token"], dram_gbs * achieved)
-    return lambda depth: a + b * depth
+    a = predicted_intercept_ms(
+        file_bytes, geo["active_weight_fraction"], dram_gbs * ACHIEVED_WEIGHTS * achieved
+    )
+    per = achieved_fraction(geo["per_layer_read"], geo["query_per_kv_head"]) * achieved
+
+    def at(depth):
+        growing = growing_bytes_at(geo, depth)
+        if growing is None:
+            return None            # past a window whose interleave is unknown
+        return a + predicted_slope_ms(growing, dram_gbs * per) * depth
+
+    return at
 
 
 def main():
