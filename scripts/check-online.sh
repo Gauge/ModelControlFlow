@@ -127,7 +127,12 @@ esac
 # demonstrate it computes what it claims — and the first thing to demonstrate is
 # that it computes anything at all on somebody else's weights.
 printf '\n=== and running it, with the engine MCF wrote\n'
-answered=$("$mcf" run "$REPOSITORY:$FILE" --prompt "once upon a time" --limit 16 2>&1) \
+# **The engine is named** (F103). The heading says *the engine MCF wrote*, and
+# with no engine named this ran whatever daemon happened to be listening — which
+# on a machine with a provisioned one would have demonstrated somebody else's
+# engine under MCF's own claim.
+answered=$("$mcf" run "$REPOSITORY:$FILE" --prompt "once upon a time" --limit 16 \
+    --engine stand-in 2>&1) \
     || fail "the stand-in would not run a real model: $answered"
 printf '%s\n' "$answered" | head -3 | sed 's/^/  /'
 case "$answered" in

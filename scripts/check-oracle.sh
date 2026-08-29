@@ -231,6 +231,20 @@ done
 # ── the forward pass ────────────────────────────────────────────────────────
 
 completion_reference="$oracle/build/bin/llama-completion"
+
+# **Which engine `mine` comes from, stated rather than inherited (F103, F102,
+# F46, §3.12).**
+#
+# This whole check is A19's mechanical form: `mine` must be *MCF's own engine*
+# and `theirs` the reference. `mcf run` with no engine named uses whatever
+# daemon is listening — and where that daemon serves the provisioned llama.cpp,
+# `mine` and `theirs` become the same implementation and the oracle compares the
+# reference with itself, reporting agreement while establishing nothing.
+#
+# That is worse than a flaky check. It is a check that passes *because* it has
+# stopped testing, in the one place the rest of this repository's confidence
+# rests on.
+readonly MINE_ENGINE=stand-in
 margins="$root/target/release/examples/margins"
 mcf="$root/target/release/mcf"
 
@@ -241,9 +255,24 @@ elif [ ! -x "$completion_reference" ] || [ ! -x "$margins" ] || [ ! -x "$mcf" ];
     printf '  example and the mcf binary\n'
 else
     printf '\n'
+    generation_skipped=0
     for model in "${models[@]}"; do
         name=$(basename "$model")
-        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+        # The gate is *can MCF's own engine read this model*, which is what the
+        # comparison needs. Asked of a daemon it would be a question about
+        # whatever engine that daemon serves (F103).
+        #
+        # **A skip is counted and reported** (A4). It was silent, and a section
+        # that compared nothing looked exactly like one that passed: when a
+        # wedged daemon made this gate fail for every model, the generation
+        # comparison ran zero times and the summary still read "agree on all
+        # 142 comparisons" — those 142 being distributions alone.
+        if ! "$mcf" run "$model" --prompt "A" --limit 1 --engine "$MINE_ENGINE" \
+            >/dev/null 2>&1; then
+            printf '  %-40s not compared: MCF'"'"'s own engine will not read it\n' "$name"
+            generation_skipped=$((generation_skipped + 1))
+            continue
+        fi
 
         prompts=("${GENERATE_FROM[@]}")
         if [ "${MCF_ORACLE_LONG:-0}" = "1" ]; then
@@ -252,7 +281,8 @@ else
             prompts+=("My name is Konstantin Aurelio Blackwood and I live in a lighthouse in Norway. ${filler}My name is")
         fi
         for prompt in "${prompts[@]}"; do
-            mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" 2>&1 |
+            mine=$("$mcf" run "$model" --prompt "$prompt" --limit "$GENERATE_TOKENS" \
+                --engine "$MINE_ENGINE" 2>&1 |
                 sed -n '/── what produced it/q;p' | flatten || true)
             theirs=$("$completion_reference" -m "$model" -p "$prompt" -n "$GENERATE_TOKENS" \
                 --temp 0 --seed 0 --no-warmup -ngl 0 -no-cnv --no-display-prompt 2>/dev/null |
@@ -326,7 +356,11 @@ if runs distributions && [ -x "$server_reference" ] && [ -x "$margins" ] && comm
     port=18765
     for model in "${models[@]}"; do
         name=$(basename "$model")
-        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+        # The gate is *can MCF's own engine read this model*, which is what the
+        # comparison below needs. Asked of a daemon it would be a question about
+        # whatever engine that daemon serves (F103).
+        "$mcf" run "$model" --prompt "A" --limit 1 --engine "$MINE_ENGINE" >/dev/null 2>&1 ||
+            continue
 
         # One server per model, on loopback, killed before the next.
         port=$((port + 1))
@@ -513,7 +547,9 @@ if runs forced && [ "${MCF_ORACLE_FORCED:-0}" = "1" ] && [ -x "$server_reference
     port=18766
     for model in "${models[@]}"; do
         name=$(basename "$model")
-        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+        # As above: the gate asks MCF's own engine (F103).
+        "$mcf" run "$model" --prompt "A" --limit 1 --engine "$MINE_ENGINE" >/dev/null 2>&1 ||
+            continue
 
         "$server_reference" -m "$model" --port "$port" --host 127.0.0.1 -ngl 0 \
             --no-webui >/dev/null 2>&1 &
@@ -590,6 +626,13 @@ fi
 printf '\n'
 if [ "$skipped" -gt 0 ]; then
     printf '%d model(s) were not compared because MCF refuses their vocabulary\n' "$skipped"
+fi
+# A4, and F103's lesson: a section that compared nothing must not read like one
+# that passed. The headline counts what was compared; this counts what was not.
+if [ "${generation_skipped:-0}" -gt 0 ]; then
+    printf '%d model(s) were not compared on generation: MCF'"'"'s own engine would not\n' \
+        "$generation_skipped"
+    printf 'read them, so what came back would have been somebody else'"'"'s engine\n'
 fi
 if [ "$disagreements" -gt 0 ]; then
     printf 'the oracle: %d of %d comparisons disagreed\n' "$disagreements" "$compared" >&2

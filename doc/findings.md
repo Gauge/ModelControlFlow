@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 87 |
+| **Version** | 88 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -129,6 +129,7 @@ forward as one.
 | 100 | [F100 — How large a model MCF's own engine can usefully read, and what actually stops it (B-384, PR12, D40, B-366, F99, A20, A7)](#100--f100--how-large-a-model-mcfs-own-engine-can-usefully-read-and-what-actually-stops-it-b-384-pr12-d40-b-366-f99-a20-a7) |
 | 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
 | 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
+| 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7397,14 +7398,25 @@ The check passed all morning while the daemon was down and failed the moment
 one was up. Nothing in the check could see the difference, and the entry that
 flipped had been on the disk for twenty minutes.
 
-**This repository had already outlawed exactly this.**
-[F46](#46--f46--a-test-reported-on-whether-a-daemon-was-running-b-378) found a
-test that "reported on whether a daemon happened to be running on the machine —
-passing alone and failing beside one, for reasons nothing in the test could
-see", and B-378 fixed it there by making the socket an *input*. §3.12 does not
-permit a suite whose answer depends on the state it found. The same defect was
-sitting in the corpus check, and it survived because most of the corpus was
-absent — **a check that cannot run cannot be caught being wrong.**
+**This is the third occurrence, and it landed exactly where the guard against
+it does not reach.** [F46](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38)
+found the first, [F47](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46)
+fixed it by making the socket an *input* and built
+`checks/tests/no_test_reads_ambient_state.rs` so it could not come back — and
+F47 named its own limitation in writing: *"What was not established. Whether
+other tiers have the same dependency."*
+
+**This is that question answered, and the answer is yes.** The guard watches
+**Rust test files** for calls to ambient-reading functions. `check-corpus.sh` is
+a shell tier that runs the *built binary*, so there is no call for it to see:
+the ambient read happens inside `mcf run`, legitimately, because a person typing
+`mcf run` should get whatever engine is serving. The defect is not in the binary
+at all — it is that a **check** invoked it the way a person would, and a check
+is not a person. §3.12 does not permit a suite whose answer depends on the state
+it found, and the shell tiers were never brought under that rule.
+
+It also survived because most of the corpus was absent — **a check that cannot
+run cannot be caught being wrong.**
 
 **The fix is to state the engine rather than inherit it.** The stand-in, because
 D40 makes this corpus the thing *MCF's own engine* is developed against, and the
@@ -7428,19 +7440,119 @@ different words. That is not an argument for loosening it — an exact string is
 what makes a corpus entry mechanically checkable — but it is the reason the
 entry has to say which engine it is an expectation *about*, which it now does.
 
+**And the other shell tiers have not been audited.** F47's survey was "a survey
+of three, not of the suite", and this adds one more to it. `check-oracle.sh`,
+`check-seed-set.sh` and the rest each invoke the binary, and whether any of them
+inherits an engine, a store or a socket rather than stating it is unexamined.
+That is the open question this finding leaves, in the same words F47 left it.
+
 **What this did not establish.** Whether other corpus entries are equally close
 to their knife-edge, which would need the same comparison run per entry.
 Whether the provisioned engine's answer is worse — neither continuation is
 wrong, and nothing here judges a model's output for sense.
 
+## 103 · F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)
+
+**Found by pulling the thread [F102](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19)
+left.** That finding fixed one tier and wrote down what it had not looked at:
+whether the other shell tiers inherit an engine the same way. They do, and one
+of them is the oracle.
+
+**What the audit found.** Four `mcf run` invocations across the scheduled tiers
+named no engine, so each used whatever daemon was listening: `check-corpus.sh`
+(fixed in F102), `check-online.sh` — whose own heading reads *"and running it,
+with the engine MCF wrote"* — and `check-oracle.sh` in three places. The two
+`mcf embed` calls are **not** affected, because `mcf embed` loads in-process and
+never consults a daemon; that was checked rather than assumed.
+
+**The serious one.** `check-oracle.sh` builds its comparison as
+
+```
+mine=$("$mcf" run "$model" …)          # meant to be MCF's own engine
+theirs=$("$completion_reference" …)     # the reference implementation
+```
+
+With a daemon serving the provisioned llama.cpp, `mine` *is* llama.cpp. The
+oracle would then compare the reference implementation **with itself** and
+report agreement — in the check that is A19's mechanical form, and on which
+every other claim in this repository leans. A check that passes because it has
+stopped testing is worse than one that fails.
+
+**What is established, and what is not.** That the invocation was
+engine-inheriting is established by reading it, and that `mcf run` yields a
+different engine's answer depending on the daemon is established by measurement
+([F102](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19)'s
+table). Whether any *past* oracle run was actually vacuous is **not**
+established: it needed a healthy provisioned daemon up at the time, and the
+runs whose output survives do not show one.
+
+**But the run whose output does survive shows the other half of the defect.**
+On 2026-08-28 the oracle ran with a *wedged* daemon — one accepting connections
+and never answering (B-182). Every model failed the generation section's gate,
+which was a silent `|| continue`. The section printed **nothing at all**, and
+the summary read:
+
+```
+the oracle: MCF and the reference agree on all 142 comparisons
+```
+
+Those 142 were the *distribution* comparisons, which go through
+`examples/margins.rs` — a binary that links MCF's engine directly and cannot
+reach a daemon, so that half was never at risk. The generation comparison ran
+**zero times** and nothing in the output said so. A4 requires that what was not
+done be said rather than counted as done; the corpus check does this correctly
+(*"12 of 16 entries are not held here and were not checked"*) and the oracle did
+not.
+
+**Three fixes, and a check that covers the gap F47 named.**
+
+1. Every `mcf run` in a scheduled tier names its engine. The oracle pins
+   `MINE_ENGINE=stand-in`, because *MCF's own engine against an independent one*
+   is the whole claim.
+2. The generation gate counts and prints what it skipped, and the summary
+   reports it.
+3. `checks/tests/no_tier_inherits_an_engine.rs` holds all of it from outside.
+   F47's guard watches **Rust** sources for calls that reach for ambient state
+   and cannot see a shell tier invoking the built binary — there is no call to
+   see, and `mcf run` consulting a daemon is *correct* for a person at a
+   terminal. The defect is that a check invoked it the way a person would, and a
+   check is not a person. Both negative controls were exercised: unpinning the
+   oracle's `mine` fails two tests by name, and changing the corpus's engine
+   fails the third.
+
+**The pattern, now three deep.** F46 found it in a Rust test, F47 fixed that one
+and built a guard for its own kind, F102 found it in a shell tier, and F103
+finds it in the shell tier that matters most. Each time the rule already existed
+— §3.12 has said since the beginning that a suite whose answer depends on the
+state it found is not a suite — and each time the guard did not reach the new
+ground. The lesson is not *write the rule down*; it is that a guard covers the
+shape of the place it was written for.
+
+**What this did not establish.** Whether `check-seed-set.sh`, `check-from-scratch.sh`
+or the remaining tiers inherit anything else — a store, a socket, a record path
+— which is the same audit one level further out. And nothing about whether the
+oracle's *past* verdicts were wrong: the distributions half was sound
+throughout, and the generation half is the one whose history cannot be
+reconstructed from what was printed.
+
 ## Changelog
+
+### Version 88 — the oracle could have been comparing the reference with itself
+
+F103. F102's open question, answered: four scheduled tiers inherited an engine
+rather than naming one, and one of them was the oracle — where `mine` and
+`theirs` would both have been llama.cpp with a daemon up. And a wedged daemon
+made its generation section compare zero models while the headline still read
+*agree on all 142 comparisons*.
 
 ### Version 87 — a check that answered differently depending on the machine
 
 F102. The conformance corpus ran `mcf run` without naming an engine, so it
-reported on whether a daemon was up — F46's defect, in a second place, kept
-alive by twelve absent models. A check that cannot run cannot be caught being
-wrong.
+reported on whether a daemon was up. The third occurrence of F46's defect, and
+it landed exactly where F47's guard cannot see — the guard watches Rust tests
+for ambient calls, and a shell tier invoking the built binary makes no such
+call. F47 left *whether other tiers have the same dependency* open in writing;
+this answers it.
 
 ### Version 86 — a call recorded as no call
 
