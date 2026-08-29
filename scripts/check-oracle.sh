@@ -194,6 +194,30 @@ compared=0
 disagreements=0
 skipped=0
 
+# **Where a generation divergence waits for the better instrument** (B-393,
+# F107).
+#
+# The generation comparison decides with MCF's *own* margin: the gap between
+# the token it chose and its runner-up. F27 measured that threshold on models
+# up to 1.7B and it held four times. On a 4B model it produced a false
+# positive, and the reason is that the margin is the wrong side's number — at
+# the step where the two engines parted, MCF's margin was 0.71 and the
+# *reference's* own top-two gap was 0.0199. The decision was a coin flip; MCF's
+# logits, shifted by a third of a logit in each direction (well inside
+# arithmetic), turned the tie into a clear win *in MCF's ranking* and the
+# margin measured that.
+#
+# The distributions section already had the answer and was running beside it:
+# KL 0.0520 against a floor of 0.20 — the same two engines, agreeing. Two
+# instruments, one question, and the weaker one decided.
+#
+# So a generation divergence is now recorded here and resolved by the
+# distribution comparison at that step. One that nothing resolves is still a
+# disagreement, and says which instrument it rests on.
+pending=$(mktemp "${TMPDIR:-/tmp}/mcf-oracle-pending-XXXXXX")
+resolved=$(mktemp "${TMPDIR:-/tmp}/mcf-oracle-resolved-XXXXXX")
+trap 'rm -f "$pending" "$resolved"' EXIT
+
 for model in "${models[@]}"; do
     runs tokenizer || break
     name=$(basename "$model")
@@ -336,12 +360,19 @@ else
                     "$where" "$closest" "$CLOSE_ENOUGH"
                 continue
             fi
-            disagreements=$((disagreements + 1))
-            printf '  %-40s DIFFERS on %s WITH ROOM TO SPARE\n' "$name" "$prompt"
-            printf '      at step %s, where they part, the margin was %s, over %s — not a near-tie\n' \
+            # Recorded rather than counted. MCF's margin says the model was
+            # not indifferent *in MCF's arithmetic*; whether the two engines
+            # actually disagree is a question about both of them, and the
+            # distributions section is the instrument that asks it (F107).
+            printf '%s\t%s\t%s\t%s\n' "$model" "$prompt" "$where" "$closest" >>"$pending"
+            printf '  %-40s differs on %s with room to spare by MCF'"'"'s own margin\n' \
+                "$name" "$prompt"
+            printf '      at step %s, where they part, MCF'"'"'s margin was %s, over %s\n' \
                 "$where" "$closest" "$CLOSE_ENOUGH"
             printf '      MCF:       %s\n' "$mine"
             printf '      reference: %s\n' "$theirs"
+            printf '      pending the distribution comparison at that step, which asks about\n'
+            printf '      both engines rather than about MCF'"'"'s ranking alone (F107)\n'
         done
     done
 fi
@@ -466,6 +497,36 @@ if runs distributions && [ -x "$server_reference" ] && [ -x "$margins" ] && comm
                 printf '  %-40s distributions on %s at step %s: top20 %.3f top5 %.3f kl %.4f\n' \
                     "$name" "$prompt" "$step" "$gap20" "$gap5" "$divergence" >&2
                 compared=$((compared + 1))
+
+                # **The reference's own top-two gap at this step** — the number
+                # that says whether the *decision* was a coin flip, which MCF's
+                # margin cannot say about the reference's ranking (F107).
+                theirmargin=$(printf '%s' "$response" | jq -r --argjson s "$step" '
+                    .completion_probabilities[$s].top_logprobs as $t
+                    | if ($t | length) > 1 then ($t[0].logprob - $t[1].logprob) else 0 end' \
+                    2>/dev/null || true)
+
+                # A generation divergence waiting on this step, resolved by the
+                # instrument that looks at both engines (B-393, F107).
+                waiting=$(awk -F'\t' -v m="$model" -v p="$prompt" -v s="$step" \
+                    '$1 == m && $2 == p && $3 == s { print; exit }' "$pending" 2>/dev/null || true)
+                if [ -n "$waiting" ]; then
+                    printf '%s\t%s\n' "$waiting" "$distance" >>"$resolved"
+                    if awk -v d="$distance" -v f="$LOGPROB_FLOOR" 'BEGIN { exit !(d <= f) }'; then
+                        printf '  %-40s resolved on %s at step %s: the two engines agree here\n' \
+                            "$name" "$prompt" "$step"
+                        printf '      KL %s, under %s, and the reference'"'"'s own top-two gap was\n' \
+                            "$distance" "$LOGPROB_FLOOR"
+                        printf '      %s — the decision was a near-tie for the reference, and MCF'"'"'s\n' \
+                            "$theirmargin"
+                        printf '      margin measured its own ranking rather than the disagreement\n'
+                    else
+                        printf '  %-40s CONFIRMED on %s at step %s: the generation parted and the\n' \
+                            "$name" "$prompt" "$step"
+                        printf '      distributions differ there too\n'
+                    fi
+                fi
+
                 if awk -v d="$distance" -v f="$LOGPROB_FLOOR" 'BEGIN { exit !(d <= f) }'; then
                     continue
                 fi
@@ -633,6 +694,28 @@ if runs forced && [ "${MCF_ORACLE_FORCED:-0}" = "1" ] && [ -x "$server_reference
     done
 fi
 
+# ── the divergences nothing resolved ────────────────────────────────────────
+#
+# A generation divergence the distribution comparison never reached is still a
+# disagreement, and it rests on MCF's own margin alone — which F107 measured
+# wrong once on a 4B model. Saying which instrument a verdict rests on is A5's
+# rule about degraded results applied to a check's own confidence.
+unresolved=0
+while IFS=$'\t' read -r model prompt step margin; do
+    [ -n "$model" ] || continue
+    if awk -F'\t' -v m="$model" -v p="$prompt" -v s="$step" \
+        'BEGIN { found = 0 } $1 == m && $2 == p && $3 == s { found = 1 } END { exit found }' \
+        "$resolved" 2>/dev/null; then
+        unresolved=$((unresolved + 1))
+        disagreements=$((disagreements + 1))
+        printf '\n  %-40s DIFFERS on %s WITH ROOM TO SPARE\n' "$(basename "$model")" "$prompt"
+        printf '      at step %s, MCF'"'"'s margin was %s, over %s — and the distributions at\n' \
+            "$step" "$margin" "$CLOSE_ENOUGH"
+        printf '      that step were not compared, so this verdict rests on MCF'"'"'s own\n'
+        printf '      ranking rather than on both engines (F107)\n'
+    fi
+done <"$pending"
+
 printf '\n'
 if [ "$skipped" -gt 0 ]; then
     printf '%d model(s) were not compared because MCF refuses their vocabulary\n' "$skipped"
@@ -643,6 +726,20 @@ if [ "${generation_skipped:-0}" -gt 0 ]; then
     printf '%d model(s) were not compared on generation: MCF'"'"'s own engine would not\n' \
         "$generation_skipped"
     printf 'read them, so what came back would have been somebody else'"'"'s engine\n'
+fi
+# What the margin flagged and the better instrument cleared. Printed whether or
+# not anything failed: a check that quietly drops a verdict it changed its mind
+# about is a check nobody can audit (A1).
+explained=$(wc -l <"$resolved" 2>/dev/null || echo 0)
+if [ "${explained:-0}" -gt 0 ]; then
+    printf '%d generation divergence(s) were flagged by MCF'"'"'s own margin and resolved by\n' \
+        "$explained"
+    printf 'the distribution comparison at the same step, which asks about both engines (F107)\n'
+fi
+if [ "$unresolved" -gt 0 ]; then
+    printf '%d of them rest on MCF'"'"'s margin alone, because the distributions were not\n' \
+        "$unresolved"
+    printf 'compared there\n'
 fi
 if [ "$disagreements" -gt 0 ]; then
     printf 'the oracle: %d of %d comparisons disagreed\n' "$disagreements" "$compared" >&2
