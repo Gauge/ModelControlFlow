@@ -122,6 +122,9 @@ pub fn to_first_token(
 fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Duration<Monotonic>> {
     let mut connection = UnixStream::connect(socket).ok()?;
     let line = Request::Generate {
+        // MCF asking a model something to measure its own cost: fixture data
+        // by §6.8, and nobody's private text (B-146).
+        whose: mcf_record::content::Whose::Fixture,
         model: model.display().to_string(),
         prompt: "yes".to_owned(),
         limit: Some(2),

@@ -99,6 +99,9 @@ fn generated(
         .map_err(|_| "nothing is listening; `mcf serve` starts a daemon".to_owned())?;
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
     let request = mcf_serve::control::Request::Generate {
+        // A cross-check asks MCF's own question of two engines: fixture data
+        // (§6.8, B-146).
+        whose: mcf_record::content::Whose::Fixture,
         model: path.display().to_string(),
         prompt: String::new(),
         limit: Some(POSITIONS),

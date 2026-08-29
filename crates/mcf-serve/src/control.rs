@@ -93,6 +93,21 @@ pub enum Request {
         /// stated rule: the provisioned engine where there is exactly one,
         /// MCF's own otherwise — and the account says which (§3.15).
         engine: Option<String>,
+        /// Whose text this turn is: a person's, or MCF's own (B-146, §6.8).
+        ///
+        /// **It travels rather than being inferred.** The daemon cannot tell a
+        /// probe's constant question from a person's `mcf run` by looking at
+        /// it — they arrive on the same socket in the same shape — and §6.8
+        /// requires suite data and user traffic be separated *structurally*.
+        /// So the caller says, at the point it makes the request, and the
+        /// answer decides which store the text is filed in and what the record
+        /// says the generation was.
+        ///
+        /// A request that does not say is the operator's, which is the safe
+        /// direction: MCF's own traffic filed under a person's retention is a
+        /// tidiness problem, and a person's filed under MCF's is the privacy
+        /// failure §6.8 exists to prevent.
+        whose: mcf_record::content::Whose,
     },
 }
 
@@ -114,6 +129,7 @@ impl Request {
                 seed,
                 tokens,
                 engine,
+                whose,
             } => Value::map([
                 ("ask", Value::text("generate")),
                 ("model", Value::text(model.clone())),
@@ -150,6 +166,7 @@ impl Request {
                         None => Value::Null,
                     },
                 ),
+                ("whose", Value::text(whose.as_str())),
             ]),
         };
         let Value::Map(mut fields) = body else {
@@ -238,6 +255,16 @@ impl Request {
                         .get("engine")
                         .and_then(Value::as_text)
                         .map(str::to_owned),
+                    // Absent means the operator's, which is the safe
+                    // direction: a request from a client that predates this
+                    // field is a person's until something says otherwise, and
+                    // a name this build does not know is treated the same way
+                    // rather than guessed at (A7, B-146).
+                    whose: value
+                        .get("whose")
+                        .and_then(Value::as_text)
+                        .and_then(mcf_record::content::Whose::parse)
+                        .unwrap_or(mcf_record::content::Whose::User),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),
