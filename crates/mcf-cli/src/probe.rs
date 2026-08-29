@@ -254,6 +254,9 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
             .observed()
             .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
     ));
+    lines.extend(language_lines(&path, &bytes));
+    lines.extend(embedding_lines(&path, &bytes));
+    lines.extend(declined_lines());
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
          this model is an act somebody takes, and it is recorded (D42, D43)."
@@ -465,6 +468,214 @@ fn addressing_fields(addressed: &Addressed) -> Vec<(&'static str, mcf_record::js
             mcf_record::json::Value::Integer(counted(&addressed.silent)),
         ),
     ]
+}
+
+/// What each language costs this model's vocabulary (B-057, B-379, F81).
+///
+/// **It asks no engine**, which is why it is here rather than beside the
+/// trials: the answer is a property of the file and holds for every engine that
+/// reads it. D42 makes the engine a condition because a probe asks a *model* to
+/// do something; this one asks the vocabulary, and the conditions say so rather
+/// than naming an engine that did not participate (A7).
+fn language_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
+    let probed = mcf_serve::probes::language::language_cost(path, bytes);
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(spend) => {
+            lines.push(" observed".to_owned());
+            for cost in &spend.costs {
+                lines.push(format!(
+                    "   {:<9} {:>3} token(s) for {:>3} character(s) — {} of the English",
+                    cost.language,
+                    cost.tokens,
+                    cost.characters,
+                    per_cent(cost.against_english_ppm)
+                ));
+            }
+            for language in &spend.unencodable {
+                lines.push(format!(
+                    "   {language:<9} could not be encoded by this vocabulary at all, which is \
+                     a fact about the file (A7)"
+                ));
+            }
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                mcf_serve::probes::language::NO_ENGINE,
+                language_fields(spend),
+            )));
+            lines.push(format!(
+                " observed   this vocabulary spends most on {} and least on {}",
+                spend.dearest, spend.cheapest
+            ));
+            lines.push(
+                " which is a cost and NOT a grade: tokens are context, budget and time, and a \
+                 model can be excellent at a language its vocabulary spells expensively (F81)"
+                    .to_owned(),
+            );
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(
+                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} sample(s), {} token(s) generated — none: this reads the vocabulary",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
+/// What the record keeps of a language-cost observation.
+fn language_fields(
+    spend: &mcf_serve::probes::language::Spend,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "dearest_language",
+            mcf_record::json::Value::text(spend.dearest.to_owned()),
+        ),
+        (
+            "cheapest_language",
+            mcf_record::json::Value::text(spend.cheapest.to_owned()),
+        ),
+        (
+            "tokens_per_language",
+            mcf_record::json::Value::Map(
+                spend
+                    .costs
+                    .iter()
+                    .map(|cost| {
+                        (
+                            cost.language.to_owned(),
+                            mcf_record::json::Value::Integer(
+                                i64::try_from(cost.tokens).unwrap_or(i64::MAX),
+                            ),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+    ]
+}
+
+/// Whether this artifact produces an embedding, of what width (B-057).
+fn embedding_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
+    let mut ask = |text: &str| crate::embed::measured(path, text);
+    // Not the daemon's engine: this path is in-process, and a condition that
+    // names an engine which did not participate is F102's defect (A21, §3.4).
+    let engine = mcf_serve::probes::embedding::in_process();
+    let probed = mcf_serve::probes::embedding::embedding(path, bytes, &engine, &mut ask);
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(embeds) => {
+            lines.push(format!(
+                " declared  the file says it is {}{}",
+                embeds.declared.architecture,
+                match embeds.declared.width {
+                    Some(width) => format!(", embedding width {width}"),
+                    None => ", declaring no embedding width".to_owned(),
+                }
+            ));
+            lines.push(format!(
+                " observed  a vector of width {} came back for {} token(s), and asking twice \
+                 produced {}",
+                embeds.width,
+                embeds.tokens,
+                if embeds.identical_twice {
+                    "the same vector to the last bit"
+                } else {
+                    "TWO DIFFERENT VECTORS, which MCF's own engine cannot do correctly (A19)"
+                }
+            ));
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                &engine,
+                vec![
+                    (
+                        "width",
+                        mcf_record::json::Value::Integer(
+                            i64::try_from(embeds.width).unwrap_or(i64::MAX),
+                        ),
+                    ),
+                    (
+                        "identical_twice",
+                        mcf_record::json::Value::Bool(embeds.identical_twice),
+                    ),
+                ],
+            )));
+            if embeds
+                .declared
+                .width
+                .is_some_and(|width| width != embeds.width)
+            {
+                lines.push(format!(
+                    " DIVERGENCE  the file declares {:?} and the vector that came back is {} \
+                     wide (A21, B-058)",
+                    embeds.declared.width, embeds.width
+                ));
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
+/// The modalities MCF does not probe, and why (B-057's second half).
+///
+/// Printed with the probes rather than in a manual, because the reader who
+/// needs it is the one who has just read four answers and is about to assume
+/// the silence means the rest was fine.
+fn declined_lines() -> Vec<String> {
+    let mut lines = vec![
+        "  not probed, and why".to_owned(),
+        " a modality MCF does not mention is one a reader assumes it checked (A7)".to_owned(),
+        String::new(),
+    ];
+    for held in mcf_serve::probes::declined::DECLINED {
+        lines.push(format!("   {} — DECLINED", held.modality));
+        lines.push(format!("     looked for  {}", held.looked_for));
+        lines.push(format!("     because     {}", held.because));
+        lines.push(format!("     needs       {} ({})", held.needs, held.until));
+    }
+    lines.push(String::new());
+    lines
+}
+
+/// A parts-per-million as a person reads it.
+///
+/// Integer arithmetic, as everywhere else a ratio is rendered here: the crates
+/// hold no floating-point number and a rendering is not a reason to introduce
+/// one (A6). The division truncates, which is what a percentage to one place
+/// is.
+#[allow(
+    clippy::integer_division,
+    reason = "a percentage to one decimal place, from integers, as `Headroom` and `compare` \
+              render theirs"
+)]
+fn per_cent(ppm: u64) -> String {
+    format!("{}.{}%", ppm / 10_000, (ppm % 10_000) / 1_000)
 }
 
 /// What a surface says about a write that may not have happened.

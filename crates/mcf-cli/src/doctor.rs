@@ -454,21 +454,18 @@ impl core::fmt::Display for Report {
                 // D27: the ceiling is about the 99th percentile, and the
                 // median is shown beside it because the gap between them is
                 // what a busy machine looks like.
+                // The statistic renders with its sample count and its spread
+                // because it cannot render without them (A6, B-073): this
+                // line used to assemble `p99 {} over n={}` from two separate
+                // asks and carried no spread at all.
                 writeln!(
                     f,
-                    "  {:<38} p99 {} over n={} — {}",
+                    "  {:<38} {} — {}",
                     COLD_START.name,
                     COLD_START.statistic(measured),
-                    measured.n(),
                     COLD_START.read_measurement(measured, &self.cost.cold_start_attributability),
                 )?;
-                writeln!(
-                    f,
-                    "  {:<38} median {} · ceiling {}",
-                    "",
-                    measured.spread().median,
-                    COLD_START.ceiling,
-                )?;
+                writeln!(f, "  {:<38} ceiling {}", "", COLD_START.ceiling)?;
                 writeln!(f, "  {:<38} {}", "", self.cost.cold_start_attributability)?;
             }
             None => writeln!(f, "  {:<38} {}", COLD_START.name, Verdict::NotMeasured)?,
@@ -477,10 +474,9 @@ impl core::fmt::Display for Report {
             Some(measured) => {
                 writeln!(
                     f,
-                    "  {:<38} p99 {} over n={} — {}",
+                    "  {:<38} {} — {}",
                     RECORD_WRITE.name,
                     RECORD_WRITE.statistic(measured),
-                    measured.n(),
                     RECORD_WRITE
                         .read_measurement(measured, &self.cost.record_write_attributability),
                 )?;

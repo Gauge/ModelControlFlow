@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 94 |
+| **Version** | 97 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -137,6 +137,9 @@ forward as one.
 | 107 | [F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)](#107--f107--the-oracles-first-disagreement-in-three-days-was-the-instruments-not-the-engines-b-393-b-368-b-373-f27-f34-f103-a19-a5) |
 | 108 | [F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)](#108--f108--two-rules-rested-on-somebody-remembering-and-one-identifier-had-been-cited-four-times-with-nothing-behind-it-b-394-c5-c6-b16-f80-730) |
 | 109 | [F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)](#109--f109--a-rule-of-thumb-that-cannot-be-read-as-a-result-cannot-be-recorded-and-expires-when-the-laboratory-lands-b-380-dec-002-a21-a25-315-318) |
+| 110 | [F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)](#110--f110--a-probe-for-each-modality-or-a-reason-what-a-language-costs-whether-an-artifact-embeds-and-three-declinations-in-writing-b-057-d42-f81-f106-a7-a21-x) |
+| 111 | [F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38) |
+| 112 | [F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)](#112--f112--two-absolute-rules-named-checks-that-did-not-exist-and-one-of-them-had-a-hole-on-a-shipped-surface-b-073-b-072-a6-a22-b16-d27) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8124,7 +8127,255 @@ catalogue is deliberately three: every entry is something MCF says on no
 evidence of its own, and §3.15's rule about choices the reader cannot see
 applies twice as hard to sentences the reader cannot check.
 
+## 110 · F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)
+
+**B-057's done-when has two halves and the second is the honest one**: *each
+in-scope modality has a probe; each out-of-scope one is recorded as declined.* A
+modality MCF simply does not mention is one a reader assumes it checked and
+found nothing wrong with — the same silence A7 forbids about a model's own
+metadata, pointed at MCF's coverage.
+
+**D42's test, applied to each rather than a probe written for each.** *A probe
+earns its place when a wrong answer to it would corrupt a measurement or a
+served answer*, and it must be answerable by observation rather than by
+judgement.
+
+**In scope, and built.**
+
+*`language-cost`* asks the **file's vocabulary** and no engine at all — which is
+unusual enough that the conditions say so rather than naming an engine that did
+not participate. The same sentence in six languages, counted: exact,
+deterministic, milliseconds. It earns its place because tokens are the unit of
+the context budget, the token budget, the time a turn takes and what a
+comparison holds still, so a model that spends two and a half times as many on
+one meaning is being asked a different question at the same budget. Measured on
+three files:
+
+| | English | Japanese | Arabic |
+|---|---|---|---|
+| SmolLM2-135M | 16 | **52** (325%) | **46** (288%) |
+| gemma-3-270m | 16 | 20 (125%) | 22 (138%) |
+| all-MiniLM-L6-v2 | 16 | 22 (138%) | 49 (306%) |
+
+F81's care is kept in the sentence itself, because that is where it is lost: a
+cost is a fact about a *vocabulary*. A model can be excellent at a language its
+vocabulary spells expensively.
+
+*`embedding`* asks for one vector twice and reports the width and whether the
+two were identical **to the last bit**. Not *near enough*: MCF's own engine does
+the same arithmetic in the same order, so anything but equality is a defect
+rather than noise, and a tolerance there would hide it. On all-MiniLM-L6-v2 the
+file declares bert and width 384, and 384 came back, twice, identically —
+declared and verified agreeing, which is as much a result as a divergence (A9).
+
+**Declined, in writing, each with what MCF looked for.**
+
+* **Vision** — looked for the `clip.*` metadata and projector tensors a
+  multimodal file carries. MCF's own engine implements text transformers and no
+  engine here is driven with an image, so a probe reporting *no vision* would be
+  reporting MCF's reach as a property of the model, which is the confusion A21
+  exists to prevent.
+* **Multilingual fluency** — a graded task. What a language *costs* is probed;
+  how well the model speaks it needs a rater, and reporting the first as the
+  second is exactly the reading F81 was written to prevent.
+* **Reasoning modes** — what is observable is that a model emitted its declared
+  thinking markers and how many tokens it spent inside them. That is worth
+  asking and is not a modality: it changes the token budget a turn needs, which
+  makes it a *configuring* probe with its own row. [F106](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105)
+  measured the cost of not having it — ten trials of ten spent a whole
+  two-hundred-token budget before producing anything.
+
+**And the first run recorded a condition that did not participate.** The
+embedding probe was wired with the same engine string as its neighbours, so its
+conditions read *provisioned llama.cpp, through the daemon* about arithmetic MCF
+performed in its own process — `mcf embed` consults no daemon, which F103
+established rather than assumed. Caught by reading the output of the first real
+run, which is the fifth time in four days that a condition naming the wrong
+engine has turned up. It names the in-process path and this binary's build now.
+
+**One guard improved by being wrong about its own subject.** The check that
+requires every probe to record what it observed reads the `Method` constants to
+count probes — from a list of three named files. Two probes arrived in two new
+files and the list was still three. It reads the directory now: the same lesson
+F103, F105 and F106 each paid for, met once more while adding the thing that
+triggered it.
+
+## 111 · F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)
+
+**What happened.** The exclusive window came free after four days of stale
+tiers, the performance budget ran, and it failed on its first figure:
+
+```
+core binary, no engines   4635304 B (4.4 MiB) — within
+  before 4054184 B, after 4635304 B (+14.3 %)
+FAILED: regressed against a tolerance of 2.0 % (B20, B-011)
+```
+
+Two things are true at once and the report says both: the binary is **within**
+D24's ceiling of 40 MiB, with an order of magnitude to spare, and it has grown
+14.3 % since the last recorded reading. The ceiling is the promise; the
+tolerance is B20's *no silent regression*, and it is the one that fired.
+
+**Attributed rather than re-baselined on a guess.** The binary was built at each
+first-parent merge since the baseline and measured:
+
+| merge | bytes | Δ |
+|---|---|---|
+| the era the baseline was taken in (27 Aug) | 4,094,000 | — |
+| the measurement work — the benchmark and its findings (28 Aug) | 4,564,688 | **+470,688** |
+| B-366, threads | 4,574,656 | +9,968 |
+| B-384, B-053, B-182 | 4,593,456 | +18,800 |
+| B-391, B-392, B-054 | 4,634,552 | +41,096 |
+| B-394, the identifier ledger | 4,634,552 | 0 |
+| B-380, touchstones | 4,637,576 | +3,024 |
+
+**Eighty per cent of the growth landed on 28 August**, in one merge, and the
+four merges of the day this fired account for 63 KB between them — 1.4 %, under
+the tolerance. The sections say it is code rather than a blob: 3.78 MB of
+`.text` against 562 KB of `.rodata`, with nothing anomalous in either.
+
+**So the finding is not the growth. It is what the staleness cost.** The tier
+that would have caught this in one merge did not run for a day and a half, and
+in that interval the thing it watches moved seven times its tolerance. A stale
+tier is not a neutral state — it is a **growing blind spot**, and the size of the
+blind spot is exactly what accumulated while nobody looked. B-185 already
+refuses a *release* on a stale tier and `ci.sh` already prints the ages on every
+run; what neither could say is what the debt was worth, and now one instance of
+it has a number.
+
+**And the reason it was stale is worth writing down too**, because it is not
+carelessness: every heavy tier takes this machine's exclusive window, and for
+most of the day the window was held by other projects — one holding for
+thirty-seven minutes with two more queued behind it. The discipline that
+protects a timing measurement from a busy machine is the same discipline that
+delays the tier which measures it. That is a real cost of B35's window and not
+an argument against it; the answer is to run the tiers when the window frees,
+which is what happened here.
+
+**The re-baseline, with its reason**, follows the precedent B-011's row set the
+last time this happened: a re-baseline naming the features that account for the
+growth, never a tolerance widened. What accounts for it is the measurement work
+of 28 August — the paired comparison machinery, the effect-size interval, the
+seed set and the instrument cross-checks — plus this day's probes, content
+store and touchstones.
+
+**A trap found in the re-baselining itself.** The number written by hand was
+4,666,680 B and the tier's own passing run recorded 4,664,408 — 2,272 bytes
+apart, at the same commit, from a build that is reproducible byte for byte
+(B-001). The difference is `ci.sh`'s `--remap-path-prefix`, which shortens the
+paths embedded in the binary: **the artifact the tier measures is not the one
+`cargo build --release` produces at a terminal.** Both readings are of real
+artifacts and the baseline file records the conditions of the one it holds, so
+nothing here is wrong — but a person re-baselining by hand is measuring a
+slightly different thing than the tier will, and only the 2 % tolerance hid it.
+The tier's own measurement is the authority and it overwrote the hand-written
+one on the passing run, which is the right order.
+
+**What this did not establish.** Whether 470 KB is a *reasonable* price for that
+body of work. Nothing here measures what a feature ought to cost, and inventing a
+figure to compare against would be exactly the invented intent A23 forbids. What
+is established is what it did cost, when, and that the artifact remains an order
+of magnitude inside the ceiling it promised.
+
+## 112 · F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)
+
+**Chosen by asking the rules rather than the roadmap.** Six *absolute* rules
+cite a check that names a backlog item, and six of those items are not done. Two
+of the six are merely open rather than blocked, which makes them buildable
+today: A6's *no number without its conditions, its sample count and its spread*
+(B-073) and A22's *the headless path can do everything* (B-072).
+
+**A6's hole was real, and on a surface an operator reads.** `Measurement<Q>` has
+no constructor that omits a condition set and no rendering that drops one —
+B-005 made that structural and a check holds it. But a surface never had to use
+that rendering. It could ask for a percentile, get a bare `Q` back, and print it.
+`mcf doctor` did:
+
+```
+cold start to first command response   p99 960005 ns over n=100 — not attributable
+```
+
+A value and a sample count, assembled from two separate asks, with **no spread
+at all** — and the median printed on the next line only because somebody had
+written it there. The rule was held for the whole measurement and by nobody for
+the statistic taken out of it.
+
+`Stated<Q>` is what a statistic leaves in now: one `Display`, and it carries the
+statistic's name, the value, `n`, the median, p5–p95, the minimum and the
+maximum. `Budget::statistic` returns one, so the bare number is reachable only
+through `value()` — named for what calling it does, the way `Content::disclose`
+and `Touchstone::bare` are — and a **surface** that formats that is what the
+check looks for. A test may: the budget tier compares a statistic with a
+baseline and writes it to a file, which is arithmetic and a record rather than a
+view, and the distinction is the one A22 draws.
+
+**Two existing checks caught the change being wrong on the way in**, which is
+the part worth recording. `measurement_has_one_way_in.rs` requires every
+constructor in the module to take conditions, and `Stated::new` takes a
+`&Measurement<Q>` — the same guarantee one step along, since a thing built out
+of a measurement cannot be built out of a bare number; the rule is amended to
+say both spellings. And `an_event_class_figure_is_reported_at_the_percentile_d27_names`
+failed because the first version of `Stated`'s rendering dropped the **median**,
+which D27 wants beside the p99 precisely because the gap between them is what a
+busy machine looks like. Neither was my noticing.
+
+**A22's check was named and never written, and the rule said as much.** It
+observes that the rule is close to self-enforcing — a capability reachable only
+through an interface is one the laboratory cannot test, which A19 forbids — and
+*close to* is not a check. What is enumerable today is the control plane: every
+variant of `Request`, read from the enum rather than from a list, must be sent by
+the command-line crate, and the three a person asks for by name must be commands
+in the argument parser.
+
+It passes today, and the hypothesis that sent me looking was wrong: I expected
+`Status` and `Holding` to be answerable by the daemon and unreachable from a
+terminal, and `mcf status` already asks both. Recorded because a check that
+confirms a property is worth exactly as much as one that finds a defect, and
+because the guess is part of the account.
+
+**The compiler holds the other direction, and better.** Trying to write the
+negative control — a new operation with no command — would not compile: the
+daemon's match over `Request` is exhaustive, so an operation nobody handles is a
+build failure before any check runs. The control had to add the variant *and*
+handle it to reach the check at all. That is the shape B16 asks for, found by
+attempting to break the thing rather than by reasoning about it.
+
+**And the half that cannot be written yet is written as an assertion.** When
+§XI's window arrives it becomes a second client of the same wire, and A22's real
+target is an action *it* has that no command does. A test fails the day a
+`mcf-window` crate appears, so its actions are enumerated then — rather than
+somebody discovering six months later that A22 had been checked against one
+client. The same reasoning put the privileged helper and reference-model
+neutrality in M0: a special case is far cheaper to prevent than to find.
+
+**Rules resting on review alone: unchanged at 13.** These two were already
+machine-checked *in name*; what changed is that the checks now exist. The
+number to watch is B16's, and the number this moved is a different one — four
+absolute rules still cite items that are open or blocked.
+
 ## Changelog
+
+### Version 97 — two absolute rules stop naming checks that do not exist
+
+F112. A6's hole was on a shipped surface — `mcf doctor` printed a p99 with its
+sample count and no spread — and is closed by a statistic that cannot be
+rendered without its evidence. A22's is enumerated from the control plane's own
+enum, passes today, and fails the day a second surface appears.
+
+### Version 96 — what a stale tier cost, measured
+
+F111. The budget tier ran for the first time in two days and failed: the core
+binary is 14.3% over its last reading, against a 2% tolerance and comfortably
+inside D24's ceiling. Attributed per merge rather than re-baselined on a guess —
+80% of it landed a day before the tier fired, which is what the staleness cost.
+
+### Version 95 — a probe for each modality, or a reason
+
+F110. Two probes built — a language's cost on this vocabulary, which asks no
+engine, and whether an artifact embeds and does it twice identically — and three
+modalities declined in writing with what MCF looked for. The first run of the
+embedding probe recorded an engine that did not participate, which is the fifth
+of those in four days.
 
 ### Version 94 — a rule of thumb that cannot be read as a result
 

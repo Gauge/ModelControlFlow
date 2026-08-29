@@ -211,5 +211,94 @@ impl<Q: Quantity> fmt::Display for Measurement<Q> {
     }
 }
 
+/// A statistic that cannot be rendered without its sample count and its spread
+/// (A6, B-073, §3.4).
+///
+/// **The hole this closes.** [`Measurement`] has no rendering that drops its
+/// conditions — but a surface never had to use it. It could ask for
+/// [`Measurement::at`] or [`Measurement::maximum`], get a bare `Q`, and print
+/// that: `mcf doctor` did exactly this, reporting a p99 with its sample count
+/// and no spread at all. A6's *no number without its conditions, its sample
+/// count and its spread* was held by the type for the whole measurement and by
+/// nobody for the statistic taken out of it.
+///
+/// So a statistic leaves a measurement in this, which carries the rest with it.
+/// The bare value is reachable — arithmetic needs it — through
+/// [`Stated::value`], named for what calling it does, and a surface that
+/// formats *that* into a line is a surface a check can find (B-073).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stated<Q: Quantity> {
+    /// Which statistic this is, in the word a reader knows it by.
+    what: &'static str,
+    value: Q,
+    n: usize,
+    spread: Spread<Q>,
+}
+
+impl<Q: Quantity> Stated<Q> {
+    /// States a statistic with everything A6 requires beside it.
+    #[must_use]
+    pub fn new(what: &'static str, value: Q, measured: &Measurement<Q>) -> Self {
+        Self {
+            what,
+            value,
+            n: measured.n(),
+            spread: measured.spread(),
+        }
+    }
+
+    /// The bare number, for arithmetic.
+    ///
+    /// Named for what it does, the way [`crate::touchstone::Touchstone::bare`]
+    /// and `Content::disclose` are: comparing a statistic with a ceiling needs
+    /// the number and nothing else, and that is a legitimate call. Formatting
+    /// it into a line is not, and is what `checks/tests/a_number_carries_its_conditions.rs`
+    /// looks for.
+    #[must_use]
+    pub const fn value(&self) -> Q {
+        self.value
+    }
+
+    /// How many samples it was taken from.
+    #[must_use]
+    pub const fn n(&self) -> usize {
+        self.n
+    }
+
+    /// The spread it came out of.
+    #[must_use]
+    pub const fn spread(&self) -> &Spread<Q> {
+        &self.spread
+    }
+}
+
+impl<Q: Quantity> fmt::Display for Stated<Q> {
+    /// The statistic, what it is, how many samples, and the spread — never
+    /// fewer. The conditions belong to the [`Measurement`] and are rendered
+    /// with it; what this closes is the *statistic* leaving without its own
+    /// evidence.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} (n={}, median {}, p5–p95 {}–{}, min {}, max {})",
+            self.what,
+            self.value,
+            self.n,
+            // The median beside the statistic, because D27's reason for
+            // reading an event-class figure at the 99th percentile is that the
+            // *gap* between the two is what a busy machine looks like. Dropping
+            // it hides the reason a reading may not be usable — which is what
+            // the first version of this rendering did, and what
+            // `an_event_class_figure_is_reported_at_the_percentile_d27_names`
+            // caught.
+            self.spread.median,
+            self.spread.p5,
+            self.spread.p95,
+            self.spread.minimum,
+            self.spread.maximum
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests;

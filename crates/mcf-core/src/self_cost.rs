@@ -21,7 +21,7 @@
 
 use crate::attested::Attested;
 use crate::hardware::Attributability;
-use crate::measurement::{Bytes, Conditions, Measurement, Percentile, Quantity};
+use crate::measurement::{Bytes, Conditions, Measurement, Percentile, Quantity, Stated};
 use crate::time::{Clock as _, Duration, Monotonic, SystemClock};
 
 /// This process's resident set.
@@ -225,15 +225,24 @@ impl<Q: Quantity> Budget<Q> {
                 needs,
             };
         }
-        self.read(Attested::Known(self.statistic(measured)))
+        self.read(Attested::Known(self.statistic(measured).value()))
     }
 
-    /// The value D27 says this figure is about.
+    /// The value D27 says this figure is about, with the evidence beside it.
+    ///
+    /// **It returns a [`Stated`] rather than a bare `Q`** (B-073). A6 wants no
+    /// number without its sample count and its spread, and this is the exact
+    /// place where a number used to leave a measurement alone: `mcf doctor`
+    /// printed the p99 this returns with an `n` it fetched separately and no
+    /// spread at all. A caller doing arithmetic asks for [`Stated::value`],
+    /// which says what it is doing.
     #[must_use]
-    pub fn statistic(&self, measured: &Measurement<Q>) -> Q {
+    pub fn statistic(&self, measured: &Measurement<Q>) -> Stated<Q> {
         match self.kind {
-            Kind::Prohibition | Kind::CeilingOnState => measured.maximum(),
-            Kind::CeilingOnEvent => measured.at(Percentile::P99),
+            Kind::Prohibition | Kind::CeilingOnState => {
+                Stated::new("max", measured.maximum(), measured)
+            }
+            Kind::CeilingOnEvent => Stated::new("p99", measured.at(Percentile::P99), measured),
         }
     }
 }

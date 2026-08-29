@@ -126,6 +126,29 @@ fn answer(bytes: &[u8], text: &str) -> Result<(bert::Embedding, String), Failure
     Ok((embedding, mark))
 }
 
+/// One embedding, for a probe: the width, a digest of the vector, and how many
+/// identifiers the text spent (B-057).
+///
+/// **A digest rather than the vector.** The probe's question is *the same one
+/// twice*, which a digest answers exactly; and a vector passing through a probe
+/// is a vector something downstream might record, which is the shape A25 keeps
+/// out of the record. What comes back here cannot be un-hashed into content.
+///
+/// `None` where this artifact does not embed, which is what an ordinary text
+/// model does and is not a failure (A7).
+pub(crate) fn measured(path: &Path, text: &str) -> Option<(usize, String, usize)> {
+    let bytes = std::fs::read(path).ok()?;
+    let file = gguf::parse(&bytes).ok()?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let tokens = vocabulary.encode(text, true).ok()?;
+    let (embedding, _mark) = answer(&bytes, text).ok()?;
+    let mut digest = mcf_core::digest::Sha256::new();
+    for value in &embedding.vector {
+        digest.update(&value.to_le_bytes());
+    }
+    Some((embedding.vector.len(), digest.finish().hex(), tokens.len()))
+}
+
 /// The answer first and machine-readable, the conditions after and legible.
 fn render(path: &Path, embedding: &bert::Embedding, mark: &str) -> String {
     let mut vector = String::from("[");

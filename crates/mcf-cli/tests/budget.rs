@@ -223,7 +223,7 @@ fn cold_start_is_within_its_ceiling() {
     );
     against_baseline(
         COLD_START.name,
-        i64::try_from(COLD_START.statistic(&measured).as_nanos()).unwrap_or(i64::MAX),
+        i64::try_from(COLD_START.statistic(&measured).value().as_nanos()).unwrap_or(i64::MAX),
         "ns",
         measured.conditions(),
         &Judgement::NotJudged(
@@ -294,7 +294,13 @@ fn the_latency_mcf_interposes_is_within_its_ceiling() {
     }
     against_baseline(
         ADDED_LATENCY.name,
-        i64::try_from(ADDED_LATENCY.statistic(&measured.round_trip).as_nanos()).unwrap_or(i64::MAX),
+        i64::try_from(
+            ADDED_LATENCY
+                .statistic(&measured.round_trip)
+                .value()
+                .as_nanos(),
+        )
+        .unwrap_or(i64::MAX),
         "ns",
         measured.round_trip.conditions(),
         &Judgement::NotJudged(
@@ -436,7 +442,13 @@ fn the_latency_to_a_first_token_is_within_its_ceiling() {
     }
     against_baseline(
         "added_latency_to_first_token",
-        i64::try_from(ADDED_LATENCY.statistic(&measured.round_trip).as_nanos()).unwrap_or(i64::MAX),
+        i64::try_from(
+            ADDED_LATENCY
+                .statistic(&measured.round_trip)
+                .value()
+                .as_nanos(),
+        )
+        .unwrap_or(i64::MAX),
         "ns",
         measured.round_trip.conditions(),
         &Judgement::NotJudged(
