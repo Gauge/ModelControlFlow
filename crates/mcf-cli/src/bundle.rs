@@ -104,6 +104,7 @@ pub(crate) fn run(wanted: &str, into: Option<&str>) -> Response {
                 &carried.borrow(),
                 manifest.entries,
                 &manifest.digest,
+                &prompt_beside(&journal, &to, wanted),
             ),
             served: true,
         },
@@ -207,8 +208,54 @@ fn destination(into: Option<&str>, wanted: &str) -> PathBuf {
     }
 }
 
+/// The prompt this claim was taken with, written beside the bundle (A25, F105).
+///
+/// **Two files, and that is the point.** The record no longer holds the prompt
+/// — it holds its length and its digest, and the text is in the content store —
+/// so a bundle made from record lines cannot carry it, and
+/// `mcf_record::export` must stay unable to reach content or its guarantee
+/// becomes a filter again (B9). A bundle still needs the input or it reproduces
+/// nothing (B-211), so the text is disclosed here, deliberately, at one call
+/// site named for what it does, and lands in a file of its own that the report
+/// names and the operator can see and delete.
+///
+/// The returned line is what the report says about it, which is one of three
+/// things: where it is, that the record was written before content was kept, or
+/// why it could not be read. None of them is silence (A7).
+fn prompt_beside(journal: &Path, bundle: &Path, wanted: &str) -> String {
+    let beside = bundle.with_extension("mcf-bundle.prompt");
+    let store = match mcf_record::content::ContentStore::open(
+        &mcf_record::content::ContentStore::beside(journal),
+    ) {
+        Ok(store) => store,
+        Err(failure) => return format!("  the prompt could not be reached: {failure}"),
+    };
+    match store.disclose_kept(wanted) {
+        Ok(Some(prompt)) => match std::fs::write(&beside, prompt.disclose()) {
+            Ok(()) => format!(
+                "  the prompt is beside it in {} — {} byte(s) of your own text, in\n  a file of \
+                 its own so that sending one is not sending the other (A25)",
+                beside.display(),
+                prompt.length_bytes()
+            ),
+            Err(error) => format!("  the prompt could not be written beside it: {error}"),
+        },
+        Ok(None) => "  the prompt is NOT here: this claim was recorded before MCF filed what \
+                     was\n  asked, so the bundle carries its digest and not its text (F105)"
+            .to_owned(),
+        Err(failure) => format!("  the prompt is filed and would not be read: {failure}"),
+    }
+}
+
 /// What the operator is told, before the file goes anywhere (A24).
-fn report(to: &Path, claim: &Entry, carried: &[String], entries: usize, digest: &str) -> String {
+fn report(
+    to: &Path,
+    claim: &Entry,
+    carried: &[String],
+    entries: usize,
+    digest: &str,
+    prompt: &str,
+) -> String {
     let mut lines = vec![
         format!("wrote {}", to.display()),
         format!("  {entries} entr(ies), sha256 {digest}"),
@@ -233,6 +280,8 @@ fn report(to: &Path, claim: &Entry, carried: &[String], entries: usize, digest: 
     }
     lines.push(String::new());
     lines.push("── what leaves with it, if you send it ──────────────────────".to_owned());
+    lines.push(prompt.to_owned());
+    lines.push(String::new());
     for said in [
         "  the prompt both arms were asked, which is text you wrote",
         "  this machine's full hardware identity, which a contribution would",

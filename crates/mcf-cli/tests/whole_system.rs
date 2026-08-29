@@ -1349,6 +1349,111 @@ fn a_credential_is_read_where_it_is_named_and_not_sent_in_the_clear() {
     );
 }
 
+/// What a served generation puts in each of the two stores (A25, §6.8, F105).
+///
+/// **The failure this is against was live for three months.** One `Value` was
+/// both the line sent to the caller and the body of the record entry, so every
+/// completion went into the journal as an ordinary string — 4 019 of them on
+/// the machine where it was found — and `mcf export` copied them out while
+/// printing *no prompt or completion content, by construction*. A25 is
+/// absolute and its structure was intact and unused: `ContentStore` had no way
+/// to hold anything, so nothing was ever put in it.
+///
+/// So this asks the question end to end rather than of the source: run a model
+/// through a real daemon, then look in both stores. The record must hold a
+/// length and no text; the content store must hold exactly what was said,
+/// because A1 forbids solving a leak by losing the data.
+#[test]
+fn a_generation_puts_its_text_in_the_content_store_and_not_in_the_record() {
+    let machine = Machine::new("content-separation");
+    let model = machine.0.join("fixture.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("the fixture writes");
+
+    let mut serving = machine
+        .command(&["serve"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the daemon starts");
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.stdout.as_mut().expect("it says where it is");
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = String::new();
+        let _read = reader.read_line(&mut line);
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+
+    let ran = machine.run(&[
+        "run",
+        model.to_str().expect("a fixture path is text"),
+        "--prompt",
+        "a",
+        "--limit",
+        "4",
+        "--engine",
+        "stand-in",
+    ]);
+    let said = text(&ran);
+    let _stopped = machine.run(&["stop", "--because", "the content-separation test is done"]);
+    let _waited = serving.wait();
+    assert!(
+        said.contains("served   by the daemon"),
+        "the daemon did not serve it, so this tests the wrong path: {said}"
+    );
+
+    // The record entry, as the record holds it.
+    let record = std::fs::read_to_string(machine.journal()).expect("the record is there");
+    let generated: Vec<mcf_record::json::Value> = record
+        .lines()
+        .filter_map(|line| mcf_record::json::parse(line).ok())
+        .filter(|entry| {
+            entry.get("kind").and_then(mcf_record::json::Value::as_text) == Some("generated")
+        })
+        .collect();
+    assert_eq!(generated.len(), 1, "one generation, one entry: {record}");
+    let entry = generated.first().expect("one entry");
+    let body = entry.get("body").expect("an entry has a body");
+
+    for content in ["text", "prompt", "produced_tokens"] {
+        assert!(
+            body.get(content).is_none(),
+            "the record holds `{content}`, which is what a person wrote or a model said \
+             (A25, F105): {}",
+            body.to_line()
+        );
+    }
+    let bytes = body
+        .get("text_bytes")
+        .and_then(mcf_record::json::Value::as_integer)
+        .expect("the record says how much was said, which is a measurement about content");
+    assert!(bytes > 0, "the model said nothing, so this proves nothing");
+
+    // And the content store holds it, under this entry's identifier.
+    let id = entry
+        .get("id")
+        .and_then(mcf_record::json::Value::as_text)
+        .expect("a written entry has an identifier");
+    let store = mcf_record::content::ContentStore::open(
+        &mcf_record::content::ContentStore::beside(&machine.journal()),
+    )
+    .expect("the content store opens");
+    let kept = store
+        .disclose_kept(id)
+        .expect("the store answers")
+        .expect("what the model said was kept, because A1 forbids losing it to fix a leak");
+    assert_eq!(
+        i64::try_from(kept.length_bytes()).unwrap_or(i64::MAX),
+        bytes,
+        "the record's length and the content store's content disagree"
+    );
+    // What was printed is what was kept: the caller's answer and the filed
+    // content are one thing seen twice, not two.
+    assert!(
+        said.contains(kept.disclose()),
+        "what was filed is not what the caller was told: {said}"
+    );
+}
+
 /// The daemon, as processes: one starts and stays up, another asks it to stop,
 /// and it says why it stopped (B-030, B-210, D1).
 #[test]

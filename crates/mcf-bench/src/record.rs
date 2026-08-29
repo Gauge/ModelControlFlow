@@ -123,9 +123,33 @@ fn held_machine(held: &MachineHeld) -> Value {
 }
 
 /// What the comparison was asked to do (PR2, B30, B-211).
+///
+/// **The prompt is a condition and it is also content** (A6 and A25 at once,
+/// F105). A8 needs to be able to say that two comparisons were not asked the
+/// same thing, and A25 says what a person typed does not live in the record.
+/// Both are absolute, and they are reconciled the way `Content::length_bytes`
+/// already suggests: what the record keeps is a *measurement about* the prompt
+/// — its length and its digest — which is enough to refuse a confound and is
+/// not the text. The text goes to the content store under this entry's
+/// identifier, where `mcf bundle` discloses it deliberately.
+///
+/// The digest identifies; it does not conceal. Anyone who guesses `Once upon a
+/// time` can confirm it, and the record does not claim otherwise — it claims
+/// not to *hold* the prompt, which is what makes an export of it carry none.
 fn method(held: &Method) -> Value {
     Value::map([
-        ("prompt", Value::text(held.prompt.clone())),
+        (
+            "prompt_bytes",
+            Value::Integer(i64::try_from(held.prompt.len()).unwrap_or(i64::MAX)),
+        ),
+        (
+            "prompt_digest",
+            Value::text({
+                let mut digest = mcf_core::digest::Sha256::new();
+                digest.update(held.prompt.as_bytes());
+                digest.finish().hex()
+            }),
+        ),
         ("resolving_ppm", parts_per_million(held.resolving)),
         ("ceiling", count(held.ceiling)),
         (

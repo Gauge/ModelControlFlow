@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the classification scheme every failure is filed under |
-| **Version** | 3 |
+| **Version** | 4 |
 | **Status** | Living. Drafted, awaiting ratification. |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v23, governed by [rules.md](rules.md) |
 | **Answers** | §7.10 · registered as DEC-010 in [backlog.md](backlog.md) |
@@ -132,6 +132,7 @@ category with no scenario is an untested claim, and the cross-check fails CI
 | `record.replay.incomplete` | Rebuilt, with a stated gap |
 | `record.schema.unknown` | Written by a version this one cannot read (§7.30) |
 | `record.budget.exhausted` | Retention limit reached (§7.5) |
+| `record.content.unreadable` | Content filed beside the record is there and will not be read (F105) |
 
 ### 8 · `config.*` — configuration
 | Code | Meaning |
@@ -240,6 +241,16 @@ adding the category is the fix.
   §3.17 wants the rare paths exercised, and the laboratory is where that happens.
 
 ## Changelog
+
+### Version 4 — `record.content.unreadable` added
+
+A25 says content lives in a store that is not the record, and the store had no
+way to hold anything, so nothing was ever put in it and the completions went
+into the record instead (F105). Filing content gives the store a read, and a
+read has a failure the taxonomy had no code for: content that is *there and
+will not open*, which must not come back as the same answer as content that was
+never kept. Added with its laboratory scenario in the same change (A13). 112
+codes.
 
 ### Version 3 — `artifact.unreadable` added
 

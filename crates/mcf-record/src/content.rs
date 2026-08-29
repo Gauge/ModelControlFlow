@@ -12,6 +12,24 @@
 //! else; neither type converts to the other, and B-161's check reads both
 //! modules to say so.
 //!
+//! **The store had no way to hold anything for its first three months** (F105).
+//! It could be opened and asked where it was, and that is all — so nothing was
+//! ever put in it, and the model's completions went into the *record* as
+//! ordinary strings, where a type that never appeared could not stop them. A25
+//! is absolute and it was not held: 4 019 completions and 29 prompts were in
+//! the record of the machine this was found on, and `mcf export` printed *no
+//! prompt or completion content, by construction* over the file it had just
+//! written them into. The guarantee was structural and unused, which is the
+//! most expensive kind: it reads like a defence in every review.
+//!
+//! **Keyed by the record's own identifier, and the pointer only goes one way.**
+//! Content is filed under the entry it belongs to, as an opaque string — this
+//! module cannot name an `EntryId` without acquiring a path to the record, so it
+//! takes a `&str` and validates its shape. Nothing in the record points here:
+//! an entry says how many bytes were said and never where they are, so a reader
+//! who has the record has no route to the content, which is what makes an
+//! export that walks the record unable to reach it.
+//!
 //! **What is content and what is not** (B9). Metrics, timings, resource states,
 //! configurations and error conditions are *system* record and are recorded in
 //! full. What a user typed and what a model generated are content. Benchmark
@@ -120,6 +138,99 @@ impl ContentStore {
         &self.path
     }
 
+    /// Files one piece of content under the record entry it belongs to.
+    ///
+    /// **The key is the entry's identifier and this module cannot say so in a
+    /// type.** Taking an `EntryId` would mean naming one of the record's types,
+    /// which is the path B-161 exists to prevent, so the key arrives as a `&str`
+    /// and its shape is checked here instead.
+    ///
+    /// One file per key, holding the bytes and nothing else: no format, no
+    /// escaping, no parser, and forgetting one piece of content is removing one
+    /// file — which is what §7.5's retention question will need when it is
+    /// answered (DEC-005).
+    ///
+    /// # Errors
+    ///
+    /// `internal.invariant_violated` when the key is not one this store will
+    /// make a filename of; `record.unwritable` when the write fails.
+    pub fn keep(&self, key: &str, content: &Content) -> Result<()> {
+        let path = self.file(key)?;
+        std::fs::create_dir_all(&self.path).map_err(|error| Self::unwritable(&path, &error))?;
+        std::fs::write(&path, content.text.as_bytes())
+            .map_err(|error| Self::unwritable(&path, &error))
+    }
+
+    /// Hands back content that was filed, if any was.
+    ///
+    /// Named for what calling it does, exactly as [`Content::disclose`] is: a
+    /// caller that reads content has decided to, and the call site says so.
+    ///
+    /// `Ok(None)` is the ordinary answer for an entry whose content was never
+    /// kept or has been forgotten — which is a state rather than a failure
+    /// (A7), and is what a reader meets for every entry written before this
+    /// store could hold anything.
+    ///
+    /// # Errors
+    ///
+    /// `internal.invariant_violated` for a key this store would not have
+    /// written; `record.unreadable` when the file is there and will not be
+    /// read, because *there and unreadable* is not the same answer as *absent*.
+    pub fn disclose_kept(&self, key: &str) -> Result<Option<Content>> {
+        let path = self.file(key)?;
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(Content::new(String::from_utf8_lossy(&bytes)))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Failure::new(
+                Category::RecordContentUnreadable,
+                Attribution::Machine,
+                Disposition::Refused,
+                WHERE,
+                "content is filed here and would not be read",
+            )
+            .with_context("path", path.display().to_string())
+            .with_context("os_error", error.to_string())),
+        }
+    }
+
+    /// Where one key's content lives, refusing a key that is not a name.
+    ///
+    /// A key with a separator or a parent component in it would write outside
+    /// the store, which is the traversal §3.7 is about pointed inward. The
+    /// permitted shape is what the record's own identifiers are made of.
+    fn file(&self, key: &str) -> Result<PathBuf> {
+        let usable = !key.is_empty()
+            && key.len() <= 160
+            && key
+                .chars()
+                .all(|held| held.is_ascii_alphanumeric() || matches!(held, '-' | '_' | '.'))
+            && !key.starts_with('.');
+        if !usable {
+            return Err(Failure::new(
+                Category::InternalInvariantViolated,
+                Attribution::Mcf,
+                Disposition::Refused,
+                WHERE,
+                "a content key must be a plain name: letters, digits, dash, underscore and dot",
+            )
+            .with_context("key_bytes", key.len().to_string()));
+        }
+        Ok(self.path.join(key))
+    }
+
+    /// The failure for a write that would not happen.
+    fn unwritable(path: &Path, error: &std::io::Error) -> Failure {
+        Failure::new(
+            Category::RecordUnwritable,
+            Attribution::Machine,
+            Disposition::Refused,
+            WHERE,
+            "content could not be written to the content store",
+        )
+        .with_context("path", path.display().to_string())
+        .with_context("os_error", error.to_string())
+    }
+
     /// Where content goes by default: beside the record, and not in it.
     ///
     /// `None` when there is nowhere to put it, for the same reason
@@ -127,11 +238,20 @@ impl ContentStore {
     /// to write the user's data into (A7).
     #[must_use]
     pub fn default_path() -> Option<PathBuf> {
-        crate::journal::default_path().map(|record| {
-            record
-                .parent()
-                .map_or_else(|| PathBuf::from("content"), |dir| dir.join("content"))
-        })
+        crate::journal::default_path().map(|record| Self::beside(&record))
+    }
+
+    /// Where content lives beside a record at a stated path.
+    ///
+    /// The *stated* path, because a daemon is told where its record is rather
+    /// than looking one up, and a process that asked the environment where to
+    /// put content while writing its record somewhere else would put the two
+    /// halves of one machine's history in two places (F46's shape).
+    #[must_use]
+    pub fn beside(record: &Path) -> PathBuf {
+        record
+            .parent()
+            .map_or_else(|| PathBuf::from("content"), |dir| dir.join("content"))
     }
 }
 

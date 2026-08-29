@@ -87,6 +87,14 @@ const DECLARED: &[Deletes] = &[
                laboratory processes that died (A27)",
     },
     Deletes {
+        file: "crates/mcf-lab/src/catalogue/record.rs",
+        calls: 1,
+        what: "a file the laboratory itself just filed in a scratch content store, removed so \
+               that a directory can take its place — which is how *there and unreadable* is \
+               constructed, and which must not come back as the same answer as *never kept* \
+               (F105, D26, A27)",
+    },
+    Deletes {
         file: "crates/mcf-record/src/overhead.rs",
         calls: 1,
         what: "the file the overhead measurement itself wrote, removed by the measurement \

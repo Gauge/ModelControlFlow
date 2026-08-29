@@ -148,7 +148,7 @@ impl fmt::Display for Domain {
     }
 }
 
-/// What failed: the taxonomy's 111 leaf codes.
+/// What failed: the taxonomy's 112 leaf codes.
 ///
 /// `#[non_exhaustive]` because the taxonomy's extension policy makes adding a
 /// leaf cheap, and a caller outside this crate that matches exhaustively today
@@ -277,6 +277,8 @@ pub enum Category {
     RecordSchemaUnknown,
     /// Retention limit reached (§7.5)
     RecordBudgetExhausted,
+    /// Content filed beside the record is there and will not be read (F105)
+    RecordContentUnreadable,
     /// Value outside the permitted domain
     ConfigInvalid,
     /// Coherent and impossible on this machine
@@ -383,7 +385,7 @@ pub enum Category {
 
 impl Category {
     /// Every category, in the taxonomy's own order.
-    pub const ALL: [Self; 111] = [
+    pub const ALL: [Self; 112] = [
         Self::HubUnreachable,
         Self::HubRateLimited,
         Self::HubAuthRequired,
@@ -444,6 +446,7 @@ impl Category {
         Self::RecordReplayIncomplete,
         Self::RecordSchemaUnknown,
         Self::RecordBudgetExhausted,
+        Self::RecordContentUnreadable,
         Self::ConfigInvalid,
         Self::ConfigUnsatisfiable,
         Self::ConfigConflict,
@@ -562,6 +565,7 @@ impl Category {
             Self::RecordReplayIncomplete => "record.replay.incomplete",
             Self::RecordSchemaUnknown => "record.schema.unknown",
             Self::RecordBudgetExhausted => "record.budget.exhausted",
+            Self::RecordContentUnreadable => "record.content.unreadable",
             Self::ConfigInvalid => "config.invalid",
             Self::ConfigUnsatisfiable => "config.unsatisfiable",
             Self::ConfigConflict => "config.conflict",
@@ -680,6 +684,9 @@ impl Category {
             Self::RecordReplayIncomplete => "Rebuilt, with a stated gap",
             Self::RecordSchemaUnknown => "Written by a version this one cannot read (§7.30)",
             Self::RecordBudgetExhausted => "Retention limit reached (§7.5)",
+            Self::RecordContentUnreadable => {
+                "Content filed beside the record is there and will not be read (F105)"
+            }
             Self::ConfigInvalid => "Value outside the permitted domain",
             Self::ConfigUnsatisfiable => "Coherent and impossible on this machine",
             Self::ConfigConflict => "Two settings that cannot both hold",
@@ -803,7 +810,7 @@ impl Category {
             Self::RecordCorruptJournal => Domain::Record,
             Self::RecordReplayIncomplete => Domain::Record,
             Self::RecordSchemaUnknown => Domain::Record,
-            Self::RecordBudgetExhausted => Domain::Record,
+            Self::RecordBudgetExhausted | Self::RecordContentUnreadable => Domain::Record,
             Self::ConfigInvalid => Domain::Config,
             Self::ConfigUnsatisfiable => Domain::Config,
             Self::ConfigConflict => Domain::Config,

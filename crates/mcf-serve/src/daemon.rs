@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Subsystem};
 use mcf_core::time::{Clock as _, Instant, Monotonic, SystemClock, Timestamp};
-use mcf_record::journal::{Entry, EntryKind};
+use mcf_record::journal::{Entry, EntryId, EntryKind};
 use mcf_record::json::Value;
 
 use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
@@ -190,16 +190,20 @@ impl Daemon {
     /// a request, and a daemon that refused to start because it could not
     /// write down that it had started would be trading a working MCF for a
     /// tidy record (A4, A2 — said, not swallowed).
-    fn note(&self, kind: EntryKind, at: Timestamp, body: Value) {
+    fn note(&self, kind: EntryKind, at: Timestamp, body: Value) -> Option<EntryId> {
         let Ok(mut journal) = mcf_record::journal::Journal::open(&self.places.journal) else {
             eprintln!(
                 "mcf: the record at {} could not be opened, so this event is unrecorded",
                 self.places.journal.display()
             );
-            return;
+            return None;
         };
-        if let Err(failure) = journal.append(&Entry::new(kind, at, body)) {
-            eprintln!("mcf: {kind} could not be recorded: {failure}");
+        match journal.append(&Entry::new(kind, at, body)) {
+            Ok(appended) => Some(appended.id),
+            Err(failure) => {
+                eprintln!("mcf: {kind} could not be recorded: {failure}");
+                None
+            }
         }
     }
 
@@ -419,7 +423,7 @@ impl Daemon {
             .models
             .parent()
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
-        let account = crate::generation::serve_generation(
+        let produced = crate::generation::serve_generation(
             &self.places.models,
             &mcf_home,
             &self.resident,
@@ -436,7 +440,30 @@ impl Daemon {
             engine,
             writer,
         );
-        self.note(EntryKind::Generated, at, account);
+        // The account goes to the record and what the model said goes to the
+        // content store, filed under the entry the record just wrote (A25,
+        // §6.8, F105). The record first, because the key is its identifier —
+        // and a process that dies between the two leaves an entry saying how
+        // many bytes were said with nothing filed under it, which
+        // `disclose_kept` answers as absent. That is a state, and it is the one
+        // A7 wants: *not kept* rather than a plausible empty string.
+        let Some(id) = self.note(EntryKind::Generated, at, produced.account) else {
+            return;
+        };
+        let Some(said) = produced.said else { return };
+        let store = match mcf_record::content::ContentStore::open(
+            &mcf_record::content::ContentStore::beside(&self.places.journal),
+        ) {
+            Ok(store) => store,
+            Err(failure) => {
+                eprintln!("mcf: what the model said could not be filed: {failure}");
+                return;
+            }
+        };
+        if let Err(failure) = store.keep(id.as_str(), &mcf_record::content::Content::new(said.text))
+        {
+            eprintln!("mcf: what the model said could not be filed: {failure}");
+        }
     }
 
     /// What MCF says to each request.

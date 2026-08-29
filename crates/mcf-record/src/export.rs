@@ -93,6 +93,16 @@ pub struct Manifest {
     pub entries: usize,
     /// The digest of those entries, exactly as they are written.
     pub digest: String,
+    /// How many of them hold content — a prompt or a completion.
+    ///
+    /// **Nothing MCF writes today lands in these fields** (F105): the record
+    /// keeps a length and a digest, and the text goes to the content store.
+    /// This is a count of what a record written *before* that carries, and it
+    /// exists because a surface that printed *no prompt or completion content*
+    /// over a file holding four thousand of them is the failure A1 is about.
+    /// Counted rather than removed: A1 forbids the record editing its own
+    /// history, and B9 names a filter as the wrong shape for this guarantee.
+    pub content_entries: usize,
 }
 
 /// Writes a bundle from a journal.
@@ -152,22 +162,26 @@ pub fn write_selected(
         hasher.update(line.as_bytes());
         hasher.update(b"\n");
     }
-    let manifest = Manifest {
-        entries: lines.len(),
-        digest: hasher.finish().hex(),
-    };
-
-    let mut out = String::new();
-    // Whether anything carried holds text the operator wrote. Asked of the
-    // entries rather than assumed from the kind: a bundle's honesty about this
-    // has to survive somebody adding a field to an entry.
-    let written = replayed
+    // How many of the carried entries hold content. Asked of the entries
+    // rather than assumed from the kind: a bundle's honesty about this has to
+    // survive somebody adding a field to an entry, and the *count* rather than
+    // the boolean because a surface saying so should be able to say how much
+    // (A6, F105).
+    let carrying = replayed
         .entries
         .iter()
         .zip(text.lines().skip(1))
         .filter(|(_, line)| lines.contains(line))
-        .any(|(entry, _)| holds_written_text(&entry.to_value()));
-    out.push_str(&header(kind, &manifest, replayed.loss.is_some(), written).to_line());
+        .filter(|(entry, _)| holds_written_text(&entry.to_value()))
+        .count();
+    let manifest = Manifest {
+        entries: lines.len(),
+        digest: hasher.finish().hex(),
+        content_entries: carrying,
+    };
+
+    let mut out = String::new();
+    out.push_str(&header(kind, &manifest, replayed.loss.is_some(), carrying > 0).to_line());
     out.push('\n');
     for line in &lines {
         out.push_str(line);
@@ -231,6 +245,12 @@ pub fn read(from: &Path) -> Result<(Kind, Manifest, Vec<Value>)> {
             Some(Manifest {
                 entries: usize::try_from(manifest.get("entries")?.as_integer()?).ok()?,
                 digest: manifest.get("digest")?.as_text()?.to_owned(),
+                // What a bundle's own manifest states is its entry count and
+                // its digest. How many of those entries hold content is a fact
+                // about the file, computed by whoever wrote it, and reading it
+                // back from the file would be believing a number the file
+                // states about itself (A21).
+                content_entries: 0,
             })
         })
         .ok_or_else(|| unreadable_bundle(from, "its header carries no manifest"))?;
@@ -302,23 +322,37 @@ fn header(kind: Kind, manifest: &Manifest, partial: bool, carries_written_text: 
     ])
 }
 
-/// Whether an entry holds text the operator wrote.
+/// Whether an entry holds content — what a person wrote or a model said.
 ///
 /// The fields are named rather than guessed at, because guessing is how this
 /// gets it wrong in the direction that matters: an unrecognized field read as
 /// *not user content* is a bundle telling somebody it is safe to send.
 ///
-/// A field added later that holds written text and is not named here is a
-/// defect, and `checks/tests/a_bundle_says_what_it_holds.rs` is what catches
-/// it — by requiring that every place a surface writes operator text into the
-/// record be one of these.
+/// **This asked about the operator's half only, and A25 names two** (F105). It
+/// listed the prompt and not the completion, so four thousand entries holding
+/// what a model generated were carried by a bundle whose header said it held no
+/// user content. The rule had said *what a user typed and what a model
+/// generated* since it was written; the guard covered the first clause.
+///
+/// **Every path here is now a legacy shape.** Nothing MCF writes lands in one:
+/// a generation records `text_bytes` and a comparison records `prompt_bytes`
+/// and `prompt_digest`, and the text itself goes to the content store. They
+/// stay because a record written before that still holds them and does not
+/// change (A1), and a header computed without them would be false about exactly
+/// the records that need it to be true.
+///
+/// A field added later that holds content and is not named here is a defect,
+/// and `checks/tests/a_bundle_says_what_it_holds.rs` is what catches it.
 fn holds_written_text(entry: &Value) -> bool {
-    /// Where operator text reaches the record today.
-    const WRITTEN: [&[&str]; 2] = [
+    /// Where content reached the record before F105.
+    const WRITTEN: [&[&str]; 3] = [
         // A comparison's method: what both arms were asked (PR2, B-211).
         &["body", "method", "prompt"],
         // A generation: what was asked, where a surface recorded it.
         &["body", "prompt"],
+        // A generation: what the model said. A25 covers this and the guard
+        // that was written for it did not (F105).
+        &["body", "text"],
     ];
     WRITTEN.iter().any(|path| {
         let mut held = entry;

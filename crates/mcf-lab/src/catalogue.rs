@@ -77,6 +77,8 @@ pub const CATALOGUE: &[Scenario] = &[
     record::TORN_LAST_LINE,
     record::CORRUPT_LINE,
     record::HEADERLESS,
+    record::CONTENT_UNREADABLE,
+    record::CONTENT_KEY_REFUSED,
     serve::TWO_DAEMONS,
     store::AUTHORIZATION_IS_STALE,
     store::SHELF_WILL_NOT_EMPTY,
