@@ -8258,6 +8258,18 @@ of 28 August — the paired comparison machinery, the effect-size interval, the
 seed set and the instrument cross-checks — plus this day's probes, content
 store and touchstones.
 
+**A trap found in the re-baselining itself.** The number written by hand was
+4,666,680 B and the tier's own passing run recorded 4,664,408 — 2,272 bytes
+apart, at the same commit, from a build that is reproducible byte for byte
+(B-001). The difference is `ci.sh`'s `--remap-path-prefix`, which shortens the
+paths embedded in the binary: **the artifact the tier measures is not the one
+`cargo build --release` produces at a terminal.** Both readings are of real
+artifacts and the baseline file records the conditions of the one it holds, so
+nothing here is wrong — but a person re-baselining by hand is measuring a
+slightly different thing than the tier will, and only the 2 % tolerance hid it.
+The tier's own measurement is the authority and it overwrote the hand-written
+one on the passing run, which is the right order.
+
 **What this did not establish.** Whether 470 KB is a *reasonable* price for that
 body of work. Nothing here measures what a feature ought to cost, and inventing a
 figure to compare against would be exactly the invented intent A23 forbids. What
