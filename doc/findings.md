@@ -7938,6 +7938,15 @@ unchanged: it is a fine first filter, and F27's calibration of it stands. What
 changed is that it no longer has the last word when a better instrument has an
 opinion.
 
+**A hazard in the procedure, recorded beside F103's.** Waiting for the long run
+to finish was done with `until ! pgrep -f "check-oracle.sh"; do sleep; done` —
+and the shell running that loop has `check-oracle.sh` in its own command line,
+so `pgrep` matched the watcher. It reported the oracle still running for an hour
+after it had finished, twice. It is the session's own small instance of the
+thing every finding above is about: an instrument that measured itself and
+reported the answer as though it were about something else. Match on something
+the watcher does not contain.
+
 **What this did not establish.** Whether MCF's third-of-a-logit shift at this
 position is ordinary quantized arithmetic or a small real defect that the KL
 floor is too loose to see. The floor was measured against a clean engine and two
