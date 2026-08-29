@@ -1252,6 +1252,18 @@ pub struct Method {
     pub prompt: String,
     /// The difference the caller cared about.
     pub resolving: PartsPerMillion,
+    /// Whether both arms were asked MCF's own standard question, or the
+    /// operator's (B-160, B42, §6.37).
+    ///
+    /// **This is what decides whether the result can be shared**, and it is
+    /// settled here, where the run is described, rather than at the moment
+    /// somebody tries to share it — a marking applied at the boundary is one
+    /// that can be forgotten at the boundary.
+    ///
+    /// It compares the *text*, not how it arrived: an operator who types the
+    /// standard question verbatim has run the standard question, and a run
+    /// that took the default because nothing was given has too.
+    pub workload: mcf_core::contribution::Workload,
     /// The most paired trials the run would have taken.
     pub ceiling: usize,
     /// Which engine the run asked for, where it asked.

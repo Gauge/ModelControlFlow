@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 100 |
+| **Version** | 101 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -143,6 +143,8 @@ forward as one.
 | 113 | [F113 — The load tier found a race in the laboratory, and it was six runs in a thousand of a file being written and executed at once (B-191, B-009, §3.17, D26, A13)](#113--f113--the-load-tier-found-a-race-in-the-laboratory-and-it-was-six-runs-in-a-thousand-of-a-file-being-written-and-executed-at-once-b-191-b-009-317-d26-a13) |
 | 114 | [F114 — MCF was keeping its own probe traffic in the store meant for the operator's private text (B-146, B-392, §6.8, A17, A25, B9)](#114--f114--mcf-was-keeping-its-own-probe-traffic-in-the-store-meant-for-the-operators-private-text-b-146-b-392-68-a17-a25-b9) |
 | 115 | [F115 — A16's fifth gate was in the rule and nowhere in the code, and every comparison MCF had recorded was uncontributable for saying nothing (B-160, B-039, A16, A24, B-203, B42, §3.20)](#115--f115--a16s-fifth-gate-was-in-the-rule-and-nowhere-in-the-code-and-every-comparison-mcf-had-recorded-was-uncontributable-for-saying-nothing-b-160-b-039-a16-a24-b-203-b42-320) |
+| 116 | [F116 — The benchmark's standard question, chosen by measuring 27 vocabularies rather than by taste (B-160, B42, F110, F81, §6.37)](#116--f116--the-benchmarks-standard-question-chosen-by-measuring-27-vocabularies-rather-than-by-taste-b-160-b42-f110-f81-637) |
+| 117 | [F117 — The pinned length was declared and never enforced, and a rate computed the obvious way is a property of the length you chose (B-081, D19, A19, §3.4, F116)](#117--f117--the-pinned-length-was-declared-and-never-enforced-and-a-rate-computed-the-obvious-way-is-a-property-of-the-length-you-chose-b-081-d19-a19-34-f116) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8540,7 +8542,155 @@ because the previous demonstration had stopped it. Discarding the output of a
 command whose *output is the evidence* wasted three attempts — the same shape as
 F113's first diagnosis, one step earlier.
 
+## 116 · F116 — The benchmark's standard question, chosen by measuring 27 vocabularies rather than by taste (B-160, B42, F110, F81, §6.37)
+
+**The operator's decision, and the measurement it needed.**
+[F115](#115--f115--a16s-fifth-gate-was-in-the-rule-and-nowhere-in-the-code-and-every-comparison-mcf-had-recorded-was-uncontributable-for-saying-nothing-b-160-b-039-a16-a24-b-203-b42-320)
+found that every timing comparison MCF had ever recorded was refused for
+sharing because the row never said where its work came from — and that the
+deeper cause was that `mcf bench` had no standard question at all. It required
+one to be supplied, so every result was the operator's own by default rather
+than by anyone's judgement.
+
+The project already describes the answer for laboratories: *ship a standard
+workload and accept a replacement; results from the standard travel, results
+from a replacement do not.* The benchmark simply never had the first half. The
+operator chose to build it.
+
+**A standard question is only standard if it is the same work for every model
+asked it**, and that is not automatic: the same English sentence costs 16 tokens
+on one vocabulary and 52 on another once other languages are involved (F110).
+Four candidates, measured across every vocabulary this machine holds:
+
+| candidate | tokens | spread |
+|---|---|---|
+| *The quick brown fox jumps over the lazy dog…* | 16–19 | 19% |
+| *Write a short paragraph explaining how a lighthouse keeper…* | 15–20 | 33% |
+| **In three sentences, describe what happens to a river…** | **20–22** | **10%** |
+| *Describe in three sentences what happens to a river…* | 16–18 | 12% |
+
+Two tokens of variation across 27 vocabularies, which is as close to *the same
+work* as a question written in words gets.
+
+**Why this shape.** Plain English, because that is where vocabularies agree. No
+markers and no numerals, which tokenize unpredictably. An instruction rather
+than a fragment, because that is what people benchmark. A bounded answer —
+*three sentences* — so that a pinned token budget is near what the model would
+have said anyway rather than a cut across the middle of a thought.
+
+**It is fixed for life.** A standard question that changed would silently make
+yesterday's shared results incomparable with today's, which is the one thing a
+standard exists to prevent. A future change is a second question beside this
+one, never an edit to this one.
+
+**What it does not settle**, and the operator said so within a minute of seeing
+it: 27 vocabularies is a sample. A family MCF has never met can tokenize it
+anywhere, and a mismatch between two arms is work one arm does and the other
+does not — which pairing cannot cancel, because it is not noise.
+[F117](#117--f117--the-pinned-length-was-declared-and-never-enforced-and-a-rate-computed-the-obvious-way-is-a-property-of-the-length-you-chose-b-081-d19-a19-34-f116)
+measures what a token of mismatch is worth and what to do about it.
+
+## 117 · F117 — The pinned length was declared and never enforced, and a rate computed the obvious way is a property of the length you chose (B-081, D19, A19, §3.4, F116)
+
+**Found by the operator asking a question about the design**: *wouldn't more
+verbose models always take longer, since they respond with more words?*
+
+They would, and MCF knew it. The timing discipline is called `LengthPinned` and
+the code says why:
+
+> *a timing that varies because one run stopped earlier is measuring the stop,
+> not the speed. A timing comparison that let its arms stop where they liked
+> would be reporting the models' verbosity as the machine's throughput.*
+
+**The pin was declared and never enforced.** The engine that does the timing
+treats a token budget as a *ceiling* and stops at the model's own end-of-turn
+token. And MCF could not see it happen: through that engine an answer arrives as
+one chunk, so the account reads `1` token and `stopped:
+unknown_the_engine_did_not_say`, while the record writes `tokens_pinned: 32` in
+a form that reads as enforced.
+
+**Measured, across a matrix of two models, five lengths, two settings of the
+pin, seven repeats a cell.**
+
+| model | asked | produced, pin off | produced, pin on |
+|---|---|---|---|
+| SmolLM2-135M | 8 / 16 / 32 / 64 / 128 | **5 / 5 / 5 / 5 / 5** | 8 / 16 / 32 / 64 / 128 |
+| Qwen3-0.6B | 8 / 16 / 32 / 64 / 128 | 8 / 16 / 32 / 64 / 128 | 8 / 16 / 32 / 64 / 128 |
+
+Unpinned, SmolLM2 produces five tokens **whatever it is asked for** — the length
+axis collapses entirely for that model — while Qwen3 runs to the budget every
+time. A comparison of the two at 128 tokens would time five tokens of work
+against a hundred and twenty-eight and report the difference as speed.
+
+**And the second finding, which nobody was looking for.** With the pin on, time
+is linear in length, and the line has two halves:
+
+| model | fixed cost per request | cost per token | rate from the slope |
+|---|---|---|---|
+| Qwen3-0.6B-Q8_0 | 987.1 ms | 13.141 ms | **76.1 tok/s** |
+| SmolLM2-135M-Q4_0 | 141.5 ms | 1.930 ms | **518.2 tok/s** |
+
+The obvious way to report a rate — total time divided by tokens — gives this
+instead:
+
+| length | Qwen3 | SmolLM2 |
+|---|---|---|
+| 8 | 7.3 tok/s | 50.9 tok/s |
+| 16 | 13.4 | 93.0 |
+| 32 | 22.7 | 157.5 |
+| 64 | 35.2 | 241.3 |
+| 128 | 47.9 | 329.5 |
+
+**A 6.6-fold swing in the "rate" of one model, from nothing but the length
+somebody picked.** Neither end is its speed. Its speed is the slope, and the
+rest is the intercept being amortized differently.
+
+**At the length MCF benchmarks by default, 70% of the run is not generation at
+all** — 987 of 1,407 ms for Qwen3, 141 of 203 ms for SmolLM2, both almost
+exactly seven tenths. A thirty-two-token benchmark is mostly a measurement of
+loading a model and reading a prompt.
+
+**What a token of mismatch is worth**, which is what the operator's earlier
+question about prompt tokenization needed: **0.93%–0.95% of a 32-token run per
+token.** So the two-token spread of the standard question is worth about 1.9% —
+below this machine's own repeat spread of **1.7%–9.5%, median 5.1%**, but
+*systematic*: it pushes every repeat the same way and does not average out.
+
+**What follows, and it changes what a benchmark is.**
+
+1. **Pin the length, or the axis is fiction** for any model that stops early.
+2. **A rate is a slope, not a quotient.** Reporting tokens per second from a
+   single length reports the length. A rate needs at least two.
+3. **Two claims, not one.** *This model generates at N tokens per second* is the
+   slope. *This configuration answers a thirty-two-token reply in M
+   milliseconds* is the total, and is a different, equally honest statement that
+   must name its length. MCF reports something shaped like the first and
+   measured like the second.
+4. **Match the arms' token counts exactly.** One token is ~0.95%; the floor is
+   ~5%; a systematic bias under the floor is still a bias.
+5. **The floor bounds the question.** A comparison asked to resolve less than
+   about 5% here is being asked something this machine cannot answer at this
+   shape, and should say so rather than take more pairs.
+
+**Conditions, because these are numbers and not opinions.** One machine, the
+provisioned llama.cpp at a pinned commit, a fresh process per run with the model
+loaded each time and no warm-up — which is the *cold* regime MCF's `--cold` uses
+and the one where the intercept is largest. A daemon holding a model resident
+would have a much smaller fixed cost and the same slope; that is the next thing
+to measure, and it is not measured here. `prototypes/generation-timing` is the
+instrument, and A20 keeps every figure above out of anything MCF publishes.
+
 ## Changelog
+
+### Version 101 — the pin, and a rate that was a property of the length
+
+F116 and F117. The benchmark gained a standard question, chosen by measuring 27
+vocabularies. Then the operator asked whether verbose models would simply take
+longer — they would, and the pin that was supposed to prevent it was declared
+and never enforced: SmolLM2 produces five tokens whatever it is asked for. And
+measuring that turned up a second thing nobody was looking for: a rate computed
+as total over tokens swings 6.6-fold with the length chosen, because 70% of a
+short run is fixed cost. A rate is a slope.
 
 ### Version 100 — the fifth gate, and a share that can send nothing
 

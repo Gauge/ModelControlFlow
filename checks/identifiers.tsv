@@ -378,6 +378,8 @@ register	B-391
 register	B-392
 register	B-393
 register	B-394
+register	B-396
+register	B-397
 register	DEC-001
 register	DEC-002
 register	DEC-003
@@ -548,6 +550,8 @@ finding	F112
 finding	F113
 finding	F114
 finding	F115
+finding	F116
+finding	F117
 rule	A1
 rule	A2
 rule	A3

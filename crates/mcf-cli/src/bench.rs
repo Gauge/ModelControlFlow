@@ -96,6 +96,14 @@ fn asked_for(
         Method {
             prompt: prompt.to_owned(),
             resolving,
+            // The text, not how it arrived: an operator who types the standard
+            // question verbatim has asked the standard question, and a run that
+            // took it because nothing was given has too (B-160, B42).
+            workload: if prompt == mcf_bench::STANDARD_QUESTION {
+                mcf_core::contribution::Workload::Declared
+            } else {
+                mcf_core::contribution::Workload::Custom
+            },
             ceiling: CEILING,
             engine: engine.map(str::to_owned),
             cold,

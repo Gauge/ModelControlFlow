@@ -878,11 +878,18 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
         cold,
         within,
     } = asked;
-    match (left, right, prompt) {
-        (Some(left), Some(right), Some(prompt)) => Request::Bench {
+    match (left, right) {
+        (Some(left), Some(right)) => Request::Bench {
             left,
             right,
-            prompt,
+            // **The standard question when nobody names one** (B-160, B42).
+            // A benchmark needs something to time, and who chose it decides
+            // whether the result can be shared: MCF ships one so that the
+            // ordinary run produces something that travels, and an operator
+            // who wants their own text says so and gets a result that stays
+            // here. Before this, `--prompt` was required and every result was
+            // therefore the operator's own (F115).
+            prompt: prompt.unwrap_or(mcf_bench::STANDARD_QUESTION),
             limit,
             seed,
             engine,
@@ -890,17 +897,13 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
             cold,
             within,
         },
-        (None, _, _) => Request::MissingArgument {
+        (None, _) => Request::MissingArgument {
             command: "bench",
             needs: "<model>",
         },
-        (Some(_), None, _) => Request::MissingArgument {
+        (Some(_), None) => Request::MissingArgument {
             command: "bench",
             needs: "--against <model>",
-        },
-        (Some(_), Some(_), None) => Request::MissingArgument {
-            command: "bench",
-            needs: "--prompt <text>",
         },
     }
 }

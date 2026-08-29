@@ -155,13 +155,19 @@ fn method(held: &Method) -> Value {
         // B-203 requires that marking travel *from production* rather than be
         // applied at the export boundary. It was not written at all, so every
         // timing comparison MCF ever recorded was refused for saying nothing
-        // rather than for what it said (F116).
+        // rather than for what it said (F115).
         //
         // `custom`, and not as a placeholder: `mcf bench` takes the prompt from
         // `--prompt`, so the work is the operator's own by construction today.
         // A row produced from a workload MCF ships will say `declared`, and
         // that is the day this becomes a choice rather than a fact.
-        ("workload", Value::text("custom")),
+        (
+            "workload",
+            Value::text(match held.workload {
+                mcf_core::contribution::Workload::Declared => "declared",
+                mcf_core::contribution::Workload::Custom => "custom",
+            }),
+        ),
         ("resolving_ppm", parts_per_million(held.resolving)),
         ("ceiling", count(held.ceiling)),
         (

@@ -51,6 +51,7 @@ fn watched() -> MachineHeld {
 
 fn asked() -> Method {
     Method {
+        workload: mcf_core::contribution::Workload::Declared,
         prompt: "Once upon a time".to_owned(),
         resolving: FIVE,
         ceiling: 200,
