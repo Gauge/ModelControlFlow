@@ -528,6 +528,48 @@ pub(crate) fn record_probed_context(
     context: &mcf_serve::probes::Context,
     engine: &str,
 ) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let mut body = vec![
+        (
+            "declared_tokens",
+            Value::Integer(as_integer(context.declared)),
+        ),
+        (
+            "accepted_tokens",
+            Value::Integer(as_integer(context.accepted)),
+        ),
+    ];
+    if let Some(because) = &context.because {
+        body.push(("because", Value::text(because.clone())));
+    }
+    record_probed(model, mcf_serve::probes::USABLE_CONTEXT.name, engine, body)
+}
+
+/// Writes what any probe observed (B-386, B-054, D42, A1).
+///
+/// **One writer, because two would eventually disagree about what a probe
+/// result is** (F79). The context probe had the only one, written for it, and
+/// the probes built afterwards printed their results and kept nothing — so
+/// B-386's *a probe run yesterday can be read back today* held for one probe of
+/// four while the row said it held (F106). The fields differ per probe; the
+/// model, the method, the engine and the shape of the entry do not, and those
+/// are here.
+///
+/// **Whichever way it came out.** *Agrees* is as much a measurement as
+/// *diverges* (A9), and a caller that recorded only the interesting half would
+/// leave a record that cannot answer *what did this model do* — only *when was
+/// it surprising*.
+///
+/// # Errors
+///
+/// `record.unwritable` where there is nowhere to write, or the journal refuses
+/// the append. A probe whose result could not be kept says so rather than
+/// reading as kept (A2).
+pub(crate) fn record_probed(
+    model: &std::path::Path,
+    method: &str,
+    engine: &str,
+    fields: Vec<(&'static str, Value)>,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
     let Some(path) = mcf_record::journal::default_path() else {
         return Err(mcf_core::Failure::new(
             mcf_core::failure::Category::RecordUnwritable,
@@ -539,23 +581,10 @@ pub(crate) fn record_probed_context(
     };
     let mut body = vec![
         ("model", Value::text(model.display().to_string())),
-        (
-            "method",
-            Value::text(mcf_serve::probes::USABLE_CONTEXT.name),
-        ),
-        (
-            "declared_tokens",
-            Value::Integer(as_integer(context.declared)),
-        ),
-        (
-            "accepted_tokens",
-            Value::Integer(as_integer(context.accepted)),
-        ),
+        ("method", Value::text(method.to_owned())),
         ("engine", Value::text(engine.to_owned())),
     ];
-    if let Some(because) = &context.because {
-        body.push(("because", Value::text(because.clone())));
-    }
+    body.extend(fields);
     let mut journal = mcf_record::journal::Journal::open(&path)?;
     journal.append(&Entry::new(
         EntryKind::ModelProbed,
