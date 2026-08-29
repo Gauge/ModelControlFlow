@@ -46,6 +46,22 @@ readonly EXIT_CANNOT_CHECK=2
 readonly PROMPT='The capital of France is'
 readonly BUDGET=12
 
+# **Which engine answers, stated rather than inherited (F102, F46, §3.12).**
+#
+# This was `mcf run` with no engine named, which means *whatever daemon happens
+# to be listening*. The same command, the same models and the same machine then
+# gave different answers depending on whether a daemon was up — and one entry
+# flipped from passing to failing for a reason nothing in this file could see.
+# That is the defect F46 already found in another surface and B-378 fixed there;
+# it survived here because twelve of sixteen entries were not on the disk to
+# exercise it.
+#
+# The stand-in, because D40 makes this corpus the thing **MCF's own engine** is
+# developed against. Cross-engine agreement is `check-oracle.sh`'s question, and
+# it is asked there on distributions with a stated margin rather than on an exact
+# string — which is the more robust instrument for it (F27, B-368).
+readonly ENGINE=stand-in
+
 # One line per entry: family | path under the store | state | what to expect.
 #
 # `embeds` is the third state: the model has no next token to produce, so it is
@@ -74,6 +90,18 @@ readonly CORPUS=(
     "Q4_1|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q4_1.gguf|runs|Paris"
     "Q3_K, IQ4_NL, Q5_0 (as Q2_K)|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q2_K.gguf|runs|Paris"
     "Q2_K, Q3_K|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf|runs|Paris"
+    # The rung at the top (B-384, F100). Every entry above is under six hundred
+    # million elements, and D40's rule — the smallest trained model of each
+    # family — was chosen when a model this size cost fifty-two minutes for one
+    # cross-check on one thread. After B-366 it costs three and a half minutes,
+    # so the rule is no longer forced by cost and keeping to it would be
+    # choosing by convenience, which is the thing B-384 exists to prevent.
+    #
+    # Eight billion elements is the largest that runs here: the memory ceiling
+    # is available memory over four bytes, since the engine dequantizes on load.
+    # What it buys is a file with thirty-six blocks and a wide grouped-query
+    # ratio — shapes no model under six hundred million can show.
+    "qwen3, at scale|Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf|runs|Paris"
 )
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -104,7 +132,8 @@ mcf=$root/target/release/mcf
 # cannot show is that the *cut* was the right one — see F23.
 roundtrip=$root/target/release/examples/roundtrip
 
-printf 'the conformance corpus, from %s\n\n' "$store"
+printf 'the conformance corpus, from %s\n' "$store"
+printf 'every entry through the %s engine, named rather than inherited (F102)\n\n' "$ENGINE"
 
 failures=0
 absent=0
@@ -118,7 +147,7 @@ for entry in "${CORPUS[@]}"; do
         continue
     fi
 
-    said=$("$mcf" run "$path" --prompt "$PROMPT" --limit "$BUDGET" 2>&1) || true
+    said=$("$mcf" run "$path" --prompt "$PROMPT" --limit "$BUDGET" --engine "$ENGINE" 2>&1) || true
     # `mcf run` prints the answer first and its conditions after a rule; a
     # refusal prints the classified failure. Either way the first lines are
     # what this reads.

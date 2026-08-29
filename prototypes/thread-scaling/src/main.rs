@@ -59,6 +59,22 @@ const PROMPT: &str = "The capital of France is";
 
 fn main() -> std::process::ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().is_some_and(|first| first == "ladder") {
+        let rest = arguments.get(1..).unwrap_or_default();
+        // `ladder --threads N …` pins the count; without it the machine's own
+        // is used. Pinning it to one is how the ladder separates *the engine's
+        // arithmetic scales with work* from *the partition scales better on
+        // bigger products*, which are two different explanations for the same
+        // curve (F99, B-366).
+        if rest.first().is_some_and(|first| first == "--threads") {
+            let count = rest
+                .get(1)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(1);
+            return ladder(rest.get(2..).unwrap_or_default(), Threads::stated(count));
+        }
+        return ladder(rest, Threads::what_the_machine_reports());
+    }
     if arguments.first().is_some_and(|first| first == "shapes") {
         let Some(path) = arguments.get(1) else {
             eprintln!("usage: mcf-prototype-thread-scaling shapes <model.gguf>");
@@ -146,6 +162,204 @@ fn main() -> std::process::ExitCode {
     report(&counts, &measured, tokens);
     println!("load     {} at the end", said_load());
     std::process::ExitCode::SUCCESS
+}
+
+/// What a token costs on MCF's own engine, across the models this machine holds
+/// (B-384).
+///
+/// **The question B-384 asks is not how fast the engine is.** It is *how large
+/// a model this engine can usefully read* — and "usefully" has to be tied to a
+/// purpose or it is a preference. The purpose is the one that justifies the
+/// engine existing at all: A19 and D31 put it here to be checked against an
+/// independent implementation, so the number that matters is how long that
+/// cross-check takes. F49's comparison is a hundred and twenty positions, so
+/// the last column is what that would cost on each model.
+///
+/// Every model is loaded, timed over a fixed token budget at the thread count
+/// the machine reports, and reported with its parameter count — so the shape of
+/// the relationship is visible rather than assumed to be linear.
+fn ladder(paths: &[String], threads: Threads) -> std::process::ExitCode {
+    /// How many tokens each model generates. Small, because the largest model
+    /// in a ladder decides how long the whole thing takes and the per-token
+    /// cost is what is wanted.
+    const TOKENS: usize = 4;
+    /// How many positions F49's cross-check compares — what the last column
+    /// projects (F49, B-368).
+    const CROSS_CHECK_POSITIONS: u64 = 120;
+
+    if paths.is_empty() {
+        eprintln!("usage: mcf-prototype-thread-scaling ladder <model.gguf>...");
+        return std::process::ExitCode::FAILURE;
+    }
+    println!("machine  {}", threads.describe());
+    println!("run      {TOKENS} token(s) after a {PROMPT:?} prompt, greedy, seed 0");
+    println!("load     {} at the start", said_load());
+    println!();
+    println!(
+        "{:>52}{:>14}{:>12}{:>10}{:>12}{:>14}",
+        "model", "elements", "multiplied", "dequantized", "per token", "120 positions"
+    );
+
+    for path in paths {
+        println!("{}", one_rung(path, threads, TOKENS, CROSS_CHECK_POSITIONS));
+    }
+    println!();
+    println!(
+        "`120 positions` is F49's cross-check projected from the measured per-token cost -\n\
+         an estimate and labelled one (A20), not a measurement of a run that happened."
+    );
+    println!("load     {} at the end", said_load());
+    std::process::ExitCode::SUCCESS
+}
+
+/// One model of the ladder — every column that could be filled, and the reason
+/// for any that could not.
+///
+/// **A rung that did not run still reports what was read.** A4: a partial
+/// outcome is an outcome. The size of a model MCF refuses is exactly the
+/// interesting thing about it — the reference model this project is named
+/// around is refused for its *architecture*, and a table that printed only the
+/// refusal would have hidden that its size was never the blocker.
+fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> String {
+    let mut row = Rung::new(short(path));
+    let Ok(bytes) = std::fs::read(path) else {
+        return row.refused("the file could not be read");
+    };
+    let file = match gguf::parse(&bytes) {
+        Ok(file) => file,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    // Tensor elements, not "parameters" as a publisher counts them: every
+    // number in every tensor the file carries, embedding table included, which
+    // is what the engine multiplies and stores. A model sold as 15M reads as
+    // 24M here because nine million of them are its vocabulary.
+    if let Some(dequantized) = file.dequantized_bytes() {
+        row.elements = dequantized.checked_div(4);
+        row.dequantized = Some(dequantized);
+    }
+
+    let vocabulary = match Vocabulary::read(&file) {
+        Ok(vocabulary) => vocabulary,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    let prompt = match vocabulary.encode(PROMPT, true) {
+        Ok(prompt) => prompt,
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+
+    let loading = Instant::now();
+    let model = match load(&file, &bytes) {
+        Ok(model) => model.across(threads),
+        Err(failure) => return row.refused(&failure.to_string()),
+    };
+    row.loaded = Some(loading.elapsed().as_secs_f64());
+    // What a forward pass multiplies: everything the file carries, less the
+    // embedding table, which is indexed rather than multiplied.
+    let shape = &model.shape;
+    let table = u64::try_from(shape.vocabulary.saturating_mul(shape.embedding)).unwrap_or(0);
+    row.multiplied = row.elements.map(|all| all.saturating_sub(table));
+
+    let started = Instant::now();
+    if let Err(reason) = run_once(&model, &prompt, tokens) {
+        return row.refused(&reason);
+    }
+    let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    row.per_token = u64::try_from(tokens)
+        .ok()
+        .and_then(|tokens| took.checked_div(tokens));
+    row.projected = row.per_token.map(|each| each.saturating_mul(positions));
+    row.render()
+}
+
+/// One row of the ladder, filled as far as the model got.
+struct Rung {
+    name: String,
+    elements: Option<u64>,
+    /// The elements a forward pass actually multiplies against.
+    ///
+    /// **Everything except the embedding table.** A token's embedding is one
+    /// *row* read out of that table, not a product against all of it — and for
+    /// a small model the table is most of the file. `stories15M` carries 24
+    /// million elements of which 9 million are vocabulary, so a cost per
+    /// element computed from the file's total says the small models are more
+    /// expensive per element than the large ones, which is an artefact of the
+    /// denominator rather than a fact about the engine.
+    ///
+    /// The output projection *is* multiplied, and where a file ties it to the
+    /// embedding table it is the same tensor read twice — so it is counted once
+    /// here, as work done rather than as bytes held.
+    multiplied: Option<u64>,
+    dequantized: Option<u64>,
+    loaded: Option<f64>,
+    per_token: Option<u64>,
+    projected: Option<u64>,
+}
+
+impl Rung {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            elements: None,
+            multiplied: None,
+            dequantized: None,
+            loaded: None,
+            per_token: None,
+            projected: None,
+        }
+    }
+
+    /// The columns that were filled, and then why the rest were not.
+    fn refused(&self, why: &str) -> String {
+        format!("{}\n{:>44}  {why}", self.render(), "")
+    }
+
+    fn render(&self) -> String {
+        format!(
+            "{:>44}{:>11}{:>12}{:>12}{:>8}{:>11}{:>12}{:>12}",
+            self.name,
+            self.elements
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}M")),
+            self.multiplied
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}M")),
+            self.dequantized
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}MB")),
+            self.loaded
+                .map_or_else(|| "-".to_owned(), |value| format!("{value:.1}s")),
+            self.per_token
+                .map_or_else(|| "-".to_owned(), |value| format!("{value} ms")),
+            self.projected.map_or_else(|| "-".to_owned(), as_duration),
+            // Microseconds of work per million multiplied elements: the rate
+            // that says whether the curve is the arithmetic or the partition.
+            match (self.per_token, self.multiplied) {
+                (Some(each), Some(work)) => each
+                    .saturating_mul(1000)
+                    .checked_div(work.checked_div(1_000_000).unwrap_or(1).max(1))
+                    .map_or_else(|| "-".to_owned(), |rate| format!("{rate}us")),
+                _ => "-".to_owned(),
+            },
+        )
+    }
+}
+
+/// Milliseconds as something a person reads without counting zeros.
+#[allow(clippy::integer_division)]
+fn as_duration(millis: u64) -> String {
+    if millis < 10_000 {
+        return format!("{millis} ms");
+    }
+    if millis < 600_000 {
+        return format!("{}.{} s", millis / 1000, (millis % 1000) / 100);
+    }
+    format!("{} min", millis / 60_000)
+}
+
+/// The last two path components, which is what tells two quantizations apart.
+fn short(path: &str) -> String {
+    let parts: Vec<&str> = path.rsplit('/').take(1).collect();
+    parts.join("/")
 }
 
 /// What a forward pass actually asks the partition to do, counted rather than

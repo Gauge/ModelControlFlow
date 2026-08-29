@@ -107,12 +107,14 @@ impl Addressing {
     }
 }
 
+pub mod tools;
+
 /// The bracketed markers in a piece of text, in order of first appearance.
 ///
 /// Used on a template, where they appear as string literals among the logic:
 /// finding them is reading, and none of the logic around them is evaluated
 /// (D46).
-fn markers_in(text: &str) -> Vec<String> {
+pub(crate) fn markers_in(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let characters: Vec<char> = text.chars().collect();
     let mut at = 0;
@@ -677,8 +679,28 @@ pub enum Trial {
     CouldNotTell(String),
 }
 
+/// One trial, and what the model actually said in it.
+///
+/// The chat-template probe needs only how a turn *ended*; a probe that reads
+/// what came out — whether a tool call is well formed (B-053), whether a
+/// structured answer parses (B-054) — needs the text as well. It was always
+/// being read out of the account and thrown away.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spoken {
+    /// How the turn ended.
+    pub trial: Trial,
+    /// What the model said, as the engine reported it.
+    ///
+    /// Empty where the model said nothing, which both engines agree on even
+    /// where they disagree about the token count (F39).
+    pub text: String,
+}
+
 /// One trial through a running daemon: the wrapped question in, the answer
 /// out, and what ended it.
+///
+/// Where the text matters, [`spoken`] returns it; this is that with the text
+/// dropped, so the two cannot drift apart.
 #[must_use]
 pub fn trial(
     socket: &Path,
@@ -688,10 +710,23 @@ pub fn trial(
     budget: usize,
     engine: Option<&str>,
 ) -> Trial {
+    spoken(socket, model, prompt, tokens, budget, engine).trial
+}
+
+/// The same trial, keeping what the model said.
+#[must_use]
+pub fn spoken(
+    socket: &Path,
+    model: &Path,
+    prompt: &str,
+    tokens: Option<&[usize]>,
+    budget: usize,
+    engine: Option<&str>,
+) -> Spoken {
     use std::io::{BufRead as _, BufReader, Write as _};
 
     let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
-        return Trial::CouldNotTell("nothing is listening on the control socket".to_owned());
+        return could_not_tell("nothing is listening on the control socket".to_owned());
     };
     let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(600)));
     let request = crate::control::Request::Generate {
@@ -706,13 +741,13 @@ pub fn trial(
         .and_then(|()| connection.flush())
         .is_err()
     {
-        return Trial::CouldNotTell("the request could not be sent".to_owned());
+        return could_not_tell("the request could not be sent".to_owned());
     }
 
     let reader = BufReader::new(&connection);
     for line in reader.lines() {
         let Ok(line) = line else {
-            return Trial::CouldNotTell("the stream ended before its account".to_owned());
+            return could_not_tell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
             // Deliberately not counted. MCF's own engine streams one line per
@@ -724,7 +759,7 @@ pub fn trial(
             Ok(crate::control::Streamed::Token { .. }) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
-                    return Trial::CouldNotTell(format!(
+                    return could_not_tell(format!(
                         "the generation did not complete: {}",
                         failure.to_line()
                     ));
@@ -734,7 +769,7 @@ pub fn trial(
                     .and_then(mcf_record::json::Value::as_integer)
                     .and_then(|count| usize::try_from(count).ok());
                 let Some(counted) = counted else {
-                    return Trial::CouldNotTell(
+                    return could_not_tell(
                         "the account did not say how many tokens were produced, so a finished \
                          turn cannot be told from a refusal to speak (F38)"
                             .to_owned(),
@@ -757,7 +792,7 @@ pub fn trial(
                     .and_then(mcf_record::json::Value::as_text)
                     .is_none_or(|text| text.trim().is_empty());
                 let said = if wordless { 0 } else { counted };
-                return match account
+                let ended = match account
                     .get("stopped")
                     .and_then(mcf_record::json::Value::as_text)
                 {
@@ -769,11 +804,27 @@ pub fn trial(
                     )),
                     None => Trial::CouldNotTell("the account did not say how it ended".to_owned()),
                 };
+                return Spoken {
+                    trial: ended,
+                    text: account
+                        .get("text")
+                        .and_then(mcf_record::json::Value::as_text)
+                        .unwrap_or_default()
+                        .to_owned(),
+                };
             }
-            Err(_) => return Trial::CouldNotTell("a line of the stream was unreadable".to_owned()),
+            Err(_) => return could_not_tell("a line of the stream was unreadable".to_owned()),
         }
     }
-    Trial::CouldNotTell("the stream ended before its account".to_owned())
+    could_not_tell("the stream ended before its account".to_owned())
+}
+
+/// A trial that could not be told apart, with nothing said.
+fn could_not_tell(because: impl Into<String>) -> Spoken {
+    Spoken {
+        trial: Trial::CouldNotTell(because.into()),
+        text: String::new(),
+    }
 }
 
 /// Which engine a running daemon would use, for the conditions (D42).

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 84 |
+| **Version** | 88 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -126,6 +126,10 @@ forward as one.
 | 97 | [F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)](#97--f97--five-modules-measure-something-and-are-checked-against-nothing-and-now-they-say-so-b-390-a19-a7-616) |
 | 98 | [F98 — The unpaired interval needed different mathematics, and the recurrence was checked against enumeration (B-388, B54, B53, §3.27, A19)](#98--f98--the-unpaired-interval-needed-different-mathematics-and-the-recurrence-was-checked-against-enumeration-b-388-b54-b53-327-a19) |
 | 99 | [F99 — Threads pay at every shape a model performs, cost nothing in noise, and past a product's optimum more of them is slower (B-366, D38, F52, §3.12, A6, A19)](#99--f99--threads-pay-at-every-shape-a-model-performs-cost-nothing-in-noise-and-past-a-products-optimum-more-of-them-is-slower-b-366-d38-f52-312-a6-a19) |
+| 100 | [F100 — How large a model MCF's own engine can usefully read, and what actually stops it (B-384, PR12, D40, B-366, F99, A20, A7)](#100--f100--how-large-a-model-mcfs-own-engine-can-usefully-read-and-what-actually-stops-it-b-384-pr12-d40-b-366-f99-a20-a7) |
+| 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
+| 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
+| 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7187,7 +7191,407 @@ parameters, which is [B-384](backlog.md)'s question and the reason it was
 sequenced after this one. And energy, thermal state and memory, none of which
 was read.
 
+## 100 · F100 — How large a model MCF's own engine can usefully read, and what actually stops it (B-384, PR12, D40, B-366, F99, A20, A7)
+
+**The fact nobody had.** PR12 was accepted on the condition that B-366 go first
+*because it moves the number*, and then that somebody measure how large a model
+MCF's own engine can usefully read — which decides whether twenty-seven billion
+was ever the target. Nothing between 0.6 billion and 27 billion had been tried.
+Four models were acquired to fill it: Qwen3 at 0.6B, 1.7B, 4B and 8B, one
+family across the range, meeting the reference model already held.
+
+**Every figure was taken with the machine held to itself** (`heavy`, load
+average 1.4 to 3.3), on one thirty-two-processor machine, four tokens after a
+five-token prompt, greedy, seed 0. Facts about MCF's own engine on one machine,
+not measurements MCF publishes (B65).
+
+### The ladder
+
+| model | elements | multiplied | dequantized | per token | 120 positions |
+|---|---|---|---|---|---|
+| stories15M Q8_0 | 24M | 15M | 97 MB | 15 ms | 1.8 s |
+| SmolLM2-135M Q8_0 | 134M | 106M | 538 MB | 84 ms | 10.0 s |
+| Qwen3-0.6B Q8_0 | 596M | 440M | 2 384 MB | 221 ms | 26.5 s |
+| Qwen3-1.7B Q8_0 | 1 720M | 1 409M | 6 882 MB | 479 ms | 57.4 s |
+| Qwen3-4B Q4_K_M | 4 022M | 3 633M | 16 089 MB | 977 ms | 117.2 s |
+| Qwen3-8B Q4_K_M | 8 190M | 7 568M | 32 762 MB | **1 744 ms** | **209.2 s** |
+| Qwen3.8-27B Q4_K_M | 27 320M | — | 109 282 MB | — | refused |
+
+**The size that stops the reference model is not its size.** 27,320M elements
+and 109,282 MB dequantized is PR12's figure exactly — and MCF never reaches the
+point of caring, because the file declares architecture `qwen35`, which is not
+one of the three MCF has been taught. A ceiling argument was built on a number
+that is correct and is not the blocker. The register item for the architecture
+is B-365.
+
+### What "usefully" means here, and why it is not a preference
+
+Tied to the purpose that justifies the engine existing: A19 and D31 put it here
+to be **checked against an independent implementation**, so the number that
+decides the ceiling is what that check costs. F49's cross-check is a hundred and
+twenty positions, which is the last column above — **3.5 minutes on an 8B
+model.**
+
+**PR12's arithmetic is superseded by roughly an order of magnitude.** It
+measured Qwen3-0.6B at 0.9 s a forward pass and projected the reference model's
+cross-check at **eighty minutes**. That model now costs 221 ms, and the same
+projection to 27 billion elements is **about twelve minutes**. PR12's
+recommendation — *do not lift the ceiling by dequantizing per use, it spends
+time the engine does not have* — rested on a margin that has changed by that
+factor. This does not overturn it: what per-use dequantization actually costs
+per token has never been measured, and that measurement is what the question now
+needs. It does mean the recommendation should be re-asked rather than inherited.
+
+### The curve was the threads, and two explanations were wrong first
+
+Cost per token is **sub-linear in a model's elements** — 0.67 µs per thousand
+elements at 24M against 0.22 at 8 190M — which reads as an engine that gets more
+efficient at scale.
+
+*The first explanation was the denominator.* A token's embedding is one row read
+out of the embedding table, not a product against all of it, and for a small
+model that table is most of the file: nine of stories15M's twenty-four million
+elements are vocabulary. So the ladder counts what a forward pass actually
+multiplies. **It was a real effect and not the answer** — the rate still fell
+fourfold across the range.
+
+*The second explanation was [F99](#99--f99--threads-pay-at-every-shape-a-model-performs-cost-nothing-in-noise-and-past-a-products-optimum-more-of-them-is-slower-b-366-d38-f52-312-a6-a19)'s
+partition*: a small model's products earn few workers and a large model's earn
+all of them. That is a claim with two outcomes, so it was measured rather than
+argued — the same ladder pinned to one thread:
+
+| multiplied elements | at one thread | at thirty-two | speedup |
+|---|---|---|---|
+| 15M | 3 933 µs/M | 1 000 µs/M | 3.9× |
+| 106M | 4 405 | 792 | 5.6× |
+| 440M | 4 604 | 502 | 9.2× |
+| 1 409M | 4 250 | 339 | 12.5× |
+| 3 633M | 3 946 | 268 | 14.7× |
+| 7 568M | 3 437 | 230 | **14.9×** |
+
+**At one thread the rate is flat** — 3 400 to 4 600 µs per million multiplied
+elements, no trend with size. **At thirty-two it falls monotonically by 4.3×.**
+The engine's arithmetic is linear in the work it does; the *partition* is what
+scales with size, because a bigger product earns more workers. The curve was
+never a property of the arithmetic.
+
+### So: the ceiling, stated
+
+**Time is no longer what binds.** Memory is: the engine dequantizes to `f32` on
+load (D38's legibility trade), so the ceiling is available memory divided by
+four bytes — **about 18 billion elements** on this 91 GiB machine, where 72 GiB
+was free. Projected at that ceiling from the measured rate: roughly **4 s a
+token and an 8-minute cross-check** — an estimate, labelled, and never promoted
+(A20).
+
+**Measured, the largest model that runs here is 8 billion elements**: 9.3 s to
+load, 1.7 s a token, 3.5 minutes for the check that justifies the engine.
+
+### What this changes about the validation half
+
+D40 split the reference role: the reference model is the subject of provenance,
+frontier and residency work, and what the *engine* is developed against is a
+conformance corpus of **the smallest trained model of each family**. That rule
+was correct when it was written, and the one-thread column is what it was
+correct against — an 8B model then cost **52 minutes** for one cross-check, and
+a corpus made of such models could not be run.
+
+It now costs 3.5 minutes. So *smallest of each family* is no longer forced by
+cost, and continuing it would be choosing by convenience — which is exactly what
+B-384 exists to prevent. The corpus gains one rung at the top: an 8B model, the
+largest that runs here, because every entry until now has been under 600
+million and a defect that needs thirty-six blocks or a wide grouped-query ratio
+to appear has never had a file that could show it.
+
+### What this did not establish
+
+One machine, one memory system, one processor. Whether the flat one-thread rate
+holds on hardware with a different cache hierarchy. What per-use dequantization
+costs, which is the measurement PR12's question now needs and which nobody has
+taken. Anything about a model between 8 and 18 billion elements — the projection
+to the memory ceiling is extrapolation from six points, and the honest form of it
+is the word *estimate*.
+
+## 101 · F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)
+
+**The first run against a real model found a defect in the reader, which is
+what a real model is for.** `mcf probe` on Qwen3-0.6B, through the provisioned
+llama.cpp at a pinned commit, reported:
+
+| offering | well formed | malformed | no call |
+|---|---|---|---|
+| the file's own markers, `<tool_call>…</tool_call>` | 0 | 0 | **5** |
+| a plain description, a bare object expected | **5** | 0 | 0 |
+
+*No call, five times out of five* — from a model that calls perfectly under the
+other offering. The reader looked only **between** the markers when an offering
+named them, so a model that emitted a correct call *without* the wrapper was
+recorded as having done nothing at all.
+
+**Two facts had been folded into one, and the wrong one survived.** *It ignored
+the tool* and *it called, but not in the form asked for* are different things to
+know about a model, and A1 forbids discarding the second. It is also A2's silent
+failure with a friendly name: the probe reported a clean, plausible, wrong
+answer, and nothing in it looked broken.
+
+**What the model actually did, once the reader could say so.** Every one of the
+five trials, byte for byte:
+
+```
+{"name": "get_weather", "arguments": {"city": "Paris"}}
+```
+
+A well-formed call to the offered tool, with the right argument, emitted with no
+markers around it — despite MCF's instruction naming the markers and the model's
+own vocabulary carrying them as tokens. The corrected reading is `malformed`
+with that text quoted, because the form asked for was not produced and the model
+plainly did call.
+
+**And that is a fact about tool calling worth keeping.** The markers a file
+declares are what its *harness* wraps a call in, not what the model emits.
+`<tool_call>` is in the vocabulary because the template writes it; the model was
+trained to produce the object and to let the framing be somebody else's job. So
+a vocabulary carrying call markers is a declaration about the **format a harness
+must speak**, and never a prediction of what the model will emit — which is
+A21's separation arriving in a place nobody had looked for it.
+
+**The design decision this vindicates.** [B-053](backlog.md)'s probe tries
+*several* offerings rather than the one its file suggests, because MCF does not
+execute chat templates (D46) and therefore chooses how a tool is described — and
+a single chosen framing deciding the answer would make the probe a measurement
+of the framing. Had it tried only the likeliest candidate, the model's own
+markers, it would have reported **no tool support** for a model that calls
+correctly every time.
+
+**A smaller thing from the same run.** The declared markers printed as
+`<tool_call>, </tool_call>, <tool_call>, </tool_call>, <tool_response>, …` —
+`markers_in` reports every occurrence and a template that writes a marker five
+times is not five declarations. Deduplicated.
+
+**What this did not establish.** Whether another family emits its markers when
+asked to; one model, one engine, one phrasing of the instruction. Whether a
+model that *is* given a template-rendered tool section behaves differently,
+which MCF cannot ask without executing templates. And nothing about whether the
+call is *useful* — the arguments are deliberately not read for sense, because
+that is a judgement and a probe makes none (D42).
+
+## 102 · F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)
+
+**Found by accident, which is the only reason it was found.** Twelve of the
+corpus's sixteen entries were not on this machine, so the check had been
+exercising a quarter of what it claims. Re-acquiring them
+([B-384](backlog.md)'s work) made one entry fail — and the failure was not in
+the model, the engine, or that day's changes.
+
+**`check-corpus.sh` ran `mcf run` without naming an engine.** That means
+*whatever daemon happens to be listening*. Measured on one model, one machine,
+one afternoon:
+
+| how it was run | what came out |
+|---|---|
+| MCF's own engine, no daemon in the path | `the city of Paris. The city of Paris is the city` |
+| through the daemon, **engine unstated** — what the check did | `a city in the same country. The city is in the` |
+| through the daemon, stand-in named | `the city of Paris…` |
+| through the daemon, provisioned named | `a city in the same country…` |
+
+The check passed all morning while the daemon was down and failed the moment
+one was up. Nothing in the check could see the difference, and the entry that
+flipped had been on the disk for twenty minutes.
+
+**This is the third occurrence, and it landed exactly where the guard against
+it does not reach.** [F46](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38)
+found the first, [F47](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46)
+fixed it by making the socket an *input* and built
+`checks/tests/no_test_reads_ambient_state.rs` so it could not come back — and
+F47 named its own limitation in writing: *"What was not established. Whether
+other tiers have the same dependency."*
+
+**This is that question answered, and the answer is yes.** The guard watches
+**Rust test files** for calls to ambient-reading functions. `check-corpus.sh` is
+a shell tier that runs the *built binary*, so there is no call for it to see:
+the ambient read happens inside `mcf run`, legitimately, because a person typing
+`mcf run` should get whatever engine is serving. The defect is not in the binary
+at all — it is that a **check** invoked it the way a person would, and a check
+is not a person. §3.12 does not permit a suite whose answer depends on the state
+it found, and the shell tiers were never brought under that rule.
+
+It also survived because most of the corpus was absent — **a check that cannot
+run cannot be caught being wrong.**
+
+**The fix is to state the engine rather than inherit it.** The stand-in, because
+D40 makes this corpus the thing *MCF's own engine* is developed against, and the
+header now prints which engine every entry went through. `--engine stand-in`
+works with or without a daemon, so the check is hermetic in the sense B19 wants.
+
+**The second finding, underneath the first: the two engines genuinely disagree
+on this file, and the oracle was right not to care.** `Qwen3-0.6B-Q2_K` is the
+most aggressively quantized model in the corpus, and
+[F29](#29--f29--the-sixth-family-answers-a-different-question-b-371-dec-055-b-365-a19-33)
+and F33 already record that MCF multiplies floats where the reference multiplies
+in quantized arithmetic, with the widest gap observed **on a Q2_K file for
+exactly that reason**. The oracle ran on this same model in the same session and
+reported agreement on all 142 comparisons — because it compares *distributions
+against a stated margin* (F27's 0.40) rather than an exact string from a greedy
+decode.
+
+So the corpus's `says Paris` test is the more brittle instrument of the two: on
+a knife-edge token, two engines that agree within the oracle's tolerance produce
+different words. That is not an argument for loosening it — an exact string is
+what makes a corpus entry mechanically checkable — but it is the reason the
+entry has to say which engine it is an expectation *about*, which it now does.
+
+**And the other shell tiers have not been audited.** F47's survey was "a survey
+of three, not of the suite", and this adds one more to it. `check-oracle.sh`,
+`check-seed-set.sh` and the rest each invoke the binary, and whether any of them
+inherits an engine, a store or a socket rather than stating it is unexamined.
+That is the open question this finding leaves, in the same words F47 left it.
+
+**What this did not establish.** Whether other corpus entries are equally close
+to their knife-edge, which would need the same comparison run per entry.
+Whether the provisioned engine's answer is worse — neither continuation is
+wrong, and nothing here judges a model's output for sense.
+
+## 103 · F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)
+
+**Found by pulling the thread [F102](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19)
+left.** That finding fixed one tier and wrote down what it had not looked at:
+whether the other shell tiers inherit an engine the same way. They do, and one
+of them is the oracle.
+
+**What the audit found.** Four `mcf run` invocations across the scheduled tiers
+named no engine, so each used whatever daemon was listening: `check-corpus.sh`
+(fixed in F102), `check-online.sh` — whose own heading reads *"and running it,
+with the engine MCF wrote"* — and `check-oracle.sh` in three places. The two
+`mcf embed` calls are **not** affected, because `mcf embed` loads in-process and
+never consults a daemon; that was checked rather than assumed.
+
+**The serious one.** `check-oracle.sh` builds its comparison as
+
+```
+mine=$("$mcf" run "$model" …)          # meant to be MCF's own engine
+theirs=$("$completion_reference" …)     # the reference implementation
+```
+
+With a daemon serving the provisioned llama.cpp, `mine` *is* llama.cpp. The
+oracle would then compare the reference implementation **with itself** and
+report agreement — in the check that is A19's mechanical form, and on which
+every other claim in this repository leans. A check that passes because it has
+stopped testing is worse than one that fails.
+
+**Measured, not inferred.** One model, one prompt, one seed, with a daemon
+serving the provisioned engine — the three answers the oracle's two variables
+can take:
+
+| | what came out |
+|---|---|
+| `theirs` — the reference, `llama-completion` | `a city in the same country. The city is in the` |
+| `mine` — engine unstated, **what the check did** | `a city in the same country. The city is in the` |
+| `mine` — `--engine stand-in`, **what the check meant** | `the city of Paris. The city of Paris is the city` |
+
+The first two are **byte-identical**, because they are the same implementation
+reached by two paths. The third — MCF's own engine, the thing the oracle exists
+to check — says something else entirely. So on this model the comparison the
+oracle is for was being replaced by a tautology that cannot fail, and the
+divergence it should have surfaced is real.
+
+**What is still not established.** Whether any *past* oracle run was actually
+vacuous. That needed a healthy provisioned daemon up at the time, and the runs
+whose output survives do not show one. What is established is that the
+mechanism is real and reproducible on demand, rather than a hazard reasoned
+about from the source.
+
+**But the run whose output does survive shows the other half of the defect.**
+On 2026-08-28 the oracle ran with a *wedged* daemon — one accepting connections
+and never answering (B-182). Every model failed the generation section's gate,
+which was a silent `|| continue`. The section printed **nothing at all**, and
+the summary read:
+
+```
+the oracle: MCF and the reference agree on all 142 comparisons
+```
+
+Those 142 were the *distribution* comparisons, which go through
+`examples/margins.rs` — a binary that links MCF's engine directly and cannot
+reach a daemon, so that half was never at risk. The generation comparison ran
+**zero times** and nothing in the output said so. A4 requires that what was not
+done be said rather than counted as done; the corpus check does this correctly
+(*"12 of 16 entries are not held here and were not checked"*) and the oracle did
+not.
+
+**Three fixes, and a check that covers the gap F47 named.**
+
+1. Every `mcf run` in a scheduled tier names its engine. The oracle pins
+   `MINE_ENGINE=stand-in`, because *MCF's own engine against an independent one*
+   is the whole claim.
+2. The generation gate counts and prints what it skipped, and the summary
+   reports it.
+3. `checks/tests/no_tier_inherits_an_engine.rs` holds all of it from outside.
+   F47's guard watches **Rust** sources for calls that reach for ambient state
+   and cannot see a shell tier invoking the built binary — there is no call to
+   see, and `mcf run` consulting a daemon is *correct* for a person at a
+   terminal. The defect is that a check invoked it the way a person would, and a
+   check is not a person. Both negative controls were exercised: unpinning the
+   oracle's `mine` fails two tests by name, and changing the corpus's engine
+   fails the third.
+
+**The pattern, now three deep.** F46 found it in a Rust test, F47 fixed that one
+and built a guard for its own kind, F102 found it in a shell tier, and F103
+finds it in the shell tier that matters most. Each time the rule already existed
+— §3.12 has said since the beginning that a suite whose answer depends on the
+state it found is not a suite — and each time the guard did not reach the new
+ground. The lesson is not *write the rule down*; it is that a guard covers the
+shape of the place it was written for.
+
+**A hazard in the procedure, not the code.** The first attempt to verify this
+edited `check-oracle.sh` *while that script was executing* under the exclusive
+window. Bash reads a script incrementally from a file offset, and rewriting the
+file in place leaves the running shell reading from the same offset into
+different bytes — it can execute misaligned text, and nothing in the output
+would look wrong. That run was discarded rather than read. The tiers here are
+shell scripts and the natural workflow is *fix the script, then re-run*: the
+fix must land before the run starts, or the run is not evidence.
+
+**What this did not establish.** Whether `check-seed-set.sh`, `check-from-scratch.sh`
+or the remaining tiers inherit anything else — a store, a socket, a record path
+— which is the same audit one level further out. And nothing about whether the
+oracle's *past* verdicts were wrong: the distributions half was sound
+throughout, and the generation half is the one whose history cannot be
+reconstructed from what was printed.
+
 ## Changelog
+
+### Version 88 — the oracle could have been comparing the reference with itself
+
+F103. F102's open question, answered: four scheduled tiers inherited an engine
+rather than naming one, and one of them was the oracle — where `mine` and
+`theirs` would both have been llama.cpp with a daemon up. And a wedged daemon
+made its generation section compare zero models while the headline still read
+*agree on all 142 comparisons*.
+
+### Version 87 — a check that answered differently depending on the machine
+
+F102. The conformance corpus ran `mcf run` without naming an engine, so it
+reported on whether a daemon was up. The third occurrence of F46's defect, and
+it landed exactly where F47's guard cannot see — the guard watches Rust tests
+for ambient calls, and a shell tier invoking the built binary makes no such
+call. F47 left *whether other tiers have the same dependency* open in writing;
+this answers it.
+
+### Version 86 — a call recorded as no call
+
+F101. B-053's probe, on its first real model, reported *no call* five times
+out of five for a model that emitted a perfect call every time — it had not
+wrapped it in the markers asked for. Two facts folded into one, and the wrong
+one survived. The markers a file declares turn out to be the harness's job
+rather than the model's, which is A21 in a place nobody had looked.
+
+### Version 85 — how large a model the engine can usefully read
+
+F100. B-384: measured across six models from 24M to 8 billion elements. Time
+is no longer what binds — memory is, at about 18 billion elements — and the
+reference model is stopped by neither, but by an architecture MCF has not been
+taught. Two explanations for the cost curve were wrong before the measurement
+settled it.
 
 ### Version 84 — threads, measured on both sides
 

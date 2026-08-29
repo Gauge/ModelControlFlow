@@ -43,6 +43,19 @@ const FROM: usize = 32;
 /// *never* (A7).
 const CEILING: usize = 1024;
 
+/// The token budget one tool-calling trial gets.
+///
+/// Smaller than [`BUDGET`], because a tool call is short — a name and one
+/// argument — and the probe runs two offerings by five trials, which on MCF's
+/// own engine is minutes of generation per hundred tokens allowed.
+///
+/// **What it costs is a condition, not a threshold.** A model that would have
+/// called on its two-hundredth token is reported as not having called *within
+/// this many*, which is the same distinction the stop-condition probe's
+/// ceiling makes (A7): never write *never* for something only observed not to
+/// have happened yet.
+const TOOL_BUDGET: usize = 160;
+
 /// Probes a model.
 /// The engine, named the way a later comparison can use.
 ///
@@ -217,6 +230,17 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     lines.extend(stopping_lines(
         &socket, &path, &bytes, &engine, asked, apply,
     ));
+    lines.extend(tool_lines(
+        &socket,
+        &path,
+        &bytes,
+        &engine,
+        asked,
+        probed
+            .outcome
+            .observed()
+            .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
+    ));
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
          this model is an act somebody takes, and it is recorded (D42, D43)."
@@ -227,6 +251,122 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
         text: lines.join("\n"),
         served: true,
     }
+}
+
+/// The tool-calling probe, and what it found (B-053).
+///
+/// **Asked through the addressing this run just measured**, because a model
+/// spoken to in a way it does not recognise emits nothing recognisable and the
+/// probe would report *no call* about a turn nobody would ever send. That makes
+/// this probe depend on the chat-template one, which is the right dependency:
+/// §X calls a misconfigured model a measurement error, and a tool-call
+/// observation taken under a wrong addressing is exactly that.
+fn tool_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+    engine: &str,
+    asked: &str,
+    addressing: Option<&mcf_serve::probes::Addressing>,
+) -> Vec<String> {
+    let mut ask = |identifiers: &[usize], budget: usize| {
+        let spoken =
+            mcf_serve::probes::spoken(socket, path, "", Some(identifiers), budget, Some(asked));
+        (spoken.trial, spoken.text)
+    };
+    let probed = mcf_serve::probes::tools::tool_calling(
+        path,
+        bytes,
+        addressing,
+        TRIALS,
+        TOOL_BUDGET,
+        engine,
+        &mut ask,
+    );
+
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(calling) => {
+            // The declaration first, and marked as a declaration: A21's three
+            // states are only kept apart if the reader can see which is which.
+            let declared = &calling.declared;
+            lines.push(format!(
+                " declared  the file {} tool support{}",
+                if declared.claims_support() {
+                    "claims"
+                } else {
+                    "claims no"
+                },
+                if declared.markers.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — its vocabulary carries {}", declared.markers.join(", "))
+                }
+            ));
+            lines.push(" observed".to_owned());
+            for (name, good) in &calling.well_formed {
+                let bad = calling
+                    .malformed
+                    .iter()
+                    .find(|(other, _)| other == name)
+                    .map_or(0, |(_, count)| *count);
+                let none = calling
+                    .no_call
+                    .iter()
+                    .find(|(other, _)| other == name)
+                    .map_or(0, |(_, count)| *count);
+                lines.push(format!(
+                    "   {name}: {good} well formed, {bad} malformed, {none} no call, of {}",
+                    calling.of
+                ));
+            }
+            // Every reason, not a summary of them: what a model actually
+            // emitted is the thing somebody debugging needs (A1).
+            for reason in &calling.reasons {
+                lines.push(format!("   what came out — {reason}"));
+            }
+            match &calling.best {
+                Some(best) => lines.push(format!(
+                    " VERIFIED   this model emits well-formed calls, best under {best}"
+                )),
+                None if declared.claims_support() => lines.push(
+                    " DIVERGENCE  the file claims tool support and no trial produced a \
+                     well-formed call. That is a disagreement between what the artifact says \
+                     and what it did, which is a finding rather than an error (A21, B-058) — \
+                     and it is not proof the model cannot: MCF chose how to describe the tool, \
+                     and that choice is a condition of this answer"
+                        .to_owned(),
+                ),
+                None => lines.push(
+                    " observed   no well-formed call, and the file claimed none. The two agree."
+                        .to_owned(),
+                ),
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(
+                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!(
+        "  a trial had {TOOL_BUDGET} token(s): a model that did not call within that is \
+         reported as not having called within it, never as unable to (A7)"
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
 }
 
 /// What a decided probe says.
