@@ -177,7 +177,7 @@ fn products(repeats: usize) -> std::process::ExitCode {
     println!("run      one product per cell, x {repeats} repeats, median reported");
     println!("load     {} at the start", said_load());
     println!();
-    print!("{:>16}", "rows x columns");
+    print!("{:>16}{:>10}", "rows x columns", "before");
     for count in &counts {
         print!("{count:>10}");
     }
@@ -187,6 +187,25 @@ fn products(repeats: usize) -> std::process::ExitCode {
         let mut noise = Noise::seeded(u64::try_from(rows).unwrap_or(1));
         let matrix = noise.values(rows.saturating_mul(columns));
         let vector = noise.values(columns);
+
+        // What the serial path cost *before* B-366 rewrote it: the same
+        // arithmetic in a loop that pushes into a fresh vector, rather than
+        // writing into one the partition allocated. A change that made the
+        // one-thread path slower to make the many-thread path possible would be
+        // a cost this table has to show rather than one it can leave out.
+        let mut before = Vec::new();
+        for _ in 0..repeats {
+            let started = Instant::now();
+            let produced = as_it_was_written(&matrix, &vector, rows, columns);
+            before.push(u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX));
+            if !same_bits(
+                &produced,
+                &mcf_standin::ops::matmul_vec(&matrix, &vector, rows, columns),
+            ) {
+                eprintln!("the rewritten serial path disagrees with the one it replaced");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
 
         let mut medians = Vec::new();
         let mut definition: Option<Vec<f32>> = None;
@@ -211,7 +230,7 @@ fn products(repeats: usize) -> std::process::ExitCode {
             medians.push(median(&taken).unwrap_or(0));
         }
 
-        print!("{rows:>10} x{columns:>4}");
+        print!("{rows:>10} x{columns:>4}{:>9}u", median(&before).unwrap_or(0));
         for value in &medians {
             print!("{value:>9}u");
         }
@@ -241,6 +260,31 @@ fn products(repeats: usize) -> std::process::ExitCode {
     println!("Microseconds. `best` is the count with the lowest median and its speedup over one.");
     println!("load     {} at the end", said_load());
     std::process::ExitCode::SUCCESS
+}
+
+/// The serial matrix-vector product exactly as it was written before B-366.
+///
+/// Kept here rather than in the engine because it is not a second
+/// implementation MCF ships — it is the *previous* one, so that the cost of the
+/// rewrite is a measured number instead of an assurance. It must agree with the
+/// current serial path bit for bit, which the sweep asserts on every cell.
+fn as_it_was_written(matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
+    if vector.len() != columns || matrix.len() != rows.saturating_mul(columns) {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(rows);
+    for row in 0..rows {
+        let start = row.saturating_mul(columns);
+        let slice = matrix
+            .get(start..start.saturating_add(columns))
+            .unwrap_or(&[]);
+        let mut total = 0.0_f32;
+        for (weight, value) in slice.iter().zip(vector.iter()) {
+            total = weight.mul_add(*value, total);
+        }
+        out.push(total);
+    }
+    out
 }
 
 /// Two answers, compared bit for bit — the property, asked of every cell above.

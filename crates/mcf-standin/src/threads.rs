@@ -204,10 +204,14 @@ where
     // Taken from the back, which costs nothing and is the only order a `Vec`
     // gives cheaply. It changes who computes what and therefore nothing.
     queue.reverse();
+    // No more workers than there is work: ninety-seven threads for two chunks is
+    // ninety-five starts that find an empty queue, and starting a thread is not
+    // free.
+    let workers = threads.count().min(queue.len());
     let queue = Mutex::new(queue);
 
     thread::scope(|scope| {
-        for _ in 1..threads.count() {
+        for _ in 1..workers {
             let worker = || drain(&queue, width, compute);
             match thread::Builder::new().spawn_scoped(scope, worker) {
                 Ok(handle) => drop(handle),
