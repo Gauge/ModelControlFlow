@@ -2,7 +2,7 @@
 
 use mcf_record::json::Value;
 
-use super::{destination, keeps, rests_on};
+use super::{destination, keeps, prompt_beside, rests_on};
 
 fn entry(kind: &str, id: &str, body: Value) -> Value {
     Value::map([
@@ -140,4 +140,55 @@ fn only_a_claim_can_be_bundled() {
     // Whether that entry exists depends on the machine; either way the command
     // must not serve a bundle of something that is not a claim.
     assert!(!response.served, "{}", response.text);
+}
+
+/// The prompt travels beside the bundle, and each of the three things that can
+/// be true of it is said rather than left out (A25, A7, F105).
+///
+/// The record does not hold the prompt any more — it holds its length and its
+/// digest — so a bundle assembled from record lines cannot carry it, and
+/// `mcf_record::export` must stay unable to reach content or A25's guarantee
+/// becomes a filter again. B-211 still needs the input, so it is disclosed
+/// here, deliberately, into a file of its own.
+#[test]
+fn the_prompt_beside_a_bundle_says_which_of_three_things_is_true() {
+    let root = std::env::temp_dir().join(format!("mcf-bundle-prompt-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a scratch directory is creatable");
+    let journal = root.join("record.jsonl");
+    let bundle = root.join("claim.mcf-bundle");
+
+    // Nothing filed: the claim predates content being kept, and the report
+    // says so rather than leaving the line out.
+    let said = prompt_beside(&journal, &bundle, "comparison_1");
+    assert!(said.contains("NOT here"), "{said}");
+
+    // Filed: it is written beside the bundle, in its own file.
+    let store = mcf_record::content::ContentStore::open(
+        &mcf_record::content::ContentStore::beside(&journal),
+    )
+    .expect("the content store opens");
+    store
+        .keep(
+            "comparison_1",
+            &mcf_record::content::Content::new("Once upon a time"),
+        )
+        .expect("content is filed");
+    let said = prompt_beside(&journal, &bundle, "comparison_1");
+    assert!(said.contains("16 byte(s)"), "{said}");
+    let beside = bundle.with_extension("mcf-bundle.prompt");
+    assert_eq!(
+        std::fs::read_to_string(&beside).expect("the prompt is beside it"),
+        "Once upon a time"
+    );
+
+    // Filed and unreadable: not the same answer as never filed, which is the
+    // distinction `record.content.unreadable` exists for.
+    let filed = mcf_record::content::ContentStore::beside(&journal).join("comparison_1");
+    std::fs::remove_file(&filed).expect("the filed prompt is there");
+    std::fs::create_dir(&filed).expect("a directory takes its place");
+    let said = prompt_beside(&journal, &bundle, "comparison_1");
+    assert!(said.contains("would not be read"), "{said}");
+
+    let _removed = std::fs::remove_dir_all(&root);
 }

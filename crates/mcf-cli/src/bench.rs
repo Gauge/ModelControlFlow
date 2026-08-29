@@ -1020,10 +1020,28 @@ fn keep(
     // a caller who asked about half a percent was shown one verdict and the
     // record kept another — two answers to one question (A6).
     let body = record::comparison(held, finding, method, machine);
-    journal
+    let appended = journal
         .append(&Record::new(EntryKind::Comparison, at, body))
-        .map(|_id| path)
-        .map_err(|failure| format!("the comparison would not append — {failure}"))
+        .map_err(|failure| format!("the comparison would not append — {failure}"))?;
+    // The prompt is a condition and it is content, so the record keeps its
+    // length and its digest and the text goes beside it, under this entry's
+    // identifier (A25, A6, F105). A prompt that cannot be filed is said rather
+    // than swallowed: the comparison is written either way, and what is missing
+    // is what a bundle would have disclosed.
+    let content = mcf_record::content::ContentStore::beside(&path);
+    match mcf_record::content::ContentStore::open(&content).and_then(|store| {
+        store.keep(
+            appended.id.as_str(),
+            &mcf_record::content::Content::new(method.prompt.clone()),
+        )
+    }) {
+        Ok(()) => Ok(path),
+        Err(failure) => Err(format!(
+            "the comparison is recorded at {} and its prompt could not be filed beside it — \
+             {failure}",
+            path.display()
+        )),
+    }
 }
 
 /// A duration as a person reads it, without a float.

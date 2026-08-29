@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 88 |
+| **Version** | 90 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -130,6 +130,8 @@ forward as one.
 | 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
 | 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
 | 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
+| 104 | [F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6) |
+| 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7558,7 +7560,243 @@ oracle's *past* verdicts were wrong: the distributions half was sound
 throughout, and the generation half is the one whose history cannot be
 reconstructed from what was printed.
 
+## 104 · F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)
+
+**Found by finishing the audit [F103](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312)
+left open**: *whether the remaining tiers inherit anything else — a store, a
+socket, a record path.* They inherit the socket, and naming the engine does not
+fix it.
+
+**The reasoning that turned out to be half a fix.** F103 pinned `--engine
+stand-in` in every scheduled tier so that a listening daemon could not answer
+with a provisioned llama.cpp. The daemon does honour it —
+`mcf_serve::generation::choose_engine` takes `Some("stand-in")` and returns
+MCF's own engine, which was read rather than assumed. But *whose* stand-in? The
+daemon's. A daemon is another process running another binary, started whenever
+it was started, from whatever source was in the tree then. A tier builds a
+binary, and then asks a different one.
+
+**Measured, with a negative control.** Two release binaries differing only in
+one match arm, so their digests differ and their behaviour does not. `C` is the
+client; `D` serves.
+
+| | engine line the client printed |
+|---|---|
+| `C` alone, no daemon | `MCF's own stand-in, build 0.1.0-m0` |
+| `C` with `D` listening, `--engine stand-in` | `MCF's own stand-in, build 0.1.0-m0` |
+
+Identical — and the second was produced by `D`. That was established by
+building a marked `C` whose account said `[MARKED-B]`: with the daemon up the
+mark did not appear, and with it killed the same command printed it. The engine
+line is the same either way because it carried the *version*, and F93
+established a year of this project ago that the version is the same string on
+either side of a change to an instrument. `mcf_core::engine::Run::at_build`
+exists precisely because "an engine that changes silently colours every
+measurement taken after it" — and both of its callers were handing it
+`BuildIdentity::current().version`, a constant.
+
+**What it cost, measured on the corpus.** With a daemon started from `D`
+listening on the inherited `XDG_RUNTIME_DIR`, `scripts/check-corpus.sh` reported
+*every entry held here did what it says* — sixteen of sixteen — and `D`'s
+record held **sixteen `generated` entries**. The tier had built a binary, run
+sixteen models through somebody else's, and said nothing. With the isolation in
+place the same command passes and `D`'s record holds **zero**. That is the
+whole finding in one pair of numbers.
+
+**Two fixes, because either alone leaves the other half.**
+
+1. **A tier brings its own socket.** `tier_private_runtime_dir` in
+   `scripts/lib-tiers.sh`; `check-corpus.sh`, `check-oracle.sh` and
+   `check-online.sh` export it. No daemon is found, so the binary the tier just
+   built is the binary that answers. The Rust tier has done exactly this since
+   it was written — `crates/mcf-cli/tests/whole_system.rs` gives every process a
+   machine of its own, *including its socket*, with the reason in a comment —
+   and the shell tiers handed it the operator's.
+2. **The account names the build.** `mcf_core::build_identity::identifier()`
+   returns `0.1.0-m0+3c4733313727`: the version and twelve characters of the
+   binary's own digest, `+unknown` where the platform will not let a binary read
+   itself (A7). It is what `Run::at_build` is given and what the engine line
+   prints, in this process and in the daemon. Re-run of the experiment above,
+   after the fix: `C` alone prints `+3c4733313727`, `C` with `D` listening
+   prints `+3225ba1cd420`. The difference is now visible to anyone reading the
+   output, which is what A6 asks of a condition.
+
+**Where a Unix socket path length became a scientific detail.** The first
+attempt put the private runtime directory under this session's scratch path, 96
+bytes long; the daemon refused to start because `sun_path` is 108 and MCF
+appends `/mcf/control.sock`. The refusal was honest and correctly classified.
+The lesson is in the helper: it computes the room it has and falls back to
+`/tmp`, because a tier that isolates itself only where the path happens to be
+short is a tier that isolates itself on some machines and not others — which is
+the same class of defect as the one it was written to fix.
+
+**The guard, and its three negative controls.**
+`checks/tests/no_tier_inherits_a_daemon.rs`. It derives the set of daemon-reaching
+subcommands from the CLI source — every module that calls
+`crate::serve::socket_path()` — rather than listing them, so a new one fails the
+build until somebody writes down which subcommand it is. Removing the corpus's
+isolation fails it by name; deleting a known module from its table fails the
+derivation test; making `identifier()` return the bare version fails the
+cross-check against `sha256sum`.
+
+**What this did not establish.** Whether any past corpus or oracle run was
+served by a stale daemon: the output never said, which is the defect, and no
+record of those runs distinguishes them. The record's own build identity has
+carried the digest since F93, so a *record* entry can be attributed — but the
+tiers print rather than record, and F83's lesson has a second instance here.
+`scripts/frontier.sh` is left as it is on purpose: it is not a check, it cannot
+fail, and it *asks for* a daemon by name — its numbers now say which build
+answered, which is what it needed and did not have.
+
+**What remains unaudited, one level further out again.** The record path. Every
+tier that runs the binary writes generation entries into the operator's real
+record, where they are indistinguishable from an operator's own runs. That is
+not a wrong *answer*, so it is not this finding; it is a question about whose
+record a check's traffic belongs in, and it is written down here rather than
+guessed at.
+
+## 105 · F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)
+
+**Found by looking at the record while auditing something else.** F104's work
+ended in the operator's journal, checking which build had produced which
+generation. Every `generated` entry carried a `text` field, and the text was
+what the model had said.
+
+**A25 is absolute and it says both halves**: *prompt and completion content
+lives in a different store from the system record.* The structure to hold it
+exists — `mcf_record::content` defines a `Content` newtype that will not print
+itself and a `ContentStore` that is a different type from the journal, and
+`checks/tests/content_is_not_the_record.rs` reads both modules to prove neither
+can name the other's types.
+
+**And the store had no way to hold anything.** `ContentStore` could be opened
+and asked where it was. There was no `keep`, no read, no path in or out. So
+nothing was ever put in it, and every completion went into the journal as an
+ordinary string, where a type that never appeared could not stop it. The
+guarantee was intact, checked, cited in four modules, and had never been on the
+path any content took.
+
+**Measured on the machine it was found on**, counted from the journal:
+
+| | entries |
+|---|---|
+| entries in the record | 4 152 |
+| **holding content** | **4 047** |
+| — a model's completion, `body.text` | 4 018 |
+| — an operator's prompt, `body.method.prompt` | 29 |
+
+**And the surface said the opposite.** `mcf export` wrote the file and printed,
+over it:
+
+```
+  no prompt or completion content, by construction: this reads the record and the
+  record is not the content store (A25)
+```
+
+The file held 4 018 model completions. That sentence is the failure A1 is
+about — not a wrong number, but a claim of a guarantee, printed at the moment
+the operator decides whether a file is safe to hand to somebody.
+
+**The guard that was there, and the half it covered.** `mcf_record::export`
+does not assert its header: it computes `contains_user_content` by walking a
+list of paths, and `checks/tests/a_bundle_says_what_it_holds.rs` exists to keep
+that list complete. Both were written by
+[F68](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii),
+which found the *same claim* false for the *same reason* one field earlier: the
+header was a constant `false` on the reasoning that *this module reads the
+journal, and the journal is not the content store*, and a comparison had begun
+recording the prompt. F68 fixed the constant, named the two paths operator text
+took, and built the check that keeps the list complete. The list named
+`body.method.prompt` and `body.prompt`; it never named `body.text`, because the
+whole guard was framed as *text the operator wrote* and A25's sentence has two
+clauses.
+
+**So this is the second occurrence, and the first one is why it was invisible.**
+After F68 the claim was computed rather than asserted, the check existed, and
+`contains_user_content` came out `false` — which now looked like an answer
+somebody had verified rather than a question nobody had asked about the model's
+half. A guard that has been through one correction reads as trustworthy, and
+that is what made 4 018 completions comfortable where they were. So bundles carrying four thousand model
+completions answered `contains_user_content: false` — computed honestly, from a
+list that was asking about the other half. It is F103's lesson again: a guard
+covers the shape of the place it was written for.
+
+**The fix, and why each piece is not a filter.** B9 names the violation shape —
+one store with a flag and an export query that excludes it — so nothing here
+removes content on the way out.
+
+1. **The store can hold things.** `keep` and `disclose_kept`, one file per key,
+   filed under the record entry's own identifier as an opaque `&str`, because
+   taking an `EntryId` would give the content store a path to the record. The
+   pointer goes one way: an entry says how many bytes were said and never where
+   they are, so a reader with the record has no route to the content.
+2. **A generation has two halves that cannot be confused.** `Produced` carries
+   the account and what was said; the record gets the account, and
+   `on_the_wire` adds the text and the identifiers for the caller who asked.
+   The join goes one way and lives in one function. The record keeps
+   `text_bytes` — a measurement *about* content, which the content module's own
+   documentation had already argued belongs there.
+3. **A comparison keeps its prompt's length and digest**, which is enough for
+   A8 to refuse a confound and is not the text. The digest identifies and does
+   not conceal: anyone who guesses `Once upon a time` can confirm it, and the
+   record does not claim to hide the prompt — it claims not to hold it.
+4. **A bundle still reproduces its claim.** The prompt is disclosed
+   deliberately, at one call site, into a file *beside* the bundle, and the
+   report names it. Two files, because `mcf_record::export` must stay unable to
+   reach content or the guarantee becomes a filter again.
+5. **The export tells the truth about what it wrote.** It counts the entries
+   holding content and says so. On the machine this was found on it now prints
+   *4 047 of those entries hold a prompt or a completion, recorded before MCF
+   kept content out of its record* — a number that agrees with an independent
+   count of the journal.
+
+**What is not done, deliberately.** The 4 047 entries are not rewritten. A1
+forbids a record editing its own history, and a record that edited itself to
+look better would be worth less than one that says what it holds. They stay,
+they are counted, and every export of them says so.
+
+**A category the taxonomy did not have.** Filing content gives the store a
+*read*, and a read has a failure that had no code: content that is there and
+will not open, which must never come back as the same answer as content that was
+never kept — `None` is what an entry written before this says. `record.content.unreadable`,
+added with its laboratory scenario in the same change (A13), along with the
+refusal of a key that is not a plain name — §3.7's traversal, pointed inward.
+
+**Checks, and their negative controls.** The primary one is end to end rather
+than textual: `whole_system.rs` runs a model through a real daemon and looks in
+both stores — the record must hold a length and no text, and the content store
+must hold exactly what the caller was shown, because A1 forbids fixing a leak by
+losing the data. Putting `("text", …)` back into the account fails it by name.
+`a_bundle_says_what_it_holds.rs` now asks about both halves of A25 and refuses a
+surface that starts writing content into an entry again.
+
+**What this did not establish.** Whether any bundle or export carrying those
+entries was ever *sent* anywhere — nothing on this machine records that, which
+is correct: A24 makes sending an act the operator takes, and MCF is not watching
+them take it. And nothing about the other stores a tier inherits, which is where
+[F104](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6)
+left off — the record path itself, which is the audit one further level out
+again.
+
 ## Changelog
+
+### Version 90 — a guarantee that was never on the path
+
+F105. A25 says content lives in a store that is not the record; the store had
+no way to hold anything, so nothing was ever put in it and 4 047 entries held
+prompts and completions — while `mcf export` printed *no prompt or completion
+content, by construction* over them. The guard that computes that claim was
+complete about the operator's half of the rule and had never asked about the
+model's.
+
+### Version 89 — the tier named the engine and still asked another binary
+
+F104. F103's open question, answered: the tiers inherit the socket. The daemon
+honours `--engine stand-in` and its stand-in is its own binary's, so a tier
+built a binary and asked a different one — measured, with sixteen corpus
+entries landing in a foreign daemon's record. The tiers bring their own socket
+now, and the engine line carries the digest of the build that produced it
+rather than a version string that never changes.
 
 ### Version 88 — the oracle could have been comparing the reference with itself
 

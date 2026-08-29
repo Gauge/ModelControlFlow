@@ -19,6 +19,14 @@
 //! that rots: a field added later that holds written text and is not named
 //! would make the header lie again, quietly.
 //!
+//! **And it did, for the half of A25 this file did not ask about** (F105). The
+//! rule says *what a user typed and what a model generated*; the list named the
+//! prompt and never the completion, so 4 019 entries holding what a model said
+//! were carried by bundles whose header answered `contains_user_content:
+//! false`. The guard was written the day a *prompt* reached the record and it
+//! covered the shape of that day — the same lesson F103 drew one level out.
+//! `body.text` is named now, and this file asks about both halves.
+//!
 //! A source check rather than a compile-fail harness, for the reason given in
 //! `measurement_has_one_way_in.rs`.
 
@@ -43,42 +51,62 @@ fn the_header_is_computed_rather_than_asserted() {
     );
 }
 
-/// Every path where operator text reaches the record is named.
+/// Every path by which content ever reached the record is named.
 ///
-/// The list is short and the check is that it is complete: a field carrying
-/// written text that the header's computation does not know about is a bundle
-/// telling somebody it is safe to send.
+/// The list is short and the check is that it is complete: a field carrying a
+/// prompt or a completion that the header's computation does not know about is
+/// a bundle telling somebody it is safe to send.
+///
+/// **Both halves of A25.** What a person typed *and* what a model generated —
+/// the second is the one that was missing, and is why this is no longer named
+/// for the operator's half alone (F105).
 #[test]
-fn every_place_operator_text_reaches_the_record_is_named() {
-    /// Where a shipped surface puts text the operator wrote into an entry.
-    const WRITTEN: [(&str, &str); 2] = [
-        // `mcf bench` records the prompt as part of the method (PR2, B-211).
+fn every_place_content_reaches_the_record_is_named() {
+    let named = code_only(&read("crates/mcf-record/src/export.rs"));
+    for path in [
+        r#"&["body", "method", "prompt"]"#,
+        r#"&["body", "prompt"]"#,
+        r#"&["body", "text"]"#,
+    ] {
+        assert!(
+            named.contains(path),
+            "the header's computation does not name {path}, so a record that holds content \
+             there is exported as one that holds none (A24, A25, F105)"
+        );
+    }
+}
+
+/// And no shipped surface writes content into an entry any more.
+///
+/// The paths above are *legacy shapes*: a record written before F105 holds them
+/// and does not change (A1). What must not happen is a new one. The two places
+/// that did are named with what they write instead, so that putting either back
+/// fails here rather than three months later in somebody's export.
+#[test]
+fn nothing_writes_content_into_the_record_any_more() {
+    for (path, gone, instead) in [
         (
             "crates/mcf-bench/src/record.rs",
             r#"("prompt", Value::text(held.prompt.clone()))"#,
+            "prompt_digest",
         ),
-        // The daemon records what a generation was asked, where it does.
-        ("crates/mcf-serve/src/generation.rs", "prompt"),
-    ];
-
-    let named = code_only(&read("crates/mcf-record/src/export.rs"));
-    for (path, writes) in WRITTEN {
+        (
+            "crates/mcf-serve/src/generation.rs",
+            r#"("text", Value::text("#,
+            "text_bytes",
+        ),
+    ] {
         let source = code_only(&read(path));
-        if !source.contains(writes) {
-            continue;
-        }
-        // The field is written somewhere; the header's computation must know
-        // the path it lands under.
         assert!(
-            named.contains("\"prompt\""),
-            "{path} writes operator text and the header's computation does not name where it \
-             lands (A24, A25)"
+            !source.contains(gone),
+            "{path} writes content into a record entry again: `{gone}` (A25, F105)"
+        );
+        assert!(
+            source.contains(instead),
+            "{path} no longer records `{instead}`, so the record has stopped saying how much \
+             was said — the measurement about content that A6 wants and A25 permits"
         );
     }
-    assert!(
-        named.contains(r#"&["body", "method", "prompt"]"#),
-        "a comparison's method carries the prompt, and the header must know it"
-    );
 }
 
 /// The surface that writes a bundle says what leaves with it, before it does.
@@ -93,6 +121,9 @@ fn the_surface_says_what_leaves_with_it() {
         "what leaves with it, if you send it",
         "the prompt both arms were asked, which is text you wrote",
         "Writing this file is not sending it",
+        // The prompt is not in the record any more, so it travels beside the
+        // bundle rather than in it, and the report says which file (F105).
+        "the prompt is beside it in",
     ] {
         assert!(
             source.contains(said),

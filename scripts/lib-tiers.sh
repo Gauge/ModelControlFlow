@@ -113,3 +113,41 @@ tier_age_in_words() {
         printf '%d days ago\n' $(( seconds / 86400 ))
     fi
 }
+
+# A runtime directory of the tier's own, so that a daemon somebody left running
+# does not answer for the binary the tier just built (F104, F103, §3.12).
+#
+# `mcf run`, `mcf bench` and `mcf probe` all look for a control socket under
+# `XDG_RUNTIME_DIR` and let a listening daemon serve the work. That is correct
+# for a person at a terminal — it is what the daemon is *for* — and wrong for a
+# check: the daemon is another process running another binary, built from source
+# that may be days old, and the account it returns is indistinguishable from the
+# fresh binary's. F103 pinned *which engine* answers a tier's question;
+# `--engine stand-in` is honoured by the daemon, and the daemon's stand-in is
+# still not the one under test. This pins *which build* answers it.
+#
+# The Rust tier has done this since it was written: `crates/mcf-cli/tests/`
+# gives every process a machine of its own, including its socket. The shell
+# tiers handed it the operator's.
+#
+# **The path is short by construction.** A Unix socket path must fit in
+# `sun_path`, 108 bytes on Linux, and the first attempt at this experiment put
+# the directory under a scratch path whose name alone was 96: the daemon
+# refused to start, which was honest, but a tier that isolates itself only where
+# the path happens to be short is a tier that isolates itself on some machines
+# and not others. `TMPDIR` is used when it leaves room and `/tmp` when it does
+# not, and which one was used is visible in the directory the caller prints.
+#
+# Prints the directory. The caller exports it and removes it; it is not removed
+# here because a helper that installed its own `trap` would silently replace the
+# caller's.
+tier_private_runtime_dir() {
+    # "/mcf-tier-XXXXXX" is 16 bytes and "/mcf/control.sock" — what MCF appends
+    # — is 17. Ten bytes of margin for the platform's own accounting.
+    local room=$(( 108 - 16 - 17 - 10 ))
+    local base=${TMPDIR:-/tmp}
+    if [ "${#base}" -gt "$room" ]; then
+        base=/tmp
+    fi
+    mktemp -d "$base/mcf-tier-XXXXXX"
+}

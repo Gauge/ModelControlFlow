@@ -132,6 +132,16 @@ fail_cannot_check() {
     exit "$EXIT_CANNOT_CHECK"
 }
 
+# shellcheck source=scripts/lib-tiers.sh
+. "$root/scripts/lib-tiers.sh"
+
+# The binary this tier just built answers, not a daemon somebody left running
+# (F104). `--engine stand-in` below pins which engine; this pins which *build*
+# of it, which the account cannot tell a reader either way.
+runtime=$(tier_private_runtime_dir)
+trap 'rm -rf "$runtime"' EXIT
+export XDG_RUNTIME_DIR="$runtime"
+
 # The reference comes from `mcf provision llama.cpp` (B-367): a prefix under
 # MCF's data home holding the source at the pinned commit, the build, and the
 # provenance of both. `MCF_ORACLE` names a checkout elsewhere for a machine

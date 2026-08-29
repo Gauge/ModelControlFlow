@@ -839,17 +839,27 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
     let mut line = String::new();
     BufReader::new(&connection).read_line(&mut line).ok()?;
     let answer = crate::control::Answer::read(line.trim_end()).ok()?;
-    Some(
-        answer
-            .body
-            .get("build")
-            .and_then(|build| build.get("version"))
-            .and_then(mcf_record::json::Value::as_text)
-            .map_or_else(
-                || "a daemon that did not say".to_owned(),
-                |version| format!("whatever the daemon at build {version} chooses"),
-            ),
-    )
+    let build = answer.body.get("build");
+    let version = build
+        .and_then(|build| build.get("version"))
+        .and_then(mcf_record::json::Value::as_text);
+    // The digest as well as the version, for the reason F93 established and
+    // F104 found a second instance of: the version is the same string for
+    // every build, so a probe recorded against *whatever the daemon chooses*
+    // could not say which daemon, and a daemon is a different binary from the
+    // one that asked. `Null` where the platform would not let it read itself,
+    // which stays `unknown` rather than becoming a plausible digest (A7).
+    let instrument = build
+        .and_then(|build| build.get("instrument"))
+        .and_then(mcf_record::json::Value::as_text)
+        .map_or_else(
+            || "unknown".to_owned(),
+            |hex| hex.get(..12).unwrap_or(hex).to_owned(),
+        );
+    Some(version.map_or_else(
+        || "a daemon that did not say".to_owned(),
+        |version| format!("whatever the daemon at build {version}+{instrument} chooses"),
+    ))
 }
 
 #[cfg(test)]

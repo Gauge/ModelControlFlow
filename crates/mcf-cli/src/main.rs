@@ -588,13 +588,31 @@ fn export(to: &std::path::Path) -> Response {
             text: format!(
                 "wrote {}\n\
                  \x20 {} entries · sha256:{}\n\
-                 \x20 no prompt or completion content, by construction: this reads the record \
-                 and the\n\x20 record is not the content store (A25)\n\
+                 {}\
                  \x20 nothing has left this machine — sending a bundle is a separate, \
                  itemized act (A24)",
                 to.display(),
                 manifest.entries,
-                manifest.digest
+                manifest.digest,
+                // Read from the file that was written rather than asserted
+                // about the mechanism. The sentence this replaces said *no
+                // prompt or completion content, by construction* over an
+                // export carrying four thousand completions, because the
+                // record held them and nothing here looked (F105, A1).
+                if manifest.content_entries == 0 {
+                    "\x20 no prompt or completion content: the record keeps a length and a \
+                     digest, and\n\x20 the text is in the content store, which this does not \
+                     read (A25)\n"
+                        .to_owned()
+                } else {
+                    format!(
+                        "\x20 {} of those entries hold a prompt or a completion, recorded \
+                         before MCF\n\x20 kept content out of its record. They are in this \
+                         file. Nothing written\n\x20 since does that, and the record is not \
+                         edited to look better (A25, A1, F105)\n",
+                        manifest.content_entries
+                    )
+                }
             ),
             served: true,
         },

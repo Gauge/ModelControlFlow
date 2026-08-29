@@ -11,6 +11,7 @@
 
 use mcf_core::failure::Category;
 use mcf_core::time::Timestamp;
+use mcf_record::content::{Content, ContentStore};
 use mcf_record::journal::{Entry, EntryKind, FORMAT_VERSION, Journal, Writer, replay};
 use mcf_record::json::Value;
 
@@ -55,6 +56,23 @@ pub(super) const HEADERLESS: Scenario = Scenario {
     produces: Category::RecordCorruptJournal,
     summary: "the journal's first line is not a header, so the whole file is refused",
     run: headerless,
+};
+
+/// Content filed beside the record is there and will not be read.
+pub(super) const CONTENT_UNREADABLE: Scenario = Scenario {
+    id: "record/content-unreadable",
+    produces: Category::RecordContentUnreadable,
+    summary: "content was filed and the file will not open; the absence is a failure rather \
+              than an empty answer",
+    run: content_unreadable,
+};
+
+/// A content key that is not a name is refused before anything is written.
+pub(super) const CONTENT_KEY_REFUSED: Scenario = Scenario {
+    id: "record/content-key-refused",
+    produces: Category::InternalInvariantViolated,
+    summary: "a content key with a path in it is refused rather than writing outside the store",
+    run: content_key_refused,
 };
 
 fn entry(sequence: u64) -> Entry {
@@ -179,5 +197,67 @@ fn headerless(world: &World) -> Outcome {
     match Journal::open(&path) {
         Err(failure) => Outcome::Produced(failure),
         Ok(_) => Outcome::Unexpected("a journal with no header was accepted".to_owned()),
+    }
+}
+
+/// A25's store, holding something it then cannot hand back.
+///
+/// The observable rather than the cause (D26): a file that will not open, not
+/// a permission model or a damaged medium. It is a *directory* where content
+/// should be a file, which every platform refuses to read as bytes — and the
+/// distinction this scenario exists for is that *there and unreadable* must
+/// not come back as `None`, because `None` is what an entry whose content was
+/// never kept says, and losing that difference is A1's information loss.
+fn content_unreadable(world: &World) -> Outcome {
+    let store = match ContentStore::open(&world.path("content")) {
+        Ok(store) => store,
+        Err(failure) => {
+            return Outcome::Unexpected(format!("the content store would not open: {failure}"));
+        }
+    };
+    let key = "generated_lab_0000";
+    if let Err(failure) = store.keep(key, &Content::new("what a model said")) {
+        return Outcome::Unexpected(format!("content would not be kept: {failure}"));
+    }
+    // Replace the file with a directory of the same name: present, and not
+    // readable as bytes.
+    let path = world.path("content").join(key);
+    if let Err(error) = std::fs::remove_file(&path) {
+        return Outcome::Unexpected(format!("the kept file was not there: {error}"));
+    }
+    if let Err(error) = std::fs::create_dir(&path) {
+        return Outcome::Unexpected(format!("the directory would not be made: {error}"));
+    }
+    match store.disclose_kept(key) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(None) => Outcome::Unexpected(
+            "content that is there and unreadable came back as absent, which is what an entry \
+             whose content was never kept says (A1)"
+                .to_owned(),
+        ),
+        Ok(Some(_)) => Outcome::Unexpected("a directory was read as content".to_owned()),
+    }
+}
+
+/// The traversal of §3.7, pointed inward.
+///
+/// Content is filed under the record's own entry identifier, which is a plain
+/// name — but the store takes a `&str`, because naming an `EntryId` here would
+/// give the content store a path to the record (B-161). What a `&str` cannot
+/// carry is the guarantee that it *is* one, so the store checks, and this is
+/// the check firing: a key holding a parent component would write wherever it
+/// pointed.
+fn content_key_refused(world: &World) -> Outcome {
+    let store = match ContentStore::open(&world.path("content")) {
+        Ok(store) => store,
+        Err(failure) => {
+            return Outcome::Unexpected(format!("the content store would not open: {failure}"));
+        }
+    };
+    match store.keep("../escaped", &Content::new("somewhere else")) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(()) => Outcome::Unexpected(
+            "a key with a parent component was written, so content can leave its store".to_owned(),
+        ),
     }
 }

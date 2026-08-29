@@ -15,7 +15,6 @@ use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::Failure;
 use mcf_record::json::Value;
 use mcf_standin::gguf;
@@ -57,6 +56,72 @@ impl Resident {
     }
 }
 
+/// What a generation produced, in two halves that cannot be confused (A25,
+/// §6.8, F105).
+///
+/// **The record may hold the left half and never the right.** A25 is absolute:
+/// what a person typed and what a model generated live in a store that is not
+/// the record. It was violated for three months by the simplest possible route
+/// — one `Value` served as both the line sent to the caller and the body of the
+/// record entry, so the model's completion went into the journal as an ordinary
+/// string and `mcf export` copied it out while printing *no prompt or
+/// completion content, by construction*.
+///
+/// So there are two values and the join goes one way. [`Produced::account`] is
+/// what the builders make and what the daemon records; [`Produced::on_the_wire`]
+/// adds what the caller asked for. Nothing removes anything: a *filter* is
+/// B9's named violation, and a filter that stopped being applied would be
+/// silent.
+pub(crate) struct Produced {
+    /// Facts *about* the generation: counts, conditions, how it stopped, what
+    /// was lost. This is the half the record may hold.
+    pub(crate) account: Value,
+    /// What the model said, and the identifiers it said it in.
+    ///
+    /// `None` for a generation that produced nothing, and for one that was
+    /// refused before an engine was reached.
+    pub(crate) said: Option<Said>,
+}
+
+/// The model's own output: content, in A25's sense.
+pub(crate) struct Said {
+    /// The text.
+    pub(crate) text: String,
+    /// The same thing as identifiers, which another engine can be asked about
+    /// step by step where text cannot (B-362): past the first disagreement two
+    /// engines are writing different sentences.
+    pub(crate) tokens: Vec<usize>,
+}
+
+impl Produced {
+    /// The line the caller receives: the account, plus what it asked for.
+    ///
+    /// One direction, one call site. A generation is a thing somebody asked
+    /// for, and answering it is not publication — what A25 governs is where the
+    /// answer is *kept*.
+    fn on_the_wire(&self) -> Value {
+        let Value::Map(fields) = &self.account else {
+            return self.account.clone();
+        };
+        let mut fields = fields.clone();
+        if let Some(said) = &self.said {
+            fields.insert("text".to_owned(), Value::text(said.text.clone()));
+            if !said.tokens.is_empty() {
+                fields.insert(
+                    "produced_tokens".to_owned(),
+                    Value::List(
+                        said.tokens
+                            .iter()
+                            .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                            .collect(),
+                    ),
+                );
+            }
+        }
+        Value::Map(fields)
+    }
+}
+
 /// Serves one generation, writing the stream, and returns the account that
 /// was sent as the terminating line.
 #[allow(
@@ -76,7 +141,7 @@ pub(crate) fn serve_generation(
     tokens: Option<&[usize]>,
     engine: Option<&str>,
     writer: &mut &UnixStream,
-) -> Value {
+) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
     // did (D43, B-059). A caller that sent identifiers has said exactly what
     // it wants and is not overridden; a caller that sent a prompt gets the
@@ -98,7 +163,7 @@ pub(crate) fn serve_generation(
     let tokens = wrapped.as_deref().or(tokens);
 
     let chosen = choose_engine(mcf_home, engine);
-    let account = match chosen {
+    let produced = match chosen {
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
         Ok(Chosen::Provisioned(llama)) => match tokens {
@@ -114,46 +179,59 @@ pub(crate) fn serve_generation(
     // through a derived configuration carries what set it — which is what
     // makes *are yesterday's number and today's comparable* answerable rather
     // than assumed (D43, §3.4).
-    let account = account.map(|account| match (account, derived) {
-        (Value::Map(mut fields), Some(addressing)) => {
-            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
-                conditions.insert(
-                    "addressed_as".to_owned(),
-                    Value::text(if wrapped.is_some() {
-                        addressing.provenance()
-                    } else {
-                        format!(
-                            "{} — not applied here: the caller sent its own identifiers",
+    let produced = produced.map(|produced| Produced {
+        account: match (produced.account, derived) {
+            (Value::Map(mut fields), Some(addressing)) => {
+                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                    conditions.insert(
+                        "addressed_as".to_owned(),
+                        Value::text(if wrapped.is_some() {
                             addressing.provenance()
-                        )
-                    }),
-                );
+                        } else {
+                            format!(
+                                "{} — not applied here: the caller sent its own identifiers",
+                                addressing.provenance()
+                            )
+                        }),
+                    );
+                }
+                Value::Map(fields)
             }
-            Value::Map(fields)
-        }
-        (account, _) => account,
+            (account, _) => account,
+        },
+        said: produced.said,
     });
-    let account = account.map(|account| match (account, derived_budget) {
-        (Value::Map(mut fields), Some(budget)) => {
-            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
-                conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
+    let produced = produced.map(|produced| Produced {
+        account: match (produced.account, derived_budget) {
+            (Value::Map(mut fields), Some(budget)) => {
+                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                    conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
+                }
+                Value::Map(fields)
             }
-            Value::Map(fields)
-        }
-        (account, _) => account,
+            (account, _) => account,
+        },
+        said: produced.said,
     });
-    let account = match account {
-        Ok(account) => account,
-        Err(failure) => Value::map([
-            ("tokens", Value::Integer(0)),
-            ("stopped", Value::text("refused")),
-            ("failure", mcf_record::encode::failure(&failure)),
-            ("conditions", conditions(named, None, seed, limit)),
-        ]),
+    let produced = match produced {
+        Ok(produced) => produced,
+        Err(failure) => Produced {
+            account: Value::map([
+                ("tokens", Value::Integer(0)),
+                ("stopped", Value::text("refused")),
+                ("failure", mcf_record::encode::failure(&failure)),
+                ("conditions", conditions(named, None, seed, limit)),
+            ]),
+            said: None,
+        },
     };
-    let _written = writeln!(writer, "{}", Streamed::Done(account.clone()).to_line());
+    let _written = writeln!(
+        writer,
+        "{}",
+        Streamed::Done(produced.on_the_wire()).to_line()
+    );
     let _flushed = writer.flush();
-    account
+    produced
 }
 
 /// Which engine serves a request (B-032, §3.15).
@@ -253,7 +331,7 @@ fn through_served(
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
-) -> Result<Value, Failure> {
+) -> Result<Produced, Failure> {
     let given = Path::new(named);
     let path = if given.is_file() {
         given.to_path_buf()
@@ -333,29 +411,24 @@ fn through_served(
         );
     }
 
-    Ok(Value::map([
-        (
-            "tokens",
-            Value::Integer(i64::try_from(completed.predicted).unwrap_or(i64::MAX)),
-        ),
-        ("stopped", Value::text(completed.stop.written())),
-        ("text", Value::text(completed.text)),
-        // The identifiers as well as the text, so that another engine can be
-        // asked what it would have chosen at each one (B-362). Text cannot
-        // answer that: past the first disagreement the two are writing
-        // different sentences.
-        (
-            "produced_tokens",
-            Value::List(
-                completed
-                    .produced
-                    .iter()
-                    .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
-                    .collect(),
+    Ok(Produced {
+        account: Value::map([
+            (
+                "tokens",
+                Value::Integer(i64::try_from(completed.predicted).unwrap_or(i64::MAX)),
             ),
-        ),
-        ("conditions", conditions),
-    ]))
+            ("stopped", Value::text(completed.stop.written())),
+            (
+                "text_bytes",
+                Value::Integer(i64::try_from(completed.text.len()).unwrap_or(i64::MAX)),
+            ),
+            ("conditions", conditions),
+        ]),
+        said: Some(Said {
+            text: completed.text,
+            tokens: completed.produced,
+        }),
+    })
 }
 
 /// One generation through the provisioned engine, as a supervised subprocess
@@ -369,7 +442,7 @@ fn through_provisioned(
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
-) -> Result<Value, Failure> {
+) -> Result<Produced, Failure> {
     let given = Path::new(named);
     let path = if given.is_file() {
         given.to_path_buf()
@@ -402,37 +475,48 @@ fn through_provisioned(
         fields.insert("loaded".to_owned(), Value::text("per_request_subprocess"));
     }
 
+    let bytes = Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX));
+    let said = Some(Said {
+        text,
+        tokens: Vec::new(),
+    });
     match ended {
-        Ok(_) => Ok(Value::map([
-            (
-                "tokens",
-                Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
-            ),
-            // Not "the model stopped": this engine prints text and exits, and
-            // why it ended — its own end-of-turn token, or the budget — is not
-            // on the wire. A7: what MCF does not know it does not say.
-            ("stopped", Value::text("unknown_the_engine_did_not_say")),
-            ("text", Value::text(text)),
-            ("conditions", conditions),
-        ])),
+        Ok(_) => Ok(Produced {
+            account: Value::map([
+                (
+                    "tokens",
+                    Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
+                ),
+                // Not "the model stopped": this engine prints text and exits,
+                // and why it ended — its own end-of-turn token, or the budget —
+                // is not on the wire. A7: what MCF does not know it does not
+                // say.
+                ("stopped", Value::text("unknown_the_engine_did_not_say")),
+                ("text_bytes", bytes),
+                ("conditions", conditions),
+            ]),
+            said,
+        }),
         // The engine died. What it produced was produced (A4); the failure is
         // the account, and the daemon is still here (§3.1).
-        Err(failure) => Ok(Value::map([
-            (
-                "tokens",
-                Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
-            ),
-            ("stopped", Value::text("engine_died")),
-            ("text", Value::text(text)),
-            ("failure", mcf_record::encode::failure(&failure)),
-            ("conditions", conditions),
-        ])),
+        Err(failure) => Ok(Produced {
+            account: Value::map([
+                (
+                    "tokens",
+                    Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
+                ),
+                ("stopped", Value::text("engine_died")),
+                ("text_bytes", bytes),
+                ("failure", mcf_record::encode::failure(&failure)),
+                ("conditions", conditions),
+            ]),
+            said,
+        }),
     }
 }
 
 /// The conditions every account carries, whether it succeeded or not.
 fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize) -> Value {
-    let identity = BuildIdentity::current();
     Value::map([
         ("model", Value::text(named)),
         (
@@ -451,7 +535,7 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
         ),
         (
             "engine",
-            Value::text(format!("MCF's own stand-in, build {}", identity.version)),
+            Value::text(mcf_core::build_identity::stand_in_engine()),
         ),
         ("loaded", Value::text("not_loaded")),
         ("sampler", Value::text("greedy")),
@@ -486,7 +570,7 @@ fn attempt(
     limit: usize,
     seed: u64,
     writer: &mut &UnixStream,
-) -> Result<Value, Failure> {
+) -> Result<Produced, Failure> {
     // A path as given, or a name under the daemon's store — the two ways a
     // model is addressed, and no third.
     let given = Path::new(named);
@@ -553,7 +637,7 @@ fn attempt(
         Some(tokens) => tokens.to_vec(),
         None => vocabulary.encode(prompt, true)?,
     };
-    let build = BuildIdentity::current().version.to_owned();
+    let build = mcf_core::build_identity::identifier();
 
     let mut at = 0_usize;
     let generated = session::generate_streaming(
@@ -587,34 +671,44 @@ fn attempt(
 
     let degradation = generated.degradation().to_string();
     let produced = generated.value().observed();
-    Ok(Value::map([
-        (
-            "tokens",
-            Value::Integer(i64::try_from(produced.tokens.len()).unwrap_or(i64::MAX)),
-        ),
-        (
-            "prompt_tokens",
-            Value::Integer(i64::try_from(produced.prompt_length).unwrap_or(i64::MAX)),
-        ),
-        (
-            "stopped",
-            Value::text(match produced.stopped {
-                Stopped::AtStopToken { .. } => "stop_token",
-                Stopped::AtLimit => "limit",
-                Stopped::NothingToRead => "nothing_to_read",
-            }),
-        ),
-        ("text", Value::text(vocabulary.decode(&produced.tokens))),
-        (
-            "conditions",
-            conditions(named, Some((&path, held_bytes)), seed, limit).with_residency(
-                loaded,
-                &since,
-                dequantized,
+    let text = vocabulary.decode(&produced.tokens);
+    Ok(Produced {
+        account: Value::map([
+            (
+                "tokens",
+                Value::Integer(i64::try_from(produced.tokens.len()).unwrap_or(i64::MAX)),
             ),
-        ),
-        ("degraded", Value::text(degradation)),
-    ]))
+            (
+                "prompt_tokens",
+                Value::Integer(i64::try_from(produced.prompt_length).unwrap_or(i64::MAX)),
+            ),
+            (
+                "stopped",
+                Value::text(match produced.stopped {
+                    Stopped::AtStopToken { .. } => "stop_token",
+                    Stopped::AtLimit => "limit",
+                    Stopped::NothingToRead => "nothing_to_read",
+                }),
+            ),
+            (
+                "text_bytes",
+                Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX)),
+            ),
+            (
+                "conditions",
+                conditions(named, Some((&path, held_bytes)), seed, limit).with_residency(
+                    loaded,
+                    &since,
+                    dequantized,
+                ),
+            ),
+            ("degraded", Value::text(degradation)),
+        ]),
+        said: Some(Said {
+            text,
+            tokens: produced.tokens.clone(),
+        }),
+    })
 }
 
 /// The refusal for a model that is not where it was said to be.

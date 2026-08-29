@@ -80,7 +80,7 @@ impl fmt::Display for Erratum {
 /// Ordered oldest first. Adding to it is part of fixing an instrument, and
 /// `checks/tests/a_corrected_instrument_leaves_an_erratum.rs` is what makes
 /// that not optional.
-pub const KNOWN: [Erratum; 3] = [
+pub const KNOWN: [Erratum; 4] = [
     Erratum {
         instrument: "mcf_core::hardware::contention",
         defect: "the rate divided accumulated processor ticks by the interval the sampler \
@@ -113,6 +113,18 @@ pub const KNOWN: [Erratum; 3] = [
         finding: "F92",
         corrected_at_utc_nanos: 1_787_958_120_000_000_000,
         corrected_at: "2026-08-28T23:02:00Z",
+    },
+    Erratum {
+        instrument: "mcf_serve::generation",
+        defect: "a generation's engine condition named MCF's version, which is the same string \
+                 for every build, so the account could not say which binary produced the answer \
+                 — and a daemon serves from its own binary rather than the one that asked",
+        effect: "a generation recorded before this cannot be attributed to the build that took \
+                 it, and one served by a daemon started from older source is indistinguishable \
+                 from one the current binary produced; every entry now carries the digest",
+        finding: "F104",
+        corrected_at_utc_nanos: 1_787_984_045_000_000_000,
+        corrected_at: "2026-08-29T06:14:05Z",
     },
 ];
 

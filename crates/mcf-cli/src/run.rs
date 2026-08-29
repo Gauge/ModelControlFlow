@@ -23,7 +23,6 @@
 use std::path::{Path, PathBuf};
 
 use mcf_core::attested::Attested;
-use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::hardware::Machine;
 use mcf_standin::gguf;
@@ -450,7 +449,7 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
     let model = load(&file, bytes)?.across(threads);
 
     let prompt_tokens = vocabulary.encode(prompt, true)?;
-    let build = BuildIdentity::current().version.to_owned();
+    let build = mcf_core::build_identity::identifier();
     let generated = generate(
         &model,
         &build,
@@ -484,7 +483,7 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
         stopped: produced.stopped,
         threads: model.threads().describe(),
         mark: degradation,
-        engine: format!("MCF's own stand-in, build {build}"),
+        engine: mcf_core::build_identity::stand_in_engine(),
     })
 }
 
