@@ -111,12 +111,12 @@ fn every_probe_that_renders_an_observation_records_it() {
 #[test]
 fn every_probe_method_has_a_renderer() {
     let mut methods = Vec::new();
-    for file in [
-        "crates/mcf-serve/src/probes.rs",
-        "crates/mcf-serve/src/probes/tools.rs",
-        "crates/mcf-serve/src/probes/structured.rs",
-    ] {
-        for line in read(file).lines() {
+    // Read from wherever a probe lives rather than from a list of three files.
+    // The list was three files, and the day two probes arrived in two new ones
+    // it was still three (B-057) — which is the shape F103, F105 and F106 each
+    // paid for: a guard covers the place it was written for.
+    for file in probe_sources() {
+        for line in read(&file).lines() {
             if let Some((held, _)) = line.split_once(": Method = Method {")
                 && let Some(name) = held.split_whitespace().last()
             {
@@ -130,7 +130,14 @@ fn every_probe_method_has_a_renderer() {
          files: {methods:#?}"
     );
     let source = read("crates/mcf-cli/src/probe.rs");
-    let rendered = renderers(&source).len();
+    // Renderers *of an observation*: a `*_lines` function that renders no
+    // `Outcome` is a section of the report rather than a probe's result, and
+    // counting it would demand a `Method` for the list of modalities MCF
+    // declines to probe — which is the opposite of a probe (B-057).
+    let rendered = renderers(&source)
+        .into_iter()
+        .filter(|(_, body)| body.contains("Outcome::Observed"))
+        .count();
     assert_eq!(
         rendered,
         methods.len(),
@@ -139,6 +146,30 @@ fn every_probe_method_has_a_renderer() {
          not a probe (D42)",
         methods.len()
     );
+}
+
+/// Every file a probe can be defined in.
+///
+/// The directory rather than a list: a probe in a file nobody added to a list
+/// is a probe this check does not see, and that is exactly how B-057's two new
+/// ones arrived.
+fn probe_sources() -> Vec<String> {
+    let root = mcf_checks::workspace::root();
+    let mut found = vec!["crates/mcf-serve/src/probes.rs".to_owned()];
+    let directory = root.join("crates/mcf-serve/src/probes");
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|kind| kind == "rs")
+            && let Some(name) = path.file_name().and_then(|name| name.to_str())
+        {
+            found.push(format!("crates/mcf-serve/src/probes/{name}"));
+        }
+    }
+    found.sort();
+    found
 }
 
 /// The functions in `probe.rs` that render a probe's result, by name and body.

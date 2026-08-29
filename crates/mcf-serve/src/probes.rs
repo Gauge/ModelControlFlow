@@ -107,6 +107,9 @@ impl Addressing {
     }
 }
 
+pub mod declined;
+pub mod embedding;
+pub mod language;
 pub mod structured;
 pub mod tools;
 

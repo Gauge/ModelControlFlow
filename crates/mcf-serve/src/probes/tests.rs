@@ -76,7 +76,7 @@ fn a_vocabulary(tokens: &[String], with_template: bool) -> Vec<u8> {
 }
 
 /// A vocabulary with no chat tokens at all.
-fn plain() -> Vec<u8> {
+pub(super) fn plain() -> Vec<u8> {
     a_vocabulary(&with_bytes(&["<s>", "\u{2581}a", "a"]), false)
 }
 

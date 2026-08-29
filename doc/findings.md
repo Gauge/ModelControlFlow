@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 94 |
+| **Version** | 95 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -137,6 +137,7 @@ forward as one.
 | 107 | [F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)](#107--f107--the-oracles-first-disagreement-in-three-days-was-the-instruments-not-the-engines-b-393-b-368-b-373-f27-f34-f103-a19-a5) |
 | 108 | [F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)](#108--f108--two-rules-rested-on-somebody-remembering-and-one-identifier-had-been-cited-four-times-with-nothing-behind-it-b-394-c5-c6-b16-f80-730) |
 | 109 | [F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)](#109--f109--a-rule-of-thumb-that-cannot-be-read-as-a-result-cannot-be-recorded-and-expires-when-the-laboratory-lands-b-380-dec-002-a21-a25-315-318) |
+| 110 | [F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)](#110--f110--a-probe-for-each-modality-or-a-reason-what-a-language-costs-whether-an-artifact-embeds-and-three-declinations-in-writing-b-057-d42-f81-f106-a7-a21-x) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8124,7 +8125,88 @@ catalogue is deliberately three: every entry is something MCF says on no
 evidence of its own, and §3.15's rule about choices the reader cannot see
 applies twice as hard to sentences the reader cannot check.
 
+## 110 · F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)
+
+**B-057's done-when has two halves and the second is the honest one**: *each
+in-scope modality has a probe; each out-of-scope one is recorded as declined.* A
+modality MCF simply does not mention is one a reader assumes it checked and
+found nothing wrong with — the same silence A7 forbids about a model's own
+metadata, pointed at MCF's coverage.
+
+**D42's test, applied to each rather than a probe written for each.** *A probe
+earns its place when a wrong answer to it would corrupt a measurement or a
+served answer*, and it must be answerable by observation rather than by
+judgement.
+
+**In scope, and built.**
+
+*`language-cost`* asks the **file's vocabulary** and no engine at all — which is
+unusual enough that the conditions say so rather than naming an engine that did
+not participate. The same sentence in six languages, counted: exact,
+deterministic, milliseconds. It earns its place because tokens are the unit of
+the context budget, the token budget, the time a turn takes and what a
+comparison holds still, so a model that spends two and a half times as many on
+one meaning is being asked a different question at the same budget. Measured on
+three files:
+
+| | English | Japanese | Arabic |
+|---|---|---|---|
+| SmolLM2-135M | 16 | **52** (325%) | **46** (288%) |
+| gemma-3-270m | 16 | 20 (125%) | 22 (138%) |
+| all-MiniLM-L6-v2 | 16 | 22 (138%) | 49 (306%) |
+
+F81's care is kept in the sentence itself, because that is where it is lost: a
+cost is a fact about a *vocabulary*. A model can be excellent at a language its
+vocabulary spells expensively.
+
+*`embedding`* asks for one vector twice and reports the width and whether the
+two were identical **to the last bit**. Not *near enough*: MCF's own engine does
+the same arithmetic in the same order, so anything but equality is a defect
+rather than noise, and a tolerance there would hide it. On all-MiniLM-L6-v2 the
+file declares bert and width 384, and 384 came back, twice, identically —
+declared and verified agreeing, which is as much a result as a divergence (A9).
+
+**Declined, in writing, each with what MCF looked for.**
+
+* **Vision** — looked for the `clip.*` metadata and projector tensors a
+  multimodal file carries. MCF's own engine implements text transformers and no
+  engine here is driven with an image, so a probe reporting *no vision* would be
+  reporting MCF's reach as a property of the model, which is the confusion A21
+  exists to prevent.
+* **Multilingual fluency** — a graded task. What a language *costs* is probed;
+  how well the model speaks it needs a rater, and reporting the first as the
+  second is exactly the reading F81 was written to prevent.
+* **Reasoning modes** — what is observable is that a model emitted its declared
+  thinking markers and how many tokens it spent inside them. That is worth
+  asking and is not a modality: it changes the token budget a turn needs, which
+  makes it a *configuring* probe with its own row. [F106](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105)
+  measured the cost of not having it — ten trials of ten spent a whole
+  two-hundred-token budget before producing anything.
+
+**And the first run recorded a condition that did not participate.** The
+embedding probe was wired with the same engine string as its neighbours, so its
+conditions read *provisioned llama.cpp, through the daemon* about arithmetic MCF
+performed in its own process — `mcf embed` consults no daemon, which F103
+established rather than assumed. Caught by reading the output of the first real
+run, which is the fifth time in four days that a condition naming the wrong
+engine has turned up. It names the in-process path and this binary's build now.
+
+**One guard improved by being wrong about its own subject.** The check that
+requires every probe to record what it observed reads the `Method` constants to
+count probes — from a list of three named files. Two probes arrived in two new
+files and the list was still three. It reads the directory now: the same lesson
+F103, F105 and F106 each paid for, met once more while adding the thing that
+triggered it.
+
 ## Changelog
+
+### Version 95 — a probe for each modality, or a reason
+
+F110. Two probes built — a language's cost on this vocabulary, which asks no
+engine, and whether an artifact embeds and does it twice identically — and three
+modalities declined in writing with what MCF looked for. The first run of the
+embedding probe recorded an engine that did not participate, which is the fifth
+of those in four days.
 
 ### Version 94 — a rule of thumb that cannot be read as a result
 
