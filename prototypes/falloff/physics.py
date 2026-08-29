@@ -110,7 +110,7 @@ def gguf_metadata(path, want):
 
 WANTED = [".block_count", ".attention.head_count", ".attention.key_length",
           ".attention.value_length", ".embedding_length", ".context_length",
-          ".attention.sliding_window"]
+          ".attention.sliding_window", ".expert_count", ".expert_used_count"]
 
 
 def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
@@ -166,6 +166,20 @@ def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
         return {"verdict": "header-incomplete", "architecture": architecture,
                 "why": "the header does not state " + ", ".join(missing),
                 "growing_bytes_per_depth_token": None}
+    # A mixture of experts holds many feed-forward blocks and reads only some
+    # of them per token, so the file size overstates what a token actually
+    # moves. TinyMixtral uses 2 of 4 and its intercept was over-predicted by
+    # 1.79x -- close to the 2x the counts imply.
+    #
+    # Scaling the WHOLE file by used/total assumes the experts dominate it.
+    # That holds for the mixtures here and is stated rather than hidden: a
+    # dense model has no expert count and is scaled by 1.
+    experts = pick(".expert_count")
+    experts_used = pick(".expert_used_count")
+    active_fraction = 1.0
+    if experts and experts_used and experts > 0:
+        active_fraction = float(experts_used) / float(experts)
+
     window = pick(".attention.sliding_window")
     architecture = next((k.split(".")[0] for k in kv), None)
     # Layers whose cost keeps growing with depth. Without a sliding window
@@ -187,6 +201,8 @@ def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
         "architecture": architecture,
         "why": window_note if growing is None else None,
         "cache_bytes": cache_bytes,
+        "experts": experts, "experts_used": experts_used,
+        "active_weight_fraction": active_fraction,
         "layers": layers, "kv_heads": kv_heads,
         "growing_layers": growing, "window_note": window_note,
         # How much of ONE layer's cache is read contiguously per token. A
@@ -218,6 +234,29 @@ def geometry(path, cache_bytes=DEFAULT_CACHE_BYTES):
 def predicted_slope_ms(bytes_per_depth_token, dram_gbs):
     """Milliseconds per token, per token of depth."""
     return bytes_per_depth_token / (dram_gbs * 1e9) * 1e3
+
+
+def predicted_intercept_ms(file_bytes, active_fraction, dram_gbs):
+    """The depth-independent part: the weights, read once per generated token.
+
+    Counted rather than assumed. At depth 4096, 128 extra tokens of Qwen3-0.6B
+    moved 153.9 GB measured by L3 miss; the KV cache accounts for 60.1 GB and
+    the weights re-read once per token for 81.8 GB, which together come to
+    142.0 GB -- a ratio of 1.08. A token reads the whole model AND the whole
+    cache, so both halves of the curve are in the file."""
+    return file_bytes * active_fraction / (dram_gbs * 1e9) * 1e3
+
+
+def curve(file_bytes, geo, dram_gbs, achieved=1.0):
+    """The whole curve from the file: ms/token as a function of depth.
+
+    `achieved` is the fraction of peak bandwidth the engine reaches -- one
+    number for this machine, measured, not shipped as a constant."""
+    if geo.get("verdict") != "described":
+        return None
+    a = predicted_intercept_ms(file_bytes, geo["active_weight_fraction"], dram_gbs * achieved)
+    b = predicted_slope_ms(geo["growing_bytes_per_depth_token"], dram_gbs * achieved)
+    return lambda depth: a + b * depth
 
 
 def main():

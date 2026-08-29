@@ -150,6 +150,7 @@ forward as one.
 | 120 | [F120 — A prefilled depth costs what a generated one costs and arrives twenty times sooner, which retires the long path rather than speeding it up (B-400, F119, A18, A11)](#120-f120-a-prefilled-depth-costs-what-a-generated-one-costs-and-arrives-twenty-times-sooner-which-retires-the-long-path-rather-than-speeding-it-up-b-400-f119-a18-a11) |
 | 121 | [F121 — The fall-off predicted from the file header on all 27 models, and the one outlier was an architecture the arithmetic did not describe (B-400, F120, A7, A21, B16)](#121-f121-the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16) |
 | 122 | [F122 — The predictor generalised by being made to refuse: two architectures agree to 8%, and every model it cannot describe now says so (B-400, F121, A2, A7, A9, A21)](#122-f122-the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21) |
+| 123 | [F123 — Counted rather than inferred: a token reads the whole model and the whole cache, so both halves of the curve are in the file (B-400, F121, F122, A11, A21, D19)](#123-f123-counted-rather-than-inferred-a-token-reads-the-whole-model-and-the-whole-cache-so-both-halves-of-the-curve-are-in-the-file-b-400-f121-f122-a11-a21-d19) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8948,6 +8949,76 @@ and must be measured, which costs 15–40 seconds. The honest split is that the
 prediction is offered where it has been shown to hold and the measurement is
 taken everywhere else — and which of the two applies is decided from the header
 before anything runs.
+
+## 123 · F123 — Counted rather than inferred: a token reads the whole model and the whole cache, so both halves of the curve are in the file (B-400, F121, F122, A11, A21, D19)
+
+**The operator installed perf, and the mechanism could be counted instead of
+argued from slopes.**
+
+The counter had to be calibrated first, and the obvious one was wrong. The AMD
+UMC controller PMU exposes `event` and `rdwrmask` and no named events; a
+read-only and a write-only workload of known size gave counts that did not
+separate by mask, and `rdwrmask=0x3` returned zero. Guessing at an undocumented
+encoding is not measurement. `l3_lookup_state.l3_miss` is documented, one miss
+is one cache line, and it calibrates: reading a known 512 MB to 4,096 MB gives
+a slope of **58.0, 64.5 and 63.4 bytes per miss** against the 64 a line
+actually is. That is an instrument.
+
+**The experiment.** Two generations at the same depth differing only in tokens
+produced — 32 against 160 — so the difference cancels prefill, model load and
+everything else that happens once, leaving decode traffic alone. Qwen3-0.6B at
+depth 4096, three passes:
+
+| | bytes |
+|---|---|
+| counted, 128 extra tokens | **153.9 GB** |
+| the KV cache alone | 60.1 GB — 2.56× short |
+| the weights, re-read per token (639 MB file) | 81.8 GB |
+| weights + cache | **142.0 GB — ratio 1.08** |
+
+A generated token reads the whole model *and* the whole cache. The slope
+argument had accounted for only one of them.
+
+**So the intercept was never a mystery either.** It had been treated as the
+number that must be measured because only the slope followed from the header.
+It follows too — it is the weights divided by bandwidth:
+
+    ms/token(depth) = (active weight bytes + depth x growing KV bytes) / bandwidth
+
+Against every model measured here:
+
+| | intercept ratio | slope ratio | n |
+|---|---|---|---|
+| bandwidth-bound | 0.82–1.03, median 0.95 | 0.79–0.91, median 0.86 | 7 |
+| latency-bound | 0.78–0.96, median 0.89 | 0.36–0.71, median 0.56 | 17 |
+
+The intercept generalises where the slope does not, and for a reason: reading
+the weights is one long sequential stream whatever the architecture, while the
+cache read is strided and small for models with few KV heads, which is the
+latency-bound case.
+
+**One outlier, and it was an architecture again.** TinyMixtral's intercept was
+over-predicted by 1.79×. It is a mixture of four experts using two per token,
+so most of the file is never touched — and 4/2 is 2. Scaling by
+`expert_used_count / expert_count` brings it to 0.90, inside the band. That
+assumes the experts dominate the file, which is stated rather than hidden, and
+a dense model has no expert count and is scaled by one.
+
+This is the third time an outlier has turned out to be a real architectural
+feature written in the header that the arithmetic did not read — the sliding
+window in [F121](#121--f121--the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16),
+the growing-cache assumption in
+[F122](#122--f122--the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21),
+and the expert count here.
+
+**What perf is not.** It is not a dependency. It was used once, on this
+machine, to check that the bytes moved are the bytes the arithmetic claims.
+Nothing shipped needs it: kernel-coupled, privileged, absent in containers, no
+Windows equivalent. The bandwidth constant the curve depends on is measured by
+a userspace benchmark that needs no privilege on any platform, and the cache
+topology it needs is world-readable — `index3: size=32768K shared_with=0-7,16-23`
+states the 32 MiB per core complex that a bandwidth cliff had been used to
+infer.
 
 ## Changelog
 
