@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 101 |
+| **Version** | 102 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -145,6 +145,7 @@ forward as one.
 | 115 | [F115 — A16's fifth gate was in the rule and nowhere in the code, and every comparison MCF had recorded was uncontributable for saying nothing (B-160, B-039, A16, A24, B-203, B42, §3.20)](#115--f115--a16s-fifth-gate-was-in-the-rule-and-nowhere-in-the-code-and-every-comparison-mcf-had-recorded-was-uncontributable-for-saying-nothing-b-160-b-039-a16-a24-b-203-b42-320) |
 | 116 | [F116 — The benchmark's standard question, chosen by measuring 27 vocabularies rather than by taste (B-160, B42, F110, F81, §6.37)](#116--f116--the-benchmarks-standard-question-chosen-by-measuring-27-vocabularies-rather-than-by-taste-b-160-b42-f110-f81-637) |
 | 117 | [F117 — The pinned length was declared and never enforced, and a rate computed the obvious way is a property of the length you chose (B-081, D19, A19, §3.4, F116)](#117--f117--the-pinned-length-was-declared-and-never-enforced-and-a-rate-computed-the-obvious-way-is-a-property-of-the-length-you-chose-b-081-d19-a19-34-f116) |
+| 118 | [F118 — Generation is not a constant-rate process: the rate halves with context depth, and the depth a machine can reach is bounded by memory rather than by the model (B-396, B-397, D19, §3.4, A19, F117)](#118--f118--generation-is-not-a-constant-rate-process-the-rate-halves-with-context-depth-and-the-depth-a-machine-can-reach-is-bounded-by-memory-rather-than-by-the-model-b-396-b-397-d19-34-a19-f117) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8680,7 +8681,98 @@ would have a much smaller fixed cost and the same slope; that is the next thing
 to measure, and it is not measured here. `prototypes/generation-timing` is the
 instrument, and A20 keeps every figure above out of anything MCF publishes.
 
+## 118 · F118 — Generation is not a constant-rate process: the rate halves with context depth, and the depth a machine can reach is bounded by memory rather than by the model (B-396, B-397, D19, §3.4, A19, F117)
+
+**The operator's design, tested.** The proposal was to let every model generate
+from the same near-empty prompt for a fixed time — fifteen seconds, thirty, a
+minute, two, four — and count the tokens, on the reasoning that a long enough
+run dilutes the per-request fixed cost, a one-token prompt cannot cost one
+vocabulary more than another, and a suppressed stop token stops verbosity
+leaking in. All three are right, and better than the length ladder
+[F117](#117--f117--the-pinned-length-was-declared-and-never-enforced-and-a-rate-computed-the-obvious-way-is-a-property-of-the-length-you-chose-b-081-d19-a19-34-f116)
+used.
+
+The design was changed in one respect: a ladder of **token counts** rather than
+of durations, because killing a generation at fifteen seconds loses whatever is
+in the output buffer and turns an exact count into an estimate. The axis is
+swapped and the information is the same, plus one thing the duration form cannot
+give — the *marginal* rate between rungs, which is the rate at that depth.
+
+**The result contradicts the hope that the ladder would be conclusive on its
+own.** Marginal rate, three repeats a rung:
+
+| model | 128→256 | 256→512 | 512→1024 | 1024→2048 | 2048→4096 | change | machine noise |
+|---|---|---|---|---|---|---|---|
+| Qwen3-0.6B-Q8_0 | 73.7 | 69.9 | 67.4 | 59.1 | **46.4** | **−37.1%** | 0.8% |
+| SmolLM2-135M-Q4_0 | 516.9 | 475.5 | 414.6 | 320.8 | **234.9** | **−54.6%** | 2.8% |
+
+Each token attends to every token before it, so per-token cost rises as the run
+goes on. The decay is an order of magnitude larger than the machine's own
+repeat-to-repeat noise.
+
+**It is not thermal**, which is why the machine was watched: the processor die
+moved 59.6 → 61.4 °C and 63.2 → 61.2 °C across the deepest runs. A rate that
+fell because the machine got hot would be a condition rather than a property,
+and this one is the property.
+
+**And the headline rate is not even monotonic.** Tokens over the whole run —
+what a fixed-duration test reports — for Qwen3: 46.9, 57.4, 63.0, **65.1**,
+62.0, 53.0. It peaks near a thousand tokens, because amortizing the fixed cost
+pushes it up while context decay pulls it down and the two cross. *Measure for
+longer to get a better number* does not hold: there is a length that flatters
+each model and it is a different length for each.
+
+**Two consequences for comparison.** A fixed-duration comparison is **biased
+against the faster model** — it reaches deeper context in the same time and pays
+more per token there. And *speed* is not a scalar property of a model at all: it
+is a function of depth, so *which model is faster* is ill-posed until a depth is
+named.
+
+**The operator then found the axis this measurement left uncontrolled.**
+Context length depends on the model *and* on the space the model is allowed to
+occupy. Checked rather than agreed with: the engine had taken each model's own
+declared training context, so the two ladders above ran at **8,192 and 40,960**
+allocated context — a fivefold difference in key/value cache, never set and
+never recorded.
+
+What that costs, measured on SmolLM2-135M: allocating 512 against 8,192 is
+**187 MB against 359 MB** of resident memory. **172 MB of key/value cache,
+nearly twice the size of the weights.**
+
+So:
+
+* the allocation is a condition and MCF's own condition floor has a
+  `context_length` field that has read `unknown` in every run this project has
+  ever taken;
+* two arms at their respective defaults are two allocations, which is a
+  difference nobody declared;
+* and the part of the decay curve a person ever reaches is **bounded by their
+  memory**, not by the model — a machine that can afford 512 tokens of context
+  never operates where the rate has halved.
+
+**What this does not invalidate.** The 4,096-token rung sits inside both
+allocations, so no eviction or context-shift occurred and the decay above is
+genuine attention growth rather than an artefact of hitting a limit. What it
+does mean is that the *magnitudes* are conditioned on an allocation nobody
+chose, and the prototype now sets it, holds it still across arms, and records it
+— refusing to combine readings taken at two.
+
+**Still unmeasured**, and named rather than assumed: whether the rate at a given
+depth depends on the allocation itself; the warm regime, where a resident model
+has a far smaller fixed cost and MCF actually serves; and the cost of a *prompt*
+token, since both ladders varied only the generated length.
+
 ## Changelog
+
+### Version 102 — the rate halves, and the depth is bounded by memory
+
+F118. The operator's fixed-duration design, tested as a token ladder: the
+marginal rate falls 37% and 55% across 128→4096 tokens, far above the machine's
+noise and not thermal. The headline rate peaks and then falls, so there is a
+length that flatters each model. And the operator found the axis the measurement
+left uncontrolled — the engine had allocated 8,192 and 40,960 context for the
+two arms, which on one model is a 172 MB difference in memory, nearly twice its
+weights.
 
 ### Version 101 — the pin, and a rate that was a property of the length
 
