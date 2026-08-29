@@ -48,6 +48,9 @@
 //!
 //! [`enough`]: super::enough
 //! [`Quantity`]: mcf_core::measurement::Quantity
+//!
+//! **Not an instrument:** it assembles trials into a comparison. The
+//! statistics it reports are `enough`'s and are cross-checked there.
 
 use core::fmt;
 

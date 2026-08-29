@@ -22,6 +22,10 @@
 //! Checking beforehand turns the common case from a surprise into a refusal; it
 //! does not make the failure impossible, which is why the transfer classifies
 //! it too.
+//!
+//! **Cross-check owed (B-390):** free space is read from one call and
+//! compared against nothing; `df` is the independent source and is not
+//! consulted.
 
 // The second module in the workspace that opts in; the reason is above.
 #![allow(unsafe_code)]

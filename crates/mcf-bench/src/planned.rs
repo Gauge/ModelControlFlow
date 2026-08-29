@@ -40,6 +40,9 @@
 //! bookkeeping path that could disagree with the first.
 //!
 //! [`Estimate`]: mcf_core::measurement::Estimate
+//!
+//! **Not an instrument:** counts and arithmetic over values the caller
+//! declared.
 
 use core::fmt;
 

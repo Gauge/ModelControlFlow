@@ -23,6 +23,8 @@
 //! to tell the daemon to release what it holds, which is a control it does not
 //! have. Recording it is what can be done today, and a run that came out mixed
 //! is one whose result says why.
+//!
+//! **Not an instrument:** it names what a trial reused.
 
 use core::fmt;
 

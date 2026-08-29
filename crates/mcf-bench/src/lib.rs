@@ -14,6 +14,8 @@
 //! M5 has begun to fill it: [`enough`] holds the stopping condition a
 //! comparison carries instead of a repeat count, because the count turned out
 //! not to be a constant (F53).
+//!
+//! **Not an instrument:** it names the modules beneath it.
 
 pub mod compare;
 pub mod enough;

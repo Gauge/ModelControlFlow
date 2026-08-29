@@ -30,6 +30,9 @@
 //! ([`Strength::Assembled`] is what a *comparison* built this way would carry).
 //!
 //! [`Strength::Assembled`]: super::compare::Strength::Assembled
+//!
+//! **Not an instrument:** it draws and describes seeds; the comparison it
+//! makes is `enough`'s.
 
 use core::fmt;
 

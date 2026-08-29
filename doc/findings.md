@@ -123,6 +123,7 @@ forward as one.
 | 94 | [F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93) |
 | 95 | [F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92) |
 | 96 | [F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)](#96--f96--the-pre-flight-marks-rather-than-refuses-and-the-band-it-uses-says-whose-machine-measured-it-b-217-dec-007-f95-a21-a20-a4) |
+| 97 | [F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)](#97--f97--five-modules-measure-something-and-are-checked-against-nothing-and-now-they-say-so-b-390-a19-a7-616) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6948,6 +6949,51 @@ mark it, which is the opposite of what the operator chose.
 **And a machine nobody read is not a machine that was free** (A7). `Headroom`
 is `Option` on the comparison, absent for anything built from a record that
 never carried it, and an absent reading marks nothing and claims nothing.
+
+## 97 · F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)
+
+**The half of B-390 that was owed.** [F94](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93)
+built the tier that compares each instrument against an independent source. The
+operator chose *tier **plus** a check*, and without the check the next
+instrument arrives the way the last four did.
+
+**Every module in the measuring crates now declares one of three things**, in
+its own documentation where the next person to edit it will read it:
+
+| marker | meaning |
+|---|---|
+| `**Cross-checked by test:**` | names a test in the instrument tier, which the check looks up |
+| `**Cross-checked by:**` | names something that is not a test — two independent routes compared inside the reading itself |
+| `**Cross-check owed (B-390):**` | names what would serve, and does not have it |
+
+**The third is the honest one.** Five modules measure something and are
+compared against nothing: `processor` reads core counts and the governor from
+one place; `scheduling` measures delay against MCF's own clock alone; `space`
+and `storage` read one call each; and `project` is graded by leaving each point
+out and projecting it from the others (F68) — which is the instrument checking
+itself, not an independent source. Writing *cross-checked* on any of those
+would have been worse than the gap.
+
+**So the count is a ratchet.** Five may fall and may not rise. A new instrument
+cannot quietly join the list: it has to be cross-checked, or argued to measure
+nothing, and both of those are visible in review. When the debt falls the check
+insists the number be lowered to match, so it cannot creep back up.
+
+**A marker in the module, not a list in the check.** A list here goes stale the
+week it is written — this repository has said so about tables of driver names
+(F79) — and worse, it is read by nobody editing the instrument. The marker is
+where the work happens.
+
+**And the check caught its own imprecision on the first run.** It tried to tell
+a test name from any other backticked identifier and could not: it read
+`routes_disagree_about`, a struct field, as a test that did not exist. The fix
+was to make the claim *stated* rather than inferred — a separate marker for the
+form that names a test. That is the same lesson as `LocallyMeasured::new` not
+being a `From` (B-167): a claim about where something came from should be
+written rather than guessed at.
+
+**Both negative controls were exercised.** A module whose marker was removed
+fails by name; a sixth module claiming the debt fails with *up from 5*.
 
 ## Changelog
 

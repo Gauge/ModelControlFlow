@@ -38,6 +38,11 @@
 //! a rate nobody measured.
 //!
 //! [`Estimate`]: mcf_core::measurement::Estimate
+//!
+//! **Cross-check owed (B-390):** `score` grades the projection by leaving
+//! each point out and projecting it from the others (F68), which is the
+//! instrument checking itself. An independent source would be a second
+//! interpolation, or a measurement of the thing projected.
 
 use mcf_core::measurement::{Basis, Estimate, PartsPerMillion};
 use mcf_core::time::{Duration, Monotonic};

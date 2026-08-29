@@ -33,6 +33,8 @@
 //! is: what a comparison must not lose is a question about comparisons.
 //!
 //! [`EntryKind::Comparison`]: mcf_record::journal::EntryKind::Comparison
+//!
+//! **Not an instrument:** it encodes what other modules measured.
 
 use mcf_core::measurement::{Isolation, PartsPerMillion};
 use mcf_core::time::{ClockKind, Measurable};

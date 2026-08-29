@@ -29,6 +29,10 @@
 //! between them, and here is what they are* is a diagnosis. The command lines
 //! are read from `/proc` and are the operator's own machine's — nothing leaves,
 //! and §3.20's gate is on whatever sends a record rather than on reading one.
+//!
+//! **Cross-checked by test:** `contention_agrees_with_the_kernel` — the kernel's
+//! own `/proc/stat` accounting, a different file and a different accounting
+//! path, which cannot exceed the core count.
 
 use core::fmt;
 

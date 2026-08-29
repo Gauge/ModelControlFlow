@@ -22,6 +22,9 @@
 //!
 //! [`Characterized`]: Characterization::Characterized
 //! [`AttemptedUncharacterized`]: Characterization::AttemptedUncharacterized
+//!
+//! **Not an instrument:** it assembles the readings the modules beside it
+//! take.
 
 mod accelerator;
 mod contention;

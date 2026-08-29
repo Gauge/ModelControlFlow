@@ -29,6 +29,10 @@
 //! it loses is the right to travel. Refusing to start would deny a result to
 //! anyone whose machine is simply busy, and this project's whole answer to
 //! that is to measure and mark rather than to gate.
+//!
+//! **Not an instrument:** it measures nothing. The competing load comes from
+//! `contention` and the capacity from the platform; this divides one by the
+//! other.
 
 use core::fmt;
 

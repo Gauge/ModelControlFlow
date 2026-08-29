@@ -23,6 +23,9 @@
 //! evicted before each: zero major faults warm, exactly thirty evicted.
 //!
 //! [`TOLERATED_DELAY_PPM`]: super::TOLERATED_DELAY_PPM
+//!
+//! **Cross-check owed (B-390):** the filesystem and device behind a path are
+//! read from one place.
 
 use core::fmt;
 use std::path::Path;

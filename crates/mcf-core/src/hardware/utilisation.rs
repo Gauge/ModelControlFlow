@@ -15,6 +15,9 @@
 //! *nothing was competing* from *MCF could not see*.
 //!
 //! **On demand only** (B4, F85). Nothing here runs on a timer.
+//!
+//! **Cross-checked by test:** `accelerator_occupancy_agrees_with_the_vendor` — the
+//! vendor's own tool, where one is installed.
 
 use core::fmt;
 

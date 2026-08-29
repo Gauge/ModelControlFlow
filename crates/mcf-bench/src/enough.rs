@@ -59,6 +59,11 @@
 //! stated resolution*, and *not yet decided* — which is the same honesty D42
 //! requires of a probe, for the same reason: a comparison that cannot tell
 //! must not be rounded to either answer (A7).
+//!
+//! **Cross-checked by test:** `the_intervals_coverage_matches_a_brute_force_count`
+//! — every one of the 2^n sign patterns enumerated directly, the definition
+//! with no algebra in it, against the closed form used here. It found a
+//! rounding direction on its first run (F94).
 
 use core::fmt;
 

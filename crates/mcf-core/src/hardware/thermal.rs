@@ -43,6 +43,10 @@
 //! per-die registers need a kernel driver to reach, which MCF does not ship.
 //! So a Windows build should expect `Unknown` for the processor and say so
 //! rather than substituting a board sensor for a die one.
+//!
+//! **Cross-checked by test:** `a_processor_sensor_responds_to_the_processor` —
+//! physics rather than another reading. Every core is loaded and the die must
+//! warm, which a board zone read as a die fails (F91).
 
 use core::fmt;
 

@@ -28,6 +28,10 @@
 //! before its out-parameter is read; the name buffers are sized from the
 //! vendor's documented maximum and the same length is passed to the callee; and
 //! the library is closed exactly once, on every path out.
+//!
+//! **Cross-checked by:** the driver-files route in `route_files`, which reads
+//! the same devices by another means; `accelerator` compares them and records
+//! where they differ.
 
 // The one module in the workspace that opts in; the reason is above.
 #![allow(unsafe_code)]
