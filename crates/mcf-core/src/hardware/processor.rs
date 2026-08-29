@@ -8,6 +8,10 @@
 //! whose `/proc` is not mounted — a minimal container, a platform that is not
 //! Linux — produces a profile that says so rather than one that guesses (A7),
 //! and B19 requires the suite pass on such a machine.
+//!
+//! **Cross-check owed (B-390):** core counts and the governor are read from
+//! one place and compared against nothing. An independent source exists —
+//! `lscpu`, `/proc/cpuinfo` against `sysconf` — and has not been used.
 
 use core::fmt;
 

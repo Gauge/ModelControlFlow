@@ -10,10 +10,14 @@
 //! and what MCF will and will not promise here, and writes the whole thing to
 //! the record.
 
+mod bench;
+mod bundle;
 mod check;
+mod crosscheck;
 mod doctor;
 mod embed;
 mod explain;
+mod history;
 mod licence;
 mod log;
 mod models;
@@ -22,7 +26,11 @@ mod provision;
 mod pull;
 mod run;
 mod say;
+mod segment;
 mod serve;
+mod show;
+mod support;
+mod verify;
 
 use std::process::ExitCode;
 
@@ -113,6 +121,62 @@ enum Request<'a> {
         /// Which engine, where the operator says (B-032).
         engine: Option<&'a str>,
     },
+    /// Check a bundle against this machine.
+    Verify {
+        /// The bundle to check.
+        bundle: &'a str,
+    },
+    /// Write one file that reproduces one claim.
+    Bundle {
+        /// The claim's identifier, as `mcf log` prints it.
+        id: &'a str,
+        /// Where to write it.
+        into: Option<&'a str>,
+    },
+    /// Expand one recorded entry into the evidence behind it.
+    Show {
+        /// The entry's identifier, as `mcf log` prints it.
+        id: &'a str,
+    },
+    /// Compare two models on a timeable engine, with no pass condition.
+    Bench {
+        /// The left arm: a path, or something `mcf list` names.
+        left: &'a str,
+        /// The right arm.
+        right: &'a str,
+        /// What to ask both of them.
+        prompt: &'a str,
+        /// How many tokens to produce at most.
+        limit: Option<usize>,
+        /// The seed, which is a condition of the answer and of the order the
+        /// arms were drawn in (D19, B53).
+        seed: u64,
+        /// Which engine, where the operator says (B-032).
+        engine: Option<&'a str>,
+        /// The difference the caller cares about, in parts per million.
+        resolving: Option<u64>,
+        /// Whether every trial must load the model for itself (§6.13, F65).
+        cold: bool,
+        /// A wall-clock budget, in seconds, from the operator.
+        ///
+        /// **The operator's, not the laboratory's** (B-224, B-226). A lab may
+        /// not declare its work in minutes; a person may certainly say how
+        /// many they have. What MCF owes in return is a proposal naming what
+        /// fits and what does not, rather than a quietly smaller run (§3.1).
+        within: Option<u64>,
+    },
+    /// Write what a maintainer would need to read this machine's hardware.
+    Support {
+        /// Where to write it.
+        into: Option<&'a str>,
+    },
+    /// Show how a model's vocabulary segments a prompt.
+    Segment {
+        /// The model whose vocabulary does the segmenting.
+        model: &'a str,
+        /// The text to segment.
+        prompt: &'a str,
+    },
     /// Install, build and pin a component in a controlled environment.
     Provision {
         /// Which component, from the table MCF carries.
@@ -134,10 +198,19 @@ enum Request<'a> {
         /// A prefix root other than the default.
         into: Option<&'a str>,
     },
+    /// Compare MCF's own engine against the one it provisioned.
+    CrossCheck {
+        /// The model both engines read.
+        model: &'a str,
+    },
     /// Ask a model to do the thing, and report what it did.
     Probe {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
+        /// Which engine to ask through, if the caller named one.
+        engine: Option<&'a str>,
+        /// Whether to apply what was observed, which is an act (D43).
+        apply: bool,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -278,15 +351,48 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "explain",
             argument,
         },
-        ["probe", model] => Request::Probe { model },
+        ["cross-check", model] => Request::CrossCheck { model },
+        ["cross-check"] => Request::MissingArgument {
+            command: "cross-check",
+            needs: "<model>",
+        },
+        ["probe", model] => Request::Probe {
+            model,
+            engine: None,
+            apply: false,
+        },
+        // The act D43 requires. It is a flag rather than a default because
+        // that is the whole of the decision: MCF may learn better, and what it
+        // does with that is say so until somebody asks for the change.
+        ["probe", model, "--apply"] => Request::Probe {
+            model,
+            engine: None,
+            apply: true,
+        },
+        ["probe", model, "--engine", engine, "--apply"] => Request::Probe {
+            model,
+            engine: Some(engine),
+            apply: true,
+        },
+        // Naming the engine is the point rather than a convenience: a probe
+        // result belongs to the engine it was taken through (D42), and until
+        // the two are shown to agree, which one answered is part of the
+        // result (B-376).
+        ["probe", model, "--engine", engine] => Request::Probe {
+            model,
+            engine: Some(engine),
+            apply: false,
+        },
         ["probe"] => Request::MissingArgument {
             command: "probe",
             needs: "<model>",
         },
-        ["probe", _, argument, ..] => Request::UnexpectedArgument {
-            command: "probe",
-            argument,
-        },
+        ["probe", _, argument, ..] if argument != &"--engine" && argument != &"--apply" => {
+            Request::UnexpectedArgument {
+                command: "probe",
+                argument,
+            }
+        }
         ["provision", "--list"] => Request::ProvisionList { into: None },
         ["provision", "--list", "--into", into] => Request::ProvisionList { into: Some(into) },
         ["provision", "--remove", name] => Request::ProvisionRemove {
@@ -349,6 +455,44 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
+        ["bench", rest @ ..] => match bench_options(rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "bench",
+                argument,
+            },
+        },
+        ["verify", bundle] => Request::Verify { bundle },
+        ["verify"] => Request::MissingArgument {
+            command: "verify",
+            needs: "<bundle>, which `mcf bundle` writes",
+        },
+        ["verify", _, argument, ..] => Request::UnexpectedArgument {
+            command: "verify",
+            argument,
+        },
+        ["bundle", id] => Request::Bundle { id, into: None },
+        ["bundle", id, "--into", path] => Request::Bundle {
+            id,
+            into: Some(path),
+        },
+        ["bundle"] => Request::MissingArgument {
+            command: "bundle",
+            needs: "<entry-id>, which `mcf log --kind comparison` prints first on each line",
+        },
+        ["bundle", _, argument, ..] => Request::UnexpectedArgument {
+            command: "bundle",
+            argument,
+        },
+        ["show", id] => Request::Show { id },
+        ["show"] => Request::MissingArgument {
+            command: "show",
+            needs: "<entry-id>, which `mcf log` prints first on each line",
+        },
+        ["show", _, argument, ..] => Request::UnexpectedArgument {
+            command: "show",
+            argument,
+        },
         ["status"] => Request::Status,
         ["status", argument, ..] => Request::UnexpectedArgument {
             command: "status",
@@ -364,6 +508,25 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["stop", argument, ..] => Request::UnexpectedArgument {
             command: "stop",
+            argument,
+        },
+        ["support"] => Request::Support { into: None },
+        ["support", "--into", path] => Request::Support { into: Some(path) },
+        ["support", argument, ..] => Request::UnexpectedArgument {
+            command: "support",
+            argument,
+        },
+        ["segment", model, "--prompt", prompt] => Request::Segment { model, prompt },
+        ["segment", _model] | ["segment", _model, "--prompt"] => Request::MissingArgument {
+            command: "segment",
+            needs: "--prompt <text>",
+        },
+        ["segment"] => Request::MissingArgument {
+            command: "segment",
+            needs: "<model> --prompt <text>",
+        },
+        ["segment", _, argument, ..] => Request::UnexpectedArgument {
+            command: "segment",
             argument,
         },
         ["list"] => Request::List,
@@ -551,6 +714,189 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             needs: "--prompt <text>",
         }),
     }
+}
+
+/// Reads `bench`'s own arguments.
+///
+/// `--resolving` is a percentage to one decimal place, read into parts per
+/// million, because *how much is a difference* is the caller's question and
+/// this is where they answer it (F55).
+fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut left = None;
+    let mut right = None;
+    let mut prompt = None;
+    let mut limit = None;
+    let mut seed = 0_u64;
+    let mut engine = None;
+    let mut resolving = None;
+    let mut cold = false;
+    let mut within = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--against" => match rest.next() {
+                Some(other) => right = Some(*other),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--against <model>",
+                    });
+                }
+            },
+            "--prompt" => match rest.next() {
+                Some(asked) => prompt = Some(*asked),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--prompt <text>",
+                    });
+                }
+            },
+            "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(tokens) => limit = Some(tokens),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--limit <tokens>, a number",
+                    });
+                }
+            },
+            "--engine" => match rest.next() {
+                Some(named) => engine = Some(*named),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--engine <stand-in|provisioned>",
+                    });
+                }
+            },
+            "--seed" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(chosen) => seed = chosen,
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--seed <number>",
+                    });
+                }
+            },
+            "--cold" => cold = true,
+            "--within" => match rest.next().and_then(|value| value.parse().ok()) {
+                Some(seconds) => within = Some(seconds),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--within <seconds>, a number",
+                    });
+                }
+            },
+            "--resolving" => match rest.next().and_then(|value| per_cent(value)) {
+                Some(held) => resolving = Some(held),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs: "--resolving <per-cent>, such as 5 or 2.5",
+                    });
+                }
+            },
+            other if other.starts_with("--") => return Err(other),
+            other if left.is_none() => left = Some(other),
+            other => return Err(other),
+        }
+    }
+
+    Ok(assembled(&Asked {
+        left,
+        right,
+        prompt,
+        limit,
+        seed,
+        engine,
+        resolving,
+        cold,
+        within,
+    }))
+}
+
+/// What `bench` was asked for, before it is known to be a complete request.
+struct Asked<'a> {
+    left: Option<&'a str>,
+    right: Option<&'a str>,
+    prompt: Option<&'a str>,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&'a str>,
+    resolving: Option<u64>,
+    cold: bool,
+    within: Option<u64>,
+}
+
+/// A benchmark request, or the first thing missing from one.
+///
+/// Which thing is missing is named rather than counted: *bench needs an
+/// argument* sends the reader back to the manual, and `--against <model>`
+/// sends them back to the shell.
+fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
+    let &Asked {
+        left,
+        right,
+        prompt,
+        limit,
+        seed,
+        engine,
+        resolving,
+        cold,
+        within,
+    } = asked;
+    match (left, right, prompt) {
+        (Some(left), Some(right), Some(prompt)) => Request::Bench {
+            left,
+            right,
+            prompt,
+            limit,
+            seed,
+            engine,
+            resolving,
+            cold,
+            within,
+        },
+        (None, _, _) => Request::MissingArgument {
+            command: "bench",
+            needs: "<model>",
+        },
+        (Some(_), None, _) => Request::MissingArgument {
+            command: "bench",
+            needs: "--against <model>",
+        },
+        (Some(_), Some(_), None) => Request::MissingArgument {
+            command: "bench",
+            needs: "--prompt <text>",
+        },
+    }
+}
+
+/// A percentage to one decimal place, as parts per million.
+///
+/// Parsed by hand rather than through a float: this crate holds no
+/// floating-point number, and a percentage with one decimal place is two
+/// integers (A6).
+pub(crate) fn per_cent(written: &str) -> Option<u64> {
+    let (whole, tenths) = match written.split_once('.') {
+        Some((whole, rest)) => {
+            let mut digits = rest.chars();
+            let tenth = digits.next()?.to_digit(10)?;
+            if digits.next().is_some() {
+                // More precision than the unit admits, refused rather than
+                // silently rounded (A7).
+                return None;
+            }
+            (whole.parse::<u64>().ok()?, u64::from(tenth))
+        }
+        None => (written.parse::<u64>().ok()?, 0),
+    };
+    let held = whole
+        .checked_mul(10_000)?
+        .checked_add(tenths.checked_mul(1_000)?)?;
+    (held > 0).then_some(held)
 }
 
 /// Reads `pull`'s own arguments.
@@ -765,7 +1111,14 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
                  \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
                  \x20                                     never a speed (D31, B65)\n\
-                 \x20 mcf probe <model>                   ask a model to do the thing, and\n\
+                 \x20 mcf bench <model> --against <model> compare two models on an engine\n\
+                 \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
+                 \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
+                 \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
+                 \x20 mcf cross-check <model>              read one engine's tokens with the\n\
+                 \x20                                       other, and say whether they agree\n\
+                 \x20 mcf probe <model> [--engine <name>] [--apply]\n\
+                 \x20                                       ask a model to do the thing, and\n\
                  \x20                                     report what it did — configuring\n\
                  \x20                                     nothing (§X, D42)\n\
                  \x20 mcf provision <component>           build a pinned component in a\n\
@@ -774,11 +1127,27 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
+                 \x20 mcf verify <bundle>                 does this machine agree, and if\n\
+                 \x20                                     not, which conditions differ — MCF\n\
+                 \x20                                     will not say which caused it (A8)\n\
+                 \x20 mcf bundle <entry-id>               one file that reproduces one\n\
+                 \x20        [--into <path>]              claim: the method, the conditions,\n\
+                 \x20                                     every trial and the provenance (PR2)\n\
+                 \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
+                 \x20                                     the measurements and conditions it\n\
+                 \x20                                     rests on (B55)\n\
                  \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
                  \x20         [--last <n>] [--full]       read back out of the record\n\
                  \x20 mcf explain <model>                 what it declares, what MCF read,\n\
                  \x20                                     what MCF would choose, and what\n\
                  \x20                                     it cannot tell you\n\
+                 \x20 mcf support [--into <path>]         what a maintainer would need to\n\
+                 \x20                                     read this machine's sensors, as a\n\
+                 \x20                                     file you read before you send it\n\
+                 \x20 mcf segment <model>                 the prompt as the model actually\n\
+                 \x20             --prompt <text>         receives it, fragment by fragment:\n\
+                 \x20                                     where text breaks, and where this\n\
+                 \x20                                     vocabulary has no word for it\n\
                  \x20 mcf status                          ask a running daemon what it is\n\
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
@@ -843,7 +1212,38 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
         } => run::run(model, prompt, *limit, *seed, *engine),
-        Request::Probe { model } => probe::run(model),
+        Request::Bench {
+            left,
+            right,
+            prompt,
+            limit,
+            seed,
+            engine,
+            resolving,
+            cold,
+            within,
+        } => bench::bench(
+            left,
+            right,
+            prompt,
+            *limit,
+            *seed,
+            *engine,
+            resolving.map(mcf_core::measurement::PartsPerMillion),
+            *cold,
+            within.map(|seconds| {
+                mcf_core::time::Duration::from_nanos(seconds.saturating_mul(1_000_000_000))
+            }),
+        ),
+        Request::Verify { bundle } => verify::run(bundle),
+        Request::Bundle { id, into } => bundle::run(id, *into),
+        Request::Show { id } => show::run(id),
+        Request::CrossCheck { model } => crosscheck::run(model),
+        Request::Probe {
+            model,
+            engine,
+            apply,
+        } => probe::run(model, *engine, *apply),
         Request::Provision { name, into } => provision::run(name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
@@ -854,6 +1254,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Embed { model, text } => embed::run(model, text),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
+        Request::Support { into } => support::run(*into),
+        Request::Segment { model, prompt } => segment::run(model, prompt),
         Request::List => models::list(),
         Request::Remove {
             names,
@@ -943,7 +1345,17 @@ mod tests {
         // controlled environment (B-367).
         assert!(text.contains("mcf probe"), "{text}");
         assert!(text.contains("mcf provision"), "{text}");
-        for unbuilt in ["mcf bench", "mcf lab", "mcf recommend"] {
+        // And `mcf bench`, which compares two models on an engine that can be
+        // timed and has no pass condition (B-080, A18).
+        assert!(text.contains("mcf bench"), "{text}");
+        // And `mcf segment`, which shows a prompt as the model's own
+        // vocabulary produces it, with no generation and no judgement
+        // (B-381, PR11, §3.15).
+        assert!(text.contains("mcf segment"), "{text}");
+        // And `mcf support`, the route by which hardware MCF cannot read
+        // reaches somebody who can add it (F91).
+        assert!(text.contains("mcf support"), "{text}");
+        for unbuilt in ["mcf lab", "mcf recommend"] {
             assert!(
                 !text.contains(unbuilt),
                 "usage advertises {unbuilt}, which nothing has built"

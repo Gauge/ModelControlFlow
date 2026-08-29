@@ -11,4 +11,16 @@
 //! — and that division is expected to be visible in this crate's types rather
 //! than in its documentation.
 //!
-//! Empty at M0 beyond this statement of what it is for; M5 and M6 fill it.
+//! M5 has begun to fill it: [`enough`] holds the stopping condition a
+//! comparison carries instead of a repeat count, because the count turned out
+//! not to be a constant (F53).
+//!
+//! **Not an instrument:** it names the modules beneath it.
+
+pub mod compare;
+pub mod enough;
+pub mod planned;
+pub mod project;
+pub mod record;
+pub mod seeds;
+pub mod warmth;

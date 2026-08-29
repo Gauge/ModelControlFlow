@@ -478,6 +478,115 @@ if runs embeddings && [ -x "$embedding_reference" ] && [ -x "$mcf" ]; then
     done
 fi
 
+# ── agreement at length, by teacher forcing (B-377, F40) ────────────────────
+#
+# Every comparison above stops being possible at the first divergence: past it
+# the two engines are writing different sentences, and nothing downstream is
+# the same question. So *whether agreement decays with position* had never been
+# asked, and position is where a rotary encoding or a cache would go wrong.
+#
+# Here MCF is made to read the reference's own tokens rather than its own. At
+# every position it sees exactly the reference's prefix and is asked what comes
+# next, which stays comparable however far the free generations have drifted.
+# F40 ran it across 700 positions of gemma-3-270m and found the sliding-window
+# attention correct past its own 512-token window — 189 consecutive agreements,
+# on a mechanism nothing had reached because nothing had generated that far.
+#
+# **This section reads the distribution rule, not the margin rule.** The 0.40
+# margin threshold was measured on one parting step per file (F27, F33); at
+# every position of a long comparison it is a different test with a different
+# rate of false alarm, and F40 watched it raise two where the distributions
+# agreed with room to spare. What is asserted here is the rank the reference's
+# token got: a top-two order swap is arithmetic, and a reference token MCF
+# ranks tenth is not.
+#
+# It is off by default because it costs minutes per model — `MCF_ORACLE_FORCED=1`
+# asks for it. `MCF_ORACLE_FORCED_TOKENS` sets how far, and the default is past
+# the widest sliding window in the corpus.
+readonly FORCED_TOKENS=${MCF_ORACLE_FORCED_TOKENS:-700}
+readonly FORCED_WORST_RANK=8
+readonly FORCED_PROMPT='The history of the city of Paris begins'
+
+if runs forced && [ "${MCF_ORACLE_FORCED:-0}" = "1" ] && [ -x "$server_reference" ] &&
+    [ -x "$margins" ] && command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    printf '\n'
+    port=18766
+    for model in "${models[@]}"; do
+        name=$(basename "$model")
+        "$mcf" run "$model" --prompt "A" --limit 1 >/dev/null 2>&1 || continue
+
+        "$server_reference" -m "$model" --port "$port" --host 127.0.0.1 -ngl 0 \
+            --no-webui >/dev/null 2>&1 &
+        server=$!
+        ready=0
+        for _ in $(seq 1 120); do
+            if curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+        done
+        if [ "$ready" -ne 1 ]; then
+            kill "$server" 2>/dev/null || true
+            wait "$server" 2>/dev/null || true
+            printf '  %-40s the reference server did not become ready\n' "$name"
+            continue
+        fi
+
+        # `ignore_eos` is set, and has to be. Without it the reference stops
+        # where the model stops — 377 tokens on gemma-3-270m — and a window of
+        # 512 is never reached, so the check cannot exercise the mechanism it
+        # exists for. That was found by running the negative control: the
+        # sliding window was deliberately broken and this section returned
+        # *identical* numbers (F41).
+        #
+        # What the flag costs is handled rather than accepted. A reference
+        # forbidden to stop takes its best remaining token where MCF takes the
+        # model's end of turn, and F40's largest apparent defect — a margin of
+        # 6.59, an order of magnitude past any real one — was exactly that.
+        # Those positions are set aside by name and counted, never silently
+        # dropped (A1, A19).
+        response=$(curl -sf "http://127.0.0.1:$port/completion" -H 'Content-Type: application/json' \
+            -d "$(jq -cn --arg p "$FORCED_PROMPT" --argjson n "$FORCED_TOKENS" \
+                '{prompt: $p, n_predict: $n, temperature: 0, seed: 0, cache_prompt: false, return_tokens: true, ignore_eos: true}')" \
+            2>/dev/null || true)
+        kill "$server" 2>/dev/null || true
+        wait "$server" 2>/dev/null || true
+        [ -n "$response" ] || continue
+
+        ids=$(printf '%s' "$response" | jq -r 'if .tokens then (.tokens | join(",")) else empty end')
+        [ -n "$ids" ] || continue
+
+        forced=$("$margins" "$model" "$FORCED_PROMPT" --forced "$ids" 2>/dev/null || true)
+        [ -n "$forced" ] || continue
+
+        compared=$((compared + 1))
+        total=$(printf '%s\n' "$forced" | jq -s 'length')
+        # Positions where MCF chose the model's end of turn are not comparable:
+        # the reference was forbidden to take it.
+        aside=$(printf '%s\n' "$forced" | jq -s '[.[] | select(.mine_is_stop)] | length')
+        disagreed=$(printf '%s\n' "$forced" |
+            jq -s '[.[] | select(.mine_is_stop | not) | select(.agreed | not)] | length')
+        worst=$(printf '%s\n' "$forced" |
+            jq -s '[.[] | select(.mine_is_stop | not) | select(.agreed | not) | .rank_of_forced] | max // 0')
+
+        if [ "$worst" -le "$FORCED_WORST_RANK" ]; then
+            printf '  %-40s agreed at %s of %s comparable positions; where they differed\n' \
+                "$name" "$((total - aside - disagreed))" "$((total - aside))"
+            printf '  %-40s the reference token was never worse than MCF rank %s\n' '' "$worst"
+            if [ "$aside" -gt 0 ]; then
+                printf '  %-40s %s position(s) set aside: MCF took the model'"'"'s end of turn,\n' \
+                    '' "$aside"
+                printf '  %-40s which the reference was forbidden to take (F40)\n' ''
+            fi
+        else
+            disagreements=$((disagreements + 1))
+            printf '  %-40s RANKS THE REFERENCE TOKEN %s AT SOME POSITION\n' "$name" "$worst" >&2
+            printf '      %s of %s comparable positions disagreed; a top-two swap is\n' \
+                "$disagreed" "$((total - aside))" >&2
+            printf '      arithmetic and this is not — the distributions differ in shape,\n' >&2
+            printf '      not in order (F40, F41)\n' >&2
+        fi
+    done
+fi
+
 printf '\n'
 if [ "$skipped" -gt 0 ]; then
     printf '%d model(s) were not compared because MCF refuses their vocabulary\n' "$skipped"

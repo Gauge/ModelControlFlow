@@ -113,7 +113,26 @@ fn a_category_returns_every_scenario_that_produces_it() {
 fn running_the_catalogue_twice_leaves_no_residue() {
     let first: Vec<Outcome> = CATALOGUE.iter().map(run).collect();
     let second: Vec<Outcome> = CATALOGUE.iter().map(run).collect();
-    assert_eq!(first, second, "a scenario contaminated the next run");
+    // Named, not just counted. "A scenario contaminated the next run" sends a
+    // reader to twenty-odd scenarios with no way to tell which; the id and both
+    // outcomes are what makes the next occurrence a diagnosis rather than a
+    // hunt (A2's shape, applied to this suite's own failures).
+    let differed: Vec<String> = CATALOGUE
+        .iter()
+        .zip(first.iter().zip(second.iter()))
+        .filter(|(_, (before, after))| before != after)
+        .map(|(scenario, (before, after))| {
+            format!(
+                "{}\n     first pass: {before:?}\n     second:    {after:?}",
+                scenario.id
+            )
+        })
+        .collect();
+    assert!(
+        differed.is_empty(),
+        "a scenario did not reproduce across two passes of the catalogue:\n  {}",
+        differed.join("\n  ")
+    );
 }
 
 /// A11: nothing here can become a performance number. The laboratory's clock

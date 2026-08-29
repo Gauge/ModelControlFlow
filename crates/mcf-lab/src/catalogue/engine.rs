@@ -173,3 +173,127 @@ fn two_engines_provisioned(world: &World) -> Outcome {
         Ok(_) => Outcome::Unexpected("two pins were chosen between".to_owned()),
     }
 }
+
+/// A server that binds nothing: started, alive, never ready.
+pub(super) const SERVER_NEVER_LISTENS: Scenario = Scenario {
+    id: "engine/server-never-listens",
+    produces: Category::EngineHangNoOutput,
+    summary: "a provisioned server that starts and never begins answering is given up on with \
+              how long it was waited for, and is told apart from one that died",
+    run: server_never_listens,
+};
+
+fn server_never_listens(world: &World) -> Outcome {
+    // A "server" that lives and does nothing: the case the readiness wait is
+    // for. It is not enough for the process to be absent — that is
+    // `engine.spawn.not_found` — nor for it to die, which is
+    // `engine.exit.immediate`. It has to be alive and silent.
+    let prefix = world.scratch().join("llama.cpp@cccccccccccc");
+    let bin = prefix.join("build").join("bin");
+    if std::fs::create_dir_all(&bin).is_err() {
+        return Outcome::Unexpected("the fixture prefix could not be made".to_owned());
+    }
+    let server = bin.join("llama-server");
+    // Five seconds, not six hundred. The wait under test is three attempts of
+    // a tenth of a second, so five is ample — and this scenario is run a
+    // hundred times by the reproducibility test, on a machine that is also
+    // compiling. A sleeper that outlives the run by ten minutes is a process
+    // MCF left behind, and enough of them make `fork` fail, at which point
+    // this scenario reports *could not start* — true, and not what it claims
+    // to produce. It is killed on drop either way; this makes the drop
+    // unnecessary rather than load-bearing.
+    if std::fs::write(&server, b"#!/bin/sh\nexec sleep 5\n").is_err() {
+        return Outcome::Unexpected("the fixture server could not be written".to_owned());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).is_err() {
+            return Outcome::Unexpected("the fixture server could not be made runnable".to_owned());
+        }
+    }
+
+    let llama = mcf_serve::adapters::ProvisionedLlama {
+        prefix,
+        commit: "cccccccccccc".to_owned(),
+    };
+    // Three attempts rather than the six hundred a real start is given: the
+    // bound is a parameter so that this scenario can exist at all (A13).
+    //
+    // Spawning is not what this scenario is about — the readiness wait is —
+    // and on a machine that is compiling while the suite runs, `fork` can
+    // fail. That produces a true report of a different failure, which is not
+    // the one declared, and the catalogue's reproducibility check then sees
+    // two passes disagree. So a spawn that did not happen is retried rather
+    // than reported: the scenario has not run yet, and saying it produced
+    // something would be the lie.
+    for attempt in 0..3 {
+        let waited = mcf_serve::served::Served::start_within(
+            &llama,
+            &world.scratch().join("no-such-model.gguf"),
+            world.scratch(),
+            3,
+        );
+        match waited {
+            Ok(_) => {
+                return Outcome::Unexpected(
+                    "a server that binds nothing was called ready".to_owned(),
+                );
+            }
+            Err(failure) if failure.category() == Category::EngineSpawnRefused && attempt < 2 => {}
+            Err(failure) => return Outcome::Produced(failure),
+        }
+    }
+    Outcome::Unexpected("the fixture server could not be started at all".to_owned())
+}
+
+/// A server whose answer MCF cannot read.
+pub(super) const SERVER_ANSWER_UNREADABLE: Scenario = Scenario {
+    id: "engine/server-answer-unreadable",
+    produces: Category::EngineProtocolMalformed,
+    summary: "an answer from the provisioned server that is not a generation — not JSON, or an \
+              error wearing a completion's shape — is refused rather than read as a model that \
+              said nothing",
+    run: server_answer_unreadable,
+};
+
+fn server_answer_unreadable(_world: &World) -> Outcome {
+    // Two shapes, because the second is the dangerous one: an error carries no
+    // `stop_type` and no content, which reads exactly like a model that
+    // emitted its end-of-turn token and nothing else — the observation F38
+    // turns on. Reading it as that would blame the model for the server.
+    let error_shaped =
+        mcf_serve::served::interpret("{\"error\":{\"code\":503,\"message\":\"Loading model\"}}");
+    if error_shaped.is_ok() {
+        return Outcome::Unexpected(
+            "an error was read as a generation that said nothing".to_owned(),
+        );
+    }
+    match mcf_serve::served::interpret("this is not JSON at all") {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => Outcome::Unexpected("text that is not JSON was read as a completion".to_owned()),
+    }
+}
+
+/// A cross-check with nothing to check against.
+pub(super) const NOTHING_TO_CROSS_CHECK: Scenario = Scenario {
+    id: "engine/nothing-to-cross-check",
+    produces: Category::ProbeInconclusive,
+    summary: "an engine that produced no tokens gives a cross-check nothing to read, which is \
+              *could not tell* and never *the engines disagree*",
+    run: nothing_to_cross_check,
+};
+
+fn nothing_to_cross_check(_world: &World) -> Outcome {
+    // The bytes are deliberately not a model, and are never reached: the
+    // emptiness is noticed first. That ordering is the thing under test as
+    // much as the category — a comparison against nothing must not be reported
+    // as a comparison that found nothing wrong (A7, D42), and it must not cost
+    // a model load to say so (F44).
+    match mcf_serve::crosscheck::against(b"not a model either", &[1], &[]) {
+        Err(failure) => Outcome::Produced(failure),
+        Ok(_) => {
+            Outcome::Unexpected("a comparison against no tokens was called an agreement".to_owned())
+        }
+    }
+}

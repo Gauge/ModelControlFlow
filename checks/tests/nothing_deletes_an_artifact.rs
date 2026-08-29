@@ -44,6 +44,24 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-serve/src/served.rs",
+        calls: 2,
+        what: "the Unix socket the provisioned server listens on — once before binding, in \
+               case a killed daemon left one behind, and once when the server is dropped. A \
+               socket is a name for a running process, not a thing anybody stored: it holds \
+               no bytes, it is created by MCF a moment earlier under MCF's own runtime \
+               directory, and leaving one behind is the litter B58 is about (A27, §3.11)",
+    },
+    Deletes {
+        file: "crates/mcf-serve/src/configured.rs",
+        calls: 1,
+        what: "a model's derived configuration, in `forget`, which is somebody undoing a \
+               decision somebody else made (D43). What goes is MCF's note about how to \
+               address a model — never the model, and never the record: the `model_configured` \
+               entry that says the decision was taken outlives the file, the way \
+               `ArtifactRemoved` outlives an artifact (A1, §3.11)",
+    },
+    Deletes {
         file: "crates/mcf-hub/src/store.rs",
         calls: 1,
         what: "an artifact on the shelf, in `purge`, which is the one place MCF destroys one \

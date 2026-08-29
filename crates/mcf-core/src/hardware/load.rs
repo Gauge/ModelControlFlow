@@ -12,6 +12,9 @@
 //! itself. What remains here is a true statement about the machine, kept
 //! because a reader looking at an unattributable result wants to know what else
 //! was running.
+//!
+//! **Not an instrument:** the kernel's load average is reported verbatim and
+//! decides nothing (F3).
 
 use core::fmt;
 

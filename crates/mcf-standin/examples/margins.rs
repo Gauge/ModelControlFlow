@@ -46,9 +46,25 @@ fn main() -> std::process::ExitCode {
     let mut steps: usize = 10;
     let mut against: Option<String> = None;
     let mut logprobs_of: Vec<usize> = Vec::new();
+    let mut forced: Vec<usize> = Vec::new();
+    let mut dump_at: Vec<usize> = Vec::new();
     while let Some(argument) = arguments.next() {
         if argument == "--against" {
             against = arguments.next();
+        } else if argument == "--dump-at" {
+            dump_at = arguments
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|id| id.trim().parse().ok())
+                .collect();
+        } else if argument == "--forced" {
+            forced = arguments
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|id| id.trim().parse().ok())
+                .collect();
         } else if argument == "--logprobs-of" {
             logprobs_of = arguments
                 .next()
@@ -110,6 +126,82 @@ fn main() -> std::process::ExitCode {
             }
         };
         position += 1;
+    }
+
+    // Teacher forcing: MCF is made to read the reference's own tokens rather
+    // than its own, so that the two can still be compared *after* they have
+    // parted. Greedy generation stops being comparable at the first
+    // disagreement — everything downstream is a different sentence — and that
+    // is the whole reason this mode exists: whether MCF's agreement with the
+    // reference decays with position cannot be asked any other way, and
+    // position is exactly where a rotary or cache defect would live (B-377).
+    if !forced.is_empty() {
+        for next in &forced {
+            let mut ranked: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+            ranked.sort_by(|left, right| {
+                right
+                    .1
+                    .partial_cmp(&left.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            let (Some(best), Some(second)) = (ranked.first().copied(), ranked.get(1).copied())
+            else {
+                break;
+            };
+            // Where MCF's own choice is not the reference's, the rank it gave
+            // the reference's token says how far apart they are: rank 1 with a
+            // hair of margin is a coin, rank 900 is not.
+            let rank = ranked
+                .iter()
+                .position(|(id, _)| id == next)
+                .unwrap_or(usize::MAX);
+            // The whole distribution where it was asked for, so that two
+            // engines disagreeing about which token is best can be compared on
+            // what they *both* think of the same twenty (B-373, B-377).
+            if dump_at.contains(&position) {
+                let largest = best.1;
+                let mut total = 0.0_f32;
+                for value in &logits {
+                    total += (value - largest).exp();
+                }
+                let offset = largest + total.ln();
+                let top: Vec<String> = ranked
+                    .iter()
+                    .take(20)
+                    .map(|(id, value)| format!("\"{id}\":{:.5}", value - offset))
+                    .collect();
+                println!("{{\"dump\":{position},\"logprobs\":{{{}}}}}", top.join(","));
+            }
+            // Whether MCF's own choice is the model's end of turn. A
+            // reference run with `ignore_eos` — which is how a comparison
+            // reaches past a sliding window at all — is forbidden to stop, so
+            // where MCF stops the two are being asked different questions and
+            // the disagreement is the flag rather than the engine. F40's
+            // largest apparent defect, by an order of magnitude, was exactly
+            // this. It is reported rather than hidden so that a reader can see
+            // how many positions were set aside (A1).
+            let mine_is_stop = vocabulary.ending == Some(best.0);
+            println!(
+                "{{\"position\":{},\"forced\":{},\"mine\":{},\"agreed\":{},\"rank_of_forced\":{},\"margin\":{:.5},\"mine_is_stop\":{}}}",
+                position,
+                next,
+                best.0,
+                best.0 == *next,
+                rank,
+                best.1 - second.1,
+                mine_is_stop
+            );
+            logits = match model.forward(*next, position, &mut cache) {
+                Ok(logits) => logits,
+                Err(failure) => {
+                    eprintln!("{failure}");
+                    return std::process::ExitCode::FAILURE;
+                }
+            };
+            position += 1;
+        }
+        return std::process::ExitCode::SUCCESS;
     }
 
     if against.is_none() && !wants_logprobs {

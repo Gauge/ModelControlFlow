@@ -23,6 +23,7 @@ members = [
     "checks",
     "prototypes/adversarial",
     "prototypes/kernel-slope",
+    "prototypes/timing-noise",
 ]
 
 [workspace.package]

@@ -32,7 +32,7 @@ mod instant;
 mod timestamp;
 mod zone;
 
-pub use clock::{Clock, ClockKind, Monotonic, Simulated, SimulatedClock, SystemClock};
+pub use clock::{Clock, ClockKind, Measurable, Monotonic, Simulated, SimulatedClock, SystemClock};
 pub use duration::Duration;
 pub use instant::Instant;
 pub use timestamp::{Civil, Timestamp, UtcOffset};

@@ -26,6 +26,41 @@ use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
 use mcf_standin::tokenizer::{Piece, Vocabulary};
 
+/// Role words a template *assigns*, in the order it assigns them.
+///
+/// Lexical and deliberately narrow: the text after `set <name> =` up to the
+/// closing quote, for a single- or double-quoted literal. It recognises the
+/// one shape that matters — a template deciding what word to write — and
+/// recognises nothing else, which is the honest extent of reading a program
+/// without running it. Where it finds nothing the caller falls back to the
+/// words the template mentions.
+fn assigned_roles(template: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for after in template.split("set ").skip(1) {
+        let Some((name, rest)) = after.split_once('=') else {
+            continue;
+        };
+        if !name.trim().eq_ignore_ascii_case("role") {
+            continue;
+        }
+        let rest = rest.trim_start();
+        let Some(quote) = rest
+            .chars()
+            .next()
+            .filter(|mark| *mark == '"' || *mark == '\'')
+        else {
+            continue;
+        };
+        let Some((literal, _)) = rest[quote.len_utf8()..].split_once(quote) else {
+            continue;
+        };
+        if !literal.is_empty() && !found.iter().any(|held| held == literal) {
+            found.push(literal.to_owned());
+        }
+    }
+    found
+}
+
 /// One way of putting a question to a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addressing {
@@ -173,20 +208,43 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
     };
     let (open, close) = (&open, &close);
 
-    // Which word names the answering side. Taken from the template rather than
-    // assumed, and where it names more than one every one is a candidate —
-    // the model decides between them (D46's third layer).
-    let mut roles: Vec<&str> = ["assistant", "model"]
-        .into_iter()
-        .filter(|role| template.contains(role))
-        .collect();
+    // Which word names the answering side.
+    //
+    // Reading the template for the word it *emits*, not for the words it
+    // mentions. Mentioning is not meaning: gemma's template names `assistant`
+    // exactly once and does it to rename it —
+    //
+    //     {%- if (message['role'] == 'assistant') -%}
+    //     {%- set role = "model" -%}
+    //
+    // — so a bag-of-words read produced a candidate the template explicitly
+    // rejects, and then the probe could not tell the two apart because
+    // *ending a turn* does not (F48, B-375). A word assigned to the role is
+    // what gets written out; a word compared against is an input name being
+    // translated away.
+    //
+    // This reads the template's shape and does not execute it: a template is
+    // a program in somebody else's language, and running one is a door §3.7
+    // keeps shut.
+    let assigned = assigned_roles(template);
+    let mut roles: Vec<String> = if assigned.is_empty() {
+        // Nothing assigned: the template emits the role it was given, so the
+        // ordinary names are the candidates and the model decides between them.
+        ["assistant", "model"]
+            .into_iter()
+            .filter(|role| template.contains(role))
+            .map(str::to_owned)
+            .collect()
+    } else {
+        assigned
+    };
     if roles.is_empty() {
-        roles.push("assistant");
+        roles.push("assistant".to_owned());
     }
 
     roles
         .into_iter()
-        .map(|role| Addressing {
+        .map(|role: String| Addressing {
             name: format!("{}…{} as {role}", trim(open), trim(close)),
             pieces_before: vec![
                 Piece::Marker(open.clone()),
@@ -278,6 +336,9 @@ pub struct Addressed {
     /// What the file *declared*, for the divergence (B-058) — never used to
     /// decide, only to disagree with.
     pub declared_a_template: bool,
+    /// The winning addressing itself, so that applying it needs no second
+    /// search and cannot pick a different one than was reported (D43).
+    pub best_addressing: Option<Addressing>,
 }
 
 /// The method, written where the result can carry it.
@@ -317,7 +378,7 @@ pub fn chat_template(
     engine: &str,
     generate: &mut dyn FnMut(&[usize], usize) -> Trial,
 ) -> Probed<Addressed> {
-    let conditions = conditions(model, engine);
+    let conditions = conditions(&CHAT_TEMPLATE, model, engine);
     let Ok(file) = gguf::parse(bytes) else {
         return Probed::inconclusive(
             CHAT_TEMPLATE,
@@ -522,6 +583,10 @@ pub fn chat_template(
             );
         }
         (Some(best), false) => Outcome::Observed(Addressed {
+            best_addressing: candidates
+                .iter()
+                .find(|candidate| candidate.name == best)
+                .cloned(),
             best,
             stopped,
             silent,
@@ -566,13 +631,20 @@ pub const QUESTIONS: [&str; 5] = [
 pub const QUESTION: &str = QUESTIONS[0];
 
 /// The conditions a probe result holds under (D42, §3.4).
-fn conditions(model: &Path, engine: &str) -> Conditions {
+/// The conditions a probe's result carries.
+///
+/// The method is a parameter and not `CHAT_TEMPLATE`. It was the constant once,
+/// and the second probe's result then said it was the first probe's — a
+/// condition naming the wrong experiment, which is the exact provenance
+/// failure B-059 exists to prevent and would have been believed because it is
+/// printed in the same place as the true ones (§3.4, A21).
+fn conditions(method: &Method, model: &Path, engine: &str) -> Conditions {
     Conditions::new(
         mcf_core::build_identity::BuildIdentity::current(),
         Floor {
             mcf_configuration: mcf_core::attested::Attested::Known(ConditionValue::text(format!(
                 "probe: {}, engine: {engine}, model: {}",
-                CHAT_TEMPLATE.name,
+                method.name,
                 model.display()
             ))),
             ..Floor::nothing_known()
@@ -625,7 +697,7 @@ pub fn trial(
     let request = crate::control::Request::Generate {
         model: model.display().to_string(),
         prompt: prompt.to_owned(),
-        limit: budget,
+        limit: Some(budget),
         seed: 0,
         tokens: tokens.map(<[usize]>::to_vec),
         engine: engine.map(str::to_owned),
@@ -637,14 +709,19 @@ pub fn trial(
         return Trial::CouldNotTell("the request could not be sent".to_owned());
     }
 
-    let mut said = 0_usize;
     let reader = BufReader::new(&connection);
     for line in reader.lines() {
         let Ok(line) = line else {
             return Trial::CouldNotTell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
-            Ok(crate::control::Streamed::Token { .. }) => said = said.saturating_add(1),
+            // Deliberately not counted. MCF's own engine streams one line per
+            // token and the provisioned server streams the whole answer as
+            // one, so counting lines here measures the engine's chunking and
+            // calls it the model's output — which made every addressing look
+            // like a one-token turn through the server (F39). The count comes
+            // from the account, which both engines fill in the same units.
+            Ok(crate::control::Streamed::Token { .. }) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
                     return Trial::CouldNotTell(format!(
@@ -652,6 +729,34 @@ pub fn trial(
                         failure.to_line()
                     ));
                 }
+                let counted = account
+                    .get("tokens")
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|count| usize::try_from(count).ok());
+                let Some(counted) = counted else {
+                    return Trial::CouldNotTell(
+                        "the account did not say how many tokens were produced, so a finished \
+                         turn cannot be told from a refusal to speak (F38)"
+                            .to_owned(),
+                    );
+                };
+                // The two engines disagree by one at exactly the boundary this
+                // probe turns on: asked a question it does not recognise, a
+                // model emits its end-of-turn token and nothing else, and MCF's
+                // own engine calls that nought tokens while the provisioned
+                // server calls it one — it counts the end-of-turn token itself
+                // (F39). Neither is wrong, and a probe that took either
+                // literally would report *said nothing* on one engine and
+                // *said something* on the other for one behaviour.
+                //
+                // The text is the form both agree on: it is empty on both. So
+                // the count is what was said, and having said nothing is nought
+                // whatever the engine calls it.
+                let wordless = account
+                    .get("text")
+                    .and_then(mcf_record::json::Value::as_text)
+                    .is_none_or(|text| text.trim().is_empty());
+                let said = if wordless { 0 } else { counted };
                 return match account
                     .get("stopped")
                     .and_then(mcf_record::json::Value::as_text)
@@ -698,3 +803,427 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// What the engine did with a prompt of a stated length.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Accepted {
+    /// It read this many of the identifiers it was sent.
+    ///
+    /// Equal to what was sent is the ordinary case. *Fewer* is silent
+    /// truncation, which is the failure this probe exists to catch: a prompt
+    /// quietly shortened is a measurement of a different prompt (§3.8, D46).
+    Read(usize),
+    /// It refused, in its own words.
+    Refused(String),
+    /// Something else, and why.
+    CouldNotTell(String),
+}
+
+/// The context length the file declares, against the longest prompt the engine
+/// will actually take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Context {
+    /// What the file says.
+    pub declared: usize,
+    /// The longest prompt accepted whole, with one token left to generate.
+    pub accepted: usize,
+    /// What the engine said where it refused, kept because a refusal for an
+    /// unrelated reason would otherwise be reported as a short context (A1).
+    pub because: Option<String>,
+}
+
+/// The method.
+pub const USABLE_CONTEXT: Method = Method {
+    name: "usable-context",
+    asks: "for a prompt of the length the file declares, and then — only if that is refused — \
+           for the longest one the engine will take whole, by halving. What is compared is \
+           integers: how many identifiers were sent against how many were read",
+    decides: "how long a prompt MCF may give this model on this machine through this engine — \
+              and nothing else: a probe writes the verified half of a capability and never a \
+              default (D42)",
+};
+
+/// The usable context, by asking.
+///
+/// The declared length is asked for first, so the ordinary case — a file whose
+/// claim holds — costs one trial rather than fifteen. Only a refusal starts
+/// the search, and the search is a halving between the largest length known to
+/// work and the smallest known to fail.
+///
+/// One token is left for the model to produce, because a context is the whole
+/// budget and not the prompt's share of it: `llama.cpp` refuses a prompt of
+/// exactly the declared length for that reason, and reporting *the declared
+/// context is wrong by one* would be reporting arithmetic as a divergence.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one search, written as the search: ask the claim, then halve. Splitting it would \
+              put the question in one function and the answer in another"
+)]
+#[must_use]
+pub fn usable_context(
+    model: &Path,
+    declared: usize,
+    engine: &str,
+    ask: &mut dyn FnMut(usize) -> Accepted,
+) -> Probed<Context> {
+    let conditions = conditions(&USABLE_CONTEXT, model, engine);
+    let inconclusive = |because: String, trials: usize, spent: usize| {
+        Probed::inconclusive(USABLE_CONTEXT, because, trials, spent, conditions.clone())
+    };
+    if declared < 2 {
+        return inconclusive(
+            "the file declares no context length worth asking about".to_owned(),
+            0,
+            0,
+        );
+    }
+
+    // Ask the *instrument* before asking the model, and ask it the cheapest
+    // question there is. MCF's own engine does not report how many identifiers
+    // it read, so it can never answer this probe — and finding that out by
+    // sending it the whole declared context first cost eight thousand forward
+    // passes to learn nothing (F44). One token learns the same thing.
+    if let Accepted::CouldNotTell(said) = ask(1) {
+        return inconclusive(said, 1, 1);
+    }
+
+    let mut trials = 1_usize;
+    let mut spent = 1_usize;
+    let mut because: Option<String> = None;
+    // Whole is the length asked for; read is what came back. They differ only
+    // under truncation, and that difference is the finding.
+    let mut works = 0_usize;
+
+    let mut attempt = |length: usize,
+                       trials: &mut usize,
+                       spent: &mut usize,
+                       because: &mut Option<String>|
+     -> Option<bool> {
+        *trials = trials.saturating_add(1);
+        *spent = spent.saturating_add(length);
+        match ask(length) {
+            Accepted::Read(read) if read == length => Some(true),
+            Accepted::Read(read) => {
+                *because = Some(format!(
+                    "the engine read {read} of the {length} identifiers it was sent and said \
+                     nothing about the difference — a prompt shortened in silence is a \
+                     measurement of a different prompt (§3.8, A2)"
+                ));
+                Some(false)
+            }
+            Accepted::Refused(said) => {
+                *because = Some(said);
+                Some(false)
+            }
+            Accepted::CouldNotTell(said) => {
+                *because = Some(said);
+                None
+            }
+        }
+    };
+
+    // The claim itself, first.
+    let full = declared.saturating_sub(1);
+    match attempt(full, &mut trials, &mut spent, &mut because) {
+        Some(true) => {
+            return Probed {
+                method: USABLE_CONTEXT,
+                outcome: Outcome::Observed(Context {
+                    declared,
+                    accepted: full,
+                    because: None,
+                }),
+                trials,
+                tokens: spent,
+                conditions,
+            };
+        }
+        Some(false) => {}
+        None => {
+            return inconclusive(
+                because.unwrap_or_else(|| "the engine did not answer".to_owned()),
+                trials,
+                spent,
+            );
+        }
+    }
+
+    // It refused, so find where it stops refusing.
+    let mut fails = full;
+    while fails.saturating_sub(works) > 1 {
+        let middle = works.saturating_add(fails.saturating_sub(works).wrapping_div(2));
+        match attempt(middle, &mut trials, &mut spent, &mut because) {
+            Some(true) => works = middle,
+            Some(false) => fails = middle,
+            None => {
+                return inconclusive(
+                    because.unwrap_or_else(|| "the engine did not answer".to_owned()),
+                    trials,
+                    spent,
+                );
+            }
+        }
+    }
+
+    if works == 0 {
+        return inconclusive(
+            format!(
+                "the engine would not take a prompt of any length up to the {declared} this file \
+                 declares, which is a fact about the engine or the machine rather than about the \
+                 model. It said: {}",
+                because.unwrap_or_else(|| "nothing".to_owned())
+            ),
+            trials,
+            spent,
+        );
+    }
+    Probed {
+        method: USABLE_CONTEXT,
+        outcome: Outcome::Observed(Context {
+            declared,
+            accepted: works,
+            because,
+        }),
+        trials,
+        tokens: spent,
+        conditions,
+    }
+}
+
+/// One length, asked of a running daemon.
+///
+/// The prompt is one identifier repeated. What is being asked is how many the
+/// engine will take, and a filler that means something would invite the reply
+/// that the answer depends on what was said — it does not, and the identifiers
+/// are counted rather than read.
+#[must_use]
+pub fn accepts(
+    socket: &Path,
+    model: &Path,
+    filler: usize,
+    length: usize,
+    engine: Option<&str>,
+) -> Accepted {
+    use std::io::{BufRead as _, BufReader, Write as _};
+
+    let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
+        return Accepted::CouldNotTell("nothing is listening on the control socket".to_owned());
+    };
+    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
+    let request = crate::control::Request::Generate {
+        model: model.display().to_string(),
+        prompt: String::new(),
+        limit: Some(1),
+        seed: 0,
+        tokens: Some(vec![filler; length]),
+        engine: engine.map(str::to_owned),
+    };
+    if writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .is_err()
+    {
+        return Accepted::CouldNotTell("the request could not be sent".to_owned());
+    }
+
+    let reader = BufReader::new(&connection);
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            return Accepted::CouldNotTell("the stream ended before its account".to_owned());
+        };
+        match crate::control::Streamed::read(line.trim_end()) {
+            Ok(crate::control::Streamed::Token { .. }) => {}
+            Ok(crate::control::Streamed::Done(account)) => {
+                if let Some(failure) = account.get("failure") {
+                    // The engine's own sentence, not the whole classified
+                    // record: a reader wants to know that the context was
+                    // exceeded, and the record is on the journal either way.
+                    return Accepted::Refused(
+                        failure
+                            .get("context")
+                            .and_then(|context| context.get("engine_said"))
+                            .and_then(mcf_record::json::Value::as_text)
+                            .map_or_else(|| failure.to_line(), str::to_owned),
+                    );
+                }
+                return match account
+                    .get("conditions")
+                    .and_then(|conditions| conditions.get("identifiers_read"))
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|read| usize::try_from(read).ok())
+                {
+                    Some(read) => Accepted::Read(read),
+                    // MCF's own engine does not report this, and guessing that
+                    // it read everything would be inventing the observation
+                    // the probe is for (A7).
+                    None => Accepted::CouldNotTell(
+                        "this engine does not say how many identifiers it read, so a prompt \
+                         taken whole cannot be told from one quietly shortened (B-376)"
+                            .to_owned(),
+                    ),
+                };
+            }
+            Err(_) => {
+                return Accepted::CouldNotTell("a line of the stream was unreadable".to_owned());
+            }
+        }
+    }
+    Accepted::CouldNotTell("the stream ended before its account".to_owned())
+}
+
+/// The model file, for a caller that has the bytes and needs the fields.
+///
+/// # Errors
+///
+/// Whatever reading the file reports.
+pub fn gguf_of(bytes: &[u8]) -> Result<gguf::Model, mcf_core::Failure> {
+    gguf::parse(bytes)
+}
+
+/// The context length the file declares, whatever family wrote it.
+///
+/// The key is prefixed by the architecture the file states, which is a field
+/// GGUF exists to carry and not a family MCF recognises (DEC-053).
+#[must_use]
+pub fn declared_context(file: &gguf::Model) -> Option<usize> {
+    let architecture = match file.get("general.architecture") {
+        Some(gguf::Value::Text(named)) => named.clone(),
+        _ => return None,
+    };
+    match file.get(&format!("{architecture}.context_length")) {
+        Some(gguf::Value::Integer(found)) => usize::try_from(*found).ok(),
+        _ => None,
+    }
+}
+
+/// One identifier to repeat, for a question that is about length.
+///
+/// The lowest ordinary token in the vocabulary: not a marker, not a byte
+/// fallback, and present in every file MCF reads. What it *means* is beside
+/// the point — the engine is being asked how many identifiers it will take,
+/// and it counts them.
+#[must_use]
+pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
+    let vocabulary = Vocabulary::read(file).ok()?;
+    (0..vocabulary.len()).find(|at| {
+        vocabulary
+            .token(*at)
+            .is_some_and(|spelled| spelled.chars().count() > 1 && !spelled.starts_with('<'))
+    })
+}
+
+/// How long this model's turns run, and whether it ends them at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stopping {
+    /// The longest turn that ended at the model's own stop token.
+    pub longest: usize,
+    /// How many trials ended that way.
+    pub stopped: usize,
+    /// How many were asked.
+    pub of: usize,
+    /// The largest budget any trial was given.
+    pub ceiling: usize,
+    /// MCF's default budget, for the divergence — what a caller gets if they
+    /// say nothing.
+    pub default_budget: usize,
+}
+
+/// The method.
+pub const STOP_CONDITIONS: Method = Method {
+    name: "stop-conditions",
+    asks: "the same short questions, doubling the budget until the model ends its turn or a \
+           ceiling is reached, and reports the longest turn it finished — so that *this model \
+           does not stop* is told apart from *the budget was too small*, which look identical \
+           from outside",
+    decides: "how many tokens MCF should allow this model by default — and nothing else: a \
+              probe writes the verified half of a capability and never a default (D42)",
+};
+
+/// The turn lengths a model actually needs.
+///
+/// **Doubling rather than one large budget.** A budget large enough for the
+/// worst case is spent on every trial including the ones that end in ten
+/// tokens, and tokens are what a probe costs (B49). Doubling pays for the
+/// answer that was needed and one wasted step at most.
+///
+/// **A ceiling that is reported.** Reaching it is not *the model never stops* —
+/// it is *not within this many tokens*, which is a different claim and the only
+/// one the trials support (A7). The number travels so that a reader can decide
+/// whether it was large enough.
+#[must_use]
+pub fn stop_conditions(
+    model: &Path,
+    trials: usize,
+    from: usize,
+    ceiling: usize,
+    default_budget: usize,
+    engine: &str,
+    generate: &mut dyn FnMut(&str, usize) -> Trial,
+) -> Probed<Stopping> {
+    let conditions = conditions(&STOP_CONDITIONS, model, engine);
+    let mut spent = 0_usize;
+    let mut ran = 0_usize;
+    let mut longest = 0_usize;
+    let mut stopped = 0_usize;
+    let mut reached = from;
+
+    for trial in 0..trials {
+        let question = QUESTIONS
+            .get(trial % QUESTIONS.len())
+            .copied()
+            .unwrap_or(QUESTION);
+        let mut budget = from;
+        loop {
+            ran = ran.saturating_add(1);
+            spent = spent.saturating_add(budget);
+            reached = reached.max(budget);
+            match generate(question, budget) {
+                Trial::Stopped { after } => {
+                    stopped = stopped.saturating_add(1);
+                    longest = longest.max(after);
+                    break;
+                }
+                Trial::RanOut if budget >= ceiling => break,
+                Trial::RanOut => budget = budget.saturating_mul(2).min(ceiling),
+                Trial::CouldNotTell(because) => {
+                    return Probed::inconclusive(
+                        STOP_CONDITIONS,
+                        format!("on the question {question:?}: {because}"),
+                        ran,
+                        spent,
+                        conditions,
+                    );
+                }
+            }
+        }
+    }
+
+    if stopped == 0 {
+        return Probed::inconclusive(
+            STOP_CONDITIONS,
+            format!(
+                "no turn ended at this model's own stop token within {reached} tokens. That is \
+                 not *this model never stops* — it is *not within {reached}*, and a larger \
+                 ceiling or a different addressing may end it (A7). If this model is addressed \
+                 wrongly it will not stop at any budget, which is what the chat-template probe \
+                 is for"
+            ),
+            ran,
+            spent,
+            conditions,
+        );
+    }
+
+    Probed {
+        method: STOP_CONDITIONS,
+        outcome: Outcome::Observed(Stopping {
+            longest,
+            stopped,
+            of: trials,
+            ceiling: reached,
+            default_budget,
+        }),
+        trials: ran,
+        tokens: spent,
+        conditions,
+    }
+}

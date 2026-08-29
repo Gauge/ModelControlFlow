@@ -10,7 +10,7 @@ use mcf_hub::source::{Entry, Listing};
 
 /// A listing with no plan behind it, and the reason MCF gives when there is
 /// none: an offer still has to say why it is not planning (A2).
-fn no_plan() -> std::result::Result<Vec<String>, String> {
+fn no_plan() -> std::result::Result<super::Plan, String> {
     Err("this repository publishes no configuration, and a plan needs one".to_owned())
 }
 
@@ -120,8 +120,17 @@ fn a_hub_that_is_not_a_url_is_refused() {
 /// without the length it fits at (A6, §3.4).
 #[test]
 fn a_plan_is_offered_at_a_stated_context() {
-    let plan = vec!["  Q4_K_M.gguf — fits: needs 1 of 2 usable, 1 left".to_owned()];
-    let offered = offer(&a_listing(), &Ok(plan.clone()));
+    let plan = super::Plan {
+        available: mcf_core::measurement::Bytes(2),
+        verdicts: vec![(
+            "Q4_K_M.gguf".to_owned(),
+            mcf_hub::fitment::Verdict::Fits {
+                needs: mcf_core::measurement::Bytes(1),
+                headroom: mcf_core::measurement::Bytes(1),
+            },
+        )],
+    };
+    let offered = offer(&a_listing(), &Ok(plan));
     assert!(
         offered.contains(&format!("at {PLANNING_CONTEXT} tokens of context")),
         "{offered}"

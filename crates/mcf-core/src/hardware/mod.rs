@@ -22,8 +22,13 @@
 //!
 //! [`Characterized`]: Characterization::Characterized
 //! [`AttemptedUncharacterized`]: Characterization::AttemptedUncharacterized
+//!
+//! **Not an instrument:** it assembles the readings the modules beside it
+//! take.
 
 mod accelerator;
+mod contention;
+pub mod headroom;
 mod load;
 mod nvml;
 mod processor;
@@ -31,8 +36,13 @@ mod route_files;
 mod scheduling;
 mod space;
 mod storage;
+pub mod thermal;
+pub mod utilisation;
 
 pub use accelerator::{Accelerator, Characterization, Missing, Reading, Route, routes};
+pub use contention::{
+    Competitor, NAMED, OVER, Snapshot, Steadiness, sample as contention, steadiness,
+};
 pub use load::{LoadAverage, load_average};
 pub use processor::{Memory, PowerProfile, Processor};
 pub use scheduling::{Attributability, Scheduling, TOLERATED_DELAY_PPM, Watch, scheduling};

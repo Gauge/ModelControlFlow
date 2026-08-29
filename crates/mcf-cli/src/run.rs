@@ -50,6 +50,35 @@ pub(crate) fn run(
     seed: u64,
     engine: Option<&str>,
 ) -> Response {
+    run_where(
+        crate::serve::socket_path(),
+        model,
+        prompt,
+        limit,
+        seed,
+        engine,
+    )
+}
+
+/// The same, told where a daemon would be.
+///
+/// Where the daemon is, is an *input* rather than something looked up in the
+/// middle. It was ambient, and a test asserting on the refusal MCF gives for
+/// an unreadable file therefore reported on whether a daemon happened to be
+/// running on the machine — passing alone and failing beside one, for reasons
+/// nothing in the test could see (F46, B-378). §3.12 does not allow a suite
+/// whose answer depends on the state it found.
+///
+/// `None` means *no daemon*, which is both what a machine with no runtime
+/// directory gives and what a test wants to say.
+pub(crate) fn run_where(
+    socket: Option<std::path::PathBuf>,
+    model: &str,
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&str>,
+) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -73,20 +102,18 @@ pub(crate) fn run(
     // only when nothing is (B-034, PR9). Which one did is part of the account,
     // because it is a condition: the same file through the same engine in
     // another process is another process's memory, cache and clock.
-    let listening = crate::serve::socket_path().and_then(|socket| {
+    let listening = socket.and_then(|socket| {
         std::os::unix::net::UnixStream::connect(&socket)
             .ok()
             .map(|c| (socket, c))
     });
     if let Some((socket, connection)) = listening {
         return served(
-            connection,
-            &socket,
-            &path,
-            prompt,
-            limit.unwrap_or(TOKENS),
-            seed,
-            engine,
+            connection, &socket, &path, prompt,
+            // Not `unwrap_or(TOKENS)`: the daemon may have a budget somebody
+            // derived for this model, and it can only use it if it can tell a
+            // caller who said nothing from one who said thirty-two (D43).
+            limit, seed, engine,
         );
     }
     if engine.is_some_and(|engine| engine != "stand-in") {
@@ -153,7 +180,7 @@ fn served(
     socket: &Path,
     path: &Path,
     prompt: &str,
-    limit: usize,
+    limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
 ) -> Response {
@@ -272,7 +299,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}",
+             {}{}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -282,6 +309,25 @@ fn served(
             condition("engine"),
             socket.display(),
             condition("loaded"),
+            // MCF addressing a model other than plainly must never be
+            // something a reader has to go looking for (§3.15, D43). The
+            // account carries it either way; this is where a person sees it.
+            match account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("addressed_as"))
+                .and_then(mcf_record::json::Value::as_text)
+            {
+                Some(how) => format!("\x20 addressed {how}\n"),
+                None => String::new(),
+            },
+            match account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("budget_from"))
+                .and_then(mcf_record::json::Value::as_text)
+            {
+                Some(why) => format!("\x20 budget    {why}\n"),
+                None => String::new(),
+            },
             match degraded {
                 Some(mark) => format!(
                     "\x20 MARKED   {mark}\n\x20 This is a behaviour answer and can never be a speed \

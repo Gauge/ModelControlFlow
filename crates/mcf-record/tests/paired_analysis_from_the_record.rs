@@ -20,7 +20,7 @@ use mcf_core::attested::Attested;
 use mcf_core::build_identity::BuildIdentity;
 use mcf_core::measurement::{Conditions, Count, Floor};
 use mcf_core::time::Timestamp;
-use mcf_core::trial::{Arm, Position, SessionId, Trial, Trials};
+use mcf_core::trial::{Arm, Draw, Position, STANDARD, SeedSet, SessionId, Trial, Trials};
 use mcf_record::encode;
 use mcf_record::journal::{Entry, EntryKind, Journal, replay};
 use mcf_record::json::Value;
@@ -58,6 +58,12 @@ fn a_session() -> Trials<Count> {
             if even { a.clone() } else { b.clone() },
             Position(u32::try_from(position).unwrap_or(0)),
             session.clone(),
+            Draw::Seeded {
+                seed: SeedSet::Standard
+                    .seed_for(usize::try_from(position).unwrap_or(0))
+                    .unwrap_or(0),
+                from: STANDARD.to_owned(),
+            },
         )
     }))
 }
@@ -153,6 +159,10 @@ fn read_trials(body: &Value) -> Trials<Count> {
             Arm::new(arm),
             Position(u32::try_from(position).unwrap_or(0)),
             SessionId::new(session),
+            // B-290: a trial read back without what it drew is a trial whose
+            // spread nobody can tell from an artefact, so the decoder refuses
+            // rather than inventing one.
+            mcf_record::decode::draw(row).expect("a trial records what it drew"),
         )
     }))
 }

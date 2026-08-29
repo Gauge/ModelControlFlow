@@ -49,7 +49,9 @@ const DECLARED: &[Spawns] = &[
         sites: 5,
         what: "the laboratory's stand-ins for an engine that dies: a shell told to exit, a \
                shell told to kill itself, a program that is not there, a directory where a \
-               program should be. What is simulated is the death, never a model (D26, B-033)",
+               program should be, and a shell told to sleep — a server that starts and never \
+               becomes ready. What is simulated is the death or the silence, never a model \
+               (D26, B-033)",
     },
     Spawns {
         file: "crates/mcf-serve/src/adapters.rs",
@@ -58,6 +60,16 @@ const DECLARED: &[Spawns] = &[
                provisioned prefix (B-367), supervised as B-033 asks — or, in the laboratory, a \
                shell that dies a stated way. What it is given is a model file as *input*; the \
                program is never something MCF acquired (D39, B-032)",
+    },
+    Spawns {
+        file: "crates/mcf-serve/src/served.rs",
+        sites: 1,
+        what: "the same provisioned prefix's server rather than its completion tool (B-376), \
+               so that a turn of token identifiers can reach an engine and the engine can say \
+               why it stopped — the two things a probe needs and a command line cannot carry. \
+               It is given a model file as *input* and binds a Unix socket under MCF's own \
+               runtime directory, never a port: nothing listens on the network, and the \
+               program is still one MCF built, never one it acquired (D39, B-032, §XVII)",
     },
     Spawns {
         file: "crates/mcf-cli/src/provision.rs",

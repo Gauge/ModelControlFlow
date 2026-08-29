@@ -25,6 +25,7 @@ use mcf_standin::session::{self, Request, Stopped};
 use mcf_standin::tokenizer::Vocabulary;
 
 use crate::control::Streamed;
+use crate::served::Served;
 
 /// The model held between requests (D41, §7.18).
 ///
@@ -66,30 +67,81 @@ pub(crate) fn serve_generation(
     store: &Path,
     mcf_home: &Path,
     resident: &std::sync::Mutex<Option<Resident>>,
+    server: &std::sync::Mutex<Option<Served>>,
+    runtime: &Path,
     named: &str,
     prompt: &str,
-    limit: usize,
+    limit: Option<usize>,
     seed: u64,
     tokens: Option<&[usize]>,
     engine: Option<&str>,
     writer: &mut &UnixStream,
 ) -> Value {
+    // What somebody decided this model should be addressed as, if anybody
+    // did (D43, B-059). A caller that sent identifiers has said exactly what
+    // it wants and is not overridden; a caller that sent a prompt gets the
+    // addressing that was applied, and the account says so — MCF doing
+    // something other than the plain thing must never be invisible (§3.15).
+    let derived = crate::configured::read_derived(mcf_home, &resolved(store, named));
+    // The caller's word first, then what somebody derived for this model, then
+    // MCF's stated default. A caller who said nothing is not a caller who said
+    // the default (D43, §3.15).
+    let limit = limit
+        .or_else(|| derived.budget.as_ref().map(|budget| budget.tokens))
+        .unwrap_or(crate::control::DEFAULT_LIMIT);
+    let derived_budget = derived.budget.clone();
+    let derived = derived.addressing;
+    let wrapped = match (tokens, derived.as_ref()) {
+        (None, Some(addressing)) => addressed_as(store, named, prompt, addressing),
+        _ => None,
+    };
+    let tokens = wrapped.as_deref().or(tokens);
+
     let chosen = choose_engine(mcf_home, engine);
     let account = match chosen {
-        // Identifiers cannot travel through this engine: it is driven as a
-        // subprocess that takes text on a command line and prints text back
-        // (B-032), so a turn assembled from token identifiers has nowhere to
-        // go. Dropping them and generating from `prompt` instead would answer
-        // a different question and say nothing about having done so — which
-        // is the defect F38 is about, wearing a different coat. It is refused
-        // (A2), and B-376 is the item that lifts it.
-        Ok(Chosen::Provisioned(_)) if tokens.is_some() => Err(identifiers_cannot_travel()),
-        Ok(Chosen::Provisioned(llama)) => {
-            through_provisioned(store, &llama, named, prompt, limit, seed, writer)
-        }
+        // A turn of identifiers goes to the server, which can be given one;
+        // a prompt goes to the completion tool, which cannot (B-376).
+        Ok(Chosen::Provisioned(llama)) => match tokens {
+            Some(tokens) => through_served(
+                store, &llama, server, runtime, named, tokens, limit, seed, writer,
+            ),
+            None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
+        },
         Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, tokens, limit, seed, writer),
         Err(failure) => Err(failure),
     };
+    // The provenance travels into the account, so that a measurement taken
+    // through a derived configuration carries what set it — which is what
+    // makes *are yesterday's number and today's comparable* answerable rather
+    // than assumed (D43, §3.4).
+    let account = account.map(|account| match (account, derived) {
+        (Value::Map(mut fields), Some(addressing)) => {
+            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                conditions.insert(
+                    "addressed_as".to_owned(),
+                    Value::text(if wrapped.is_some() {
+                        addressing.provenance()
+                    } else {
+                        format!(
+                            "{} — not applied here: the caller sent its own identifiers",
+                            addressing.provenance()
+                        )
+                    }),
+                );
+            }
+            Value::Map(fields)
+        }
+        (account, _) => account,
+    });
+    let account = account.map(|account| match (account, derived_budget) {
+        (Value::Map(mut fields), Some(budget)) => {
+            if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
+            }
+            Value::Map(fields)
+        }
+        (account, _) => account,
+    });
     let account = match account {
         Ok(account) => account,
         Err(failure) => Value::map([
@@ -141,26 +193,169 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
     }
 }
 
-/// The refusal a turn of identifiers meets at the provisioned engine.
+/// The model a request names, as a path.
 ///
-/// Its own function so that the decision can be tested for the words it uses
-/// as well as for the category it reaches: a refusal whose reason does not say
-/// what to do about it is A2 half-kept.
-fn identifiers_cannot_travel() -> Failure {
-    // Not `config.invalid`: the request is perfectly readable, and calling it
-    // unreadable would send somebody looking for a typo. What is missing is an
-    // engine that can carry a turn of identifiers — and when the daemon chose
-    // the provisioned engine itself, nothing the caller wrote is at fault, so
-    // this is attributed to the machine.
-    Failure::new(
-        mcf_core::failure::Category::EngineUnavailable,
-        mcf_core::failure::Attribution::Machine,
-        mcf_core::failure::Disposition::Refused,
-        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-        "no engine here can be given a turn built from token identifiers: the provisioned \
-         engine takes text and returns text, so the identifiers would be silently dropped and \
-         the prompt generated from instead. MCF's own engine can — ask for it by name (B-376)",
-    )
+/// Written once: three engines resolved it identically, and a fourth reader —
+/// the derived configuration — would have made four.
+fn resolved(store: &Path, named: &str) -> std::path::PathBuf {
+    let given = Path::new(named);
+    if given.is_file() {
+        given.to_path_buf()
+    } else {
+        store.join(named.replace(':', "/"))
+    }
+}
+
+/// A prompt wrapped the way somebody decided this model should be addressed.
+///
+/// `None` where the turn cannot be built — a vocabulary that will not read, a
+/// marker the file no longer holds. That is not a silent fallback to raw: the
+/// generation proceeds with the prompt as text, which is what would have
+/// happened anyway, and the account still carries the configuration so a
+/// reader can see it was on file. Wrapping *some* of a turn would be worse
+/// than not wrapping it (F37).
+fn addressed_as(
+    store: &Path,
+    named: &str,
+    prompt: &str,
+    addressing: &crate::configured::Addressing,
+) -> Option<Vec<usize>> {
+    let path = resolved(store, named);
+    let bytes = std::fs::read(&path).ok()?;
+    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let mut pieces = addressing.before.clone();
+    pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
+    pieces.extend(addressing.after.iter().cloned());
+    vocabulary.addressed(&pieces)
+}
+
+/// One generation through the provisioned engine driven as a *server*
+/// (B-376), which is the shape that can be probed: the turn goes as
+/// identifiers and the engine says why it stopped.
+///
+/// The server holds the model between requests, which is the residency F36
+/// left open. A request for a different model replaces the server, and
+/// replacing it stops the old one — `Served` kills its child when it is
+/// dropped, so the model does not stay in memory on a machine three other
+/// projects share (A27).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's conditions, each named in the account"
+)]
+fn through_served(
+    store: &Path,
+    llama: &crate::adapters::ProvisionedLlama,
+    server: &std::sync::Mutex<Option<Served>>,
+    runtime: &Path,
+    named: &str,
+    tokens: &[usize],
+    limit: usize,
+    seed: u64,
+    writer: &mut &UnixStream,
+) -> Result<Value, Failure> {
+    let given = Path::new(named);
+    let path = if given.is_file() {
+        given.to_path_buf()
+    } else {
+        store.join(named.replace(':', "/"))
+    };
+    let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
+    let held = metadata.len();
+
+    let mut slot = server.lock().map_err(|_poisoned| {
+        Failure::new(
+            mcf_core::failure::Category::EngineUnavailable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Aborted,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            "the served engine's slot was left poisoned by an earlier failure",
+        )
+    })?;
+    // A server holding a different model is stopped rather than kept beside
+    // this one: two resident models is a decision about memory nobody has
+    // taken (D41, DEC-018), and taking it here silently would be the hidden
+    // choice §3.15 forbids.
+    let reused = slot.as_ref().is_some_and(|held| held.model == path);
+    if !reused {
+        *slot = None;
+        *slot = Some(Served::start(llama, &path, runtime)?);
+    }
+    let engine = slot.as_ref().ok_or_else(|| {
+        Failure::new(
+            mcf_core::failure::Category::EngineUnavailable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Aborted,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            "the served engine was started and then was not there",
+        )
+    })?;
+
+    let completed = engine.complete(tokens, limit, seed)?;
+
+    // The answer arrives whole rather than token by token, so it is one chunk
+    // of the stream. Calling it several would be inventing a shape the engine
+    // did not have.
+    let line = Streamed::Token {
+        at: 0,
+        text: completed.text.clone(),
+    }
+    .to_line();
+    let _written = writeln!(writer, "{line}");
+    let _flushed = writer.flush();
+
+    let engine_name = format!(
+        "provisioned llama.cpp server @{} from {}",
+        llama.commit.get(..12).unwrap_or(&llama.commit),
+        llama.prefix.display()
+    );
+    let mut conditions = conditions(named, Some((&path, held)), seed, limit);
+    if let Value::Map(fields) = &mut conditions {
+        fields.insert("engine".to_owned(), Value::text(engine_name));
+        fields.insert(
+            "loaded".to_owned(),
+            Value::text(if reused {
+                "resident_in_server"
+            } else {
+                "loaded_for_this_request"
+            }),
+        );
+        // What MCF sent against what the engine read. They agreeing is the
+        // check that the turn arrived as itself (D46); them differing is a
+        // finding, and either way it is recorded rather than assumed.
+        fields.insert(
+            "identifiers_sent".to_owned(),
+            Value::Integer(i64::try_from(tokens.len()).unwrap_or(i64::MAX)),
+        );
+        fields.insert(
+            "identifiers_read".to_owned(),
+            Value::Integer(i64::try_from(completed.evaluated).unwrap_or(i64::MAX)),
+        );
+    }
+
+    Ok(Value::map([
+        (
+            "tokens",
+            Value::Integer(i64::try_from(completed.predicted).unwrap_or(i64::MAX)),
+        ),
+        ("stopped", Value::text(completed.stop.written())),
+        ("text", Value::text(completed.text)),
+        // The identifiers as well as the text, so that another engine can be
+        // asked what it would have chosen at each one (B-362). Text cannot
+        // answer that: past the first disagreement the two are writing
+        // different sentences.
+        (
+            "produced_tokens",
+            Value::List(
+                completed
+                    .produced
+                    .iter()
+                    .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                    .collect(),
+            ),
+        ),
+        ("conditions", conditions),
+    ]))
 }
 
 /// One generation through the provisioned engine, as a supervised subprocess
@@ -449,42 +644,5 @@ impl WithResidency for Value {
             Value::Integer(i64::try_from(dequantized).unwrap_or(i64::MAX)),
         );
         Value::Map(fields)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::identifiers_cannot_travel;
-
-    /// The refusal is a refusal, attributed to the configuration rather than
-    /// to the machine or the model, and it names the item that lifts it.
-    ///
-    /// A lab scenario would drive this end to end, and cannot yet: reaching it
-    /// needs a provisioned engine on the machine, which is what B-376 is
-    /// about. Until then the decision is tested where it is made, which is
-    /// more than the silent drop it replaced had.
-    #[test]
-    fn a_turn_of_identifiers_is_refused_rather_than_dropped() {
-        let failure = identifiers_cannot_travel();
-        assert_eq!(
-            failure.disposition(),
-            mcf_core::failure::Disposition::Refused,
-            "nothing was attempted, so nothing was aborted"
-        );
-        assert_eq!(
-            failure.attribution(),
-            mcf_core::failure::Attribution::Machine,
-            "the daemon may have chosen this engine itself, so nothing the caller wrote is \
-             at fault"
-        );
-        let said = failure.to_string();
-        assert!(
-            said.contains("B-376"),
-            "a refusal has to say what would lift it: {said}"
-        );
-        assert!(
-            said.contains("silently dropped"),
-            "and what it is refusing to do instead: {said}"
-        );
     }
 }

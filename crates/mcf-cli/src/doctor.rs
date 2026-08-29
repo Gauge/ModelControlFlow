@@ -379,6 +379,54 @@ fn no_record_location() -> Failure {
     .with_context("tried", "$XDG_DATA_HOME/mcf, $HOME/.local/share/mcf")
 }
 
+/// Every temperature and occupancy this machine publishes, and what MCF could
+/// not read.
+///
+/// Until F91, MCF read no processor temperature at all and reported an
+/// accelerator's as the whole thermal state. A reader deciding whether a
+/// measurement was taken on a hot machine needs the processor, not the
+/// graphics card — and where MCF cannot read the hardware, A7 and A2 require
+/// it be said out loud with the route that closes it. A gap nobody is told
+/// about is a gap nobody reports.
+fn sensor_lines() -> String {
+    let mut said: Vec<String> = mcf_core::hardware::thermal::sensors()
+        .iter()
+        .map(|sensor| format!("  {sensor}"))
+        .collect();
+    said.extend(
+        mcf_core::hardware::utilisation::accelerators()
+            .iter()
+            .map(|card| format!("  {card}")),
+    );
+    said.extend(crate::support::Gaps::here().one_line());
+    said.push(String::new());
+    said.join("\n")
+}
+
+/// The warning for an accelerator that is present and unreadable.
+///
+/// Extracted from the report's rendering because that rendering is one screen
+/// of a person's attention, and this is the paragraph that most needs room.
+fn uncharacterized(machine: &Machine) -> String {
+    let mut said: Vec<String> = Vec::new();
+    for device in &machine.accelerators {
+        if let Characterization::AttemptedUncharacterized { missing } = device.characterization() {
+            let names: Vec<&str> = missing.iter().map(|m| m.as_str()).collect();
+            said.push(format!(
+                "\n  ⚠ accelerator #{} is present and not characterized.\n\
+                     \x20   MCF will attempt to use it and will mark every result taken on it\n\
+                     \x20   as degraded, because it cannot read: {}.\n\
+                     \x20   Those readings are what §3.8 needs to tell a slow model from a\n\
+                     \x20   busy machine, so results taken here are not comparable with\n\
+                     \x20   characterized ones and are not contributable (D25, A5, A8).",
+                device.index(),
+                names.join(", "),
+            ));
+        }
+    }
+    said.join("")
+}
+
 impl core::fmt::Display for Report {
     /// The report, rendered for a terminal.
     ///
@@ -395,24 +443,8 @@ impl core::fmt::Display for Report {
         for line in self.machine.to_string().lines() {
             writeln!(f, "  {line}")?;
         }
-        for device in &self.machine.accelerators {
-            if let Characterization::AttemptedUncharacterized { missing } =
-                device.characterization()
-            {
-                let names: Vec<&str> = missing.iter().map(|m| m.as_str()).collect();
-                writeln!(
-                    f,
-                    "\n  ⚠ accelerator #{} is present and not characterized.\n\
-                     \x20   MCF will attempt to use it and will mark every result taken on it\n\
-                     \x20   as degraded, because it cannot read: {}.\n\
-                     \x20   Those readings are what §3.8 needs to tell a slow model from a\n\
-                     \x20   busy machine, so results taken here are not comparable with\n\
-                     \x20   characterized ones and are not contributable (D25, A5, A8).",
-                    device.index(),
-                    names.join(", "),
-                )?;
-            }
-        }
+        write!(f, "{}", sensor_lines())?;
+        write!(f, "{}", uncharacterized(&self.machine))?;
 
         writeln!(f, "\nWHAT MCF COSTS HERE")?;
         write!(f, "{}", Self::cost_line(&CORE_BINARY, self.cost.artifact))?;
@@ -673,7 +705,33 @@ fn where_models_go() -> String {
         ));
     }
     lines.push(String::new());
+    lines.push(scored_projection());
+    lines.push(String::new());
     lines.join("\n")
+}
+
+/// How well MCF's own projection has done against what it later measured
+/// (B-215, §6.16).
+///
+/// **The instrument does not get to grade itself**, so this is MCF grading it:
+/// every measurement in the record is checked against the band that *would
+/// have been* projected for it from the others. Nothing is stored — it is
+/// recomputed from the history each time, so it tracks as the history grows,
+/// which is what B-215 means by *over time*. A stored score would be a score
+/// about a record that has since changed.
+///
+/// It sits in `doctor` because that is the surface that says what MCF costs
+/// here and what it promises, and *how often my own guesses were right* is one
+/// of those.
+fn scored_projection() -> String {
+    let held = crate::history::read();
+    let scored = mcf_bench::project::score(&held.points);
+    format!(
+        "PROJECTION, SCORED AGAINST WHAT WAS LATER MEASURED  (B-215, §6.16)\n  {scored}\n  \
+         Recomputed from this machine's record every time it is asked, so it moves as the\n  \
+         history does. A projection nobody scores is a claim MCF makes for ever without\n  \
+         ever finding out whether it was any good."
+    )
 }
 
 /// How much room a store has, or would have.

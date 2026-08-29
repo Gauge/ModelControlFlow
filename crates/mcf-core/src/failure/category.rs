@@ -877,3 +877,66 @@ impl fmt::Display for Category {
         f.write_str(self.code())
     }
 }
+
+/// Whose failure this is (B-233, B49, §7.10, §3.1).
+///
+/// **The failure this exists to prevent.** An out-of-memory caused by another
+/// process competing for the machine is a condition of the run. Recorded as
+/// the model's, it becomes *this model gave up* — a claim about a model
+/// arrived at by measuring a busy afternoon. B-233: every failure of a
+/// yielding run classifies to one branch or the other, never ambiguously.
+///
+/// **Four branches, not two.** *Environment or model* would force MCF's own
+/// bugs into *environment*, which is the same error in the other direction —
+/// blaming the machine for what MCF did. And an artifact that is corrupt on
+/// disk is neither: the run never happened, so there is nothing to attribute
+/// to a model that was never asked.
+///
+/// **Read from the attribution and never from the category**, which is a
+/// correction worth stating because the other way round is the obvious design
+/// and it is wrong. `probe.inconclusive` is MCF's when its own logic could not
+/// decide and the machine's when the machine misbehaved; `engine.unavailable`
+/// is MCF's when its stand-in does not implement a format and the machine's
+/// when nothing is installed; `config.invalid` is the operator's. A category
+/// says *what went wrong*. Only the attribution says *whose*, which is why it
+/// is a separate axis that every failure must supply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Branch {
+    /// The model under test did this: it looped, it ignored the format, it
+    /// never stopped, it emitted a call to a tool that does not exist.
+    ///
+    /// The only branch that is evidence about a model.
+    TheModel,
+    /// The machine or its surroundings did this: memory exhausted, an
+    /// accelerator lost, a disk full, a network unreachable, a clock that
+    /// jumped.
+    ///
+    /// A condition of the run (§3.4). It says what happened *around* a
+    /// measurement, and nothing whatever about the thing measured.
+    TheEnvironment,
+    /// The artifact was not what it needed to be: absent, corrupt, truncated,
+    /// in a format nothing here reads.
+    ///
+    /// Distinct from the model, because the run never happened: there is no
+    /// behaviour to attribute to something that was never asked a question.
+    TheArtifact,
+    /// MCF did this.
+    ///
+    /// Its own record it cannot write, its own configuration it cannot make
+    /// sense of, its own laboratory machinery. Kept separate so that MCF's
+    /// bugs cannot be read as the machine's bad luck — which is the same
+    /// laundering B-233 forbids, pointed inwards.
+    McfItself,
+}
+
+impl fmt::Display for Branch {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        form.write_str(match self {
+            Self::TheModel => "the model under test",
+            Self::TheEnvironment => "the environment the run happened in",
+            Self::TheArtifact => "the artifact",
+            Self::McfItself => "MCF itself",
+        })
+    }
+}

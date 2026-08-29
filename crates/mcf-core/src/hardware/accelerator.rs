@@ -21,6 +21,11 @@
 //! publishes, and the vendor's management library over the C ABI. Nothing
 //! outside this module knows which route answered, and no measurement path
 //! contains a test for which vendor a device is (B28).
+//!
+//! **Cross-checked by:** two independent routes. The driver files and the
+//! vendor library are read separately and their disagreement is recorded
+//! rather than resolved (`routes_disagree_about`), which is A19 built into
+//! the reading itself.
 
 use core::fmt;
 

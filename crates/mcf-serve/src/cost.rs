@@ -124,7 +124,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
     let line = Request::Generate {
         model: model.display().to_string(),
         prompt: "yes".to_owned(),
-        limit: 2,
+        limit: Some(2),
         seed: 0,
         tokens: None,
         // D24's figure is about what MCF interposes around its own engine; a

@@ -11,6 +11,10 @@
 //! adding a vendor is adding a route (D25), and a route that pretended to be
 //! general by guessing at unfamiliar files would be inventing readings, which
 //! A7 forbids.
+//!
+//! **Cross-checked by:** the vendor-library route in `nvml`, which reads the
+//! same devices by another means; `accelerator` compares them and records
+//! where they differ.
 
 use std::path::Path;
 

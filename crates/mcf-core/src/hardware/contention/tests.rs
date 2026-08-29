@@ -1,0 +1,253 @@
+//! What a contention snapshot has to get right on the machine running it.
+//!
+//! B19 keeps these hermetic: they read `/proc`, which is this machine's own
+//! state and needs no network, no accelerator and no model. What they assert
+//! is the *shape* of the answer, because the values are whatever else is
+//! running — a test that asserted a quiet machine would fail on a busy one and
+//! would be measuring the runner rather than the code.
+
+use crate::attested::Attested;
+
+use super::{NAMED, Snapshot, sample};
+
+/// A snapshot names what it found, most first, and never more than it says.
+#[test]
+fn it_names_the_busiest_and_no_more_than_it_says() {
+    let held: Snapshot = sample();
+    assert!(
+        held.competitors.len() <= NAMED,
+        "a list of everything is a list nobody reads: {}",
+        held.competitors.len()
+    );
+    for pair in held.competitors.windows(2) {
+        let (Some(one), Some(other)) = (pair.first(), pair.last()) else {
+            continue;
+        };
+        assert!(
+            one.cores_taken >= other.cores_taken,
+            "the busiest first, so a reader stops at the top"
+        );
+    }
+}
+
+/// **MCF's own process is named rather than filtered out.** MCF competing with
+/// itself is a true and useful thing to see, and a snapshot that hid it would
+/// be hiding the one process the reader can do something about.
+#[test]
+fn mcfs_own_process_is_named_as_its_own() {
+    // The test binary spends processor time by definition — it is running.
+    let mut spinning = 0_u64;
+    let until = std::time::Instant::now() + super::OVER;
+    let held = std::thread::spawn(move || {
+        while std::time::Instant::now() < until {
+            spinning = spinning.wrapping_add(1);
+        }
+        spinning
+    });
+    let snapshot = sample();
+    let _spun = held.join();
+
+    let ours = std::process::id();
+    let mine = snapshot.competitors.iter().find(|held| held.pid == ours);
+    if let Some(mine) = mine {
+        assert!(
+            mine.is_mcf,
+            "MCF's own process must be marked as its own, not left to be guessed at"
+        );
+        assert!(
+            format!("{mine}").contains("this is MCF"),
+            "and say so where it is rendered: {mine}"
+        );
+    }
+    // Where it is not in the top few, that is a fact about a busy machine and
+    // not a defect — the assertion above is about what happens when it is.
+}
+
+/// The total is the sum of everything, not of the few that are named.
+///
+/// A snapshot that totalled only its own top five would understate the machine
+/// by exactly the amount it did not show, which is the sort of quiet
+/// arithmetic A1 forbids.
+#[test]
+fn the_total_counts_what_is_not_named() {
+    let held = sample();
+    let named: u64 = held
+        .competitors
+        .iter()
+        .fold(0, |sum, one| sum.saturating_add(one.cores_taken));
+    assert!(
+        held.cores_taken >= named,
+        "the total ({}) must count processes the list did not name ({named})",
+        held.cores_taken
+    );
+}
+
+/// **D25's boundary, restated.** Per-process accelerator occupancy needs a
+/// vendor library MCF may not have, and *unknown* is not *no contention*.
+#[test]
+fn an_unreadable_accelerator_is_unknown_and_not_zero() {
+    assert_eq!(
+        sample().accelerator,
+        Attested::Unknown,
+        "MCF has no per-process accelerator reading, and says so rather than reporting none"
+    );
+}
+
+/// The kernel's pressure accounting is read where the machine keeps it, and is
+/// `Unknown` where it does not — a kernel without it is not a quiet one (A7).
+#[test]
+fn pressure_is_read_or_reported_absent() {
+    let held = sample();
+    for (named, value) in [
+        ("processor", held.processor_pressure),
+        ("memory", held.memory_pressure),
+        ("storage", held.storage_pressure),
+    ] {
+        match value {
+            Attested::Known(held) => assert!(
+                held <= 1_000_000,
+                "{named} pressure is a fraction of the window: {held} ppm"
+            ),
+            Attested::Unknown => {}
+        }
+    }
+    // On a machine that keeps it, at least one is readable — which is a
+    // statement about this test's runner and is asserted only that way round.
+    if std::path::Path::new("/proc/pressure/cpu").exists() {
+        assert!(
+            matches!(held.processor_pressure, Attested::Known(_)),
+            "this machine keeps pressure accounting and MCF did not read it"
+        );
+    }
+}
+
+/// It is on demand and it says what it cost: two readings a stated interval
+/// apart, and no timer anywhere (B4, D5).
+#[test]
+fn it_costs_the_interval_it_states_and_no_more() {
+    let began = std::time::Instant::now();
+    let _held = sample();
+    let took = began.elapsed();
+    assert!(
+        took >= super::OVER,
+        "a rate needs two readings an interval apart: {took:?}"
+    );
+    assert!(
+        took < super::OVER.saturating_mul(20),
+        "and reading /proc twice must not dominate the interval: {took:?}"
+    );
+}
+
+/// **Steady against its own baseline, not quiet against a number** (B-217,
+/// DEC-007). The reading is a spread against the middle of what was competing,
+/// wherever that middle sits — a machine idling at forty percent has a
+/// baseline of forty percent, and refusing to measure below an absolute quiet
+/// would deny most people a result while telling them nothing.
+#[test]
+fn steadiness_is_measured_against_the_machines_own_middle() {
+    let held = super::steadiness(2);
+    assert_eq!(held.readings, 2, "two is the fewest that can show a spread");
+    if held.middle > 0 {
+        assert!(
+            held.spread.is_some(),
+            "a machine with something competing has a baseline to be steady against"
+        );
+    }
+    // The rendering says both halves: where it sat and how far it moved.
+    let text = format!("{held}");
+    assert!(
+        text.contains("competing") || text.contains("no baseline"),
+        "{text}"
+    );
+}
+
+/// **A machine with nothing competing has no baseline**, and the spread is a
+/// state rather than an infinity: dividing by a zero middle is exactly what A7
+/// turns into an answer instead of a number.
+#[test]
+fn nothing_competing_has_no_baseline_rather_than_a_perfect_one() {
+    let held = super::Steadiness {
+        middle: 0,
+        spread: None,
+        readings: 3,
+    };
+    assert!(
+        format!("{held}").contains("no baseline"),
+        "a zero baseline must not read as perfect steadiness: {held}"
+    );
+}
+
+/// Fewer than two readings cannot show a spread, so two is what it takes.
+#[test]
+fn one_reading_is_raised_to_two() {
+    assert_eq!(super::steadiness(0).readings, 2);
+    assert_eq!(super::steadiness(1).readings, 2);
+}
+
+/// It measures and does not judge: there is no threshold here, because what
+/// spread is too much is the band DEC-007 leaves open, and inventing one here
+/// would be the figure that decision exists to derive from measurement.
+#[test]
+fn it_reports_a_number_and_no_verdict() {
+    let held = super::steadiness(2);
+    // The type carries a number and no judgement — asserted on the rendering,
+    // because a value would be about the machine running the suite.
+    let said = format!("{held}");
+    for judgement in ["too ", "quiet", "unusable", "refus"] {
+        assert!(
+            !said.contains(judgement),
+            "no rendering here may judge a spread — what is too much is DEC-007's open band: \
+             `{judgement}` in {said}"
+        );
+    }
+}
+
+/// **The defect F90 found.** The rate was computed by dividing accumulated
+/// processor ticks by [`OVER`], the interval the sampler *intends* to wait.
+/// Walking `/proc` costs real time — a file read per process — and that time
+/// falls inside the window, so the true interval is always longer than `OVER`
+/// and the reported figure is inflated by exactly the ratio. It inflates most
+/// when the machine is busiest, because that is when the walk is slowest and
+/// when the reading matters.
+///
+/// Measured against `/proc/stat` on this machine: under forty-eight spinners
+/// on thirty-two threads, dividing by `OVER` reported **35.2 cores** — more
+/// than the machine has — where the kernel's own accounting said **28.9**.
+/// Dividing by the elapsed time instead agreed to under one percent.
+#[test]
+fn the_interval_is_measured_rather_than_assumed() {
+    let source = include_str!("../contention.rs");
+    assert!(
+        source.contains("saturating_duration_since(opened)"),
+        "the window a rate is divided by must be the one that elapsed, not the one that was \
+         intended: `/proc` takes time to walk and that time is inside the window"
+    );
+    assert!(
+        !source.contains("OVER.as_millis()"),
+        "dividing by the intended interval is the defect itself, and it reports figures the \
+         machine cannot physically produce"
+    );
+}
+
+/// A machine cannot be more than fully busy.
+///
+/// The arithmetic check the old code would have failed: no snapshot may report
+/// more cores competing than the machine has, because a figure above the
+/// ceiling is not a large reading, it is a broken instrument.
+#[test]
+fn no_snapshot_reports_more_cores_than_the_machine_has() {
+    let held = super::sample();
+    let ceiling = u64::try_from(std::thread::available_parallelism().map_or(1, Into::into))
+        .unwrap_or(u64::MAX)
+        .saturating_mul(1_000);
+    // A tenth of slack for scheduling granularity: the tick accounting is
+    // integral and a process can be credited a tick it began before the
+    // window opened. Ten percent is far below the 22% the defect produced.
+    let slack = ceiling.saturating_add(ceiling.wrapping_div(10));
+    assert!(
+        held.cores_taken <= slack,
+        "reported {} thousandths of a core on a machine with {ceiling} — a reading above the \
+         ceiling is a broken instrument, not a busy machine",
+        held.cores_taken
+    );
+}

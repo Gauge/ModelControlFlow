@@ -30,7 +30,7 @@ use mcf_core::provenance::{
     TransformationKind,
 };
 use mcf_core::time::Timestamp;
-use mcf_core::trial::{Series, Trial, Trials};
+use mcf_core::trial::{Draw, Series, Trial, Trials};
 
 use crate::json::Value;
 
@@ -43,6 +43,23 @@ pub fn build_identity(identity: BuildIdentity) -> Value {
         ("rustc", Value::text(identity.rustc)),
         ("target", Value::text(identity.target)),
         ("profile", Value::text(identity.profile)),
+        // **What actually took the measurement** (F93). The four fields above
+        // are identical across builds whose instruments differ: three
+        // measuring instruments changed in this repository in one working
+        // day and every record on either side of all three says `0.1.0-m0`.
+        // A binary's own digest cannot be forgotten by a build environment
+        // and differs exactly when the instrument does.
+        (
+            "instrument",
+            match mcf_core::build_identity::instrument() {
+                mcf_core::attested::Attested::Known(digest) => Value::text(digest.hex()),
+                // A7: a platform that will not let MCF read its own
+                // executable is a capability of the platform, and a
+                // placeholder here would be the very thing this field exists
+                // to stop.
+                mcf_core::attested::Attested::Unknown => Value::Null,
+            },
+        ),
     ])
 }
 
@@ -384,7 +401,38 @@ pub fn trial<Q: Quantity>(trial: &Trial<Q>, as_integer: impl Fn(Q) -> i64) -> Va
         ("arm", Value::text(trial.arm().as_str())),
         ("position", Value::Integer(i64::from(trial.position().0))),
         ("session", Value::text(trial.session().as_str())),
+        ("drew", draw(trial.drew())),
     ])
+}
+
+/// What a trial drew, and under which discipline (B61, D19, B-290).
+///
+/// **The seed is written as text, and that is not laziness.** A seed is a
+/// `u64` and this record's integers are `i64`, so half the seed space would
+/// wrap or saturate on the way in — losing a *condition*, which is the one
+/// thing §3.4 will not have. It is also not a quantity: nothing orders,
+/// subtracts or averages a seed, so the argument for a numeric type does not
+/// apply to it. Decimal rather than hexadecimal, because that is how every
+/// language will print it back.
+#[must_use]
+pub fn draw(drew: &Draw) -> Value {
+    match drew {
+        Draw::Seeded { seed, from } => Value::map([
+            ("discipline", Value::text("seeded")),
+            ("seed", Value::text(seed.to_string())),
+            ("from", Value::text(from.clone())),
+            ("tokens", Value::Null),
+        ]),
+        Draw::LengthPinned { seed, tokens } => Value::map([
+            // A timing trial, which D19 has hold its seed still and pin the
+            // generation length instead. Named as its own discipline so that a
+            // reader cannot mistake it for a behaviour trial's fixed seed.
+            ("discipline", Value::text("length_pinned")),
+            ("seed", Value::text(seed.to_string())),
+            ("from", Value::Null),
+            ("tokens", Value::Integer(i64::from(*tokens))),
+        ]),
+    }
 }
 
 /// A session's trials, and the conditions they were taken under.
@@ -438,6 +486,67 @@ pub fn series<Q: Quantity>(series: &Series<Q>, as_integer: impl Fn(Q) -> i64) ->
                 points
                     .iter()
                     .map(|point| Value::Integer(as_integer(*point)))
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+/// What was competing for the machine (B-216, PR5).
+///
+/// The command lines are the operator's own machine's and go into the
+/// operator's own record; §3.20's gate is on whatever *sends* a record rather
+/// than on writing one, and a snapshot naming no names would be a number where
+/// a diagnosis was asked for.
+#[must_use]
+pub fn contention(held: &mcf_core::hardware::Snapshot) -> Value {
+    let fraction = |value: Attested<u64>| match value {
+        Attested::Known(held) => Value::Integer(i64::try_from(held).unwrap_or(i64::MAX)),
+        Attested::Unknown => Value::Null,
+    };
+    Value::map([
+        (
+            "over_ms",
+            Value::Integer(i64::try_from(mcf_core::hardware::OVER.as_millis()).unwrap_or(i64::MAX)),
+        ),
+        (
+            "cores_taken_thousandths",
+            Value::Integer(i64::try_from(held.cores_taken).unwrap_or(i64::MAX)),
+        ),
+        ("processor_pressure_ppm", fraction(held.processor_pressure)),
+        ("memory_pressure_ppm", fraction(held.memory_pressure)),
+        ("storage_pressure_ppm", fraction(held.storage_pressure)),
+        (
+            "load_average_thousandths",
+            match held.load {
+                Attested::Known(load) => Value::Integer(i64::try_from(load.0).unwrap_or(i64::MAX)),
+                Attested::Unknown => Value::Null,
+            },
+        ),
+        // D25: a capability of the observer, and *unknown* is not *none*.
+        (
+            "accelerator_occupancy",
+            match &held.accelerator {
+                Attested::Known(said) => Value::text(said.clone()),
+                Attested::Unknown => Value::Null,
+            },
+        ),
+        (
+            "competitors",
+            Value::List(
+                held.competitors
+                    .iter()
+                    .map(|one| {
+                        Value::map([
+                            ("pid", Value::Integer(i64::from(one.pid))),
+                            ("command", Value::text(one.command.clone())),
+                            (
+                                "cores_taken_thousandths",
+                                Value::Integer(i64::try_from(one.cores_taken).unwrap_or(i64::MAX)),
+                            ),
+                            ("is_mcf", Value::Bool(one.is_mcf)),
+                        ])
+                    })
                     .collect(),
             ),
         ),

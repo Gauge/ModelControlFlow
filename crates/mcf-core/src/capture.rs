@@ -74,6 +74,16 @@ pub fn floor(
             Attested::Known(storage) => Attested::Known(ConditionValue::text(storage.to_string())),
             Attested::Unknown => Attested::Unknown,
         }),
+        // Which seed set a run drew from is a property of the run, not of the
+        // machine, and this function reads the machine. A run that took seeded
+        // trials fills it in from its own `SeedSet`; a timing laboratory has
+        // no answer to give, because D19 has it hold the seed still and pin the
+        // generation length instead (B-290).
+        seed_set: Attested::Unknown,
+        // What a measurement reused is a property of the run, not of the
+        // machine, and this function reads the machine. A benchmark fills it
+        // in from what the engine said about each trial (B-081, §6.13).
+        reuse: Attested::Unknown,
     }
 }
 
@@ -136,17 +146,23 @@ fn describe_hardware(machine: &Machine) -> Option<String> {
 /// The processor's own temperature is not read: no route supplies it yet, and
 /// A7 forbids reporting the accelerator's as though it were the machine's.
 fn describe_thermal(machine: &Machine) -> Option<String> {
-    let described: Vec<String> = machine
-        .accelerators
-        .iter()
-        .filter_map(|device| {
-            device
-                .reading()
-                .temperature_c
-                .known()
-                .map(|celsius| format!("accel#{} {celsius} °C", device.index()))
-        })
-        .collect();
+    // **The processor first, and it was missing entirely until F91.** This
+    // condition reported accelerator temperatures and nothing else, so every
+    // measurement MCF has taken carries no record of how hot the thing doing
+    // the work was — which is the half of the thermal condition DEC-007's open
+    // question is actually about.
+    let sensors = crate::hardware::thermal::sensors();
+    let mut described: Vec<String> = Vec::new();
+    if let Some(found) = crate::hardware::thermal::processor(&sensors) {
+        described.push(format!("processor {found}"));
+    }
+    described.extend(machine.accelerators.iter().filter_map(|device| {
+        device
+            .reading()
+            .temperature_c
+            .known()
+            .map(|celsius| format!("accel#{} {celsius} °C", device.index()))
+    }));
     if described.is_empty() {
         None
     } else {

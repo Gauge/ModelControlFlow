@@ -158,7 +158,21 @@ fn counted(entries: usize, kind: Option<EntryKind>) -> String {
 /// log readable is that the interesting thing is in the same place every time,
 /// and what a reader wants from an acquisition is not what they want from a
 /// failure.
-fn summarize(entry: &Entry) -> String {
+pub(crate) fn summarize(entry: &Entry) -> String {
+    let said = described(entry);
+    // Any instrument defect that applies to this entry, beside it (F93). A
+    // measurement whose instrument was later found wrong must say so where it
+    // is read, not in a document the reader has no reason to open.
+    let errata = errata_for(entry.recorded_at());
+    if errata.is_empty() {
+        said
+    } else {
+        format!("{said}\n{}", errata.join("\n"))
+    }
+}
+
+/// The entry, as one line, before any erratum is attached.
+fn described(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
         EntryKind::MachineProfile => text(body, "processor")
@@ -243,11 +257,200 @@ fn summarize(entry: &Entry) -> String {
                 .map_or(0, <[Value]>::len),
             text(body, "reason").unwrap_or_else(|| "no reason recorded".to_owned())
         ),
+        // A9: a comparison that found nothing is a result, and it reads as
+        // one here.
+        EntryKind::Comparison => comparison(body),
+        // B24 with a name attached: a measurement that could not be
+        // attributed, and what else was here when it happened (PR5, B-216).
+        EntryKind::ContentionSnapshot => contention(body),
+        // The other half of A9, and the one §6.3 already calls a complete
+        // success: *this will not run here, because it needs 131 GiB and you
+        // have 24.*
+        EntryKind::FitmentPlanned => fitment(body),
         // `EntryKind` is non-exhaustive: an entry from a newer build is shown as
         // what it is rather than hidden, because a log that skipped what it did
         // not understand would be a log that lies by omission (§7.30, A1).
         other => format!("{other}: {}", body.to_line()),
     }
+}
+
+/// A comparison, as a reader meets it in the log (A9, B-086).
+///
+/// Three of the four outcomes are things a reader will call *it didn't work*,
+/// and none of them is a failure. The line says which it was rather than
+/// leaving anyone to infer it from a missing number.
+/// Any instrument defect that applies to something recorded at this moment
+/// (F93).
+///
+/// **Rendered beside the entry rather than left in a findings document.** A
+/// reader meeting a measurement is the person who needs to know the instrument
+/// that took it was later found wrong, and they will not go looking. A2: no
+/// silent failure, and an uncorrected reading rendered as though nothing were
+/// known about it is exactly that.
+fn errata_for(at: mcf_core::time::Timestamp) -> Vec<String> {
+    let nanos = i64::try_from(at.utc_nanos()).unwrap_or(i64::MAX);
+    mcf_core::errata::affecting(nanos)
+        .iter()
+        .map(|held| format!("  ⚠ ERRATUM {held}"))
+        .collect()
+}
+
+/// The interval on the size, recomputed from the pairs the entry carries.
+///
+/// **Derived on read, never stored** (B55, B56, F92). The trials are kept, so
+/// every comparison in the record — including one written before the interval
+/// existed — renders with the range its own pairs always supported. Nothing is
+/// rewritten: the entry on disk is what it was, and the summary is computed
+/// each time it is asked for, which is the rule that made this possible.
+fn recomputed_spread(body: &Value) -> Option<mcf_bench::enough::Spread> {
+    let pairs = body.get("pairs").and_then(Value::as_list)?;
+    let differences: Vec<i64> = pairs
+        .iter()
+        .filter_map(|pair| {
+            let left = pair.get("left_ns").and_then(Value::as_integer)?;
+            let right = pair.get("right_ns").and_then(Value::as_integer)?;
+            let smaller = left.min(right);
+            (smaller > 0).then(|| {
+                right
+                    .saturating_sub(left)
+                    .saturating_mul(1_000_000)
+                    .wrapping_div(smaller)
+            })
+        })
+        .collect();
+    mcf_bench::enough::spread_of(&differences)
+}
+
+fn comparison(body: &Value) -> String {
+    let arm = |side: &str| {
+        body.get(side)
+            .and_then(|held| held.get("arm"))
+            .and_then(Value::as_text)
+            .unwrap_or("an unnamed arm")
+            .to_owned()
+    };
+    let outcome = body.get("outcome");
+    let of = |key: &str| {
+        outcome
+            .and_then(|held| held.get(key))
+            .and_then(Value::as_integer)
+            .unwrap_or(0)
+    };
+    let kind = outcome
+        .and_then(|held| held.get("kind"))
+        .and_then(Value::as_text)
+        .unwrap_or("an unrecorded outcome");
+    let quicker = outcome
+        .and_then(|held| held.get("quicker"))
+        .and_then(Value::as_text);
+    let said = match kind {
+        // A size without a direction is not a comparison (F67), and the log's
+        // one line is where most readers meet the verdict.
+        // The size as a range, recomputed from the pairs (F92). A record
+        // written before the interval existed renders with one anyway,
+        // because the trials it kept are what the interval is made of.
+        "differ" | "ordered" | "apart" => {
+            let sized = recomputed_spread(body)
+                .map_or_else(|| per_cent(of("difference")), |held| format!("{held}"));
+            let unsettled = if kind == "ordered" {
+                format!(
+                    " — which does not settle the size at the {} asked about",
+                    per_cent(of("resolution"))
+                )
+            } else {
+                String::new()
+            };
+            match quicker {
+                Some(side) => format!(
+                    "the {} arm ({}) is quicker by {sized}{unsettled}",
+                    side,
+                    arm(side)
+                ),
+                None => format!("they differ by {sized}{unsettled}"),
+            }
+        }
+        "same" => format!(
+            "no difference as large as {} — which is a result, not a failure to find one",
+            per_cent(of("resolution"))
+        ),
+        "not_yet" => "not decided: the arms have not separated".to_owned(),
+        "not_comparable" => format!("not comparable: {} differed", differing(body)),
+        other => other.to_owned(),
+    };
+    format!(
+        "compared {} with {}: {said}, after {} paired trial(s)",
+        arm("left"),
+        arm("right"),
+        of("pairs")
+    )
+}
+
+/// The conditions a comparison found differing, as one phrase.
+fn differing(body: &Value) -> String {
+    let Some(held) = body
+        .get("isolation")
+        .and_then(|held| held.get("differ"))
+        .and_then(Value::as_list)
+    else {
+        return "more than one condition".to_owned();
+    };
+    held.iter()
+        .filter_map(Value::as_text)
+        .collect::<Vec<&str>>()
+        .join(", ")
+}
+
+/// A contention snapshot, as a reader meets it in the log (B-216, PR5).
+fn contention(body: &Value) -> String {
+    let competitors = body.get("competitors").and_then(Value::as_list);
+    let busiest = competitors
+        .and_then(<[Value]>::first)
+        .and_then(|one| one.get("command"))
+        .and_then(Value::as_text)
+        .unwrap_or("nothing it could name");
+    let taken = body
+        .get("cores_taken_thousandths")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    format!(
+        "what was competing: {}.{} core(s) across {} process(es), busiest {busiest}",
+        taken.wrapping_div(1_000),
+        taken.wrapping_div(100).wrapping_rem(10),
+        competitors.map_or(0, <[Value]>::len)
+    )
+}
+
+/// A plan, as a reader meets it in the log (A9, §6.3, B-213).
+fn fitment(body: &Value) -> String {
+    let variants = body
+        .get("plan")
+        .and_then(|plan| plan.get("variants"))
+        .and_then(Value::as_list);
+    let counted = |wanted: &str| {
+        variants.map_or(0, |held| {
+            held.iter()
+                .filter(|variant| variant.get("outcome").and_then(Value::as_text) == Some(wanted))
+                .count()
+        })
+    };
+    format!(
+        "planned {} — {} of {} variant(s) fit here, {} at a shorter context, {} do not",
+        text(body, "repository").unwrap_or_else(|| "a repository".to_owned()),
+        counted("fits"),
+        variants.map_or(0, <[Value]>::len),
+        counted("fits_at_a_shorter_context"),
+        counted("does_not_fit")
+    )
+}
+
+/// A ratio in parts per million, as a reader wants it.
+///
+/// Integer arithmetic: this crate renders what the record holds and does not
+/// introduce a float to do it (A6).
+fn per_cent(held: i64) -> String {
+    let whole = held.wrapping_div(10_000);
+    let tenths = held.wrapping_div(1_000).wrapping_rem(10).abs();
+    format!("{whole}.{tenths}%")
 }
 
 fn text(body: &Value, key: &str) -> Option<String> {
@@ -260,3 +463,109 @@ fn integer(body: &Value, key: &str) -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Writes down that somebody changed how MCF addresses a model (D43, B-059).
+///
+/// The pair to the configuration file the way `ComponentProvisioned` pairs
+/// with a prefix: the file says what MCF does now, and this says who changed
+/// it, when, and on what evidence. A configuration whose file is edited by
+/// hand still has this line to be compared against.
+///
+/// # Errors
+///
+/// `record.unwritable` where there is nowhere to write.
+pub(crate) fn record_configured(
+    model: &std::path::Path,
+    addressing: &mcf_serve::configured::Addressing,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-cli::log"),
+            "there is nowhere to record the configuration",
+        ));
+    };
+    let body = Value::map([
+        ("model", Value::text(model.display().to_string())),
+        ("addressing", addressing.to_value()),
+        // What MCF did before, so that the entry says what *changed* and not
+        // only what is now true. A record of the new state alone cannot answer
+        // whether anything happened (A1).
+        ("was", Value::text("raw text, MCF's default (§3.8)")),
+    ]);
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&Entry::new(
+        EntryKind::ModelConfigured,
+        mcf_core::time::Timestamp::now(),
+        body,
+    ))?;
+    Ok(path)
+}
+
+/// Writes what a probe observed about a model's usable context (B-386, B-055).
+///
+/// **Why this exists at all.** A probe printed its findings and wrote none of
+/// them down, so a figure this machine established lived on a terminal until
+/// the terminal scrolled. A1: a measurement nobody can find later is the same
+/// as one not taken. B-382 is where it surfaced — a prompt's cost could only
+/// be stated against the file's claim, because MCF's own measurement of what
+/// the engine actually takes existed nowhere readable.
+///
+/// **What travels with it.** The conditions, because a context measured
+/// through one engine on one machine is not a fact about the model (§3.4); and
+/// the engine's own words where it refused, because a refusal for an unrelated
+/// reason would otherwise be read back as a short context (A1).
+///
+/// # Errors
+///
+/// `record.unwritable` where there is nowhere to write, or the journal refuses
+/// the append. A probe whose result could not be kept says so rather than
+/// reading as kept (A2).
+pub(crate) fn record_probed_context(
+    model: &std::path::Path,
+    context: &mcf_serve::probes::Context,
+    engine: &str,
+) -> Result<std::path::PathBuf, mcf_core::Failure> {
+    let Some(path) = mcf_record::journal::default_path() else {
+        return Err(mcf_core::Failure::new(
+            mcf_core::failure::Category::RecordUnwritable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-cli::log"),
+            "there is nowhere to record what the probe observed",
+        ));
+    };
+    let mut body = vec![
+        ("model", Value::text(model.display().to_string())),
+        (
+            "method",
+            Value::text(mcf_serve::probes::USABLE_CONTEXT.name),
+        ),
+        (
+            "declared_tokens",
+            Value::Integer(as_integer(context.declared)),
+        ),
+        (
+            "accepted_tokens",
+            Value::Integer(as_integer(context.accepted)),
+        ),
+        ("engine", Value::text(engine.to_owned())),
+    ];
+    if let Some(because) = &context.because {
+        body.push(("because", Value::text(because.clone())));
+    }
+    let mut journal = mcf_record::journal::Journal::open(&path)?;
+    journal.append(&Entry::new(
+        EntryKind::ModelProbed,
+        mcf_core::time::Timestamp::now(),
+        Value::map(body),
+    ))?;
+    Ok(path)
+}
+
+/// A count as the record's integer, saturating rather than wrapping.
+fn as_integer(held: usize) -> i64 {
+    i64::try_from(held).unwrap_or(i64::MAX)
+}

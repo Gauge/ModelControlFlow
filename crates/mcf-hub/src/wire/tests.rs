@@ -420,3 +420,68 @@ fn a_wire_describes_itself_and_says_what_it_will_not_carry() {
     assert_eq!(tcp.deadlines.connect, Duration::from_secs(15));
     assert_eq!(tcp.deadlines.idle, Duration::from_secs(60));
 }
+
+/// **EINTR means *ask again*, not *the transfer was interrupted*.**
+///
+/// It is the one io error whose contract is retry: a signal arrived while the
+/// thread was blocked in the kernel and the read did not happen. Classifying
+/// it as `transfer.interrupted` tells an operator on a busy machine that their
+/// download was cut off by something that was not there, which is the wrong
+/// answer stated confidently (A2, F61).
+#[test]
+fn an_interrupted_read_is_retried_rather_than_classified() {
+    use std::io::Read;
+
+    /// A reader that is interrupted twice and then answers.
+    struct Twitchy {
+        left: usize,
+    }
+
+    impl Read for Twitchy {
+        fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+            if self.left > 0 {
+                self.left -= 1;
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "a signal arrived",
+                ));
+            }
+            let held = b"ok";
+            into.get_mut(..held.len())
+                .ok_or_else(|| std::io::Error::other("the buffer is too small"))?
+                .copy_from_slice(held);
+            Ok(held.len())
+        }
+    }
+
+    let mut buffer = [0_u8; 8];
+    let read = super::patiently(&mut Twitchy { left: 2 }, &mut buffer)
+        .expect("an interrupted read is retried, not reported");
+    assert_eq!(read, 2);
+    assert_eq!(buffer.get(..2), Some(b"ok".as_slice()));
+}
+
+/// And every other error still reaches the classifier, so the retry is a
+/// retry and not a swallow (A2).
+#[test]
+fn any_other_error_is_still_reported() {
+    use std::io::Read;
+
+    struct Broken;
+
+    impl Read for Broken {
+        fn read(&mut self, _into: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "the far end went away",
+            ))
+        }
+    }
+
+    let mut buffer = [0_u8; 8];
+    let held = super::patiently(&mut Broken, &mut buffer);
+    assert_eq!(
+        held.map(|_| ()).unwrap_err().kind(),
+        std::io::ErrorKind::ConnectionReset
+    );
+}

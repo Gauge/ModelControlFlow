@@ -37,6 +37,9 @@
 //! is a reading of the device (B-193).
 //!
 //! [`children_major_faults`]: super::children_major_faults
+//!
+//! **Cross-check owed (B-390):** the delay this reports is measured against
+//! MCF's own clock and against nothing else.
 
 use core::fmt;
 

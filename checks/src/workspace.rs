@@ -135,6 +135,18 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-prototype-timing-noise",
+        path: "prototypes/timing-noise",
+        // The DEC-007 evidence: how much an identical run's timing varies on a
+        // machine, and how many repeats that implies (F51, F52, F53). Ships
+        // nothing and nothing depends on it. It reaches for `mcf-bench`
+        // because the second half of its job is demonstrating that crate's
+        // stopping condition against real timings rather than against a
+        // fixture — an instrument that proved the rule on invented numbers
+        // would have proved nothing (B-083).
+        depends_on: &["mcf-bench", "mcf-core"],
+    },
+    Member {
         name: "mcf-checks",
         path: "checks",
         // Development dependencies only: the taxonomy agreement check reads
@@ -143,6 +155,11 @@ pub const MEMBERS: &[Member] = &[
         // examine `mcf_record`'s codec and journal and `mcf_standin`'s model
         // reader. Nothing this crate builds ships.
         depends_on: &[
+            // `mcf-bench` so that the seed-set tier can ask whether two
+            // distributions differ with the same arithmetic every other
+            // comparison uses (B-291, D19). A second implementation of that
+            // question inside the checks would be a second answer to it (A6).
+            "mcf-bench",
             "mcf-core",
             // `mcf-helper` so that `the_daemon_holds_no_privilege` can compare
             // the helper's surface against D35 in both directions. Nothing in

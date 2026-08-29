@@ -93,11 +93,84 @@ pub enum EntryKind {
     /// client that ignored the conditions still leaves them in the record, and
     /// a client that hung up early leaves the account of what it got.
     Generated,
+    /// MCF was told to address a model the way a probe found it wants to be,
+    /// and on whose word (D42, D43, B-059).
+    ///
+    /// The act D43 requires. A probe writes the verified half of a capability
+    /// and never a default, so nothing a probe learns changes how MCF talks to
+    /// a model until somebody says so — and when somebody does, the change has
+    /// to outlive the moment. This entry is what makes a derived configuration
+    /// answer *why this value*: which probe, when, under what conditions, and
+    /// what MCF did differently afterwards.
+    ///
+    /// It is also the line that makes measurements across it non-comparable,
+    /// which §3.4 requires MCF to say rather than assume.
+    ModelConfigured,
+    /// What two arms of a comparison were found to do (B-086, B-250, A9).
+    ///
+    /// **A kind of its own because a null result is a result.** A9: *"no
+    /// measurable difference" and "does not fit here" are findings, not
+    /// failures.* A comparison that separated its arms, one that established
+    /// they are the same to a stated resolution, and one that refused a delta
+    /// because more than one variable differed are three outcomes of the same
+    /// event, and putting any of them anywhere but here would make it
+    /// unfindable next to the others — the `Same` reading in a note, the
+    /// refusal in `Failure`, and the register unable to answer *what has been
+    /// compared on this machine*.
+    ///
+    /// The paired differences are written out beside the verdict, because B56
+    /// keeps the trials and derives the summary: a comparison whose
+    /// distribution was thrown away is a question nobody can re-ask.
+    Comparison,
+    /// What MCF judged about a variant before a byte of it was fetched
+    /// (B-086, B-213, PR3, §6.3).
+    ///
+    /// *This will not run here, because it needs 131 GiB and you have 24* is a
+    /// complete success of §III, and A9 makes it a result rather than a
+    /// refusal. Recorded whichever way it came out, so that the register can
+    /// answer *what has this machine been told it cannot run* — which is the
+    /// question an operator asks before downloading tens of gigabytes a second
+    /// time.
+    FitmentPlanned,
+    /// What was competing for this machine when a measurement could not be
+    /// attributed (B-216, PR5, §3.8, B24).
+    ///
+    /// **B24's refusal with a name attached.** Having been told a measurement
+    /// is unattributable, the operator's next question is always *by what?* —
+    /// and MCF is the only thing positioned to answer, because it was there
+    /// when it happened. This is that answer, kept: PR5 requires the snapshot
+    /// persist with the record rather than being a transient thing on a
+    /// screen, so that the finding survives the terminal it was printed in
+    /// (§3.1).
+    ///
+    /// Written when something asks for it and at no other time. B4 refuses
+    /// ambient sampling and there is no timer here: a snapshot exists because
+    /// a run could not decide, or because somebody asked.
+    ContentionSnapshot,
+    /// What a probe asked a model and what it observed (B-386, B-055, D42,
+    /// A1).
+    ///
+    /// **Because a measurement nobody can find later is the same as one not
+    /// taken.** `mcf probe` established figures — the usable context against
+    /// the declared one (F42), how a model wants to be addressed (F38) — and
+    /// printed them. A terminal scrolls. Every surface that wants a *measured*
+    /// figure rather than a declared one was blocked behind that, and B-382
+    /// is the item that found it: a prompt's cost could only be stated against
+    /// the file's claim, because MCF's own measurement of what the engine
+    /// takes existed nowhere it could be read.
+    ///
+    /// Distinct from [`Self::ModelConfigured`], which is the *act* D43
+    /// requires — somebody deciding to address a model differently. This is
+    /// the observation that act may or may not follow from. A probe that
+    /// changes nothing still measured something (A9), and D42 keeps the two
+    /// apart on purpose: a probe writes the verified half of a capability and
+    /// never a default.
+    ModelProbed,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 17] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -112,6 +185,11 @@ impl EntryKind {
         Self::ComponentProvisioned,
         Self::ComponentRemoved,
         Self::Generated,
+        Self::ModelConfigured,
+        Self::Comparison,
+        Self::FitmentPlanned,
+        Self::ContentionSnapshot,
+        Self::ModelProbed,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -133,6 +211,11 @@ impl EntryKind {
             Self::ComponentProvisioned => "component_provisioned",
             Self::ComponentRemoved => "component_removed",
             Self::Generated => "generated",
+            Self::ModelConfigured => "model_configured",
+            Self::Comparison => "comparison",
+            Self::FitmentPlanned => "fitment_planned",
+            Self::ContentionSnapshot => "contention_snapshot",
+            Self::ModelProbed => "model_probed",
         }
     }
 

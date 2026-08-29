@@ -85,7 +85,12 @@ fn a_floor_full_of_unknowns_survives_as_unknowns() {
     let scratch = Scratch::new("bare");
     let machine = Machine::read_through(&[]);
     let captured = capture::conditions(&machine, None, "the round-trip test", "full", None);
-    assert!(!captured.floor().thermal_state.is_known());
+    // A field that is genuinely unknown on a machine with no accelerator, so
+    // that the round trip below is carrying at least one. This used to name
+    // `thermal_state`, which was unknown only because MCF read no processor
+    // temperature at all — the defect F91 corrected, and a premise that a
+    // passing test was quietly resting on.
+    assert!(!captured.floor().driver_versions.is_known());
 
     {
         let mut journal = Journal::open(&scratch.journal()).expect("a journal opens");
@@ -112,9 +117,9 @@ fn a_floor_full_of_unknowns_survives_as_unknowns() {
     assert_eq!(&rebuilt, &captured);
     // The half that matters: an unknown came back unknown and not as a word
     // that happens to read like one (A7).
-    assert!(!rebuilt.floor().thermal_state.is_known());
+    assert!(!rebuilt.floor().driver_versions.is_known());
     assert_ne!(
-        rebuilt.floor().thermal_state,
+        rebuilt.floor().driver_versions,
         Attested::Known(mcf_core::measurement::ConditionValue::text("unknown"))
     );
 }

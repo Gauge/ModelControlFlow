@@ -4,7 +4,23 @@
 //! against a model built for the purpose; what is here is the surface's part —
 //! finding the model, keeping the mark, and refusing legibly.
 
-use super::{TOKENS, examined, resolve, run};
+use super::{TOKENS, examined, resolve, run_where};
+
+/// Every test here asks MCF to answer for itself.
+///
+/// Not because the daemon is uninteresting, but because *which* of them
+/// answers changes the refusal, and a test that took whichever was running
+/// reported on the machine rather than on the code (F46, B-378). A test about
+/// a daemon says so by passing one.
+fn without_a_daemon(
+    model: &str,
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&str>,
+) -> crate::Response {
+    run_where(None, model, prompt, limit, seed, engine)
+}
 
 /// A path is a model, and so is something under the store — both spellings,
 /// because both are things somebody will type.
@@ -28,7 +44,7 @@ fn a_model_is_found_by_path_or_by_name() {
 /// that would list one.
 #[test]
 fn a_model_that_is_not_there_is_said() {
-    let response = run("owner/model:absent.gguf", "hello", None, 0, None);
+    let response = without_a_daemon("owner/model:absent.gguf", "hello", None, 0, None);
     assert!(!response.served);
     assert!(
         response.text.contains("there is no model"),
@@ -48,7 +64,7 @@ fn a_file_that_is_not_a_model_is_refused_legibly() {
     let file = scratch.join("model.gguf");
     std::fs::write(&file, b"ONNX and not much else").expect("a file");
 
-    let response = run(file.to_str().unwrap_or_default(), "hello", None, 0, None);
+    let response = without_a_daemon(file.to_str().unwrap_or_default(), "hello", None, 0, None);
     assert!(!response.served);
     assert!(response.text.contains("did not run"), "{}", response.text);
     assert!(

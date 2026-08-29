@@ -1,0 +1,19 @@
+[package]
+name = "mcf-prototype-timing-noise"
+description = "The DEC-007 evidence: how much an identical run's timing varies here, and how many repeats that implies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "mcf-prototype-timing-noise"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-bench = { path = "../../crates/mcf-bench" }
+mcf-core = { path = "../../crates/mcf-core" }

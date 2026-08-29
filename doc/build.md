@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Reference — the workspace, the toolchain, and the checks that gate a change |
-| **Version** | 42 |
+| **Version** | 45 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v44, governed by [rules.md](rules.md) |
 | **Registers to** | B-001 in [backlog.md](backlog.md) |
@@ -349,6 +349,18 @@ named a rule that does not exist, and — before it was written — a register w
 front matter was two versions behind its own changelog and whose header counts
 were three revisions stale.
 
+**The register also counts itself.** `checks/tests/the_register_counts_itself.rs`
+totals the backlog's rows by state and compares them with the headline sentence
+the file opens with, because that sentence is written by hand and the table
+under it is edited every working day. Its first run found the header claiming
+204 build items of which 54 were done against a table holding 217 of which 84
+were, one decision row whose milestone and status had been overwritten by a
+pasted copy of a build row, and one build row whose status began with prose
+rather than with a state — none of which reading had caught, which is this
+section's whole argument. The status column is a light format contract for the
+same reason: a status that does not begin with one of the register's own words
+is a row nobody can total.
+
 **One clause is deliberately not fully checked.** The contract asks for present
 tense outside changelogs, and that resists a machine. Only the constructions the
 README names outright are checked; the rest stays a stated `review` obligation.
@@ -387,7 +399,43 @@ $ scripts/check-tier-ages.sh [--release]     # ages, and the release refusal
 ```
 
 Reproducibility (§5) is a scheduled check rather than one of D10's tiers, and
-keeps its own flag.
+keeps its own flag. So do the checks that need something on the disk: the
+conformance corpus (`--with-corpus`), the reference comparison
+(`--with-oracle`), the real hub (`--with-online`), the from-scratch container
+(`--with-from-scratch`) and the seed set (`--with-seed-set`).
+
+### The frontier
+
+`scripts/frontier.sh` (B-091, F67). Not a check and not a step of
+`scripts/ci.sh`: it is a **benchmark**, it has no pass condition, and A18
+forbids one gating a change. Its exit status says whether it could run, never
+what it found.
+
+It compares every quantization of one model against one reference arm — seven
+paired comparisons rather than seven absolutes on a chart, because §3.27 makes
+the comparison the durable output. It prints what it characterizes in as many
+words: the instrument, not quantization in general, and nothing at all about
+quality.
+
+### The seed-set check
+
+`scripts/check-seed-set.sh` (B-291, D19). MCF's published seed set is the first
+thirty-two draws of a stated stream; this runs three hundred and twenty more
+from a million indices further along and asks whether the prefix behaves like
+the body. §6.16's *the instrument does not get to grade itself*, turned on the
+instrument: a set that is assumed representative is a set nobody checked.
+
+Two things about it are easy to get wrong and are therefore written into the
+types. Its polarity is inverted — *the same* is the clearance and
+*distinguishable* is the finding — so `mcf_bench::seeds::Representative` is a
+type of its own rather than a reused verdict, and a green result cannot render
+as a discovery. And **not decided is not clearance**: a run that could not
+separate the two has not cleared the set, and the tier fails on it.
+
+It samples with nucleus and has to. MCF's shipped generation is greedy, and
+greedy ignores the seed entirely: a validation against it would compare a
+constant with a constant and clear the set for a reason that has nothing to do
+with the set.
 
 ### The property tier
 
@@ -982,6 +1030,25 @@ rather than of the run: on a machine nobody else uses it is irrelevant, and on
 this one an overnight run wants hours.
 
 ## Changelog
+
+### Version 45 — the frontier
+
+`scripts/frontier.sh` (B-091). A benchmark rather than a check: no pass
+condition, not a step of `scripts/ci.sh`, and its exit status says whether it
+could run rather than what it found.
+
+### Version 44 — the seed set is checked rather than trusted
+
+`scripts/check-seed-set.sh` (B-291). A scheduled check that runs the published
+seed set against a draw ten times larger from the same stream. Its polarity is
+inverted and its type says so; *not decided* is not clearance.
+
+### Version 43 — the register counts itself
+
+`checks/tests/the_register_counts_itself.rs` (B-041). The backlog's headline
+sentence is now computed rather than asserted, and its first run found the
+header thirty items behind its own table, a decision row overwritten by a
+pasted build row, and a status that began with prose.
 
 ### Version 30 — where the models go
 

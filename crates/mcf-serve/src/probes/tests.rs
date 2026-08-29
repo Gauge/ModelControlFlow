@@ -346,3 +346,326 @@ fn speaking_then_stopping_is_what_counts() {
         "and the silence is kept, not discarded"
     );
 }
+
+use super::{Accepted, Context, usable_context};
+
+/// A file whose claim holds costs one cheap question and one real one, not
+/// fifteen. The search exists for the case where the claim does not hold, and
+/// running it anyway would spend a context's worth of forward passes to learn
+/// nothing.
+///
+/// The cheap one first is the instrument being asked whether it can answer at
+/// all, which is worth a single token and was worth eight thousand before
+/// (F44).
+#[test]
+fn a_context_that_holds_is_one_question() {
+    let mut asked = Vec::new();
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| {
+            asked.push(length);
+            Accepted::Read(length)
+        },
+    );
+    let observed = probed
+        .outcome
+        .observed()
+        .expect("the engine took what the file declares");
+    assert_eq!(
+        observed,
+        &Context {
+            declared: 8192,
+            accepted: 8191,
+            because: None,
+        }
+    );
+    assert_eq!(
+        asked,
+        vec![1, 8191],
+        "the instrument, then the claim — and no search"
+    );
+}
+
+/// Where the claim does not hold, the boundary is found exactly.
+#[test]
+fn the_boundary_is_found_where_it_is() {
+    let ceiling = 2047;
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| {
+            if length <= ceiling {
+                Accepted::Read(length)
+            } else {
+                Accepted::Refused("exceeds the available context size".to_owned())
+            }
+        },
+    );
+    let observed = probed.outcome.observed().expect("a boundary was found");
+    assert_eq!(observed.accepted, ceiling, "the largest length that worked");
+    assert_eq!(observed.declared, 8192);
+    assert!(
+        observed
+            .because
+            .as_deref()
+            .is_some_and(|said| said.contains("context size")),
+        "the engine's own reason travels with the divergence (A1)"
+    );
+    assert!(
+        probed.trials <= 15,
+        "a halving, not a walk: {}",
+        probed.trials
+    );
+}
+
+/// A prompt read shorter than it was sent is the failure this probe is for,
+/// and it must not be mistaken for a shorter context that was honestly
+/// reported.
+#[test]
+fn silent_truncation_is_caught_and_named() {
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| Accepted::Read(length.min(1000)),
+    );
+    let observed = probed.outcome.observed().expect("a boundary was found");
+    assert_eq!(observed.accepted, 1000);
+    assert!(
+        observed
+            .because
+            .as_deref()
+            .is_some_and(|said| said.contains("silence")),
+        "a prompt quietly shortened has to be named as that: {:?}",
+        observed.because
+    );
+}
+
+/// An engine that cannot say how much it read leaves the question open. It is
+/// not *the context is short* and not *the context is fine* (A7, D42).
+///
+/// And it costs one token to learn. MCF's own engine is this engine, and the
+/// first version of this probe sent it the whole declared context before
+/// finding out — eight thousand forward passes to reach *could not tell*
+/// (F44).
+#[test]
+fn an_engine_that_cannot_say_leaves_it_unknown() {
+    let mut asked = Vec::new();
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        8192,
+        "test",
+        &mut |length| {
+            asked.push(length);
+            Accepted::CouldNotTell("this engine does not say".to_owned())
+        },
+    );
+    assert!(
+        probed.outcome.observed().is_none(),
+        "nothing was observed, so nothing may be reported as observed"
+    );
+    assert_eq!(
+        asked,
+        vec![1],
+        "and it was learned from one token, not from a context's worth"
+    );
+}
+
+/// What is applied must address the model exactly as the probe did.
+///
+/// The improvement M3's first exit criterion asks for is *attributable to a
+/// named probe*, and it is only attributable if the thing applied is the thing
+/// measured. A configuration that rebuilt the turn slightly differently —
+/// another marker, a lost newline — would be a different addressing wearing
+/// the probe's provenance, which is worse than no provenance at all (A21).
+#[test]
+fn what_is_applied_addresses_it_as_the_probe_did() {
+    let bytes = chatml();
+    let file = mcf_standin::gguf::parse(&bytes).expect("the fixture reads");
+    let vocabulary =
+        mcf_standin::tokenizer::Vocabulary::read(&file).expect("the fixture has a vocabulary");
+    let candidates = super::addressings(&file, &vocabulary);
+    let chosen = candidates
+        .iter()
+        .find(|candidate| candidate.name != "raw")
+        .expect("the fixture declares a template");
+
+    // What the probe sent.
+    let measured = chosen
+        .wrap(&vocabulary, super::QUESTION)
+        .expect("the probe could assemble it");
+
+    // The same thing, through the file a person's decision writes.
+    let stored = crate::configured::Addressing {
+        name: chosen.name.clone(),
+        before: chosen.pieces_before.clone(),
+        after: chosen.pieces_after.clone(),
+        probe: super::CHAT_TEMPLATE.name.to_owned(),
+        at: "2026-08-27T00:00:00Z".to_owned(),
+        build: "0.1.0-m0".to_owned(),
+        conditions: "test".to_owned(),
+    };
+    let value = stored.to_value();
+    let read_back =
+        crate::configured::Addressing::from_value(&value).expect("it survives the round trip");
+
+    let mut pieces = read_back.before.clone();
+    pieces.push(mcf_standin::tokenizer::Piece::Text(
+        super::QUESTION.to_owned(),
+    ));
+    pieces.extend(read_back.after.iter().cloned());
+    let applied = vocabulary
+        .addressed(&pieces)
+        .expect("the stored addressing assembles");
+
+    assert_eq!(
+        applied, measured,
+        "the turn a configuration builds must be the turn the probe measured, identifier for \
+         identifier"
+    );
+}
+
+use super::{Stopping, stop_conditions};
+
+/// A model that ends its turns is reported by the longest one, and the budget
+/// doubles rather than starting large.
+#[test]
+fn a_model_that_stops_is_reported_by_its_longest_turn() {
+    let mut budgets = Vec::new();
+    let probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        2,
+        32,
+        1024,
+        32,
+        "test",
+        &mut |_question, budget| {
+            budgets.push(budget);
+            if budget >= 128 {
+                Trial::Stopped { after: 100 }
+            } else {
+                Trial::RanOut
+            }
+        },
+    );
+    let observed = probed.outcome.observed().expect("both turns ended");
+    assert_eq!(
+        observed,
+        &Stopping {
+            longest: 100,
+            stopped: 2,
+            of: 2,
+            ceiling: 128,
+            default_budget: 32,
+        }
+    );
+    assert_eq!(
+        budgets,
+        vec![32, 64, 128, 32, 64, 128],
+        "it doubles from the floor for each trial rather than starting large (B49)"
+    );
+}
+
+/// A model that never stops within the ceiling is *not* reported as one that
+/// never stops.
+///
+/// The claim the trials support is *not within this many tokens*, and the
+/// number travels so a reader can judge whether it was large enough (A7). It
+/// also names the likelier cause, because a model addressed wrongly does not
+/// stop at any budget (F38).
+#[test]
+fn never_stopping_names_the_ceiling_and_not_the_model() {
+    let probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        2,
+        32,
+        128,
+        32,
+        "test",
+        &mut |_question, _budget| Trial::RanOut,
+    );
+    assert!(probed.outcome.observed().is_none());
+    let said = format!("{:?}", probed.outcome);
+    assert!(said.contains("128"), "the ceiling has to be named: {said}");
+    assert!(
+        said.contains("chat-template"),
+        "and the likelier cause: {said}"
+    );
+}
+
+/// The ceiling is a ceiling: the budget never exceeds it.
+#[test]
+fn the_budget_never_passes_the_ceiling() {
+    let mut budgets = Vec::new();
+    let _probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        1,
+        32,
+        100,
+        32,
+        "test",
+        &mut |_question, budget| {
+            budgets.push(budget);
+            Trial::RanOut
+        },
+    );
+    assert!(
+        budgets.iter().all(|budget| *budget <= 100),
+        "a doubling that overshot the ceiling would spend past what was asked: {budgets:?}"
+    );
+    assert_eq!(budgets, vec![32, 64, 100]);
+}
+
+/// A template that names a role in order to *rename* it must not yield the
+/// name it renamed.
+///
+/// gemma's template mentions `assistant` exactly once and does it to map it to
+/// `model`. A bag-of-words read produced both as candidates, the probe could
+/// not tell them apart because *ending a turn* does not, and the tie was
+/// reported as though the file were ambiguous when it is explicit (F48,
+/// B-375).
+#[test]
+fn a_role_that_is_renamed_is_not_a_candidate() {
+    let template = "{%- if (message['role'] == 'assistant') -%}\n                    {%- set role = \"model\" -%}\n                    {%- else -%}{%- set role = message['role'] -%}{%- endif -%}\n                    {{ '<start_of_turn>' + role + '\n' }}";
+    assert_eq!(
+        super::assigned_roles(template),
+        vec!["model".to_owned()],
+        "the word the template writes out, not the word it tests for"
+    );
+}
+
+/// A template that emits the role it was given assigns nothing, and the
+/// ordinary names stay candidates for the model to decide between.
+#[test]
+fn a_template_that_assigns_nothing_yields_nothing() {
+    let chatml = "{% for message in messages %}                  {{'<|im_start|>' + message['role'] + '\n' + message['content'] }}                  {% endfor %}";
+    assert!(
+        super::assigned_roles(chatml).is_empty(),
+        "nothing is assigned, so nothing is claimed"
+    );
+}
+
+/// Single quotes count, and the first assignment is not the only one.
+#[test]
+fn both_quotings_are_read_and_every_assignment_is_kept() {
+    let template = "{%- set role = 'model' -%}{%- set role = \"agent\" -%}";
+    assert_eq!(
+        super::assigned_roles(template),
+        vec!["model".to_owned(), "agent".to_owned()],
+        "a template naming two is ambiguous and both are candidates — that is a tie MCF has \
+         evidence for, unlike the one it invented"
+    );
+}
+
+/// A `set` of something other than the role is not a role.
+#[test]
+fn only_the_role_variable_is_read() {
+    let template = "{%- set first_user_prefix = \"model\" -%}";
+    assert!(
+        super::assigned_roles(template).is_empty(),
+        "an assignment to another name says nothing about the role"
+    );
+}

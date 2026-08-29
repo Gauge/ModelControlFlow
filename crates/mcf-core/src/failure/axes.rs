@@ -36,6 +36,8 @@ pub enum Attribution {
     Unattributable,
 }
 
+use super::category::Branch;
+
 impl Attribution {
     /// Every attribution, in the taxonomy's own order.
     pub const ALL: [Self; 8] = [
@@ -135,5 +137,30 @@ impl Disposition {
 impl fmt::Display for Disposition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl Attribution {
+    /// Which of B-233's four branches this attribution belongs to.
+    ///
+    /// **The grouping B-233 asks for**: every failure of a yielding run
+    /// classifies to one branch or the other, never ambiguously. `Attribution`
+    /// already made that unambiguous — every failure supplies one and there is
+    /// no default — and this is the coarser reading of it, which is what a
+    /// surface needs when the question is *is this evidence about the model*.
+    ///
+    /// **`Unattributable` is its own answer and not a fifth branch.** B24
+    /// makes *MCF cannot tell* a real result, and folding it into any of the
+    /// four would be the attribution MCF refused to make, made anyway. So it
+    /// returns `None`.
+    #[must_use]
+    pub const fn branch(self) -> Option<Branch> {
+        match self {
+            Self::ModelUnderTest => Some(Branch::TheModel),
+            Self::Machine | Self::Hub => Some(Branch::TheEnvironment),
+            Self::Artifact => Some(Branch::TheArtifact),
+            Self::Mcf | Self::Managed | Self::User => Some(Branch::McfItself),
+            Self::Unattributable => None,
+        }
     }
 }

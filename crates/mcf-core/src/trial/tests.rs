@@ -4,12 +4,20 @@
 //! in the trials themselves — §3.27's pairing above all — and that a thinned
 //! series cannot be mistaken for a full one.
 
-use super::{Arm, Position, Series, SessionId, Thinning, Trial, Trials};
+use super::{Arm, Draw, Position, STANDARD, SeedSet, Series, SessionId, Thinning, Trial, Trials};
 use crate::build_identity::BuildIdentity;
 use crate::measurement::{Conditions, Count, Floor};
 
 fn conditions() -> Conditions {
     Conditions::new(BuildIdentity::current(), Floor::nothing_known())
+}
+
+/// What trial `index` drew, from MCF's published set (B61, D19).
+fn drew(index: usize) -> Draw {
+    Draw::Seeded {
+        seed: SeedSet::Standard.seed_for(index).unwrap_or(0),
+        from: STANDARD.to_owned(),
+    }
 }
 
 fn session() -> SessionId {
@@ -38,6 +46,7 @@ fn interleaved() -> Trials<Count> {
             arm,
             Position(u32::try_from(position).unwrap_or(0)),
             session(),
+            drew(usize::try_from(position).unwrap_or(0)),
         )
     }))
 }
@@ -80,9 +89,9 @@ fn an_unpaired_trial_is_counted_rather_than_forgotten() {
     let a = Arm::new("A");
     let b = Arm::new("B");
     let trials = Trials::from([
-        Trial::new(Count(1), a.clone(), Position(0), session()),
-        Trial::new(Count(2), b.clone(), Position(1), session()),
-        Trial::new(Count(3), a.clone(), Position(2), session()),
+        Trial::new(Count(1), a.clone(), Position(0), session(), drew(0)),
+        Trial::new(Count(2), b.clone(), Position(1), session(), drew(1)),
+        Trial::new(Count(3), a.clone(), Position(2), session(), drew(2)),
     ]);
     let paired = trials.paired_with(&a, &b);
     assert_eq!(paired.len(), 1);
@@ -115,7 +124,13 @@ fn a_measurement_is_projected_from_the_trials_that_remain() {
 #[test]
 fn an_arm_with_one_trial_has_no_measurement() {
     let a = Arm::new("A");
-    let trials = Trials::from([Trial::new(Count(1), a.clone(), Position(0), session())]);
+    let trials = Trials::from([Trial::new(
+        Count(1),
+        a.clone(),
+        Position(0),
+        session(),
+        drew(0),
+    )]);
     assert!(trials.measure(&a, conditions()).is_none());
     assert_eq!(trials.of_arm(&a).len(), 1, "the trial is still kept");
 }

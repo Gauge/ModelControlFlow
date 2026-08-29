@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 42 |
+| **Version** | 83 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -66,6 +66,64 @@ forward as one.
 | 36 | [F36 — The reference model answers, through an engine that is a process (B-032, B-033, B-367, D39, §XII)](#36--f36--the-reference-model-answers-through-an-engine-that-is-a-process-b-032-b-033-b-367-d39-xii) |
 | 37 | [F37 — The first probe found two defects and then refused to answer (B-051, B-052, D42, §3.18, F25, F26)](#37--f37--the-first-probe-found-two-defects-and-then-refused-to-answer-b-051-b-052-d42-318-f25-f26) |
 | 38 | [F38 — The probe's answer was upside down, and the decisive column was the broken one (B-052, B-374, D42, §3.18, F25, F37)](#38--f38--the-probes-answer-was-upside-down-and-the-decisive-column-was-the-broken-one-b-052-b-374-d42-318-f25-f37) |
+| 39 | [F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)](#39--f39--the-engine-that-can-be-probed-and-three-ways-the-instrument-stood-in-for-the-model-b-032-b-055-b-376-d39-d42-f36-f38) |
+| 40 | [F40 — MCF's engine agrees with the reference for seven hundred positions (B-368, B-373, B-377, D39, A19, F27, F32, F39)](#40--f40--mcfs-engine-agrees-with-the-reference-for-seven-hundred-positions-and-the-rule-that-would-have-called-it-broken-was-the-wrong-rule-b-368-b-373-b-377-d39-a19-f27-f32-f39) |
+| 41 | [F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)](#41--f41--the-check-could-not-fail-and-the-mutation-that-showed-it-was-not-the-first-one-tried-b-003-b-368-b-377-a13-f40) |
+| 42 | [F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)](#42--f42--the-context-both-models-declare-is-the-context-they-have-and-the-probe-that-asked-broke-the-protocol-asking-b-055-b-058-b-059-b-376-d42-37-38-a2-a21) |
+| 43 | [F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)](#43--f43--a-model-that-produced-nothing-now-answers-and-the-change-can-be-accounted-for-b-059-b-062-d42-d43-38-315-a21-f38) |
+| 44 | [F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)](#44--f44--a-configuration-says-whether-it-still-holds-and-the-probe-that-asked-spent-eight-thousand-passes-learning-it-could-not-b-058-b-059-d42-d43-a21-f39-f42) |
+| 45 | [F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)](#45--f45--the-page-whose-job-is-to-have-no-hidden-choices-had-one-and-the-check-for-a-moved-condition-invented-one-b-058-b-059-b-062-d43-315-a21-f44) |
+| 46 | [F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)](#46--f46--mcfs-own-default-was-cutting-every-answer-off-and-a-gate-test-that-depends-on-whether-a-daemon-is-running-b-056-b-059-d42-d43-38-312-b49-f38) |
+| 47 | [F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)](#47--f47--the-suite-was-reporting-on-the-machine-it-found-b-378-b-003-b16-312-f46) |
+| 48 | [F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)](#48--f48--the-tie-was-mcfs-not-the-models-a-template-that-names-a-role-in-order-to-rename-it-b-375-b-376-d42-d46-37-f38-f39-f40) |
+| 49 | [F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)](#49--f49--mcf-can-check-its-own-engine-against-the-one-it-built-on-a-users-machine-b-362-b-376-d31-d39-a12-a19-ii) |
+| 50 | [F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)](#50--f50--the-privileged-helper-could-be-told-where-the-machine-is-b-190-d35-632-xvii-a2-a26) |
+| 51 | [F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)](#51--f51--contention-moves-the-level-not-the-spread-and-that-decides-how-a-benchmark-must-be-built-dec-007-b-250-b-181-34-a19-f2-f3) |
+| 52 | [F52 — The engine benchmarks will use is three times noisier than the one they will not (DEC-007, B-366, B-376, §3.4, A19, F51)](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51) |
+| 53 | [F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)](#53--f53--the-noise-floor-is-a-property-of-the-moment-not-of-the-machine-dec-007-b-083-b-181-d35-a19-f51-f52) |
+| 54 | [F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)](#54--f54--the-stopping-condition-and-the-first-comparison-that-stopped-itself-b-083-b-086-b-250-dec-007-f51-f52-f53) |
+| 55 | [F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)](#55--f55--the-pairing-is-worth-eighty-eight-percent-and-the-stopping-condition-could-only-answer-one-way-b-250-b-083-b53-327-dec-007-f51-f53-f54) |
+| 56 | [F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)](#56--f56--a-confounded-comparison-has-no-delta-to-give-a8-b-085-34-a7-f55) |
+| 57 | [F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)](#57--f57--the-sign-test-and-the-resampling-that-could-not-see-identical-arms-b-086-b-083-dec-007-a9-f51-f55) |
+| 58 | [F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)](#58--f58--a-null-result-reaches-the-disk-as-a-result-a9-b-086-b-213-63-d16-f56) |
+| 59 | [F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)](#59--f59--the-benchmark-runner-and-the-first-real-comparison-it-refused-to-over-report-b-080-a18-67-b65-b-091-f53-f57) |
+| 60 | [F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)](#60--f60--the-clock-in-the-type-stopped-a-comparison-not-a-record-a11-b-082-d9-f59) |
+| 61 | [F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)](#61--f61--the-seed-set-had-to-become-arithmetic-and-eintr-was-being-called-a-cut-off-transfer-b-290-b61-d19-a2-f53-f55) |
+| 62 | [F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)](#62--f62--the-seed-set-is-shown-representative-and-the-sampler-that-would-have-cleared-it-for-nothing-b-291-d19-616-713-b65) |
+| 63 | [F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)](#63--f63--the-recommendation-is-in-a-different-repository-from-the-weights-b-281-b60-d18-a21-315) |
+| 64 | [F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)](#64--f64--every-benchmark-trial-was-cold-and-three-fifths-of-it-was-process-start-b-081-613-b-376-f59-d41-f35) |
+| 65 | [F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)](#65--f65--one-resident-model-and-paired-interleaving-cannot-both-be-had-b-090-b-081-b-250-dec-001-613-b53-f64) |
+| 66 | [F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)](#66--f66--fifty-eight-of-a-hundred-trials-is-fifty-eight-data-points-and-the-fifty-ninth-was-not-one-a4-b-087-31-a1-a6) |
+| 67 | [F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)](#67--f67--the-first-frontier-and-what-it-is-mostly-a-frontier-of-b-091-xii-34-327-f64-f65) |
+| 68 | [F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)](#68--f68--the-bundles-header-said-it-held-no-user-content-while-carrying-the-prompt-b-211-pr2-a24-a25-ii) |
+| 69 | [F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)](#69--f69--a-band-predicted-before-the-measurement-and-the-measurement-landed-in-it-b-214-b-215-pr3-a20-b46-616-f67) |
+| 70 | [F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)](#70--f70--a-run-that-cannot-decide-names-what-it-competed-with-and-i-could-not-make-one-b-216-pr5-38-b24-b4-d25-f55) |
+| 71 | [F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7) |
+| 72 | [F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7) |
+| 73 | [F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)](#73--f73--a-budget-proposes-and-what-it-excluded-is-on-the-page-b-226-b47-31-a7) |
+| 74 | [F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) |
+| 75 | [F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7) |
+| 76 | [F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)](#76--f76--a-run-that-reports-as-it-goes-shows-what-moves-not-what-has-not-decided-b-227-a4-31-a18) |
+| 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
+| 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
+| 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
+| 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
+| 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
+| 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
+| 84 | [F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)](#84--f84--the-branch-is-read-from-the-attribution-and-reading-it-from-the-category-is-the-obvious-wrong-design-b-233-b24-710-34) |
+| 85 | [F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)](#85--f85--an-idle-daemon-took-zero-processor-ticks-and-issued-zero-reads-in-ninety-seconds-b-187-b-108-b4-d5-313-618) |
+| 86 | [F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)](#86--f86--a-field-of-one-is-refused-by-name-and-a-foreign-number-has-no-route-in-b-167-b-127-b34-b43-623-5) |
+| 87 | [F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)](#87--f87--a-contribution-has-nowhere-to-put-a-task-and-no-way-to-be-unsent-b-171-b-203-b-251-b-310-b42-b54-d21-630-320) |
+| 88 | [F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)](#88--f88--a-behaviour-laboratorys-bound-has-nowhere-to-put-a-wall-clock-b-230-b-223-b45-d8-d13-38) |
+| 89 | [F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)](#89--f89--a-figure-with-a-unit-and-nothing-behind-it-is-the-most-convincing-kind-of-wrong-b-188-b-163-b-164-b39-b31-a20-a7) |
+| 90 | [F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38) |
+| 91 | [F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)](#91--f91--the-sensors-were-there-the-whole-time-one-directory-across-b-084-dec-007-a7-a2-34) |
+| 92 | [F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327) |
+| 93 | [F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)](#93--f93--every-measurement-mcf-has-taken-is-attributed-to-an-instrument-it-cannot-identify-34-a1-a2-a7-616) |
+| 94 | [F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93) |
+| 95 | [F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92) |
+| 96 | [F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)](#96--f96--the-pre-flight-marks-rather-than-refuses-and-the-band-it-uses-says-whose-machine-measured-it-b-217-dec-007-f95-a21-a20-a4) |
+| 97 | [F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)](#97--f97--five-modules-measure-something-and-are-checked-against-nothing-and-now-they-say-so-b-390-a19-a7-616) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -2886,18 +2944,13 @@ and the budget was large enough to reach the end of a turn, the tie narrowed to
 **two** — so one of the three had been tied on refusals. Two addressings answer
 and end the turn equally often, and this observation cannot tell those two
 apart. Their
-turn lengths do separate them, on the first look:
-
-```
-start_of_turn…end_of_turn as assistant   ran 6-91 tokens
-start_of_turn…end_of_turn as model       ran 7-10 tokens
-```
-
-which is B-375's first candidate answering, and is **not yet an answer**: a
-turn of seven tokens can be a correct terse reply or a model cutting itself
-off, and telling those apart needs a question this probe does not ask. What it
-establishes is that the two addressings are *not* equivalent for this model,
-which the tie alone could not say. The
+turn lengths appeared to separate them, and **that separation did not survive a
+change of engine** — see F39, which measured the same thing through the
+provisioned server and found the two addressings running 7-11 and 8-11 tokens
+where MCF's own engine had them at 6-91 and 7-10. B-375's first candidate is
+therefore not yet a candidate: what it separated on one engine it does not
+separate on another, which is the definition of a reading that characterizes
+the instrument (B29). The
 tie-break that preferred `raw` was itself a defect — `max_by_key` returns the
 *last* maximum, which handed every tie to whichever candidate was listed last,
 and `raw` always is. A tie is now `inconclusive` naming the tie, because
@@ -2921,7 +2974,4431 @@ what a probe learns on a 135M model is about that model. And nothing is
 configured by any of this — `mcf run` still sends raw text (§3.8); D42 holds
 that a probe writes the verified half of a capability and never a default.
 
+## 39 · F39 — The engine that can be probed, and three ways the instrument stood in for the model (B-032, B-055, B-376, D39, D42, F36, F38)
+
+**What was built.** The provisioned engine driven as a **server** rather than
+as a completion tool. F36's engine is a subprocess per generation — a command
+line in, text out — and it runs the reference model honestly and cannot be
+probed at all, for two reasons that are properties of the interface rather than
+of llama.cpp: a turn of token identifiers has nowhere to go on a command line
+(B-374, F26), and the tool does not say why it stopped. Those are exactly the
+two things F38's observation is made of, so every probe was confined to MCF's
+own engine.
+
+**The contract was confirmed before anything was written.** The sixteen
+identifiers MCF assembles came back as `tokens_evaluated: 16`, and the
+generation ended `stop_type: "eos"`. Both halves, in one request.
+
+**It listens on a Unix socket, not a port.** `--host` binds one when the
+address ends in `.sock`. Four projects share this machine (§XVII); a port is a
+machine-wide resource two of them can collide over, and nothing here listens on
+the network. The model stays loaded between requests, which is the residency
+F36 left open.
+
+**The instrument stood in for the model three times, in one afternoon.**
+
+*First: ready is three conditions deep.* The socket file appears before
+anything listens; the listener accepts before the model is loaded; and a
+request in between is answered — with an error, in a shape close enough to a
+completion to be mistaken for one. The first readiness check waited for a
+connection to be accepted, which is the second condition and not the third, and
+the probe's opening trial read a still-loading server as *an engine that does
+not say why generation ended*. The wait is now on the server's own `/health`
+saying `ok`.
+
+*Second: the fix for F38 was itself engine-dependent.* F38 made a trial count
+only if the model spoke first, and *spoke* was measured by counting the token
+lines in the stream. MCF's own engine streams one line per token; the server
+streams the whole answer as one. So through the server **every** addressing
+looked like a one-token turn, and the probe reported a tie where there was
+none. The count now comes from the account, which both engines fill in the
+same units. **The defect F38 is about, inside the fix for F38.**
+
+*Third: the two engines disagree by exactly one, at the boundary the probe
+turns on.* Asked something it does not recognise, a model emits its end-of-turn
+token and nothing else. MCF's engine calls that **0** tokens; the server calls
+it **1** — it counts the end-of-turn token itself. Neither is wrong. But *said
+nothing* is the whole of F38's fix, and a probe taking either literally reports
+a refusal on one engine and an answer on the other for one behaviour. The form
+both agree on is the **text**, which is empty either way, so a turn with no text
+counts as no tokens whatever the engine calls it.
+
+**Then the two engines were made to answer the same question.** This is the
+test of whether a probe result is a property of the model or of the instrument
+(B29), and it is why the default was not changed on the speed alone:
+
+```
+                                       provisioned server        MCF's own engine
+im_start…im_end as assistant           5 of 5  ←                 5 of 5  ←
+raw                                    1 of 5, silent 4          1 of 5, silent 4
+best                                   im_start…im_end           im_start…im_end
+wall                                   13 s                      267 s
+```
+
+The verdict agrees — the same best addressing, the same counts, the same
+silences — and the server is **twenty times faster**. The agreement is what
+makes changing the default honest; the speed is what makes probing usable at
+all. A 270M model that took tens of minutes takes eight seconds.
+
+**And where they disagree, the disagreement is the finding.** gemma-3-270m's
+tie stands on both engines, but the turn lengths F38 recorded as B-375's first
+candidate do not:
+
+```
+                                         MCF's own engine      provisioned server
+start_of_turn…end_of_turn as assistant   ran 6-91              ran 7-11
+start_of_turn…end_of_turn as model       ran 7-10              ran 8-11
+```
+
+On one engine the two look separated; on the other they look identical. **A
+reading that changes with the instrument is a reading about the instrument.**
+B-375's candidate is withdrawn rather than kept with a caveat, and F38 is
+corrected where it recorded the separation as though it were about the model.
+
+**What this cost, and what caught it.** The repository's own gates caught four
+things this change would otherwise have shipped without: two failure categories
+claimed with no laboratory scenario able to produce them (A13, B-010), a place
+MCF starts a process that was not declared (§6.4), and two deletions that were
+not declared (§3.11). None of them were found by the author. That is what those
+checks are for, and it is the second time in this document that the gate has
+been the thing that noticed.
+
+**What was not established.** Nothing about a large model through this path:
+every figure here is a 135M and a 270M model, chosen because a probe that takes
+four minutes does not get run. Whether the server holds a 16 GB model usefully
+between requests is the thing residency was built for and is not measured. The
+turn lengths are now known to differ between engines and it is not known
+*why* — whether the sampling diverges, the tokenizers differ at some position,
+or something else — and B-373's oracle is the instrument for asking. No timing
+here is a measurement: none of it was taken in the exclusive window (B35), and
+the twentyfold figure is an order of magnitude rather than a number.
+
+## 40 · F40 — MCF's engine agrees with the reference for seven hundred positions, and the rule that would have called it broken was the wrong rule (B-368, B-373, B-377, D39, A19, F27, F32, F39)
+
+**The question.** F39 found that MCF's engine and the provisioned one produce
+the same verdict and different text: the same model, the same identifiers,
+greedy from the same seed, generations that agree for a few tokens and then
+part. Two explanations, opposite consequences. Either two near-tied tokens are
+picked differently and the trajectories diverge from there — which is nobody's
+defect — or the distributions genuinely differ, and every result MCF has ever
+measured through its own engine is suspect.
+
+**What the oracle could already say, and where it stopped.** `margins
+--against` reports the margin at the step where MCF's text stops being a prefix
+of the reference's, which is F32's fix for F27's rule. On SmolLM2 the two part
+at **step 4 with a margin of 0.105** — a near-tie, well under the 0.40
+threshold. That is the benign answer, and it is only an answer about step 4.
+
+**The oracle has only ever compared ten tokens.** `GENERATE_TOKENS=10`. Past
+the parting step nothing is comparable, because the two engines are writing
+different sentences — so *whether agreement decays with position* had never
+been asked, and position is exactly where a rotary encoding or a cache would go
+wrong.
+
+**So MCF was made to read the reference's tokens instead of its own.** Teacher
+forcing: at every position MCF sees exactly the reference's prefix and is asked
+what comes next. That is comparable all the way down, however far the free
+generations have drifted apart.
+
+| | SmolLM2-135M | gemma-3-270m |
+|---|---|---|
+| positions compared | 250 | 700 |
+| disagreements | 3 (1.2%) | 25 (3.6%) |
+| worst rank MCF gave the reference's token | 1 | 3 |
+| largest margin at a disagreement | 0.113 | 6.590 *(see below)* |
+
+**The sliding window holds when the cache is grown a token at a time.** F28
+already crossed this boundary and established the mask against the reference —
+with a **682-token prompt**, including one built so that only an engine masking
+the sliding blocks and not the global ones recalls a fact placed outside the
+window. What it did not exercise is the other path to the same state: a cache
+filled *one position at a time by generation* rather than in a single pass over
+a prompt. This does that, and compares 700 positions rather than the eight
+generated tokens F28 compared. Across the boundary:
+
+```
+positions   0-255   disagreed 17 of 247   (6.9%)   worst rank 3
+positions 256-511   disagreed  8 of 256   (3.1%)   worst rank 1
+positions 512-700   disagreed  0 of 189   (0.0%)   worst rank 0
+```
+
+**One hundred and eighty-nine consecutive agreements past the window.**
+Agreement does not decay with position; on this model it improves.
+
+**The one alarming number was the instrument again.** Position 385 showed a
+disagreement at a margin of **6.59** — an order of magnitude past the largest
+real defect this project has recorded (0.775, F27). MCF's chosen token there
+was **106**, which is gemma's `<end_of_turn>`. The reference had been run with
+`ignore_eos` so that it would produce seven hundred tokens, so it was forbidden
+to stop and took its best remaining token while MCF took the stop. The margin
+was measuring a flag in the experiment. **That is the third time in three
+findings that the most decisive number was the one the instrument made** (F37,
+F38, F39), and the only reason it did not become a defect report is that the
+token was looked up rather than the number believed.
+
+**Two disagreements were left, and they split the two rules apart.** At
+positions 45 and 160 MCF preferred a different token with margins of 0.490 and
+0.704 — both over the oracle's 0.40 threshold, both in the range where F27 and
+F32 found real defects. The distribution comparison, which is the oracle's
+other and better instrument (B-373), says otherwise:
+
+| | position 45 | position 160 |
+|---|---|---|
+| top-20 sets in common | 19 of 20 | 19 of 20 |
+| KL(reference ‖ MCF) | **0.028** | **0.068** |
+| threshold for *distributions differ* | 0.20 | 0.20 |
+| largest single log-probability gap | 0.362 | 0.565 |
+
+The two engines hold the same twenty tokens with nearly the same probabilities
+and order the top two differently. At position 160 the reference itself has its
+top two **0.06 apart** — its own near-tie — where MCF has them 0.70 apart the
+other way.
+
+**The finding about method: the margin rule does not transfer, and the KL rule
+does.** The 0.40 threshold was measured on *one parting step per file*, across
+sixteen files (F27, F33). Applied at every position of a seven-hundred-step
+comparison it is a different test with a different rate of false alarm, and it
+raised two. The distribution rule, on the same two positions, says agreement
+with room to spare. Nothing about the gating threshold changes — it is still
+right for the quantity it was calibrated on — but **the per-position test must
+use the distribution rule, and B-373's case for preferring logits over texts
+is stronger than when it was written.**
+
+**What was established.** MCF's engine agrees with the reference across 250 and
+700 positions of two different architectures, one of them with sliding-window
+attention exercised past its own window for the first time. Every disagreement
+is an order-swap between tokens both engines hold at nearly the same
+probability. The divergence F39 asked about is near-tie amplification, and
+B-377 closes on that.
+
+**What was not established.** Whether a long *prompt* and a long *generation*
+could ever disagree here — F28 covered the first path and this the second, and
+neither has been shown to be the harder one. Nothing about a large model: both are under 300M,
+and a defect that only appears at 27B would not show here. Nothing about
+quantizations other than Q8_0 and Q6_K — F33 measured the arithmetic gap
+widening at Q2_K, and this test has not been run there, where a 0.56
+log-probability gap might be ordinary or might not. Nothing about a *prompt*
+longer than the window: this exercises long generation, and a long prompt fills
+the same cache by a different path. And no timing: the seven-hundred-position
+comparison took five minutes and thirty-seven seconds of a shared machine
+outside the exclusive window, which makes it a duration and not a measurement
+(B35).
+
+## 41 · F41 — The check could not fail, and the mutation that showed it was not the first one tried (B-003, B-368, B-377, A13, F40)
+
+**What was added.** F40's teacher-forced comparison, made durable as a section
+of the oracle tier: MCF is made to read the reference's own tokens, and what is
+asserted is the *rank* MCF gave the reference's token at each position. A
+top-two order swap is arithmetic; a reference token MCF ranks tenth is not.
+Off by default at `MCF_ORACLE_FORCED=1`, because it costs minutes per model.
+
+It passed on the first run — 354 of 377 positions on gemma-3-270m, the
+reference's token never worse than MCF's rank 3 — and the number meant nothing.
+
+**The negative control returned identical figures with the mechanism broken.**
+B-003's rule is that a check has to be shown to fail. The sliding window was
+deliberately given an off-by-one and the section reported *the same numbers to
+the digit*: 354 of 377, worst rank 3. Not a near miss — no difference at all.
+
+**The reason is that the check never reached the mechanism.** gemma-3-270m
+attends over a window of 512 tokens and stops at its own end of turn after
+**377**. A window of 512 is never reached in 377 tokens, so nothing about the
+sliding window was being exercised, and the check was asserting a property of
+the first 377 positions while its comment claimed the window. (F28's long-prompt
+comparison does cross the boundary and always did; what was empty here was this
+section's own claim to cross it by generating.)
+
+This is why F40 used `ignore_eos`, and F40's own artifact is why the tier had
+not: a reference forbidden to stop takes its best remaining token where MCF
+takes the model's end of turn, and that produced the largest apparent defect in
+this document. The two are not in tension once the artifact is *named* rather
+than avoided — the flag is set, and the positions where MCF chose the stop
+token are set aside by that name and counted in the output (A1). On this model
+that is exactly one position in seven hundred.
+
+**Then the mutation was still too weak.** With the run reaching 700 positions,
+the off-by-one *still* changed nothing. That is not a failure of the check but
+a fact about the model: the extra key is at the far edge of the window and
+carries a negligible attention weight. A boundary error of one token in this
+mechanism is, on this model, unobservable.
+
+**The structural break is caught, enormously.**
+
+```
+                              agreed        worst rank of the reference's token   verdict
+clean                         675 of 699    3                                     passes
+sliding window off by one     675 of 699    3                                     passes  ← not caught
+sliding window disabled       462 of 700    618                                   fails, exit 1
+```
+
+Rank **3** against rank **618**. The threshold sits at 8, in a gap of two
+orders of magnitude — which is the widest separation between noise and defect
+anything in this document has measured, and a good deal wider than the margin
+rule's 0.320-to-0.449 (F32, F33).
+
+**What this check does and does not cover, stated rather than implied.** It
+catches a sliding-window mechanism that is absent, wrong in shape, or applied
+to the wrong blocks. It does **not** catch a boundary off by one, and that is
+now known by measurement rather than assumed either way — which sharpens F28,
+where an off-by-one was reasoned about as *a defect with room to hide* and a
+history was built to deny it that room. On this model it hides regardless: the
+key at the window's edge carries too little weight to change the answer. A21 applies to MCF's
+own instruments as much as to a model's metadata: what a check has been shown
+to catch is what it verifies, and the rest is declared.
+
+**What was not established.** Whether the off-by-one is unobservable on other
+models, or only on this one — a longer window, or a model that leans harder on
+its oldest visible token, might make it plain. Nothing about models without
+sliding-window attention, where this section still compares 700 positions but
+tests no windowing at all. And the run costs five to six minutes per model on a
+shared machine, which is why it is off by default and why nothing here is a
+timing (B35).
+
+## 42 · F42 — The context both models declare is the context they have, and the probe that asked broke the protocol asking (B-055, B-058, B-059, B-376, D42, §3.7, §3.8, A2, A21)
+
+**What was built.** The second probe: the context length a file declares
+against the longest prompt the engine will actually take. It is reachable only
+because of B-376 — MCF's own engine pays a forward pass per prompt token, so a
+32768-token question through it is hours, and through the server it is thirty
+seconds.
+
+**What can be observed here without judgement.** Not *does the model still
+understand the context*, which is a judgement and is not built. The exact
+observation is an integer comparison: MCF sends N identifiers and the engine
+reports how many it read. Equal is agreement; fewer is a prompt silently
+shortened, which is a measurement of a different prompt (§3.8, D46).
+
+**The claim holds on both models, and the shape of the claim is worth stating.**
+
+| | declared | accepted as prompt |
+|---|---|---|
+| SmolLM2-135M | 8192 | 8191 |
+| gemma-3-270m | 32768 | 32767 |
+
+The off-by-one is not a divergence and is not reported as one: **a declared
+context is the whole budget, not the prompt's share of it.** A prompt of
+exactly 8192 is refused because nothing is left to answer with. Reporting that
+as a defect would be reporting arithmetic, and the probe leaves one token for
+the reply and says so.
+
+**The claim is asked directly, so agreement costs one trial.** A halving search
+runs only when the claim fails. On the corpus that is one question and no
+search — 8191 tokens spent rather than fifteen trials' worth.
+
+**The divergence branch was exercised deliberately, because a check that has
+only ever agreed has shown nothing** (B-003). The engine was given a 2048-token
+context against a file declaring 8192:
+
+```
+declared 8192 token(s)
+accepted 2047 token(s) of prompt, with one left to generate
+DIVERGENCE the file declares 8192 tokens and this engine on this machine takes 2047
+the engine's own words: request (2048 tokens) exceeds the available context size (2048 tokens)
+```
+
+Found exactly, in fourteen trials.
+
+**Asking the question broke the control protocol, which is the finding.**
+`REQUEST_CEILING` was sixty-four kibibytes, on the stated reasoning that *a
+control request is a verb and a name*. That was true when it was written and
+stopped being true at B-374, which made a request able to carry a turn of token
+identifiers. Thirty-two thousand of them written as decimal numbers is a
+quarter of a megabyte, so a **legitimate request was cut off at about four
+thousand tokens**.
+
+Worse than the bound was what happened at it. The daemon read its sixty-four
+kibibytes, failed to parse the fragment, and closed while the client was still
+writing — so the client saw a connection reset and **no reason at all**. The
+probe reported *a line of the stream was unreadable*, which was true and
+useless. That is the silent failure A2 forbids, in the one place §3.7 says to
+be careful.
+
+Both halves are fixed. The ceiling is four mebibytes, derived from the largest
+thing a request can honestly be — a turn of identifiers for a very long
+context — and is still a stated number rather than *whatever arrives*, which is
+what §3.7 actually asks for. And a request that fills the ceiling without
+ending is now **refused with the ceiling named**, before the connection closes.
+
+**A taxonomy error the divergence made visible.** MCF classified the server's
+`400 exceeds the available context size` as `engine.protocol.malformed`,
+attributed to the machine. The server's answer was perfectly well formed; it
+refused a request that was out of bounds and said exactly why. Calling that
+answer unparseable blames the engine for the request. It is `config.invalid`,
+refused, attributed to the request — and `malformed` is kept for an answer that
+genuinely cannot be read. The wrong category was written by the same hand that
+wrote the scenario for it (F39) and survived until a real refusal arrived.
+
+**A condition that named the wrong experiment.** The probe framework built its
+conditions with `CHAT_TEMPLATE.name` hard-coded, so the context probe's result
+carried `probe: chat-template` — a provenance field, printed beside the true
+ones, stating the wrong experiment. It is the exact failure B-059 exists to
+prevent, and it existed for as long as there was only one probe to be wrong
+about. The method is a parameter now.
+
+**What was not established.** Whether a context that is *accepted* is a context
+that is *usable* — a model may take 32767 tokens and attend to none of them,
+and that question needs an observation this probe does not make. Nothing about
+memory: both models are small enough that their declared context fits, and a
+27B model at 32768 may not, which is the case where this probe earns its keep
+and has not been run. Nothing about MCF's own engine, which cannot answer here
+at all: it does not report how many identifiers it read, so the probe returns
+*could not tell* rather than assuming it read them all (A7). And no timing —
+thirty seconds on a shared machine is a duration, not a measurement (B35).
+
+## 43 · F43 — A model that produced nothing now answers, and the change can be accounted for (B-059, B-062, D42, D43, §3.8, §3.15, A21, F38)
+
+**M3's first exit criterion, met.** *A model that the defaults configure
+wrongly measurably improves, and the improvement is attributable to a named
+probe.* The same model, the same prompt, the same engine, either side of one
+act:
+
+```
+BEFORE  mcf run … --prompt "What is the capital of France?"
+        [end of text]
+
+THE ACT mcf probe … --apply
+        APPLIED  im_start…im_end as assistant — set by the chat-template probe
+                 at 2026-08-27T21:32:11, through provisioned (MCF 0.1.0-m0)
+
+AFTER   mcf run … --prompt "What is the capital of France?"
+        The capital of France is Paris. Paris is a city located in the northern
+        part of the country, known for its historical landmarks, cultural
+        institutions, and cultural attractions…
+```
+
+The margin is not subtle and it is not a matter of quality: addressed the way
+MCF addresses every model today, SmolLM2 emits its end-of-turn token and
+**says nothing at all**. F38 measured that as a refusal to speak and it is what
+`mcf run` had been doing since there was an `mcf run`.
+
+**What the act is, and what it is not.** D42 is that a probe reports a
+measurement and configures nothing; D43 is that MCF never reconfigures under a
+user. Between them there has to be a person, and `--apply` is where the person
+is. It is a flag rather than a default because that *is* the decision: MCF may
+learn better, and what it does with that is say so until somebody asks.
+
+Three answers, and only one writes anything. Observed and not raw: written down
+with the probe, the moment, the build and the conditions, and the act goes on
+the record as a `model_configured` entry naming what MCF did **before**, so the
+line says what changed rather than only what is now true. Observed and raw:
+nothing to apply, because writing a configuration that changes nothing would
+put a probe's provenance on a default and make it look derived (A21).
+**Inconclusive: refused** — and gemma-3-270m is the case, refused in a real run.
+D42 made *could not tell* first-class exactly so that it could not become a
+configuration, and this is the place that rule has to hold or it holds nowhere.
+
+**Every value answers *why this value*, and answers it where it is used.** The
+provenance is not filed away; it is on the account, in the record, and on every
+`mcf run`:
+
+```
+  addressed im_start…im_end as assistant — set by the chat-template probe
+            at 2026-08-27T21:32:11, through provisioned (MCF 0.1.0-m0)
+```
+
+§3.15 is why it is printed rather than merely stored: MCF doing something other
+than the plain thing must never be something a reader has to go looking for.
+The full build identity and the conditions in full are in the file and the
+journal entry, where somebody chasing a difference between two machines will
+look — legibility decides where they are shown, A1 decides that they are kept.
+
+**The test that makes the attribution real.** *Attributable to a named probe*
+is only true if the thing applied is the thing measured. A configuration that
+rebuilt the turn slightly differently — another marker, a lost newline — would
+be a different addressing wearing the probe's provenance, which is worse than
+no provenance. So the winning addressing is carried out of the probe rather
+than looked up again by name, and a test asserts that the turn a stored
+configuration builds is the turn the probe sent, **identifier for identifier**.
+
+**What the gate caught, again.** `forget` destroys a file and §3.11 requires
+every deletion in MCF to be declared with what it destroys and why that is not
+an artifact. It was not, and the gate said so. What goes is MCF's note about
+how to address a model — never the model, and never the record: the
+`model_configured` entry outlives the file the way `ArtifactRemoved` outlives an
+artifact.
+
+**What was not established.** The other half of D43: MCF does not yet notice
+when its answer *would now differ* from what was applied — a better probe,
+another engine, a changed default — which is the divergence half of B-058 and
+is not built. A configuration is therefore as good as the day it was taken, and
+nothing warns when it stops being. Nothing about a second parameter: the usable
+context is probed (F42) and is not applied to anything, because nothing in MCF
+yet reads a context bound from configuration. And the improvement here is one
+model on one machine through one engine — §3.8's point is that the *wrong*
+configuration corrupts a measurement, and this shows the mechanism, not a
+general result about small models.
+
+## 44 · F44 — A configuration says whether it still holds, and the probe that asked spent eight thousand passes learning it could not (B-058, B-059, D42, D43, A21, F39, F42)
+
+**What was built.** D43's other half: MCF noticing when its answer *would now
+differ* from what somebody applied. Two things are checkable and they are not
+the same kind of knowledge, so they are reported separately and never mixed.
+
+**The conditions can be checked with no trials at all.** A configuration
+records the engine and the build it was taken through, and MCF knows which are
+in force. When they have moved it says so, naming both sides:
+
+```
+moved    the engine it was taken through is not the one in force:
+         was provisioned, now stand-in
+         which does not mean the answer changed — two engines agreed on this
+         question when it was measured (F39) — only that the evidence was
+         gathered elsewhere (A21)
+```
+
+**That caveat is the finding, not decoration.** F39 measured two engines
+returning the same verdict on this exact question, so *the conditions moved*
+and *the answer changed* are different claims and only the first is known. A
+tool that reported a changed engine as a disagreement would be manufacturing
+divergences, which is the same error as suppressing them and easier to make.
+
+**The answer is compared only where there is evidence.** `mcf probe` has just
+measured the thing that set the configuration, so the comparison is free and it
+is the one that can say *wrong*:
+
+```
+applied  im_start…im_end as assistant — set by the chat-template probe …
+agrees   this run measured the same addressing that is applied, so the
+         configuration is not merely old — it is confirmed (A21)
+```
+
+and, with the stored answer made to differ:
+
+```
+DIVERGENCE what is applied is some other addressing, and this run measured
+           im_start…im_end as assistant as best. MCF's answer would now differ,
+           which is the case D43 is about — applying it is an act
+```
+
+**An inconclusive re-probe is not a disagreement.** It leaves the capability
+where it was and does not license undoing anything — the same rule as D42's,
+applied to the second occasion it matters.
+
+**The probe spent eight thousand forward passes to learn it could not answer.**
+Running the whole of `mcf probe` through MCF's own engine took the
+usable-context probe (F42) down a path where the answer was never available:
+MCF's engine does not report how many identifiers it read, so the probe could
+only ever return *could not tell* — after sending it 8191 identifiers and
+paying a forward pass for each. The instrument is now asked the cheapest
+question there is, **one token**, before the model is asked anything:
+
+```
+INCONCLUSIVE — this engine does not say how many identifiers it read, so a
+prompt taken whole cannot be told from one quietly shortened (B-376)
+```
+
+Same answer, 8190 forward passes cheaper. The general shape is worth keeping:
+**ask the instrument whether it can answer before asking the model** — §3.18
+makes a probe an experiment, and an experiment whose instrument cannot read the
+result is one that should not be run.
+
+**A comparison that invented a parse.** The first version of the build check
+took the first two words of the build identity as its version. It worked on the
+real string and turned a compiler version into a version number on anything
+else. The whole identity is compared now and only the display is shortened: a
+different compiler or target *is* a different build, and choosing which
+differences count would be MCF deciding where it has no evidence (§3.15).
+
+**What was not established.** Whether a moved condition ever *does* change the
+answer here — F39 says not for these two engines on this question, and that is
+two engines and one question. Whether the model file itself changed: the
+configuration is keyed by path, and a file swapped underneath would be found by
+a re-probe and by nothing else. And the divergence is reported where somebody
+runs `mcf probe`; a configuration nobody re-probes is still as good as the day
+it was taken, which is now *visible* rather than fixed — which is what D43
+argues is the honest state and §7.25 feared was a rotting branch.
+
+## 45 · F45 — The page whose job is to have no hidden choices had one, and the check for a moved condition invented one (B-058, B-059, B-062, D43, §3.15, A21, F44)
+
+**What was built.** `mcf explain` carrying the derived configuration beside the
+declared defaults. It is the command whose entire purpose is §3.15 — *no hidden
+choices* — and since F43 it had been omitting the one choice somebody made
+deliberately. A model configured yesterday was explained as though it would be
+addressed raw.
+
+```
+addressed as   im_start…im_end as     applied by somebody, on a probe's
+               assistant — set by the evidence, under the conditions in
+               chat-template probe at force here (D43, B-059)
+               2026-08-27T22:08:33,
+               through provisioned
+               llama.cpp @925e1179947e
+```
+
+It also said *Nothing here has been probed* under **What is it good at?**, to a
+reader who had probed it. That sentence was true when it was written and is the
+kind of stale line that makes a reader stop believing the rest of the page.
+
+**The comparison invented a moved condition.** `explain` reported that the
+configuration had been taken under conditions that no longer held, on a machine
+where nothing had changed. The two sides were not the same kind of name: the
+probe recorded the engine as **the name a caller asked for** — `provisioned` —
+and `explain` held **the engine that resolved** — `provisioned llama.cpp
+@925e1179947e, from /path`. Comparing those compares two spellings of one
+engine and finds them different every time.
+
+This is exactly the failure F44 argued the design must avoid, arriving one
+commit later by a different route. There, the danger was reporting a moved
+condition as a disagreement; here it was reporting a condition as moved when it
+had not. **Manufacturing a divergence is the same error as suppressing one, and
+it is the easier one to make** — a false divergence looks like diligence.
+
+**The fix is to record the engine as the thing it is.** `provisioned` is not an
+engine; a build at a commit is. Both sides now write
+`provisioned llama.cpp @925e1179947e`, which also makes a *different build of
+the same engine* visible as the moved condition it genuinely is — a distinction
+the old name could not express at all. Two tests pin the spellings together, so
+that changing one has to change the other.
+
+**A table that assumed its values were short.** The value column was never
+wrapped, on the reasoning that a value is a word or a number. True of every row
+for as long as there were only defaults; a derived configuration's value is a
+*sentence*, because it carries its own provenance. An overrunning value pushed
+its source onto the same line and the table stopped being a table. Both columns
+wrap now.
+
+**What was not established.** Whether the resolved engine name is stable across
+provisioning — a rebuild at the same commit produces the same name and a
+genuinely different environment, and MCF would call that unmoved. The
+provenance is compared, not the environment it names, and closing that gap
+means comparing the provisioned component's own record rather than its name.
+Nothing about a second derived parameter: the usable context is measured (F42)
+and nothing consumes it, so `explain` has one derived row and the machinery for
+n. And the divergence is still only reported where somebody looks — a
+configuration nobody explains or re-probes is unexamined, which D43 argues is
+the honest state rather than a defect.
+
+## 46 · F46 — MCF's own default was cutting every answer off, and a gate test that depends on whether a daemon is running (B-056, B-059, D42, D43, §3.8, §3.12, B49, F38)
+
+**What was built.** The stop-condition probe, and the second *applied*
+parameter — the thing M3 was measured to lack (F45).
+
+**The question it answers, and why it is a configuring probe.** MCF allows
+**32 tokens** unless told otherwise. SmolLM2's turns, addressed the way it asks
+to be, run to **313**. Every answer past the thirty-second token was being cut
+off by MCF rather than finished by the model, which is a measurement of the
+budget and not of the model — §3.8's exact complaint, sitting in MCF's own
+default the whole time.
+
+```
+ended its own turn in 5 of 5 trials, the longest running 313 token(s)
+
+DIVERGENCE MCF allows 32 tokens unless told otherwise, and this model's turns
+           run to 313. Every answer past that is cut off by MCF rather than
+           finished by the model (§3.8)
+
+APPLIED    313 tokens — set by the stop-conditions probe at 2026-08-27T22:15:34,
+           through provisioned llama.cpp @925e1179947e
+```
+
+Afterwards, the same question ends at **65 tokens with the model's own stop
+token** where MCF's default would have truncated it.
+
+**Telling *does not stop* from *the budget was too small*.** They look
+identical from outside, and B-056 is the item that says so. The probe doubles:
+32, 64, 128… until the turn ends or a ceiling is reached. Doubling rather than
+one large budget because a budget sized for the worst case is spent on every
+trial including the ones that finish in ten tokens, and tokens are what a probe
+costs (B49). Reaching the ceiling is reported as **not within this many
+tokens** — never as *never* — with the number, and naming the likelier cause: a
+model addressed wrongly does not stop at any budget, which is the
+chat-template probe's business (F38, A7).
+
+**The value applied is the longest turn observed. Not an average, not a
+margin.** An average truncates half the answers; a margin is a number MCF
+invented, and §3.15 has no room for one. What is claimed is exactly what was
+measured — *this many tokens were enough for every turn that finished here*.
+
+**A caller who says nothing is not a caller who says the default.** The budget
+only applies where the caller gave none, and making that true required the
+distinction to exist on the wire: `mcf run` substituted its default *before*
+sending, so the daemon could not tell `--limit 32` from silence. The request
+now carries `None`, and the daemon resolves the caller's word, then what
+somebody derived, then MCF's stated default. Verified both ways: silence gets
+313 and finishes at 65, `--limit 8` gets 8 and is cut off. D43 is that MCF
+never changes a value under somebody who set it, and that rule is unenforceable
+if the value arrives already substituted.
+
+**Each derived parameter carries its own provenance.** The addressing and the
+budget are set by different probes on different days through possibly different
+engines, and a budget citing the chat-template probe would be a value citing an
+experiment that did not measure it (B-059). The file holds them separately, and
+writing one reads the file first so that setting a budget cannot silently drop
+an addressing (A1).
+
+**A gate test that depends on whether a daemon happens to be running** (fixed
+in F47).
+`run::tests::a_file_that_is_not_a_model_is_refused_legibly` asserts the refusal
+says *no vendored engine* — true when MCF answers for itself, false when a
+daemon is up and a provisioned llama.cpp produces its own refusal instead. It
+failed during this work because a daemon was left running from a manual check,
+and passed when it was stopped. **The test is right and the isolation is
+missing**: §3.12 makes a suite whose result depends on ambient state a suite
+that cannot be reproduced, and this one silently reports on whichever machine
+state it found. Registered as B-378 rather than fixed here, because the fix is
+about how the CLI tests reach a daemon and is not this probe's business.
+
+**What was not established.** Whether the longest turn observed over five short
+factual questions is the longest turn this model has — it plainly is not, and
+the probe claims only what it measured. A model asked to write an essay will
+exceed it, and the honest reading of the applied budget is *enough for turns
+like the ones asked*, which is why the questions are part of the method. Nothing
+about a model that stops at wildly different lengths depending on the question:
+10 to 313 on this one, and a single number for a distribution that wide is a
+choice this probe makes and states rather than one it justifies. And no timing —
+sixteen trials and 1952 tokens is a cost, not a speed (B49, B35).
+
+## 47 · F47 — The suite was reporting on the machine it found (B-378, B-003, B16, §3.12, F46)
+
+**What was wrong.** `run` looked up whether a daemon was listening *in the
+middle of doing its job*, so a test asserting on the refusal MCF gives for an
+unreadable file was really asserting on whichever of MCF and a daemon answered.
+It passed alone and failed beside a running daemon, for reasons nothing in the
+test could see. F46 found it by leaving one running.
+
+**Why it matters more than one test.** This suite has been the arbiter of every
+change in this document. A gate whose answer depends on the state of the
+machine it ran on is not a gate — it is a different experiment each time,
+reported as though it were the same one, and §3.12 is exactly about the
+difference.
+
+**The fix is that where the daemon is becomes an input.** `run_where` takes it;
+`run` looks it up and passes it in. `None` means *no daemon*, which is both what
+a machine with no runtime directory gives and what a test wants to say. The
+tests call a helper named `without_a_daemon`, so what they assume is in the
+name rather than in the environment.
+
+**Shown to work in the direction that matters.** The old failure mode was *pass
+without a daemon, fail with one*. The tests now pass **identically with a
+daemon running and with none** — which is the assertion, and running it only
+one way would have demonstrated nothing (B-003).
+
+**A check, so it cannot come back.** A small table of entry points that reach
+for ambient state, each with the sibling that takes it as an argument, and the
+files watched for calls to them. Shown to fire: putting the ambient call back
+produced
+
+```
+crates/mcf-cli/src/run/tests.rs:47: calls `run(` — use `run_where(` instead,
+because it looks up whether a daemon is listening…
+```
+
+A second test asserts that every sibling the table names **exists**, because a
+check that tells somebody to call a function that is not there fails the reader
+rather than the code.
+
+**The table is small on purpose, and that is a limitation rather than a
+design.** It watches one call in one file. Nothing stops a *new* function from
+acquiring the same shape unnoticed, and nothing checks the other ambient
+readers — the model store, the record's path — which are read by tests that
+mostly pass their own scratch directories and were not audited here. What is
+mechanical is the regression, not the class.
+
+**What was not established.** Whether other tiers have the same dependency. The
+laboratory's serving scenarios build their own socket under a scratch world and
+`mcf-serve`'s cost tests do the same, which is why only the CLI's was found —
+but *these three read ambient state and are fine* is a survey of three, not of
+the suite.
+
+## 48 · F48 — The tie was MCF's, not the model's: a template that names a role in order to rename it (B-375, B-376, D42, D46, §3.7, F38, F39, F40)
+
+**The question B-375 asked.** gemma-3-270m had two addressings that both
+answered and ended the turn five times of five, so *did the turn end* could not
+separate them. F38 offered turn length as the sharper question and F40
+withdrew it — it separated them on one engine and not on another, which made it
+a reading about the instrument. What was left was to find a question that
+holds.
+
+**There was no question to find, because there was no ambiguity.** The two
+candidates differed only in the role word — `assistant` against `model` — and
+gemma's own template says which:
+
+```
+{%- if (message['role'] == 'assistant') -%}
+    {%- set role = "model" -%}
+```
+
+It names `assistant` **exactly once, and does it to rename it**. MCF read the
+template as a bag of words: *does this text contain "assistant"? then that is a
+candidate.* So it manufactured a candidate the file explicitly rejects, failed
+to tell it from the real one, and reported the file as ambiguous when the file
+is explicit. Two findings' worth of searching for a sharper observation, and
+the defect was in the question's premise.
+
+**Mentioning is not meaning.** A word a template *compares against* is an input
+name on its way to being translated; a word it *assigns* is what gets written
+out. MCF now reads the assignment — `set <name> = "literal"`, both quotings,
+every occurrence — and falls back to the mentioned names only when a template
+assigns nothing, which is the case where it emits the role it was given and the
+mentioned names really are the candidates.
+
+**It reads the template's shape and does not execute it.** A chat template is a
+program in somebody else's language and running one is a door §3.7 keeps shut —
+which is also the position taken when this was last raised. What is recognised
+is one shape, the one that matters, and nothing else; that is the honest extent
+of reading a program without running it, and it is stated rather than implied.
+
+```
+gemma-3-270m   start_of_turn…end_of_turn as model   5 of 5 ←
+               raw                                  4 of 5
+               best: as model — agrees with the file
+```
+
+**A behavioural question was tried first, and is worth recording because it
+failed on the model it was for.** Stop the turn *before* the role word and let
+the model supply it: `<start_of_turn>user\n…<end_of_turn>\n<start_of_turn>` and
+one token. SmolLM2 answers `ass` — the first token of `assistant`, its own role
+word, exactly right. gemma-3-270m answers a **newline**. The question is sharp,
+needs no judgement, and does not discriminate on the one model with a tie. It
+is not built.
+
+**And the fix uncovered a plumbing defect it would have hidden.** With gemma
+deciding, the stop-condition probe ran on an *unconfigured* model for the first
+time and returned inconclusive: with nothing applied it sent the question as
+**text**, which routes to the engine that takes a command line and cannot say
+why it stopped (B-376). Every unconfigured model — most of them — would have
+reported inconclusive for a reason that is MCF's plumbing rather than the
+model's behaviour. The question travels as identifiers now whether or not it is
+wrapped.
+
+**What was not established.** How many real templates the assignment rule
+reads correctly: two, here. A template that builds the role by concatenation,
+or in a macro, or with a variable it assigns twice, is not handled and is not
+claimed to be — a template naming two roles yields two candidates, which is a
+tie MCF has evidence for, unlike the one it invented. And nothing here verifies
+that `model` is *right* for gemma beyond the model ending its turns under it:
+that is the same observation as before, on a candidate set that is no longer
+wrong.
+
+## 49 · F49 — MCF can check its own engine against the one it built, on a user's machine (B-362, B-376, D31, D39, A12, A19, §II)
+
+**What was built.** `mcf cross-check <model>` — the two engines a *user* has,
+compared on the same input, on their machine, about their model.
+
+**Why it is not the oracle.** `scripts/check-oracle.sh` compares MCF against a
+reference implementation and needs a checkout of somebody else's source; it
+runs when this repository is being changed. This asks the same question of
+MCF's own engine and the one **MCF built into a prefix** (B-367, D39) — which
+is a thing a user has. §II is why it exists: MCF makes claims about models, and
+a claim computed by an engine nobody has checked is a claim about the engine.
+A12 says MCF may not ask to be trusted, and this is the shape of not asking.
+
+**It was unbuildable until B-376.** Comparing two engines requires giving both
+the same input in the same form and getting comparable output back. A
+completion tool takes a command line and prints text; the server takes
+identifiers and hands them back. The whole comparison rests on the second.
+
+**Teacher forcing, because texts cannot be compared.** Two correct
+implementations agree until two tokens are close enough that summation order
+picks a different winner, and after that they are writing different sentences
+(F27, F40). MCF reads the *other* engine's tokens and at each position is asked
+what it would have chosen.
+
+**The rank, not the margin.** F40 measured both rules and F41 measured the gap.
+The margin threshold was calibrated on one parting step per file and raises
+false alarms at every position of a long comparison; the rank separates by two
+orders of magnitude. The line is **8**, and this run confirms where the clean
+side of it sits:
+
+| | agreed | worst rank |
+|---|---|---|
+| SmolLM2-135M Q8_0 | 116 of 120 | 2 |
+| gemma-3-270m Q6_K | 111 of 120 | 3 |
+| TinyMixtral-4x248M Q5_K_M | 117 of 120 | 2 |
+| Qwen3-0.6B Q4_K_M | 113 of 120 | 2 |
+| SmolLM2-135M **Q2_K** | 117 of 120 | 1 |
+
+Four architectures including a mixture of experts, and the quantization F33
+found the widest arithmetic gap on. Every one within rank 3 of a line at 8.
+
+**Shown to fail, and the first mutation was again the wrong one.** Swapping the
+rotation's pairing changed nothing — because the arm edited was one llama never
+takes; the family falls through to the default. That is F41's lesson arriving
+again in the same session, and it is worth writing down twice: **a negative
+control that does not touch the subject demonstrates nothing, and looks
+identical to one that does.** Mutating the arm the family *does* take:
+
+```
+clean               agreed 116 of 120   worst rank    2   AGREE     exit 0
+rotation swapped    agreed  37 of 120   worst rank 3388   DIVERGE   exit 1
+```
+
+**What it refuses to say.** Not *which* engine is wrong. Neither is the
+authority — what is compared is two readings of one file, and a disagreement is
+a finding about one of them. Saying which would need a third reading, and
+claiming it from two would be exactly the manufactured certainty A19 forbids.
+
+**A precondition checked before a model is loaded.** *Nothing to compare
+against* is a fact about the other engine's answer and needs no model at all.
+The first version parsed the file first and a laboratory scenario caught it —
+the same shape as F44, where a probe paid eight thousand forward passes to
+learn its instrument could not answer.
+
+**What the gate caught.** `probe.inconclusive` claimed with no scenario able to
+produce it (A13), and then a failure carrying no context. Both are checks that
+have now fired on four consecutive pieces of work, which is either a very good
+suite or a very consistent author.
+
+**What was not established.** Whether 120 positions is enough: F40 used 700 and
+found agreement improving with position, so a short comparison is the
+conservative direction, but *enough* is not measured. Nothing about a model too
+large for MCF's own engine — the reference model cannot be cross-checked at
+all, because MCF cannot read it (B-372), which is precisely the case where a
+user would most want the check. And the threshold is provisional in the
+direction all of them here are: a defect that only ever swaps the top two
+tokens passes.
+
+## 50 · F50 — The privileged helper could be told where the machine is (B-190, D35, §6.32, §XVII, A2, A26)
+
+**Found by preparing to use it.** D35 names three privileged operations and one
+of them is *read the processor's energy counter* — the awkward one, a read that
+needs elevation, without which there is no energy-per-token figure on a
+processor at all. Energy was raised as a fourth axis for the first benchmark,
+and the question was whether this machine could measure it. It can, and the
+helper that would do it was already built and already correct in every respect
+this document had checked.
+
+**It accepted `--under`.** The flag rebases every fixed path, and it exists so
+that three laboratory scenarios can drive a privileged program against a
+fixture without letting it near the machine (D26). It was parsed by the
+**shipped binary**, not only by the tests. Demonstrated as an ordinary user,
+against a directory made a moment earlier:
+
+```
+$ mcf-helper energy --under /tmp/…/fake
+name: 4242
+```
+
+**With no privilege that is harmless, which is exactly why it survived.** The
+helper has never held any. But this program exists *in order to* be given some,
+and the moment it is — by a capability, by setuid, by a line in a sudoers
+file — `--under` is a hole the size of the privilege:
+
+- `energy --under <a tree you control>` reads any file the privilege can reach,
+  through a symlink at the path it expects.
+- the governor operation *writes* under the same rebased root, and the value it
+  writes is chosen from `scaling_available_governors` — which is read from
+  under that root too, so the caller supplies that as well.
+
+A local privilege escalation, latent, waiting for the grant that was about to
+be made. §6.32 is the section that asks how a privileged daemon avoids becoming
+a way to run anything as root, and the answer it settled on — per-operation,
+minimal, auditable, a separate executable that exits — was implemented
+faithfully. The hole was in an argument nobody classed as part of that surface.
+
+**The fix is that the seam is not in the program.** `run` takes no root and
+refuses `--under`; `run_under(root, arguments)` is a parameter, reachable from
+the laboratory and this crate's tests and from nothing else. Refused rather
+than ignored: a caller who asked for something and did not get it must be told
+(A2), and silently reading the real machine instead would be worse than either.
+
+**One existing test asserted the weaker guarantee.** `under_cannot_name_a_file_to_write`
+checked that a root naming a *file* produced a platform failure and left the
+file untouched — true, and it was checking that the rebasing was survivable
+rather than that it should not exist. It now asserts both: the shipped program
+refuses the argument, and the parameterised form still declines a root with no
+processors under it.
+
+**What this says about the shape of the audit.** The repository has a check
+that nothing shipped reaches for elevation and that nothing links the helper
+but the laboratory, and it passes — the danger was never that the daemon would
+become privileged. It was that the helper's *input* was wider than its
+operations, and a surface enumerated as three operations was really three
+operations and a root. **An enumerated surface is only enumerated if the
+arguments are part of the enumeration.**
+
+**What was not established.** Whether the other two operations have a
+comparable widening — the accelerator one takes an index and shells out to a
+vendor tool, which is a second thing to look at with the same eyes and has not
+been. Whether any other program in this repository takes a test seam through
+its shipped argument parsing: one was found by needing it, not by looking.
+And the grant itself has still not been made, so nothing here is a claim that
+energy is measurable — only that the program which would measure it is no
+longer a way to read anything else.
+
+## 51 · F51 — Contention moves the level, not the spread, and that decides how a benchmark must be built (DEC-007, B-250, B-181, §3.4, A19, F2, F3)
+
+**What was measured.** The first thing the operator's answer on DEC-007 asked
+for: not a chosen repeat count but a measured one. One deterministic run —
+MCF's own engine, eight tokens, greedy from a fixed seed, so that only the
+timing varies — repeated on this machine as it is, and again under sixteen
+deliberate burners. `prototypes/timing-noise` is the instrument.
+
+| | machine as it is | under sixteen burners |
+|---|---|---|
+| load average during | 9.8 – 10.8 | 10.5 – 22.5 |
+| median | **3.202 s** | **5.322 s** |
+| middle half of runs spans | 4.2% of the median | 9.1% |
+| slowest ÷ fastest | 1.11 | 1.16 |
+
+**The finding is the shape of the difference, not its size.** Contention made
+the run **66% slower** and made the spread **twice as wide**. Those are not
+comparable magnitudes. A busy machine does not mainly add noise — it moves the
+whole distribution, coherently, and keeps it nearly as tight as before.
+
+**Which decides how a comparison must be built, and it is not by repeating
+more.** If two configurations are measured one after the other and the
+machine's load changes in between, the error is the *level shift* — up to 66%
+here — and no repeat count removes it, because every repeat of the second
+configuration is wrong in the same direction. If the two are interleaved, a
+level shift lands on both arms equally and cancels. B-250 already asks for
+paired, interleaved, order-randomized trials as a principle; this is the number
+behind it, and it says the principle matters roughly **fifteen times more** than
+the repeat count does.
+
+**How many repeats, derived.** The samples were resampled against themselves —
+two groups drawn from the *same* measured timings, four thousand times — and
+each candidate count asked how often two such groups differ by more than the
+effect being looked for. Every difference found that way is noise pretending to
+be one, since there is no real difference by construction. No assumption is
+made about the distribution's shape, which matters because a wall time has a
+floor at the work itself and a tail made of whatever else the machine did.
+
+| to detect | on this machine as it is | under load |
+|---|---|---|
+| 2% | 50 repeats | more than 100 — the noise is larger than the effect |
+| 5% | **7 repeats** | 50 |
+| 10% | 3 | 7 |
+| 20% | 3 | 3 |
+
+**Seven repeats is the answer for a five-percent claim on this machine in its
+normal state**, and 2% is not honestly reachable at any repeat count a person
+will wait for. That is a fact about this machine and this workload, not a
+constant — which is why the instrument travels rather than the number.
+
+**It also settles the argument it was built to settle.** The as-is column was
+taken at a load average of ten on sixteen cores — the machine was not quiet,
+and the numbers are perfectly usable. An absolute quiet threshold would have
+refused that measurement and would have been wrong. What the baseline actually
+consists of here is other projects' tooling: language servers nine hours old,
+and another project's process. **It is not going away**, so a rule that waits
+for it to go away never fires. The operator's criterion — stability against the
+machine's own baseline — is the one the data supports.
+
+**What was not established.** One workload, one model, one machine, one engine —
+MCF's own, which is not the engine benchmarks will use; the provisioned server
+is faster and its noise has not been measured, and a shorter run may well be
+noisier in relative terms. Wall time only: no energy, no memory, no
+thermal state, and the processor's frequency governor was left as it was, so
+part of the 4.2% may be frequency scaling that pinning would remove. Nothing
+here is a *speed* — B65 forbids one from MCF's own engine, and these are
+durations under stated conditions used to characterize the *machine*, which is
+what the engine is a fixed load for.
+
+## 52 · F52 — The engine benchmarks will use is three times noisier than the one they will not, and two guesses about why were both wrong (DEC-007, B-366, B-376, §3.4, A19, F51)
+
+**Why this was measured.** F51 derived a repeat count — seven, for a five
+percent claim — from MCF's *own* engine, and said plainly that this was the
+wrong engine: benchmarks will use the provisioned one. This is that gap closed,
+and the answer changes the number.
+
+**Every figure below was taken with the machine holding still.** The instrument
+now asks whether a run's duration tracked the machine's load, which is the
+operator's stability criterion put in the one form that needs no threshold. Any
+measurement where it did is reported as being *of a machine that changed*
+rather than of the command.
+
+| engine | path | run | middle half | 5% needs | 10% needs |
+|---|---|---|---|---|---|
+| MCF's own | in-process | 3.2 s | **3.6%** | 5 | 3 |
+| MCF's own | through the daemon | 4.9 s | **3.6%** | 7 | 3 |
+| provisioned | through the daemon | 0.23 s | 13.7% | 50 | 15 |
+| provisioned | through the daemon | 2.0 s | **9.9%** | 50 | 10 |
+| provisioned, **one thread** | through the daemon | 4.8 s | **45.8%** | >100 | >100 |
+
+**The engine that will be measured is about three times noisier than the one
+that will not.** Fifty repeats for a five percent claim, against seven. That is
+the number DEC-007 actually needs, and F51's seven was an answer about the
+wrong subject.
+
+**Two guesses, both wrong, both caught by measuring.**
+
+*The path.* The obvious suspect was the daemon and its socket — a round trip
+and a subprocess between the timer and the work. It contributes **nothing**:
+MCF's engine measures 3.6% in-process and 3.6% through the daemon. Ruled out.
+
+*The threads.* The next guess was that llama.cpp is multi-threaded and MCF's
+engine is not, and that a process wanting sixteen cores on a machine already at
+load ten finishes when it is given them. Pinning the server to one thread
+should then have tightened it. **It made it five times worse** — 45.8% against
+9.9% — on a clean measurement. The prediction was exactly backwards and the
+mechanism is not established.
+
+**So thread count is a condition, not a detail.** It moves benchmark noise by a
+factor of five, in a direction that is not obvious from reasoning, and a timing
+that does not record it is a timing nobody can reproduce (§3.4). This also
+bears on B-366: giving MCF's own engine threads will change its noise
+characteristics, and the change must be re-measured rather than predicted —
+this finding is what says predicting it does not work.
+
+**A measurement of mine was contaminated and I did not notice until the
+instrument was taught to.** An earlier reading of the same command reported a
+middle half spanning 121.6% and nothing detectable at any effect size. The load
+average had gone from 9.9 to 19.6 *during* it. That is precisely the condition
+the operator's criterion invalidates, and the instrument reported the range and
+drew no conclusion from it — leaving the conclusion to me, which is the wrong
+division of labour. It now computes whether duration tracked load and says so
+in a sentence nobody can read past.
+
+**What was not established.** Why the provisioned engine is noisier, which is
+now an open question rather than an answered one — two mechanisms were tested
+and neither holds. Whether the one-thread result generalises or is particular
+to this model and this machine. Anything about energy, memory or thermal state.
+And whether pinning the frequency governor narrows any of these, which is the
+last of DEC-007's open pieces and needs the privileged helper that F50 has only
+just made safe to grant.
+
+## 53 · F53 — The noise floor is a property of the moment, not of the machine (DEC-007, B-083, B-181, D35, A19, F51, F52)
+
+**What was asked.** The last of DEC-007's open pieces: whether pinning the
+processor's frequency would narrow the noise F51 and F52 measured. It was
+expected to need the privileged helper F50 has just made safe to grant. It did
+not.
+
+**The governor grant buys nothing here, and that was answerable without any
+privilege.** This machine's governor is already `performance`, and the only
+other one it offers is `powersave`. There is nothing to pin. D35 lists setting
+the governor as one of three privileged operations, and it remains right to
+have — on a machine that is *not* already at performance it would matter — but
+on this one the answer is that the reading which decides it costs nothing.
+
+**Frequency moves anyway, and a governor cannot stop it.** Boost is on, the
+range is **0.62 to 5.76 GHz**, and at any instant the cores are spread across
+most of it — idle ones at 0.62 while busy ones sit at 5.5. Across runs the mean
+moved 4.26 to 5.36 GHz. So a run's clock depends on which core it lands on and
+what else is running, and no governor setting removes that.
+
+**But frequency does not explain the noise, and neither does load.** The
+correlations between duration and each of them, across five clean rounds of the
+same command: **−0.36, +0.09, +0.56, +0.15, −0.17** for frequency and
+**+0.32, +0.21, −0.07, −0.42, −0.18** for load. They change sign between
+rounds. A permutation test says why: at twenty samples, a coefficient of
+±0.15 is what chance produces **48% of the time**, and ±0.42 about **5%**.
+None of these is evidence of a mechanism. **F52's question stays open**, and
+this closes two candidates rather than answering it.
+
+**The finding is what happened while looking.** Six clean measurements of the
+*same command, the same engine, the same machine*:
+
+| middle half spans | 2.6% | 7.4% | 7.4% | 7.9% | 8.5% | 9.9% |
+|---|---|---|---|---|---|---|
+| repeats for a 5% claim | 7 | 20 | 30 | >100 | 50 | 50 |
+
+**The noise floor is not a property of the machine. It is a property of the
+half-hour.** A number derived from one sitting and written into a document is a
+number about that sitting. F51 published seven, F52 published fifty, and both
+were honest reports of what was in front of them.
+
+**Which changes what an acceptance criterion can be.** *At least N repeats*
+cannot be the rule, because N is not stable — it varied sevenfold here with
+nothing changed but the time of day. The rule has to be a **stopping condition
+rather than a count**: a benchmark repeats until its *own* resampling says the
+difference it is looking at is bigger than the noise it is measuring, and
+reports how many that took. That is the same principle the operator already
+set — measure, do not choose — applied one level deeper than it was meant, to
+the measurement of the measurement.
+
+**And my own instrument had a chosen number in it.** Contamination was called
+at a correlation of 0.5, picked because it sounded like a lot. At twenty
+samples it is barely above what chance produces, so it would have flagged clean
+runs and missed dirty ones. It now shuffles the pairing four thousand times and
+reports how often chance alone is that tight — no threshold, and the reader
+sees the same figure the decision is made on.
+
+**What was not established.** Why the provisioned engine is noisier than MCF's
+own; two more candidates are eliminated and the question is still open.
+Thermal state — the only sensor this machine exposes reads sixteen degrees,
+which is not a processor temperature, so thermal steady state cannot currently
+be observed at all here and is the one piece of DEC-007 that stays genuinely
+unanswerable. And whether the sevenfold variation in the noise floor narrows
+inside an exclusive window, which is the argument *for* the window and has not
+been tested because the window is not built.
+
+## 54 · F54 — The stopping condition, and the first comparison that stopped itself (B-083, B-086, B-250, DEC-007, F51, F52, F53)
+
+**What was built.** `mcf_bench::enough` — the rule a comparison carries instead
+of a repeat count. F53 established that a count cannot be the rule, because the
+same command on the same machine needed seven repeats in one sitting and over a
+hundred in another. So a comparison repeats until *its own* resampling
+separates the difference it is looking at from the noise it is measuring, and
+reports how many that took. **The count becomes part of the result rather than
+part of the policy.**
+
+**Three outcomes, because two would be a lie.** *They differ*, *they are the
+same to within a stated resolution*, and *not yet decided*. The middle one is a
+real answer — B-086 says a null result is a result — and it carries the size of
+the difference that would have shown, so *no difference* never means *we
+stopped looking*. The third is D42's honesty applied to a comparison: arms that
+have not separated, with noise still wider than the question, must not be
+rounded to either answer.
+
+**Paired by construction, because the pairing is the defence.** F51 measured
+contention moving a run's whole distribution by sixty-six percent while
+widening it only from four to nine, so *all of A then all of B* carries any
+drift as an error landing on every repeat in one direction. Arms of unequal
+length are refused rather than truncated: a caller who has run one arm more
+than the other has not run a paired trial, and truncating would silently
+produce the shape B-250 exists to prevent.
+
+**The first comparison that stopped itself**, on the question the first
+benchmark is actually for — two quantizations of one model, 150 tokens each,
+alternating. Twice, an hour apart:
+
+```
+not decided after 10 paired trial(s)
+they differ by 9.6%, after 17 paired trial(s) — noise alone produced a gap
+that big 4.5% of the time      · medians 1.130 s and 1.031 s
+
+they differ by 36.2%, after 8 paired trial(s) — noise alone produced a gap
+that big 3.9% of the time      · medians 1.129 s and 0.829 s
+```
+
+Seventeen, then eight. Not the seven F51 derived, nor the fifty F52 derived —
+**the number was found by the run rather than brought to it**, which is the
+whole of what F53 asked for. And the two sittings disagree about the *size* of
+the difference — 9.6% against 36.2%, from a slower second arm rather than a
+faster first — which is F53's point arriving again: what a single sitting
+measures is what that sitting had.
+
+**A shipped crate here may not hold a floating-point number**, because that is
+how a NaN reaches a record — a rule this module broke on its first draft and
+that the gate caught. It counts in nanoseconds and parts per million now, which
+is not merely compliance: a ratio of integers cannot be a NaN, a zero duration
+is *not yet decided* rather than an infinity, and the existing measurement
+vocabulary already had the type for it.
+
+**What was not established.** One machine, one pair of files, one prompt
+length, and two sittings that disagree by a factor of four about the size of
+the gap: that Q2_K is faster than Q8_0 here is a demonstration that the
+instrument works, not a finding about quantization — the frontier is B-091 and
+this is not it. The ceiling of a hundred and twenty paired trials is a chosen
+number, as is the one-in-twenty false-alarm rate; both are stated in one line
+each. And the resampling seed is fixed, so re-asking the same data gives the
+same verdict — which is reproducibility (§3.12) and not certainty, and the two
+are easy to confuse when a number comes back identical twice.
+
+## 55 · F55 — The pairing is worth eighty-eight percent, and the stopping condition could only answer one way (B-250, B-083, B53, §3.27, DEC-007, F51, F53, F54)
+
+**What was asked.** B-250's condition is that *block-then-subtract does not
+compile*. F51 had measured why it should not — contention moves a run's whole
+distribution rather than widening it — but the number that mattered was never
+taken directly: **how large a difference does the blocked arrangement invent
+between two things that are identical?** And whatever the answer, the type had
+to stop it being expressible.
+
+**The blocked arrangement invents eighty-eight percent.** One command,
+`mcf run` over a real model file, two hundred tokens, run twenty times and then
+twenty times again. Nothing about the command changed between the two blocks;
+forty-eight busy loops started on this thirty-two-core machine did.
+
+```
+arm A, quiet          median 0.233 s   middle half spans  4.4%
+arm B, under load     median 0.439 s   middle half spans 43.2%
+```
+
+Subtract those two blocks and MCF would report **one configuration 88% slower
+than an identical one**, with a spread that looks like evidence rather than
+like a warning. That is the failure B53 calls *thirty runs of A, then thirty of
+B, subtracted*, priced on this machine.
+
+**Interleaved, the same machine change costs nothing.** The paired runner —
+alternating the arms, drawing which goes first per pair — was asked the same
+null question while sixteen burners arrived a third of the way through. The
+load episode is visible in the raw trials, four pairs at 0.24–0.27 s among
+thirty at 0.15 s, and the verdict is unmoved:
+
+```
+no difference as large as 2.0%, after 30 paired trial(s) — one that big would
+have shown          · medians 0.149 s and 0.149 s
+order: 16 pair(s) ran the left arm first, 14 the right
+  …
+  #19: 0.169 s  0.145 s  right first  right quicker by 16.5%
+  #20: 0.242 s  0.257 s  left first   left quicker by  6.4%
+  #21: 0.267 s  0.256 s  left first   right quicker by 4.0%
+  #22: 0.193 s  0.205 s  left first   left quicker by  6.0%
+  #23: 0.172 s  0.158 s  left first   right quicker by 8.3%
+  #24: 0.148 s  0.149 s  right first  left quicker by  1.0%
+```
+
+Pairs #20 to #23 are seventy percent above the rest of the run and contribute
+nothing to the answer, because the load landed on *both* arms of each of them.
+That is the whole of §3.27 in six lines of a real run.
+
+**And the mechanism is provable exactly, without a machine.** A test on the
+simulated clock builds forty-eight timings — a level that steps up halfway
+through, a wobble belonging to the round, a jitter belonging to the run — and
+arranges *the same forty-eight numbers* two ways. Interleaved: *no difference
+as large as 20.0%*. Blocked: *they differ by 50.0%, noise alone produced a gap
+that big 0.0% of the time*. Only the arrangement differs, and it is the whole
+of the answer. A fixture whose jitter cycled with period six failed this first
+— its noise was confounded with the even/odd positions the pairing uses, and
+the paired comparison correctly found the three-percent difference the fixture
+had accidentally built. The fixture was wrong, and the instrument said so.
+
+**What was built.** `mcf_bench::compare`. A `Comparison` has three
+constructors and there is no fourth: `Interleaving`, which runs the arms
+alternately itself and draws the order per pair from a stated seed;
+`from_trials`, which reads a session back out of the record and **verifies the
+interleaving from the positions** — the merged trials are taken two at a time
+and every couple must hold one of each arm, so blocked trials come back as
+`RanInBlocks` naming the arm and where it repeated; and
+`from_separate_sessions`, which is §3.27's *it may be all that exists*.
+
+The statistics moved behind that door. `enough`'s two entry points are
+`pub(super)`, because a function taking two slices of timings cannot tell an
+interleaved comparison from two blocks and never could — that is B-250's *does
+not compile*, and `checks/tests/a_comparison_is_paired.rs` is what keeps it
+true when somebody adds a fourth way in.
+
+**The weaker claim is weaker in the type, not in a label.** A comparison
+assembled from separate sessions answers `None` to `paired_differences()`:
+there is no pairing, so there is no paired difference, and a difference of two
+summaries cannot be handed out wearing this one's name. The label exists as
+well, in every rendering. The reverse is refused too — two arms that turn out
+to share a session may not be assembled the weak way, because the strong
+construction is available and choosing the weak one would be discarding
+evidence.
+
+**The reported quantity changed, and so did the null.** F54 pooled both arms
+and redrew independent groups, which is an unpaired test on paired data: it
+throws away the very structure that makes the comparison durable. The statistic
+is now the median of the *paired differences* and the null is a sign flip —
+under *these arms are the same*, which arm came out ahead in a given pair is a
+coin toss. That change also exposed a defect the pooled version hid.
+
+**The defect: the stopping condition could only ever answer one way.** The
+first real run of the new instrument, one command against itself, stopped after
+**four paired trials** and declared *no difference as large as five percent* —
+from differences of 12.9%, 7.4%, 0.2% and 1.4%. It cannot be. A sign flip over
+four pairs has sixteen assignments, so the smallest false-alarm rate reachable
+is one in sixteen, above the one in twenty the module requires: `Differ` was
+**unreachable at that count whatever the data**, and a rule that can only
+answer one way is not a test.
+
+The cause was a circular question. *Would a five-percent difference have
+shown?* was being asked of a null built out of the very differences a
+five-percent difference would have moved. It is now asked as power: centre this
+run's differences on their own median, add an effect of exactly the resolution
+asked for, and ask whether *that* would have been declared. On the same four
+real differences the answer is *not yet*; on noise of the same size, centred, a
+five-percent null result arrives at **eighty pairs** — not four.
+
+The same correction went into the pooled path, which asks it by scaling one arm
+rather than shifting a difference. Both are `Same`-branch questions only: the
+`Differ` branch was never circular.
+
+**What was not established.** The eighty-eight percent is one machine, one
+command, one load pattern; a different machine and a lighter load give a
+smaller number, and the point is the *shape* rather than the size — F51 already
+showed the shift is coherent rather than random, and this shows what
+subtracting two blocks does with it. The machine also hosts other projects'
+workloads, so the *quiet* arm is quiet relative to its own baseline (§3.4,
+DEC-007) rather than absolutely. The order-randomization generator is a
+xorshift with a stated seed, which is reproducibility and not
+unpredictability — nothing here needs the latter. And the eighty pairs above is
+this sitting's number: F53's finding stands, and the count is still a property
+of the half-hour.
+
+## 56 · F56 — A confounded comparison has no delta to give (A8, B-085, §3.4, A7, F55)
+
+**What was asked.** A8 says *a comparison is only meaningful when one thing
+differs; when more than one did, the honest output is "these are not
+comparable", not a delta.* F55 made a comparison a type that knows how it was
+built. This makes it a type that knows what it is a comparison **of** — and
+refuses to answer when it is a comparison of nothing in particular.
+
+**An arm is a configuration, not a name.** `UnderTest` carries an `Arm` and the
+`Conditions` it is measured under, and every constructor of a `Comparison`
+takes two of them. An arm that carried only a name would leave the question
+unanswerable, and a comparison that cannot say what it isolated is one whose
+delta a reader will over-read.
+
+**Four answers, computed from the floor itself.** `mcf_core::measurement::Isolation`
+walks `Floor::entries()` rather than a list of field names written out again,
+which matters more than it looks: §3.3 says the floor never shrinks and does
+not say it never grows, and a second copy of the list would be the thing that
+quietly stopped growing with it — the comparison would go on reporting
+*isolated* about a condition it had stopped looking at. A check enforces that
+the isolation module names no condition of its own.
+
+- *Same configuration.* Nothing differs. Not a failure and not a confound: two
+  arms of one configuration measure the machine's own noise, which is the
+  control every comparison should be able to run against itself — and is
+  exactly the null run F55 used.
+- *Isolated.* Exactly one condition differs, and it is named.
+- *Confounded.* More than one differs. **The verdict is `None`.**
+- *Undetermined.* A condition is `Unknown` on one side or the other.
+
+**Two unknowns are not a match**, which is A7 pointed at a comparison. *They
+were probably the same* is a plausible value substituted for something MCF did
+not read, and it is the substitution that would make this whole check
+worthless: today almost every condition producer is unbuilt, so a rule that
+counted unknown-against-unknown as agreement would report *isolated* about
+every comparison MCF can currently take.
+
+**Ordering, stated because it is a judgement.** Two known differences are a
+confound whatever else is unread. A comparison that has already lost its
+meaning does not recover it by MCF failing to read a twelfth condition, and
+reporting *undetermined* there would be the softer of two answers where A8
+wants the harder one.
+
+**The refusal is in the type.** `Finding::verdict()` returns
+`Option<&Verdict>`, and it is `None` exactly when the arms are confounded and
+the operator has not declared it. Not a flag beside the number and not a
+warning in the rendering — there is no number, so a caller cannot print one by
+forgetting to ask. On twelve interleaved trials in which one arm takes twice as
+long, with quantization *and* thermal state differing, the rendering is *these
+are not comparable: 2 conditions differ (thermal\_state, quantization)* and the
+words *they differ by* appear nowhere in it.
+
+**A confound the operator declares is science** (A8), so `declaring(because)`
+exists and returns the delta with the declaration and every differing variable
+printed beside it. MCF does not judge the declaration and cannot: whether two
+variables may honestly move together is a statement about the question being
+asked, not about the machine. What it will not do is let the delta out without
+them.
+
+**What this immediately says about MCF's own instrument.** The timing prototype
+compares two shell commands. It can state one condition — the command line, as
+`mcf_configuration` — and cannot state the other ten, so its findings now read:
+
+```
+they differ by 76.4%, after 10 paired trial(s) … — isolation is undetermined:
+mcf_configuration differs, and 10 condition(s) could not be compared
+(hardware_state, thermal_state, driver_versions, runtime_versions,
+quantization, context_length, batch_shape, realized_placement,
+instrumentation, artifact_storage)
+```
+
+That sentence is longer than the number it qualifies, and it is the honest
+description of what a prototype timing two opaque commands has established.
+Every one of those ten is a producer that does not exist yet (B-007, B-013),
+so the sentence shortens as MCF learns to read its own machine — which is the
+point of asking the question in a form that can be answered later.
+
+**What was not established.** The comparison is of *values*, so two conditions
+recorded in different words — `q8_0` against `Q8_0` — read as a difference.
+Normalizing them would be MCF deciding two strings mean the same thing, which
+is a judgement it has no basis for; the producers that will write these fields
+are what makes the values comparable, and until they exist the strings are the
+caller's to keep consistent. Nothing here checks that a *declared* confound is
+a reasonable one, and nothing can.
+
+## 57 · F57 — The sign test, and the resampling that could not see identical arms (B-086, B-083, DEC-007, A9, F51, F55)
+
+**What was found, and how.** B-086 needed a test that records a null result, so
+the first fixture written for it compared two arms with *identical* timings —
+the clearest null there is. The stopping condition answered *not decided*, at
+forty pairs, about data that could not be clearer.
+
+The cause is in the statistic. F55's null was a sign flip over the paired
+differences, judged by the median's size. When every difference is the same
+magnitude — and *identical arms* is the extreme case, every difference exactly
+zero — flipping signs cannot move that size. The null distribution is a single
+point, the observed value sits on it, and the p-value is one, for ever. **An
+instrument that cannot recognize the cleanest possible null is not a
+conservative instrument; it is a broken one.**
+
+**What replaced it: the sign test, exact.** Under *these two arms are the
+same*, which arm came out ahead in a given pair is a coin toss. The chance of a
+split as lopsided as the one observed is a sum of binomial coefficients — whole
+numbers, computed in `u128`, with no resampling, no seed, and no approximation.
+Ten pairs won by one arm is 1,953 parts per million; a test asserts that exact
+figure, which a resampling could only have come near and would have moved
+whenever the seed did.
+
+It also uses **only the ordering of two values within a pair**, which is what
+`Quantity` guarantees and all it guarantees. F51 measured a tail made of
+whatever else the machine was doing; a statistic that weighs by magnitude
+carries that tail into the answer.
+
+**The cost is stated, and it arrived immediately.** Discarding magnitudes
+discards power when the noise is well behaved, and the test will call a
+difference real that is far too small to act on. The very first fixture written
+after the change gave the left arm a systematic extra millisecond in a run of
+one-second trials — forty pairs out of forty, a real difference of **a tenth of
+a percent**, found and reported. The fixture was wrong and the instrument said
+so on its first use, which is the best possible demonstration of both halves of
+the trade.
+
+**Two properties the exact form makes checkable.** Six pairs is the fewest that
+can reach one in twenty at all — five gives one chance in sixteen — so `Differ`
+is arithmetically unreachable below six, whatever the data. That is F55's
+four-pair defect in its general form, and it is now a test rather than an
+anecdote. And `2^n` leaves `u128` past a hundred and twenty-seven pairs: the
+first draft answered *not decided* at a hundred and sixty pairs of data it had
+decided at eighty, which is **an instrument whose confidence falls as its
+evidence grows**. The counts are now scaled down to the largest exactly
+computable size with the winner's count rounded down, which can only weaken the
+claim, never strengthen it.
+
+**What it costs and buys, on this machine.** The same noise that needed eighty
+pairs under the resampling test reaches a five-percent null result at **twenty**
+under the sign test. A real difference between two token budgets, previously
+found at ten paired trials, is now found at **six** — 88.1%, the minimum count
+the test admits. Two clean runs of one command against itself established *no
+difference as large as 5%* at twelve and at twenty-eight pairs, which is F53
+arriving again: the count is a property of the sitting.
+
+**What was not established.** The sign test's power depends on the noise being
+symmetric about zero under the null, which pairing makes reasonable and does not
+prove. The `Same` branch still estimates power from a single realization of this
+run's own noise rather than averaging over the noise's distribution, so it is a
+statement about *this run* — which is what F53 says any such statement can be.
+And the pooled path, for comparisons assembled from separate sessions, still
+resamples: it has no pairs to take signs of.
+
+## 58 · F58 — A null result reaches the disk as a result (A9, B-086, B-213, §6.3, D16, F56)
+
+**The failure this is against.** Not that MCF prints the wrong word. It is that
+a null result is never written down — so that six weeks later nobody can tell
+whether two configurations were compared and found the same, or were never
+compared at all. **In an empty register those two look identical**, and the
+second is the one that gets the work repeated.
+
+**Two kinds, and neither is a failure.** `EntryKind::Comparison` and
+`EntryKind::FitmentPlanned`. A9 names both halves — *"no measurable difference"
+and "does not fit here" are findings, not failures* — and §6.3 already calls
+*this will not run here, because it needs 131 GiB and you have 24* a complete
+success of §III. A test asserts of both kinds that they are not
+`EntryKind::Failure` and that their rendered line contains no such word,
+because filing a null result under failures is filing it where nobody looking
+for results will find it.
+
+**Four outcomes for a comparison, all written.** *Differ*, *same to a stated
+resolution*, *not yet decided*, and *not comparable*. The third and fourth are
+the ones a reader will call *it didn't work*: the log says which it was rather
+than leaving anyone to infer it from a missing number. The null result carries
+the resolution that would have shown — *no difference as large as 5.0%, which
+is a result, not a failure to find one* — so it never reads as *we stopped
+looking*. The refusal names the conditions that differed and contains no delta
+anywhere in the line, which is A8 held at the surface as well as in the type.
+
+**The distribution goes to the disk, not only the verdict.** Every pair: both
+raw durations, both positions, which arm ran first, and the difference. D16
+keeps raw trials always and B56 derives summaries at query time, and this is
+the case that proves why — **the stopping condition's own rule has changed
+twice in two days** (F55, then F57). A record holding only the verdicts would
+now be a record of two obsolete opinions. It holds the numbers, so the question
+can be asked again.
+
+Both arms' full conditions are written too, so the isolation question (F56) can
+be re-asked rather than trusted.
+
+**A plan is kept whichever way it came out.** Every variant of a repository,
+with its outcome and the arithmetic behind it: what it needs, what is left, the
+longest context that would fit, or how much more memory the machine would have
+to have. Kept for the ones that fit as well as the ones that do not, because a
+record of only the refusals cannot answer *when was this last known to fit*
+(A1). `mcf pull` on a repository with no file named now writes one before it
+answers, and a record it cannot open does not stop it answering — a plan is
+information about a repository and a machine, not a change to either (A4).
+
+**What was not established.** The plan is recorded on the listing path only;
+`mcf pull` of a named file re-plans to check what is true now and does not write
+that second plan, which would be two entries about one moment. Nothing yet reads
+these entries back to answer a question — *what has this machine been told it
+cannot run* is a query the register can now support and does not yet offer, and
+that is B-217's. And a comparison entry is written by whoever holds a
+`Comparison`; no surface produces one yet, because the benchmark runner is
+B-080.
+
+## 59 · F59 — The benchmark runner, and the first real comparison it refused to over-report (B-080, A18, §6.7, B65, B-091, F53, F57)
+
+**What was built.** `mcf bench <model> --against <model>` — the runner A18 says
+must exist and must never gate. It builds the comparison the only way one can
+be built (B-250), stops when this run's own arithmetic decides (F55, F57), and
+writes what it found to the record whichever way that was (B-086).
+
+**It has no verdict that fails.** *They differ*, *they are the same to a stated
+resolution* and *not decided* all exit zero, because all three are things the
+machine said and none of them is MCF being wrong. What does fail is MCF being
+unable to run the benchmark: no such model, no daemon, an engine that cannot
+report a speed, an engine that refused. `checks/tests/benchmarks_never_gate.rs`
+holds both halves of A18 — no verdict reaches a failing exit status, no gating
+test bounds a wall-clock reading, no gating test writes to the machine's own
+record, and the gating tier does not run the benchmark at all. The measured
+tiers that *may* assert on timings are named in that file, because an exemption
+written down is one somebody can argue with.
+
+**The engine is asked, not assumed.** B65 and D31: MCF's own stand-in is
+written to be read rather than to be fast. So before a trial is timed, one
+request goes to each arm and the *account* is read for which engine actually
+ran. A stand-in is refused by name rather than marked, because a marked number
+is a number somebody will quote without its mark. On this machine, before
+anything was provisioned:
+
+```
+mcf: …/stories260K.gguf would run on MCF's own stand-in, build 0.1.0-m0, and a
+stand-in's answer can never be a speed (B65, D31)
+```
+
+**Then a real engine, and a real comparison.** `mcf provision llama.cpp` built
+the pinned reference in a container; `mcf pull` acquired `stories15M-q4_0.gguf`
+and `stories15M-q8_0.gguf` from `ggml-org/tiny-llamas` — two quantizations of
+one model, which is exactly the single-variable comparison §3.4 wants and
+B-091's shape in miniature. At 256 tokens, three consecutive runs:
+
+```
+no difference as large as 5.0%, after 20 paired trial(s) — the measured difference was 3.2%
+no difference as large as 5.0%, after 25 paired trial(s) — the measured difference was 3.3%
+no difference as large as 5.0%, after 12 paired trial(s) — the measured difference was 1.6%
+```
+
+Twenty, twenty-five, twelve — F53 again, the count is a property of the
+sitting. **This is a null result, and it is the point**: a real benchmark on a
+real engine, reported as a finding rather than as a failure to find one, and
+recorded (A9, B-086).
+
+**The defect the real run found.** Before the size test existed, the same
+comparison at 64 tokens came back *they differ by 0.8%, after 113 paired
+trials* — a real difference, found honestly by the sign test, and **an answer
+to a question nobody asked**. A caller who says *resolving five percent* has
+said that eight tenths of one is beneath notice; reporting it invites acting on
+it, which is the §3.28 failure from the other direction. `Differ` now requires
+the effect to be **real and at least as large as the resolution asked about**,
+and below that the verdict is the null one — *no difference as large as five
+percent* is true of a measured eight tenths. The measurement travels inside the
+null result rather than being discarded (A1), so a reader who later cares about
+a smaller resolution has it.
+
+That the sign test could find 0.8% at all is F57's stated cost arriving as
+designed: it uses only which arm won each pair, so a small consistent
+difference becomes significant with enough pairs. The fix is not a weaker test;
+it is asking the caller's question rather than the test's.
+
+**The first unread condition read.** F56 left `mcf bench` reporting *isolation
+is undetermined* over ten conditions. It now reads each file's **own tensor
+types** — the file's quantization rather than the name a repository gave it
+(A21) — so the sentence has become *quantization differs, and nine conditions
+could not be compared*, and the comparison names what it isolated. Nine to go,
+and each is a producer that does not exist yet (B-007, B-013).
+
+**A later run, and what five of them together say.** The same comparison was
+run twice more at a hundred and twenty-eight tokens, once while this shared
+machine sat at a load average of sixty-eight and twice at thirty-five:
+
+```
+load 68   they differ by 29.2%, after 74 paired trial(s) — noise alone produced
+          a gap that big 4.7% of the time      · 46 pairs one way, 28 the other
+load 35   no difference as large as 5.0%, after 12 paired trial(s) — measured 2.7%
+load 35   no difference as large as  5.0%, after  9 paired trial(s) — measured 2.9%
+```
+
+Five runs now: four say *no difference as large as five percent*, with a
+consistent lean of 1.6% to 3.3% in the same direction, and one says 29.2% at a
+false-alarm rate of 4.7% — three tenths of a percent inside the threshold it
+had to clear. **One run at one-in-twenty is what one-in-twenty means**, and
+nothing here distinguishes that from §3.27's own caveat, which predicts exactly
+this: *a ratio measured at one level of contention need not hold at another,
+because degradation is not uniform.* The loaded run's raw pairs include one at
+a factor of thirty-seven, which is the machine being savaged rather than either
+model being slow.
+
+So the honest statement is the weaker one: **on this machine, at these token
+budgets, q4\_0 and q8\_0 of stories15M differ by less than five percent, with a
+small consistent lean; and one run under heavy contention crossed the threshold
+in a way one run cannot tell from luck.** Which of the two it was is L25's
+question and B-091's, and neither is answered here.
+
+**What was not established.** A 15-million-parameter model at 64 to 256 tokens
+is dominated by process start and request overhead, so *q4\_0 and q8\_0 are the
+same here to five percent* is a finding about this configuration and not about
+quantization — B-091 is the frontier and this is not it. Only one prompt, one
+machine, one engine build, and both arms served by the same daemon. The
+benchmark compares two *models* under identical settings; comparing one model
+under two settings is a different argument shape the command does not have. And
+the ceiling of two hundred paired trials and the default five-percent
+resolution are chosen numbers, each stated in one line.
+
+## 60 · F60 — The clock in the type stopped a comparison, not a record (A11, B-082, D9, F59)
+
+**What was found.** `ClockKind` has put the clock in the type since the first
+week: `Duration<Monotonic>` and `Duration<Simulated>` are different types, so a
+simulated interval cannot be compared with a real one, stored where one is
+expected, or averaged into a set of them. That was taken to satisfy A11 —
+*nothing reported as a performance number may originate in simulation*.
+
+It did not. F59's benchmark encoder was written generic over the clock, and a
+generic encoder will happily put the laboratory's arithmetic into the record,
+where it becomes a measurement with nothing on it to say otherwise. **The type
+system was stopping the wrong operation**: comparison, which nobody was
+attempting, rather than *writing down*, which the new code did in three lines.
+
+**What closed it.** `Measurable`, a trait implemented for `Monotonic` and for
+nothing else, and the comparison encoder is bounded by it. Encoding a
+laboratory comparison is now a compile error, which is B-082's *the type system
+prevents a simulated timing being published* in the strongest available form.
+It bit immediately: three of the encoder's own tests were written on the
+simulated clock — the shape questions do not care which clock they use — and
+stopped compiling. They state monotonic durations now, which is the documented
+seam and is in one place.
+
+A trait somebody has to write, rather than a boolean somebody can set: adding a
+clock to the publishable set is a decision about what MCF is willing to call a
+measurement, and a check asserts that `Monotonic` is still the only member.
+
+**And the same question asked of the whole tree.** No crate that writes to the
+record names `Simulated` at all — not `mcf-record`, `mcf-serve`, `mcf-cli`,
+`mcf-hub`, `mcf-standin` or `mcf-helper` — and the laboratory does not depend on
+the crate that encodes comparisons, so the edge that would carry one does not
+exist. Both are checked, because both are true today and neither is true by
+construction.
+
+**What was not established.** The bound is on the comparison encoder because
+that is the only path that writes timings *as measurements* today; `self_cost`
+and the record's clock-anomaly detector hold `Monotonic` concretely rather than
+generically, which is the same guarantee reached a different way and is not
+enforced by a bound. `Duration::from_nanos` remains available for any clock —
+it is how a test states a known interval and how the laboratory states a
+simulated one — so a test can fabricate a monotonic duration on purpose. That
+is deliberate and is the one seam; what it cannot do is fabricate one by
+accident from the laboratory's clock.
+
+## 61 · F61 — The seed set had to become arithmetic, and EINTR was being called a cut-off transfer (B-290, B61, D19, A2, F53, F55)
+
+**What B61 forbids.** Thirty trials at one fixed seed with identical inputs
+produce thirty identical outputs: `n=1` wearing the costume of `n=30`, with a
+spread of zero that reads as remarkable consistency and is an artefact. Fixing a
+seed does not reduce variance; it conceals it, at the exact point §3.4 requires
+uncertainty to be reported.
+
+**A trial now cannot exist without saying what it drew.** `Trial` has a fifth
+field with no default, so the artefact is not something a run can produce
+quietly. The field is a `Draw` and it has two variants, because D19 gives the
+two kinds of laboratory opposite rules: a behaviour trial draws seed *i* at
+trial *i* from a declared set, and a timing trial **holds its seed still and
+pins its generation length instead** — *a timing that varies because one run
+stopped earlier is measuring the stop, not the speed.* Two variants rather than
+one with a flag, so that a reader can never mistake a timing trial's fixed seed
+for a behaviour trial's mistake.
+
+**D19 assumed a trial count, and F55 had already taken it away.** *"The set's
+size is the trial count"* was written when a benchmark was expected to declare
+its repeats. It cannot: F53 measured the same command needing seven repeats in
+one sitting and over a hundred in another, and F55 replaced the count with a
+stopping condition that finds out as it goes. A fixed list of thirty seeds runs
+out on the thirty-first trial, and *what happens then* has only bad answers —
+wrap around and repeat a trajectory, or stop measuring because the list ended.
+
+So MCF's published set is **stated as arithmetic rather than as a list**: a
+stride and two mix rounds, six lines, unbounded, identical on every machine.
+Everything D19 asked of a list it gives, and one thing more — **every step is a
+bijection on `u64`**, so two trials cannot draw the same seed. A list of
+literals could only promise that by being checked; here it is the arithmetic.
+A test walks the first hundred thousand seeds and finds no collision, which is
+not a proof and would catch a mistranscribed constant; the first four seeds are
+pinned in a test because changing them breaks comparability with every
+measurement already recorded against `mcf-standard-v1`.
+
+A declared set is still admitted — a laboratory may need to reproduce somebody
+else's run, and refusing would make MCF unable to check another tool's work.
+It is refused if it repeats a seed, holds fewer than two, or has no name, and it
+**runs out rather than wrapping around**: the runner stops, because repeating
+the list would repeat a trajectory.
+
+**The seed set is a condition, and comparisons check it.** D19: *comparisons
+require matching seed sets the way they require matching hardware — recorded,
+checked, and refused when they differ.* It is the floor's twelfth question, so
+it renders on every surface and enters the isolation check for free (F56); and
+`Comparison::from_trials` refuses two arms that drew from different sets by
+name, with a refusal that says why a longer run does not fix it. The check runs
+pair by pair rather than once at the end, because the two runs of a pair must
+have drawn the *same* thing — what differs between them has to be the arm and
+not the trajectory.
+
+**A timing run answers the seed-set question, and the answer is *none*.** A7
+governs values MCF could not read; a run that held its seed still knows
+perfectly well what it did. Recording that as `Unknown` would have put a
+deliberate discipline in the same box as a failure to look, and would have made
+every timing comparison's isolation undetermined for ever — a wrong answer
+rather than a cautious one.
+
+**And `mcf bench` now pins a length.** It did not: `--limit` was optional and
+defaulted to *as the daemon chooses*, which is a benchmark whose arms stop where
+they like and whose timing therefore includes the models' verbosity. It pins
+128 tokens when nobody says, states the discipline in its own report, and
+records it.
+
+---
+
+**The second half of this finding is a defect the suite found under load, and
+it is not the one it looked like.** A full workspace run on a machine at load
+sixty produced one divergence: the stall scenario, which exists to show that
+*MCF's deadline ends the wait rather than the far end*, came back
+`transfer.interrupted` instead of `transfer.stalled`.
+
+**It did not reproduce**: three thousand four hundred targeted runs, the last
+three thousand under ninety-six deliberate burners, all produced what the
+scenario declares. So what caused it is **not established**, and saying
+otherwise would be inventing a mechanism to fit one observation.
+
+What the investigation did find, by reading the contract of `read` rather than
+by measurement, is a real misclassification on the same path.
+`ErrorKind::Interrupted` is EINTR: a signal arrived while the thread was blocked
+in the kernel and the read did not happen. It is the one io error whose contract
+is *retry*, and MCF was classifying it as `transfer.interrupted` — telling an
+operator on a busy machine that their download had been cut off by something
+that was not there. A2 forbids the wrong answer stated confidently as firmly as
+it forbids silence. Reads on the wire now retry it and classify everything else
+exactly as before, with two tests: one reader that is interrupted twice and then
+answers, and one that resets and must still be reported.
+
+Whether that was the divergence is unknown. It is a defect either way, and it
+removes one candidate.
+
+**What was not established.** The published set's bijectivity is argued from the
+structure of its three steps and checked over a prefix, not proved. The
+divergence above has one observation and no mechanism. And nothing yet validates
+the standard set against a larger random one, which D19 requires periodically
+and which is B-291's.
+
+## 62 · F62 — The seed set is shown representative, and the sampler that would have cleared it for nothing (B-291, D19, §6.16, §7.13, B65)
+
+**What was asked.** D19 gives MCF a published seed set and then puts §6.16 on
+it: *the instrument does not get to grade itself.* The set is the first
+thirty-two draws of a stated stream (F61); the question is whether that prefix
+behaves like the stream at large, or whether MCF has been drawing from an
+unlucky corner of it since the day it was written.
+
+**What was run.** Thirty-two seeds from the head of the stream against three
+hundred and twenty from a million indices further along — two draws from one
+space, which is exactly what *is the prefix representative* means, and
+reproducible in a way a genuinely random draw would not be (§3.12). The
+per-trial outcome is how many distinct tokens the generation used: a behaviour
+statistic, never a speed, which is what a stand-in may legitimately produce
+(B65, D31). One prompt, held still, so that what varies between trials is the
+seed and nothing else (A8).
+
+```
+sampler: Nucleus { temperature: 1.0, top_p: 0.95 }, 48 tokens, stories15M-q4_0
+the standard set is indistinguishable from a draw 10 times larger,
+to within 10.0% — 32 trials against 320
+```
+
+Three hundred and fifty-two generations, eleven and a half minutes in release
+on this machine. **The set stays**, and it stays because it was shown rather
+than because nobody looked.
+
+**The defect this nearly had.** The first version of the tier was going to use
+MCF's shipped generation, which is `Settings::Greedy` — and **greedy ignores
+the seed entirely**. Every seed produces the same tokens, so both draws would
+have been three hundred and fifty-two copies of one number, the pooled null
+would have found no difference between two constants, and the tier would have
+cleared the seed set *for a reason that has nothing to do with the seed set*.
+A green check that cannot fail is worse than no check, because it is read as
+evidence.
+
+The tier therefore names a stochastic sampler explicitly, and says in its own
+header that this is the line to change when MCF ships a stochastic default.
+Which brings out something worth stating plainly: **today the seed set changes
+nothing about any MCF generation**, because the sampler MCF ships is greedy. It
+is recorded as a condition, it is checked before two comparisons are put side
+by side, and it will start mattering the day a sweep picks a sampler that draws
+(D18, B-281).
+
+**The polarity is inverted, and the type says so.** Everywhere else in
+`mcf-bench`, *they differ* is the interesting answer and *the same* is a null
+result. Here the clearance is *the same to within a stated resolution* and the
+finding is *distinguishable*. `Representative` is its own type rather than a
+reused `Verdict` for that reason: a green result must not be able to render as
+a discovery, and a test asserts that neither rendering contains the other's
+word.
+
+**And *not decided* is not clearance.** A run that could not separate the two
+has not shown anything, and treating it as clearance is precisely how an
+unvalidated instrument stays unvalidated. `clears_the_set` is true for one
+variant only, and the tier fails on the other two.
+
+**The two draws cannot be paired**, and the module says so: trial *i* of each
+shares nothing but its index. So it uses the pooled null — the construction
+§3.27 calls weaker everywhere else — which is the honest one here, because
+there is genuinely nothing to pair. A test also asserts the two draws share no
+seed, which the stream's bijectivity gives and which would otherwise be
+comparing part of the set with itself.
+
+**What was not established.** One model, one prompt, one sampler setting, one
+statistic. *Representative* here means *the distinct-token count of a 48-token
+generation from this model does not differ by more than ten percent between the
+prefix and the body* — a different statistic or a different model could give a
+different answer, and D19 asks for this periodically rather than once for
+exactly that reason. The larger draw is ten times the set, which is a chosen
+ratio; the resolution of ten percent is chosen too, and both are one line each.
+Eleven and a half minutes is the cost on a fifteen-million-parameter model, and
+it scales with the model.
+
+## 63 · F63 — The recommendation is in a different repository from the weights (B-281, B60, D18, A21, §3.15)
+
+**What B60 asks for.** *Calibration adopts what the artifact recommends rather
+than imposing a house style, and marks it declared, unverified until a sweep
+has tested it.* Its violation is *a global default temperature applied to every
+model, which measures each of them under settings some were never designed
+for.*
+
+**The first question is where a recommendation would be**, and the answer was
+measured rather than assumed. There are exactly two places MCF can look: the
+model file's own metadata, which travels with the weights and is the only
+source an offline machine has; and the repository's `generation_config.json`,
+which does not travel.
+
+Six repositories were listed and one model file's metadata was dumped:
+
+| repository | `config.json` | `generation_config.json` |
+|---|---|---|
+| `ggml-org/tiny-llamas` | no | no |
+| `bartowski/SmolLM2-135M-Instruct-GGUF` | no | no |
+| `unsloth/Qwen3-0.6B-GGUF` | yes | **no** |
+| `unsloth/gemma-3-270m-it-GGUF` | no | no |
+| `Felladrin/gguf-Llama-160M-Chat-v1` | no | no |
+| `QuantFactory/SmolLM2-360M-Instruct-GGUF` | no | no |
+| `HuggingFaceTB/SmolLM2-135M-Instruct` *(the base repository)* | yes | **yes, 132 bytes** |
+
+And the GGUF metadata of an acquired model carries twenty keys — architecture,
+tokenizer, quantization version — and **not one sampler parameter**.
+
+**So: none of six GGUF repositories publishes a sampling recommendation, and
+the one repository that does is the base repository the conversion came from —
+which MCF was never asked to fetch and cannot identify from the conversion
+alone.** B60's *adopt what the artifact recommends* has, for the artifacts MCF
+actually acquires, nothing to adopt. That is a fact about the ecosystem rather
+than about MCF, and it is the fact that shapes what MCF can honestly do.
+
+**What was built.** MCF looks in both places and says what it found.
+`mcf_standin::recommended` reads the file's metadata under the architecture it
+declares; `mcf_hub::recommendation` reads the repository's
+`generation_config.json`. Each has *nothing declared* as a state rather than as
+an empty set, because *no recommendation* and *a recommendation that sets
+nothing* are different facts and **only the first justifies MCF choosing for
+itself**. The hub's reader keeps a third state as well: a file that is
+published and states no sampler parameter is a publisher who looked and said
+nothing, which is not the same as a publisher who did not look.
+
+`mcf_core::configuration::Calibrated` is where the attribution lives: values
+plus **whose choice they are**, with four constructors and no fifth — declared
+by the artifact, measured here by a sweep, pinned by a laboratory, or MCF's own
+with the reason it had to choose. There is no constructor that omits the
+source, and `Sampling` has no `Default`, which together are B60's *no global
+default* as a shape rather than a habit.
+
+**And the surface says it.** `mcf explain` previously read *sampler: greedy —
+MCF default, stated in crates/mcf-cli/src/run.rs*: transparent about the value
+and silent about the fact that nobody had asked the model. It now reads
+
+```
+sampler   greedy   MCF's own, because this file recommends none: no sampler
+                   key in its metadata, and a conversion repository publishes
+                   no generation_config.json either (B60, F63). Stated in
+                   crates/mcf-cli/src/run.rs
+```
+
+which is the same value and a different claim. §3.15's *no hidden choices* is
+not satisfied by naming the value; it is satisfied by naming whose the value
+is.
+
+**Kept apart** (B60): a laboratory's pinned method is quarantined from anything
+that inherited the artifact's recommendation, in both directions, and from
+another laboratory's pin — two laboratories that each imposed their own are two
+methods, not one. Everything that did not pin stays comparable, because an
+artifact's recommendation, a sweep's measurement and MCF's own choice are all
+answers to *how should this be sampled*, and A8 already refuses the case where
+the answers differ.
+
+**Attribution is not identity** (D17, D18). The same numbers are the same
+distribution however each arrived at them, which is exactly why the attribution
+has to travel separately rather than be inferred from the values — a test
+asserts both halves.
+
+**What was not established.** The half of B60 that needs a sweep: *divergence
+between the recommendation and what measures best here is a finding and is
+surfaced.* Nothing measures a sampling setting yet (B-280 is open), so
+`Chosen::MeasuredHere` exists and is unreachable — which is the honest way to
+say a state is defined and unpopulated. The GGUF keys are read where present
+and no examined file has them, so that path is tested against constructed files
+rather than against a real one. And MCF does not follow a conversion back to
+its base repository to find the recommendation there: doing so would mean MCF
+deciding which repository a file came from, which is a claim about provenance
+it has no basis for (A21, §3.6).
+
+## 64 · F64 — Every benchmark trial was cold, and three fifths of it was process start (B-081, §6.13, B-376, F59, D41, F35)
+
+**§6.13's rule.** *Caching, reuse and adaptation are permitted — but anything
+that could change a result must be visible in that result's conditions. A
+measurement taken with a warm cache is a different measurement from one taken
+cold, and MCF must know which it produced.* The corollary is sharper: **the
+benchmark path may not adapt.**
+
+MCF had the information and was not using it. The daemon's account has said
+`loaded: resident_in_server` or `loaded_for_this_request` or
+`per_request_subprocess` for some time; nothing read it, so nothing recorded it,
+and every timing MCF has ever reported was silent about what it reused.
+
+**What was built.** `mcf_bench::warmth`: each trial's warmth, read from the
+daemon's own words rather than parsed loosely — a state this build has not been
+taught is *unstated* rather than whichever of the two it superficially
+resembles, and the wrong guess there would silently make a mixed run look
+uniform. A run is `Uniform` or **`Mixed`**, and a mixed run says *this is not
+one measurement (§6.13)* rather than averaging over it. **One warm trial among
+a hundred and ninety-nine cold ones is a mixed run**: §6.13's concern is not
+proportion, it is that the result depends on hidden history.
+
+It becomes the condition floor's thirteenth question, written by
+`Interleaving::finish` — the runner is what saw each trial's warmth, so the
+runner is what records it and a caller cannot forget. From there it flows into
+`Isolation` for nothing: **a warm arm against a cold one is confounded, and A8
+withholds the delta.** §6.13's *must be visible in the conditions*, enforced
+rather than printed.
+
+**What it made visible, immediately.** Two runs on the provisioned engine:
+
+```
+q4_0 against q8_0     reuse   cold: every trial loaded the model for itself
+q4_0 against itself   reuse   cold: every trial loaded the model for itself
+```
+
+Even comparing a model with *itself* — where residency should obviously hold —
+every trial was cold. The account says why: `loaded: per_request_subprocess`.
+The provisioned engine has a server path, and `mcf bench` **cannot reach it**:
+a turn of identifiers goes to the server, a prompt goes to the completion tool,
+and a prompt is what `mcf bench` sends (B-376). So the benchmark path is
+uniformly cold **by construction**, which is at least reproducible and is not
+what anybody would have assumed.
+
+**How much of a trial that is.** The same model at two token budgets,
+interleaved:
+
+```
+--limit   8    median 0.048 s
+--limit 256    median 0.109 s
+```
+
+Two points on `t(n) = overhead + n × cost`: **about 46 ms of overhead and
+0.25 ms per token**. At the benchmark's default of 128 tokens that is **60% of
+every trial spent on process start and model load**; at the 64 tokens F59's
+comparison used, **74%**.
+
+**Which explains F59.** Two quantizations differ in the dequantization work
+done *during generation* — the 40% — and are identical in the 60%. A real
+difference of, say, ten percent in generation shows up as four percent of the
+measured total, which is under the five percent that comparison was asking
+about. F59's null result is not evidence that the quantizations run alike; it
+is a measurement of a quantity three fifths of which cannot differ between the
+arms. **The condition was there all along and nothing was reading it.**
+
+**What was not established.** The 46 ms includes `mcf run`'s own process start,
+because the instrument spawns it — the daemon-side share is a subset and is not
+separated here. Two points fit a straight line and two points cannot show it is
+one; a third budget would. Warm behaviour is untested against a real engine
+because the benchmark cannot currently produce it, so `Warmth::Warm` is
+exercised against constructed runs. And making the benchmark warm is not this
+item's: it means tokenizing MCF-side and sending identifiers so the request
+reaches the server path, which changes what is measured and belongs with
+B-376 and B-090.
+
+## 65 · F65 — One resident model and paired interleaving cannot both be had (B-090, B-081, B-250, DEC-001, §6.13, B53, F64)
+
+**What was tried.** F64 established that every benchmark trial was cold and
+that three fifths of a default trial was process start, because a *prompt*
+routes to the provisioned engine's completion tool — a fresh process each time
+— while a *turn of identifiers* routes to its server, which stays up (B-376).
+The obvious fix: tokenize the prompt MCF-side, once per arm, and send
+identifiers.
+
+**It made the benchmark worse, and the condition said so immediately.**
+
+```
+reuse   MIXED: 294 trial(s) loaded the model, 106 found it resident,
+        0 unstated — this is not one measurement (§6.13)
+```
+
+The server holds **one** model at a time (DEC-001: *two make every latency
+figure depend on what else was loaded*), and a paired comparison alternates
+two. So a trial is warm exactly when the previous request used the same model —
+which happens only where the drawn order puts two runs of one arm next to each
+other across a pair boundary. About a third of trials, and **which third is a
+property of the order the run drew**.
+
+That is a collision between two rules that are each right:
+
+- **B53** randomizes which arm goes first in each pair, so that going first is
+  not an advantage.
+- **§6.13** forbids a measurement whose result depends on hidden history.
+
+Randomizing the order *is* the hidden history here. Strict alternation would
+make every trial cold and uniform — and would give going first a fixed
+position, which B53 forbids for a different and equally good reason.
+
+**So: with one resident model, a paired interleaved comparison of two models
+cannot be warm.** It can be uniformly cold, or it can be mixed. There is no
+third option on MCF's current serving design, and that is an architectural
+consequence rather than a defect in any of the three rules.
+
+**What was built, given that.** The delta is withheld from a mixed run, exactly
+as it is from a confound: `Withheld::MixedReuse`, and the rendering leads with
+*no delta* rather than a number. A mixed run is **not declarable** — an
+operator can say *I know these two variables moved together*, which answers
+A8's question, and cannot say *I know some of my trials loaded the model*,
+because that is a statement about the instrument rather than about the
+question. And the run stops as soon as it goes mixed rather than spending its
+ceiling to arrive at the same refusal.
+
+Two ways out, and the refusal names both:
+
+```
+--cold, two models      reuse  cold: every trial loaded the model for itself
+                        no difference as large as 5.0%, after 9 paired trial(s)
+
+one model against       reuse  warm: the model was already resident for every trial
+itself, warm path       no difference as large as 5.0%, after 15 paired trial(s)
+```
+
+`--cold` sends text, which is a fresh process per request and therefore
+uniform: a measurement that includes F64's forty-six milliseconds as a stated
+condition, which is a measurement. Comparing a model with *itself* — the noise
+floor, and the control every comparison should be able to run — never changes
+the resident model and is uniformly warm.
+
+**Uniform and honest beats warm and mixed**, and the point of B-081's condition
+is that MCF can now tell which it has.
+
+**What was not established.** Whether a warm two-model comparison is worth
+having is DEC-001's question and not answered here: it would need two resident
+models, which DEC-001 refused for serving and did not consider for measuring.
+The nine and fifteen paired trials above are single runs and F53 applies —
+those counts are properties of the sitting. And `--cold` measures generation
+*plus* process start; separating them would need the server path, which is the
+thing that cannot be uniform.
+
+## 66 · F66 — Fifty-eight of a hundred trials is fifty-eight data points, and the fifty-ninth was not one (A4, B-087, §3.1, A1, A6)
+
+**A4 is absolute and names its own violation:** *an all-or-nothing return type
+on anything that can partially succeed.* MCF had written exactly that three
+days earlier. `mcf bench`'s runner returned `Result<Comparison, String>` and
+discarded every completed pair the moment one request failed — a hundred paired
+trials thrown away because the hundred-and-first did not answer.
+
+Nothing about it looked wrong. A loop that gives up on an error and returns it
+is the natural thing to write, which is why A4 is absolute and why the check is
+about the *shape* rather than about any particular loop.
+
+**What was built.** The runner always yields the comparison it built, however
+far it got, and the reason it stopped travels **with** the trials rather than
+instead of them: `Comparison::cut_short`, an `Option<String>` so that *it
+finished* and *it was interrupted and nobody recorded why* stay different facts
+(A7). It reaches the record as `cut_short`, where `null` means the run
+finished — so six weeks later a short run that was interrupted is
+distinguishable from a short run that decided quickly.
+
+**Demonstrated by interrupting one.** The daemon was stopped five seconds into
+a benchmark:
+
+```
+not decided after 58 paired trial(s): the arms have not separated …
+  reuse    warm: the model was already resident for every trial
+  pairs    58 interleaved, order drawn per pair
+  CUT SHORT after 58 pair(s)
+           the stream from the daemon ended before its account …
+```
+
+Fifty-eight pairs kept, the verdict over them standing, and what was lost said
+rather than implied by a smaller number. Each pair is two runs of two arms
+taken back to back under the same conditions, and an interruption afterwards
+does not reach back and unmake them.
+
+**The second defect, which the first run of the fix exposed.** The interrupted
+request was being recorded as a trial with a duration of **zero nanoseconds**.
+It showed up as the run going `MIXED` — the failed request's warmth was
+*unstated*, so ninety-three warm trials plus one unknown was not one
+measurement — and behind that flag was something worse: a number nobody
+measured had entered the distribution.
+
+A4 says a partial outcome is preserved. It does not say a non-outcome is one.
+**A run that did not happen is not a trial**, and a zero-duration stand-in for
+it is A1's forbidden loss wearing a data point's clothes. The runner now
+records no pair at all where a run did not happen, and does not attempt the
+second run of a pair whose first did not happen — one run alone is not half a
+pair (§3.27). After the fix the same interruption leaves fifty-eight *warm*
+pairs and no fabricated zero.
+
+**And a third, found while writing the check for the first two.** The record
+was written from a finding **recomputed at the default resolution** rather than
+the one the operator asked about. A caller asking about half a percent was
+shown one verdict and the record kept another: two answers to one question
+(A6), in the worst possible place to have them. The record now carries the
+finding that was displayed.
+
+**What was not established.** The interruption tested here is the daemon
+stopping; a trial that fails for another reason takes the same path but has not
+been run. `checks/tests/partial_outcomes_are_outcomes.rs` checks the shape
+rather than the behaviour — the behaviour is in `mcf-bench`'s own tests, and
+the shape is what stops the natural all-or-nothing return coming back. And A4's
+other example, *eleven tokens before a runtime died are eleven tokens*, was
+already held by the generation path and is asserted rather than newly built.
+
+## 67 · F67 — The first frontier, and what it is mostly a frontier of (B-091, §XII, §3.4, §3.27, F64, F65)
+
+**The cleanest comparison §3.4 admits**, and MCF's first: one model, one
+machine, one prompt, one engine build, one sitting, and seven quantizations of
+the same weights by the same publisher. What differs between two arms is the
+quantization, read from each file's own tensor types rather than from its name
+(A21), and everything else is held still.
+
+Built as **seven paired comparisons against one reference arm**, not as seven
+absolutes on a chart: §3.27 makes the comparison the durable output, so each
+point carries its own stopping condition, its own count and its own conditions.
+`--cold` throughout, because F65 established that a warm run of two models
+comes out mixed and has no delta to give.
+
+```
+reference  SmolLM2-135M-Instruct-Q8_0.gguf   (145 MB)
+
+f16      271 MB   the reference is quicker by 61.9%   6 pairs, 3.1%
+Q2_K      88 MB   this arm is quicker by 26.1%        6 pairs, 3.1%
+Q3_K_S    88 MB   this arm is quicker by 25.7%        6 pairs, 3.1%
+Q4_0      92 MB   this arm is quicker by 24.4%        6 pairs, 3.1%
+Q4_K_M   105 MB   this arm is quicker by 18.2%        6 pairs, 3.1%
+Q5_K_M   112 MB   this arm is quicker by 16.6%        6 pairs, 3.1%
+Q6_K     138 MB   no difference as large as 5.0%; measured 2.8%
+```
+
+Absolute, for the one point that has it here: **372.0 ms against 476.7 ms**,
+which §3.27 keeps local and does not travel.
+
+**It is monotone in file size, and that is the finding.** 88, 88, 92, 105, 112,
+138, 145, 271 megabytes give 26.1, 25.7, 24.4, 18.2, 16.6, ~3, 0, −61.9
+percent. The ordering is exact and the two 88 MB files — which are different
+quantization *schemes* — differ by four tenths of a percent from each other.
+
+F64 already said why: every trial loads the model, because the engine holds one
+at a time and a paired comparison alternates two, and load time goes with
+bytes. So **this is principally a frontier of file size**, and the generation
+work that distinguishes one quantization scheme from another is the smaller
+term underneath it. A straight line through the two extreme points predicts f16
+at 1.84× the reference against 2.04× observed, so it is not *purely* size —
+f16 also moves more memory per token — but size is what dominates.
+
+That is a true measurement, honestly conditioned, and it is not the frontier
+somebody wants. The frontier somebody wants needs the load out of the figure,
+which needs a warm two-model comparison, which needs two resident models
+(F65, DEC-001).
+
+**Six paired trials, seven times.** The sign test's minimum: six pairs won by
+one arm is one chance in thirty-two, which clears one in twenty, and every
+difference here is far larger than the five percent asked about. The
+comparisons stopped at the first count that could decide, which is F55's
+stopping condition doing exactly what it is for.
+
+**A size without a direction is not a comparison.** The first run of this
+frontier reported seven differences and said of none of them which way round it
+was — a table nobody can read. `Verdict::Differ` carries which arm was quicker
+now, the sign was already in the paired differences, and the rendering names the
+arm. Found by producing the thing and looking at it.
+
+**What this characterizes.** The instrument. `scripts/frontier.sh` prints that
+in as many words, because B-091 requires it: this is not a statement about
+quantization in general, about these quantizations on other hardware, or about
+anything but latency — and what a quantization costs in *quality* is not
+measured here and is not measured anywhere yet (§IV, DEC-002).
+
+**What was not established.** One sitting, and F53 says a sitting is what a
+sitting had. One prompt of four tokens and one budget of 128, so the ratio of
+prompt to generation is fixed and unexplored. The reference arm is Q8_0 by
+default and a different reference would give a different table of the same
+shape. Seven of the twenty variants this repository publishes. And the script
+is not a step of `scripts/ci.sh` and never will be: it has no pass condition,
+and A18 forbids a benchmark gating a change.
+
+## 68 · F68 — The bundle's header said it held no user content while carrying the prompt (B-211, PR2, A24, A25, §II)
+
+**§II's fourth obligation, built.** *Every measurement carries a stated method,
+stated conditions, stated uncertainty, and the ability for someone else to
+repeat it.* Three were built; the fourth was a property of the design rather
+than a thing anybody could hand over. `mcf bundle <entry-id>` is that thing: one
+file holding a claim and everything it rests on, selected out of the record
+rather than assembled beside it.
+
+```
+wrote /tmp/comparison_2026-08-28T12-48-45Z_f67204b1_0000.mcf-bundle
+  5 entr(ies), sha256 3075435016fa04…
+
+  the claim   … the left arm is quicker by 26.2%, after 6 paired trial(s)
+  rests on    component_provisioned_2026-08-28T06-39-11Z_ef027fef_0000
+  rests on    artifact_acquired_2026-08-28T12-22-48Z_e105a153_0000
+  rests on    artifact_acquired_2026-08-28T12-23-32Z_4ce3df53_0000
+  rests on    machine_profile_2026-08-28T12-47-38Z_a1171665_0000
+```
+
+**One mechanism, not a fourth.** B-302 requires export, contribution and repro
+bundle be one thing, because three serializations of the same evidence
+eventually disagree about what the evidence was. `export::write_selected` is
+`write` with a predicate, and the module's own claim — *the kinds differ in
+what is selected, never in how it is written* — stopped being a sentence in a
+header and became a function signature.
+
+**The method had to start being recorded.** A comparison's conditions say what
+the machine was; nothing said what the *question* was. A floor full of hardware
+does not tell somebody what to run, so `Method` — the prompt, the resolution
+asked about, the ceiling, the engine asked for, whether every trial was made to
+load the model — is written with every comparison now. It is deliberately not
+part of `Conditions`: two people asking different questions of one machine are
+not two conditions, they are two experiments.
+
+**And that made the header lie.** The bundle's `contains_user_content` was a
+constant `false`, on reasoning that was correct when it was written: *this
+module reads the journal, and the journal is not the content store* (A25,
+B-161). The journal still is not the content store. But **the method of a
+measurement is text the operator wrote**, and it has to travel or the bundle
+reproduces nothing — so the first bundle produced carried a prompt under a
+header saying it carried no user content.
+
+A `false` that is sometimes wrong is worse than no field at all: a reader
+deciding whether to send a file is entitled to know what leaves with it (A24,
+§3.20), and that field is the one they will read. It is computed from the
+entries now, over a named list of the places operator text reaches the record —
+named rather than guessed, because guessing gets it wrong in the direction that
+matters, and a check requires the list stay complete.
+
+**What leaves with it is printed before it leaves.** Producing a bundle is not
+publication and is not gated — writing a file to a path the operator named is
+not sending it. What the surface owes is the other half of A24: the list a
+person should read first, which names the two things they would not expect —
+the prompt they wrote, and this machine's **full hardware identity**, which a
+*contribution* strips and a bundle deliberately keeps. That difference is what
+makes a bundle checkable rather than aggregable, and it is the reason the two
+artifacts are opposites.
+
+**What is missing is said too.** The first bundle produced had no machine
+profile, because nothing had written one on this machine — so it says *NOT in
+it: what this machine is*, and names the command that would fix it. A bundle
+whose conditions lack the machine is a weaker artifact than one whose do not,
+and that is the reader's to weigh rather than to discover later (A7).
+
+**What was not established.** The bundle carries the identifiers of what it
+rests on and not the weights: PR2 anticipated that, and it makes verification
+depend on fetching them, which §7.11 cares about. The join between a claim and
+an acquisition is the artifact's path, because the record holds no foreign key —
+a bundle for a claim about a model acquired on another machine, or moved by
+hand, will carry no provenance and does not currently say so. And re-running the
+method on another machine is `mcf verify`, which is B-212 and not this.
+
+## 69 · F69 — A band predicted before the measurement, and the measurement landed in it (B-214, B-215, PR3, A20, B46, §6.16, F67)
+
+**PR3's question, asked before a byte is fetched:** *how fast would this be
+here?* MCF cannot measure a model it does not have, and refusing to say
+anything makes choosing between twenty published quantizations cost tens of
+gigabytes a guess. A20 admits the middle answer and then walls it off: *an
+estimate can never be mistaken for a measurement, never promoted into one, and
+never compared with one. It can only be replaced by one.*
+
+**The prediction, made first.** A quantization this machine had never
+benchmarked — `SmolLM2-135M-Instruct-Q4_K_S`, 102,039,904 bytes — was projected
+from the record with itself excluded, by reading between the two measured sizes
+it sits between:
+
+```
+ 91,893,088 bytes   381.3 .. 395.9 ms   (measured)
+105,454,432 bytes   387.2 .. 407.4 ms   (measured)
+
+PREDICTION for 102,039,904 bytes:  between 385.7 and 404.5 ms
+```
+
+**Then measured.** `mcf bench` on the file, `--cold`, 128 tokens:
+
+```
+medians  397.3 ms and 471.4 ms
+```
+
+**397.3 ms, inside a band of 385.7 to 404.5** — about three fifths of the way
+across it. One prediction, made before the measurement and not adjusted after.
+
+**What makes it defensible is what it refuses to do.** It reads *between*
+measured points and never past them. F67 established the relationship this
+rests on — latency monotone in file size, because every trial loads the model —
+and F67 also measured where it stops being straight: a line through the
+extremes predicted the largest point eleven percent low. So a file outside the
+measured range gets no band at all, and the refusal says why. It is
+band-shaped, because a duration predicted from a rate is a range and one number
+is *the smallest possible version of a confident wrong number* (B46). It is
+from local history only, because there is no corpus and B34 would let one
+advise rather than decide. And a budget this machine has no history at gets
+nothing, because two requests of different lengths are two different things.
+
+The surface says the word: *this is an ESTIMATE read between two measured
+sizes, and A20 forbids it standing beside a measurement or being promoted into
+one.* A20's *clearly-labelled* is not satisfied by a type name nobody sees.
+
+---
+
+**And then §6.16 turned on it** (B-215). *The instrument does not get to grade
+itself*, and a projection nobody scores is a claim MCF makes for ever without
+finding out whether it was any good. `mcf doctor` now says:
+
+```
+PROJECTION, SCORED AGAINST WHAT WAS LATER MEASURED
+  42 of 49 measured points fall inside the band that would have been
+  projected for them; the worst miss is 150.1% (5 could not be scored:
+  nothing measured on one side of them)
+```
+
+**Scored by leaving each point out**, which needs no stored predictions and no
+new record kind: for every measurement in the history, the band its neighbours
+would have given is computed and compared with what it actually was. It is
+recomputed from the record each time it is asked, so it moves as the history
+does — which is what *over time* means when the history is the thing changing.
+A stored score would be a score about a record that has since changed.
+
+The points at the ends are **not scored and not counted as misses**: with them
+left out there is nothing to read between, so there is no projection to score,
+and counting them would be scoring the refusal to extrapolate — the thing the
+model gets right.
+
+**Eighty-six percent, and a worst miss of 150%.** That is a finding about the
+model rather than a reassurance: the misses are real and the largest is large.
+The history includes points taken while this shared machine was at a load
+average of sixty, whose slowest trials ran to thirteen seconds against a
+fastest of seventy-nine milliseconds — a band that wide is not a band, and a
+neighbour interpolated from it is not a prediction. The score says so instead
+of hiding it.
+
+**What was not established.** One prediction checked against one measurement,
+on one family, at one budget, in one sitting. The relationship is F67's and is
+principally about file size because every trial loads the model — a projection
+built on a warm engine would be projecting something else. The band's width is
+the fastest and slowest trials seen, which is honest and crude: it inherits
+every outlier the history has, and the 150% miss is one of them arriving. And
+nothing prunes the history: a measurement taken under contention stays a point
+for ever, which is a decision nobody has made (DEC-013).
+
+## 70 · F70 — A run that cannot decide names what it competed with, and I could not make one (B-216, PR5, §3.8, B24, B4, D25, F55)
+
+**B24's refusal, upgraded to a diagnosis.** §3.8: *MCF knows the difference
+between "this model is slow" and "this machine was busy". When it cannot tell
+the difference, it says so rather than attributing the result.* Having been told
+a measurement is unattributable, the operator's next question is always **by
+what?** — and MCF is the only thing positioned to answer, because it was there
+and nothing else was.
+
+**What was built.** `mcf_core::hardware::contention` reads `/proc` twice a
+stated fifth of a second apart, turns accumulated processor time into a rate,
+and **names the processes**: a snapshot whose answer is *the machine was busy*
+is a number, and one that says which processes and what they took is a
+diagnosis. The kernel's own stall accounting is read for processor, memory and
+storage. Per-process accelerator occupancy is `Unknown`, because MCF has no
+vendor library here and D25 makes *unknown* not *none*.
+
+**MCF's own process is marked, not filtered out.** It is the one process the
+reader can do something about, and a snapshot that hid it would be hiding the
+useful half.
+
+**Two rules had to be satisfied at once.** B4 refuses ambient sampling and D5
+settled it: MCF does not watch, it looks when there is a reason. So a snapshot
+is taken **because a comparison could not decide**, and at no other time — one
+caller, no timer, no thread, and *after* the run, because sampling during one
+would make MCF one of the competitors it reports. A check asserts each of those
+and counts the callers, because the failure here is the natural one: a snapshot
+is useful, so somebody takes it more often, and then on a timer, and then MCF
+is a monitor.
+
+**And it goes into the record**, as `contention_snapshot`. PR5 is explicit that
+the snapshot must persist rather than be a transient thing on a screen, because
+a finding printed and not written down does not survive the terminal (§3.1).
+
+---
+
+**What I could not do: make a real run end *not decided*.** Five attempts, all
+of them trying to provoke the condition the snapshot exists for:
+
+| resolution | budget | arms | load | outcome |
+|---|---|---|---|---|
+| 0.5% | 32 | two quantizations | 61 | decided at 113 pairs |
+| 0.1% | 32 | two quantizations | 61 | *differ by 2.0%* at 12 pairs |
+| 0.1% | 32 | one model against itself | 61 | *same* at 113 pairs |
+| 0.05% | 1 | one model against itself | 61 | refused: the unit is one decimal place |
+| 5% | 1 | two quantizations | 60 | *same* at 35 pairs |
+
+**That is a finding about the stopping condition rather than about this path.**
+F55 and F57 built it to find the count a claim needs, and on this machine, at a
+load average of sixty, with the finest resolution the unit expresses, it reached
+a verdict every time. *Not decided* is genuinely hard to reach — which is good
+news about the instrument and inconvenient for demonstrating a feature that
+fires only there.
+
+So the rendering is covered deterministically instead: a comparison built to be
+undecidable, a snapshot constructed by hand, and the section asserted — including
+that a snapshot which could **not** be written says so rather than reading as
+kept (A2). The sampling itself is tested against this real machine: that it
+names the busiest first, that the total counts processes the list did not name,
+that MCF's own process is marked, that an unreadable accelerator is unknown
+rather than idle, and that it costs the interval it states and no more.
+
+**A check that could not tell a type from a prefix.** `ContentionSnapshot`
+begins with the six letters of `Content`, and
+`checks/tests/content_is_not_the_record.rs` — which exists to stop the record
+acquiring a way to hold user content (A25, §6.8) — refused it on a substring
+match. The fix was to make the check precise rather than to rename around it: an
+occurrence followed by a lowercase letter is part of a longer word.
+**A check that blocks correct work teaches people to rename around it, and a
+rule people rename around is a rule nobody believes.**
+
+**What was not established.** The end-to-end trigger has not been observed
+firing on a real run. Thermal and clock state are not in the snapshot: F53
+measured that the only sensor this machine exposes reads sixteen degrees, which
+is not a processor temperature, and a field filled from it would be worse than
+an absent one. The interval and the number of processes named are chosen
+numbers, each stated in one line. And the command lines go into the operator's
+own record — §3.20's gate is on whatever *sends* a record, and `mcf bundle`
+already lists what leaves.
+
+## 71 · F71 — The machine either side of a run is a condition, not a gate (B-217, DEC-007, §3.4, §3.8, A6, A7)
+
+**The item as written, and why it could not be built that way.** B-217 asked
+for a *quiet-machine pre-flight*: a laboratory that refuses to begin on a
+contended machine rather than producing an invalid result. Reshaping it in the
+register already moved it once — not *refuse on a contended machine* but
+*refuse on a machine that is not in its own steady state* — because a machine
+with a baseline load of two cores is not a broken machine, it is somebody's
+machine. Building even the reshaped version stops at the same wall: **refusing
+requires a threshold, and a threshold is a figure MCF would be choosing.**
+DEC-007 leaves that band open on purpose. A number invented here would deny a
+result to every operator whose ordinary baseline sits above it, and would be
+exactly the kind of figure that decision exists to derive from measurement
+rather than from taste.
+
+**So the measurement was built and the refusal was not.**
+`mcf_core::hardware::contention::steadiness(readings)` takes *n* successive
+contention samples and reports the middle reading, the spread between the
+extremes as parts-per-million of that middle, and how many readings it took.
+Its doc comment says the thing outright: *this measures; it does not judge.*
+`Comparison` gained a `MachineHeld` — competing processor time before the run
+and after it, with room for the steady-state readings on either side — and
+`moved()` reports the shift as parts-per-million of the smaller figure. It is
+recorded as a condition (§3.4, A6) and rendered as one:
+
+```
+machine  0.15 core(s) competing before, 0.15 after — the level moved 0.0%
+         across the run, which is a condition and not a verdict: what movement
+         is too much is DEC-007's open band
+```
+
+**Both halves were exercised on the real machine.** A run on the quiet machine
+reported 0.15 cores before and 0.15 after, a movement of 0.0%. A run with forty
+spinning processes started eight seconds *into* it reported 0.25 cores before
+and 4.60 after — a movement of 1740% — and still produced its verdict, which
+now arrives next to the fact that the floor moved by a factor of eighteen
+underneath it. That is A7 rather than A5: MCF does not know that this verdict
+is wrong, and saying so would be a claim it cannot support. It knows the
+conditions were not held, and it says that instead.
+
+**What this leaves open, deliberately.** The reader of such a record can
+discard it; MCF cannot discard it for them. The gate B-217 originally wanted is
+still the right eventual behaviour, and it stays blocked on DEC-007 — which now
+has something to be decided *from*, since every comparison recorded from here
+carries the movement its own machine showed. That is the intended direction of
+travel: the measurement precedes the threshold, and B-217 stays in progress
+until the threshold has a measured basis rather than an assumed one.
+
+## 72 · F72 — Work is counted; minutes are derived, banded, and sometimes absent (B-224, B-225, B46, D14, A20, A7)
+
+**The rule and the reason.** B-224: *a laboratory declares its work in
+countable units — trials, sweep points, tokens, documents — never in minutes.*
+A lab that declares twenty minutes has declared a property of the machine it
+was written on. Move it to a slower machine and the declaration is wrong; move
+it to a faster one and it is wrong the other way; in neither case has anything
+about the work changed. And it is wrong *silently* — nothing on the page says
+the number was a guess about somebody else's hardware.
+
+**What was built.** `mcf_bench::planned::Work` carries three counts — trials,
+arms, tokens — and no fourth field. There is deliberately no duration, no
+deadline and no timeout on it, because a type with one would let a laboratory
+declare in minutes, and B-224 is a statement about what *may* be declared
+rather than about what is usually declared. `checks/tests/work_is_counted_not_timed.rs`
+holds that shut: Rust cannot say *no field of this struct means a duration*,
+since a `usize` is a `usize` whether it counts trials or seconds, so the check
+is on the source of the declaration, its rendering, and the derivation.
+
+**The minutes, derived rather than refused.** Refusing to tell an operator what
+a run will cost them is not honesty, it is unhelpfulness with a rule attached.
+So the duration is computed: the declared count multiplied by a per-generation
+band this machine measured, which makes it an `Estimate` and puts A20's wall
+between it and any measurement in the type system. Banded, because a rate has a
+spread and a single number is B46's *smallest possible version of a confident
+wrong number*. Where two arms have two bands the enclosing one is used — the
+faster arm's floor to the slower arm's ceiling — because widening is the
+direction an estimate is allowed to be wrong in.
+
+**Measured on this machine.** A run of two SmolLM2 quantizations at 128 tokens
+declared and expected:
+
+```
+work     at most 200 paired trial(s) across 2 arm(s) — 400 generation(s) of
+         128 token(s), 51200 token(s) in all
+         expected 1m 6s to 2m 49s at that ceiling — an ESTIMATE from 68
+         measured arm(s) of local history, never a measurement and never a
+         declaration (B-224, A20)
+```
+
+The counts are the same sentence on any machine. The minutes are this
+machine's, and say so.
+
+**And absent where there is nothing to derive from** (A7). Asked for the same
+two files at ninety-seven tokens, a budget this machine has never used:
+
+```
+work     at most 200 paired trial(s) across 2 arm(s) — 400 generation(s) of
+         97 token(s), 38800 token(s) in all
+         no expected duration: nothing has been measured at 97 tokens here;
+         this machine has history at 1, 32, 64, 128, 400, 2000 — two requests
+         of different lengths are two different things
+```
+
+The declaration still stands, and the absence names what history there *is*, so
+the operator can pick a budget that has one. A figure MCF chose instead would
+be indistinguishable on the page from one it measured.A behaviour
+run gets the same treatment for a different reason: it pins no generation
+length by design (D19), so it has no budget to project at.
+
+**B-225 needed no second bookkeeping path.** The register asks that estimates
+be scored against actuals and their error tracked, so that a lab whose
+estimates are persistently wrong surfaces as a finding. An expectation here is
+exactly the per-trial band multiplied by a count both sides agree on, so it
+contains the truth if and only if the per-trial band did — which is what
+`project::score` already scores, by leaving each measured point out and
+projecting it from the others, and what `mcf doctor` already reports (F68: 42
+of 49 inside, worst miss 150.1%). A separate score of the derived figure would
+be a second number that could disagree with the first about the same history.
+
+## 73 · F73 — A budget proposes, and what it excluded is on the page (B-226, B47, §3.1, A7)
+
+**The failure this prevents.** An operator gives a time budget, the run quietly
+does six of the twenty things it would have done, and reports the six. Nothing
+on the page is false and the reader is still misled: they are looking at a
+sixth of an experiment believing it is the experiment. §3.1's rule is that *ran
+6 of 20* always arrives with the fourteen.
+
+**A budget is the operator's, and never the laboratory's.** F72 established
+that a lab may not declare its work in minutes. A person may certainly say how
+many they have — `mcf bench --within <seconds>` — and the asymmetry is the
+point: the constraint comes from outside the apparatus, and what the apparatus
+owes in return is a *proposal*.
+
+**`Proposal` has three shapes and no fourth.** `Whole` where everything fits;
+`Fewer`, which cannot be constructed without the excluded half, so the fourteen
+are in the type and not only in the prose; and `NotEnough`, which is a refusal.
+A budget that buys less than two paired trials does not buy a smaller
+comparison, because two trials of two arms is the smallest thing that *is* a
+paired comparison and producing something below it would be answering a
+different question quietly.
+
+**Planned against the slow edge of the measured band.** Against the fast edge a
+run would go over budget about as often as under it, which makes a budget
+decorative. Under-spending is the harmless direction, so that is the direction
+the arithmetic errs in.
+
+**And a budget MCF cannot plan against is a refusal.** Truncating against a
+rate it does not have would be inventing the rate (A7); running the full
+ceiling anyway would be ignoring what the operator asked for. Measured on this
+machine, at a token budget nothing has been run at:
+
+```
+mcf: a time budget needs a measured rate to plan against, and there is none
+here — nothing has been measured at 45 tokens here; this machine has history
+at 1, 32, 64, 97, 128, 400, 2000 — two requests of different lengths are two
+different things
+  run without --within to take the comparison and give this machine that
+  history
+```
+
+The refusal names what would fix it, which is the difference between a rule and
+an obstacle.
+
+**And a refusal that was arithmetically right for a reason worth reading.**
+Asked for sixty seconds at a budget this machine *did* have history at, MCF
+refused: *the budget buys less than a comparison*. That looked wrong — sixty
+seconds is many generations of a 135M model — until the history was read. It
+was right, and why it was right is [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34).
+
+## 74 · F74 — The record caught a third party's workload, and the projection swallowed it (B-217, F71, §3.8, A6, B34)
+
+**Found while checking something else.** A benchmark of two SmolLM2
+quantizations was asked for within sixty seconds and refused: *the budget buys
+less than a comparison* (F73). Sixty seconds is a great many generations of a
+135M-parameter model, so the refusal looked like a defect. It was not. Read out
+of the record, the last three comparisons at those budgets say:
+
+| tokens | competing before | competing after | fastest left trial | slowest |
+|---|---|---|---|---|
+| 128 | 0.35 core(s) | 0.15 | 400.8 ms | 424.9 ms |
+| 128 | 33.05 core(s) | 33.10 | 6.69 s | 13.37 s |
+| 97 | 33.70 core(s) | 35.90 | 5.62 s | 18.59 s |
+| 97 | 33.25 core(s) | 33.30 | 3.43 s | 18.35 s |
+
+A generation that takes 400 milliseconds on a quiet machine took **thirteen to
+eighteen seconds** while thirty-three cores were busy. Planned against the slow
+edge of that, sixty seconds genuinely does not buy two paired trials, and the
+refusal was arithmetic rather than a bug.
+
+**What was competing was not MCF's.** The processes were a .NET test suite in
+an unrelated repository on the same machine, running at 2640% processor and
+holding twenty-six cores for the better part of twenty minutes. Nothing about
+it is MCF's business except that it was there.
+
+**B-217 worked exactly as built.** F71 said the movement across a run is
+recorded as a condition and never as a verdict, and that the reader of such a
+record can discard it while MCF cannot discard it for them. That is what
+happened: the confound is in the record, in its own field, in parts per
+million, for anyone who reads the entry. Without it, the only trace would have
+been four unexplained slow numbers.
+
+**And here is the gap it exposed.** `mcf_bench::project::band` reads the
+history and does not read the conditions the history was taken under. Four
+contended entries sit in it beside sixty-odd quiet ones, and every projection
+made from that history — the expected duration on the screen, the band
+`mcf explain` shows, the score `mcf doctor` reports — silently rests on them
+without saying so. That is not a wrong number; it is a number whose conditions
+did not travel with it, which is the thing §3.4 and A6 exist to prevent, and it
+is one layer deeper than where MCF was enforcing them.
+
+**What was deliberately not done.** The contended entries were not deleted:
+A1 forbids losing them, and they are true measurements of what this machine did
+that afternoon. Nor were they filtered out, because filtering needs a threshold
+and the threshold is DEC-007's, still open — the same wall F71 stopped at. What
+is owed is narrower and needs no decision: **a projection must carry the
+conditions of the history it rests on**, so that a reader sees *from 68
+measured arms, 4 of which were taken while the machine was not steady* rather
+than *from 68 measured arms*. That is registered as B-385.
+
+**A note on how this was found**, because it matters more than the finding.
+Nobody was looking for it. A refusal that seemed wrong was checked against the
+record instead of being adjusted until it looked right, and the record had the
+answer in a field added the previous day for an unrelated reason. That is what
+§3.8 is for.
+
+## 75 · F75 — A band that says what it rested on turns a wrong-looking number into a legible one (B-385, F74, §3.4, A6, A7)
+
+**Built to close what [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34) found.**
+`project::band` read this machine's history without reading the conditions the
+history was taken under, so four contended entries sat in it beside seventy
+quiet ones and every surface rendering a band inherited them in silence.
+
+**A `Point` now carries what else the machine was doing** — thousandths of a
+processor, the larger of the readings taken either side of that run, because a
+projection should inherit the worse of the two conditions rather than the
+flattering one. `band` returns a `Projection`, which is a band *and* a
+`Rested`, and the two cannot be separated by a caller: holding only the band is
+the defect, so the type no longer offers it.
+
+**Carried, never filtered.** Filtering contended history needs a threshold and
+the threshold is DEC-007's, still open — the same wall [F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+stopped at. Saying what the band rested on needs no threshold at all, which is
+why this could be built today and the refusal could not.
+
+**And unknown is not quiet** (A7). Entries written before B-217 recorded
+nothing about the machine; that renders as *neither of the two runs it was read
+between recorded what the machine was doing, which is unknown and not quiet*,
+and a zero there would be a claim MCF cannot support.
+
+**What it looks like on the machine that has the problem.** The same command
+that produced F72's clean expectation now says:
+
+```
+expected 7m 4s to 89m 8s at that ceiling — an ESTIMATE from 74 measured
+arm(s) of local history, never a measurement and never a declaration
+(B-224, A20); read between two runs with 33.10 core(s) and 33.10 core(s)
+competing
+```
+
+Seven minutes to eighty-nine is a useless-looking band, and that is the
+finding: it is the *correct* band for this history, and the clause after the
+semicolon is the whole reason. Before B-385 the same estimate would have read
+*from 74 measured arms of local history* and nothing else — the same numbers,
+with no way to tell they came from an afternoon when somebody else's test suite
+owned the machine. And `mcf explain`, projecting at a budget whose history is
+clean, says the same thing in the other direction: *read between two runs with
+0.15 core(s) and 0.15 core(s) competing*.
+
+**The general shape.** Twice now the honest move has been the same one:
+measure the condition, attach it to the claim, and leave the judgement to the
+decision that has not been made (F71, and this). Neither needed a threshold to
+be useful, and both would have needed one to refuse.
+
+## 76 · F76 — A run that reports as it goes shows what moves, not what has not decided (B-227, A4, §3.1, A18)
+
+**Half of B-227 was already true.** A4 keeps what an interrupted run produced:
+the pairs are kept, the reason it stopped travels with them, and the comparison
+is marked cut short. What was missing is the other half — *reports as it goes*.
+A benchmark that takes minutes and says nothing until it finishes is one an
+operator cannot tell from a hung one, and one whose forty pairs are first heard
+of when it stops.
+
+**Where it goes.** Standard error, and only there. The result of a benchmark is
+one thing and goes to standard output; these are the run talking about itself
+while it works, and a pipeline reading a verdict must not have to filter
+progress out of it. A check counts `println!` against `eprintln!` to keep it
+that way — a substring test would forbid the very thing it is asking for, since
+one ends in the other.
+
+**What it says, which took a second attempt.** The first version rendered the
+verdict, and the verdict while a run is going is *not decided* at nearly every
+pair:
+
+```
+… after 2 pair(s), so far: not decided after 2 paired trial(s): the arms have
+  not separated and the noise is still wider than the difference being looked for
+… after 3 pair(s), so far: not decided after 3 paired trial(s): the arms have
+  not separated and the noise is still wider than the difference being looked for
+```
+
+Forty lines of that is not reporting, it is repeating — and it is worse than
+silence, because it buries the one line that will differ. What actually moves
+while a run goes on is the two arms, so that is what is shown:
+
+```
+… after 2 pair(s), so far: 1894.1 ms against 3511.2 ms
+… after 3 pair(s), so far: 1687.1 ms against 1720.3 ms
+… after 4 pair(s), so far: 1687.1 ms against 1835.2 ms
+… after 5 pair(s), so far: 1687.1 ms against 1720.3 ms
+```
+
+An operator watching that sees the second arm settling out of its first cold
+reading, which is a thing worth knowing while it happens. Where a verdict *is*
+reached the verdict is what is shown, because then it is the news.
+
+**Marked in the line, not by where it appeared.** Every interim line carries
+the count it rests on and the words *so far*, so that a reader who scrolls back
+cannot take one for the answer. It is not an estimate (A20): it is a real
+finding over fewer pairs, which is a different thing and is labelled as the
+different thing.
+
+**And it cannot change what the run does** (A18). `so_far` takes the comparison
+by shared reference and contains no `break`, no exit and no error path; a check
+holds all of that. A benchmark has no pass condition, and a progress line that
+could stop a run would be one.
+
+## 77 · F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)
+
+**The failure, in B40's own words.** *A model with no tool-calling that scores
+4% on an agentic suite has not been measured badly — it has not been measured.*
+The four percent is the wrong instrument's reading, and once it is a number in
+a column nothing downstream can tell it from a real one. It sorts. It averages.
+It loses a comparison. It becomes a verdict about a model, arrived at by
+grading it on a capability it does not have.
+
+**Both rules name `compiler` as their check**, which means the shape has to do
+the work. `mcf_core::graded::Graded` has four variants: `Measured` carries a
+`Score`, and `NotApplicable`, `Unknown` and `Failed` have nowhere to put one.
+The only way a number leaves is `score() -> Option<&Score>` — fallible on
+purpose, so that a caller reaching for a number meets the three cases with none
+at exactly the point where they were about to flatten them. There is no
+`unwrap_or`, no `Default`, no `score_or_zero`.
+
+**`NotApplicable` and `Unknown` are different claims**, and keeping them apart
+is the part that would be easiest to lose. *MCF looked and the capability is
+absent* and *MCF has not looked* are not the same statement: the second is
+resolvable by running a probe and the first is not, and collapsing them would
+make a laboratory's silence indistinguishable from a model's limitation (A7).
+
+**`Score` is not a number type.** It carries the laboratory it is on, and
+`against` compares two scores only where they share one — returning `None`
+otherwise, which is not a failure to compare but the absence of anything to
+compare. There is no `PartialOrd`, no `Add`, no `Sum`. Two readings of one
+instrument are comparable because that is what an instrument is for; two
+readings of different instruments are not, and a type that permitted it would
+be an invitation.
+
+**And no total** (B-201). `Profile` holds one outcome per laboratory and offers
+no arithmetic across them — no `overall`, no `average`, no `rank`, no `Ord`.
+*Which model is better* has no referent once quality is plural, and an
+*overall* column is §5's leaderboard wearing local clothes. What a profile does
+offer is coverage: `measured by 1 of 3 laboratory(ies); inapplicable to tools`,
+because B41 makes coverage travel with every answer and *inapplicable to* is
+the half a reader is least likely to be shown.
+
+**Built before the laboratories exist, deliberately.** M6's evaluation labs are
+not written yet. The type is the thing that makes the failure unrepresentable,
+so it is cheaper — and much more likely to hold — built first than retrofitted
+around results that already exist as numbers. A check names each escape hatch
+by the string that would introduce it, since what a compiler cannot enforce is
+that nobody *adds* the hatch later.
+
+**A note on the check that nearly blocked itself.** The module's prose names
+`unwrap_or` and `Default` in order to say they are absent, so a check reading
+the whole file failed on the sentence explaining why it passes. It reads the
+code without the comments now — the second time this repository has met that
+shape, and the rule is the same as it was: a check that blocks the correct work
+teaches people to write around it.
+
+## 78 · F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)
+
+**The observation PR11 came from.** A vocabulary handles text it does not
+contain by shattering it, and *where* it shatters is invisible to the person
+who wrote the text. A token count answers *how much*; it cannot answer *where*,
+and a word that survives whole and a word broken into seven bytes add the same
+amount to the same total.
+
+**`mcf segment <model> --prompt <text>`.** No generation, no judgement: it
+reads the vocabulary out of the file and shows what that vocabulary does.
+
+```
+$ mcf segment SmolLM2-135M-Instruct-Q4_K_M.gguf --prompt "The antidisestablishmentarianism debate"
+7 token(s) for 39 character(s) of text, on a vocabulary of 49152 token(s)
+
+  #0        504  "The"
+  #1       1598  " ant"
+  #2      17889  "idis"
+  #3      30834  "establish"
+  #4        358  "ment"
+  #5      35050  "arianism"
+  #6       6866  " debate"
+
+2 of 3 whitespace-separated word(s) survived as a single token; the rest were
+broken into pieces. Where a word breaks is a property of this model's
+vocabulary and not of the writing, and nothing here rates it (§3.15).
+```
+
+**And the same eight characters on two vocabularies.** SmolLM2's byte-level
+BPE spends **fifteen** tokens on `日本語のテキスト`, alternating an incomplete
+byte with the token that completes the character:
+
+```
+  #7      11100  "�"
+  #8        224  "テ"
+  #9      10391  "�"
+  #10       251  "キ"
+```
+
+Llama's SentencePiece vocabulary spends **two** tokens on `日本` where
+SmolLM2 spends five. Neither is a defect and MCF says so about neither: it is
+what these two vocabularies contain, and the reader who is choosing a model for
+Japanese now has the fact in front of them rather than a total they cannot
+decompose.
+
+**A round trip that is not one is said out loud.** On the Llama vocabulary the
+same command reports: *What came back is not what was typed: `"<s> 日本 hello"`
+against `"日本 hello"`* — the beginning-of-text token the file asks for and the
+space `SentencePiece` was trained with. A surface that quietly stripped those
+would be hiding two things the model definitely receives (A1, F19).
+
+**A bug this found, which is the part worth keeping.** The first version took
+each token's contribution as `decode(k).strip_prefix(decode(k-1))`, with a
+fallback to the whole string when the prefix did not match. On English it was
+correct everywhere. On Japanese it reported:
+
+```
+  #14       226  "日本語のテキスト"
+```
+
+— the last token of the phrase appearing to have produced the entire phrase.
+The cause is F19's: a byte-level vocabulary spells one character across
+several tokens, so the decode of *k* tokens is **not** the decode of *k-1* with
+something appended. The replacement mark standing in for the incomplete
+character is *replaced* by the character it stood for, the prefix strip fails,
+and `unwrap_or` supplied a confident wrong answer. Comparing **bytes** and
+taking what follows the common run is correct in both cases, and the failing
+string is now a test.
+
+The general lesson is not about tokenizers. `unwrap_or` on a fallible
+derivation is A2's silent failure with a friendly name: the code kept going,
+the output looked plausible, and only text in a script the author had not tried
+made it visible.
+
+## 79 · F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)
+
+**The measured cost behind the item.** F37: `<|im_start|>` written into a
+prompt reaches the model as ordinary tokens, and the table that produced was
+the most decisive-looking wrong answer in this repository. Until now a person
+tuning a prompt had strictly *less* visibility than the probe that was fooled
+by it.
+
+**`mcf segment` now answers two separate questions about every marker-shaped
+thing in the prompt**, and keeping them separate is the whole point:
+
+```
+Markers written into the prompt:
+  "<|im_start|>" → 7 ordinary token(s). This vocabulary HAS a token spelled
+    exactly that, and typed text still does not become it: nothing a person
+    writes can produce a control token (D46, F26).
+  "<|nope|>" → 6 ordinary token(s). This vocabulary has no such token at all,
+    so it is ordinary text here however it is spelled.
+  "[INST]" → 3 ordinary token(s). This vocabulary has no such token at all,
+    so it is ordinary text here however it is spelled.
+  A template whose markers do not survive is a template that does not do what
+  it looks like it does (F37, B-383).
+```
+
+*Does this vocabulary have such a token* and *does typing it produce one* have
+different answers, and the second is always **no**. That is D46 and F26's
+safety property, deliberate and load-bearing: a surface that let typed
+characters become the token a chat template uses to start a turn would let
+anybody forge a turn boundary. So a vocabulary that has `<|im_start|>` and a
+prompt that contains `<|im_start|>` still do not meet — and the reader is told
+that in a sentence rather than left to infer it from a token count.
+
+**Found by shape, then asked of the vocabulary.** MCF keeps no table of every
+family's markers; one would be out of date the week it was written. It notices
+`<…>` and `[…]`, bounded in length and stopped by whitespace so that *a < b*
+in prose is not a marker, and then asks *this* file — the only authority that
+matters.
+
+**Measured here.** On SmolLM2's vocabulary `<|im_start|>` costs seven ordinary
+tokens and `[INST]` costs three. Neither does anything. Nothing in the output
+says a person was wrong to write them: §3.15's job is to make the effect
+visible, not to grade the prompt.
+
+## 81 · F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)
+
+**`mcf explain` now answers *what does each language cost here*.** One
+sentence — the first clause of Article 1 of the Universal Declaration of Human
+Rights, in the United Nations' own translations — put through the model's own
+vocabulary, in thirteen languages spanning Latin, Cyrillic, Greek, Han, Kana,
+Hangul, Arabic and Devanagari.
+
+On SmolLM2-135M-Instruct:
+
+| language | tokens | characters | against the cheapest |
+|---|---|---|---|
+| English | 13 | 63 | 1.0x |
+| German | 24 | 64 | 1.8x |
+| Chinese (Simplified) | 29 | 19 | 2.2x |
+| Arabic | 45 | 51 | 3.4x |
+| Russian | 54 | 69 | 4.1x |
+| Greek | 70 | 83 | 5.3x |
+| Japanese | 72 | 42 | 5.5x |
+| Korean | 85 | 39 | 6.5x |
+| Hindi | 92 | 87 | 7.0x |
+
+**And on the Llama vocabulary of `stories15M`, the order changes.** Russian
+costs 54 tokens on SmolLM2 and **23** there; Greek costs 70 on SmolLM2 and
+**84** there. Neither vocabulary dominates, which is the result that makes the
+point: this is not a ranking of languages by difficulty. It is a table of what
+somebody happened to put in a file.
+
+**The ratio is over the same meaning, not the same character count.** The
+register asked for *tokens per character*, and per-character answers the wrong
+question: Chinese writes this sentence in nineteen characters, so it looks
+expensive per character while costing fewer tokens outright than French. What
+compounds — context, money, time — is the total for the same meaning, and
+these sentences *are* the same meaning by construction, which is the whole
+reason for using a carefully translated parallel text rather than one MCF
+wrote. The character count stays on every line so that a reader who wants the
+other reading can have it (A1).
+
+**The wording is the hard part, and it has its own check.** The arithmetic is
+counting tokens. What is easy to get wrong is that *expensive* reads as *bad*:
+a sentence letting a vocabulary's spelling be heard as a judgement about a
+language, or about how well the model speaks it, would be the most damaging
+thing in this repository and the easiest to write by accident. So
+`checks/tests/a_language_cost_is_about_the_vocabulary.rs` requires the answer
+to name what it is a property *of* — the file — to deny what it is not, and to
+contain none of a list of grading words. A model can be excellent at a language
+its vocabulary spells expensively.
+
+**A smaller thing worth recording.** The check first failed against a sentence
+that is in the source: `rustfmt` had broken it across lines with a trailing
+`\`, so a substring search found nothing and would have gone on asserting
+about a string that never appears. It joins continuations first now. That is
+the fourth variant this repository has met of *a check that passes without
+checking* (F80), and the second where the fix was to read the source the way a
+compiler does rather than the way a text editor shows it.
+
+## 82 · F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)
+
+**The question, answered before anything is sent.** Is this guidance document,
+this transcript, this file too long for this model? The same text is a rounding
+error on one model's window and does not fit at all on another's, and there was
+no surface that said so. `mcf segment` now does:
+
+```
+1185 token(s) of prompt against a DECLARED context of 128 token(s) — 925.7%
+of it: this prompt does not fit, before a single token of answer.
+```
+
+and, where it does fit, what is left:
+
+```
+8 token(s) of prompt against a DECLARED context of 8192 token(s) — 0.0% of
+it, leaving 8184 token(s) for everything else — the answer, and anything else
+in the window.
+```
+
+*Leaving N for everything else* rather than only a percentage, because a share
+of the window hides that the answer needs room in it too.
+
+**Declared, and said to be declared** (A21). The number is the file's claim
+about itself, and F42 measured that an engine on a real machine can take fewer.
+So the word is in capitals, and the sentence names `mcf probe` as what would
+verify it — a marking with no route attached is a disclaimer.
+
+**Which is where the item stops, and why.** B-382 asks for the count against
+the **usable** context *measured* for this model. That measurement exists —
+F42 took it — and it is **not in the record**. `mcf probe` prints its findings
+and writes only `--apply`'s configuration change, so the usable context this
+machine established for a model lives on a terminal that has since scrolled.
+
+**A1's plainest case.** *A measurement nobody can find later is the same as one
+not taken.* Every surface that wants a measured figure rather than a declared
+one is blocked behind this, and the fix is not in B-382's scope: it is that a
+probe's outcome should be written down. That is B-386, opened here, and B-382
+stays in progress until it exists. Building a reader for a record that is never
+written would be dead code pretending to be a feature.
+
+**No declaration is unknown, not unlimited** (A7). A file that declares no
+context length gets *there is nothing to state it against — which is unknown
+rather than unlimited*, and a declared zero is treated as no declaration rather
+than as a division.
+
+## 83 · F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)
+
+**Closing [F82](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42)'s
+gap the day it was found.** A probe measured a model's usable context, printed
+it, and wrote nothing. `EntryKind::ModelProbed` now exists and `mcf probe`
+writes what it observed — the declared figure, the accepted one, the engine,
+and the engine's own words where it refused, because a refusal for an unrelated
+reason would otherwise be read back as a short context.
+
+**Recorded whichever way it came out** (A9). *Agrees* is as much a measurement
+as *diverges*, and a record that kept only the surprising half could not answer
+*what does this machine take*. A check requires the write to sit after both
+branches rather than inside the divergence one.
+
+**Distinct from the act it might lead to** (D42, D43). `ModelProbed` is an
+observation; `ModelConfigured` is somebody deciding to address a model
+differently. A probe that changes nothing still measured something, and
+collapsing the two would make *MCF looked* and *MCF changed* the same entry.
+
+**The loop, end to end on this machine.** `mcf probe` on `stories15M-q8_0`:
+
+```
+ declared 128 token(s)
+ accepted 127 token(s) of prompt, with one left to generate
+ agrees the file's claim holds
+ recorded in /home/gauge/.local/share/mcf/record.jsonl
+```
+
+and then, with no probe re-run and nothing passed between them:
+
+```
+$ mcf segment stories15M-q8_0.gguf --prompt "Once upon a time there was a small brave mouse."
+12 token(s) of prompt against a MEASURED context of 127 token(s) — 9.4% of it,
+and the file declares 128. Measured is what `mcf probe` found this engine on
+this machine actually accepts, which is the number a prompt has to fit
+(B-055, F42, §3.4).
+```
+
+**The declaration stays in the sentence.** A measurement supersedes a claim for
+the purpose of deciding whether a prompt fits — that is what taking one is for
+(A21) — but *this file claims 128 and this machine takes 127* is itself the
+finding, and dropping the claim would hide that the two can disagree. On a
+model where they diverge, that clause is the whole story.
+
+**And the reader will not answer about a different file.** A context measured
+for one artifact is not a fact about a differently quantized sibling; the path
+must match exactly, because the conditions §3.4 requires include which artifact
+was asked.
+
+## 84 · F84 — The branch is read from the attribution, and reading it from the category is the obvious wrong design (B-233, B24, §7.10, §3.4)
+
+**B-233's requirement.** *Environment failures are a distinct taxonomy branch
+from model failures: an out-of-memory from competition is a condition of the
+run, never the model giving up.* Recorded as the model's, a busy afternoon
+becomes a claim about a model — and nothing downstream can undo it, because a
+wrong attribution reads exactly like a right one.
+
+**The first implementation was wrong, and it was the obvious one.**
+`Category::branch()`: a hundred and eleven categories, each mapped to one of
+four branches, derived from its domain with a handful of stated exceptions. It
+compiled, it was exhaustive, and running it against every `Failure::new` in the
+workspace produced eleven disagreements — all of which were the *map* being
+wrong and the code being right:
+
+- `probe.inconclusive` attributed to the **machine**, because the machine
+  misbehaved. The map said MCF's.
+- `engine.unavailable` attributed to **MCF**, because MCF's own stand-in does
+  not implement that format. The map said the environment's.
+- `config.invalid` attributed to the **user**. The map said MCF's.
+- `engine.exit.immediate` attributed to the **machine**. The map said the
+  artifact's.
+
+**A category says *what went wrong*. Only the attribution says *whose*.** The
+same category is honestly attributable to different parties depending on the
+situation, which is precisely why `Attribution` is a separate axis that
+`Failure::new` demands and gives no default for. So B-233 was **already
+structurally satisfied** before any of this: every failure classifies
+unambiguously, because every failure supplies the axis that classifies it.
+
+What is now added is the coarser reading a surface needs — `Attribution::branch`
+— and what is checked is only what is not structural: that the model's branch
+is reachable *only* through `ModelUnderTest`, that every branch is reachable at
+all, and that no construction in the workspace attributes a model's behaviour
+elsewhere or a condition of the run to the model. That last check passes across
+the whole workspace with no exceptions.
+
+**`Unattributable` returns `None`, not a fourth branch.** B24 makes *MCF cannot
+tell* a real result, and folding it into a branch would be the attribution MCF
+refused to make, made anyway.
+
+**The general lesson.** The wrong design was more code, more precise-looking,
+and produced a table of eleven violations that would have been "fixed" by
+editing eleven correct call sites. A check that disagrees with working code is
+evidence about the check first. This is the second time in this session that
+running a new rule against the existing codebase is what showed the rule was
+wrong — the first being the register's parser (F80), where the code was right
+and the reader was not.
+
+## 85 · F85 — An idle daemon took zero processor ticks and issued zero reads in ninety seconds (B-187, B-108, B4, D5, §3.13, §6.18)
+
+**Two items, one measurement.** B-187: *counter reads are zero outside a lab
+run.* B-108: *the benchmark subsystem consumes nothing during ordinary
+serving.* Both were open and both are the same discipline seen from two sides.
+
+**Measured on this machine.** A running `mcf serve`, with nothing asked of it,
+read from `/proc` before and after ninety seconds:
+
+```
+ticks:  336 -> 336   (0 of 100/s over 90 s)
+syscr:  290824 -> 290824
+rchar:  2294781810 -> 2294781810
+```
+
+Not *small*. **Zero** processor time and **zero** read syscalls — the process
+did not execute. That is the difference between a daemon that polls quietly and
+one that genuinely waits, and it is only visible because the counters are
+integers that either moved or did not.
+
+**Why it matters beyond tidiness.** A daemon that polls thermal counters to
+look responsive is a daemon that is one of the competitors it reports (§3.8) —
+which [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34)
+showed is not hypothetical: something *was* stealing this machine, and MCF's
+value there depended on not being part of the problem. And a benchmark
+subsystem with an idle cost makes every serving measurement conditional on
+whether it was compiled in.
+
+**What holds it.** B4's discipline — a reading exists because somebody asked
+for it, never because a clock came round — plus one structural fact:
+`mcf-serve` does not depend on `mcf-bench`. The daemon cannot start a benchmark
+because it cannot name one, which is a stronger guarantee than any measurement
+of its idle cost. `checks/tests/idle_mcf_reads_nothing.rs` pins all three:
+no spawned loop in the serving path, no reader of the machine outside a command
+the operator ran, and no path from the daemon to the benchmark crate.
+
+**The one counter MCF does read** is a GPU temperature through NVML, inside
+`Machine::read_through`, reached only from `mcf doctor`, `mcf run`'s fitment
+check, `mcf pull`'s, and `mcf verify`. Every one of those is something a person
+typed.
+
+## 86 · F86 — A field of one is refused by name, and a foreign number has no route in (B-167, B-127, B34, B43, §6.23, §5)
+
+**Built ahead of the recommender, for the reason [F77](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39)
+gives.** Both items specify a *type-level* property, and a type is cheapest to
+get right before there are values to retrofit it around.
+
+**B-167: no foreign number reaches a recommendation.** `Candidate` holds a
+`LocallyMeasured<Profile>` and there is no other constructor. A contributed
+measurement is a `FromCorpus`, `origin` offers no conversion in either
+direction, and so a corpus number cannot arrive by any route — not by being
+confirmed, not by being averaged in, not by being passed as an argument that
+happens to typecheck.
+
+The failure mode this guards is not somebody deliberately ranking on foreign
+data. It is a number arriving through three layers of helpers with nobody
+noticing where it came from. A type that has to be *written* at the boundary is
+the only thing that survives that, which is why `LocallyMeasured::new` is
+deliberately not a `From`.
+
+**B-127: a field of one is not a field.** `Field::ordered_by` returns a named
+refusal rather than a list:
+
+```
+one candidate (a) is not a field: a frontier with a single point is not a
+frontier, and *the best of one* recommends whatever it was handed (§6.23)
+```
+
+and it names the one, because the operator's next move is to name a second. An
+empty field is a *different* refusal from a field of one, since *nothing was
+considered* and *only this was considered* are different situations.
+
+**And the case that would otherwise slip through.** A field of six where one
+candidate has a reading is a field of one wearing six names — the other five
+were not measured badly, they were not measured (B40). `TooFewMeasured` says
+so, and names the laboratory and the count. Asking a laboratory nobody ran
+gets the same refusal rather than an empty ranking, because an empty list reads
+as *nothing is any good* rather than *nothing was asked*.
+
+**And the coverage is computed, not stored** (B-202). `Field::coverage` says
+which laboratory the ordering was made on, how many of the candidates it
+measured against how many were considered, which laboratories some candidate
+was verified inapplicable to, and which informed nothing at all:
+
+```
+on agentic alone, which measured 2 of 3 candidate(s); inapplicable to tools
+(verified absent, which is not a low score — B40); vision informed nothing
+here, which is *not run* rather than *no difference* (A7)
+```
+
+*Two of three* rather than *two*, because the bare count hides the candidate
+that was not measured. Computed from the same field the ordering came from, so
+a ranking cannot end up beside coverage describing a different set of
+candidates. And a laboratory with one reading is not *silent*: what a reader
+needs from that word is *nothing came from here at all*.
+
+**Unmeasured candidates are absent from the ordering, not last.** A missing
+reading is not a low one, which is [F77](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39)'s
+rule showing up one layer higher — and ordering is stable, so two candidates a
+laboratory could not tell apart keep the order they were considered in rather
+than one the sort invented.
+
+## 87 · F87 — A contribution has nowhere to put a task, and no way to be unsent (B-171, B-203, B-251, B-310, B42, B54, D21, §6.30, §3.20)
+
+**Four items, one shape, built ahead of M9** for the reason F77 and F86 give:
+each specifies a property of the format, and a format is cheapest to get right
+before there is anything in it.
+
+**Outcomes, never artifacts** (B-171). A contribution that *strips* task
+content on the way out is one line away from not stripping it, and the line
+lives in the export path where nobody looks twice. A contribution with nowhere
+to *put* task content cannot leak it however the export is written. There is no
+field here that can hold a prompt, a completion, a document or a path, and a
+check forbids each by name.
+
+The stakes are not only privacy. A benchmark task that travels ends up in
+somebody's training data, and a corpus that leaks its own tasks measures
+memorization from then on.
+
+**Comparisons in preference to absolutes** (B-251, B54, §3.27). *This arm was
+12% quicker than that one over forty pairs* survives travel: both arms met the
+same afternoon, so what differs between them is the arm. *This took 380 ms*
+does not: it is a fact about somebody else's hardware that the reader cannot
+scale. So `Absolute::new` is **fallible** — it refuses unless all thirteen of
+the condition floor's questions are answered — while a `Comparison` needs the
+conditions it was taken under and not a complete floor. The preference is in
+what is easy to construct, not in a docstring.
+
+**A custom workload is refused, and refused early** (B-203, B42, A25). The
+marking is on the row from production. A marking applied at export is a marking
+that can be forgotten at export, in the one place under time pressure with the
+operator watching a progress bar. Both routes in refuse it, and a complete
+condition set does not rescue it — the objection is not that the conditions are
+unknown, it is that nobody else has the workload.
+
+**And nothing retracts** (B-310, B63, D21). There is no `retract`, `unsend`,
+`withdraw`, `recall` or `revoke`, and a check forbids all five by name so that
+adding one is a deliberate act against a test rather than a helpful-looking
+commit. Once something has left, it has left; an affordance suggesting
+otherwise would be the most consequential false promise MCF could make, because
+a person would rely on it. What exists instead is the terms, which say so
+*before* anything is sent:
+
+```
+What leaves is outcomes only: scores, classifications, conditions and effect
+sizes. No prompt, no completion, no task, no fixture and no file leaves —
+there is nowhere in the format to put one. Publication cannot be undone: MCF
+offers no retraction, because there is no such act (D21, B63).
+```
+
+**And the other direction: what arrives** (B-166, B-172). An import is a
+claim. `Imported` holds the figure as a `FromCorpus`, which cannot back a
+recommendation (B-167) and cannot render as MCF's own, and it says so in
+words — *DECLARED elsewhere … `mcf probe` and `mcf bench` are what would make
+it a measurement here*. There is no `verify`, no `promote`, no `into_local`:
+verification does not convert a claim, it **replaces** it, exactly as A20
+replaces an estimate.
+
+`Reproduction` has three states and all three are outcomes. `Measured` keeps
+*both* figures side by side — only the local one throws away the comparison,
+only the difference throws away what was compared. `WillNotFitHere` is a
+complete answer rather than a refusal to answer: *it needs 48 GiB and this
+machine has 24* is what the operator asked. And `NotAttempted` is its own
+state, because unattempted is not agreement.
+
+A divergence between two machines running one identifier is the most valuable
+thing a corpus can learn about itself — how far a result travels — and
+recording it as an error would throw away the one observation nobody else is
+positioned to make (§6.29).
+
+**A small recurrence.** Those terms name every forbidden thing in order to say
+it is absent, so the check that forbids them failed on the sentence explaining
+why it passes — the third time in this session (F81 was the second). The check
+skips the terms now. The pattern is stable enough to name: *a rule and the
+prose describing the rule cannot be distinguished by substring search*, and a
+check that does not account for it blocks the correct work.
+
+## 88 · F88 — A behaviour laboratory's bound has nowhere to put a wall clock (B-230, B-223, B45, D8, D13, §3.8)
+
+**B-230, and it is [F72](#72--f72--work-is-counted-minutes-are-derived-banded-and-sometimes-absent-b-224-b-225-b46-d14-a20-a7)'s
+argument one level up.** F72 established that a laboratory declares its *work*
+in countable units. This says the same of its *bound*: a behaviour laboratory's
+deadline is a token budget, never a wall clock.
+
+**The specific harm.** A behaviour run bounded by minutes gives a model on a
+busy machine fewer attempts than the same model on a quiet one. The result is
+supposed to be about the model and becomes partly about the afternoon — and it
+happens *silently*: the run completes, reports fewer outcomes, and nothing on
+the page says the machine is why. A token budget counts the same everywhere.
+
+**A timing laboratory is the opposite case** and keeps its wall clock, because
+elapsed time is its whole subject: a timing run that will not finish is a
+measurement about this machine (§3.8), which is what was being asked. So
+`Bound` has exactly two variants, one of which carries a `Duration`, and a
+check pins the count at one — a second would be the forbidden wall clock
+wearing a different name.
+
+**B-223 in the same constructor.** `Planned::new` takes a `Calibrated` and
+there is no `Default`, no second constructor, and no `Option` around it. B45's
+tier ordering — calibration precedes measurement — becomes a property of the
+type rather than a convention, and the difference matters because a convention
+is what somebody skips at four in the afternoon. An evaluation on a
+configuration nobody calibrated is a measurement of an arbitrary sampling
+setting wearing a model's name.
+
+**One type for both classes, rather than two.** The refusal is a `Result` from
+the constructor rather than two separate types that cannot express each other's
+bound. Two types would be stricter on paper and would drift: every feature
+added to one has to be added to the other, and the second copy is where the
+rule quietly stops being enforced.
+
+## 89 · F89 — A figure with a unit and nothing behind it is the most convincing kind of wrong (B-188, B-163, B-164, B39, B31, A20, A7)
+
+**B39's violation, stated exactly.** A platform with no power interface yields
+a number derived from processor utilization. Multiply a percentage by a
+nameplate wattage and you have a figure with the right unit, a plausible
+magnitude, and no measurement in it at all. It is more dangerous than an
+obviously wrong number because nothing about it looks wrong.
+
+`Energy` has three variants — `Measured`, `Modelled`, `Unknown` — and the only
+way joules leave is `measured_millijoules() -> Option<u64>`, fallible so that a
+caller reaching for a number meets the other two where they were about to
+flatten them. There is no `unwrap_or`, no `Default`, no `millijoules_or_zero`,
+and the word *utilization* appears exactly once in the module: inside the
+sentence that refuses it. A check pins the count at one, because a second
+occurrence would mean it had become an implementation rather than a warning.
+
+**The sampling rate is in the type** (B-188, §3.4). Energy read at one hertz
+across a two-second run has seen two samples, and what it missed is most of the
+run. A reading whose rate does not travel cannot be compared with one taken at
+another rate, and nobody can tell that from the number — so `comparable_with`
+requires the same rate *and* the same counter, since a package-level figure is
+not a device-level one. A modelled figure compares with nothing at all, not
+even another model: two models are two authors' opinions rather than two
+readings.
+
+**And what was watching** (B-163, B-164). The condition floor has carried an
+`instrumentation` entry as free text since it was written, which is enough to
+*note* a profile and not enough to *refuse* on one. `Timed::new` is fallible
+and refuses a `Profile::Deep`: a timing taken while a profiler was attached is
+a timing of the profiler as much as of the model.
+
+**`Light` is admitted, and that is the interesting case.** It carries a
+measured residual — how much the watcher moved the measurement, characterized
+against the same run unwatched — so the perturbation is a condition and A6 lets
+the measurement travel with it. `Deep` is refused not because it is worse but
+because there is *no single residual to carry*: tracing overhead depends on
+what the model did, so it is a distribution rather than a number.
+
+**No threshold anywhere.** B31 asks that the overhead be characterized, not
+that it be small. A cutoff here would be MCF deciding how much perturbation is
+acceptable for somebody else's measurement — the same kind of figure DEC-007
+exists to derive rather than assume, and the same wall
+[F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+stopped at. A check forbids the words.
+
+## 90 · F90 — The contention instrument reported 35 cores on a 32-thread machine, because it divided by the window it meant to use (B-216, B-217, DEC-007, A2, §3.8)
+
+**Found by an operator's question, not by a test.** Asked whether the noisy
+benchmarks of [F74](#74--f74--the-record-caught-a-third-partys-workload-and-the-projection-swallowed-it-b-217-f71-38-a6-b34)
+were simply a machine with headroom to spare, the first thing to check was the
+core count. This machine is a 16-core, 32-thread Ryzen 9 9950X. The record
+contained a comparison whose conditions said **44.05 cores competing** — a
+figure the machine cannot physically produce.
+
+**The instrument was dividing by the interval it intended to wait.**
+`contention::sample` reads every process's accumulated processor time, sleeps
+`OVER` (200 ms), reads again, and converts the difference to a rate by dividing
+by `OVER`. But walking `/proc` costs real time — one file read per process —
+and that time falls *inside* the window. The true interval is `OVER` plus two
+walks, and the reported rate is inflated by exactly their ratio.
+
+**It inflates most when it matters most.** The walk is slower when the machine
+is busy, which is precisely when the reading is being taken and relied upon.
+Measured against `/proc/stat`, which is the kernel's own accounting and cannot
+exceed the core count:
+
+| condition | dividing by `OVER` | dividing by the elapsed window | `/proc/stat` |
+|---|---|---|---|
+| quiet | 1.25 cores | 1.16 | 1.16 |
+| 48 spinners on 32 threads | **35.20** | 28.65 | 28.89 |
+| 48 spinners, repeat | 35.55 | 29.19 | 29.40 |
+| 48 spinners, repeat | 35.20 | 28.81 | 29.10 |
+
+Eight percent over when quiet; **twenty-two percent over under load**, and past
+the physical ceiling. The per-process summation itself was never wrong — with
+the measured interval it agrees with the kernel to under one percent.
+
+**Fixed, and the interval is now a condition.** The window is measured with the
+monotonic clock and carried on the `Snapshot` as `over_millis`, because it is
+not constant: it grows with the number of processes and with how busy the
+machine is, and two snapshots taken over different windows are not the same
+measurement (§3.4). Rebuilt and re-measured under the same 48 spinners, MCF
+reports 28.5–29.3 cores where the kernel reports 32.0–32.2 — under rather than
+over, and never above the ceiling.
+
+**Two checks now hold it.** One forbids the old arithmetic by name. The other
+asserts that no snapshot reports more cores than the machine has, with ten
+percent of slack for tick granularity — an assertion the defect would have
+failed by more than twice that margin.
+
+**What this does to what was already recorded.** Every machine reading in the
+record before this fix is high by roughly a fifth. The recorded *44.05 cores*
+was about 36; the recorded *33* was about 27. The entries stay as they are
+(A1) — they are what the instrument said — and the conclusion of F74 is
+unchanged and in fact sharpened: those runs were at 85 % to 113 % of what a
+32-thread machine can deliver. There was no headroom at all.
+
+**And a caution about the class of defect.** The reading was wrong in the
+direction that makes a machine look busier than it is, which is the direction
+that would have made a refusal threshold fire too often. Had B-217's refusal
+been built when it was asked for, it would have been calibrated against an
+instrument that was over-reading by a fifth under exactly the conditions the
+threshold governs. Two of this session's decisions not to invent a threshold —
+[F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+and [F75](#75--f75--a-band-that-says-what-it-rested-on-turns-a-wrong-looking-number-into-a-legible-one-b-385-f74-34-a6-a7)
+— turn out to have been protecting against this without knowing it. *Measure
+the instrument before you calibrate anything against it* is §6.16 with a number
+attached.
+
+## 91 · F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)
+
+**A recorded finding was wrong, and it had closed a question.** F53 concluded
+that *the only sensor this machine exposes reads sixteen degrees, which is not
+a processor temperature*, and DEC-007's thermal half has been blocked on that
+ever since. It was reading `/sys/class/thermal`, where this board publishes one
+ACPI zone that does read 16.8 °C. One directory across, `/sys/class/hwmon`
+carries `k10temp`:
+
+```
+k10temp/Tccd1 82.8 °C (processor die)
+k10temp/Tccd2 77.5 °C (processor die)
+k10temp/Tctl  87.7 °C (processor package)
+acpitz        16.8 °C (board)          ← the sensor F53 found
+```
+
+Sixteen degrees against eighty-eight. **The operator was right that the
+real-time information was accessible somewhere**, and a wrong finding is worse
+than an open question: an open question gets revisited.
+
+**MCF was reading no processor temperature at all.** The `thermal_state`
+condition reported accelerator temperatures and nothing else, so every
+measurement in the record carries no trace of how hot the thing doing the work
+was — which is exactly the half of the condition DEC-007's open question is
+about. It now reads: `thermal_state=processor k10temp/Tccd1 66.8 °C (processor
+die), critical point not published by this chip, accel#0 30 °C`.
+
+**Everything is reported and nothing is chosen.** A machine has many
+thermometers measuring different things. MCF reads all of them, labels each
+with the chip that published it, classifies the ones it recognises, and neither
+averages them nor picks a headline. A die reading is preferred to a package one
+where both exist, because a control temperature can carry a vendor offset —
+even when the die reads *lower*.
+
+**A second sentinel, caught by the same discipline as [F90](#90--f90--the-contention-instrument-reported-35-cores-on-a-32-thread-machine-because-it-divided-by-the-window-it-meant-to-use-b-216-b-217-dec-007-a2-38).**
+An NVMe drive publishes `temp2_max` as `65261850`, which rendered as *critical
+at 65261.8 °C* beside real limits. A number no thermometer produced, presented
+with the confidence of one that was measured. A limit outside −50 °C to 200 °C
+is a chip's way of saying nothing, and absent is what it means (A7).
+
+**The critical point is often absent entirely, and that is not a default.**
+Intel's `coretemp` publishes one; the `k10temp` here publishes none. So MCF
+cannot compute *how close to throttling* universally, and does not pretend to:
+the rendering says *critical point not published by this chip*, because a
+reader who is not told the limit is missing will assume there is headroom.
+
+**Occupancy has the same shape.** AMD publishes `gpu_busy_percent` in sysfs —
+readable by any process. NVIDIA publishes nothing there and requires NVML.
+Intel's `i915` derives occupancy from perf counters needing privilege. So a
+card MCF cannot poll reports `unknown` **with the reason**, never zero: an
+operator must be able to tell *nothing was competing* from *MCF could not see*.
+
+**And the table problem, answered properly.** Classifying sensors means a table
+of driver names, and this repository has already said tables go stale the week
+they are written (F79). The honest answer is not a longer list but a route:
+`mcf support --into <path>` writes what a maintainer would need — driver names,
+kernel, architecture, every sensor with its label and reading, and a section
+naming exactly what MCF could not account for. It is a **file**, not an upload;
+nothing here contacts anybody, which is the simplest way to satisfy §3.20's
+gate. It carries no prompt, no model output and no file content, on the same
+reasoning as `contribution` (B-171, A25). And the offer appears where the gap
+is found — `mcf doctor` says so — because a gap nobody is told about is a gap
+nobody reports.
+
+On this machine it correctly names `r8169_0_f00:00`, a network chip this build
+does not classify, and `nvidia`, whose occupancy sysfs does not carry.
+
+**Windows, honestly.** `MSAcpi_ThermalZoneTemperature` through WMI is the same
+ACPI zone that reads 16.8 °C here, and is frequently absent. The real per-die
+registers need a kernel driver, which MCF does not ship. A Windows build should
+expect `Unknown` for the processor and say so, rather than substituting a board
+sensor for a die one — which is precisely the mistake this finding corrects.
+
+## 92 · F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)
+
+**Every benchmark ended in this sentence:**
+
+> *the right arm is quicker by **356.0%**, after 6 paired trial(s) — noise alone
+> produced a gap that big **3.1%** of the time*
+
+Two numbers, the second looking like it qualifies the first. It does not.
+`one_sided_luck` is an exact sign test and its entire input is the count of
+positive and negative differences:
+
+```rust
+let ahead  = differences.iter().filter(|held| **held > 0).count();
+let behind = differences.iter().filter(|held| **held < 0).count();
+```
+
+Magnitudes are discarded before the statistic is computed. So *3.1%* answers
+*did the right arm win more often than a coin would* — correctly, exactly, in
+whole numbers — and says nothing whatever about **356.0%**. The clause *"noise
+alone produced a gap that big"* asserted that it did. That sentence was false,
+and it was on the front of every comparison MCF has ever produced.
+
+**How blind it was, measured.** Every comparison on this machine carrying a
+machine reading:
+
+| competing | n | reported | luck | what the pairs spanned |
+|---|---|---|---|---|
+| 0.15 c | 6 | by 13.9 % | 3.12 % | 15 points |
+| 0.35 c | 6 | by 133.2 % | 3.12 % | 23 points |
+| 33.05 c | 6 | by 356.0 % | 3.12 % | **1040 points** |
+| 33.25 c | 12 | by 206.5 % | 3.86 % | 954 points |
+| 44.05 c | 9 | by 114.0 % | 3.91 % | 616 points |
+
+The confidence figure is pinned near three percent across evidence differing in
+quality by a factor of **sixty-nine**, because 3.125 % is simply 2/2⁶ — what six
+unanimous pairs give regardless of what they contain. And each magnitude
+carried a decimal place: *356.0 %* is a claim of one part in a thousand made
+from six numbers spanning tenfold.
+
+**The inconsistency this exposes.** B46 has always said that a number predicted
+from a rate is a range and that one number is *the smallest possible version of
+a confident wrong number*. Every **estimated** figure in MCF is banded — the
+projection, the expected duration, `Estimate` itself. The one **measured**
+figure, the headline the whole benchmark product exists to produce, was a bare
+point.
+
+**Fixed with the machinery already present.** The bounds are order statistics of
+the paired differences: sorted, the *k*-th and *(n+1−k)*-th bracket the median
+with a probability that is a binomial tail, which `binomial_tail` already
+computed for the sign test. Exact, integer, no resampling, no floats, and no
+distributional assumption beyond the exchangeability the interleaving exists to
+provide. The same records now read:
+
+| competing | was | is |
+|---|---|---|
+| 0.35 c | by 133.2 % | **128.0 % to 150.7 %** (96.8 %) |
+| 44.05 c | by 114.0 % | 33.4 % to 181.9 % (96.0 %) |
+| 33.70 c | by 102.3 % | **4.1 % to 349.4 %** (96.8 %) |
+| 33.05 c | by 356.0 % | **118.6 % to 1158.8 %** (96.8 %) |
+
+The quiet run's interval is 23 points wide — a real measurement. The 33.70 c run
+reported *102.3 %* from evidence consistent with **4.1 %**, very nearly nothing
+at all. Nothing on the page had distinguished them.
+
+**The coverage is reported, not aimed at.** Six pairs cannot express 95 %; the
+widest interval available covers 96.875 %. Saying so is the same discipline as
+reporting the count a run actually needed rather than the one it hoped for
+(F53).
+
+**A third verdict, because the two claims are different.** When the interval
+runs from below the caller's resolution to above it, the order is established
+and the size is not. `Verdict::Ordered` says both:
+
+> *the left arm is quicker — noise alone put them in this order 0.1 % of the
+> time after 60 paired trial(s). HOW MUCH quicker is NOT established at the
+> 5.0 % you asked about: the evidence spans 0.0 % to 12.0 %. The order is a
+> result; the size is not, and this comparison is not fit to contribute*
+
+A variant rather than a flag, so nothing downstream can render it as a
+measurement by forgetting to check a boolean — and MCF invents no threshold,
+because the resolution came from the caller.
+
+**What the change caught in MCF's own tests.** Three existing tests encoded the
+old, weaker claim and failed:
+
+- A six-percent effect under fifteen-percent noise at **sixty pairs** had been
+  reported as *differ by 6 %*. Its interval reaches zero. Sixty pairs settle the
+  order and do not settle the size, and now say so.
+- Eight wins and four ties had been *differ*. A third of the pairs showed
+  nothing, so the interval on the median reaches zero — the point median of
+  10 % had been standing in for evidence that was not there.
+
+Neither was a regression. Both were the point estimate having concealed how
+little it rested on.
+
+**And one place MCF cannot do this yet.** The interval is an order statistic of
+*paired* differences. For arms assembled from separate sessions there are no
+pairs, and the two-sample equivalent needs a rank-sum distribution this crate
+does not have. `Verdict::Apart` therefore reports a point and **says that it is
+one** — a distinct variant, so nothing can mistake it for a paired interval.
+Inventing a range from the two arms' own ranges would be exactly the confident
+wrong number the whole finding is about. That is B-388.
+
+**Recomputed on read, and the record untouched** (B55, B56, A1). The trials are
+kept, so every comparison already written renders with the interval its own
+pairs always supported. Nothing on disk was rewritten; the summary is derived
+each time it is asked for, which is the rule that made this recoverable at all.
+The oldest entries in this machine's record gained their intervals without a
+byte changing.
+
+## 93 · F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)
+
+**The premise.** §3.4 makes MCF's own version part of the condition set of
+every measurement, because a number is only interpretable if you know what took
+it. The instrument is the first condition.
+
+**What the condition actually said.** All 52 comparisons in this machine's
+record, without exception:
+
+```json
+{ "version": "0.1.0-m0", "revision": null,
+   "rustc": "rustc 1.98.0", "profile": "release",
+   "target": "x86_64-unknown-linux-gnu" }
+```
+
+Identical. And they span one day during which three measuring instruments
+changed:
+
+| corrected | instrument | what it did to readings |
+|---|---|---|
+| 21:39 UTC | contention (F90) | competing-processor readings **~22 % high** under load |
+| 22:27 UTC | thermal (F91) | **no processor temperature at all** |
+| 23:02 UTC | effect size (F92) | headline was a **point estimate** with no measure of itself |
+
+Nothing in any of the 52 records says which side of any of those three it falls
+on. A comparison taken at 07:00 and one taken at 22:00 are, as far as the
+condition set is concerned, the work of the same instrument.
+
+**The mechanism existed and had never fired.** `build.rs` reruns on
+`MCF_BUILD_COMMIT`; `build_identity.rs` reads it through `option_env!` and — per
+A7 — refuses to invent one when absent; `licence.rs` explains the absence to
+the operator. Careful work. And the variable is set in exactly one place in the
+repository:
+
+```
+scripts/check-reproducible-build.sh:79:  export MCF_BUILD_COMMIT="$revision"
+```
+
+The binary an operator builds with `cargo build --release` never has it, so the
+honest field honestly reports `Unknown`, every time, for ever. **A field that is
+always unknown is not a mechanism.**
+
+**Why this is worse than the three defects it hides.** F90 and F91 were
+*fixable* because their extent could be reasoned about — from git, from memory,
+and from a physically impossible reading of 44 cores on a 32-thread machine.
+None of that reasoning came from the record. The next defect will be subtler and
+there will be nothing to reason from. This is the defect that makes the others
+unrecoverable, and a repository that found three in one day will find more.
+
+**The fix, going forward: the binary's own digest.** MCF hashes its own
+executable once and records it with every measurement. No build cooperation, no
+git, nothing an environment can forget to supply, and it works for a binary
+shipped in a tarball with no `.git`. Two builds that measure differently have
+different digests by construction, which is the only property needed to
+partition a record correctly. This machine's records now carry
+`"instrument": "12ce9405…"`. It says *that* the instrument differs rather than
+*what* changed — and what changed is the erratum's job.
+
+**The fix, backwards: an erratum keyed on time.** The 52 already written cannot
+be attributed by digest. But `recorded_at` is on all 3391 entries, precise and
+trustworthy, and the correction times are known. So `mcf_core::errata` carries
+each defect — the instrument, what was wrong, **what it did to the readings**,
+and the moment it was corrected — and every surface that renders a measurement
+renders the errata that apply to it:
+
+```
+comparison_2026-08-28T17-20-03Z…  compared … 
+  ⚠ ERRATUM mcf_core::hardware::contention: the rate divided accumulated
+    processor ticks by the interval the sampler intended to wait …
+  ⚠ ERRATUM mcf_core::hardware::thermal: no processor temperature was read …
+  ⚠ ERRATUM mcf_bench::enough: the effect size was a point estimate …
+```
+
+The entry recorded at 22:59 UTC gets **only** the effect-size erratum, because
+the other two were already fixed by then. That is per-entry attribution from
+timestamps alone.
+
+**Nothing is rewritten** (A1). The measurements stay exactly as taken — they are
+what the instrument said. A record that edits its own history to look better is
+not a record. And each erratum states its *effect*, not merely that something
+was wrong: a reader told only *distrust this* cannot decide what to do, while a
+reader told *high by about a fifth under load* can.
+
+**A defect inside the fix, caught by its own test.** The first version of the
+errata list carried nanosecond constants **two days** from the dates written
+beside them — computed by hand, entirely plausible on sight, and silently
+wrong, so no erratum applied to any entry and the whole mechanism did nothing
+while appearing to work. Two spellings of one fact drift. The test now
+cross-checks the nanoseconds against the readable moment through `Timestamp`,
+which is A19: a reported quantity checked against an independently known value.
+
+That is the sixth time in this session that a thing which looked correct was
+wrong, and the second where the failure mode was *doing nothing while appearing
+to work*.
+
+## 94 · F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)
+
+**Six defects in one session, and 1,321 test functions found none of them.**
+
+| | defect | found by |
+|---|---|---|
+| F80 | register headline wrong by five items | adding a row and noticing the total |
+| F84 | branch read from the wrong axis | running a new rule against real call sites |
+| F90 | contention +22 %, above the physical ceiling | an operator asking about headroom |
+| F91 | no processor temperature, ever | an operator saying the data was accessible |
+| F92 | effect size with no measure of itself | reading the output as a stranger |
+| F93 | instrument unidentifiable in every record | asking why F90's extent was knowable |
+
+Not because the tests are weak. Because every one of these was code doing
+exactly what it was written to do, and the writing was wrong. A test written
+from the same understanding as the code cannot see past it.
+
+**What unites them: an independent source existed and was never consulted.**
+`/proc/stat` for contention. A second sensor directory for temperature. An
+independent computation of a textbook interval for the effect size. The record
+itself for the instrument's identity. None was hard to find — `/proc/stat`
+exposed F90 in about thirty seconds once somebody looked.
+
+**MCF has a rule for exactly this, and it names this failure.**
+
+> **A19 — Anything reported is tested against an independently known value.**
+> **Violation looks like:** *a statistic whose only validation is that it looks
+> about right.*
+
+**Where it was applied.** Fifty-eight files. SHA-256 against published vectors,
+the tokenizer against reference output, dequantization against `llama.cpp`,
+time arithmetic against known dates, JSON, HTTP framing, the control protocol,
+the probes. Genuinely thorough.
+
+**Where it was not.** Zero citations in `hardware/contention.rs`,
+`hardware/thermal.rs`, `bench/enough.rs` or `bench/project.rs` — every module
+that measures the machine or reduces measurements to a claim.
+
+And the sharpest form of it: MCF ships `mcf cross-check`, which compares its own
+inference engine against an independently provisioned reference across a
+hundred and twenty positions, chosen because F40 found two engines parting at
+step four. That discipline was applied to the engine, and to nothing that
+measures.
+
+**Why the asymmetry is understandable and still wrong.** A digest has a
+published test vector; a machine's contention does not. So the parts with
+obvious ground truth got A19 and the parts without it got careful reasoning
+instead. But an independent source existed in every case — what was missing was
+the requirement to look for one.
+
+**What was built.** `scripts/ci.sh --with-instruments`, scheduled rather than
+gating because it needs the real machine and warms it for eight seconds:
+
+- **contention against the kernel's own accounting** — a different file, a
+  different accounting path, and a quantity that cannot exceed the core count;
+- **a processor sensor against physics** — every core is loaded for eight
+  seconds and the die must get hotter. A board zone read as a die, a stale
+  value, or the wrong sensor entirely all fail this, which is precisely F91's
+  ACPI zone at 16.8 °C standing in for a processor at 70 °C;
+- **the interval's coverage against brute-force enumeration** — every one of
+  the 2ⁿ sign patterns counted directly, the definition with no algebra in it,
+  against the closed form the implementation uses;
+- **occupancy against the vendor's own tool** where one is installed.
+
+**It found something on its first run.** The enumeration and the closed form
+disagreed by **one part in a million**: at eight pairs the true coverage is
+99.21875 %, and MCF stated 99.2188 % where enumeration gives 99.2187 %.
+Computing `MILLION - missed` truncates the part being subtracted, which rounds
+the *coverage* up. The magnitude is trivial and the direction is not — a
+coverage MCF overstates is a guarantee it cannot keep. It now counts the
+patterns that fall inside and truncates those, so the claim is never larger
+than the truth.
+
+That is a defect no reasoning would have found and no test written from the
+same understanding would have caught. It took a second implementation that
+shared no arithmetic with the first.
+
+**A disagreement is a finding, not a crash.** Each check reports both values and
+how far apart they are, because *the instrument is wrong* is not actionable and
+*it reads 35.2 where the kernel reads 28.9* is.
+
+**The general lesson, stated for the next instrument.** The failure mode of a
+test is not a wrong answer — it is agreement with the code it was written
+beside. Six times in one session, the thing that broke the agreement was an
+outside view: a kernel counter, a physical prediction, a second implementation,
+or an operator asking a question the code had not anticipated.
+
+## 95 · F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)
+
+**The measurement DEC-007 asked for, finally possible.** DEC-007 settled that
+quiet is relative — *a machine steady throughout a run is measurable wherever
+its baseline sits* — and left open the band, insisting the number be measured
+rather than chosen. It could not be measured until today, because there was
+neither a trustworthy axis to measure against (the contention instrument
+over-read by a fifth under load, F90) nor a quantity to measure (the effect
+size was a point estimate with no measure of itself, F92). Both are fixed.
+
+**What is read out is width, not size.** A machine that cannot be measured is
+not one whose answers get *bigger* — it is one whose answers get *wider*. So
+the observable is the width of the effect-size interval, and every run is cut
+to the same first six pairs before it is computed, because the stopping
+condition takes as many pairs as it needs and comparing widths at different
+counts would be comparing the stopping condition with itself.
+
+**The sweep.** The same paired comparison — two SmolLM2 quantizations, 32
+tokens, cold — at rising fractions of this 32-thread machine, three times each:
+
+| load asked | competing, measured | interval widths (points) | against baseline |
+|---|---|---|---|
+| 0 % | 4–7 % | 6.7, 10.5, 12.7 | — |
+| 25 % | 28–30 % | 8.7, 11.4, 15.0 | **indistinguishable** |
+| 50 % | 51–55 % | 65.3, 82.6, 309.0 | **6× to 30×** |
+| 75 % | 76 % | 123.3 | 12× |
+
+**The band is between 30 % and 51 % of machine capacity.** At 30 % the widths
+(8.7–15.0) sit inside the baseline's own run-to-run range (6.7–12.7) — the
+criterion the operator set, and one that chooses no number: the machine's own
+quiet variability is the threshold. At 51 % the smallest width is more than
+five times the baseline's largest, with no overlap at all.
+
+**Half a machine free is not enough**, which is the result worth carrying. The
+operator's question several rounds ago was whether F74's noisy benchmarks were
+simply a machine with headroom to spare. They were not — those ran at 85–113 %
+of capacity — but this sweep answers the general form of the question, and the
+answer is that headroom is the wrong frame. With **sixteen of thirty-two
+threads idle**, the interval is already six to thirty times wider. Degradation
+does not wait for saturation.
+
+**And the corrected instrument validated itself in the field.** The load was
+generated in known amounts and MCF's own contention reading was taken during
+each run: eight spinner threads read as 8.98–9.62 cores, sixteen as
+16.33–17.65, twenty-four as 24.27. F90's fix is not merely internally
+consistent; it agrees with a quantity that was set rather than observed.
+
+**What it costs to run a benchmark on a busy machine**, incidentally measured:
+a single 32-token cold generation takes about 1.5 seconds idle and about 60
+seconds at 75 % load — **forty times slower**. A comparison that finishes in
+half a minute on a quiet machine took twelve minutes.
+
+**Two levels were planned and not taken.** The sweep was designed for six
+levels to 125 % of capacity and was stopped after four. The reason is itself a
+measurement: at 100 % of capacity a single comparison did not finish inside the
+fifteen-minute cap the harness allows it, having taken about thirty seconds on
+an idle machine. Estimating the sweep at forty-five to ninety minutes was
+wrong by more than a factor of two, for the same reason the finding is about —
+work on a saturated machine does not slow down proportionally. The four levels
+taken bracket the band; the two not taken would have confirmed a trend already
+unambiguous across them, at the cost of another hour of somebody's machine.
+
+**What this does not settle.** The bracket is 30–51 % and no finer: nothing was
+measured between them, so the departure could be anywhere in that range. One
+model pair, one token budget, one machine, three repeats a level. The shape is
+clear and the edge is not, and locating it would take a second sweep across
+31–50 % rather than a wider one.
+
+## 96 · F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)
+
+**B-217, asked for as a refusal and built as a marking.** The item wanted a
+laboratory that *refuses to begin on a contended machine rather than producing
+an invalid result*. [F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+built the measurement and left the refusal, because the threshold would have
+been a figure MCF chose. [F95](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92)
+measured the threshold. This is what was built on top of it, and it is not a
+refusal:
+
+```
+NOT FIT TO CONTRIBUTE — 84.3% of this machine was already busy (27.00 of 32
+core(s)) — OUTSIDE the band of 30.0%, so this is a real measurement that is
+not fit to contribute (B-217, DEC-007). The band is DECLARED from one
+32-thread machine, one model pair, 32 tokens (F95); `prototypes/contention-band`
+measures it here (A21, A20)
+```
+
+**Why marking and not refusing** (the operator, 2026-08-28). A run outside the
+band still happened, and A4 keeps what it produced: the pairs are real, the
+verdict stands, the record is complete. What it loses is the right to travel.
+Refusing to start would deny a result to anyone whose machine is simply busy,
+and this project's answer to that has been the same in three findings now —
+measure the condition, attach it, and let the reader judge.
+
+**A fraction of capacity, not a count of cores.** Sixteen busy threads is half
+of a thirty-two-thread machine and a sixteenth of a large one, and F95 measured
+the departure at a *fraction*. So `Headroom` divides by what
+`available_parallelism` reports, and the same absolute load is inside the band
+on one machine and outside it on another — which is DEC-007's *quiet is
+relative* expressed in the units that predict the harm.
+
+**The band is somebody else's measurement, and says so** (A21, B34, A20).
+Thirty percent came from one machine, one model pair, one token budget. That
+makes it **declared** here in exactly the sense F42's declared context length is
+declared: far better than a figure chosen out of the air, and not the same as a
+local measurement. The rendering carries the provenance and names
+`prototypes/contention-band` as what replaces it — an estimate replaced by a
+measurement, never promoted into one.
+
+**Every reason, not the first.** `Finding::not_fit_to_contribute` returns a
+list. A run can be outside the band *and* fail to establish its size (F92), and
+a reader told only one of those will fix that one and be surprised again (A1).
+
+**Distinct from `Withheld`, which was the temptation.** `Withheld::Confounded`
+and `Withheld::MixedReuse` suppress the delta — those comparisons have no delta
+to give. A busy machine is not that: the delta exists, it is real, and it is
+worth less. Reusing `Withheld` would have thrown away a measurement in order to
+mark it, which is the opposite of what the operator chose.
+
+**And a machine nobody read is not a machine that was free** (A7). `Headroom`
+is `Option` on the comparison, absent for anything built from a record that
+never carried it, and an absent reading marks nothing and claims nothing.
+
+## 97 · F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)
+
+**The half of B-390 that was owed.** [F94](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93)
+built the tier that compares each instrument against an independent source. The
+operator chose *tier **plus** a check*, and without the check the next
+instrument arrives the way the last four did.
+
+**Every module in the measuring crates now declares one of three things**, in
+its own documentation where the next person to edit it will read it:
+
+| marker | meaning |
+|---|---|
+| `**Cross-checked by test:**` | names a test in the instrument tier, which the check looks up |
+| `**Cross-checked by:**` | names something that is not a test — two independent routes compared inside the reading itself |
+| `**Cross-check owed (B-390):**` | names what would serve, and does not have it |
+
+**The third is the honest one.** Five modules measure something and are
+compared against nothing: `processor` reads core counts and the governor from
+one place; `scheduling` measures delay against MCF's own clock alone; `space`
+and `storage` read one call each; and `project` is graded by leaving each point
+out and projecting it from the others (F68) — which is the instrument checking
+itself, not an independent source. Writing *cross-checked* on any of those
+would have been worse than the gap.
+
+**So the count is a ratchet.** Five may fall and may not rise. A new instrument
+cannot quietly join the list: it has to be cross-checked, or argued to measure
+nothing, and both of those are visible in review. When the debt falls the check
+insists the number be lowered to match, so it cannot creep back up.
+
+**A marker in the module, not a list in the check.** A list here goes stale the
+week it is written — this repository has said so about tables of driver names
+(F79) — and worse, it is read by nobody editing the instrument. The marker is
+where the work happens.
+
+**And the check caught its own imprecision on the first run.** It tried to tell
+a test name from any other backticked identifier and could not: it read
+`routes_disagree_about`, a struct field, as a test that did not exist. The fix
+was to make the claim *stated* rather than inferred — a separate marker for the
+form that names a test. That is the same lesson as `LocallyMeasured::new` not
+being a `From` (B-167): a claim about where something came from should be
+written rather than guessed at.
+
+**Both negative controls were exercised.** A module whose marker was removed
+fails by name; a sixth module claiming the debt fails with *up from 5*.
+
 ## Changelog
+
+### Version 83 — a marker is shown as what it becomes
+
+F79. B-383: every marker-shaped thing in a prompt, with the two questions kept
+apart — whether the vocabulary has such a token, and what typing it actually
+produces. The second answer is always *ordinary text*, which is D46's safety
+property and was F37's expensive surprise.
+
+### Version 82 — the prompt as the model receives it
+
+F78. B-381: `mcf segment` shows where a prompt breaks, fragment by fragment,
+with no generation and no judgement. Fifteen tokens for eight Japanese
+characters on one vocabulary and four on another — and a silent `unwrap_or`
+that had been reporting a whole phrase as one token's work.
+
+### Version 81 — four outcomes and no total
+
+F77. B-200 and B-201: a laboratory result is a sum type whose three
+non-readings have nowhere to put a score, a score knows which laboratory it is
+on and will not compare across two, and a profile has coverage but no total.
+
+### Version 80 — a run reports as it goes
+
+F76. B-227's missing half: interim lines on standard error, carrying the pair
+count and the two arms' medians rather than repeating *not decided* forty
+times. A4 already kept what an interrupted run produced.
+
+### Version 79 — a band says what it rested on
+
+F75. B-385 closed: a projection carries the machine conditions of the two
+points it was read between, on every surface that renders one. Nothing is
+filtered, because filtering needs DEC-007's figure and carrying does not.
+
+### Version 78 — the record caught somebody else's workload
+
+F74. Thirty-three cores of an unrelated .NET test suite made a 400 ms
+generation take eighteen seconds, B-217's machine field caught it, and the
+projection that reads that history does not yet say so. B-385 registers the
+gap; the entries stay, because A1.
+
+### Version 77 — a budget proposes rather than truncating
+
+F73. B-226: a time budget is the operator's to give and produces a proposal
+naming both halves, a refusal below a comparison, or a refusal where there is
+no measured rate to plan against — never a quietly smaller run.
+
+### Version 76 — work is counted, and minutes are derived
+
+F72. B-224 and B-225: a laboratory's declaration is trials, arms and tokens,
+with no field that could hold a duration; the minutes are multiplied out of a
+measured band, marked as an estimate, and absent by name where there is no
+history.
+
+### Version 75 — the machine either side of a run
+
+F71. B-217's pre-flight, built as a measurement and not as a gate: a comparison
+now carries what the machine was doing before it and after it, because the
+threshold that would justify a refusal is the figure DEC-007 exists to derive.
+
+### Version 74 — a run that cannot decide names what it competed with
+
+F70. B24's refusal with a name attached, taken on demand and never on a timer.
+And five attempts to provoke a real *not decided* at load sixty all reached a
+verdict instead, which is a finding about the stopping condition.
+
+### Version 73 — a band predicted before the measurement
+
+F69. A quantization this machine had never benchmarked was projected from the
+record at 385.7–404.5 ms and then measured at 397.3. And MCF now scores its own
+projection against every measurement it has: 42 of 49 inside, worst miss 150%.
+
+### Version 72 — one file that reproduces one claim
+
+F68. `mcf bundle` builds §II's fourth obligation out of the record. Producing
+the first one found that the header's `contains_user_content` had been a
+constant `false` since before a comparison recorded the prompt it was asked.
+
+### Version 71 — the first frontier
+
+F67. Seven quantizations of one model, one machine, one sitting, built as seven
+paired comparisons against one reference. It is monotone in file size, which is
+what F64 predicted: every trial loads the model, and load time goes with bytes.
+Also: a size without a direction is not a comparison, and the first run of the
+frontier had none.
+
+### Version 70 — a partial run keeps what it produced
+
+F66. `mcf bench`'s runner was discarding every completed pair when one request
+failed — A4's own description of its violation. It keeps them now, says what
+stopped it, and records no trial for a run that did not happen: a zero-duration
+stand-in had been entering the distribution.
+
+### Version 69 — one resident model, or paired interleaving
+
+F65. Making the benchmark warm made it mixed, because one model is resident at
+a time and a paired comparison alternates two. A mixed run has no delta to
+give; `--cold` and comparing a model with itself are the two uniform ways.
+
+### Version 68 — every trial was cold
+
+F64. What a trial reused is now a condition, and reading it showed that every
+benchmark trial loads the model for itself — three fifths of a default trial is
+process start, which is why F59's comparison could not see a difference between
+two quantizations.
+
+### Version 67 — the recommendation is somewhere else
+
+F63. None of six GGUF repositories publishes a sampling recommendation, and no
+acquired model file carries one in its metadata; the recommendation lives in
+the base repository the conversion came from. MCF looks in both places it can,
+says what it found, and names its own choice as its own.
+
+### Version 66 — the seed set is shown, not assumed
+
+F62. The published set is indistinguishable from a draw ten times larger from
+the same stream. The tier nearly cleared it for nothing: MCF's shipped
+generation is greedy, and greedy ignores the seed.
+
+### Version 65 — five runs of one comparison
+
+F59 amended. Four of five runs of the same comparison say *no difference as
+large as five percent*; the fifth, under a load average of sixty-eight, says
+29.2% at a false-alarm rate of 4.7%. One run at one-in-twenty is what
+one-in-twenty means, and nothing distinguishes it from §3.27's contention
+caveat.
+
+### Version 64 — a trial says what it drew
+
+F61. A trial cannot exist without its seed, and the published set became
+arithmetic rather than a list because F55 removed the trial count D19 assumed.
+Along the way: EINTR was being classified as a cut-off transfer.
+
+### Version 63 — the clock in the type, applied to writing
+
+F60. Putting the clock in the type stopped a simulated duration being compared
+with a real one and not being written down as one. `Measurable` closes it: the
+comparison encoder will not take the laboratory's clock, and three of its own
+tests stopped compiling.
+
+### Version 62 — a benchmark that cannot fail
+
+F59. `mcf bench` compares two models on an engine that can be timed, refuses a
+stand-in by name, and has no verdict that sets a failing exit status. Its first
+real comparison — two quantizations of one model on a provisioned llama.cpp —
+found a defect: a difference smaller than the resolution asked about was being
+reported as a difference.
+
+### Version 61 — the sign test, and a null result on the disk
+
+F57 and F58. The paired verdict is an exact sign test: the resampling it
+replaces could not recognize two arms with identical timings, and answered *not
+decided* about the clearest null there is. A comparison and a fitment plan are
+now record kinds of their own, and neither is a failure.
+
+### Version 60 — a confounded comparison has no delta
+
+F56. An arm is a configuration; `Isolation` says whether a comparison isolated
+one variable, none, several, or something MCF has not read enough to judge; and
+a confounded comparison's verdict is `None` rather than a number with a warning
+beside it.
+
+### Version 59 — the pairing is structural, and it is worth eighty-eight percent
+
+F55. `mcf_bench::compare`: a comparison can only be built from paired,
+interleaved, order-randomized trials, and the blocked arrangement is priced at
+88% on a real machine. The stopping condition's `Same` branch was asking a
+circular question and could only answer one way at small counts; it asks about
+power now.
+
+### Version 58 — the first comparison that stopped itself
+
+F54. `mcf_bench::enough`: the rule a comparison carries instead of a repeat
+count, since F53 showed a count is a property of the sitting. Three outcomes,
+arms paired by construction, and the count reported as part of the answer.
+
+Validated on the question the first benchmark is for — two quantizations of one
+model, alternating. Undecided at ten paired trials, decided at seventeen. Not
+F51's seven nor F52's fifty: the number was found by the run rather than
+brought to it.
+
+### Version 57 — the noise floor is a property of the moment
+
+F53. The last of DEC-007's open pieces, answered without the privilege it was
+expected to need: this machine's governor is already at performance and offers
+only powersave, so there is nothing to pin. Frequency still moves — nine to one
+across cores — but neither it nor load explains the noise; their correlations
+with duration change sign between rounds, and a permutation test says a
+coefficient that size is what chance gives half the time at twenty samples.
+
+The finding is what happened while looking. Six clean measurements of the same
+command gave repeat counts from seven to over a hundred. The noise floor is not
+a property of the machine but of the half-hour, which means *at least N
+repeats* cannot be the rule. The rule has to be a stopping condition: repeat
+until this run's own resampling separates the effect from its own noise, and
+report what that took.
+
+And the instrument had a chosen number in it — contamination called at a
+correlation of 0.5, which at twenty samples is barely above chance. It is a
+permutation test now.
+
+### Version 56 — the engine that will be measured is the noisier one
+
+F52. F51 derived seven repeats from MCF's own engine and said that was the
+wrong engine. It was: the provisioned one needs fifty for the same claim, being
+about three times noisier.
+
+Two guesses about why, both wrong and both caught by measuring. The daemon path
+contributes nothing — 3.6% either side of it. And pinning the server to one
+thread, which should have tightened it if threads were the cause, made it five
+times worse. Thread count is therefore a condition that must be recorded, and
+B-366 cannot predict its own effect on noise.
+
+An earlier reading was contaminated by the machine changing under it and the
+instrument reported the range without drawing the conclusion. It now asks
+whether duration tracked load and refuses the reading in a sentence nobody can
+read past.
+
+### Version 55 — contention moves the level, not the spread
+
+F51. The first measurement the operator's DEC-007 answer asked for: a repeat
+count derived rather than chosen. Seven repeats detect a five percent
+difference on this machine in its normal state; two percent is not honestly
+reachable.
+
+The finding is the shape rather than the size. Sixteen burners made the run
+sixty-six percent slower and the spread only twice as wide — so a busy machine
+moves the whole distribution coherently rather than mainly adding noise, and no
+repeat count removes an error that lands on every repeat in the same direction.
+Interleaving does. B-250 asked for that as a principle and now has a number
+saying it matters about fifteen times more than the repeat count.
+
+And it settles what it was built to settle: the usable column was taken at a
+load average of ten on sixteen cores. An absolute quiet threshold would have
+refused a perfectly good measurement.
+
+### Version 54 — the privileged helper could be told where the machine is
+
+F50. Found by preparing to grant the helper the privilege D35 says it needs to
+read the processor's energy counter. It accepted a flag that rebased every path
+it touches, in the shipped binary and not only in tests — harmless while it held
+no privilege, and a local escalation the moment it held any. The seam is a
+parameter now and not an argument.
+
+The lesson is about the audit rather than the bug: the repository already
+checks that nothing shipped reaches for elevation and that only the laboratory
+links the helper, and both passed. The surface was enumerated as three
+operations and was really three operations and a root. An enumerated surface is
+only enumerated if the arguments are part of the enumeration.
+
+### Version 53 — MCF can check its own engine on a user's machine
+
+F49. `mcf cross-check`: the two engines a user has, compared by teacher forcing
+so that the comparison survives the point where their generations part. Four
+architectures and a Q2_K file agree within rank 3 of a line at 8; the rotation
+deliberately swapped diverges at rank 3388.
+
+The first mutation was the wrong one again — an arm the family never takes —
+which is F41's lesson twice in one session and worth the second telling: a
+negative control that does not touch the subject looks exactly like one that
+does.
+
+### Version 52 — the tie was MCF's, not the model's
+
+F48. B-375 asked for a sharper question than *did the turn end*, to separate
+two addressings gemma-3-270m tied on. There was none to find: the two differed
+only in a role word, and gemma's template names the losing one exactly once, in
+order to rename it. MCF read the template as a bag of words and manufactured a
+candidate the file explicitly rejects.
+
+A behavioural question was tried and is recorded for failing on the model it
+was for — stopping before the role word and letting the model supply it works
+on SmolLM2 and yields a newline on gemma. And with gemma deciding, the
+stop-condition probe ran on an unconfigured model for the first time and found
+that it had been sending the question as text, which reaches the one engine
+that cannot say why it stopped.
+
+### Version 51 — the suite was reporting on the machine it found
+
+F47. B-378 fixed the day it was found, because the suite it undermines is the
+one every finding in this document rests on. Where the daemon is, is an input
+now rather than something looked up in the middle; the tests pass identically
+with a daemon and without, which is the assertion. A table-driven check keeps
+the shape from coming back, and a second test asserts the alternatives it names
+actually exist.
+
+### Version 50 — MCF's own default was cutting every answer off
+
+F46. The stop-condition probe, and the second applied parameter. MCF allows 32
+tokens unless told otherwise and SmolLM2's turns run to 313, so every answer
+past the thirty-second token was being ended by MCF rather than by the model —
+§3.8's complaint sitting in MCF's own default.
+
+Making the budget apply only where the caller gave none required the
+distinction to exist on the wire: `mcf run` substituted its default before
+sending, so the daemon could not tell `--limit 32` from silence. D43's rule
+that MCF never changes a value under somebody who set it is unenforceable if
+the value arrives already substituted.
+
+It also found a gate test whose result depends on whether a daemon happens to
+be running, which §3.12 does not allow. B-378.
+
+### Version 49 — the page with no hidden choices had one
+
+F45. `mcf explain` carries the derived configuration now, and said *nothing
+here has been probed* to a reader who had probed it. Building that found the
+inverse of F44's danger: the check for a moved condition compared the engine a
+probe *asked for* against the engine that *resolved*, which are two spellings
+of one thing, and reported a machine where nothing had changed as one where the
+conditions no longer held. A false divergence looks like diligence, which makes
+it the easier error.
+
+### Version 48 — a configuration says whether it still holds
+
+F44. D43's divergence half. The conditions a configuration was taken under can
+be checked with no trials and are reported as *the evidence was gathered
+elsewhere*, never as a disagreement — F39 measured two engines agreeing on this
+question, so a moved engine is not a changed answer. The answer itself is
+compared only where a run has just measured it, which is the comparison that
+can say wrong.
+
+It also cost eight thousand forward passes to learn the instrument could not
+answer. The instrument is asked one token first now, which is a shape worth
+keeping: ask whether the instrument can read the result before running the
+experiment.
+
+### Version 47 — a model that produced nothing now answers
+
+F43. M3's first exit criterion met: SmolLM2 addressed the way MCF addresses
+every model says nothing at all, and addressed the way the chat-template probe
+found it answers — with the change written down, recorded, and printed on
+every run that uses it.
+
+The act is where D42 and D43 meet: a probe configures nothing, MCF never
+reconfigures under a user, so between them there is a person and `--apply` is
+where the person is. Inconclusive refuses to apply, which is the one place that
+rule has to hold. And the winning addressing is carried out of the probe rather
+than rebuilt from its name, because *attributable to a named probe* is only
+true if what was applied is what was measured.
+
+### Version 46 — the context is what it says, and asking broke the protocol
+
+F42. The second probe: declared context against the longest prompt the engine
+takes. Both models' claims hold. The off-by-one is not a divergence — a
+declared context is the whole budget, not the prompt's share — and the probe
+leaves a token for the answer and says so.
+
+Asking broke the control protocol. The 64-kibibyte request ceiling predated a
+request being able to carry token identifiers, so a legitimate question was cut
+off at about four thousand tokens, and the daemon closed on the fragment while
+the client was still writing — a connection reset and no reason. Both halves
+fixed: a ceiling derived from what a request can honestly be, and a refusal
+that names it.
+
+Two smaller errors the work made visible: a well-formed refusal from the engine
+was being classified as an unparseable answer, and the probe framework stamped
+every result with the first probe's name, which is the provenance failure
+B-059 exists to prevent.
+
+### Version 45 — the check could not fail
+
+F41. F40's comparison made durable as an oracle section, and then shown to be
+worthless as first written: the negative control returned identical numbers
+with the sliding window broken, because the reference stops at 377 tokens and
+the window is 512. The check had never reached the mechanism it named.
+
+Fixed by taking the length and naming the artifact rather than avoiding it —
+positions where MCF takes the model's end of turn are set aside by that name
+and counted. The second mutation was still too weak to see; the third, a
+structural break, separates by two orders of magnitude. What the check catches
+and what it does not are now both written down.
+
+### Version 44 — the engine agrees for seven hundred positions
+
+F40. B-377 closed. MCF was made to read the reference's own tokens rather than
+its own, which is the only way to compare two engines after their greedy
+generations have parted. Agreement does not decay with position, and
+gemma-3-270m's sliding-window attention is correct past its own 512-token
+window — 189 consecutive agreements — which nothing had ever tested because
+nothing had ever generated that far.
+
+Two lessons about method. The one alarming number was `ignore_eos` in the
+experiment rather than anything in MCF, found by looking up the token instead
+of believing the margin. And the oracle's two rules part company on a
+per-position test: the margin threshold was calibrated on one parting step per
+file and raises false alarms when applied at every position, where the
+distribution rule says agreement with room to spare.
+
+### Version 43 — the engine that can be probed
+
+F39. The provisioned engine driven as a server: a turn of identifiers reaches
+it, and it says why it stopped. Probing a 270M model goes from tens of minutes
+to eight seconds, and the default changed only once both engines were shown to
+return the same verdict.
+
+Three times in building it the instrument stood in for the model — a readiness
+check one condition short, a token count that measured the engine's chunking
+rather than the model's output, and an off-by-one at exactly the boundary F38
+turns on. The second of those was the defect F38 is about, living inside the
+fix for F38.
+
+It also withdraws a claim: the turn lengths F38 offered as B-375's first
+candidate separate gemma-3-270m's tied addressings on one engine and not on
+the other, so they were measuring the instrument.
 
 ### Version 42 — the probe's answer was upside down
 

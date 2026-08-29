@@ -62,10 +62,11 @@ impl fmt::Display for ConditionValue {
 
 /// The §3.3 floor: everything that varies and could change a result.
 ///
-/// Ten questions, each answered or explicitly unanswered. Eight are the
+/// Thirteen questions, each answered or explicitly unanswered. Eight are the
 /// intent document's own list, in its own order; the ninth is D17's realized
-/// placement and the tenth is B3's instrumentation profile. The set does not
-/// shrink.
+/// placement, the tenth is B3's instrumentation profile, the eleventh is
+/// B-193's artifact storage, the twelfth is D19's seed set and the thirteenth
+/// is §6.13's reuse. The set does not shrink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Floor {
     /// What the machine is: its processors, its memory, its accelerators.
@@ -130,6 +131,33 @@ pub struct Floor {
     ///
     /// [findings.md]: ../../../doc/findings.md
     pub artifact_storage: Attested<ConditionValue>,
+    /// Which seed set the trials drew from.
+    ///
+    /// The twelfth question, and D19 puts it here rather than in identity:
+    /// *sampling parameters are identity because they change the distribution;
+    /// a seed only draws from it.* What D19 then requires is exactly what a
+    /// condition gives — *comparisons require matching seed sets the way they
+    /// require matching hardware: recorded, checked, and refused when they
+    /// differ* (A8, B-290).
+    ///
+    /// `Unknown` for a run that took no seeded trials, which is what a timing
+    /// laboratory is: D19 has it hold the seed still and pin the generation
+    /// length instead, so *which set it drew from* is a question with no
+    /// answer rather than one MCF failed to read.
+    pub seed_set: Attested<ConditionValue>,
+    /// What the measurement reused from an earlier one.
+    ///
+    /// The thirteenth question, and §6.13's own: *caching, reuse and
+    /// adaptation are permitted, and are expected under §VII — but anything
+    /// that could change a result must be visible in that result's
+    /// conditions. A measurement taken with a warm cache is a different
+    /// measurement from one taken cold, and MCF must know which it produced.*
+    ///
+    /// A run whose trials were not all alike says so here rather than
+    /// averaging over the difference: a set of trials some of which loaded the
+    /// model and some of which did not is not one measurement, and the floor
+    /// is where that stops being invisible (B-081).
+    pub reuse: Attested<ConditionValue>,
 }
 
 impl Floor {
@@ -156,6 +184,8 @@ impl Floor {
             realized_placement: Attested::Unknown,
             instrumentation: Attested::Unknown,
             artifact_storage: Attested::Unknown,
+            seed_set: Attested::Unknown,
+            reuse: Attested::Unknown,
         }
     }
 
@@ -166,7 +196,7 @@ impl Floor {
     /// them being edited — A6's "any surface that drops its conditions is
     /// doing damage", made hard to do by accident.
     #[must_use]
-    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 11] {
+    pub fn entries(&self) -> [(&'static str, &Attested<ConditionValue>); 13] {
         [
             ("hardware_state", &self.hardware_state),
             ("thermal_state", &self.thermal_state),
@@ -179,6 +209,8 @@ impl Floor {
             ("realized_placement", &self.realized_placement),
             ("instrumentation", &self.instrumentation),
             ("artifact_storage", &self.artifact_storage),
+            ("seed_set", &self.seed_set),
+            ("reuse", &self.reuse),
         ]
     }
 

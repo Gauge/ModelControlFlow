@@ -398,3 +398,99 @@ fn the_cache_is_sized_by_the_grouped_heads_not_the_query_heads() {
         "the two readings differ by the grouping factor, which is the point"
     );
 }
+
+/// **A9's other half in the record.** *Does not fit here* is written as an
+/// outcome, with the numbers that produced it — not as a failure and not as an
+/// absence (B-086, §6.3).
+#[test]
+fn a_plan_is_recorded_whichever_way_it_came_out() {
+    use mcf_record::json::Value;
+
+    let verdicts = vec![
+        (
+            "small.gguf".to_owned(),
+            Verdict::Fits {
+                needs: Bytes(1_000),
+                headroom: Bytes(500),
+            },
+        ),
+        (
+            "medium.gguf".to_owned(),
+            Verdict::FitsWithoutContextHeadroom {
+                needs: Bytes(1_400),
+                longest_context: 512,
+            },
+        ),
+        (
+            "enormous.gguf".to_owned(),
+            Verdict::DoesNotFit {
+                needs: Bytes(140_000_000_000),
+                short_by: Bytes(120_000_000_000),
+            },
+        ),
+    ];
+    let recorded = super::planned(&verdicts, 4096, Bytes(1_500));
+
+    assert_eq!(
+        recorded.get("context").and_then(Value::as_integer),
+        Some(4096),
+        "*this fits* means nothing without the length it fits at (A6)"
+    );
+    let variants = recorded
+        .get("variants")
+        .and_then(Value::as_list)
+        .expect("the variants are a list");
+    assert_eq!(
+        variants.len(),
+        3,
+        "every variant is kept, not only the good news"
+    );
+
+    let outcomes: Vec<&str> = variants
+        .iter()
+        .filter_map(|held| held.get("outcome").and_then(Value::as_text))
+        .collect();
+    assert_eq!(
+        outcomes,
+        ["fits", "fits_at_a_shorter_context", "does_not_fit"],
+        "each outcome names itself"
+    );
+
+    let refused = variants.last().expect("the last variant");
+    assert_eq!(
+        refused.get("short_by_bytes").and_then(Value::as_integer),
+        Some(120_000_000_000),
+        "the refusal carries by how much, which is what makes it actionable (§6.3)"
+    );
+    assert_eq!(
+        refused.get("needs_bytes").and_then(Value::as_integer),
+        Some(140_000_000_000)
+    );
+}
+
+/// The outcome names are stable for life, because a record written today is
+/// read by a build that does not exist yet (C5).
+#[test]
+fn every_outcome_has_a_name_and_none_of_them_is_a_failure() {
+    for verdict in [
+        Verdict::Fits {
+            needs: Bytes(1),
+            headroom: Bytes(1),
+        },
+        Verdict::FitsWithoutContextHeadroom {
+            needs: Bytes(1),
+            longest_context: 1,
+        },
+        Verdict::DoesNotFit {
+            needs: Bytes(1),
+            short_by: Bytes(1),
+        },
+    ] {
+        let name = verdict.outcome();
+        assert!(!name.is_empty());
+        assert!(
+            !name.contains("fail") && !name.contains("error"),
+            "all three are answers to *will this run here*, which A9 makes results: {name}"
+        );
+    }
+}

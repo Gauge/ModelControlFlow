@@ -64,12 +64,37 @@ fn the_characterization_verdict_is_part_of_the_conditions() {
 fn a_machine_with_no_accelerator_captures_a_complete_honest_floor() {
     let machine = Machine::read_through(&[]);
     let captured = floor(&machine, None, "the tests", "full", None);
-    assert_eq!(captured.entries().len(), 11);
-    // No accelerator means no thermal reading and no driver version, and both
-    // say so rather than reporting zero.
-    assert!(!captured.thermal_state.is_known());
+    assert_eq!(captured.entries().len(), 13);
+    // Driver and runtime versions come from an accelerator, so a machine with
+    // none says so rather than reporting zero.
     assert!(!captured.driver_versions.is_known());
     assert!(!captured.runtime_versions.is_known());
+    // **The thermal state does not.** This assertion used to read *no
+    // accelerator means no thermal reading*, which was true only because MCF
+    // read no processor temperature at all — the defect F91 corrected. What
+    // must hold on any machine is that the reading is present exactly when the
+    // machine publishes a processor sensor, and is never invented when it does
+    // not.
+    let sensors = crate::hardware::thermal::sensors();
+    match crate::hardware::thermal::processor(&sensors) {
+        Some(_) => {
+            let described = captured
+                .thermal_state
+                .known()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            assert!(
+                described.contains("processor"),
+                "this machine publishes a processor sensor, so the floor must carry it: \
+                 {described}"
+            );
+        }
+        None => assert!(
+            !captured.thermal_state.is_known(),
+            "a machine with no processor sensor and no accelerator has no thermal reading, and \
+             substituting a board zone is the mistake F91 corrected (A7)"
+        ),
+    }
 }
 
 /// The conditions carry the instrument as well as the floor, and the
