@@ -146,6 +146,9 @@ forward as one.
 | 116 | [F116 — The benchmark's standard question, chosen by measuring 27 vocabularies rather than by taste (B-160, B42, F110, F81, §6.37)](#116--f116--the-benchmarks-standard-question-chosen-by-measuring-27-vocabularies-rather-than-by-taste-b-160-b42-f110-f81-637) |
 | 117 | [F117 — The pinned length was declared and never enforced, and a rate computed the obvious way is a property of the length you chose (B-081, D19, A19, §3.4, F116)](#117--f117--the-pinned-length-was-declared-and-never-enforced-and-a-rate-computed-the-obvious-way-is-a-property-of-the-length-you-chose-b-081-d19-a19-34-f116) |
 | 118 | [F118 — Generation is not a constant-rate process: the rate halves with context depth, and the depth a machine can reach is bounded by memory rather than by the model (B-396, B-397, D19, §3.4, A19, F117)](#118--f118--generation-is-not-a-constant-rate-process-the-rate-halves-with-context-depth-and-the-depth-a-machine-can-reach-is-bounded-by-memory-rather-than-by-the-model-b-396-b-397-d19-34-a19-f117) |
+| 119 | [F119 — The allocation effect was the running order, and the fall-off is the memory bus (B-400, F118, A12, A21, D19)](#119-f119-the-allocation-effect-was-the-running-order-and-the-fall-off-is-the-memory-bus-b-400-f118-a12-a21-d19) |
+| 120 | [F120 — A prefilled depth costs what a generated one costs and arrives twenty times sooner, which retires the long path rather than speeding it up (B-400, F119, A18, A11)](#120-f120-a-prefilled-depth-costs-what-a-generated-one-costs-and-arrives-twenty-times-sooner-which-retires-the-long-path-rather-than-speeding-it-up-b-400-f119-a18-a11) |
+| 121 | [F121 — The fall-off predicted from the file header on all 27 models, and the one outlier was an architecture the arithmetic did not describe (B-400, F120, A7, A21, B16)](#121-f121-the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8761,6 +8764,131 @@ chose, and the prototype now sets it, holds it still across arms, and records it
 depth depends on the allocation itself; the warm regime, where a resident model
 has a far smaller fixed cost and MCF actually serves; and the cost of a *prompt*
 token, since both ladders varied only the generated length.
+
+## 119 · F119 — The allocation effect was the running order, and the fall-off is the memory bus (B-400, F118, A12, A21, D19)
+
+**Retracting a number I gave the operator.** The context ladder appeared to
+show that a model runs slower at the same depth when the context is allocated
+small — 16.6% for Qwen3-0.6B, monotone across five allocations. It walked the
+allocations in ascending order and wrote no temperature beside a reading, so an
+allocation effect and a drift over the session had the same shape in that file.
+
+Interleaved, every allocation visited once per pass:
+
+| model | spread across allocations | across passes |
+|---|---|---|
+| Qwen3-0.6B | 2.5% | 2.2% |
+| Qwen3-1.7B | 1.1% | 1.2% |
+| SmolLM2-135M f16 | 2.3% | 3.1% |
+| SmolLM2-135M IQ3_M | 5.0% | 3.9% |
+
+The allocation does nothing the pass does not also do. What the ladder measured
+was its own first readings: `c=1024` ran first, immediately after a server
+start, behind an eight-token warm-up that was not enough. At depth 64 it read
+15.469 ms/token there; interleaved it reads 12.878. A16's discipline about
+stated conditions is not satisfied by stating *some* of them, and an ascending
+sweep with no condition recorded per reading cannot separate its variable from
+its order. A12 governs the outcome: where the earlier reading and the
+controlled one disagree, the controlled one is right.
+
+**What the fall-off actually is.** Each generated token makes attention re-read
+the whole KV cache. From the headers: Qwen3-0.6B holds 112 KiB per token of
+depth, so at depth 4096 it re-reads 470 MB for every single token; SmolLM2-135M
+holds 22.5 KiB. Dividing the measured slope into that traffic gives a
+bandwidth — 43–48 GB/s for Qwen3, stable from depth 192 to 24,575.
+
+Measured on this machine: 55.8 GB/s from DRAM at sixteen threads, 77.5 GB/s
+in-cache single-threaded, with both cache edges visible where the part says
+they are (a 36% fall between 24 MB and 32 MB on one thread — one core
+complex's L3; a 53% fall between 64 MB and 96 MB on sixteen — both). So Qwen3
+is reading its cache at DRAM speed and is bound by the bus. SmolLM2, whose
+cache stays inside L3 over most of the range anyone measures, is not.
+
+The two models' curves are produced by different mechanisms, which is why one
+extrapolates and the other does not — and the discriminator is arithmetic on
+the header, available before anything runs.
+
+## 120 · F120 — A prefilled depth costs what a generated one costs and arrives twenty times sooner, which retires the long path rather than speeding it up (B-400, F119, A18, A11)
+
+**The long path was buying depth, not accuracy.** To measure what a token
+costs at depth 4096 the cache must hold 4096 tokens. Every timing prototype
+here reached that depth by generating them, which is quadratic and spends
+almost all of its time on tokens nobody is timing. A prompt reaches the same
+depth by prefill, and prefill is batched.
+
+Whether the two are interchangeable is an empirical question — the cache holds
+the same number of entries either way, but not the same entries:
+
+| model | depth 576 | 1088 | 2112 |
+|---|---|---|---|
+| Qwen3-0.6B | −1.8% | −2.1% | −1.2% |
+| SmolLM2-135M | −0.7% | +0.2% | +2.8% |
+
+Every difference is inside the repeat-to-repeat noise, and prefill reached
+those depths **10–24× faster**. Five depths on a small model now take about six
+seconds.
+
+**The comparison had to be made properly to say that.** The generated readings
+are band midpoints and land nowhere near the prefilled depths; matching each
+prefilled depth against the nearest band compares two different depths and
+manufactured a disagreement of up to 21%, which is what the first version of
+this analysis reported. Interpolating the generated curve at the prefilled
+depth is the comparison that answers the question asked.
+
+**Why this retires the long path rather than shortening it.** A depth cheap to
+reach is a depth that can be *measured*, and the estimator laboratory was
+unambiguous that a fitted curve cannot state its own error: a two-sigma
+interval, which claims to hold the truth 95% of the time, covered it between 4%
+and 79%; and where the truth bends past the fitted range every candidate form
+is about 41% wrong at every fit depth, with nothing in the shallow readings to
+announce it. Fitting a flexible form is worse still — a quadratic fitted below
+depth 512 and asked about 12,288 is wrong by 1,230% at the median.
+
+A18 separates a test from a benchmark; this separates a long measurement from a
+necessary one. [long-tests.md](long-tests.md) carries the resulting discipline
+and audits every long test here: three prototypes retire, seven tiers are
+irreducible because duration, concurrency, the network or a second build *is*
+the variable they vary.
+
+## 121 · F121 — The fall-off predicted from the file header on all 27 models, and the one outlier was an architecture the arithmetic did not describe (B-400, F120, A7, A21, B16)
+
+**Every model here, measured, against its own header.** Twenty-seven models
+probed at five depths each, the slope fitted past the L3 crossing, and compared
+with KV bytes per token of depth divided by this machine's measured bandwidth.
+Scaling each group by a single constant:
+
+| regime | constant | error | n |
+|---|---|---|---|
+| bandwidth-bound | 0.83 | −5% to +7% | 6 |
+| latency-bound | 0.56 | −6% to +72% | 16 |
+
+The split is decided from the header before anything runs: a bandwidth argument
+needs each layer's read to be large enough to stream, and 2 KiB is where these
+models divide. Above it — the Qwen3 family from 0.6B to 8B across four
+quantizations — the header predicts the slope to within 7%. Below it the read
+is bound by latency instead, the constant is looser, and the slope is measured
+rather than predicted. Measuring costs 15–30 seconds.
+
+**Quantization does not move the slope.** Eleven SmolLM2 builds from Q2_K to
+f16 give 0.000726 to 0.000790 — a 9% spread across a fourfold range of weight
+sizes. That is the mechanism confirming itself: the fall-off is the KV cache
+being re-read, and the cache is f16 whatever the weights are. What quantization
+moves is the intercept.
+
+**The one outlier was right and the model was wrong.** gemma-3-270m missed the
+prediction by 3.2–5.7×, always flatter. Its header says
+`gemma3.attention.sliding_window = 512`: most of its layers never attend beyond
+a 512-token window, so their cost stops growing with depth and they contribute
+nothing to the slope. Only the full-attention layers do — one in every six.
+Counting those brings it to 0.54–0.95, inside the band every other
+latency-bound model occupies.
+
+The interleave is not in the header; the engine hard-codes it. So it is named
+per architecture rather than guessed, and an architecture with a sliding window
+and no entry is reported as unpredictable rather than predicted wrongly (A7).
+One outlier in twenty-seven found a whole class of architecture the arithmetic
+did not describe, which is the argument for running the corpus rather than two
+convenient models.
 
 ## Changelog
 

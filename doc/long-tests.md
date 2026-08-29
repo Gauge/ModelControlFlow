@@ -1,5 +1,13 @@
 # Long tests, and the burden they carry
 
+| | |
+|---|---|
+| **Type** | Discipline — the burden a slow test carries, and an audit of every slow test here |
+| **Version** | 1 |
+| **Status** | Living. Verdicts follow measurement; a test's entry changes when something cheaper is measured. |
+| **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, governed by [rules.md](rules.md) |
+| **Answers** | Raised by the operator: long tests must prove no cheaper route exists |
+
 A test that takes hours is not simply an expensive test. It is a test most
 people will never run, which makes it a test that finds nothing on most
 machines. MCF has one long-test discipline, and it is a burden of proof:
@@ -83,3 +91,21 @@ the discipline is to take the cheapest one that applies:
 
 A diagnostic that reaches for (3) without an argument against (1) and (2) is
 not being careful. It is being slow.
+
+## Changelog
+
+### Version 1 — the ladder that was twenty times longer than it needed to be
+
+Created because the operator asked that a long-running test be made to prove it
+cannot get its result any other way. The occasion was the context ladder, which
+ran for 100 minutes, was killed unfinished, and would have taken three hours:
+four of its five allocation sweeps measured an effect that turned out to be its
+own running order ([F119](findings.md)), and the fifth reached depth by
+generating when a prompt reaches it 10-24x faster and agrees within 2.8%
+([F120](findings.md)).
+
+The audit table is a first pass. Seven tiers are irreducible for a stated
+reason — duration, concurrency, the network or a second build is the variable
+they vary — and two, fuzz and corpus, are marked reducible in principle with
+nothing yet measured to say by how much. Those two are claims awaiting
+evidence, not verdicts.
