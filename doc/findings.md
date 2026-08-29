@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 91 |
+| **Version** | 92 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -133,6 +133,7 @@ forward as one.
 | 104 | [F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6) |
 | 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103) |
 | 106 | [F106 — A probe that asks for a shape, and the four whose results were never written down (B-054, B-386, D42, A1, A7, A9, F101, F103, F105)](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105) |
+| 107 | [F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)](#107--f107--the-oracles-first-disagreement-in-three-days-was-the-instruments-not-the-engines-b-393-b-368-b-373-f27-f34-f103-a19-a5) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7873,7 +7874,95 @@ a `Method` with no renderer fails the count.
 model that shows it, and the one this ran on called well within its budget under
 the framing that worked.
 
+## 107 · F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)
+
+**The first full oracle run after [F103](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312)
+pinned `mine` to MCF's own engine** reported *1 of 342 comparisons disagreed*:
+`Qwen3-4B-Q4_K_M`, on *The capital of France is*, **differs with room to
+spare** — at step 5 MCF's margin was 0.70982, over the 0.40 threshold F27
+measured, so not a near-tie.
+
+```
+MCF:       Paris. The capital of Germany is Berlin. The
+reference: Paris. The capital of Belgium is Brussels. The
+```
+
+**It was not the engine.** The reference's own distribution at that step, from
+`llama-server`'s `n_probs`, reproduced by hand:
+
+| token | reference | MCF | difference |
+|---|---|---|---|
+| ` Belgium` | −1.0522 | −1.4194 | −0.367 |
+| ` Germany` | −1.0721 | −0.7096 | **+0.363** |
+| ` France` | −1.7574 | −1.9801 | −0.223 |
+| ` Paris` | −2.4918 | −2.5118 | −0.020 |
+
+The reference's own top-two gap is **0.0199**. The model is indifferent between
+Belgium and Germany. MCF's logits are shifted by about a third of a logit —
+inside what quantized arithmetic does, and the two moved in *opposite*
+directions, so the contrast swung by 0.73 and the tie became a clear win **in
+MCF's ranking**. The margin measured that win.
+
+**The better instrument was running beside it and disagreed.** The
+distributions section compared the same model, the same prompt and the same
+step in the same run:
+
+```
+Qwen3-4B-Q4_K_M.gguf  distributions on The capital of France is at step 5:
+                      top20 0.433  top5 0.367  kl 0.0520
+```
+
+KL 0.0520 against a floor of 0.20, and under the 0.113 maximum F34 measured for
+a clean engine. Both instruments ran, both printed, they said opposite things
+about one step of one generation, and the weaker one decided the verdict and
+failed the check. Nothing noticed, because nothing compared them.
+
+**Why the margin is the wrong quantity.** It is *MCF's own* gap between its
+first and second choice. F27 built it to answer *was the model indifferent
+here* — and it answers that about **MCF's arithmetic**, not about the model.
+The two coincide only when the engines agree; where they disagree, which is
+exactly when the question is asked, MCF's margin describes the ranking MCF
+produced. Every one of F27's four coin-flips had the reference's choice as
+MCF's runner-up *and* a small MCF margin; this case has the first signature and
+not the second, which is the combination F27's evidence could not distinguish
+because it never occurred below 1.7B.
+
+**The fix, and what it does not do.** A generation divergence is now recorded
+rather than counted, and resolved by the distribution comparison at the same
+step: agreeing distributions mean the two engines agree and the decision was a
+tie on the reference's side, and the resolution prints the reference's own
+top-two gap — the number that actually says *coin flip*. A divergence the
+distributions never reached is still a disagreement and says that it rests on
+MCF's margin alone (A5, applied to a check's own confidence). The threshold is
+unchanged: it is a fine first filter, and F27's calibration of it stands. What
+changed is that it no longer has the last word when a better instrument has an
+opinion.
+
+**A hazard in the procedure, recorded beside F103's.** Waiting for the long run
+to finish was done with `until ! pgrep -f "check-oracle.sh"; do sleep; done` —
+and the shell running that loop has `check-oracle.sh` in its own command line,
+so `pgrep` matched the watcher. It reported the oracle still running for an hour
+after it had finished, twice. It is the session's own small instance of the
+thing every finding above is about: an instrument that measured itself and
+reported the answer as though it were about something else. Match on something
+the watcher does not contain.
+
+**What this did not establish.** Whether MCF's third-of-a-logit shift at this
+position is ordinary quantized arithmetic or a small real defect that the KL
+floor is too loose to see. The floor was measured against a clean engine and two
+gross defects (F34); nothing has yet measured what a *subtle* one looks like at
+4B. That is a question about the floor, and it is not this.
+
 ## Changelog
+
+### Version 92 — the oracle's disagreement was the instrument's
+
+F107. The first full run after F103 pinned MCF's own engine reported one
+disagreement with room to spare, and it was a false positive: MCF's margin
+measured MCF's ranking, the reference's own top-two gap at that step was 0.0199,
+and the distribution comparison in the same run put the two engines 0.052 apart
+against a floor of 0.20. Two instruments, one question, and the weaker one had
+the last word.
 
 ### Version 91 — a probe that asks for a shape
 
