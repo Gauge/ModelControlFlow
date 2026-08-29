@@ -112,6 +112,16 @@ fail_cannot_check() {
     exit "$EXIT_CANNOT_CHECK"
 }
 
+# shellcheck source=scripts/lib-tiers.sh
+. "$root/scripts/lib-tiers.sh"
+
+# The binary this tier just built answers, not a daemon somebody left running
+# (F104). `--engine stand-in` below pins which engine; this pins which *build*
+# of it, which the account cannot tell a reader either way.
+runtime=$(tier_private_runtime_dir)
+trap 'rm -rf "$runtime"' EXIT
+export XDG_RUNTIME_DIR="$runtime"
+
 # Where the corpus is. `MCF_CORPUS` names it outright; otherwise the store MCF
 # itself would use. Not invented: a check that guessed at a directory would be
 # a check that silently tested nothing (A7).

@@ -15,7 +15,6 @@ use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use mcf_core::build_identity::BuildIdentity;
 use mcf_core::failure::Failure;
 use mcf_record::json::Value;
 use mcf_standin::gguf;
@@ -432,7 +431,6 @@ fn through_provisioned(
 
 /// The conditions every account carries, whether it succeeded or not.
 fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize) -> Value {
-    let identity = BuildIdentity::current();
     Value::map([
         ("model", Value::text(named)),
         (
@@ -451,7 +449,7 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
         ),
         (
             "engine",
-            Value::text(format!("MCF's own stand-in, build {}", identity.version)),
+            Value::text(mcf_core::build_identity::stand_in_engine()),
         ),
         ("loaded", Value::text("not_loaded")),
         ("sampler", Value::text("greedy")),
@@ -553,7 +551,7 @@ fn attempt(
         Some(tokens) => tokens.to_vec(),
         None => vocabulary.encode(prompt, true)?,
     };
-    let build = BuildIdentity::current().version.to_owned();
+    let build = mcf_core::build_identity::identifier();
 
     let mut at = 0_usize;
     let generated = session::generate_streaming(

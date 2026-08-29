@@ -71,8 +71,14 @@ mcf="$root/target/release/mcf"
 [ -x "$mcf" ] || fail_cannot_check "no binary was built"
 
 machine=$(mktemp -d "${TMPDIR:-/tmp}/mcf-online-XXXXXX")
-trap 'rm -rf "$machine"' EXIT
+# And a socket of its own, so that the binary just built is the binary that
+# answers rather than whatever daemon is listening (F104).
+# shellcheck source=scripts/lib-tiers.sh
+. "$root/scripts/lib-tiers.sh"
+runtime=$(tier_private_runtime_dir)
+trap 'rm -rf "$machine" "$runtime"' EXIT
 export XDG_DATA_HOME="$machine"
+export XDG_RUNTIME_DIR="$runtime"
 # So that a mistake here writes nothing to the person's real record.
 unset HOME
 

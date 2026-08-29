@@ -153,6 +153,58 @@ pub fn instrument() -> Attested<Digest> {
         .to_owned()
 }
 
+/// How much of the digest identifies the instrument in a line a person reads.
+///
+/// Twelve hexadecimal characters, which is what a reader can hold and compare
+/// at a glance and what `sha256sum | cut -c1-12` gives them to compare it
+/// against. The whole digest is in the record; this is the human's handle on
+/// it.
+const SHORT: usize = 12;
+
+/// The build, in the form that identifies the instrument that produced a
+/// result (F104, F93, §3.4).
+///
+/// **The version alone identifies nothing.** F93 established that in the
+/// record: three measuring instruments changed in one working day and every
+/// entry on either side of all three said `0.1.0-m0`. The generation path kept
+/// the version anyway — [`crate::engine::Run::at_build`] exists precisely
+/// because "an engine that changes silently colours every measurement taken
+/// after it", and both of its callers were handing it a string that cannot
+/// change. So a run served by a daemon built from last week's source and a run
+/// in a freshly built binary carried the same build, and no reader of either
+/// could tell them apart (F104).
+///
+/// `+unknown` where the binary cannot read itself, which A7 makes a state
+/// rather than a blank — and which is distinguishable from every digest,
+/// because that is the point.
+///
+/// **Cross-checked by test:**
+/// `checks/tests/no_tier_inherits_a_daemon.rs::the_reported_build_is_the_binary_that_ran`
+/// compares what this returns against `sha256sum` of the running executable —
+/// a digest this repository did not compute (A19).
+#[must_use]
+pub fn identifier() -> String {
+    let version = BuildIdentity::current().version;
+    match instrument() {
+        Attested::Known(digest) => {
+            let hex = digest.hex();
+            format!("{version}+{}", hex.get(..SHORT).unwrap_or(&hex))
+        }
+        Attested::Unknown => format!("{version}+unknown"),
+    }
+}
+
+/// What MCF's own engine is called in an account, with the build that ran it
+/// (F104, A6).
+///
+/// One sentence in one place: it is printed by `mcf run` when this process
+/// generates and by the daemon when it does, and two spellings of the same
+/// condition are two answers to one question (F79).
+#[must_use]
+pub fn stand_in_engine() -> String {
+    format!("MCF's own stand-in, build {}", identifier())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BuildIdentity, SourceRevision};

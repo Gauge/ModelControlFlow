@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 88 |
+| **Version** | 89 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -130,6 +130,7 @@ forward as one.
 | 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
 | 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
 | 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
+| 104 | [F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7558,7 +7559,111 @@ oracle's *past* verdicts were wrong: the distributions half was sound
 throughout, and the generation half is the one whose history cannot be
 reconstructed from what was printed.
 
+## 104 · F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)
+
+**Found by finishing the audit [F103](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312)
+left open**: *whether the remaining tiers inherit anything else — a store, a
+socket, a record path.* They inherit the socket, and naming the engine does not
+fix it.
+
+**The reasoning that turned out to be half a fix.** F103 pinned `--engine
+stand-in` in every scheduled tier so that a listening daemon could not answer
+with a provisioned llama.cpp. The daemon does honour it —
+`mcf_serve::generation::choose_engine` takes `Some("stand-in")` and returns
+MCF's own engine, which was read rather than assumed. But *whose* stand-in? The
+daemon's. A daemon is another process running another binary, started whenever
+it was started, from whatever source was in the tree then. A tier builds a
+binary, and then asks a different one.
+
+**Measured, with a negative control.** Two release binaries differing only in
+one match arm, so their digests differ and their behaviour does not. `C` is the
+client; `D` serves.
+
+| | engine line the client printed |
+|---|---|
+| `C` alone, no daemon | `MCF's own stand-in, build 0.1.0-m0` |
+| `C` with `D` listening, `--engine stand-in` | `MCF's own stand-in, build 0.1.0-m0` |
+
+Identical — and the second was produced by `D`. That was established by
+building a marked `C` whose account said `[MARKED-B]`: with the daemon up the
+mark did not appear, and with it killed the same command printed it. The engine
+line is the same either way because it carried the *version*, and F93
+established a year of this project ago that the version is the same string on
+either side of a change to an instrument. `mcf_core::engine::Run::at_build`
+exists precisely because "an engine that changes silently colours every
+measurement taken after it" — and both of its callers were handing it
+`BuildIdentity::current().version`, a constant.
+
+**What it cost, measured on the corpus.** With a daemon started from `D`
+listening on the inherited `XDG_RUNTIME_DIR`, `scripts/check-corpus.sh` reported
+*every entry held here did what it says* — sixteen of sixteen — and `D`'s
+record held **sixteen `generated` entries**. The tier had built a binary, run
+sixteen models through somebody else's, and said nothing. With the isolation in
+place the same command passes and `D`'s record holds **zero**. That is the
+whole finding in one pair of numbers.
+
+**Two fixes, because either alone leaves the other half.**
+
+1. **A tier brings its own socket.** `tier_private_runtime_dir` in
+   `scripts/lib-tiers.sh`; `check-corpus.sh`, `check-oracle.sh` and
+   `check-online.sh` export it. No daemon is found, so the binary the tier just
+   built is the binary that answers. The Rust tier has done exactly this since
+   it was written — `crates/mcf-cli/tests/whole_system.rs` gives every process a
+   machine of its own, *including its socket*, with the reason in a comment —
+   and the shell tiers handed it the operator's.
+2. **The account names the build.** `mcf_core::build_identity::identifier()`
+   returns `0.1.0-m0+3c4733313727`: the version and twelve characters of the
+   binary's own digest, `+unknown` where the platform will not let a binary read
+   itself (A7). It is what `Run::at_build` is given and what the engine line
+   prints, in this process and in the daemon. Re-run of the experiment above,
+   after the fix: `C` alone prints `+3c4733313727`, `C` with `D` listening
+   prints `+3225ba1cd420`. The difference is now visible to anyone reading the
+   output, which is what A6 asks of a condition.
+
+**Where a Unix socket path length became a scientific detail.** The first
+attempt put the private runtime directory under this session's scratch path, 96
+bytes long; the daemon refused to start because `sun_path` is 108 and MCF
+appends `/mcf/control.sock`. The refusal was honest and correctly classified.
+The lesson is in the helper: it computes the room it has and falls back to
+`/tmp`, because a tier that isolates itself only where the path happens to be
+short is a tier that isolates itself on some machines and not others — which is
+the same class of defect as the one it was written to fix.
+
+**The guard, and its three negative controls.**
+`checks/tests/no_tier_inherits_a_daemon.rs`. It derives the set of daemon-reaching
+subcommands from the CLI source — every module that calls
+`crate::serve::socket_path()` — rather than listing them, so a new one fails the
+build until somebody writes down which subcommand it is. Removing the corpus's
+isolation fails it by name; deleting a known module from its table fails the
+derivation test; making `identifier()` return the bare version fails the
+cross-check against `sha256sum`.
+
+**What this did not establish.** Whether any past corpus or oracle run was
+served by a stale daemon: the output never said, which is the defect, and no
+record of those runs distinguishes them. The record's own build identity has
+carried the digest since F93, so a *record* entry can be attributed — but the
+tiers print rather than record, and F83's lesson has a second instance here.
+`scripts/frontier.sh` is left as it is on purpose: it is not a check, it cannot
+fail, and it *asks for* a daemon by name — its numbers now say which build
+answered, which is what it needed and did not have.
+
+**What remains unaudited, one level further out again.** The record path. Every
+tier that runs the binary writes generation entries into the operator's real
+record, where they are indistinguishable from an operator's own runs. That is
+not a wrong *answer*, so it is not this finding; it is a question about whose
+record a check's traffic belongs in, and it is written down here rather than
+guessed at.
+
 ## Changelog
+
+### Version 89 — the tier named the engine and still asked another binary
+
+F104. F103's open question, answered: the tiers inherit the socket. The daemon
+honours `--engine stand-in` and its stand-in is its own binary's, so a tier
+built a binary and asked a different one — measured, with sixteen corpus
+entries landing in a foreign daemon's record. The tiers bring their own socket
+now, and the engine line carries the digest of the build that produced it
+rather than a version string that never changes.
 
 ### Version 88 — the oracle could have been comparing the reference with itself
 
