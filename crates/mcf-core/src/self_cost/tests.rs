@@ -69,7 +69,8 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
     // routes are describing the same instant. A few attempts, and where the
     // process never holds still the check says so rather than inventing a
     // tolerance that would let a wrong multiplier through (F4.3's lesson,
-    // learned by this test failing once in a parallel run).
+    // learned by this test failing once in a parallel run — and again, which
+    // is why the multiplier is now checked separately from the instant).
     for attempt in 0..8 {
         let (Some(before), Attested::Known(bytes), Some(after)) =
             (resident_pages(), resident_bytes(), resident_pages())
@@ -77,15 +78,33 @@ fn the_resident_reading_is_in_bytes_and_lands_on_a_page_boundary() {
             println!("  the second route is not readable here, so it is not compared");
             return;
         };
-        if before != after {
+        // **A unit error is caught whether or not the set held still.** The
+        // bug this test exists for is `status`'s kibibytes read as bytes,
+        // which is a factor of 1024 — so the routes are required to agree to
+        // within a factor of two on every attempt, and that check does not
+        // depend on catching the process at rest.
+        let (smaller, larger) = (
+            before.saturating_mul(page).min(bytes.0),
+            before.saturating_mul(page).max(bytes.0),
+        );
+        assert!(
+            larger <= smaller.saturating_mul(2),
+            "the two routes are not describing the same quantity on attempt {attempt}: \
+             {before} pages by statm is {} B, against {bytes} by status — a disagreement that \
+             size is a wrong multiplier rather than a moving resident set",
+            before.saturating_mul(page)
+        );
+        // **And exact agreement is required before they are compared as one
+        // instant.** The bracket alone is not enough: a resident set can grow
+        // and shrink back between two `statm` reads that agree, which is
+        // exactly what happened here — 8057 pages either side of a `status`
+        // read that saw one page more. Reading `status` allocates, so the
+        // middle read can move the very thing it is measuring. A disagreement
+        // is therefore evidence the set moved, not evidence of a defect, and
+        // the attempt is spent rather than failed.
+        if before != after || before.saturating_mul(page) != bytes.0 {
             continue;
         }
-        assert_eq!(
-            before.saturating_mul(page),
-            bytes.0,
-            "the two routes disagree on attempt {attempt}: {before} pages by statm, \
-             {bytes} by status"
-        );
         return;
     }
     println!(

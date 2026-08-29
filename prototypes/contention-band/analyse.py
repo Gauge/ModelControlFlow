@@ -11,7 +11,7 @@ width and its own run-to-run spread, and the band is the highest load at which
 width is still indistinguishable from that baseline. No threshold is chosen
 here; the baseline's own variability is the threshold.
 """
-import json, sys
+import json, os, sys
 from math import comb
 
 PAIRS = 6
@@ -68,7 +68,15 @@ def runs(path, since):
 
 if __name__ == "__main__":
     since = int(sys.argv[1])
-    found = list(runs("/home/gauge/.local/share/mcf/record.jsonl", since))
+    # Where MCF keeps the record, resolved the way MCF resolves it rather than
+    # hard-coded to the machine this was written on.
+    home = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.environ.get("HOME", ""), ".local", "share"
+    )
+    record = os.path.join(home, "mcf", "record.jsonl")
+    if not os.path.exists(record):
+        sys.exit(f"no record at {record}; set XDG_DATA_HOME or HOME as MCF does")
+    found = list(runs(record, since))
     print(f"{len(found)} run(s), each cut to the first {PAIRS} pairs\n")
     print(f"{'competing':>10} {'% machine':>10} {'width (pts)':>12}   when")
     for r in sorted(found, key=lambda r: r["competing"]):
