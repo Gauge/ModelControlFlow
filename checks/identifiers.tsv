@@ -382,6 +382,7 @@ register	B-396
 register	B-397
 register	B-398
 register	B-399
+register	B-400
 register	DEC-001
 register	DEC-002
 register	DEC-003
@@ -555,6 +556,9 @@ finding	F115
 finding	F116
 finding	F117
 finding	F118
+finding	F119
+finding	F120
+finding	F121
 rule	A1
 rule	A2
 rule	A3
