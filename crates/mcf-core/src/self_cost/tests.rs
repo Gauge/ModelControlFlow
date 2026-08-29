@@ -287,7 +287,10 @@ fn a_state_class_figure_is_read_at_the_maximum() {
     let mut values: Vec<u64> = (0..99).map(|_| 1_000).collect();
     values.push(999_999_999);
     let measured = samples(values);
-    assert_eq!(RESIDENT_IDLE.statistic(&measured), Bytes(999_999_999));
+    assert_eq!(
+        RESIDENT_IDLE.statistic(&measured).value(),
+        Bytes(999_999_999)
+    );
     assert_eq!(
         RESIDENT_IDLE.read_measurement(&measured, &quiet()),
         Verdict::Over
@@ -304,7 +307,10 @@ fn an_event_class_figure_is_read_at_the_ninety_ninth_percentile() {
         (0..99).map(|_| Duration::from_nanos(1_000_000)).collect();
     values.push(Duration::from_nanos(9_000_000_000));
     let measured = Measurement::from_samples(values, conditions()).expect("a hundred samples");
-    assert_eq!(COLD_START.statistic(&measured).as_nanos(), 1_000_000);
+    assert_eq!(
+        COLD_START.statistic(&measured).value().as_nanos(),
+        1_000_000
+    );
     assert_eq!(
         COLD_START.read_measurement(&measured, &quiet()),
         Verdict::Within

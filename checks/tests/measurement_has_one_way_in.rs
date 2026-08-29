@@ -39,6 +39,13 @@ fn no_trait_implementation_manufactures_a_measurement() {
 /// The list of constructors is read from the source rather than declared here,
 /// so a constructor added without conditions fails this test rather than
 /// slipping past a list nobody updated.
+///
+/// **A constructor may take a `&Measurement<Q>` instead**, which is the same
+/// guarantee reached one step along: a thing built out of a measurement cannot
+/// be built out of a bare number, and the conditions came with the measurement.
+/// `Stated` is that shape — a statistic that renders with its sample count and
+/// spread, added because a surface could take a percentile out of a measurement
+/// and print it alone (B-073).
 #[test]
 fn every_constructor_takes_conditions() {
     let source = measurement_source();
@@ -70,8 +77,15 @@ fn every_constructor_takes_conditions() {
         "no constructor was found, so this check is reading the wrong file"
     );
     for constructor in &constructors {
+        // Either the conditions themselves, or the measurement that carries
+        // them. `Stated` is the second kind (B-073): a statistic taken *out of*
+        // a measurement, which cannot exist without one and therefore cannot
+        // exist without the conditions that measurement was built with. What
+        // the rule forbids is a constructor reachable from a bare value, and
+        // both spellings are closed to one.
         assert!(
-            constructor.contains("conditions: Conditions"),
+            constructor.contains("conditions: Conditions")
+                || constructor.contains("&Measurement<Q>"),
             "a measurement can be built without its conditions: {constructor}"
         );
     }

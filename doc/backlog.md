@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 224 |
+| **Version** | 225 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **287 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 232 build items (145 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 37 open).** Every item cites
+decided, 23 resolved) and 232 build items (147 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 35 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -250,8 +250,8 @@ first and importance second.
 |---|---|---|---|---|
 | B-070 | Thin client: no framework, no bundled runtime, no build step, no per-platform application; the device already has what is needed to display it | §V, §6.11 | Total transferred weight and cold render time meet DEC-016's client budget on the oldest committed client | open |
 | B-071 | Zero idle cost when nobody is looking: no polling to appear responsive | §6.11, §3.13 | With a browser tab open and idle, daemon CPU is indistinguishable from closed | open |
-| B-072 | Parity enforcement: the interface is a client of the same API a script uses, and introduces no action reachable only there | §XI, §6.21 | An automated check fails when an interface action has no headless equivalent | open |
-| B-073 | Conditions travel to the surface: no view renders a measurement without its conditions, sample count and spread | §3.4, §3.14 | Rendering a bare number is impossible by construction, not by review | open |
+| B-072 | Parity enforcement: the interface is a client of the same API a script uses, and introduces no action reachable only there | §XI, §6.21 | An automated check fails when an interface action has no headless equivalent | **done** (F112). `checks/tests/the_headless_path_can_do_everything.rs`: every variant of the control plane's `Request` — read from the enum, never a list — must be sent by the command-line crate, and the three a person asks for by name must be commands in the argument parser. **A22's check named an item that did not exist**, and the rule itself observed it was *close to* self-enforcing; close to is not a check. What could not be written before the window exists is written as an assertion that fails the day a second surface appears, so its actions are enumerated then rather than discovered later. The compiler already holds the other direction: a new `Request` variant fails to compile until the daemon handles it, which is stronger than a check and was found by trying to write the negative control |
+| B-073 | Conditions travel to the surface: no view renders a measurement without its conditions, sample count and spread | §3.4, §3.14 | Rendering a bare number is impossible by construction, not by review | **done** (F112). `mcf_core::measurement::Stated<Q>`: a statistic that cannot be rendered without its sample count and its spread, because it has one `Display` and that one carries both. **The hole was real and on a shipped surface**: `Measurement<Q>` has no rendering that drops its conditions, and a surface never had to use it — `mcf doctor` asked for a percentile, got a bare `Q`, and printed `p99 {} over n={}` with no spread at all. `Budget::statistic` returns a `Stated` now, so the bare number is reachable only through `value()`, named for what calling it does the way `Content::disclose` and `Touchstone::bare` are — and `checks/tests/a_number_carries_its_conditions.rs` fails when a **surface** formats one. A test may: the budget tier compares a statistic with a baseline, which is arithmetic and not a view. Two existing checks caught the change being wrong on the way in: one required every constructor in the module to take conditions (a `&Measurement<Q>` carries them, and the rule is amended to say so), and one required the median beside the percentile, which D27 wants because the gap between them is what a busy machine looks like |
 | B-074 | Failure legibility: classified failures, their context and their configuration are inspectable from the window | §3.1, §3.2 | Every taxonomy category has a rendering that names the subsystem and the reconstruction context | open |
 | B-075 | Exposure flow: turning on reachability from another device is deliberate, informed, revocable and recorded | §6.12, §3.10 | Exposure cannot be enabled as a side effect of any other action | blocked (DEC-017) |
 | B-076 | Multi-client behaviour: several attached clients is a defined condition, not an emergent one | §7.12, §7.9 | Concurrent clients are exercised by the lab | blocked (DEC-012) |
@@ -404,6 +404,16 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 225 — two absolute rules stop naming checks that do not exist
+
+B-073 and B-072 done, which are A6's and A22's machine-checked halves. A6's hole
+was on a shipped surface: `mcf doctor` printed a p99 with its sample count and
+no spread, because a statistic could leave a measurement as a bare number. It
+leaves in a `Stated` now, which has one rendering and that one carries
+everything. A22's check enumerates the control plane from the enum and fails
+when an operation has no command — and fails the day a second surface appears,
+which is the half that could not be written before. F112.
 
 ### Version 224 — what a stale tier cost, measured
 

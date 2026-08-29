@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 96 |
+| **Version** | 97 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -139,6 +139,7 @@ forward as one.
 | 109 | [F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)](#109--f109--a-rule-of-thumb-that-cannot-be-read-as-a-result-cannot-be-recorded-and-expires-when-the-laboratory-lands-b-380-dec-002-a21-a25-315-318) |
 | 110 | [F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)](#110--f110--a-probe-for-each-modality-or-a-reason-what-a-language-costs-whether-an-artifact-embeds-and-three-declinations-in-writing-b-057-d42-f81-f106-a7-a21-x) |
 | 111 | [F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38) |
+| 112 | [F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)](#112--f112--two-absolute-rules-named-checks-that-did-not-exist-and-one-of-them-had-a-hole-on-a-shipped-surface-b-073-b-072-a6-a22-b16-d27) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8276,7 +8277,90 @@ figure to compare against would be exactly the invented intent A23 forbids. What
 is established is what it did cost, when, and that the artifact remains an order
 of magnitude inside the ceiling it promised.
 
+## 112 · F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)
+
+**Chosen by asking the rules rather than the roadmap.** Six *absolute* rules
+cite a check that names a backlog item, and six of those items are not done. Two
+of the six are merely open rather than blocked, which makes them buildable
+today: A6's *no number without its conditions, its sample count and its spread*
+(B-073) and A22's *the headless path can do everything* (B-072).
+
+**A6's hole was real, and on a surface an operator reads.** `Measurement<Q>` has
+no constructor that omits a condition set and no rendering that drops one —
+B-005 made that structural and a check holds it. But a surface never had to use
+that rendering. It could ask for a percentile, get a bare `Q` back, and print it.
+`mcf doctor` did:
+
+```
+cold start to first command response   p99 960005 ns over n=100 — not attributable
+```
+
+A value and a sample count, assembled from two separate asks, with **no spread
+at all** — and the median printed on the next line only because somebody had
+written it there. The rule was held for the whole measurement and by nobody for
+the statistic taken out of it.
+
+`Stated<Q>` is what a statistic leaves in now: one `Display`, and it carries the
+statistic's name, the value, `n`, the median, p5–p95, the minimum and the
+maximum. `Budget::statistic` returns one, so the bare number is reachable only
+through `value()` — named for what calling it does, the way `Content::disclose`
+and `Touchstone::bare` are — and a **surface** that formats that is what the
+check looks for. A test may: the budget tier compares a statistic with a
+baseline and writes it to a file, which is arithmetic and a record rather than a
+view, and the distinction is the one A22 draws.
+
+**Two existing checks caught the change being wrong on the way in**, which is
+the part worth recording. `measurement_has_one_way_in.rs` requires every
+constructor in the module to take conditions, and `Stated::new` takes a
+`&Measurement<Q>` — the same guarantee one step along, since a thing built out
+of a measurement cannot be built out of a bare number; the rule is amended to
+say both spellings. And `an_event_class_figure_is_reported_at_the_percentile_d27_names`
+failed because the first version of `Stated`'s rendering dropped the **median**,
+which D27 wants beside the p99 precisely because the gap between them is what a
+busy machine looks like. Neither was my noticing.
+
+**A22's check was named and never written, and the rule said as much.** It
+observes that the rule is close to self-enforcing — a capability reachable only
+through an interface is one the laboratory cannot test, which A19 forbids — and
+*close to* is not a check. What is enumerable today is the control plane: every
+variant of `Request`, read from the enum rather than from a list, must be sent by
+the command-line crate, and the three a person asks for by name must be commands
+in the argument parser.
+
+It passes today, and the hypothesis that sent me looking was wrong: I expected
+`Status` and `Holding` to be answerable by the daemon and unreachable from a
+terminal, and `mcf status` already asks both. Recorded because a check that
+confirms a property is worth exactly as much as one that finds a defect, and
+because the guess is part of the account.
+
+**The compiler holds the other direction, and better.** Trying to write the
+negative control — a new operation with no command — would not compile: the
+daemon's match over `Request` is exhaustive, so an operation nobody handles is a
+build failure before any check runs. The control had to add the variant *and*
+handle it to reach the check at all. That is the shape B16 asks for, found by
+attempting to break the thing rather than by reasoning about it.
+
+**And the half that cannot be written yet is written as an assertion.** When
+§XI's window arrives it becomes a second client of the same wire, and A22's real
+target is an action *it* has that no command does. A test fails the day a
+`mcf-window` crate appears, so its actions are enumerated then — rather than
+somebody discovering six months later that A22 had been checked against one
+client. The same reasoning put the privileged helper and reference-model
+neutrality in M0: a special case is far cheaper to prevent than to find.
+
+**Rules resting on review alone: unchanged at 13.** These two were already
+machine-checked *in name*; what changed is that the checks now exist. The
+number to watch is B16's, and the number this moved is a different one — four
+absolute rules still cite items that are open or blocked.
+
 ## Changelog
+
+### Version 97 — two absolute rules stop naming checks that do not exist
+
+F112. A6's hole was on a shipped surface — `mcf doctor` printed a p99 with its
+sample count and no spread — and is closed by a statistic that cannot be
+rendered without its evidence. A22's is enumerated from the control plane's own
+enum, passes today, and fails the day a second surface appears.
 
 ### Version 96 — what a stale tier cost, measured
 
