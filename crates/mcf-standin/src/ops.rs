@@ -75,7 +75,7 @@ pub fn matmul_vec_across(
         return Vec::new();
     }
     let mut out = vec![0.0_f32; rows];
-    crate::threads::each_row(&mut out, 1, threads, &|row, slot| {
+    crate::threads::each_row(&mut out, 1, columns, threads, &|row, slot| {
         if let Some(cell) = slot.first_mut() {
             *cell = row_of(matrix, vector, row, columns);
         }

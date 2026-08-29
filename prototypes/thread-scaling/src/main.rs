@@ -257,11 +257,12 @@ fn products(repeats: usize) -> std::process::ExitCode {
     println!("run      one product per cell, x {repeats} repeats, median reported");
     println!("load     {} at the start", said_load());
     println!();
-    print!("{:>16}{:>10}", "rows x columns", "before");
+    print!("{:>16}{:>14}", "rows x columns", "before");
     for count in &counts {
-        print!("{count:>10}");
+        print!("{:>14}", format!("{count}t"));
     }
-    println!("{:>12}", "best");
+    println!("{:>14}", "best");
+    println!("(median, and the middle half of the repeats beside it)");
 
     for (rows, columns) in SHAPES {
         let mut noise = Noise::seeded(u64::try_from(rows).unwrap_or(1));
@@ -288,6 +289,7 @@ fn products(repeats: usize) -> std::process::ExitCode {
         }
 
         let mut medians = Vec::new();
+        let mut taken_per_count: Vec<Vec<u64>> = Vec::new();
         let mut definition: Option<Vec<f32>> = None;
         for count in counts.iter().copied() {
             let threads = Threads::stated(count);
@@ -308,14 +310,15 @@ fn products(repeats: usize) -> std::process::ExitCode {
                 }
             }
             medians.push(median(&taken).unwrap_or(0));
+            taken_per_count.push(taken);
         }
 
         print!(
             "{rows:>10} x{columns:>4}{:>9}u",
             median(&before).unwrap_or(0)
         );
-        for value in &medians {
-            print!("{value:>9}u");
+        for row in &taken_per_count {
+            print!("{:>14}", cell(row));
         }
         let best = medians
             .iter()
@@ -343,6 +346,19 @@ fn products(repeats: usize) -> std::process::ExitCode {
     println!("Microseconds. `best` is the count with the lowest median and its speedup over one.");
     println!("load     {} at the end", said_load());
     std::process::ExitCode::SUCCESS
+}
+
+/// One cell: the median in microseconds, and the middle half beside it.
+///
+/// A6 wants no number without its spread, and a table of medians alone cannot
+/// say whether the difference between two of its columns is a difference or the
+/// machine breathing.
+fn cell(values: &[u64]) -> String {
+    let middle = median(values).unwrap_or(0);
+    match middle_half_in_tenths(values) {
+        Some(tenths) => format!("{middle}u +-{}%", tenths.div_ceil(10)),
+        None => format!("{middle}u"),
+    }
 }
 
 /// The serial matrix-vector product exactly as it was written before B-366.

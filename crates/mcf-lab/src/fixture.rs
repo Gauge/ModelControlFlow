@@ -136,14 +136,24 @@ pub fn a_model_that_runs() -> Vec<u8> {
 ///
 /// `seed` fixes every weight, so two calls produce identical bytes and a
 /// failure can be reproduced from the number in the test.
+///
+/// It is about twelve megabytes of weights, built in memory. That is the price
+/// of a model wide enough to be partitioned, and it is paid once per call.
 #[must_use]
 pub fn a_model_with_dense_weights(seed: u64) -> Vec<u8> {
-    // Deliberately not a multiple of the thread counts anything will use: 13
-    // rows across 4 threads is 4, 4, 4, 1, and the short chunk at the end is
-    // where an off-by-one in a partition lives.
-    const DENSE_WIDTH: usize = 13;
+    // **Wide enough that the engine actually partitions it.** MCF hands a
+    // product only as many workers as its size earns (F99), so a narrow model
+    // would run every product serially and a test comparing thread counts on it
+    // would compare the serial path with itself — a test that cannot fail.
+    // 323 × 323 is a hundred thousand elements, which earns two workers, and
+    // the feed-forward products earn four.
+    //
+    // Both dimensions are deliberately prime, so no thread count divides either
+    // evenly and every partition has a short chunk at the end — which is where
+    // an off-by-one in a partition lives.
+    const DENSE_WIDTH: usize = 323;
     const BLOCKS: usize = 3;
-    const INNER: usize = 29;
+    const INNER: usize = 769;
     let vocabulary = TOKENS.len();
 
     let metadata = vec![

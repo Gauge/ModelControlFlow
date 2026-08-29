@@ -136,6 +136,34 @@ impl Threads {
         self.origin
     }
 
+    /// How many of these threads a job of this size is worth starting.
+    ///
+    /// **Measured, not chosen** (F99). Every product a real model performs is
+    /// faster partitioned than serial — even the smallest, a 576×576 attention
+    /// projection, which is nearly four times faster at eight workers. But the
+    /// best count *rises with the size of the product*, and past its optimum a
+    /// larger count is worse: that same 576×576 product takes 130 µs at eight
+    /// workers and 296 µs at thirty-two. Handing every product every thread the
+    /// machine has would therefore be slower than handing it some of them.
+    ///
+    /// The rule is one number — the least work worth handing a worker — and it
+    /// comes from the two shapes that bound it. A 331-thousand-element product
+    /// was fastest at eight workers (41 thousand each) and an 885-thousand one
+    /// at sixteen (55 thousand each); [`WORTH_A_WORKER`] sits between them.
+    /// Above about eleven million elements every count up to this machine's
+    /// thirty-two was still improving, so the rule saturates rather than
+    /// binding there.
+    ///
+    /// **The mechanism is not established and this does not claim one.** F52 is
+    /// the standing evidence that reasoning about why threads behave as they do
+    /// produces exactly backwards answers, so what is written here is what was
+    /// measured and nothing about why.
+    #[must_use]
+    pub fn worth_starting(self, work: usize) -> usize {
+        let earned = work.checked_div(WORTH_A_WORKER).unwrap_or(0);
+        self.count().min(earned.max(1))
+    }
+
     /// One sentence a surface can print beside a run.
     ///
     /// Written once here rather than at each surface: two surfaces rendering
@@ -155,6 +183,15 @@ impl Threads {
         }
     }
 }
+
+/// The least work worth handing a worker, in matrix elements (F99).
+///
+/// Read as: a product of `n` elements is worth at most `n / 50_000` workers,
+/// however many the machine has. It is a measurement of *this* machine — a
+/// different processor will have a different number — and it errs toward fewer
+/// workers, which costs speed on a machine that would have paid for more and
+/// can never cost correctness on any machine at all.
+pub const WORTH_A_WORKER: usize = 50_000;
 
 /// Computes each row of an output buffer, partitioning the *rows* across
 /// threads.
@@ -180,8 +217,13 @@ impl Threads {
 /// `out.len()` must be a whole number of `width`-sized rows; a buffer that is
 /// not is computed serially rather than partitioned, since a partition of a
 /// shape that does not exist is the wrong thing to guess at.
-pub fn each_row<F>(out: &mut [f32], width: usize, threads: Threads, compute: &F)
-where
+pub fn each_row<F>(
+    out: &mut [f32],
+    width: usize,
+    work_per_row: usize,
+    threads: Threads,
+    compute: &F,
+) where
     F: Fn(usize, &mut [f32]) + Sync,
 {
     let rows = out.len().checked_div(width).unwrap_or(0);
@@ -189,12 +231,15 @@ where
         run_chunk(0, out, width.max(1), compute);
         return;
     }
-    if threads.count() <= 1 || rows <= 1 {
+    // How many workers this job earns, which is not how many the machine has:
+    // past a product's optimum, more workers is slower (F99, [`Threads::worth_starting`]).
+    let workers = threads.worth_starting(rows.saturating_mul(work_per_row));
+    if workers <= 1 || rows <= 1 {
         run_chunk(0, out, width, compute);
         return;
     }
 
-    let per_chunk = rows.div_ceil(threads.count()).max(1);
+    let per_chunk = rows.div_ceil(workers).max(1);
     let stride = per_chunk.saturating_mul(width);
     let mut queue: Vec<(usize, &mut [f32])> = out
         .chunks_mut(stride)
@@ -207,7 +252,7 @@ where
     // No more workers than there is work: ninety-seven threads for two chunks is
     // ninety-five starts that find an empty queue, and starting a thread is not
     // free.
-    let workers = threads.count().min(queue.len());
+    let workers = workers.min(queue.len());
     let queue = Mutex::new(queue);
 
     thread::scope(|scope| {

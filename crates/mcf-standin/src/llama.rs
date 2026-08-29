@@ -26,6 +26,13 @@
 //! **Still deliberately slow.** A hidden state is a `Vec<f32>` per token, every
 //! matrix multiply is [`crate::ops::matmul_vec`], and nothing is fused. D32 and
 //! F8 settled that trade.
+//!
+//! **The one thing it does spend is processors.** A loaded model may be asked
+//! to divide each product's rows across threads ([`Loaded::across`]), which
+//! changes what a token costs and nothing about what it says — 347 ms a token
+//! to 66 on a 135-million-parameter model, with the same bytes out (B-366,
+//! [findings.md](../../../doc/findings.md) F99). That is D38's *viability*
+//! exception to D31 and not a licence to optimize the arithmetic.
 
 use std::collections::BTreeMap;
 

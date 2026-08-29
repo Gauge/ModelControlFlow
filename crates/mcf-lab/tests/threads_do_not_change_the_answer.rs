@@ -39,9 +39,28 @@ use mcf_standin::{gguf, tokenizer::Vocabulary};
 /// than the model has rows to give them.
 const COUNTS: [usize; 5] = [1, 2, 3, 8, 64];
 
+/// The fixture is wide enough that the engine really partitions it.
+///
+/// MCF hands a product only as many workers as its size earns (F99). A model
+/// narrow enough to fall under that runs every product serially, and a test
+/// comparing thread counts on it compares the serial path with itself — which
+/// is a test that cannot fail. This is asserted rather than assumed because the
+/// fixture's width and the rule's threshold are two numbers in two files, and
+/// nothing else would notice them drifting apart.
+fn the_fixture_is_partitioned() {
+    let width = 323;
+    let earned = Threads::stated(8).worth_starting(width * width);
+    assert!(
+        earned > 1,
+        "the dense fixture's smallest product earns {earned} worker(s), so nothing below is \
+         partitioned and this file establishes nothing"
+    );
+}
+
 /// Every logit of every position, identical bytes at every thread count.
 #[test]
 fn a_forward_pass_is_the_same_bytes_at_every_thread_count() {
+    the_fixture_is_partitioned();
     let bytes = fixture::a_model_with_dense_weights(20_366);
     let file = gguf::parse(&bytes).expect("the laboratory's own file reads");
 
@@ -69,6 +88,7 @@ fn a_forward_pass_is_the_same_bytes_at_every_thread_count() {
 /// somebody would report as MCF answering differently on a busy machine.
 #[test]
 fn a_generation_is_the_same_tokens_at_every_thread_count() {
+    the_fixture_is_partitioned();
     let bytes = fixture::a_model_with_dense_weights(366);
     let file = gguf::parse(&bytes).expect("reads");
     let vocabulary = Vocabulary::read(&file).expect("the vocabulary reads");

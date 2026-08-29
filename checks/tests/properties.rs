@@ -758,8 +758,13 @@ fn ask_date(seconds: i64) -> Option<String> {
 #[test]
 fn a_product_is_the_same_bytes_at_every_thread_count() {
     let verdict = check(GATING_CASES, |rng| {
-        let rows = rng.index(64);
-        let columns = rng.index(48) + 1;
+        // Big enough to be partitioned. The engine hands a product only as many
+        // workers as its size earns (F99), so a shape below that threshold runs
+        // serially and would compare the serial path against itself — a case
+        // that cannot fail. The assertion below is what says these did not.
+        let columns = rng.index(192) + 64;
+        let wanted = mcf_standin::threads::WORTH_A_WORKER * (rng.index(6) + 2);
+        let rows = wanted.div_ceil(columns) + rng.index(8);
         let matrix: Vec<f32> = (0..rows * columns).map(|_| weight(rng)).collect();
         let vector: Vec<f32> = (0..columns).map(|_| weight(rng)).collect();
 
@@ -767,13 +772,16 @@ fn a_product_is_the_same_bytes_at_every_thread_count() {
         // Zero is a thread count a caller can ask for and is not one; the
         // partition must survive it as the definition does.
         let count = rng.index(40);
-        let produced = mcf_standin::ops::matmul_vec_across(
-            &matrix,
-            &vector,
-            rows,
-            columns,
-            mcf_standin::threads::Threads::stated(count),
-        );
+        let threads = mcf_standin::threads::Threads::stated(count);
+        if count > 1 && threads.worth_starting(rows * columns) < 2 {
+            return Err(format!(
+                "{rows}×{columns} earns {} worker(s) at {count} thread(s), so this case \
+                 compared the serial path with itself and could not have failed",
+                threads.worth_starting(rows * columns)
+            ));
+        }
+        let produced =
+            mcf_standin::ops::matmul_vec_across(&matrix, &vector, rows, columns, threads);
         if definition.len() != produced.len() {
             return Err(format!(
                 "{rows}×{columns} at {count} thread(s) produced {} rows against {}",

@@ -517,7 +517,11 @@ fn attempt(
         llama::covers(&file)?;
         let dequantized_bytes = file.dequantized_bytes().unwrap_or(0);
         let vocabulary = Vocabulary::read(&file)?;
-        let model = llama::load(&file, &bytes)?;
+        // Every processor the machine reports, spent per product only as far as
+        // that product's size earns it (B-366, F99). The daemon holds a model
+        // across requests, so this is decided once at load.
+        let model = llama::load(&file, &bytes)?
+            .across(mcf_standin::threads::Threads::what_the_machine_reports());
         *held = Some(Resident {
             path: path.clone(),
             length,

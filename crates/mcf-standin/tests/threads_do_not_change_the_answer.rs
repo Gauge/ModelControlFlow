@@ -76,12 +76,21 @@ impl Noise {
     }
 }
 
-/// The shapes every case is run over: awkward on purpose.
+/// The shapes every case is run over: awkward on purpose, and in two groups.
 ///
-/// A single row cannot be partitioned. A single column is a sum of one term. A
-/// prime number of rows leaves a short chunk at the end under every count
-/// above. A row count below the thread count leaves workers with nothing.
-const SHAPES: [(usize, usize); 9] = [
+/// The first group is the degenerate end — no rows, one row, one column, a row
+/// count below the thread count. None of them is large enough to earn a second
+/// worker (F99), so each runs serially, and what they establish is that the
+/// *refusals to partition* agree with the definition too.
+///
+/// The second group is large enough to be partitioned, and is where the
+/// property is actually exercised. Every row count is prime, so no thread count
+/// divides it evenly and there is a short chunk at the end of every partition.
+/// [`a_product_is_the_same_bytes_at_every_thread_count`] asserts that these do
+/// earn more than one worker, because a shape that quietly stopped being
+/// partitioned would turn this file into a comparison of the serial path with
+/// itself.
+const SHAPES: [(usize, usize); 13] = [
     (0, 4),
     (1, 1),
     (1, 64),
@@ -91,11 +100,30 @@ const SHAPES: [(usize, usize); 9] = [
     (13, 7),
     (64, 64),
     (257, 31),
+    (1_009, 127),
+    (2_003, 97),
+    (523, 631),
+    (4_001, 257),
 ];
+
+/// Whether a shape is one the engine will actually partition.
+fn is_partitioned(rows: usize, columns: usize) -> bool {
+    Threads::stated(32).worth_starting(rows * columns) > 1
+}
 
 /// Every shape, every thread count, the same bytes.
 #[test]
 fn a_product_is_the_same_bytes_at_every_thread_count() {
+    let partitioned = SHAPES
+        .iter()
+        .filter(|(rows, columns)| is_partitioned(*rows, *columns))
+        .count();
+    assert!(
+        partitioned >= 4,
+        "only {partitioned} of these shapes is large enough for the engine to partition at \
+         all (F99's rule), so this file is mostly comparing the serial path with itself"
+    );
+
     for (seed, (rows, columns)) in SHAPES.iter().copied().enumerate() {
         let mut noise = Noise::seeded(seed as u64 + 1);
         let matrix = noise.values(rows * columns);
@@ -143,11 +171,16 @@ fn a_product_is_the_same_bytes_at_every_thread_count() {
 #[test]
 fn a_partitioned_product_is_the_same_bytes_every_time_it_is_run() {
     let mut noise = Noise::seeded(99);
-    let matrix = noise.values(129 * 17);
-    let vector = noise.values(17);
-    let first = matmul_vec_across(&matrix, &vector, 129, 17, Threads::stated(16));
+    let (rows, columns) = (1_009, 127);
+    assert!(
+        is_partitioned(rows, columns),
+        "this repetition test no longer partitions anything"
+    );
+    let matrix = noise.values(rows * columns);
+    let vector = noise.values(columns);
+    let first = matmul_vec_across(&matrix, &vector, rows, columns, Threads::stated(16));
     for repeat in 0..32 {
-        let again = matmul_vec_across(&matrix, &vector, 129, 17, Threads::stated(16));
+        let again = matmul_vec_across(&matrix, &vector, rows, columns, Threads::stated(16));
         assert_bits(&again, &first, &format!("repeat {repeat}"));
     }
 }
@@ -181,8 +214,8 @@ fn a_shape_that_disagrees_produces_nothing_at_every_thread_count() {
 #[test]
 fn splitting_a_sum_does_change_the_bytes() {
     let mut noise = Noise::seeded(7);
-    let rows = 64;
-    let columns = 64;
+    let rows = 523;
+    let columns = 631;
     let matrix = noise.values(rows * columns);
     let vector = noise.values(columns);
 

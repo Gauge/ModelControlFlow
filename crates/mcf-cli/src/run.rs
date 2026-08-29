@@ -30,6 +30,7 @@ use mcf_standin::gguf;
 use mcf_standin::llama::load;
 use mcf_standin::sample::Settings;
 use mcf_standin::session::{Request, Stopped, generate};
+use mcf_standin::threads::Threads;
 use mcf_standin::tokenizer::Vocabulary;
 
 use crate::Response;
@@ -354,6 +355,14 @@ struct Said {
     tokens: usize,
     prompt_tokens: usize,
     stopped: Stopped,
+    /// How many processors the engine divided its work across, and whose number
+    /// that was.
+    ///
+    /// A condition of the run's *cost* and never of its answer: the same input
+    /// gives the same bytes at any count (B-366). It is printed because a
+    /// reader comparing two runs' durations would otherwise have no way to know
+    /// the machines differed in how much of themselves they gave.
+    threads: String,
     /// What the engine's own mark says was lost, rendered.
     mark: String,
     engine: String,
@@ -432,7 +441,13 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
     // refused for its tokenizer sounds like a tokenizer problem.
     mcf_standin::llama::covers(&file)?;
     let vocabulary = Vocabulary::read(&file)?;
-    let model = load(&file, bytes)?;
+    // Every processor the machine reports, and the engine spends only as many
+    // of them per product as that product's size earns (B-366, F99). The answer
+    // is the same bytes at any count — that is the property the partition was
+    // built around — so this changes what the run costs and nothing about what
+    // it says.
+    let threads = Threads::what_the_machine_reports();
+    let model = load(&file, bytes)?.across(threads);
 
     let prompt_tokens = vocabulary.encode(prompt, true)?;
     let build = BuildIdentity::current().version.to_owned();
@@ -467,6 +482,7 @@ fn answer(bytes: &[u8], prompt: &str, limit: usize, seed: u64) -> Result<Said, F
         tokens: produced.tokens.len(),
         prompt_tokens: produced.prompt_length,
         stopped: produced.stopped,
+        threads: model.threads().describe(),
         mark: degradation,
         engine: format!("MCF's own stand-in, build {build}"),
     })
@@ -534,6 +550,7 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
          \x20 produced {} token(s); {stopped}\n\
          \x20 sampler  greedy, seed {seed}\n\
          \x20 engine   {}\n\
+         \x20 threads  {}\n\
          \x20 MARKED   {}\n\
          \x20 This is a behaviour answer and can never be a speed (B65, D31):\n\
          \x20 MCF's stand-in is written to be read rather than to be fast, and a\n\
@@ -547,6 +564,7 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
         said.prompt_tokens,
         said.tokens,
         said.engine,
+        said.threads,
         said.mark,
     )
     .replace("{prompt}", prompt)
