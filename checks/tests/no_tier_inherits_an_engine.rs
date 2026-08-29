@@ -35,9 +35,11 @@ fn tier_scripts() -> Vec<PathBuf> {
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("check-") && name.ends_with(".sh"))
+            path.extension().is_some_and(|kind| kind == "sh")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("check-"))
         })
         .collect();
     found.sort();
