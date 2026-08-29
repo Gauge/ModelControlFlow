@@ -1,4 +1,11 @@
-//! The four gated categories are where they say they are (B-039, §6.14).
+//! The five gated categories are where they say they are (B-039, A16, §6.14,
+//! §3.20).
+//!
+//! **It was four until F115.** §6.14 names four acts and A16 absorbs §3.20 as
+//! well, which makes five — and A16's own check says *the five categories are
+//! enumerable in code*. Four were. The missing one is publication, the only one
+//! of the five that cannot be undone, which is why A24 exists as its own rule
+//! and why nothing noticing for months is worth writing down.
 //!
 //! §6.14 draws the line at category rather than frequency: untrusted execution,
 //! large irrecoverable resource use, network exposure and destruction are asked
@@ -7,7 +14,7 @@
 //! — or that no path exists to ask about. This reads that enumeration and
 //! checks it against the tree.
 //!
-//! **Why the *absences* need checking most.** Two of the four are claimed as
+//! **Why the *absences* need checking most.** Three of the five are claimed as
 //! *no path exists*: MCF runs nothing it acquires, and listens on no network.
 //! Those are the strongest statements in the file and the easiest to falsify by
 //! accident — a `TcpListener` added for a convenience, a subprocess spawned for
@@ -236,4 +243,81 @@ fn collect(directory: &Path, into: &mut Vec<PathBuf>) {
             into.push(path);
         }
     }
+}
+
+/// Where shipped code opens an outbound connection, and why it is not
+/// publication.
+const DECLARED: &[(&str, &str)] = &[
+    (
+        "crates/mcf-hub/src/wire.rs",
+        "the one outbound connection MCF makes: to the hub a person named, when `mcf pull` is \
+     typed. Bytes come in; what goes out is the request for them, and A16 already gates \
+     the act as a large irrecoverable use (B-021, B-322)",
+    ),
+    (
+        "crates/mcf-lab/src/serving.rs",
+        "the laboratory waking its own accept loop on the loopback address so it can stop: a \
+     connection to this process from this process, which reaches no other machine and \
+     carries nothing (B-028, D26)",
+    ),
+];
+
+/// Nothing sends anything anywhere, which is why publication has no gate yet.
+///
+/// **The strongest statement available and the weakest position.** A gate is a
+/// question MCF asks before an act; an absence is MCF being unable to perform
+/// it at all. Publication is an absence today — and unlike the other two
+/// absences, this one is about the act A24 calls irreversible, so the day it
+/// stops being true is the day a gate is owed rather than unnecessary.
+///
+/// **What this looks for.** Every place shipped code could put bytes on a wire
+/// to somewhere it was not asked to. MCF makes exactly one kind of outbound
+/// connection — to a hub, when `mcf pull` is typed, which is the acquisition
+/// A16 gates as a large irrecoverable use — and every one of those sites is
+/// declared here. A second one appears in this list or the check fails, which
+/// is the same discipline `nothing_deletes_an_artifact.rs` applies to
+/// destruction.
+#[test]
+fn nothing_sends_anything_anywhere() {
+    let Asking::NoPathExists { why } = Gated::Publication.asking() else {
+        panic!(
+            "MCF has learned to send something somewhere, and A24's gate is now owed rather \
+             than unnecessary: publication cannot be undone, so the act needs the itemized \
+             confirmation B-160 builds"
+        );
+    };
+    assert!(why.contains("no destination"), "{why}");
+
+    let root = mcf_checks::workspace::root();
+    let mut sending = Vec::new();
+    for file in shipped_sources(&root) {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        if DECLARED.iter().any(|(named, _)| *named == relative) {
+            continue;
+        }
+        for line in code_only(&ships(&read(&file))).lines() {
+            let trimmed = line.trim();
+            // Opening a connection to somewhere else, in any of the shapes
+            // this workspace could write one.
+            // Shapes that *open* a connection. A type name in a `use` line is
+            // not one: the first version of this check matched
+            // `http::Request` and reported the laboratory's own hub scenario,
+            // which imports the type and connects to nothing.
+            for shape in ["TcpStream::connect", "reqwest::", "ureq::", "UdpSocket::"] {
+                if trimmed.contains(shape) {
+                    sending.push(format!("{relative}: {trimmed}"));
+                }
+            }
+        }
+    }
+    assert!(
+        sending.is_empty(),
+        "shipped code opens an outbound connection somewhere undeclared. Publication is the \
+         one gated act that cannot be undone (A24), and MCF's claim that it has no path to it \
+         is what this check holds:\n{sending:#?}"
+    );
 }

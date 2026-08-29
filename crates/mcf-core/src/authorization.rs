@@ -38,14 +38,23 @@ pub enum Gated {
     NetworkExposure,
     /// Destroying an artifact that is here (§3.11).
     Destruction,
+    /// Publishing anything off this machine (§3.20, A24).
+    ///
+    /// **The fifth, and it was missing** (F115). §6.14 names four and A16
+    /// absorbs §3.20 as well, which makes five — and A16's own check says *the
+    /// five categories are enumerable in code*. Four were. The one that was not
+    /// is the only one of the five that cannot be undone, which is the reason
+    /// A24 exists as a separate rule.
+    Publication,
 }
 
-/// All four, in the order §6.14 names them.
-pub const GATED: [Gated; 4] = [
+/// All five, in the order A16 names them.
+pub const GATED: [Gated; 5] = [
     Gated::UntrustedExecution,
     Gated::LargeIrrecoverableUse,
     Gated::NetworkExposure,
     Gated::Destruction,
+    Gated::Publication,
 ];
 
 /// How MCF asks about one of them.
@@ -87,6 +96,7 @@ impl Gated {
             Self::LargeIrrecoverableUse => "large_irrecoverable_use",
             Self::NetworkExposure => "network_exposure",
             Self::Destruction => "destruction",
+            Self::Publication => "publication",
         }
     }
 
@@ -98,6 +108,7 @@ impl Gated {
             Self::LargeIrrecoverableUse => "§6.14",
             Self::NetworkExposure => "§6.12",
             Self::Destruction => "§3.11",
+            Self::Publication => "§3.20",
         }
     }
 
@@ -131,6 +142,18 @@ impl Gated {
                 command: "mcf rm",
                 and: "a reason is stated and the plan it authorizes is the one that was \
                       previewed. Nothing is deleted at all without --purge (B-027)",
+            },
+            // The strongest statement available, and the weakest position: it
+            // holds only while MCF has nowhere to send anything. `mcf share`
+            // *produces* a contribution and shows every row that would leave —
+            // producing is not sending (A24), and there is no destination in
+            // this build, no address to configure and no code that opens one.
+            // The check that reads this is what notices the day that changes.
+            Self::Publication => Asking::NoPathExists {
+                why: "MCF sends nothing anywhere: there is no destination, no address to \
+                      configure and no path that opens one. `mcf share` writes a file and \
+                      renders every row it holds, which is producing rather than sending \
+                      (B-160, A24)",
             },
         }
     }
