@@ -33,6 +33,22 @@ import os
 L3_PER_CCD = 32 * 1024 * 1024
 L3_TOTAL = 64 * 1024 * 1024
 
+# How many layers actually attend to the WHOLE context, where an architecture
+# interleaves sliding-window layers with full ones. A sliding-window layer's
+# read stops growing once the window is full, so it contributes nothing to the
+# slope past that depth -- only the full-attention layers do.
+#
+# The interleave is not in the header. It is a property of the architecture
+# that the engine hard-codes, so it is named here per architecture rather than
+# guessed, and an architecture with a sliding window but no entry is reported
+# as such instead of being predicted wrongly (A7).
+#
+# gemma3: one full-attention layer in every six. Found because gemma-3-270m
+# was the only model in the corpus whose measured slope missed the prediction
+# by more than 3x -- and it missed it by close to 6x, in the direction of
+# being FLATTER than predicted.
+FULL_ATTENTION_EVERY = {"gemma3": 6}
+
 
 def gguf_metadata(path, want):
     """Reads the header key/values. Stops at the tensor data — the point is to
@@ -78,7 +94,8 @@ def geometry(path):
     not a guess)."""
     kv = gguf_metadata(path, [".block_count", ".attention.head_count",
                               ".attention.key_length", ".attention.value_length",
-                              ".embedding_length", ".context_length"])
+                              ".embedding_length", ".context_length",
+                              ".attention.sliding_window"])
     def pick(suffix):
         v = next((v for k, v in kv.items() if k.endswith(suffix)), None)
         # Some headers store a per-layer array rather than one number. Where
@@ -103,9 +120,25 @@ def geometry(path):
         val_len = key_len
     if not all((layers, kv_heads, key_len, val_len)):
         return None
+    window = pick(".attention.sliding_window")
+    architecture = next((k.split(".")[0] for k in kv), None)
+    # Layers whose cost keeps growing with depth. Without a sliding window
+    # that is all of them.
+    growing = layers
+    window_note = None
+    if window:
+        every = FULL_ATTENTION_EVERY.get(architecture)
+        if every:
+            growing = max(layers // every, 1)
+            window_note = f"window {int(window)}, 1 full layer in {every}"
+        else:
+            window_note = f"window {int(window)}, interleave unknown"
+            growing = None            # not predictable; say so rather than guess
+
     per_layer_read = kv_heads * (key_len + val_len) * 2
     return {
         "layers": layers, "kv_heads": kv_heads,
+        "growing_layers": growing, "window_note": window_note,
         # How much of ONE layer's cache is read contiguously per token. A
         # bandwidth argument needs this to be big enough to stream; where it
         # is small the read is bound by latency instead and the prediction
@@ -116,7 +149,12 @@ def geometry(path):
         # K and V, two bytes each: llama.cpp's default cache is f16. A run
         # using --cache-type-k/-v changes this, which is why it is a stated
         # condition and not a constant.
+        # what the WHOLE cache costs to hold, all layers
         "bytes_per_depth_token": int(layers * per_layer_read),
+        # what actually grows with depth, and so sets the slope
+        "growing_bytes_per_depth_token": (
+            int(growing * per_layer_read) if growing is not None else None
+        ),
     }
 
 
@@ -147,9 +185,16 @@ def main():
             print(f"  {name[:39]:<40}{'header does not say':>42}")
             continue
         per = geo["bytes_per_depth_token"]
-        slope = predicted_slope_ms(per, dram)
+        growing = geo["growing_bytes_per_depth_token"]
+        if growing is None:
+            print(f"  {name[:39]:<40}{per / 1024:>9.0f}K"
+                  f"{'  ' + (geo['window_note'] or ''):>42}")
+            continue
+        slope = predicted_slope_ms(growing, dram)
         found.append((name, geo, slope))
         note = "" if geo["per_layer_read"] >= 2048 else "  latency-bound"
+        if geo["window_note"]:
+            note += f"  [{geo['window_note']}]"
         print(f"  {name[:39]:<40}{per / 1024:>9.0f}K{L3_PER_CCD // per:>10,}"
               f"{slope:>12.6f}{geo['per_layer_read']:>9.0f}B{note}")
     print(f"\n  {len(found)} model(s) with usable geometry")

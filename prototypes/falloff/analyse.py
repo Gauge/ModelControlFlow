@@ -167,7 +167,10 @@ def arm_corpus(rows, dram_gbs=55.8):
             continue
         # a straight line through the bandwidth-bound part
         slope = np.polyfit(d[deep], y[deep], 1)[0]
-        want = physics.predicted_slope_ms(geo["bytes_per_depth_token"], dram_gbs)
+        growing = geo["growing_bytes_per_depth_token"]
+        if growing is None:
+            continue
+        want = physics.predicted_slope_ms(growing, dram_gbs)
         streams = geo["per_layer_read"] >= 2048
         seconds = sum(r["prefill_ns"] for r in mine) / 1e9 + sum(
             r["ms"] * 128 for r in mine) / 1e3
@@ -184,11 +187,18 @@ def arm_corpus(rows, dram_gbs=55.8):
             continue
         print(f"\n  {label}: n={len(ratios)}, ratio median {np.median(ratios):.2f}, "
               f"range {min(ratios):.2f}-{max(ratios):.2f}")
-    good = [r[3] for r in scored if r[4]]
-    if good:
-        print(f"\n  For the streaming models the header predicts the slope to within")
-        print(f"  {(1 - min(good)) * 100:.0f}-{(1 - max(good)) * 100:.0f}% once scaled by the fraction of peak")
-        print(f"  bandwidth the engine achieves -- a single constant for this machine.")
+    print("\n  Scaling each group by its own median ratio -- one constant per")
+    print("  machine per regime, measured once -- the header then predicts:")
+    for label, want_streaming in (("bandwidth-bound", True), ("latency-bound", False)):
+        ratios = [r[3] for r in scored if r[4] is want_streaming]
+        if len(ratios) < 2:
+            continue
+        mid = float(np.median(ratios))
+        residual = [(r / mid - 1) * 100 for r in ratios]
+        print(f"    {label:<16} constant {mid:.2f}   "
+              f"error {min(residual):+.0f}% to {max(residual):+.0f}%   n={len(ratios)}")
+    print("\n  So a model's fall-off follows from its header and one number for")
+    print("  this machine. Only the intercept still needs the model to run.")
 
 
 if __name__ == "__main__":
