@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 86 |
+| **Version** | 87 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -128,6 +128,7 @@ forward as one.
 | 99 | [F99 — Threads pay at every shape a model performs, cost nothing in noise, and past a product's optimum more of them is slower (B-366, D38, F52, §3.12, A6, A19)](#99--f99--threads-pay-at-every-shape-a-model-performs-cost-nothing-in-noise-and-past-a-products-optimum-more-of-them-is-slower-b-366-d38-f52-312-a6-a19) |
 | 100 | [F100 — How large a model MCF's own engine can usefully read, and what actually stops it (B-384, PR12, D40, B-366, F99, A20, A7)](#100--f100--how-large-a-model-mcfs-own-engine-can-usefully-read-and-what-actually-stops-it-b-384-pr12-d40-b-366-f99-a20-a7) |
 | 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
+| 102 | [F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7373,7 +7374,73 @@ which MCF cannot ask without executing templates. And nothing about whether the
 call is *useful* — the arguments are deliberately not read for sense, because
 that is a judgement and a probe makes none (D42).
 
+## 102 · F102 — The conformance corpus answered differently depending on whether a daemon was running (B-370, B-053, F46, F27, D40, §3.12, A19)
+
+**Found by accident, which is the only reason it was found.** Twelve of the
+corpus's sixteen entries were not on this machine, so the check had been
+exercising a quarter of what it claims. Re-acquiring them
+([B-384](backlog.md)'s work) made one entry fail — and the failure was not in
+the model, the engine, or that day's changes.
+
+**`check-corpus.sh` ran `mcf run` without naming an engine.** That means
+*whatever daemon happens to be listening*. Measured on one model, one machine,
+one afternoon:
+
+| how it was run | what came out |
+|---|---|
+| MCF's own engine, no daemon in the path | `the city of Paris. The city of Paris is the city` |
+| through the daemon, **engine unstated** — what the check did | `a city in the same country. The city is in the` |
+| through the daemon, stand-in named | `the city of Paris…` |
+| through the daemon, provisioned named | `a city in the same country…` |
+
+The check passed all morning while the daemon was down and failed the moment
+one was up. Nothing in the check could see the difference, and the entry that
+flipped had been on the disk for twenty minutes.
+
+**This repository had already outlawed exactly this.**
+[F46](#46--f46--a-test-reported-on-whether-a-daemon-was-running-b-378) found a
+test that "reported on whether a daemon happened to be running on the machine —
+passing alone and failing beside one, for reasons nothing in the test could
+see", and B-378 fixed it there by making the socket an *input*. §3.12 does not
+permit a suite whose answer depends on the state it found. The same defect was
+sitting in the corpus check, and it survived because most of the corpus was
+absent — **a check that cannot run cannot be caught being wrong.**
+
+**The fix is to state the engine rather than inherit it.** The stand-in, because
+D40 makes this corpus the thing *MCF's own engine* is developed against, and the
+header now prints which engine every entry went through. `--engine stand-in`
+works with or without a daemon, so the check is hermetic in the sense B19 wants.
+
+**The second finding, underneath the first: the two engines genuinely disagree
+on this file, and the oracle was right not to care.** `Qwen3-0.6B-Q2_K` is the
+most aggressively quantized model in the corpus, and
+[F29](#29--f29--the-sixth-family-answers-a-different-question-b-371-dec-055-b-365-a19-33)
+and F33 already record that MCF multiplies floats where the reference multiplies
+in quantized arithmetic, with the widest gap observed **on a Q2_K file for
+exactly that reason**. The oracle ran on this same model in the same session and
+reported agreement on all 142 comparisons — because it compares *distributions
+against a stated margin* (F27's 0.40) rather than an exact string from a greedy
+decode.
+
+So the corpus's `says Paris` test is the more brittle instrument of the two: on
+a knife-edge token, two engines that agree within the oracle's tolerance produce
+different words. That is not an argument for loosening it — an exact string is
+what makes a corpus entry mechanically checkable — but it is the reason the
+entry has to say which engine it is an expectation *about*, which it now does.
+
+**What this did not establish.** Whether other corpus entries are equally close
+to their knife-edge, which would need the same comparison run per entry.
+Whether the provisioned engine's answer is worse — neither continuation is
+wrong, and nothing here judges a model's output for sense.
+
 ## Changelog
+
+### Version 87 — a check that answered differently depending on the machine
+
+F102. The conformance corpus ran `mcf run` without naming an engine, so it
+reported on whether a daemon was up — F46's defect, in a second place, kept
+alive by twelve absent models. A check that cannot run cannot be caught being
+wrong.
 
 ### Version 86 — a call recorded as no call
 

@@ -46,6 +46,22 @@ readonly EXIT_CANNOT_CHECK=2
 readonly PROMPT='The capital of France is'
 readonly BUDGET=12
 
+# **Which engine answers, stated rather than inherited (F102, F46, §3.12).**
+#
+# This was `mcf run` with no engine named, which means *whatever daemon happens
+# to be listening*. The same command, the same models and the same machine then
+# gave different answers depending on whether a daemon was up — and one entry
+# flipped from passing to failing for a reason nothing in this file could see.
+# That is the defect F46 already found in another surface and B-378 fixed there;
+# it survived here because twelve of sixteen entries were not on the disk to
+# exercise it.
+#
+# The stand-in, because D40 makes this corpus the thing **MCF's own engine** is
+# developed against. Cross-engine agreement is `check-oracle.sh`'s question, and
+# it is asked there on distributions with a stated margin rather than on an exact
+# string — which is the more robust instrument for it (F27, B-368).
+readonly ENGINE=stand-in
+
 # One line per entry: family | path under the store | state | what to expect.
 #
 # `embeds` is the third state: the model has no next token to produce, so it is
@@ -116,7 +132,8 @@ mcf=$root/target/release/mcf
 # cannot show is that the *cut* was the right one — see F23.
 roundtrip=$root/target/release/examples/roundtrip
 
-printf 'the conformance corpus, from %s\n\n' "$store"
+printf 'the conformance corpus, from %s\n' "$store"
+printf 'every entry through the %s engine, named rather than inherited (F102)\n\n' "$ENGINE"
 
 failures=0
 absent=0
@@ -130,7 +147,7 @@ for entry in "${CORPUS[@]}"; do
         continue
     fi
 
-    said=$("$mcf" run "$path" --prompt "$PROMPT" --limit "$BUDGET" 2>&1) || true
+    said=$("$mcf" run "$path" --prompt "$PROMPT" --limit "$BUDGET" --engine "$ENGINE" 2>&1) || true
     # `mcf run` prints the answer first and its conditions after a rule; a
     # refusal prints the classified failure. Either way the first lines are
     # what this reads.
