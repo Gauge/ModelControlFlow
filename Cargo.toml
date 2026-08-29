@@ -23,6 +23,7 @@ members = [
     "checks",
     "prototypes/adversarial",
     "prototypes/kernel-slope",
+    "prototypes/thread-scaling",
     "prototypes/timing-noise",
 ]
 

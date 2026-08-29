@@ -115,6 +115,143 @@ pub fn a_model_that_runs() -> Vec<u8> {
     write(&metadata, &tensors)
 }
 
+/// A model whose weights are dense, seeded and nothing like an identity
+/// (B-366).
+///
+/// **Why the degenerate fixture cannot answer B-366's question.**
+/// [`a_model_that_runs`] is one-hot and its projections are zeros, so almost
+/// every sum in its forward pass is a sum of zeros — and a sum of zeros is the
+/// same number in any order. A partition of that model's work agrees with the
+/// serial path whether or not the partition is sound, which is a test that
+/// cannot fail. This model's every weight is non-zero, of mixed magnitude and
+/// mixed sign, which is the condition under which floating-point addition
+/// notices the order it was performed in.
+///
+/// **It is not a model of anything and its output means nothing.** What it is
+/// for is the one property that does not need the output to mean anything: the
+/// same input produces the same bytes however the work was divided. It has
+/// several blocks and a width that no thread count divides evenly, because a
+/// partition that is only ever exercised on a multiple of itself is a partition
+/// whose remainder nobody has run.
+///
+/// `seed` fixes every weight, so two calls produce identical bytes and a
+/// failure can be reproduced from the number in the test.
+///
+/// It is about twelve megabytes of weights, built in memory. That is the price
+/// of a model wide enough to be partitioned, and it is paid once per call.
+#[must_use]
+pub fn a_model_with_dense_weights(seed: u64) -> Vec<u8> {
+    // **Wide enough that the engine actually partitions it.** MCF hands a
+    // product only as many workers as its size earns (F99), so a narrow model
+    // would run every product serially and a test comparing thread counts on it
+    // would compare the serial path with itself — a test that cannot fail.
+    // 323 × 323 is a hundred thousand elements, which earns two workers, and
+    // the feed-forward products earn four.
+    //
+    // Both dimensions are deliberately prime, so no thread count divides either
+    // evenly and every partition has a short chunk at the end — which is where
+    // an off-by-one in a partition lives.
+    const DENSE_WIDTH: usize = 323;
+    const BLOCKS: usize = 3;
+    const INNER: usize = 769;
+    let vocabulary = TOKENS.len();
+
+    let metadata = vec![
+        text("general.architecture", "llama"),
+        text("tokenizer.ggml.model", "llama"),
+        integer("llama.block_count", BLOCKS),
+        integer("llama.embedding_length", DENSE_WIDTH),
+        integer("llama.attention.head_count", 1),
+        integer("llama.feed_forward_length", INNER),
+        integer("llama.context_length", 16),
+        integer("tokenizer.ggml.bos_token_id", 0),
+        token_list("tokenizer.ggml.tokens", &TOKENS),
+        score_list("tokenizer.ggml.scores", &scores()),
+    ];
+
+    let mut noise = Noise::seeded(seed);
+    let wide = u64::try_from(DENSE_WIDTH).unwrap_or(0);
+    let inner = u64::try_from(INNER).unwrap_or(0);
+    let tall = u64::try_from(vocabulary).unwrap_or(0);
+    let mut tensors: Vec<(String, Vec<u64>, Vec<f32>)> = vec![
+        (
+            "token_embd.weight".to_owned(),
+            vec![wide, tall],
+            noise.values(vocabulary * DENSE_WIDTH),
+        ),
+        (
+            "output_norm.weight".to_owned(),
+            vec![wide],
+            noise.values(DENSE_WIDTH),
+        ),
+    ];
+    for block in 0..BLOCKS {
+        for (name, dimensions, count) in [
+            ("attn_norm.weight", vec![wide], DENSE_WIDTH),
+            ("attn_q.weight", vec![wide, wide], DENSE_WIDTH * DENSE_WIDTH),
+            ("attn_k.weight", vec![wide, wide], DENSE_WIDTH * DENSE_WIDTH),
+            ("attn_v.weight", vec![wide, wide], DENSE_WIDTH * DENSE_WIDTH),
+            (
+                "attn_output.weight",
+                vec![wide, wide],
+                DENSE_WIDTH * DENSE_WIDTH,
+            ),
+            ("ffn_norm.weight", vec![wide], DENSE_WIDTH),
+            ("ffn_gate.weight", vec![wide, inner], INNER * DENSE_WIDTH),
+            ("ffn_up.weight", vec![wide, inner], INNER * DENSE_WIDTH),
+            ("ffn_down.weight", vec![inner, wide], DENSE_WIDTH * INNER),
+        ] {
+            tensors.push((
+                format!("blk.{block}.{name}"),
+                dimensions,
+                noise.values(count),
+            ));
+        }
+    }
+
+    write(&metadata, &tensors)
+}
+
+/// Weights from a seed, so that a run is reproducible from a number.
+///
+/// A multiplicative congruential generator, which is enough for weights whose
+/// only requirement is that they be dense and of mixed magnitude. It is not a
+/// source of randomness anything is measured against — where a seed decides a
+/// *result*, MCF uses [`mcf_standin::sample::Rng`], and where it decides
+/// coverage the laboratory says so.
+struct Noise(u64);
+
+impl Noise {
+    const fn seeded(seed: u64) -> Self {
+        Self(seed | 1)
+    }
+
+    /// The next weight: mixed sign, and magnitudes spanning three orders so
+    /// that adding them in a different order gives a different answer.
+    fn next(&mut self) -> f32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        let bits = u32::try_from(self.0 >> 40).unwrap_or(0);
+        // A value in [-1, 1), scaled by a power of ten chosen from the same
+        // stream: a matrix of uniform magnitude is a matrix whose sum order
+        // barely matters.
+        let half = u16::try_from(bits & 0xFFFF).unwrap_or(0);
+        let unit = (f32::from(half) - 32_768.0) / 32_768.0;
+        let decade = match (bits >> 16) % 3 {
+            0 => 0.01,
+            1 => 1.0,
+            _ => 100.0,
+        };
+        unit * decade
+    }
+
+    fn values(&mut self, count: usize) -> Vec<f32> {
+        (0..count).map(|_| self.next()).collect()
+    }
+}
+
 /// A score per token: worse for a letter than for a piece, and worse for a
 /// piece than for the word it builds towards.
 fn scores() -> Vec<f32> {

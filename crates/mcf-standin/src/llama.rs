@@ -26,6 +26,13 @@
 //! **Still deliberately slow.** A hidden state is a `Vec<f32>` per token, every
 //! matrix multiply is [`crate::ops::matmul_vec`], and nothing is fused. D32 and
 //! F8 settled that trade.
+//!
+//! **The one thing it does spend is processors.** A loaded model may be asked
+//! to divide each product's rows across threads ([`Loaded::across`]), which
+//! changes what a token costs and nothing about what it says — 347 ms a token
+//! to 66 on a 135-million-parameter model, with the same bytes out (B-366,
+//! [findings.md](../../../doc/findings.md) F99). That is D38's *viability*
+//! exception to D31 and not a licence to optimize the arithmetic.
 
 use std::collections::BTreeMap;
 
@@ -34,6 +41,7 @@ use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Sub
 use crate::dequantize;
 use crate::gguf::{Model as File, Value};
 use crate::ops;
+use crate::threads::Threads;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::llama");
 
@@ -203,6 +211,13 @@ pub struct Loaded {
     /// Read from the architecture rather than from the file, because nothing in
     /// the file states any of it — see [`crate::architecture::habits`].
     habits: crate::architecture::Habits,
+    /// How many processors the forward pass may divide its work across.
+    ///
+    /// One at load, which is the definition; a caller asks for more with
+    /// [`Loaded::across`]. It is not a condition of the *answer* — B-366 is the
+    /// property that the same input produces the same bytes at any count — so it
+    /// is here to be spent, not to be compared against.
+    threads: Threads,
     /// Every tensor, dequantized once and kept.
     ///
     /// Dequantizing on load rather than per token is the one memory-for-time
@@ -302,6 +317,7 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         rope_theta,
         rope_theta_swa,
         habits: crate::architecture::habits(architecture),
+        threads: Threads::definition(),
         tensors,
     })
 }
@@ -487,6 +503,40 @@ fn normalize_each_head(values: &mut [f32], head: usize, weights: &[f32], epsilon
 }
 
 impl Loaded {
+    /// The same model, dividing each product's rows across `threads` (B-366).
+    ///
+    /// **This changes what the run costs and not what it says.** Every output
+    /// element is one row's dot product summed in one fixed order, so a thread
+    /// count decides who does the arithmetic and never how — the same input
+    /// produces the same bytes at one thread and at thirty-two, which
+    /// `tests/threads_do_not_change_the_answer.rs` asserts over generated
+    /// inputs and over this model's own forward pass.
+    ///
+    /// It is a separate step from [`load`] rather than an argument to it
+    /// because one thread is the definition: a caller that wants more asks, and
+    /// the asking is visible at the call site.
+    #[must_use]
+    pub const fn across(mut self, threads: Threads) -> Self {
+        self.threads = threads;
+        self
+    }
+
+    /// How many processors this model divides its work across, and whose number
+    /// that is.
+    #[must_use]
+    pub const fn threads(&self) -> Threads {
+        self.threads
+    }
+
+    /// One matrix-vector product, across whatever this model was given.
+    ///
+    /// Every product in the forward pass goes through here, so there is one
+    /// place a thread count reaches the arithmetic and it is a place that
+    /// cannot change the arithmetic.
+    fn product(&self, matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
+        ops::matmul_vec_across(matrix, vector, rows, columns, self.threads)
+    }
+
     /// A tensor this file may or may not carry.
     ///
     /// Distinct from [`Self::tensor`], which is for the ones the shape says
@@ -570,12 +620,7 @@ impl Loaded {
         } else {
             self.tensor("output.weight")?
         };
-        Ok(ops::matmul_vec(
-            projection,
-            &normalized,
-            self.shape.vocabulary,
-            width,
-        ))
+        Ok(self.product(projection, &normalized, self.shape.vocabulary, width))
     }
 
     /// One block's attention: normalize, project, rotate, remember, attend,
@@ -616,19 +661,19 @@ impl Loaded {
             self.tensor(&format!("blk.{block}.attn_norm.weight"))?,
             self.epsilon,
         );
-        let mut queries = ops::matmul_vec(
+        let mut queries = self.product(
             self.tensor(&format!("blk.{block}.attn_q.weight"))?,
             &normalized,
             query_width,
             width,
         );
-        let mut keys = ops::matmul_vec(
+        let mut keys = self.product(
             self.tensor(&format!("blk.{block}.attn_k.weight"))?,
             &normalized,
             kv_width,
             width,
         );
-        let values = ops::matmul_vec(
+        let values = self.product(
             self.tensor(&format!("blk.{block}.attn_v.weight"))?,
             &normalized,
             kv_width,
@@ -719,7 +764,7 @@ impl Loaded {
             }
         }
 
-        Ok(ops::matmul_vec(
+        Ok(self.product(
             self.tensor(&format!("blk.{block}.attn_output.weight"))?,
             &attended,
             width,
@@ -749,20 +794,20 @@ impl Loaded {
     fn dense(&self, block: usize, normalized: &[f32]) -> Result<Vec<f32>> {
         let width = self.shape.embedding;
         let inner = self.shape.feed_forward;
-        let gate = ops::matmul_vec(
+        let gate = self.product(
             self.tensor(&format!("blk.{block}.ffn_gate.weight"))?,
             normalized,
             inner,
             width,
         );
-        let up = ops::matmul_vec(
+        let up = self.product(
             self.tensor(&format!("blk.{block}.ffn_up.weight"))?,
             normalized,
             inner,
             width,
         );
         let activated = ops::gated(&gate, &up, self.habits.activation);
-        Ok(ops::matmul_vec(
+        Ok(self.product(
             self.tensor(&format!("blk.{block}.ffn_down.weight"))?,
             &activated,
             width,
@@ -793,7 +838,7 @@ impl Loaded {
         // file's own number rather than a repair of it.
         let used = self.shape.experts_used.min(experts);
 
-        let mut scores = ops::matmul_vec(
+        let mut scores = self.product(
             self.tensor(&format!("blk.{block}.ffn_gate_inp.weight"))?,
             normalized,
             experts,
@@ -857,10 +902,10 @@ impl Loaded {
                 ));
             };
 
-            let gate = ops::matmul_vec(gate_weights, normalized, inner, width);
-            let up = ops::matmul_vec(up_weights, normalized, inner, width);
+            let gate = self.product(gate_weights, normalized, inner, width);
+            let up = self.product(up_weights, normalized, inner, width);
             let activated = ops::gated(&gate, &up, self.habits.activation);
-            let produced = ops::matmul_vec(down_weights, &activated, width, inner);
+            let produced = self.product(down_weights, &activated, width, inner);
 
             let weight = scores.get(expert).copied().unwrap_or(0.0) / total;
             for (slot, value) in out.iter_mut().zip(produced.iter()) {

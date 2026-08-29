@@ -741,3 +741,80 @@ fn ask_date(seconds: i64) -> Option<String> {
     }
     Some(String::from_utf8(output.stdout).ok()?.trim().to_owned())
 }
+
+/// A product is the same bytes however many threads compute it (B-366, D38).
+///
+/// **The quantifier is what makes this a property rather than an example.**
+/// D38 requires bit-identical output *whatever the thread count*, over every
+/// shape and every set of weights — and the failure it is against is invisible
+/// by construction: a reduction split across workers gives an answer that
+/// differs in the last bits and depends on how busy the machine was. Fixed
+/// shapes could only ever say that these shapes are safe.
+///
+/// The values span six orders of magnitude on purpose. Adding a million to a
+/// thousandth and then to another thousandth is not the same number as adding
+/// the two thousandths first, so a generator producing values of one size would
+/// make this property pass without exercising the thing it is about.
+#[test]
+fn a_product_is_the_same_bytes_at_every_thread_count() {
+    let verdict = check(GATING_CASES, |rng| {
+        // Big enough to be partitioned. The engine hands a product only as many
+        // workers as its size earns (F99), so a shape below that threshold runs
+        // serially and would compare the serial path against itself — a case
+        // that cannot fail. The assertion below is what says these did not.
+        let columns = rng.index(192) + 64;
+        let wanted = mcf_standin::threads::WORTH_A_WORKER * (rng.index(6) + 2);
+        let rows = wanted.div_ceil(columns) + rng.index(8);
+        let matrix: Vec<f32> = (0..rows * columns).map(|_| weight(rng)).collect();
+        let vector: Vec<f32> = (0..columns).map(|_| weight(rng)).collect();
+
+        let definition = mcf_standin::ops::matmul_vec(&matrix, &vector, rows, columns);
+        // Zero is a thread count a caller can ask for and is not one; the
+        // partition must survive it as the definition does.
+        let count = rng.index(40);
+        let threads = mcf_standin::threads::Threads::stated(count);
+        if count > 1 && threads.worth_starting(rows * columns) < 2 {
+            return Err(format!(
+                "{rows}×{columns} earns {} worker(s) at {count} thread(s), so this case \
+                 compared the serial path with itself and could not have failed",
+                threads.worth_starting(rows * columns)
+            ));
+        }
+        let produced =
+            mcf_standin::ops::matmul_vec_across(&matrix, &vector, rows, columns, threads);
+        if definition.len() != produced.len() {
+            return Err(format!(
+                "{rows}×{columns} at {count} thread(s) produced {} rows against {}",
+                produced.len(),
+                definition.len()
+            ));
+        }
+        for (index, (one, other)) in definition.iter().zip(produced.iter()).enumerate() {
+            if one.to_bits() != other.to_bits() {
+                return Err(format!(
+                    "{rows}×{columns} at {count} thread(s): row {index} is {other} and the \
+                     serial definition says {one}"
+                ));
+            }
+        }
+        Ok(())
+    });
+    assert_held(&verdict);
+}
+
+/// One weight: mixed sign, and a magnitude drawn from six orders.
+///
+/// Never a `NaN` and never an infinity. Both would compare equal to themselves
+/// by bits and neither says anything about summation order, so admitting them
+/// would spend cases on inputs the property is not about.
+fn weight(rng: &mut Rng) -> f32 {
+    let unit = f32::from(u16::try_from(rng.below(65_536)).unwrap_or(0));
+    let signed = (unit - 32_768.0) / 32_768.0;
+    let decade = match rng.below(4) {
+        0 => 0.001,
+        1 => 1.0,
+        2 => 1_000.0,
+        _ => 1_000_000.0,
+    };
+    signed * decade
+}

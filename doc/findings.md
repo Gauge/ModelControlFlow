@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 83 |
+| **Version** | 84 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -125,6 +125,7 @@ forward as one.
 | 96 | [F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)](#96--f96--the-pre-flight-marks-rather-than-refuses-and-the-band-it-uses-says-whose-machine-measured-it-b-217-dec-007-f95-a21-a20-a4) |
 | 97 | [F97 — Five modules measure something and are checked against nothing, and now they say so (B-390, A19, A7, §6.16)](#97--f97--five-modules-measure-something-and-are-checked-against-nothing-and-now-they-say-so-b-390-a19-a7-616) |
 | 98 | [F98 — The unpaired interval needed different mathematics, and the recurrence was checked against enumeration (B-388, B54, B53, §3.27, A19)](#98--f98--the-unpaired-interval-needed-different-mathematics-and-the-recurrence-was-checked-against-enumeration-b-388-b54-b53-327-a19) |
+| 99 | [F99 — Threads pay at every shape a model performs, cost nothing in noise, and past a product's optimum more of them is slower (B-366, D38, F52, §3.12, A6, A19)](#99--f99--threads-pay-at-every-shape-a-model-performs-cost-nothing-in-noise-and-past-a-products-optimum-more-of-them-is-slower-b-366-d38-f52-312-a6-a19) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7050,7 +7051,150 @@ compared against nothing, `enough` was never one — it was cross-checked from
 the day the interval landed. This adds a second independent check to the same
 module rather than a sixth entry to the list.
 
+## 99 · F99 — Threads pay at every shape a model performs, cost nothing in noise, and past a product's optimum more of them is slower (B-366, D38, F52, §3.12, A6, A19)
+
+**What D38 asked for and what was owed.** Work split across processors, with
+**bit-identical output whatever the thread count** — and
+[F52](#52--f52--the-engine-benchmarks-will-use-is-three-times-noisier-than-the-one-they-will-not-and-two-guesses-about-why-were-both-wrong-dec-007-b-366-b-376-34-a19-f51)
+standing beside it as the reason not to predict any of it: thread count moved a
+benchmark's noise by a factor of five, in the direction opposite to the one
+reasoned out, and the mechanism was never established. So none of the numbers
+below was estimated first.
+
+**Every figure was taken with the machine held to itself** (`heavy`, load
+average 0.47 to 1.03 across the run), on one thirty-two-processor machine, with
+the stand-in reading `SmolLM2-135M-Instruct-Q8_0`. They are facts about MCF's
+own engine on one machine, not measurements MCF publishes: B65 forbids a speed
+from a stand-in, and this is the same class of evidence as F8, F12 and F52.
+
+### The answer never moved
+
+Every cell of every table below was compared against the one-thread answer.
+Eight product shapes × seven thread counts × nine repeats, and a whole
+generation at seven counts × five repeats: **identical, always**. That is
+B-366's claim asked of a real model rather than of a fixture.
+
+### Every product a model performs is faster partitioned
+
+`211 products a token` on this model — 210 of them under a million elements and
+one output projection of 28 million — so the worry going in was that starting
+workers 211 times would cost more than it bought. It does not:
+
+| rows × columns | 1 thread | best | speedup |
+|---|---|---|---|
+| 576 × 576 (an attention projection) | 492 µs ±1% | 129 µs ±2% at 16 | 3.8× |
+| 1 536 × 576 (a feed-forward) | 1 338 µs ±1% | 196 µs ±10% at 16 | 6.8× |
+| 2 048 × 2 048 | 6 531 µs ±2% | 550 µs ±3% at 16 | 11.9× |
+| 5 632 × 2 048 | 18 012 µs ±1% | 1 166 µs ±6% at 32 | 15.4× |
+| 4 096 × 4 096 | 25 462 µs ±1% | 1 617 µs ±4% at 32 | 15.7× |
+| 11 008 × 4 096 | 68 446 µs ±1% | 5 015 µs ±5% at 24 | 13.6× |
+| 32 000 × 2 048 (an output projection) | 101 609 µs ±1% | 6 931 µs ±4% at 24 | 14.7× |
+| 49 152 × 576 | 43 303 µs ±1% | 3 169 µs ±3% at 24 | 13.7× |
+
+Even the smallest product a 135-million-parameter model performs is nearly four
+times faster partitioned. End to end the model goes from **347 ms a token to
+66** — 5.2× — which is the difference D38 was after between an engine that runs
+a large model and one that theoretically would.
+
+### But past a product's optimum, more workers is *slower*
+
+This is the part no reasoning produced. Measured before any rule was applied:
+
+| rows × columns | 8 threads | 16 | 24 | 32 |
+|---|---|---|---|---|
+| 576 × 576 | **130 µs** | 197 | 221 | 296 |
+| 1 536 × 576 | 239 | **196 µs** | 262 | 322 |
+| 2 048 × 2 048 | 940 | **549 µs** | 598 | 605 |
+| 5 632 × 2 048 | 2 465 | 1 388 | 1 353 | **1 211 µs** |
+
+A 576 × 576 product is **2.3× slower on thirty-two workers than on eight**.
+Handing every product every processor the machine has would therefore have been
+slower than handing it some of them — and end to end that is exactly what
+happened: without a rule, thirty-two threads ran the model at 912 ms against
+557 ms at eight, **1.64× worse than the best count**.
+
+### So the engine spends only what a product earns
+
+One number, and it comes from the two shapes that bound it: a 331-thousand-element
+product was fastest at eight workers (41 thousand each) and an 885-thousand one at
+sixteen (55 thousand each). `WORTH_A_WORKER` is **50 000 elements**, and a product
+gets `elements / 50 000` workers or the caller's thread count, whichever is fewer.
+
+**What the rule buys is not speed — it is that asking for everything stops
+costing anything:**
+
+| threads asked for | without the rule | with it |
+|---|---|---|
+| 8 | 557 ms (4.77×) | 603 ms (4.60×) |
+| 16 | 567 ms (4.69×) | 552 ms (5.03×) |
+| 24 | 737 ms (3.61×) | **530 ms (5.23×)** |
+| 32 | 912 ms (2.91×) | 535 ms (5.19×) |
+
+The peak barely moved (4.77× to 5.23×). The *penalty for asking for too much*
+went away, which is what makes *what this machine reports* a safe default rather
+than a number somebody has to tune per model. **A prediction made before
+measuring was wrong by a factor of two**: the rule was expected to roughly halve
+the per-token cost, by giving the small products fewer workers and the output
+projection all of them. It did not, because the 210 small products dominate and
+the rule gives them *fewer* workers, not more.
+
+**The mechanism is not established and nothing here claims one.** Whether this
+is thread-start cost, memory bandwidth, or the cache behaviour of a matrix that
+stops fitting, was not measured. F52 is the standing evidence that guessing at
+it produces backwards answers.
+
+### Threads did not make MCF's engine noisier
+
+F52's caution was explicit: *giving MCF's own engine threads will change its
+noise characteristics as well as its speed, and the change must be measured
+rather than predicted.* Measured, the middle half of five repeats:
+
+| threads | 1 | 2 | 4 | 8 | 16 | 24 | 32 |
+|---|---|---|---|---|---|---|---|
+| middle half | 0.5% | 1.9% | 1.9% | 0.8% | 0.5% | 0.1% | 0.7% |
+
+**No worse at thirty-two threads than at one**, and tighter than the 3.6% F52
+measured for this engine single-threaded through the daemon. The prediction F52
+declined to make would have been wrong in the pessimistic direction.
+
+### On a busy machine, threads cost rather than pay
+
+The first pilot ran on this machine at load average **34 of 32 processors**, and
+every thread count was *worse* than one, monotonically: 113 ms a token at one
+thread and 539 at thirty-two, 5.3× slower. The same command on the quiet machine
+is 5.2× **faster** at thirty-two. So the benefit of a thread count is a condition
+of the machine's state and not a property of the engine, which is F52's own
+lesson arriving from the other direction — and it is why the number MCF renders
+beside an answer is the count it used rather than a claim about what that count
+bought.
+
+### The rewrite did not cost the one-thread path
+
+`matmul_vec` became a delegation to the partitioned form so that both paths sum
+a row with the same function. That is a change to the code the *default* path
+runs, so it was measured against the loop it replaced, kept in the prototype for
+the purpose. Across all eight shapes the rewritten path was faster, by 20% on the
+smallest and by 0.5–2% on the rest — consistent in direction, and inside the
+repeats' own spread on every shape but the smallest.
+
+### What this did not establish
+
+Anything about another machine: one processor, one memory system, one thread
+count. Whether the 50 000 holds on a machine with four processors or a hundred
+and twenty-eight — the rule errs toward fewer workers, which costs speed there
+and can never cost correctness. Anything about a model larger than 135 million
+parameters, which is [B-384](backlog.md)'s question and the reason it was
+sequenced after this one. And energy, thermal state and memory, none of which
+was read.
+
 ## Changelog
+
+### Version 84 — threads, measured on both sides
+
+F99. B-366: every product a model performs is faster partitioned, the answer
+never moves, and past a product’s optimum more workers is slower — so the
+engine spends only what a product earns. Threads did not make it noisier,
+which F52 said had to be measured rather than predicted.
 
 ### Version 83 — a marker is shown as what it becomes
 

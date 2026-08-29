@@ -116,7 +116,8 @@ fn examine_for_embedding(path: &std::path::Path) -> Result<(), Failure> {
 fn answer(bytes: &[u8], text: &str) -> Result<(bert::Embedding, String), Failure> {
     let file = gguf::parse(bytes)?;
     let vocabulary = Vocabulary::read(&file)?;
-    let model = bert::load(&file, bytes)?;
+    let model =
+        bert::load(&file, bytes)?.across(mcf_standin::threads::Threads::what_the_machine_reports());
     let tokens = vocabulary.encode(text, true)?;
     let build = BuildIdentity::current().version.to_owned();
     let marked = bert::embed(&model, &build, &tokens)?;

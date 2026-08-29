@@ -120,7 +120,11 @@ pub fn against(bytes: &[u8], prompt: &[usize], produced: &[usize]) -> Result<Agr
 
     let file = mcf_standin::gguf::parse(bytes)?;
     let vocabulary = Vocabulary::read(&file)?;
-    let model = mcf_standin::llama::load(&file, bytes)?;
+    // Threads change what this costs and not what it produces (B-366), which is
+    // exactly what a cross-check needs: the logits compared here are the same
+    // bytes at any count, and getting them takes less of the operator's day.
+    let model = mcf_standin::llama::load(&file, bytes)?
+        .across(mcf_standin::threads::Threads::what_the_machine_reports());
 
     let mut cache = mcf_standin::llama::Cache::for_model(&model.shape);
     let mut position = 0_usize;

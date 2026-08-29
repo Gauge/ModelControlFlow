@@ -135,6 +135,18 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core"],
     },
     Member {
+        name: "mcf-prototype-thread-scaling",
+        path: "prototypes/thread-scaling",
+        // The B-366 evidence: what threads do to MCF's own engine — whether the
+        // answer moved (it must not), how much faster, and how much noisier.
+        // Ships nothing and nothing depends on it. It reaches for
+        // `mcf-standin` because the subject *is* that engine: a partition timed
+        // against a mock would be a timing of the mock, and B65's prohibition
+        // is on MCF publishing such a number rather than on MCF knowing what
+        // its own code costs (F8, F12 and F52 are the precedent).
+        depends_on: &["mcf-core", "mcf-standin"],
+    },
+    Member {
         name: "mcf-prototype-timing-noise",
         path: "prototypes/timing-noise",
         // The DEC-007 evidence: how much an identical run's timing varies on a

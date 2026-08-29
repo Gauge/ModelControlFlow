@@ -15,7 +15,10 @@
 //! Rust here is twenty-five to fifty times a specialist's single core.
 //!
 //! **Deliberately slow, and written to be read.** No SIMD, no fusion, no
-//! threading, no accelerator path, no memory-layout work. Its maintenance is
+//! accelerator path, no memory-layout work. Threads are the one division of
+//! labour it takes, and they change no arithmetic: work is partitioned by
+//! output index and every reduction stays whole, so the answer is the same
+//! bytes at one thread and at thirty-two (B-366, [`threads`]). Its maintenance is
 //! proportional to *architectures* rather than to hardware, which is exactly the
 //! treadmill §7.4 refused. Where a choice is between fast and legible, this
 //! crate takes legible, and says so at the site.
@@ -34,6 +37,7 @@
 //! | [`ops`] | The ordinary operations of a transformer, each one the definition |
 //! | [`llama`] | One family of model, assembled from those operations and run a token at a time |
 //! | [`sample`] | Choosing the next token, from a stated seed and stated settings |
+//! | [`threads`] | Splitting work across processors without changing the answer |
 //! | [`session`] | The generation loop, and the mark every result from it carries (A5) |
 //! | [`tokenizer`] | The vocabulary in the file, and the segmentation it implies |
 //!
@@ -55,5 +59,6 @@ pub mod ops;
 pub mod recommended;
 pub mod sample;
 pub mod session;
+pub mod threads;
 pub mod tokenizer;
 pub mod wordpiece;
