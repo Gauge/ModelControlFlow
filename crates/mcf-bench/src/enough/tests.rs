@@ -490,7 +490,9 @@ mod spreads {
             -335_000, 1_445_000,
         ])
         .expect("nine pairs");
-        assert_eq!(held.coverage, PartsPerMillion(960_938));
+        // 492 of 512 sign patterns, truncated down so the claim is never
+        // larger than the truth (F94).
+        assert_eq!(held.coverage, PartsPerMillion(960_937));
         assert_eq!(
             (held.low, held.high),
             (PartsPerMillion(335_000), PartsPerMillion(1_820_000)),

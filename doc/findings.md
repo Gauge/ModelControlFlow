@@ -120,6 +120,7 @@ forward as one.
 | 91 | [F91 — The sensors were there the whole time, one directory across (B-084, DEC-007, A7, A2, §3.4)](#91--f91--the-sensors-were-there-the-whole-time-one-directory-across-b-084-dec-007-a7-a2-34) |
 | 92 | [F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327) |
 | 93 | [F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)](#93--f93--every-measurement-mcf-has-taken-is-attributed-to-an-instrument-it-cannot-identify-34-a1-a2-a7-616) |
+| 94 | [F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6736,6 +6737,93 @@ which is A19: a reported quantity checked against an independently known value.
 That is the sixth time in this session that a thing which looked correct was
 wrong, and the second where the failure mode was *doing nothing while appearing
 to work*.
+
+## 94 · F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)
+
+**Six defects in one session, and 1,321 test functions found none of them.**
+
+| | defect | found by |
+|---|---|---|
+| F80 | register headline wrong by five items | adding a row and noticing the total |
+| F84 | branch read from the wrong axis | running a new rule against real call sites |
+| F90 | contention +22 %, above the physical ceiling | an operator asking about headroom |
+| F91 | no processor temperature, ever | an operator saying the data was accessible |
+| F92 | effect size with no measure of itself | reading the output as a stranger |
+| F93 | instrument unidentifiable in every record | asking why F90's extent was knowable |
+
+Not because the tests are weak. Because every one of these was code doing
+exactly what it was written to do, and the writing was wrong. A test written
+from the same understanding as the code cannot see past it.
+
+**What unites them: an independent source existed and was never consulted.**
+`/proc/stat` for contention. A second sensor directory for temperature. An
+independent computation of a textbook interval for the effect size. The record
+itself for the instrument's identity. None was hard to find — `/proc/stat`
+exposed F90 in about thirty seconds once somebody looked.
+
+**MCF has a rule for exactly this, and it names this failure.**
+
+> **A19 — Anything reported is tested against an independently known value.**
+> **Violation looks like:** *a statistic whose only validation is that it looks
+> about right.*
+
+**Where it was applied.** Fifty-eight files. SHA-256 against published vectors,
+the tokenizer against reference output, dequantization against `llama.cpp`,
+time arithmetic against known dates, JSON, HTTP framing, the control protocol,
+the probes. Genuinely thorough.
+
+**Where it was not.** Zero citations in `hardware/contention.rs`,
+`hardware/thermal.rs`, `bench/enough.rs` or `bench/project.rs` — every module
+that measures the machine or reduces measurements to a claim.
+
+And the sharpest form of it: MCF ships `mcf cross-check`, which compares its own
+inference engine against an independently provisioned reference across a
+hundred and twenty positions, chosen because F40 found two engines parting at
+step four. That discipline was applied to the engine, and to nothing that
+measures.
+
+**Why the asymmetry is understandable and still wrong.** A digest has a
+published test vector; a machine's contention does not. So the parts with
+obvious ground truth got A19 and the parts without it got careful reasoning
+instead. But an independent source existed in every case — what was missing was
+the requirement to look for one.
+
+**What was built.** `scripts/ci.sh --with-instruments`, scheduled rather than
+gating because it needs the real machine and warms it for eight seconds:
+
+- **contention against the kernel's own accounting** — a different file, a
+  different accounting path, and a quantity that cannot exceed the core count;
+- **a processor sensor against physics** — every core is loaded for eight
+  seconds and the die must get hotter. A board zone read as a die, a stale
+  value, or the wrong sensor entirely all fail this, which is precisely F91's
+  ACPI zone at 16.8 °C standing in for a processor at 70 °C;
+- **the interval's coverage against brute-force enumeration** — every one of
+  the 2ⁿ sign patterns counted directly, the definition with no algebra in it,
+  against the closed form the implementation uses;
+- **occupancy against the vendor's own tool** where one is installed.
+
+**It found something on its first run.** The enumeration and the closed form
+disagreed by **one part in a million**: at eight pairs the true coverage is
+99.21875 %, and MCF stated 99.2188 % where enumeration gives 99.2187 %.
+Computing `MILLION - missed` truncates the part being subtracted, which rounds
+the *coverage* up. The magnitude is trivial and the direction is not — a
+coverage MCF overstates is a guarantee it cannot keep. It now counts the
+patterns that fall inside and truncates those, so the claim is never larger
+than the truth.
+
+That is a defect no reasoning would have found and no test written from the
+same understanding would have caught. It took a second implementation that
+shared no arithmetic with the first.
+
+**A disagreement is a finding, not a crash.** Each check reports both values and
+how far apart they are, because *the instrument is wrong* is not actionable and
+*it reads 35.2 where the kernel reads 28.9* is.
+
+**The general lesson, stated for the next instrument.** The failure mode of a
+test is not a wrong answer — it is agreement with the code it was written
+beside. Six times in one session, the thing that broke the agreement was an
+outside view: a kernel counter, a physical prediction, a second implementation,
+or an operator asking a question the code had not anticipated.
 
 ## Changelog
 

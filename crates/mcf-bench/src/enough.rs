@@ -802,11 +802,22 @@ pub fn spread_of(differences: &[i64]) -> Option<Spread> {
         let below = binomial_tail(n, n.checked_sub(k)?.checked_add(1)?)
             .unwrap_or(0)
             .min(total);
-        let missed = below
-            .checked_mul(2)?
-            .checked_mul(u128::from(MILLION))?
-            .checked_div(total)?;
-        let coverage = u64::try_from(u128::from(MILLION).saturating_sub(missed)).ok()?;
+        // **Truncated so that the claim is never larger than the truth**
+        // (F94). Computing `MILLION - missed` truncates the part being
+        // subtracted, which rounds the *coverage* up: at eight pairs the true
+        // figure is 99.21875% and that arithmetic states 99.2188% — a claim
+        // one part in a million stronger than the evidence. Counting the
+        // patterns that fall inside and truncating those states 99.2187%.
+        // The size is trivial and the direction is not: a coverage MCF
+        // overstates is a guarantee it cannot keep, and the brute-force
+        // cross-check found it on its first run.
+        let inside = total.checked_sub(below.checked_mul(2)?)?;
+        let coverage = u64::try_from(
+            inside
+                .checked_mul(u128::from(MILLION))?
+                .checked_div(total)?,
+        )
+        .ok()?;
         if coverage >= WANTED_COVERAGE.0 {
             best = Some((usize::try_from(k).ok()?, coverage));
         }

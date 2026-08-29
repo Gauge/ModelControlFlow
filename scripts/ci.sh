@@ -45,6 +45,12 @@
 #   --with-seed-set         (B-291) shows the published seed set representative
 #                           of the stream it is a prefix of, rather than
 #                           assuming it
+#   --with-instruments      (B-390) compares each measuring instrument against
+#                           an independent source: contention against the
+#                           kernel's own accounting, a processor sensor against
+#                           the physical fact that a die warms when it works,
+#                           occupancy against the vendor's tool. Needs the real
+#                           machine, and warms it for eight seconds.
 #   --with-oracle           (B-368) compares MCF's engine against a reference
 #   --with-online           (B-029) acquires a real model from the real hub
 #                           over TLS, verifies it, lists it and removes it.
@@ -81,6 +87,7 @@ with_mutation=false
 with_from_scratch=false
 with_corpus=false
 with_seed_set=false
+with_instruments=false
 with_oracle=false
 with_online=false
 for argument in "$@"; do
@@ -94,6 +101,7 @@ for argument in "$@"; do
         --with-from-scratch) with_from_scratch=true ;;
         --with-corpus) with_corpus=true ;;
         --with-seed-set) with_seed_set=true ;;
+        --with-instruments) with_instruments=true ;;
         --with-oracle) with_oracle=true ;;
         --with-online) with_online=true ;;
         --all)
@@ -106,6 +114,7 @@ for argument in "$@"; do
             with_from_scratch=true
             with_corpus=true
             with_seed_set=true
+            with_instruments=true
             with_oracle=true
             with_online=true
             ;;
@@ -114,7 +123,8 @@ for argument in "$@"; do
             printf 'usage: scripts/ci.sh [--with-fuzz] [--with-load] [--with-soak] ' >&2
             printf '[--with-budget] [--with-mutation]\n' >&2
             printf '                     [--with-from-scratch] [--with-reproducibility] ' >&2
-            printf '[--with-corpus] [--with-seed-set] [--with-oracle] ' >&2
+            printf '[--with-corpus] [--with-seed-set]\n' >&2
+            printf '                     [--with-instruments] [--with-oracle] ' >&2
             printf '[--with-online] | --all\n' >&2
             exit 2
             ;;
@@ -296,6 +306,26 @@ if [ "$with_seed_set" = true ]; then
     fi
 fi
 
+if [ "$with_instruments" = true ]; then
+    step "each instrument against an independent source (B-390)"
+    # A19 applied to the things that measure. Every instrument defect this
+    # repository has found had an independent source available and unconsulted
+    # (F90, F91, F92, F93) — the kernel's own accounting, a second sensor
+    # directory, an independent computation of the same interval.
+    #
+    # A disagreement is a finding rather than a crash: the check prints both
+    # values and how far apart they are, because *the instrument is wrong* is
+    # not actionable and *it reads 35.2 where the kernel reads 28.9* is.
+    instruments=0
+    MCF_WITH_INSTRUMENTS=1 cargo test --locked --offline -p mcf-checks \
+        --test instruments_agree_with_an_independent_source -- --test-threads=1 \
+        || instruments=$?
+    if [ "$instruments" -ne 0 ]; then
+        printf 'ci: an instrument disagrees with its independent source\n' >&2
+        exit 1
+    fi
+fi
+
 if [ "$with_oracle" = true ]; then
     step "against a reference implementation (B-368)"
     # No exclusive window: what runs here is two tokenizers over six short
@@ -357,6 +387,7 @@ report_absent "$with_mutation" "mutation (B-191)             — scripts/ci.sh -
 report_absent "$with_from_scratch" "from-scratch conformance     — scripts/ci.sh --with-from-scratch"
 report_absent "$with_corpus" "conformance corpus (B-370)   — scripts/ci.sh --with-corpus"
 report_absent "$with_seed_set" "the seed set (B-291)         — scripts/ci.sh --with-seed-set"
+report_absent "$with_instruments" "instruments (B-390)          — scripts/ci.sh --with-instruments"
 report_absent "$with_oracle" "against a reference (B-368)  — scripts/ci.sh --with-oracle"
 report_absent "$with_online" "the real hub (B-029)         — scripts/ci.sh --with-online"
 report_absent "$with_reproducibility" "reproducible build (B-001)   — scripts/ci.sh --with-reproducibility"
