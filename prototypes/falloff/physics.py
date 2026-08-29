@@ -49,6 +49,26 @@ L3_TOTAL = 64 * 1024 * 1024
 # being FLATTER than predicted.
 FULL_ATTENTION_EVERY = {"gemma3": 6}
 
+# Architectures whose cost per token does NOT grow with depth, because they
+# keep no per-token cache to re-read. A recurrent or state-space model carries
+# a fixed-size state, so its fall-off is flat and the bandwidth argument does
+# not apply — predicting a slope for one would be confidently wrong rather
+# than merely imprecise.
+NO_GROWING_CACHE = {"mamba", "mamba2", "rwkv", "rwkv6", "rwkv7", "falcon_mamba", "jamba"}
+
+# Architectures that keep a cache, but not one this arithmetic describes.
+# Multi-head latent attention stores a compressed latent per token instead of
+# K and V per head, so layers x kv_heads x (key + value) is the wrong product.
+CACHE_NOT_DESCRIBED = {
+    "deepseek2": "multi-head latent attention: the cache holds a compressed "
+                 "latent, not K and V per head",
+}
+
+# The default cache element in llama.cpp is f16. A run using --cache-type-k or
+# --cache-type-v changes it, which is why this is a stated condition of a
+# prediction rather than a constant buried in a product (A6).
+DEFAULT_CACHE_BYTES = 2
+
 
 def gguf_metadata(path, want):
     """Reads the header key/values. Stops at the tensor data — the point is to
@@ -88,14 +108,35 @@ def gguf_metadata(path, want):
         return out
 
 
-def geometry(path):
-    """Layers, KV heads and head dimension, whatever the architecture calls
-    them. Returns None where the header does not say (A7: unknown is unknown,
-    not a guess)."""
-    kv = gguf_metadata(path, [".block_count", ".attention.head_count",
-                              ".attention.key_length", ".attention.value_length",
-                              ".embedding_length", ".context_length",
-                              ".attention.sliding_window"])
+WANTED = [".block_count", ".attention.head_count", ".attention.key_length",
+          ".attention.value_length", ".embedding_length", ".context_length",
+          ".attention.sliding_window"]
+
+
+def describe(kv, cache_bytes=DEFAULT_CACHE_BYTES):
+    """The arithmetic, on a header already read.
+
+    Separated from the file so it can be exercised against headers that do not
+    exist on this machine — which is the only way to find out what the
+    predictor does with an architecture nobody here has (D26).
+
+    Always returns a dict. `verdict` is one of:
+
+      described          the slope follows from the geometry
+      no-growing-cache   there is no cache to re-read; the slope is ~0
+      not-described      a cache this arithmetic does not model
+      header-incomplete  the header does not say enough (A7)
+    """
+    architecture = next((k.split(".")[0] for k in kv), None)
+    if architecture in NO_GROWING_CACHE:
+        return {"verdict": "no-growing-cache", "architecture": architecture,
+                "why": "carries a fixed-size state, not a per-token cache",
+                "growing_bytes_per_depth_token": 0}
+    if architecture in CACHE_NOT_DESCRIBED:
+        return {"verdict": "not-described", "architecture": architecture,
+                "why": CACHE_NOT_DESCRIBED[architecture],
+                "growing_bytes_per_depth_token": None}
+
     def pick(suffix):
         v = next((v for k, v in kv.items() if k.endswith(suffix)), None)
         # Some headers store a per-layer array rather than one number. Where
@@ -119,7 +160,12 @@ def geometry(path):
     if val_len is None:
         val_len = key_len
     if not all((layers, kv_heads, key_len, val_len)):
-        return None
+        missing = [n for n, v in (("layers", layers), ("kv heads", kv_heads),
+                                  ("key length", key_len), ("value length", val_len))
+                   if not v]
+        return {"verdict": "header-incomplete", "architecture": architecture,
+                "why": "the header does not state " + ", ".join(missing),
+                "growing_bytes_per_depth_token": None}
     window = pick(".attention.sliding_window")
     architecture = next((k.split(".")[0] for k in kv), None)
     # Layers whose cost keeps growing with depth. Without a sliding window
@@ -135,8 +181,12 @@ def geometry(path):
             window_note = f"window {int(window)}, interleave unknown"
             growing = None            # not predictable; say so rather than guess
 
-    per_layer_read = kv_heads * (key_len + val_len) * 2
+    per_layer_read = kv_heads * (key_len + val_len) * cache_bytes
     return {
+        "verdict": "described" if growing is not None else "not-described",
+        "architecture": architecture,
+        "why": window_note if growing is None else None,
+        "cache_bytes": cache_bytes,
         "layers": layers, "kv_heads": kv_heads,
         "growing_layers": growing, "window_note": window_note,
         # How much of ONE layer's cache is read contiguously per token. A
@@ -151,11 +201,18 @@ def geometry(path):
         # condition and not a constant.
         # what the WHOLE cache costs to hold, all layers
         "bytes_per_depth_token": int(layers * per_layer_read),
+        "trained": trained,
         # what actually grows with depth, and so sets the slope
         "growing_bytes_per_depth_token": (
             int(growing * per_layer_read) if growing is not None else None
         ),
     }
+
+
+def geometry(path, cache_bytes=DEFAULT_CACHE_BYTES):
+    """describe(), for a file on this machine. Always returns a dict; read
+    `verdict` before reading anything else."""
+    return describe(gguf_metadata(path, WANTED), cache_bytes)
 
 
 def predicted_slope_ms(bytes_per_depth_token, dram_gbs):
@@ -172,7 +229,7 @@ def main():
     print("  this prediction does not apply.\n")
     print(f"  {'model':<40}{'KV B/tok':>10}{'in L3 to':>10}{'slope':>12}{'per-layer':>11}")
     print(f"  {'':<40}{'':>10}{'depth':>10}{'ms/tok/tok':>12}{'read':>11}")
-    found = []
+    found, declined = [], []
     for path in sorted(glob.glob(os.path.expanduser("~/.local/share/mcf/**/*.gguf"), recursive=True)):
         name = os.path.basename(path)
         # ggml-vocab-*.gguf are tokenizer fixtures shipped with llama.cpp, not
@@ -181,23 +238,19 @@ def main():
         if name.startswith("ggml-vocab-"):
             continue
         geo = geometry(path)
-        if geo is None:
-            print(f"  {name[:39]:<40}{'header does not say':>42}")
+        if geo["verdict"] != "described":
+            print(f"  {name[:39]:<40}{geo['verdict']:>20}  {geo.get('why') or ''}"[:110])
+            declined.append((name, geo["verdict"]))
             continue
         per = geo["bytes_per_depth_token"]
-        growing = geo["growing_bytes_per_depth_token"]
-        if growing is None:
-            print(f"  {name[:39]:<40}{per / 1024:>9.0f}K"
-                  f"{'  ' + (geo['window_note'] or ''):>42}")
-            continue
-        slope = predicted_slope_ms(growing, dram)
+        slope = predicted_slope_ms(geo["growing_bytes_per_depth_token"], dram)
         found.append((name, geo, slope))
         note = "" if geo["per_layer_read"] >= 2048 else "  latency-bound"
         if geo["window_note"]:
             note += f"  [{geo['window_note']}]"
         print(f"  {name[:39]:<40}{per / 1024:>9.0f}K{L3_PER_CCD // per:>10,}"
               f"{slope:>12.6f}{geo['per_layer_read']:>9.0f}B{note}")
-    print(f"\n  {len(found)} model(s) with usable geometry")
+    print(f"\n  {len(found)} described, {len(declined)} declined with a reason")
     print("\n  A prediction from bandwidth needs the per-layer read to be")
     print("  large enough to stream. Marked rows read under 2 KiB a layer and")
     print("  are bound by latency instead, where this under-states the slope.")

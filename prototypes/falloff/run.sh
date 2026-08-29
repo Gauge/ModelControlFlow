@@ -42,7 +42,7 @@ mkdir -p "$OUT"
 readings="$OUT/readings.tsv"
 # The conditions columns come from depth_probe's CONDITIONS list, printed by
 # the probe itself so the header cannot drift from the rows.
-cond_header=$(python3 -c "import sys;sys.path.insert(0,'$root/prototypes/falloff');import depth_probe;print('\t'.join(depth_probe.CONDITIONS))")
+cond_header=$(python3 -c "import sys;sys.path.insert(0,'$root/prototypes/falloff');import depth_probe;print('\t'.join(depth_probe.CONDITIONS + depth_probe.TRAILING))")
 [ -s "$readings" ] || printf 'model\tallocation\trepeat\tarrival\tkind\tfrom_token\tto_token\tnanoseconds\tprefill_ns\t%s\n' "$cond_header" >"$readings"
 
 die() {
@@ -52,6 +52,16 @@ die() {
         esac
     done
     printf '0\n'
+}
+
+# A model that produced no reading at all is the gap that makes a table look
+# complete. Whatever the reason, it goes in the file.
+note() { # note <model> <allocation> <why>
+    printf '%s\t%s\t0\tplan\trefused\t0\t0\t0\t0' "$1" "$2" >>"$readings"
+    python3 -c "
+import sys;sys.path.insert(0,'$root/prototypes/falloff');import depth_probe
+sys.stdout.write('\t' + '\t'.join(['unknown'] * len(depth_probe.CONDITIONS)))" >>"$readings"
+    printf '\t%s\n' "$3" >>"$readings"
 }
 
 server_pid=""
@@ -76,6 +86,35 @@ start() { # start <model-path> <allocation>
 # MCF_FALLOFF_ONLY selects the models by substring. The order arm has to be
 # pointed at the model whose allocation effect is in question, which is not
 # whichever two sort first.
+# What depths this model can actually be asked about. A fixed ladder assumes
+# every model has the context of the one it was written for: the first corpus
+# sweep asked 4096 of a model trained to 128 and lost five models to HTTP 400.
+plan() { # plan <model-path> -> "<allocation> <depth> <depth> ..."
+    # the heredoc is quoted, so the prototype's path is passed as an argument
+    # rather than interpolated
+    python3 - "$1" "$root/prototypes/falloff" <<'PLAN'
+import sys
+sys.path.insert(0, sys.argv[2])
+import physics
+geo = physics.geometry(sys.argv[1])
+trained = (geo or {}).get("trained") or 0
+if not trained:
+    print("")                      # no declared context: nothing to plan (A7)
+    raise SystemExit
+allocation = min(int(trained), 16384)
+# 128 tokens are generated at each depth, and the engine needs headroom for
+# them, so the deepest probe stops short of the allocation.
+ceiling = allocation - 256
+depths, d = [], 512
+while d <= ceiling:
+    depths.append(d)
+    d *= 2
+if not depths and ceiling >= 64:
+    depths = [max(64, ceiling // 2)]   # a small-context model still has a curve
+print(" ".join(str(x) for x in [allocation] + depths))
+PLAN
+}
+
 models=()
 while IFS= read -r found; do models+=("$found"); done < <(
     find "$HOME/.local/share/mcf" "$HOME/.cache/mcf" -name '*.gguf' -type f 2>/dev/null \
@@ -134,12 +173,23 @@ if [ "$ARM" = corpus ] || [ "$ARM" = all ]; then
     for model in "${models[@]}"; do
         name=$(basename "$model")
         case "$name" in ggml-vocab-*) continue;; esac
-        start "$model" 8192 || { printf '  %-34s no server; skipped\n' "$name" >&2; continue; }
-        printf '  %-34s\n' "$name" >&2
+        read -r allocation depths <<<"$(plan "$model")"
+        if [ -z "${allocation:-}" ]; then
+            printf '  %-34s no declared context in the header; not planned\n' "$name" >&2
+            note "$name" 0 "the header declares no context length"
+            continue
+        fi
+        if [ -z "${depths:-}" ]; then
+            printf '  %-34s context %s is too small to probe at depth\n' "$name" "$allocation" >&2
+            note "$name" "$allocation" "trained context $allocation leaves no room to probe at depth"
+            continue
+        fi
+        start "$model" "$allocation" || { printf '  %-34s no server; skipped\n' "$name" >&2; continue; }
+        printf '  %-34s context %s, depths %s\n' "$name" "$allocation" "$depths" >&2
         for repeat in $(seq 1 "$REPEATS"); do
-            for depth in 512 1024 2048 4096 6144; do
+            for depth in $depths; do
                 timeout 900 python3 "$probe" prefill "$PORT" "$depth" 128 \
-                    "$name" 8192 "$repeat" "$readings" 2>&1 | sed 's/^/    /' >&2 || true
+                    "$name" "$allocation" "$repeat" "$readings" 2>&1 | sed 's/^/    /' >&2 || true
             done
         done
         stop

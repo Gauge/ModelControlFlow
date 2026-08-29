@@ -1,4 +1,4 @@
-model	allocation	repeat	arrival	kind	from_token	to_token	nanoseconds	prefill_ns	freq_max_mhz_min	freq_max_mhz_max	temp_Tccd1_first	temp_Tccd1_last	proc_VmRSS_last	proc_read_bytes_delta	proc_majflt_delta	n_samples
+model	allocation	repeat	arrival	kind	from_token	to_token	nanoseconds	prefill_ns	freq_max_mhz_min	freq_max_mhz_max	temp_Tccd1_first	temp_Tccd1_last	proc_VmRSS_last	proc_read_bytes_delta	proc_majflt_delta	n_samples	refused_because
 SmolLM2-135M-Instruct-Q4_0.gguf	8192	1	generate	band	1	128	254490658	0	5417.695	5585.566	66.125	67.5	376107008	0	0	54
 SmolLM2-135M-Instruct-Q4_0.gguf	8192	1	generate	band	129	384	535189099	0	5417.695	5585.566	66.125	67.5	376107008	0	0	54
 SmolLM2-135M-Instruct-Q4_0.gguf	8192	1	generate	band	385	896	1174164468	0	5417.695	5585.566	66.125	67.5	376107008	0	0	54
@@ -287,3 +287,29 @@ Qwen3-0.6B-Q4_K_M.gguf	8192	2	prefill	band	1024	1152	1445142624	656598944	4732.5
 Qwen3-0.6B-Q4_K_M.gguf	8192	2	prefill	band	2048	2176	1771819991	1484130745	4684.977	5381.065	83.875	72.75	2374230016	0	0	13
 Qwen3-0.6B-Q4_K_M.gguf	8192	2	prefill	band	4096	4224	2379015375	3756495621	4681.755	5399.688	79.5	74.75	2374987776	0	0	25
 Qwen3-0.6B-Q4_K_M.gguf	8192	2	prefill	band	6144	6272	3032618923	6766317030	4635.163	5380.084	76.25	75.25	2376187904	0	0	39
+Llama-160M-Chat-v1.IQ4_XS.gguf	2048	1	prefill	band	513	641	212395435	136644483	5489.129	5581.696	62.25	57.875	240492544	0	0	2	
+Llama-160M-Chat-v1.IQ4_XS.gguf	2048	1	prefill	band	1025	1153	264774906	265902140	5050.706	5534.787	66.125	61.25	241266688	0	0	3	
+Llama-160M-Chat-v1.IQ4_XS.gguf	2048	2	prefill	band	513	641	213551936	136431658	5483.99	5498.389	71.375	62.125	283955200	0	0	2	
+Llama-160M-Chat-v1.IQ4_XS.gguf	2048	2	prefill	band	1025	1153	268805299	264822016	5003.995	5488.893	70.375	63.25	284327936	0	0	3	
+Llama-160M-Chat-v1.Q4_K.gguf	2048	1	prefill	band	513	641	248202781	99592198	5479.555	5546.931	64.125	59.75	302473216	0	0	2	
+Llama-160M-Chat-v1.Q4_K.gguf	2048	1	prefill	band	1025	1153	297003012	176624357	5370.573	5525.092	69.0	58.75	303251456	0	0	2	
+Llama-160M-Chat-v1.Q4_K.gguf	2048	2	prefill	band	513	641	242866162	93556712	5473.788	5508.326	68.375	60.75	345939968	0	0	2	
+Llama-160M-Chat-v1.Q4_K.gguf	2048	2	prefill	band	1025	1153	297753948	174219680	5486.475	5509.84	68.375	63.625	346312704	0	0	2	
+all-MiniLM-L6-v2.Q4_0.gguf	512	1	prefill	refused	128	128	0	0	unknown	unknown	unknown	unknown	unknown	unknown	unknown	unknown	HTTP 500: {"error":{"code":500,"message":"the current context does not logits computation. skipping","type":"server_error"}}
+all-MiniLM-L6-v2.Q4_0.gguf	512	2	prefill	refused	128	128	0	0	unknown	unknown	unknown	unknown	unknown	unknown	unknown	unknown	HTTP 500: {"error":{"code":500,"message":"the current context does not logits computation. skipping","type":"server_error"}}
+Phi-3-mini-4k-instruct-q4.gguf	4096	1	prefill	band	513	641	6154590154	2304492798	4503.24	5538.917	68.5	61.25	5404188672	0	0	34	
+Phi-3-mini-4k-instruct-q4.gguf	4096	1	prefill	band	1025	1153	6687964768	4637529530	4488.497	5503.972	69.375	61.75	5405478912	0	0	45	
+Phi-3-mini-4k-instruct-q4.gguf	4096	1	prefill	band	2049	2177	7706222679	9626690527	4498.966	5486.331	70.75	63.625	5407301632	0	0	69	
+Phi-3-mini-4k-instruct-q4.gguf	4096	2	prefill	band	513	641	6169969126	2470640482	4488.787	5463.512	73.25	63.625	6263173120	0	0	34	
+Phi-3-mini-4k-instruct-q4.gguf	4096	2	prefill	band	1025	1153	6712567248	4649513767	4518.942	5475.753	70.25	64.125	6263545856	0	0	45	
+Phi-3-mini-4k-instruct-q4.gguf	4096	2	prefill	band	2049	2177	7706842607	9659201844	4497.123	5468.004	73.5	67.875	6264291328	0	0	69	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	1	prefill	band	512	640	1013029954	348666434	4770.627	5472.049	69.875	67.5	737021952	0	0	6	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	1	prefill	band	1024	1152	1048482092	662321384	4700.571	5456.257	74.875	69.875	737243136	0	0	7	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	1	prefill	band	2048	2176	1199065618	1432141529	4609.277	5431.771	76.125	69.0	737910784	0	0	11	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	1	prefill	band	4096	4224	1343028520	3295395431	4617.02	5412.341	81.0	70.875	740765696	0	0	19	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	1	prefill	band	8192	8320	1611552603	8319633626	4628.054	5426.27	76.625	73.75	746446848	0	0	40	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	2	prefill	band	512	640	1012464914	347994871	4736.678	5394.138	81.5	75.25	848900096	0	0	6	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	2	prefill	band	1024	1152	1047121281	699838920	4812.534	5401.485	79.0	69.875	849121280	0	0	7	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	2	prefill	band	2048	2176	1160825270	1429464062	4622.285	5429.065	81.0	70.375	849518592	0	0	11	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	2	prefill	band	4096	4224	1346895259	3311057736	4657.734	5408.287	79.0	73.25	850276352	0	0	19	
+qwen2-0_5b-instruct-q4_k_m.gguf	16384	2	prefill	band	8192	8320	1613957429	8327574072	4600.858	5415.524	79.125	78.5	851763200	0	0	40	

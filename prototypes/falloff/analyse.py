@@ -20,13 +20,20 @@ def load(path):
                 continue
             lo, hi, ns = int(f[5]), int(f[6]), int(f[7])
             n = hi - lo + 1
+            if f[4] == "refused":
+                rows.append({"model": f[0], "allocation": int(f[1]), "repeat": int(f[2]),
+                             "arrival": f[3], "kind": "refused", "depth": lo, "ms": 0.0,
+                             "prefill_ns": 0,
+                             "refused_because": f[18] if len(f) > 18 else "refused"})
+                continue
             if n <= 0:
                 continue
             rows.append(
                 {
                     "model": f[0], "allocation": int(f[1]), "repeat": int(f[2]),
-                    "arrival": f[3], "depth": (lo + hi) / 2,
+                    "arrival": f[3], "kind": f[4], "depth": (lo + hi) / 2,
                     "ms": ns / 1e6 / n, "prefill_ns": int(f[8]),
+                    "refused_because": f[18] if len(f) > 18 else "",
                 }
             )
     return rows
@@ -150,11 +157,21 @@ def arm_corpus(rows, dram_gbs=55.8):
     print("  whether each layer's read is big enough to be bound by bandwidth")
     print("  rather than latency -- known from the header, before running.\n")
     print(f"    {'model':<34}{'measured':>11}{'predicted':>11}{'ratio':>7}{'streams':>9}{'cost':>8}")
-    scored = []
-    for model in sorted({r["model"] for r in pre}):
+    scored, unscored = [], []
+    seen = {r["model"] for r in rows}
+    for model in sorted(seen):
         mine = [r for r in pre if r["model"] == model]
         geo = physics.geometry(paths[model]) if model in paths else None
         if geo is None:
+            unscored.append((model, "not found on disk"))
+            continue
+        if geo.get("verdict") != "described":
+            unscored.append((model, f"{geo['verdict']}: {geo.get('why') or ''}"))
+            continue
+        refusals = [r for r in rows if r["model"] == model and r["kind"] == "refused"]
+        if not mine:
+            why = refusals[0]["refused_because"] if refusals else "no readings"
+            unscored.append((model, why[:70]))
             continue
         crossing = physics.L3_PER_CCD / geo["bytes_per_depth_token"]
         pts = defaultdict(list)
@@ -164,6 +181,11 @@ def arm_corpus(rows, dram_gbs=55.8):
         y = np.array([np.median(pts[k]) for k in d])
         deep = d > crossing
         if deep.sum() < 2:
+            unscored.append((
+                model,
+                f"only {int(deep.sum())} depth past its L3 crossing at {crossing:.0f}; "
+                f"a slope needs two",
+            ))
             continue
         # a straight line through the bandwidth-bound part
         slope = np.polyfit(d[deep], y[deep], 1)[0]
@@ -178,7 +200,7 @@ def arm_corpus(rows, dram_gbs=55.8):
         print(f"    {model[:33]:<34}{slope:>11.6f}{want:>11.6f}"
               f"{want / slope if slope else float('nan'):>7.2f}"
               f"{('yes' if streams else 'no'):>9}{seconds:>7.0f}s")
-    if not scored:
+    if not scored and not unscored:
         return
     for label, want_streaming in (("streams (bandwidth-bound)", True),
                                   ("does not stream (latency-bound)", False)):
@@ -199,6 +221,11 @@ def arm_corpus(rows, dram_gbs=55.8):
               f"error {min(residual):+.0f}% to {max(residual):+.0f}%   n={len(ratios)}")
     print("\n  So a model's fall-off follows from its header and one number for")
     print("  this machine. Only the intercept still needs the model to run.")
+    if unscored:
+        print(f"\n  NOT SCORED — {len(unscored)}, each with the reason, because a model")
+        print("  missing from a table is the defect that makes a tool look general:")
+        for model, why in unscored:
+            print(f"    {model[:36]:<38}{why}")
 
 
 if __name__ == "__main__":

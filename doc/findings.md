@@ -149,6 +149,7 @@ forward as one.
 | 119 | [F119 — The allocation effect was the running order, and the fall-off is the memory bus (B-400, F118, A12, A21, D19)](#119-f119-the-allocation-effect-was-the-running-order-and-the-fall-off-is-the-memory-bus-b-400-f118-a12-a21-d19) |
 | 120 | [F120 — A prefilled depth costs what a generated one costs and arrives twenty times sooner, which retires the long path rather than speeding it up (B-400, F119, A18, A11)](#120-f120-a-prefilled-depth-costs-what-a-generated-one-costs-and-arrives-twenty-times-sooner-which-retires-the-long-path-rather-than-speeding-it-up-b-400-f119-a18-a11) |
 | 121 | [F121 — The fall-off predicted from the file header on all 27 models, and the one outlier was an architecture the arithmetic did not describe (B-400, F120, A7, A21, B16)](#121-f121-the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16) |
+| 122 | [F122 — The predictor generalised by being made to refuse: two architectures agree to 8%, and every model it cannot describe now says so (B-400, F121, A2, A7, A9, A21)](#122-f122-the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8889,6 +8890,64 @@ and no entry is reported as unpredictable rather than predicted wrongly (A7).
 One outlier in twenty-seven found a whole class of architecture the arithmetic
 did not describe, which is the argument for running the corpus rather than two
 convenient models.
+
+## 122 · F122 — The predictor generalised by being made to refuse: two architectures agree to 8%, and every model it cannot describe now says so (B-400, F121, A2, A7, A9, A21)
+
+**The question the operator asked.** The corpus that produced
+[F121](#121--f121--the-fall-off-predicted-from-the-file-header-on-all-27-models-and-the-one-outlier-was-an-architecture-the-arithmetic-did-not-describe-b-400-f120-a7-a21-b16)
+held four architectures, and every model whose slope the arithmetic predicted
+well was a Qwen3. A tool calibrated on one family that prints a number for
+anything is not a measuring tool. Three things were wrong and all three were
+fixable.
+
+**Five models had produced nothing, and nothing said so.** The sweep allocated
+8192 for every model and asked for depths up to 6144. Llama-160M is trained to
+2048, stories15M to 128, all-MiniLM to 512: the prefill exceeded their context,
+the engine answered HTTP 400, and `|| true` swallowed it. The table looked
+complete because the missing rows were missing.
+
+Now each model plans its depths from its own declared context, a refusal is
+written as a row carrying the engine's own words, and a model that cannot be
+probed at all still produces a row saying why. all-MiniLM refuses with *"the
+current context does not logits computation"* — it is an embedding model and
+was never going to generate. That is a result (A9), not an absence.
+
+**The arithmetic now declines what it cannot describe.** It assumed every
+architecture keeps a K-and-V cache that grows with depth. A state-space or
+recurrent model keeps a fixed-size state, so its fall-off is flat and a
+predicted slope would be confidently wrong rather than imprecise; multi-head
+latent attention stores a compressed latent, so layers × heads × (key + value)
+is the wrong product. `describe()` returns one of four verdicts — described,
+no-growing-cache, not-described, header-incomplete — and only the first carries
+a number.
+
+Ten constructed headers exercise it, for architectures not on this machine,
+because the property under test is not that the predictor is right about
+everything but that it is **never confidently wrong**. It also predicts
+correctly for multi-query attention and for the common case where head length
+is implied by the embedding width rather than stated. MCF's own acquisition
+refused a mamba repository on the same grounds while this was being written:
+the configuration states no blocks or KV heads, and MCF will not guess a shape.
+
+**And a second architecture was acquired and measured.** Phi-3-mini is `phi3`,
+reads 12 KiB per layer against Qwen3's 4 KiB, and holds 384 KiB per token of
+depth — three and a half times Qwen3's traffic:
+
+| regime | constant | error | n | architectures |
+|---|---|---|---|---|
+| bandwidth-bound | 0.86 | −8% to +5% | 7 | qwen3, phi3 |
+| latency-bound | 0.56 | −22% to +72% | 17 | llama, gemma3, qwen2 |
+
+Phi-3 lands at 0.91, inside the band Qwen3 occupies, across 0.6B to 8B and five
+quantizations. That is the claim generalising once, which is not the same as
+generalising — two architectures is better than one and is still two.
+
+The latency-bound constant did the opposite: Qwen2-0.5B came in at 0.43 and
+widened the range to −22%/+72%. That regime is not predictable from the header
+and must be measured, which costs 15–40 seconds. The honest split is that the
+prediction is offered where it has been shown to hold and the measurement is
+taken everywhere else — and which of the two applies is decided from the header
+before anything runs.
 
 ## Changelog
 

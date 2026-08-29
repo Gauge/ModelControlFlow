@@ -20,6 +20,7 @@ much is in it and not how it got there.
 """
 
 import json
+import http.client
 import os
 import pathlib
 import sys
@@ -40,9 +41,23 @@ CONDITIONS = [
     "proc_VmRSS_last", "proc_read_bytes_delta", "proc_majflt_delta", "n_samples",
 ]
 
+# One more column after the conditions: why a reading was refused, empty where
+# it was not.
+TRAILING = ["refused_because"]
+
 
 def conditions(summary):
     return "\t".join(str(summary.get(k, "unknown")) for k in CONDITIONS)
+
+
+class Refused(Exception):
+    """The engine declined this request. What it said is the reading (A2, A9):
+    a depth a model cannot reach is a fact about the model, and recording it as
+    a gap in the table loses it."""
+
+    def __init__(self, why):
+        super().__init__(why)
+        self.why = why
 
 
 def _stream(port, body):
@@ -60,7 +75,16 @@ def _stream(port, body):
     watcher.start()
     started = time.perf_counter()
     first = None
-    with urllib.request.urlopen(request) as response:
+    try:
+        response = urllib.request.urlopen(request)
+    except urllib.error.HTTPError as error:
+        watcher.stop()
+        detail = error.read().decode("utf-8", "replace")[:200].replace("\n", " ")
+        raise Refused(f"HTTP {error.code}: {detail}") from error
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
+        watcher.stop()
+        raise Refused(f"{type(error).__name__}: {error}") from error
+    with response:
         previous = started
         for raw in response:
             line = raw.decode("utf-8", "replace").strip()
@@ -92,13 +116,30 @@ def _body(prompt, tokens):
     )
 
 
+def record_refusal(out, model, allocation, repeat, mode, depth, why):
+    """A refusal is a row, not an absence. Five models produced nothing at all
+    in the first corpus sweep because their trained context was smaller than
+    the depth asked for, and the run swallowed it — which is the shape of
+    defect that makes a tool look as though it works everywhere."""
+    sys.stderr.write(f"    REFUSED at {depth}: {why}\n")
+    with open(out, "a") as handle:
+        handle.write(
+            f"{model}\t{allocation}\t{repeat}\t{mode}\trefused\t{depth}\t{depth}\t0\t0"
+            f"\t{conditions({})}\t{why}\n"
+        )
+
+
 def main():
     mode, port = sys.argv[1], int(sys.argv[2])
     model, allocation, repeat, out = sys.argv[-4:]
 
     if mode == "generate":
         depth = int(sys.argv[3])
-        first, gaps, final, held = _stream(port, _body("A", depth))
+        try:
+            first, gaps, final, held = _stream(port, _body("A", depth))
+        except Refused as refusal:
+            record_refusal(out, model, allocation, repeat, "generate", depth, refusal.why)
+            return
         rows = []
         band, start = 128, 0
         while start < len(gaps):
@@ -114,19 +155,25 @@ def main():
             for kind, lo, hi, ns in rows:
                 handle.write(
                     f"{model}\t{allocation}\t{repeat}\tgenerate\t{kind}\t{lo}\t{hi}\t{ns}\t0"
-                    f"\t{conditions(held)}\n"
+                    f"\t{conditions(held)}\t\n"
                 )
         return
 
     if mode == "prefill":
         want, tokens = int(sys.argv[3]), int(sys.argv[4])
+        _ = tokens
         # " the" is one token for every vocabulary MCF has looked at; the count
         # the engine reports is what is recorded, not this estimate.
         prompt = "A" + " the" * max(want - 1, 0)
-        first, gaps, final, held = _stream(port, _body(prompt, tokens))
+        try:
+            first, gaps, final, held = _stream(port, _body(prompt, tokens))
+        except Refused as refusal:
+            record_refusal(out, model, allocation, repeat, "prefill", want, refusal.why)
+            return
         seeded = final.get("tokens_evaluated", -1)
         if not gaps:
-            sys.stderr.write(f"    prefill {want}: no tokens generated\n")
+            record_refusal(out, model, allocation, repeat, "prefill", want,
+                           "the engine returned no tokens")
             return
         total = sum(gaps)
         per = total / len(gaps) * 1e3
@@ -140,7 +187,7 @@ def main():
             handle.write(
                 f"{model}\t{allocation}\t{repeat}\tprefill\tband\t{seeded}\t"
                 f"{seeded + len(gaps)}\t{int(total * 1e9)}\t{int(first * 1e9)}"
-                f"\t{conditions(held)}\n"
+                f"\t{conditions(held)}\t\n"
             )
         return
 
