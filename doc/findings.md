@@ -7478,13 +7478,27 @@ report agreement — in the check that is A19's mechanical form, and on which
 every other claim in this repository leans. A check that passes because it has
 stopped testing is worse than one that fails.
 
-**What is established, and what is not.** That the invocation was
-engine-inheriting is established by reading it, and that `mcf run` yields a
-different engine's answer depending on the daemon is established by measurement
-([F102](#102--f102--the-conformance-corpus-answered-differently-depending-on-whether-a-daemon-was-running-b-370-b-053-f46-f27-d40-312-a19)'s
-table). Whether any *past* oracle run was actually vacuous is **not**
-established: it needed a healthy provisioned daemon up at the time, and the
-runs whose output survives do not show one.
+**Measured, not inferred.** One model, one prompt, one seed, with a daemon
+serving the provisioned engine — the three answers the oracle's two variables
+can take:
+
+| | what came out |
+|---|---|
+| `theirs` — the reference, `llama-completion` | `a city in the same country. The city is in the` |
+| `mine` — engine unstated, **what the check did** | `a city in the same country. The city is in the` |
+| `mine` — `--engine stand-in`, **what the check meant** | `the city of Paris. The city of Paris is the city` |
+
+The first two are **byte-identical**, because they are the same implementation
+reached by two paths. The third — MCF's own engine, the thing the oracle exists
+to check — says something else entirely. So on this model the comparison the
+oracle is for was being replaced by a tautology that cannot fail, and the
+divergence it should have surfaced is real.
+
+**What is still not established.** Whether any *past* oracle run was actually
+vacuous. That needed a healthy provisioned daemon up at the time, and the runs
+whose output survives do not show one. What is established is that the
+mechanism is real and reproducible on demand, rather than a hazard reasoned
+about from the source.
 
 **But the run whose output does survive shows the other half of the defect.**
 On 2026-08-28 the oracle ran with a *wedged* daemon — one accepting connections
@@ -7527,6 +7541,15 @@ finds it in the shell tier that matters most. Each time the rule already existed
 state it found is not a suite — and each time the guard did not reach the new
 ground. The lesson is not *write the rule down*; it is that a guard covers the
 shape of the place it was written for.
+
+**A hazard in the procedure, not the code.** The first attempt to verify this
+edited `check-oracle.sh` *while that script was executing* under the exclusive
+window. Bash reads a script incrementally from a file offset, and rewriting the
+file in place leaves the running shell reading from the same offset into
+different bytes — it can execute misaligned text, and nothing in the output
+would look wrong. That run was discarded rather than read. The tiers here are
+shell scripts and the natural workflow is *fix the script, then re-run*: the
+fix must land before the run starts, or the run is not evidence.
 
 **What this did not establish.** Whether `check-seed-set.sh`, `check-from-scratch.sh`
 or the remaining tiers inherit anything else — a store, a socket, a record path
