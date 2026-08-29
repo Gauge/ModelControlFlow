@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 85 |
+| **Version** | 86 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -127,6 +127,7 @@ forward as one.
 | 98 | [F98 — The unpaired interval needed different mathematics, and the recurrence was checked against enumeration (B-388, B54, B53, §3.27, A19)](#98--f98--the-unpaired-interval-needed-different-mathematics-and-the-recurrence-was-checked-against-enumeration-b-388-b54-b53-327-a19) |
 | 99 | [F99 — Threads pay at every shape a model performs, cost nothing in noise, and past a product's optimum more of them is slower (B-366, D38, F52, §3.12, A6, A19)](#99--f99--threads-pay-at-every-shape-a-model-performs-cost-nothing-in-noise-and-past-a-products-optimum-more-of-them-is-slower-b-366-d38-f52-312-a6-a19) |
 | 100 | [F100 — How large a model MCF's own engine can usefully read, and what actually stops it (B-384, PR12, D40, B-366, F99, A20, A7)](#100--f100--how-large-a-model-mcfs-own-engine-can-usefully-read-and-what-actually-stops-it-b-384-pr12-d40-b-366-f99-a20-a7) |
+| 101 | [F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)](#101--f101--a-model-called-the-tool-perfectly-and-the-probe-recorded-no-call-five-times-out-of-five-b-053-d42-a1-a2-a21-318) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7309,7 +7310,78 @@ taken. Anything about a model between 8 and 18 billion elements — the projecti
 to the memory ceiling is extrapolation from six points, and the honest form of it
 is the word *estimate*.
 
+## 101 · F101 — A model called the tool perfectly and the probe recorded *no call*, five times out of five (B-053, D42, A1, A2, A21, §3.18)
+
+**The first run against a real model found a defect in the reader, which is
+what a real model is for.** `mcf probe` on Qwen3-0.6B, through the provisioned
+llama.cpp at a pinned commit, reported:
+
+| offering | well formed | malformed | no call |
+|---|---|---|---|
+| the file's own markers, `<tool_call>…</tool_call>` | 0 | 0 | **5** |
+| a plain description, a bare object expected | **5** | 0 | 0 |
+
+*No call, five times out of five* — from a model that calls perfectly under the
+other offering. The reader looked only **between** the markers when an offering
+named them, so a model that emitted a correct call *without* the wrapper was
+recorded as having done nothing at all.
+
+**Two facts had been folded into one, and the wrong one survived.** *It ignored
+the tool* and *it called, but not in the form asked for* are different things to
+know about a model, and A1 forbids discarding the second. It is also A2's silent
+failure with a friendly name: the probe reported a clean, plausible, wrong
+answer, and nothing in it looked broken.
+
+**What the model actually did, once the reader could say so.** Every one of the
+five trials, byte for byte:
+
+```
+{"name": "get_weather", "arguments": {"city": "Paris"}}
+```
+
+A well-formed call to the offered tool, with the right argument, emitted with no
+markers around it — despite MCF's instruction naming the markers and the model's
+own vocabulary carrying them as tokens. The corrected reading is `malformed`
+with that text quoted, because the form asked for was not produced and the model
+plainly did call.
+
+**And that is a fact about tool calling worth keeping.** The markers a file
+declares are what its *harness* wraps a call in, not what the model emits.
+`<tool_call>` is in the vocabulary because the template writes it; the model was
+trained to produce the object and to let the framing be somebody else's job. So
+a vocabulary carrying call markers is a declaration about the **format a harness
+must speak**, and never a prediction of what the model will emit — which is
+A21's separation arriving in a place nobody had looked for it.
+
+**The design decision this vindicates.** [B-053](backlog.md)'s probe tries
+*several* offerings rather than the one its file suggests, because MCF does not
+execute chat templates (D46) and therefore chooses how a tool is described — and
+a single chosen framing deciding the answer would make the probe a measurement
+of the framing. Had it tried only the likeliest candidate, the model's own
+markers, it would have reported **no tool support** for a model that calls
+correctly every time.
+
+**A smaller thing from the same run.** The declared markers printed as
+`<tool_call>, </tool_call>, <tool_call>, </tool_call>, <tool_response>, …` —
+`markers_in` reports every occurrence and a template that writes a marker five
+times is not five declarations. Deduplicated.
+
+**What this did not establish.** Whether another family emits its markers when
+asked to; one model, one engine, one phrasing of the instruction. Whether a
+model that *is* given a template-rendered tool section behaves differently,
+which MCF cannot ask without executing templates. And nothing about whether the
+call is *useful* — the arguments are deliberately not read for sense, because
+that is a judgement and a probe makes none (D42).
+
 ## Changelog
+
+### Version 86 — a call recorded as no call
+
+F101. B-053's probe, on its first real model, reported *no call* five times
+out of five for a model that emitted a perfect call every time — it had not
+wrapped it in the markers asked for. Two facts folded into one, and the wrong
+one survived. The markers a file declares turn out to be the harness's job
+rather than the model's, which is A21 in a place nobody had looked.
 
 ### Version 85 — how large a model the engine can usefully read
 

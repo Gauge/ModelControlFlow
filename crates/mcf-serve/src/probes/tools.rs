@@ -309,11 +309,18 @@ fn declared(file: &gguf::Model, vocabulary: &Vocabulary) -> Declared {
     // template writes that the vocabulary cannot express is not a token the
     // model was trained on — it is ordinary text — and counting it as a
     // declaration would be reading the template as a program (D46, F37).
-    let markers = super::markers_in(&template)
-        .into_iter()
-        .filter(|marker| marker.to_lowercase().contains("tool"))
-        .filter(|marker| vocabulary.has_token(marker))
-        .collect();
+    // Each marker once. `markers_in` reports every occurrence, and a template
+    // that writes `<tool_call>` four times is not four declarations — the first
+    // run of this probe printed the same two markers five times over.
+    let mut markers: Vec<String> = Vec::new();
+    for marker in super::markers_in(&template) {
+        if !marker.to_lowercase().contains("tool") || !vocabulary.has_token(&marker) {
+            continue;
+        }
+        if !markers.contains(&marker) {
+            markers.push(marker);
+        }
+    }
     Declared {
         template_mentions_tools: template.to_lowercase().contains("tool"),
         markers,
@@ -388,8 +395,12 @@ fn read(said: &str, offering: &Offering, trial: &Trial) -> Attempt {
             because: because.clone(),
         };
     }
-    let Some(candidate) = between(said, offering) else {
+    let Some(found) = between(said, offering) else {
         return Attempt::NoCall;
+    };
+    let (candidate, as_asked) = match &found {
+        Found::AsAsked(text) => (text.clone(), true),
+        Found::Elsewhere(text) => (text.clone(), false),
     };
     let parsed = match mcf_record::json::parse(&candidate) {
         Ok(value) => value,
@@ -412,21 +423,68 @@ fn read(said: &str, offering: &Offering, trial: &Trial) -> Attempt {
             because: format!("it called {named:?}, which was not the tool offered"),
         };
     }
+    if !as_asked {
+        // Everything about the call is right except where it was put. Malformed
+        // rather than well formed, because the offering asked for a wrapper and
+        // did not get one — and emphatically not `NoCall`, because the model
+        // did call.
+        return Attempt::Malformed {
+            because: format!(
+                "a well-formed call to {}, emitted without the markers this offering asked \
+                 for: {candidate}",
+                OFFER.name
+            ),
+        };
+    }
     Attempt::WellFormed
+}
+
+/// Where a candidate call was found, which decides what its failure means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Found {
+    /// Where the offering asked for it.
+    AsAsked(String),
+    /// A bare object, in an offering that asked for markers.
+    ///
+    /// **This is not "no call".** The model attempted one and put it somewhere
+    /// else, which is a fact about the model and a different fact from having
+    /// answered in prose. The first real run of this probe reported *no call*
+    /// five times out of five under a model's own markers while the same model
+    /// called perfectly under a plain description — and without this
+    /// distinction there was no way to tell *it ignored the tool* from *it
+    /// called without the wrapper it was asked for* (A1, F101).
+    Elsewhere(String),
 }
 
 /// The candidate call inside an answer, or nothing where none is call-shaped.
 ///
-/// Between the offering's markers where it has them; otherwise the first
-/// balanced `{…}`, which is what a bare object looks like in a reply that may
-/// carry prose around it.
-fn between(said: &str, offering: &Offering) -> Option<String> {
+/// Between the offering's markers where it has them — and where it has them and
+/// they are absent, a bare object is still looked for, because a model that
+/// emitted a call without the wrapper has done something the probe must not
+/// record as having done nothing.
+fn between(said: &str, offering: &Offering) -> Option<Found> {
     if let Some((open, close)) = &offering.between {
-        let start = said.find(open.as_str())?.checked_add(open.len())?;
-        let rest = said.get(start..)?;
-        let end = rest.find(close.as_str()).unwrap_or(rest.len());
-        return Some(rest.get(..end)?.trim().to_owned());
+        let inside = said
+            .find(open.as_str())
+            .and_then(|at| at.checked_add(open.len()))
+            .and_then(|start| said.get(start..))
+            .and_then(|rest| {
+                let end = rest.find(close.as_str()).unwrap_or(rest.len());
+                rest.get(..end)
+            });
+        if let Some(inner) = inside {
+            return Some(Found::AsAsked(inner.trim().to_owned()));
+        }
+        // The markers were not there. A bare object still counts as something
+        // the model did — reported as put elsewhere, never as absent (F101).
+        return bare(said).map(Found::Elsewhere);
     }
+    bare(said).map(Found::AsAsked)
+}
+
+/// The first balanced `{…}` in an answer, which is what a bare object looks
+/// like in a reply that may carry prose around it.
+fn bare(said: &str) -> Option<String> {
     let start = said.find('{')?;
     let mut depth = 0_usize;
     for (offset, character) in said.get(start..)?.char_indices() {

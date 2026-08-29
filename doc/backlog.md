@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 214 |
+| **Version** | 215 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **283 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 228 build items (137 done, 1 dropped, 13 in progress,
-36 blocked on a decision, 41 open).** Every item cites
+decided, 23 resolved) and 228 build items (138 done, 1 dropped, 13 in progress,
+36 blocked on a decision, 40 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -212,7 +212,7 @@ first and importance second.
 | B-050 | Three-state capability model: *declared*, *verified*, *unknown* — never confused, never defaulted | §3.18, §3.6 | The type system prevents a declared capability being read as a verified one | **done** — `mcf_core::capability::Capability<T>`: two separately optional halves, read as `declaration()` and `observation()`, with no operation between them and no `unwrap_or` to give an absence a value. The state is derived — unknown, declared, verified — and the fourth situation, *diverged*, is B-058's finding rather than a fourth kind of knowing. `is_established` is the whole of §3.18 in one method: only an observation may be acted on. `mcf_hub::inspect` now uses it instead of an enum of its own, which found a real loss — a card whose weights MCF could not read was being reported as *unknown*, discarding what the card said (A1). `checks/tests/a_declaration_is_not_an_observation.rs` holds the shape, because the failure mode is not somebody writing the wrong method but somebody adding a convenience that reads well and collapses the two |
 | B-051 | Probe framework: capability probes are bounded experiments carrying a method, a result, conditions and a record | §3.18, §3.4 | A probe's output is a `Measurement`, not a boolean | **done** — `mcf_core::probe`: a `Method` that says what was asked and what it decides, an `Outcome` whose only reader is `observed() -> Option`, a cost in tokens, and conditions the result holds under. `Inconclusive` carries its reason and has no path to a value. `mcf probe` is the surface (F37) |
 | B-052 | Probe: chat template correctness | §X, §3.18 | A model with a wrong or missing template is detected by observation, not by reading a config field | **done** (F38) — the probe asks a set of short questions through every addressing the model's own vocabulary can express and counts which ones it *answers under and then ends its turn*. It found four defects on the way, the worst of which inverted its own answer: a model refuses an unrecognised addressing by emitting its end-of-turn token immediately, which *did it stop* cannot tell from a finished reply. On SmolLM2 it now agrees with the file; on gemma-3-270m it reports a tie as inconclusive |
-| B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | open (was blocked on DEC-024, which D42 answered) — a *characterizing* probe under D42: it describes a model without changing how MCF addresses it, so it belongs beside §XIII rather than in M3, and uses B-051’s framework |
+| B-053 | Probe: tool-calling format and reliability | §X, §IX | A model that emits a well-formed tool call is distinguished from one whose metadata merely claims support | **done** (F101). `mcf_serve::probes::tools`: the declaration is read and never believed — a template that mentions tools, and call markers it names *that the vocabulary carries* — and the observation is three mechanical questions a parser answers (A19): did a call appear where one was asked for, does it parse, does it name the tool offered. The arguments are deliberately not read for sense, because whether one is sensible is a judgement and a probe makes none. Four outcomes a trial can have, kept apart because they are different facts: well formed, malformed with what came out quoted, no call, and could-not-tell (D42's third state). **The framing is a condition rather than a constant**: MCF does not execute templates (D46), so how a tool is described is MCF's own choice, and several offerings are tried with a count each — which is what saved the result. **On its first real model the probe was wrong and said so**: Qwen3-0.6B reported *no call* five times of five under its own `<tool_call>` markers, and had in fact emitted a perfect call every time without wrapping it. Two facts had been folded into one and the wrong one survived (A1, A2). The reader now falls back and reports the text. **And the finding underneath it**: the markers a file declares are what a *harness* wraps a call in, not what a model emits — a vocabulary carrying them is a declaration about the format a harness must speak and never a prediction of the model's output, which is A21 in a place nobody had looked. Fourteen tests, including that the fallback does not turn every answer into an attempt |
 | B-054 | Probe: structured output conformance | §X | Verified by parsing what the model actually emits over repeated trials | open (was blocked on DEC-024, which D42 answered) — a characterizing probe under D42; framework in M3, probe beside §XIII |
 | B-055 | Probe: context length usable versus claimed | §X, §3.18 | Divergence between claimed and usable is reported as a finding | **done** (F42) — `mcf probe` asks for a prompt of the declared length and, only if refused, halves to find the boundary; what is compared is integers, how many identifiers were sent against how many were read, so silent truncation is caught as well as an honest refusal. Both corpus models' claims hold (8192 and 32768). The divergence branch was exercised by giving the engine a 2048 context against a file declaring 8192: found at 2047 in fourteen trials. Reachable only through B-376. What it does *not* ask is whether an accepted context is an attended one |
 | B-056 | Probe: stop-condition behaviour | §X | A model that will not stop is a recorded characteristic, not a hung request | **done** (F46) — the probe doubles the budget from 32 until the turn ends or a ceiling is reached, so *this model does not stop* is told apart from *the budget was too small*; reaching the ceiling is reported as **not within this many tokens**, with the number and the likelier cause. It is a configuring probe: MCF allowed 32 tokens and SmolLM2's turns run to 313, so every answer was being cut off by MCF rather than finished by the model (§3.8). The longest turn observed is what `--apply` writes — not an average, which truncates half the answers, and not a margin, which MCF would be inventing |
@@ -400,6 +400,13 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 215 — a call recorded as no call
+
+B-053 done. The probe tells a model that emits a well-formed tool call from
+one whose metadata merely claims support — and on its first real model it got
+that wrong in the safe-looking direction, reporting *no call* five times for a
+model that called perfectly. F101.
 
 ### Version 214 — how large a model the engine can usefully read
 

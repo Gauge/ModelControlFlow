@@ -11,7 +11,7 @@
 // checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
-use super::{Attempt, Declared, OFFER, Offering, between, paired, read};
+use super::{Attempt, Declared, Found, OFFER, Offering, between, paired, read};
 use crate::probes::Trial;
 
 /// An offering that looks for a bare object.
@@ -146,17 +146,67 @@ fn a_bare_object_is_found_among_prose_and_balances_its_braces() {
     let found = between(said, &plain()).expect("an object is in there");
     assert_eq!(
         found,
-        r#"{"name": "get_weather", "arguments": {"city": "Paris"}}"#
+        Found::AsAsked(r#"{"name": "get_weather", "arguments": {"city": "Paris"}}"#.to_owned())
     );
     // An unbalanced opener yields nothing rather than the rest of the string.
     assert_eq!(between("here we go {\"name\":", &plain()), None);
+}
+
+/// A call emitted without the markers it was asked for is malformed, and never
+/// "no call".
+///
+/// **The first real run of this probe got this wrong.** Qwen3-0.6B reported
+/// *no call* five times out of five under its own `<tool_call>` markers while
+/// calling perfectly under a plain description — and the reader could not tell
+/// *it ignored the tool* from *it called without the wrapper*. Those are
+/// different facts about a model and A1 forbids discarding the second.
+#[test]
+fn a_call_without_the_markers_asked_for_is_malformed_not_absent() {
+    let bare = r#"{"name": "get_weather", "arguments": {"city": "Paris"}}"#;
+    match read(bare, &marked(), &finished()) {
+        Attempt::Malformed { because } => {
+            assert!(because.contains("without the markers"), "{because}");
+            assert!(because.contains("get_weather"), "{because}");
+        }
+        other => panic!("a call outside its markers was read as {other:?}"),
+    }
+
+    // And prose with no object in it is still `NoCall` — the fallback must not
+    // turn every answer into an attempt.
+    assert_eq!(
+        read("It is sunny in Paris.", &marked(), &finished()),
+        Attempt::NoCall
+    );
+}
+
+/// The fallback says where it found what it found.
+#[test]
+fn a_candidate_says_whether_it_was_where_it_was_asked_for() {
+    let inside = "<tool_call>{\"a\":1}</tool_call>";
+    assert_eq!(
+        between(inside, &marked()),
+        Some(Found::AsAsked("{\"a\":1}".to_owned()))
+    );
+    let outside = "{\"a\":1}";
+    assert_eq!(
+        between(outside, &marked()),
+        Some(Found::Elsewhere("{\"a\":1}".to_owned()))
+    );
+    // A plain offering asks for a bare object, so finding one is as asked.
+    assert_eq!(
+        between(outside, &plain()),
+        Some(Found::AsAsked("{\"a\":1}".to_owned()))
+    );
 }
 
 /// A call is read to its closing marker, not to the end of the answer.
 #[test]
 fn a_marked_call_ends_at_its_closing_marker() {
     let said = "<tool_call>{\"a\":1}</tool_call> and then some chatter";
-    assert_eq!(between(said, &marked()).as_deref(), Some("{\"a\":1}"));
+    assert_eq!(
+        between(said, &marked()),
+        Some(Found::AsAsked("{\"a\":1}".to_owned()))
+    );
 }
 
 /// Markers pair by their closing form, and pair with nothing where there is no
