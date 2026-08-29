@@ -74,6 +74,18 @@ readonly CORPUS=(
     "Q4_1|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q4_1.gguf|runs|Paris"
     "Q3_K, IQ4_NL, Q5_0 (as Q2_K)|unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q2_K.gguf|runs|Paris"
     "Q2_K, Q3_K|unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf|runs|Paris"
+    # The rung at the top (B-384, F100). Every entry above is under six hundred
+    # million elements, and D40's rule — the smallest trained model of each
+    # family — was chosen when a model this size cost fifty-two minutes for one
+    # cross-check on one thread. After B-366 it costs three and a half minutes,
+    # so the rule is no longer forced by cost and keeping to it would be
+    # choosing by convenience, which is the thing B-384 exists to prevent.
+    #
+    # Eight billion elements is the largest that runs here: the memory ceiling
+    # is available memory over four bytes, since the engine dequantizes on load.
+    # What it buys is a file with thirty-six blocks and a wide grouped-query
+    # ratio — shapes no model under six hundred million can show.
+    "qwen3, at scale|Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf|runs|Paris"
 )
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
