@@ -121,6 +121,7 @@ forward as one.
 | 92 | [F92 — The headline number had no measure of itself, and the sentence beside it claimed otherwise (B46, B54, A6, §6.16, §3.27)](#92--f92--the-headline-number-had-no-measure-of-itself-and-the-sentence-beside-it-claimed-otherwise-b46-b54-a6-616-327) |
 | 93 | [F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)](#93--f93--every-measurement-mcf-has-taken-is-attributed-to-an-instrument-it-cannot-identify-34-a1-a2-a7-616) |
 | 94 | [F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93) |
+| 95 | [F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6824,6 +6825,64 @@ test is not a wrong answer — it is agreement with the code it was written
 beside. Six times in one session, the thing that broke the agreement was an
 outside view: a kernel counter, a physical prediction, a second implementation,
 or an operator asking a question the code had not anticipated.
+
+## 95 · F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)
+
+**The measurement DEC-007 asked for, finally possible.** DEC-007 settled that
+quiet is relative — *a machine steady throughout a run is measurable wherever
+its baseline sits* — and left open the band, insisting the number be measured
+rather than chosen. It could not be measured until today, because there was
+neither a trustworthy axis to measure against (the contention instrument
+over-read by a fifth under load, F90) nor a quantity to measure (the effect
+size was a point estimate with no measure of itself, F92). Both are fixed.
+
+**What is read out is width, not size.** A machine that cannot be measured is
+not one whose answers get *bigger* — it is one whose answers get *wider*. So
+the observable is the width of the effect-size interval, and every run is cut
+to the same first six pairs before it is computed, because the stopping
+condition takes as many pairs as it needs and comparing widths at different
+counts would be comparing the stopping condition with itself.
+
+**The sweep.** The same paired comparison — two SmolLM2 quantizations, 32
+tokens, cold — at rising fractions of this 32-thread machine, three times each:
+
+| load asked | competing, measured | interval widths (points) | against baseline |
+|---|---|---|---|
+| 0 % | 4–7 % | 6.7, 10.5, 12.7 | — |
+| 25 % | 28–30 % | 8.7, 11.4, 15.0 | **indistinguishable** |
+| 50 % | 51–55 % | 65.3, 82.6, 309.0 | **6× to 30×** |
+| 75 % | 76 % | 123.3 | 12× |
+
+**The band is between 30 % and 51 % of machine capacity.** At 30 % the widths
+(8.7–15.0) sit inside the baseline's own run-to-run range (6.7–12.7) — the
+criterion the operator set, and one that chooses no number: the machine's own
+quiet variability is the threshold. At 51 % the smallest width is more than
+five times the baseline's largest, with no overlap at all.
+
+**Half a machine free is not enough**, which is the result worth carrying. The
+operator's question several rounds ago was whether F74's noisy benchmarks were
+simply a machine with headroom to spare. They were not — those ran at 85–113 %
+of capacity — but this sweep answers the general form of the question, and the
+answer is that headroom is the wrong frame. With **sixteen of thirty-two
+threads idle**, the interval is already six to thirty times wider. Degradation
+does not wait for saturation.
+
+**And the corrected instrument validated itself in the field.** The load was
+generated in known amounts and MCF's own contention reading was taken during
+each run: eight spinner threads read as 8.98–9.62 cores, sixteen as
+16.33–17.65, twenty-four as 24.27. F90's fix is not merely internally
+consistent; it agrees with a quantity that was set rather than observed.
+
+**What it costs to run a benchmark on a busy machine**, incidentally measured:
+a single 32-token cold generation takes about 1.5 seconds idle and about 60
+seconds at 75 % load — **forty times slower**. A comparison that finishes in
+half a minute on a quiet machine took twelve minutes.
+
+**What this does not settle.** The bracket is 30–51 % and no finer: nothing was
+measured between them, so the departure could be anywhere in that range. One
+model pair, one token budget, one machine, three repeats a level. The shape is
+clear and the edge is not, and locating it would take a second sweep across
+31–50 % rather than a wider one.
 
 ## Changelog
 
