@@ -1,9 +1,16 @@
 //! The ordinary operations of a transformer, written to be read.
 //!
-//! Every function here is the definition. No blocking, no fusion, no threading,
-//! no accelerator path, and no attempt to be clever about memory — F8 measured
+//! Every function here is the definition. No blocking, no fusion, no
+//! accelerator path, and no attempt to be clever about memory — F8 measured
 //! what that costs against a specialist's kernel and D32 settled that it is the
 //! right trade for this code, whose job is to be *checkable*.
+//!
+//! **The one exception is threads, and it changes no arithmetic.**
+//! [`matmul_vec_across`] partitions a product's *rows*; every row is still the
+//! same sum in the same order, computed by the same function (`row_of`), so
+//! the answer is the same bytes however many threads run it (B-366,
+//! [`crate::threads`]). That is a division of labour rather than an
+//! optimization of the definition, which is why it is allowed here.
 //!
 //! **What "checkable" means in practice.** Each operation has a closed form a
 //! test can compute by hand, and the tests do exactly that rather than
@@ -23,6 +30,8 @@
 //! than one that writes into an out-parameter, and this crate is allowed to be
 //! slow but not to be confusing.
 
+use crate::threads::Threads;
+
 /// A row-major matrix multiplied by a vector: `out[row] = Σ matrix[row][col] ·
 /// vector[col]`.
 ///
@@ -37,20 +46,58 @@
 /// rectangle assembled from whatever followed.
 #[must_use]
 pub fn matmul_vec(matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
+    matmul_vec_across(matrix, vector, rows, columns, Threads::definition())
+}
+
+/// The same product, with the rows partitioned across `threads` (B-366).
+///
+/// **The answer is the same bytes at one thread and at many, and that is
+/// structural.** Every output element is one row's dot product, computed by
+/// `row_of` — the single function the serial path and every partition both
+/// call — so a thread count decides *who* computes a row and can never reach
+/// the order the row is summed in. Floating-point addition is not associative,
+/// which is what makes that distinction the whole of the property (§3.12, D19).
+///
+/// `tests/threads_do_not_change_the_answer.rs` asserts the consequence over
+/// generated inputs, and `checks/tests/a_reduction_is_never_split.rs` holds the
+/// shape that produces it.
+///
+/// Returns an empty vector on a shape disagreement, exactly as [`matmul_vec`].
+#[must_use]
+pub fn matmul_vec_across(
+    matrix: &[f32],
+    vector: &[f32],
+    rows: usize,
+    columns: usize,
+    threads: Threads,
+) -> Vec<f32> {
     if vector.len() != columns || matrix.len() != rows.saturating_mul(columns) {
         return Vec::new();
     }
-    let mut out = Vec::with_capacity(rows);
-    for row in 0..rows {
-        let start = row.saturating_mul(columns);
-        let slice = matrix.get(start..start + columns).unwrap_or(&[]);
-        let mut total = 0.0_f32;
-        for (weight, value) in slice.iter().zip(vector.iter()) {
-            total = weight.mul_add(*value, total);
+    let mut out = vec![0.0_f32; rows];
+    crate::threads::each_row(&mut out, 1, threads, &|row, slot| {
+        if let Some(cell) = slot.first_mut() {
+            *cell = row_of(matrix, vector, row, columns);
         }
-        out.push(total);
-    }
+    });
     out
+}
+
+/// One row's dot product with the vector, summed low index to high.
+///
+/// The order of this sum is the model's answer. It is written once and called
+/// from both the serial and the partitioned path so that no future edit can
+/// give the two different arithmetic (B-366).
+fn row_of(matrix: &[f32], vector: &[f32], row: usize, columns: usize) -> f32 {
+    let start = row.saturating_mul(columns);
+    let slice = matrix
+        .get(start..start.saturating_add(columns))
+        .unwrap_or(&[]);
+    let mut total = 0.0_f32;
+    for (weight, value) in slice.iter().zip(vector.iter()) {
+        total = weight.mul_add(*value, total);
+    }
+    total
 }
 
 /// Root-mean-square normalization, as the llama family defines it:

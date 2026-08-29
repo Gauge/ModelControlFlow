@@ -52,7 +52,7 @@ fn nothing_computes_a_mean() {
     );
 }
 
-/// No floating point reaches a shipped crate — with one exception, which is
+/// No floating point reaches a shipped crate — with two exceptions, each
 /// stated here and paid for below.
 ///
 /// The reason is A6's, and it is why there is no mean: `Quantity` is `Ord`
@@ -69,14 +69,20 @@ fn nothing_computes_a_mean() {
 /// a dependency of `mcf-record`. Both are asserted in
 /// `a_float_cannot_reach_the_record` below, so the exemption costs a check
 /// rather than a promise.
+///
+/// **The laboratory's model builder is exempt for the same reason and pays the
+/// same price.** `mcf-lab/src/fixture.rs` writes GGUF files, and a GGUF holds
+/// weights: a builder that could not hold an `f32` could not write one. It has
+/// held `Vec<f32>` since it existed — B-366's dense-weight model only made the
+/// float visible to this check by needing a function that returns one. The
+/// exemption is the file, not the crate, and the same two facts pay for it:
+/// the record's format has no floating-point variant, and `mcf-record` does not
+/// depend on `mcf-lab` either.
 #[test]
 fn no_shipped_type_holds_a_float() {
     let mut offenders = Vec::new();
     for path in shipped_sources() {
-        if path
-            .components()
-            .any(|component| component.as_os_str() == "mcf-standin")
-        {
+        if exempt(&path) {
             continue;
         }
         let Ok(source) = std::fs::read_to_string(&path) else {
@@ -101,7 +107,23 @@ fn no_shipped_type_holds_a_float() {
     );
 }
 
-/// The exemption above is paid for: a float has no way into the record.
+/// The two places a float is admitted, because the format they read or write
+/// is made of them.
+///
+/// Named as paths rather than as crates so that admitting one file does not
+/// admit the crate around it: `mcf-lab` is a large crate and only its model
+/// builder writes weights.
+fn exempt(path: &Path) -> bool {
+    if path
+        .components()
+        .any(|component| component.as_os_str() == "mcf-standin")
+    {
+        return true;
+    }
+    relative(path) == "crates/mcf-lab/src/fixture.rs"
+}
+
+/// The exemptions above are paid for: a float has no way into the record.
 ///
 /// Two facts, and either alone would be enough. The record's own format has no
 /// floating-point representation — a `Value` cannot hold one, so there is
@@ -126,11 +148,13 @@ fn a_float_cannot_reach_the_record() {
         .iter()
         .find(|member| member.name == "mcf-record")
         .expect("mcf-record is a member");
-    assert!(
-        !record.depends_on.contains(&"mcf-standin"),
-        "mcf-record depends on mcf-standin, so the crate where floats live can reach the \
-         crate that persists things"
-    );
+    for float_holder in ["mcf-standin", "mcf-lab"] {
+        assert!(
+            !record.depends_on.contains(&float_holder),
+            "mcf-record depends on {float_holder}, so a crate where floats live can reach \
+             the crate that persists things"
+        );
+    }
 }
 
 /// The record's encoders write trials, and every summary they write travels
