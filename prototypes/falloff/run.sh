@@ -69,9 +69,13 @@ start() { # start <model-path> <allocation>
     return 1
 }
 
+# MCF_FALLOFF_ONLY selects the models by substring. The order arm has to be
+# pointed at the model whose allocation effect is in question, which is not
+# whichever two sort first.
 models=()
 while IFS= read -r found; do models+=("$found"); done < <(
-    find "$HOME/.local/share/mcf" "$HOME/.cache/mcf" -name '*.gguf' -type f 2>/dev/null | sort
+    find "$HOME/.local/share/mcf" "$HOME/.cache/mcf" -name '*.gguf' -type f 2>/dev/null \
+        | grep -i -- "${MCF_FALLOFF_ONLY:-}" | sort
 )
 [ "${#models[@]}" -gt 0 ] || { printf 'cannot measure: no models\n' >&2; exit 2; }
 printf 'found %d model(s)\n' "${#models[@]}" >&2
