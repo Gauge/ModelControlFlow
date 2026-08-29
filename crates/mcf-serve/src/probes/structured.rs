@@ -144,9 +144,22 @@ pub enum Attempt {
         /// Which question it failed, with what came out.
         because: String,
     },
-    /// Nothing object-shaped came out. The model answered in prose, or said
-    /// nothing.
+    /// Nothing object-shaped came out and the model finished its turn.
+    ///
+    /// It answered in prose, or said nothing, and it was *done* — which is
+    /// what makes this an observation about the model rather than about the
+    /// budget.
     NoObject,
+    /// Nothing object-shaped came out and the turn was still going when the
+    /// budget ran out.
+    ///
+    /// **Not [`Self::NoObject`]** (A1, A7, F101's lesson repeated). A model
+    /// cut off mid-sentence has not declined to produce a shape; MCF stopped
+    /// it. Folding the two together would report *this model does not do
+    /// structured output* about a model that was still writing the object —
+    /// and the first real model this probe met produced exactly that shape of
+    /// answer under two of three framings (F106).
+    Unfinished,
     /// The trial itself could not be run or read (D42's third state).
     CouldNotTell {
         /// Why.
@@ -170,8 +183,14 @@ pub struct Structured {
     pub conformed: Vec<(String, usize)>,
     /// Every framing, and how many produced an object that did not conform.
     pub departed: Vec<(String, usize)>,
-    /// Every framing, and how many produced nothing object-shaped.
+    /// Every framing, and how many produced nothing object-shaped in a turn
+    /// the model itself ended.
     pub no_object: Vec<(String, usize)>,
+    /// Every framing, and how many were still going when the budget ran out.
+    ///
+    /// A count of what MCF interrupted, kept apart from what the model
+    /// declined to do (A7).
+    pub unfinished: Vec<(String, usize)>,
     /// How many conforming trials also carried keys nobody asked for.
     pub with_extra: usize,
     /// Why the departures departed, in order and in the model's own output, so
@@ -252,15 +271,14 @@ pub fn structured_output(
     let mut conformed = Vec::new();
     let mut departed = Vec::new();
     let mut no_object = Vec::new();
+    let mut unfinished = Vec::new();
     let mut reasons = Vec::new();
     let mut with_extra = 0_usize;
     let mut spent = 0_usize;
     let mut undecidable = Vec::new();
 
     for framing in framings() {
-        let mut good = 0_usize;
-        let mut wrong = 0_usize;
-        let mut none = 0_usize;
+        let mut tally = Tally::default();
         for _ in 0..trials {
             let Some(wrapped) = wrap(addressing, &vocabulary, &framing.text) else {
                 undecidable.push(format!(
@@ -271,31 +289,18 @@ pub fn structured_output(
             };
             let (trial, said) = generate(&wrapped, budget);
             spent = spent.saturating_add(budget);
-            match read(&said, &trial) {
-                Attempt::Conformed { extra } => {
-                    good = good.saturating_add(1);
-                    if !extra.is_empty() {
-                        with_extra = with_extra.saturating_add(1);
-                        reasons.push(format!(
-                            "{}: conformed and added {}",
-                            framing.name,
-                            extra.join(", ")
-                        ));
-                    }
-                }
-                Attempt::Departed { because } => {
-                    wrong = wrong.saturating_add(1);
-                    reasons.push(format!("{}: {because}", framing.name));
-                }
-                Attempt::NoObject => none = none.saturating_add(1),
-                Attempt::CouldNotTell { because } => {
-                    undecidable.push(format!("{}: {because}", framing.name));
-                }
-            }
+            tally.add(
+                read(&said, &trial),
+                &framing.name,
+                &mut reasons,
+                &mut undecidable,
+            );
         }
-        conformed.push((framing.name.clone(), good));
-        departed.push((framing.name.clone(), wrong));
-        no_object.push((framing.name.clone(), none));
+        with_extra = with_extra.saturating_add(tally.with_extra);
+        conformed.push((framing.name.clone(), tally.conformed));
+        departed.push((framing.name.clone(), tally.departed));
+        no_object.push((framing.name.clone(), tally.no_object));
+        unfinished.push((framing.name.clone(), tally.unfinished));
     }
 
     // Nothing decidable at all is the third state, not a negative: *the model
@@ -305,6 +310,7 @@ pub fn structured_output(
         .iter()
         .chain(departed.iter())
         .chain(no_object.iter())
+        .chain(unfinished.iter())
         .map(|(_, count)| *count)
         .fold(0, usize::saturating_add);
     if decided == 0 {
@@ -327,6 +333,7 @@ pub fn structured_output(
             conformed,
             departed,
             no_object,
+            unfinished,
             with_extra,
             reasons,
             of: trials,
@@ -335,6 +342,57 @@ pub fn structured_output(
         trials,
         tokens: spent,
         conditions,
+    }
+}
+
+/// One framing's trials, counted.
+///
+/// A struct rather than five locals, because the five counts are one thing —
+/// what happened under this framing — and a probe that added a sixth outcome
+/// and forgot to thread it through would be reporting a total that does not add
+/// up (A4).
+#[derive(Debug, Default)]
+struct Tally {
+    /// Trials whose output carried every field of the kind asked for.
+    conformed: usize,
+    /// Trials that produced an object which did not conform.
+    departed: usize,
+    /// Trials that finished the turn with nothing object-shaped.
+    no_object: usize,
+    /// Trials the budget cut short with nothing object-shaped yet.
+    unfinished: usize,
+    /// Conforming trials that also carried keys nobody asked for.
+    with_extra: usize,
+}
+
+impl Tally {
+    /// Files one trial, and keeps what it said where a reader will see it.
+    fn add(
+        &mut self,
+        attempt: Attempt,
+        framing: &str,
+        reasons: &mut Vec<String>,
+        undecidable: &mut Vec<String>,
+    ) {
+        match attempt {
+            Attempt::Conformed { extra } => {
+                self.conformed = self.conformed.saturating_add(1);
+                if !extra.is_empty() {
+                    self.with_extra = self.with_extra.saturating_add(1);
+                    reasons.push(format!(
+                        "{framing}: conformed and added {}",
+                        extra.join(", ")
+                    ));
+                }
+            }
+            Attempt::Departed { because } => {
+                self.departed = self.departed.saturating_add(1);
+                reasons.push(format!("{framing}: {because}"));
+            }
+            Attempt::NoObject => self.no_object = self.no_object.saturating_add(1),
+            Attempt::Unfinished => self.unfinished = self.unfinished.saturating_add(1),
+            Attempt::CouldNotTell { because } => undecidable.push(format!("{framing}: {because}")),
+        }
     }
 }
 
@@ -411,7 +469,13 @@ fn read(said: &str, trial: &Trial) -> Attempt {
         };
     }
     let Some(candidate) = bare(said) else {
-        return Attempt::NoObject;
+        // Nothing object-shaped — and *why the turn ended* decides which fact
+        // that is. A turn the budget cut short says nothing about whether the
+        // model would have produced the shape (A7).
+        return match trial {
+            Trial::RanOut => Attempt::Unfinished,
+            Trial::Stopped { .. } | Trial::CouldNotTell(_) => Attempt::NoObject,
+        };
     };
     let parsed = match mcf_record::json::parse(&candidate) {
         Ok(value) => value,

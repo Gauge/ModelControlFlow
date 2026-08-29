@@ -169,3 +169,28 @@ fn a_kind_matches_only_its_own_values() {
     assert!(Kind::Boolean.matches(&boolean));
     assert!(!Kind::Boolean.matches(&text));
 }
+
+/// A turn the budget cut short is not a model that declined.
+///
+/// The distinction the first real model made necessary (F106): two of three
+/// framings produced nothing object-shaped, and whether that is *this model
+/// does not do shapes* or *MCF stopped it mid-sentence* is the difference
+/// between an observation about the model and one about the budget (A7, A1).
+#[test]
+fn a_turn_the_budget_cut_short_is_not_no_object() {
+    assert_eq!(
+        read("Sure! Here is the ", &Trial::RanOut),
+        Attempt::Unfinished
+    );
+    assert_eq!(
+        read("Sure! Here is the ", &Trial::Stopped { after: 5 }),
+        Attempt::NoObject
+    );
+    // And an object that arrived counts however the turn ended: the shape is
+    // there, and the budget running out afterwards changes nothing about it.
+    let object = r#"{"sentence": "The cat sat on the mat.", "words": 6, "is_question": false}"#;
+    assert_eq!(
+        read(object, &Trial::RanOut),
+        Attempt::Conformed { extra: Vec::new() }
+    );
+}

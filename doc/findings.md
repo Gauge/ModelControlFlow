@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 90 |
+| **Version** | 91 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -132,6 +132,7 @@ forward as one.
 | 103 | [F103 — The oracle could compare the reference with itself, and a section that compared nothing read like one that passed (B-368, B-370, F102, F47, A19, A4, §3.12)](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312) |
 | 104 | [F104 — The tier named the engine and still asked another binary, and the account could not tell (B-391, F103, F102, F93, §3.12, A19, A6)](#104--f104--the-tier-named-the-engine-and-still-asked-another-binary-and-the-account-could-not-tell-b-391-f103-f102-f93-312-a19-a6) |
 | 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103) |
+| 106 | [F106 — A probe that asks for a shape, and the four whose results were never written down (B-054, B-386, D42, A1, A7, A9, F101, F103, F105)](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -7778,7 +7779,109 @@ them take it. And nothing about the other stores a tier inherits, which is where
 left off — the record path itself, which is the audit one further level out
 again.
 
+## 106 · F106 — A probe that asks for a shape, and the four whose results were never written down (B-054, B-386, D42, A1, A7, A9, F101, F103, F105)
+
+**B-054 built: the probe that asks a model for a shape.** One JSON object,
+three fields of three different kinds — a string, a number, a boolean — about a
+sentence put in front of the model so that no world knowledge is needed. Four
+mechanical questions a parser answers: did an object come out, does it parse, is
+every field there, is each of the kind asked for. The values are deliberately
+not read for sense: whether the model counted the words is a capability a
+laboratory grades, and a probe that failed a model for miscounting would report
+*cannot produce JSON* about a model that produced JSON.
+
+Three framings, because how a shape is described is MCF's own choice (D46) and
+one framing deciding the answer would make this a measurement of the framing.
+They differ along the axis a framing can be wrong along — how much of the answer
+is shown: described in words, a schema, an example filled in.
+
+**Its first real model rewrote one of its outcomes, exactly as F101's did.**
+Qwen3-0.6B-Q8_0 through the provisioned engine, five trials a framing:
+
+| framing | conformed | departed | *first reading* | *what it was* |
+|---|---|---|---|---|
+| described in words | 0 | 0 | 5 produced no object | **5 still going when the budget ran out** |
+| a schema | 5 | 0 | — | — |
+| an example filled in | 0 | 0 | 5 produced no object | **5 still going when the budget ran out** |
+
+All ten. Not one trial was the model declining to produce a shape; every one was
+MCF stopping it at two hundred tokens while it was still writing. The first
+reading — *0 conformed, 5 produced no object* — reads as a fact about the model
+under two of three framings, and it was a fact about the budget.
+
+`Attempt::Unfinished` is a variant now, decided by *how the turn ended* rather
+than by what came out: a turn the model itself finished with no object is an
+observation about the model; a turn the budget cut short is A7's *not within
+this many*. This is the third time the same shape has cost something here —
+F101's probe folded *called without the wrapper* into *did not call*, and this
+one would have folded *interrupted* into *declined*.
+
+**And then the budget was measured rather than argued about.** The same probe,
+same model, same engine, at two hundred tokens a trial and at eight hundred:
+
+| framing | at 200 | at 800 |
+|---|---|---|
+| described in words | 0 conformed, 5 unfinished | **5 conformed** |
+| a schema | 5 conformed | 5 conformed |
+| an example filled in | 0 conformed, 5 unfinished | 0 conformed, **5 finished with no object** |
+
+The first row is a constant that was measuring itself: two hundred tokens was
+not enough for this model to finish an object it *could* produce, and the probe
+would have reported a framing that works as one that does not. The third row is
+what a large enough budget buys — at two hundred it was *interrupted*, and at
+eight hundred it is an observation: this model finishes its turn and produces no
+object when it is shown an example. The shipped budget is eight hundred, for
+that reason and with that measurement beside it.
+
+**And the thing found while wiring it in.** B-386's row says *a probe's outcome
+is written to the record, not only printed*, done, with the check
+`a_probe_is_written_down.rs` behind it. It held for one probe of four. The check
+read `fn context_lines(` **by name** and asked whether that function wrote — so
+the chat-template, stop-condition and tool-calling probes printed their results
+and kept nothing, and B-386's own done-when — *a probe run yesterday can be read
+back today* — was false for three quarters of the probes while the row said it
+was true.
+
+That is the same defect as
+[F103](#103--f103--the-oracle-could-compare-the-reference-with-itself-and-a-section-that-compared-nothing-read-like-one-that-passed-b-368-b-370-f102-f47-a19-a4-312)
+and
+[F105](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103),
+three days running: **a guard covers the shape of the place it was written
+for.** Each of the three guards was carefully built, correct about its instance,
+and blind to the next one — and in all three cases the row above it said the
+rule held.
+
+**So this guard is bound to the shape.** Any function in `probe.rs` that renders
+an `Outcome::Observed` must record it, and the number of such renderers must
+equal the number of `Method` constants the probes define. A probe cannot now be
+added, run and printed without the check seeing it. The chat-template probe was
+rendered inline in the command, which is how it stayed invisible to a check
+looking at functions; it has a renderer of its own now.
+
+**And the write goes before the verdict**, checked by position rather than by
+promise. A record written inside the branch that decides what an observation
+*means* is a record of the interpretation: `agrees` is as much a measurement as
+`diverges` (A9), and the way that goes wrong is not a missing write but a
+conditional one.
+
+**Both negative controls fire**: removing a renderer's write fails by name, and
+a `Method` with no renderer fails the count.
+
+**What this did not establish.** Whether the tool-calling probe has the same
+`NoCall`-versus-unfinished conflation the structured one had. It reads the same
+`Trial` and does not consult it, so the shape is there; what is missing is a
+model that shows it, and the one this ran on called well within its budget under
+the framing that worked.
+
 ## Changelog
+
+### Version 91 — a probe that asks for a shape
+
+F106. B-054 built, and its first real model turned ten *produced no object*
+trials into ten *still going when the budget ran out* — MCF interrupting the
+model, not the model declining. And B-386's *a probe's outcome is written to the
+record* held for one probe of four, because its guard read one function by name.
+Third day running for that shape.
 
 ### Version 90 — a guarantee that was never on the path
 

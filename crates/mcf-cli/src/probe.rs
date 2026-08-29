@@ -58,13 +58,27 @@ const TOOL_BUDGET: usize = 160;
 
 /// The token budget one structured-output trial gets.
 ///
-/// Larger than [`TOOL_BUDGET`], because the object asked for carries the
-/// sentence back — a tool call is a name and one argument, and a model that
-/// copies twenty-five characters into a field needs room for them. Still a
-/// condition rather than a threshold: a model that would have closed its brace
-/// on the two-hundredth token is reported as not having closed it *within this
-/// many* (A7).
-const STRUCTURED_BUDGET: usize = 200;
+/// **Eight hundred, and the number was measured rather than chosen** (F106).
+/// It was two hundred, on the reasoning that an object carrying a
+/// twenty-five-character sentence needs a little room — and on the first real
+/// model, two of three framings never finished inside it. The same probe at
+/// eight hundred, same model, same engine:
+///
+/// | framing | at 200 | at 800 |
+/// |---|---|---|
+/// | described in words | 0 conformed, 5 unfinished | **5 conformed** |
+/// | a schema | 5 conformed | 5 conformed |
+/// | an example filled in | 0 conformed, 5 unfinished | 0 conformed, **5 finished with no object** |
+///
+/// The first row is a budget that was measuring itself. The third is what a
+/// large enough budget buys: at two hundred that framing was *interrupted*, and
+/// at eight hundred it is a real observation about the model — it finishes its
+/// turn and produces no object when shown an example.
+///
+/// Still a condition rather than a threshold: a model that would have closed
+/// its brace on the thousandth token is reported as not having closed it
+/// *within this many* (A7), which is what `Attempt::Unfinished` counts.
+const STRUCTURED_BUDGET: usize = 800;
 
 /// Probes a model.
 /// The engine, named the way a later comparison can use.
@@ -338,6 +352,34 @@ fn tool_fields(
                 .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
         ),
     ]
+}
+
+/// What each framing did, one line each.
+///
+/// Every count beside every other, because a framing that conformed nought
+/// times means something different depending on whether its trials ended in
+/// prose or were cut off, and a reader who has to hold two lists in their head
+/// to find that out will not (F106, A1).
+fn per_framing(structured: &mcf_serve::probes::structured::Structured) -> Vec<String> {
+    let at = |per: &[(String, usize)], name: &String| {
+        per.iter()
+            .find(|(other, _)| other == name)
+            .map_or(0, |(_, count)| *count)
+    };
+    structured
+        .conformed
+        .iter()
+        .map(|(name, good)| {
+            format!(
+                "   {name}: {good} conformed, {} departed, {} produced no object, {} still \
+                 going when the budget ran out, of {}",
+                at(&structured.departed, name),
+                at(&structured.no_object, name),
+                at(&structured.unfinished, name),
+                structured.of
+            )
+        })
+        .collect()
 }
 
 /// What the record keeps of a structured-output observation.
@@ -627,23 +669,7 @@ fn structured_lines(
                     .to_owned(),
             );
             lines.push(" observed".to_owned());
-            for (name, good) in &structured.conformed {
-                let wrong = structured
-                    .departed
-                    .iter()
-                    .find(|(other, _)| other == name)
-                    .map_or(0, |(_, count)| *count);
-                let none = structured
-                    .no_object
-                    .iter()
-                    .find(|(other, _)| other == name)
-                    .map_or(0, |(_, count)| *count);
-                lines.push(format!(
-                    "   {name}: {good} conformed, {wrong} departed, {none} produced no object, \
-                     of {}",
-                    structured.of
-                ));
-            }
+            lines.extend(per_framing(structured));
             // Every reason, not a summary: what a model actually emitted is
             // the thing somebody debugging a shape needs (A1).
             for reason in &structured.reasons {
@@ -676,6 +702,13 @@ fn structured_lines(
                      answer — not a claim that it cannot (A7)"
                         .to_owned(),
                 ),
+            }
+            let cut = counted(&structured.unfinished);
+            if cut > 0 {
+                lines.push(format!(
+                    " and {cut} trial(s) were still going when the budget ran out, which is \
+                     MCF interrupting the model rather than the model declining (A7)"
+                ));
             }
         }
         Outcome::Inconclusive { because } => {
