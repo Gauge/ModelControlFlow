@@ -185,7 +185,7 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
     println!();
     println!(
         "{:>52}{:>14}{:>12}{:>10}{:>12}{:>14}",
-        "model", "elements", "dequantized", "load", "per token", "120 positions"
+        "model", "elements", "multiplied", "dequantized", "per token", "120 positions"
     );
 
     for path in paths {
@@ -241,6 +241,11 @@ fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Stri
         Err(failure) => return row.refused(&failure.to_string()),
     };
     row.loaded = Some(loading.elapsed().as_secs_f64());
+    // What a forward pass multiplies: everything the file carries, less the
+    // embedding table, which is indexed rather than multiplied.
+    let shape = &model.shape;
+    let table = u64::try_from(shape.vocabulary.saturating_mul(shape.embedding)).unwrap_or(0);
+    row.multiplied = row.elements.map(|all| all.saturating_sub(table));
 
     let started = Instant::now();
     if let Err(reason) = run_once(&model, &prompt, tokens) {
@@ -258,6 +263,20 @@ fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Stri
 struct Rung {
     name: String,
     elements: Option<u64>,
+    /// The elements a forward pass actually multiplies against.
+    ///
+    /// **Everything except the embedding table.** A token's embedding is one
+    /// *row* read out of that table, not a product against all of it — and for
+    /// a small model the table is most of the file. `stories15M` carries 24
+    /// million elements of which 9 million are vocabulary, so a cost per
+    /// element computed from the file's total says the small models are more
+    /// expensive per element than the large ones, which is an artefact of the
+    /// denominator rather than a fact about the engine.
+    ///
+    /// The output projection *is* multiplied, and where a file ties it to the
+    /// embedding table it is the same tensor read twice — so it is counted once
+    /// here, as work done rather than as bytes held.
+    multiplied: Option<u64>,
     dequantized: Option<u64>,
     loaded: Option<f64>,
     per_token: Option<u64>,
@@ -269,6 +288,7 @@ impl Rung {
         Self {
             name,
             elements: None,
+            multiplied: None,
             dequantized: None,
             loaded: None,
             per_token: None,
@@ -278,14 +298,17 @@ impl Rung {
 
     /// The columns that were filled, and then why the rest were not.
     fn refused(&self, why: &str) -> String {
-        format!("{}\n{:>52}  {why}", self.render(), "")
+        format!("{}\n{:>44}  {why}", self.render(), "")
     }
 
     fn render(&self) -> String {
         format!(
-            "{:>52}{:>14}{:>12}{:>10}{:>13}{:>14}",
+            "{:>44}{:>11}{:>12}{:>12}{:>9}{:>11}{:>12}",
             self.name,
             self.elements
+                .and_then(|value| value.checked_div(1_000_000))
+                .map_or_else(|| "-".to_owned(), |value| format!("{value}M")),
+            self.multiplied
                 .and_then(|value| value.checked_div(1_000_000))
                 .map_or_else(|| "-".to_owned(), |value| format!("{value}M")),
             self.dequantized
