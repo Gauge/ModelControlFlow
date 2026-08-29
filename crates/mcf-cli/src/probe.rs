@@ -56,6 +56,30 @@ const CEILING: usize = 1024;
 /// have happened yet.
 const TOOL_BUDGET: usize = 160;
 
+/// The token budget one structured-output trial gets.
+///
+/// **Eight hundred, and the number was measured rather than chosen** (F106).
+/// It was two hundred, on the reasoning that an object carrying a
+/// twenty-five-character sentence needs a little room — and on the first real
+/// model, two of three framings never finished inside it. The same probe at
+/// eight hundred, same model, same engine:
+///
+/// | framing | at 200 | at 800 |
+/// |---|---|---|
+/// | described in words | 0 conformed, 5 unfinished | **5 conformed** |
+/// | a schema | 5 conformed | 5 conformed |
+/// | an example filled in | 0 conformed, 5 unfinished | 0 conformed, **5 finished with no object** |
+///
+/// The first row is a budget that was measuring itself. The third is what a
+/// large enough budget buys: at two hundred that framing was *interrupted*, and
+/// at eight hundred it is a real observation about the model — it finishes its
+/// turn and produces no object when shown an example.
+///
+/// Still a condition rather than a threshold: a model that would have closed
+/// its brace on the thousandth token is reported as not having closed it
+/// *within this many* (A7), which is what `Attempt::Unfinished` counts.
+const STRUCTURED_BUDGET: usize = 800;
+
 /// Probes a model.
 /// The engine, named the way a later comparison can use.
 ///
@@ -197,29 +221,7 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     };
 
     let mut lines = vec![format!("probed {}", path.display()), String::new()];
-    lines.extend([
-        format!("  {}", probed.method.name),
-        format!(" asks {}", probed.method.asks),
-        format!(" decides  {}", probed.method.decides),
-        String::new(),
-    ]);
-    match &probed.outcome {
-        Outcome::Observed(addressed) => lines.extend(observed(addressed)),
-        Outcome::Inconclusive { because } => {
-            lines.push(format!(" INCONCLUSIVE — {because}"));
-            lines.push(
-                " which licenses nothing: MCF configures no differently than before, and \
-                 this is not a negative result (D42, §3.18)"
-                    .to_owned(),
-            );
-        }
-    }
-    lines.push(String::new());
-    lines.push(format!(
-        "  {} trial(s), {} token(s) spent",
-        probed.trials, probed.tokens
-    ));
-    lines.push(format!("  under: {}", probed.conditions));
+    lines.extend(addressing_lines(&probed, &path, &engine));
     if let Some(said) = applied {
         lines.push(String::new());
         lines.extend(said);
@@ -241,6 +243,17 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
             .observed()
             .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
     ));
+    lines.extend(structured_lines(
+        &socket,
+        &path,
+        &bytes,
+        &engine,
+        asked,
+        probed
+            .outcome
+            .observed()
+            .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
+    ));
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
          this model is an act somebody takes, and it is recorded (D42, D43)."
@@ -251,6 +264,236 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
         text: lines.join("\n"),
         served: true,
     }
+}
+
+/// The chat-template probe, and what it found (B-051, B-052).
+///
+/// **Its own function for the reason the others have one**: a probe that is
+/// rendered inline in the command is a probe no check watching *renderers* can
+/// see, and this one was the last that did not record what it observed
+/// (B-386, F106). It is first in the output because the probes after it are
+/// asked *through* the addressing it measures.
+fn addressing_lines(
+    probed: &mcf_core::probe::Probed<Addressed>,
+    path: &std::path::Path,
+    engine: &str,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(addressed) => {
+            lines.extend(observed(addressed));
+            // From the observation, before anything is said about what it
+            // means (A9, F106).
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                engine,
+                addressing_fields(addressed),
+            )));
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(
+                " which licenses nothing: MCF configures no differently than before, and \
+                 this is not a negative result (D42, §3.18)"
+                    .to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines
+}
+
+/// What the record keeps of a tool-calling observation.
+///
+/// The totals across offerings, plus which offering did best: the per-offering
+/// counts are what a reader on a terminal needs and the totals are what a later
+/// query can compare, and the best names the condition the total was reached
+/// under (A6).
+fn tool_fields(
+    calling: &mcf_serve::probes::tools::Calling,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "well_formed",
+            mcf_record::json::Value::Integer(counted(&calling.well_formed)),
+        ),
+        (
+            "malformed",
+            mcf_record::json::Value::Integer(counted(&calling.malformed)),
+        ),
+        (
+            "no_call",
+            mcf_record::json::Value::Integer(counted(&calling.no_call)),
+        ),
+        (
+            "trials_per_offering",
+            mcf_record::json::Value::Integer(i64::try_from(calling.of).unwrap_or(i64::MAX)),
+        ),
+        (
+            "declared_support",
+            mcf_record::json::Value::Bool(calling.declared.claims_support()),
+        ),
+        (
+            "best_offering",
+            calling
+                .best
+                .clone()
+                .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
+        ),
+    ]
+}
+
+/// What each framing did, one line each.
+///
+/// Every count beside every other, because a framing that conformed nought
+/// times means something different depending on whether its trials ended in
+/// prose or were cut off, and a reader who has to hold two lists in their head
+/// to find that out will not (F106, A1).
+fn per_framing(structured: &mcf_serve::probes::structured::Structured) -> Vec<String> {
+    let at = |per: &[(String, usize)], name: &String| {
+        per.iter()
+            .find(|(other, _)| other == name)
+            .map_or(0, |(_, count)| *count)
+    };
+    structured
+        .conformed
+        .iter()
+        .map(|(name, good)| {
+            format!(
+                "   {name}: {good} conformed, {} departed, {} produced no object, {} still \
+                 going when the budget ran out, of {}",
+                at(&structured.departed, name),
+                at(&structured.no_object, name),
+                at(&structured.unfinished, name),
+                structured.of
+            )
+        })
+        .collect()
+}
+
+/// What the record keeps of a structured-output observation.
+fn structured_fields(
+    structured: &mcf_serve::probes::structured::Structured,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "conformed",
+            mcf_record::json::Value::Integer(counted(&structured.conformed)),
+        ),
+        (
+            "departed",
+            mcf_record::json::Value::Integer(counted(&structured.departed)),
+        ),
+        (
+            "no_object",
+            mcf_record::json::Value::Integer(counted(&structured.no_object)),
+        ),
+        (
+            "with_extra_keys",
+            mcf_record::json::Value::Integer(
+                i64::try_from(structured.with_extra).unwrap_or(i64::MAX),
+            ),
+        ),
+        (
+            "trials_per_framing",
+            mcf_record::json::Value::Integer(i64::try_from(structured.of).unwrap_or(i64::MAX)),
+        ),
+        (
+            "best_framing",
+            structured
+                .best
+                .clone()
+                .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
+        ),
+    ]
+}
+
+/// What the record keeps of a stop-condition observation.
+fn stopping_fields(
+    stopping: &mcf_serve::probes::Stopping,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "stopped_of",
+            mcf_record::json::Value::Integer(i64::try_from(stopping.stopped).unwrap_or(i64::MAX)),
+        ),
+        (
+            "trials",
+            mcf_record::json::Value::Integer(i64::try_from(stopping.of).unwrap_or(i64::MAX)),
+        ),
+        (
+            "longest_tokens",
+            mcf_record::json::Value::Integer(i64::try_from(stopping.longest).unwrap_or(i64::MAX)),
+        ),
+        (
+            "default_budget",
+            mcf_record::json::Value::Integer(
+                i64::try_from(stopping.default_budget).unwrap_or(i64::MAX),
+            ),
+        ),
+    ]
+}
+
+/// What the record keeps of a chat-template observation.
+fn addressing_fields(addressed: &Addressed) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "best_addressing",
+            mcf_record::json::Value::text(addressed.best.clone()),
+        ),
+        (
+            "trials_per_addressing",
+            mcf_record::json::Value::Integer(i64::try_from(addressed.of).unwrap_or(i64::MAX)),
+        ),
+        (
+            "ended_their_turn",
+            mcf_record::json::Value::Integer(counted(&addressed.stopped)),
+        ),
+        (
+            "said_nothing",
+            mcf_record::json::Value::Integer(counted(&addressed.silent)),
+        ),
+    ]
+}
+
+/// What a surface says about a write that may not have happened.
+///
+/// One sentence in one place: a probe that printed *recorded* for a write that
+/// failed would be the silent failure A2 forbids, and three spellings of that
+/// sentence would eventually include one that forgot (F79).
+fn recorded(written: Result<std::path::PathBuf, mcf_core::Failure>) -> String {
+    match written {
+        Ok(journal) => format!(" recorded in {}", journal.display()),
+        Err(failure) => format!(
+            " BUT NOT RECORDED — {failure}; a measurement nobody can find later is the same as \
+             one not taken (A1, A2)"
+        ),
+    }
+}
+
+/// The total across every framing or offering, for the record.
+///
+/// The per-framing counts are what a reader needs and the total is what a
+/// later query can compare; both are kept, because a total that hid which
+/// framing produced it would be a number without its conditions (A6).
+fn counted(per: &[(String, usize)]) -> i64 {
+    i64::try_from(
+        per.iter()
+            .map(|(_, count)| *count)
+            .fold(0_usize, usize::saturating_add),
+    )
+    .unwrap_or(i64::MAX)
 }
 
 /// The tool-calling probe, and what it found (B-053).
@@ -330,6 +573,15 @@ fn tool_lines(
             for reason in &calling.reasons {
                 lines.push(format!("   what came out — {reason}"));
             }
+            // B-386's rule, which held for one probe of four: a probe that
+            // prints and does not write leaves a measurement nobody can find
+            // later (A1, F106). Whichever way it came out (A9).
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                engine,
+                tool_fields(calling),
+            )));
             match &calling.best {
                 Some(best) => lines.push(format!(
                     " VERIFIED   this model emits well-formed calls, best under {best}"
@@ -363,6 +615,117 @@ fn tool_lines(
     lines.push(format!(
         "  a trial had {TOOL_BUDGET} token(s): a model that did not call within that is \
          reported as not having called within it, never as unable to (A7)"
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
+/// The structured-output probe, and what it found (B-054).
+///
+/// **Asked through the addressing this run just measured**, for the reason
+/// [`tool_lines`] is: a model spoken to in a way it does not recognise emits
+/// nothing recognisable, and a conformance figure taken under a wrong
+/// addressing is the measurement error §X is about.
+///
+/// **There is no declaration to diverge from.** A file says nothing about
+/// whether it emits JSON on request — there is no metadata field for it — so
+/// unlike the tool probe this one has only the observed half, and says so
+/// rather than leaving a reader to wonder which half is missing (A21, A7).
+fn structured_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+    engine: &str,
+    asked: &str,
+    addressing: Option<&mcf_serve::probes::Addressing>,
+) -> Vec<String> {
+    let mut ask = |identifiers: &[usize], budget: usize| {
+        let spoken =
+            mcf_serve::probes::spoken(socket, path, "", Some(identifiers), budget, Some(asked));
+        (spoken.trial, spoken.text)
+    };
+    let probed = mcf_serve::probes::structured::structured_output(
+        path,
+        bytes,
+        addressing,
+        TRIALS,
+        STRUCTURED_BUDGET,
+        engine,
+        &mut ask,
+    );
+
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(structured) => {
+            lines.push(
+                " declared  nothing: a model file makes no claim about producing a shape, so \
+                 there is no declaration for this to agree or disagree with (A7)"
+                    .to_owned(),
+            );
+            lines.push(" observed".to_owned());
+            lines.extend(per_framing(structured));
+            // Every reason, not a summary: what a model actually emitted is
+            // the thing somebody debugging a shape needs (A1).
+            for reason in &structured.reasons {
+                lines.push(format!("   what came out — {reason}"));
+            }
+            if structured.with_extra > 0 {
+                lines.push(format!(
+                    "   {} conforming trial(s) also carried keys nobody asked for, which is \
+                     recorded and is not a failure",
+                    structured.with_extra
+                ));
+            }
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                engine,
+                structured_fields(structured),
+            )));
+            match &structured.best {
+                Some(best) => lines.push(format!(
+                    " VERIFIED   this model produces the shape it is asked for, best under \
+                     {best} — and how often is the answer, not whether: {} of {} trial(s) \
+                     conformed",
+                    structured.conforming(),
+                    structured.of.saturating_mul(structured.conformed.len())
+                )),
+                None => lines.push(
+                    " observed   no trial produced the shape asked for. That is a fact about \
+                     this model under three framings MCF chose, which are conditions of the \
+                     answer — not a claim that it cannot (A7)"
+                        .to_owned(),
+                ),
+            }
+            let cut = counted(&structured.unfinished);
+            if cut > 0 {
+                lines.push(format!(
+                    " and {cut} trial(s) were still going when the budget ran out, which is \
+                     MCF interrupting the model rather than the model declining (A7)"
+                ));
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(
+                " which licenses nothing, and is not a negative result (D42, §3.18)".to_owned(),
+            );
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s) per framing, {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!(
+        "  a trial had {STRUCTURED_BUDGET} token(s): a model that did not finish an object \
+         within that is reported as not having, never as unable to (A7)"
     ));
     lines.push(format!("  under: {}", probed.conditions));
     lines.push(String::new());
@@ -593,6 +956,16 @@ fn stopping_lines(
                 " ended its own turn in {} of {} trials, the longest running {} token(s)",
                 stopping.stopped, stopping.of, stopping.longest
             ));
+            // Recorded from the observation, before anything is said about
+            // what it means: a record written out of the verdict branch is a
+            // record of MCF's interpretation rather than of what happened
+            // (B-386, A9, F106).
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                engine,
+                stopping_fields(stopping),
+            )));
             lines.push(String::new());
             if stopping.longest > stopping.default_budget {
                 lines.push(format!(
@@ -709,6 +1082,14 @@ fn context_lines(
                 context.accepted
             ));
             lines.push(String::new());
+            // B-386: written down, whichever way it came out. *Agrees* is as
+            // much a measurement as *diverges* (A9), and it is written *here*,
+            // from the observation, rather than after the branch that decides
+            // what it means — a record produced out of the verdict is a record
+            // of the verdict (F106).
+            lines.push(recorded(crate::log::record_probed_context(
+                path, context, engine,
+            )));
             // The declared context is the whole budget, not the prompt's share
             // of it, so a prompt one shorter is agreement rather than a
             // divergence — reporting that off-by-one would be reporting
@@ -731,15 +1112,6 @@ fn context_lines(
             // much a measurement as *diverges*, and a record that kept only
             // the surprising half could not answer *what does this machine
             // take* (A1, A9).
-            lines.push(
-                match crate::log::record_probed_context(path, context, engine) {
-                    Ok(journal) => format!(" recorded in {}", journal.display()),
-                    Err(failure) => format!(
-                        " BUT NOT RECORDED — {failure}; a measurement nobody can find later is the \
-                     same as one not taken (A1, A2)"
-                    ),
-                },
-            );
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));

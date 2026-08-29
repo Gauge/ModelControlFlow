@@ -47,32 +47,136 @@ fn an_observation_is_not_the_act_it_might_lead_to() {
     );
 }
 
-/// The probe writes whichever way the measurement came out.
+/// Every probe that renders an observation records it.
+///
+/// **This named one probe, and three were built after it** (F106). It read
+/// `fn context_lines(` by name and asked whether *that* function wrote to the
+/// record — so B-386's row said *a probe's outcome is written to the record*
+/// while the tool-calling probe printed its result and kept nothing, and a
+/// question answered yesterday could not be read back today. It is the shape
+/// F103 and F105 both have: a guard covers the place it was written for.
+///
+/// So it is bound to the shape instead. Any function in `probe.rs` that renders
+/// an `Outcome::Observed` is rendering a probe's result, and must record it —
+/// whichever way it came out (A9), which is checked by requiring the write to
+/// sit outside the branch that reports a divergence.
 #[test]
-fn agreement_is_recorded_as_well_as_divergence() {
+fn every_probe_that_renders_an_observation_records_it() {
     let source = read("crates/mcf-cli/src/probe.rs");
-    let (_, after) = source
-        .split_once("fn context_lines(")
-        .expect("the context probe is where the measurement is taken");
-    // To the end of the function, which is the first line that starts a new
-    // top-level item. `\n/// ` is not reliable — the next item may have no doc
-    // comment — and a split that silently found nothing would make this check
-    // assert about the whole rest of the file.
-    let body = after.split_once("\n}\n").map_or(after, |(held, _)| held);
+    let rendering = renderers(&source);
     assert!(
-        body.contains("record_probed_context"),
-        "a probe that prints and does not write leaves a measurement nobody can find (A1)"
+        rendering.len() >= 2,
+        "no probe renderer was found, so this check is reading the wrong file"
     );
-    // The write must not sit inside the divergence branch: *agrees* is as much
-    // a measurement as *diverges*, and a record that kept only the surprising
-    // half could not answer *what does this machine take* (A9).
-    let (_, wrote) = body
-        .split_once("record_probed_context")
-        .expect("checked just above");
+
+    let mut silent = Vec::new();
+    for (name, body) in &rendering {
+        if !body.contains("Outcome::Observed") {
+            continue;
+        }
+        if !body.contains("record_probed") {
+            silent.push(name.clone());
+            continue;
+        }
+        // **Recorded from the observation, before the verdict.** *Agrees* is
+        // as much a measurement as *diverges* (A9), and the way that goes
+        // wrong is a write that sits inside the branch which decides what the
+        // observation means — a record of MCF's interpretation rather than of
+        // what happened. So the write must come *before* any line that renders
+        // a verdict, which is a position rather than a promise.
+        let wrote = body.find("record_probed");
+        for verdict in ["DIVERGENCE", "VERIFIED"] {
+            if let (Some(wrote), Some(said)) = (wrote, body.find(verdict)) {
+                assert!(
+                    wrote < said,
+                    "{name}: the observation is recorded after the {verdict} branch, so what \
+                     is kept depends on how the observation was read (A9)"
+                );
+            }
+        }
+    }
     assert!(
-        !wrote.contains("DIVERGENCE"),
-        "the write must come after both branches, so that agreement is kept too (A9)"
+        silent.is_empty(),
+        "a probe that prints and does not write leaves a measurement nobody can find later \
+         (A1, B-386, F106): {silent:#?}"
     );
+}
+
+/// Every probe MCF has is rendered by one of those functions.
+///
+/// The list of probes is read from where they are defined — a `Method` is what
+/// a probe is — so a new one cannot be added, run and printed without this
+/// check seeing it. A `Method` with no renderer is a probe nobody can run; a
+/// renderer with no `Method` is not a probe.
+#[test]
+fn every_probe_method_has_a_renderer() {
+    let mut methods = Vec::new();
+    for file in [
+        "crates/mcf-serve/src/probes.rs",
+        "crates/mcf-serve/src/probes/tools.rs",
+        "crates/mcf-serve/src/probes/structured.rs",
+    ] {
+        for line in read(file).lines() {
+            if let Some((held, _)) = line.split_once(": Method = Method {")
+                && let Some(name) = held.split_whitespace().last()
+            {
+                methods.push(name.to_owned());
+            }
+        }
+    }
+    assert!(
+        methods.len() >= 4,
+        "the probes define fewer methods than MCF has probes, so this is reading the wrong \
+         files: {methods:#?}"
+    );
+    let source = read("crates/mcf-cli/src/probe.rs");
+    let rendered = renderers(&source).len();
+    assert_eq!(
+        rendered,
+        methods.len(),
+        "there are {} probe method(s) — {methods:#?} — and {rendered} function(s) in probe.rs \
+         that render one. A probe with no renderer cannot be run; a renderer with no method is \
+         not a probe (D42)",
+        methods.len()
+    );
+}
+
+/// The functions in `probe.rs` that render a probe's result, by name and body.
+///
+/// Named `*_lines` by convention, which is the convention this check makes
+/// load-bearing: it is how a renderer is told from a helper, and a probe
+/// renderer that broke it would be a probe this check stopped watching.
+fn renderers(source: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut rest = source;
+    while let Some(at) = rest.find("_lines(") {
+        let (before, after) = rest.split_at(at);
+        let name = before
+            .rsplit_once("fn ")
+            .map(|(_, held)| format!("{held}_lines"));
+        // To the end of the function, which is the first line that starts a
+        // new top-level item. A split that silently found nothing would make
+        // this check assert about the whole rest of the file.
+        let body = after.split_once("\n}\n").map_or(after, |(held, _)| held);
+        if let Some(name) = name
+            && !name.contains(' ')
+            && !found.iter().any(|(held, _): &(String, String)| held == &name)
+            // A *call* to a renderer is not the renderer: the declaration is
+            // the one preceded by `fn `, and the body between it and the next
+            // top-level item.
+            && before.ends_with(&format!("fn {}", name.trim_end_matches("_lines")))
+        {
+            found.push((name, body.to_owned()));
+        }
+        // Past this occurrence, or the next search finds it again and this
+        // loop never ends — which is how a check becomes a hang rather than a
+        // failure.
+        let Some(next) = after.get("_lines(".len()..) else {
+            break;
+        };
+        rest = next;
+    }
+    found
 }
 
 /// A write that failed says so.

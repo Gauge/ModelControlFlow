@@ -477,14 +477,19 @@ fn between(said: &str, offering: &Offering) -> Option<Found> {
         }
         // The markers were not there. A bare object still counts as something
         // the model did — reported as put elsewhere, never as absent (F101).
-        return bare(said).map(Found::Elsewhere);
+        return first_object(said).map(Found::Elsewhere);
     }
-    bare(said).map(Found::AsAsked)
+    first_object(said).map(Found::AsAsked)
 }
 
 /// The first balanced `{…}` in an answer, which is what a bare object looks
 /// like in a reply that may carry prose around it.
-fn bare(said: &str) -> Option<String> {
+///
+/// Public because [`super::structured`] asks the same question of an answer,
+/// and *what an object looks like in a model's output* is one question: two
+/// readers of it would eventually disagree, and the probe that disagreed would
+/// be the one nobody was looking at (F79).
+pub fn first_object(said: &str) -> Option<String> {
     let start = said.find('{')?;
     let mut depth = 0_usize;
     for (offset, character) in said.get(start..)?.char_indices() {

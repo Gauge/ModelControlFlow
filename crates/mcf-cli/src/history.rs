@@ -152,6 +152,15 @@ pub(crate) fn probed_context(model: &Path) -> Option<usize> {
         if body.get("model").and_then(Value::as_text) != Some(&model.display().to_string()) {
             continue;
         }
+        // And by method, not only by the field: several probes write
+        // `model_probed` entries now, and reading whichever one happened to
+        // carry a familiar field would be answering about a different
+        // experiment (B-054, §3.4).
+        if body.get("method").and_then(Value::as_text)
+            != Some(mcf_serve::probes::USABLE_CONTEXT.name)
+        {
+            continue;
+        }
         if let Some(accepted) = body
             .get("accepted_tokens")
             .and_then(Value::as_integer)

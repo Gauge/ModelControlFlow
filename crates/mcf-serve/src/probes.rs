@@ -107,6 +107,7 @@ impl Addressing {
     }
 }
 
+pub mod structured;
 pub mod tools;
 
 /// The bracketed markers in a piece of text, in order of first appearance.
