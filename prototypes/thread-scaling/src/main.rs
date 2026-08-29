@@ -185,7 +185,7 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
     println!();
     println!(
         "{:>52}{:>14}{:>12}{:>10}{:>12}{:>14}",
-        "model", "parameters", "dequantized", "load", "per token", "120 positions"
+        "model", "elements", "dequantized", "load", "per token", "120 positions"
     );
 
     for path in paths {
@@ -207,7 +207,13 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
 fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("unreadable: {error}"))?;
     let file = gguf::parse(&bytes).map_err(|failure| failure.to_string())?;
-    let parameters: u64 = file
+    // **Tensor elements, not "parameters" as a publisher counts them.** This is
+    // every number in every tensor the file carries, embedding table included,
+    // which is what the engine actually multiplies and stores. A model sold as
+    // 15M reads as 24M here because its vocabulary is nine million of them, and
+    // calling that a parameter count would be a number that disagrees with the
+    // publisher's for a reason nobody could see.
+    let elements: u64 = file
         .dequantized_bytes()
         .map(|bytes| bytes.checked_div(4).unwrap_or(0))
         .ok_or_else(|| "the directory does not say how large its tensors are".to_owned())?;
@@ -235,10 +241,10 @@ fn one_rung(path: &str, threads: Threads, tokens: usize, positions: u64) -> Resu
     let projected = per_token.saturating_mul(positions);
 
     Ok(format!(
-        "{:>52}{:>13}M{:>11}G{:>9.1}s{:>10} ms{:>13}",
+        "{:>52}{:>13}M{:>10}MB{:>9.1}s{:>10} ms{:>13}",
         short(path),
-        parameters.checked_div(1_000_000).unwrap_or(0),
-        dequantized.checked_div(1_000_000_000).unwrap_or(0),
+        elements.checked_div(1_000_000).unwrap_or(0),
+        dequantized.checked_div(1_000_000).unwrap_or(0),
         loaded,
         per_token,
         as_duration(projected)
