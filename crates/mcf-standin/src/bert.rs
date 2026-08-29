@@ -32,6 +32,7 @@ use mcf_core::failure::{Attribution, Category, Disposition, Failure, Result, Sub
 use crate::gguf::Model as File;
 use crate::llama::{count, float, malformed, missing, number, read_tensor};
 use crate::ops;
+use crate::threads::Threads;
 
 const WHERE: Subsystem = Subsystem::new("mcf-standin::bert");
 
@@ -76,6 +77,12 @@ pub struct Loaded {
     pub pooling: Pooling,
     /// The normalization epsilon the file states.
     epsilon: f32,
+    /// How many processors each product may divide its rows across.
+    ///
+    /// One at load, which is the definition; a caller asks for more with
+    /// [`Loaded::across`]. It changes what the work costs and not what it says
+    /// (B-366, [`crate::threads`]).
+    threads: Threads,
     tensors: BTreeMap<String, Vec<f32>>,
 }
 
@@ -151,6 +158,7 @@ pub fn load(file: &File, bytes: &[u8]) -> Result<Loaded> {
         shape,
         pooling,
         epsilon,
+        threads: Threads::definition(),
         tensors,
     })
 }
@@ -328,6 +336,29 @@ fn forward(model: &Loaded, tokens: &[usize]) -> Result<Embedding> {
 }
 
 impl Loaded {
+    /// The same model, dividing each product's rows across `threads` (B-366).
+    ///
+    /// As [`crate::llama::Loaded::across`], and for the same reason: the
+    /// partition decides who computes a row and never how, so the embedding is
+    /// the same bytes at any count.
+    #[must_use]
+    pub const fn across(mut self, threads: Threads) -> Self {
+        self.threads = threads;
+        self
+    }
+
+    /// How many processors this model divides its work across, and whose number
+    /// that is.
+    #[must_use]
+    pub const fn threads(&self) -> Threads {
+        self.threads
+    }
+
+    /// One matrix-vector product, across whatever this model was given.
+    fn product(&self, matrix: &[f32], vector: &[f32], rows: usize, columns: usize) -> Vec<f32> {
+        ops::matmul_vec_across(matrix, vector, rows, columns, self.threads)
+    }
+
     fn tensor(&self, name: &str) -> Result<&[f32]> {
         self.tensors
             .get(name)
@@ -355,9 +386,9 @@ impl Loaded {
         let mut keys = Vec::with_capacity(positions);
         let mut values = Vec::with_capacity(positions);
         for state in states {
-            queries.push(biased(ops::matmul_vec(q_w, state, width, width), q_b));
-            keys.push(biased(ops::matmul_vec(k_w, state, width, width), k_b));
-            values.push(biased(ops::matmul_vec(v_w, state, width, width), v_b));
+            queries.push(biased(self.product(q_w, state, width, width), q_b));
+            keys.push(biased(self.product(k_w, state, width, width), k_b));
+            values.push(biased(self.product(v_w, state, width, width), v_b));
         }
 
         // Every position attends to every position: the attention is not
@@ -398,7 +429,7 @@ impl Loaded {
                     }
                 }
             }
-            let projected = biased(ops::matmul_vec(o_w, &attended, width, width), o_b);
+            let projected = biased(self.product(o_w, &attended, width, width), o_b);
             let residual = ops::add(&projected, state);
             after_attention.push(ops::layer_norm(
                 &residual,
@@ -420,14 +451,14 @@ impl Loaded {
         let mut out = Vec::with_capacity(positions);
         for state in &after_attention {
             let mut up = biased(
-                ops::matmul_vec(up_w, state, self.shape.feed_forward, width),
+                self.product(up_w, state, self.shape.feed_forward, width),
                 up_b,
             );
             for value in &mut up {
                 *value = ops::gelu(*value);
             }
             let down = biased(
-                ops::matmul_vec(down_w, &up, width, self.shape.feed_forward),
+                self.product(down_w, &up, width, self.shape.feed_forward),
                 down_b,
             );
             let residual = ops::add(&down, state);

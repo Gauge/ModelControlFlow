@@ -147,6 +147,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf-prototype-thread-scaling"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+ "mcf-standin",
+]
+
+[[package]]
 name = "mcf-prototype-timing-noise"
 version = "0.1.0-m0"
 dependencies = [

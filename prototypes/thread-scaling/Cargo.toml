@@ -1,0 +1,19 @@
+[package]
+name = "mcf-prototype-thread-scaling"
+description = "The B-366 evidence: what threads do to MCF's own engine — how much faster, how much noisier, and whether the answer moved."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "mcf-prototype-thread-scaling"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mcf-core = { path = "../../crates/mcf-core" }
+mcf-standin = { path = "../../crates/mcf-standin" }
