@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Rules — enforceable, checkable |
-| **Version** | 20 |
+| **Version** | 21 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v24, which wins on any disagreement |
 | **Scope** | Every rule in the project. Rules live here and nowhere else. |
@@ -65,7 +65,7 @@ each names one:
 | `review` | A human check. Weakest; each instance is a candidate for promotion. |
 | `blocked` | Not yet checkable. Names the backlog item or decision that makes it so. |
 
-**83 rules carry at least one machine check, 15 rest on review alone, and 2 are
+**85 rules carry at least one machine check, 13 rest on review alone, and 2 are
 not yet checkable at all.** That middle figure is the number to drive down
 (B16): it is the amount of this document that depends on somebody remembering
 it.
@@ -1241,14 +1241,24 @@ A number reproducible to ±10 % beats one quotable to three decimals once.
 ### C5 — Identifiers are stable for life
 Rule IDs, backlog IDs, void numbers and record IDs are never reused and never
 renumbered, so a citation made once remains valid.
-- **Absorbs:** §7 preamble, backlog convention · **Check:** `review`
-- **Why low value:** a convention. Cheap to hold, mildly annoying to violate,
-  nothing scientific rests on it.
+- **Absorbs:** §7 preamble, backlog convention · **Check:** `CI` —
+  `checks/identifiers.tsv` is a ledger of every published identifier, and
+  `an_identifier_is_stable_for_life.rs` refuses one that has been removed,
+  renamed, reordered or given a new meaning; an addition fails until it is
+  written into the ledger, whose diff is the namespace's changelog (B-394).
+- **Why low value:** a convention — and the tier it protects is not. A taxonomy
+  code travels between machines, and an entry kind's *position* in
+  `EntryKind::ALL` is what the derived index stores, so a reordering
+  reinterprets every entry ever written. Low value is about how much argument
+  the rule needs, not about what it costs to break.
 
 ### C6 — Nothing is deleted; dropped work keeps its reasoning
 Backlog items, rules and resolutions that die are marked dropped with the
 reasoning rather than removed, so they are not re-proposed later as oversights.
-- **Absorbs:** §8, backlog convention · **Check:** `review`
+- **Absorbs:** §8, backlog convention · **Check:** `CI` — the same ledger
+  (C5): an identifier that leaves the register fails the build, which is the
+  half of this rule a machine can hold. That the *reasoning* travels with a
+  dropped row stays a review matter (B-394).
 - **Why low value:** it preserves institutional memory, which is valuable but
   recoverable from version control if the rule lapses.
 
@@ -1430,6 +1440,16 @@ no rule is a defect in this file.
 ---
 
 ## Changelog
+
+### Version 21 — two review-only rules become machine-checked
+
+No rule changed. C5 and C6 rested on somebody remembering, and both are about a
+published namespace: a taxonomy code travels between machines, an entry kind's
+position is what the derived index stores, and a register identifier is what
+every finding and commit cites. `checks/identifiers.tsv` is now a ledger of all
+640 of them, and a removal, a rename, a reordering or a changed meaning fails
+the build. The count of rules resting on review alone falls from 15 to 13
+(B16, B-394, F108).
 
 ### Version 20 — B38's check is entirely machine-checked
 

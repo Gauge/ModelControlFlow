@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 92 |
+| **Version** | 93 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -107,6 +107,7 @@ forward as one.
 | 77 | [F77 — Four outcomes and no total, built before the laboratories that will produce them (B-200, B-201, B40, B41, D2, §3.23, §3.9)](#77--f77--four-outcomes-and-no-total-built-before-the-laboratories-that-will-produce-them-b-200-b-201-b40-b41-d2-323-39) |
 | 78 | [F78 — Eight Japanese characters cost fifteen tokens here and four there, and the shattering is visible (B-381, PR11, §3.15, F19, A1)](#78--f78--eight-japanese-characters-cost-fifteen-tokens-here-and-four-there-and-the-shattering-is-visible-b-381-pr11-315-f19-a1) |
 | 79 | [F79 — A marker typed into a prompt is shown as what it becomes (B-383, PR11, F37, F26, D46, §3.7)](#79--f79--a-marker-typed-into-a-prompt-is-shown-as-what-it-becomes-b-383-pr11-f37-f26-d46-37) |
+| 80 | [F80 — The register's headline was wrong by five items, and the check was green because it skipped what it could not parse (B-383, C5, A1, A2, §3.5)](#80--f80--the-registers-headline-was-wrong-by-five-items-and-the-check-was-green-because-it-skipped-what-it-could-not-parse-b-383-c5-a1-a2-35) |
 | 81 | [F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002) |
 | 82 | [F82 — A prompt's cost can be stated before it is sent, and the measured context is on a terminal and nowhere else (B-382, B-386, A21, A1, F42)](#82--f82--a-prompts-cost-can-be-stated-before-it-is-sent-and-the-measured-context-is-on-a-terminal-and-nowhere-else-b-382-b-386-a21-a1-f42) |
 | 83 | [F83 — The probe writes it down, and the prompt is measured against what the machine takes (B-386, B-382, A1, A9, D42, F42)](#83--f83--the-probe-writes-it-down-and-the-prompt-is-measured-against-what-the-machine-takes-b-386-b-382-a1-a9-d42-f42) |
@@ -134,6 +135,7 @@ forward as one.
 | 105 | [F105 — A25's guarantee was structural and unused: 4 047 record entries held content, and the export said they did not (B-392, A25, A1, A24, §6.8, F68, F104, F103)](#105--f105--a25s-guarantee-was-structural-and-unused-4-047-record-entries-held-content-and-the-export-said-they-did-not-b-392-a25-a1-a24-68-f68-f104-f103) |
 | 106 | [F106 — A probe that asks for a shape, and the four whose results were never written down (B-054, B-386, D42, A1, A7, A9, F101, F103, F105)](#106--f106--a-probe-that-asks-for-a-shape-and-the-four-whose-results-were-never-written-down-b-054-b-386-d42-a1-a7-a9-f101-f103-f105) |
 | 107 | [F107 — The oracle's first disagreement in three days was the instrument's, not the engine's (B-393, B-368, B-373, F27, F34, F103, A19, A5)](#107--f107--the-oracles-first-disagreement-in-three-days-was-the-instruments-not-the-engines-b-393-b-368-b-373-f27-f34-f103-a19-a5) |
+| 108 | [F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)](#108--f108--two-rules-rested-on-somebody-remembering-and-one-identifier-had-been-cited-four-times-with-nothing-behind-it-b-394-c5-c6-b16-f80-730) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -5953,6 +5955,49 @@ tokens and `[INST]` costs three. Neither does anything. Nothing in the output
 says a person was wrong to write them: §3.15's job is to make the effect
 visible, not to grade the prompt.
 
+## 80 · F80 — The register's headline was wrong by five items, and the check was green because it skipped what it could not parse (B-383, C5, A1, A2, §3.5)
+
+**Written after the fact, and the delay is itself the finding's second half.**
+The commit that fixed this said *F79, F80* and wrote only F79. The number was
+then cited four times — twice in this file, once in its own table of defects,
+once in the register's changelog — and resolved to nothing for a day, because
+the check that resolves identifier citations knew about rules, resolutions,
+laboratories, milestones and proposals, and not about findings (F108). What
+follows is reconstructed from the commit `d6f1752` and [backlog.md](backlog.md)'s
+Version 193, which recorded the measurement at the time.
+
+**What happened.** Adding one row to the register made its headline disagree
+with its table. `checks/tests/the_register_counts_itself.rs` exists to stop
+exactly that — and it was green.
+
+**Why it was green.** The check skipped any row whose cell count was not what it
+expected, instead of failing on it. A row it could not parse was a row it did
+not count, silently, and the headline it compared against was therefore a
+headline about a subset nobody had named.
+
+**What the skip was hiding**, once it became an assertion:
+
+| row | why it was invisible |
+|---|---|
+| B-053, B-054, B-057 | two status cells each — the residue of an edit that unblocked them and left the old status behind |
+| B-060 | written correctly, with a closure spelled `\|\|`; the check split on the escape |
+| the new row | written that day |
+
+**The measurement.** The register said **273 items** and held **278**.
+Recomputed from the table: 223 build items — 111 done, 1 dropped, 13 in
+progress, 36 blocked, 62 open.
+
+**The fix.** An unparseable row is an error, and the parser honours `\|` as a
+literal pipe. The counts are recomputed from the table rather than compared with
+a number somebody typed.
+
+**The shape, which was the third of it here at the time and the fourth by
+[F81](#81--f81--korean-costs-65-times-english-on-one-vocabulary-and-41-on-another-and-neither-is-a-fact-about-korean-b-379-315-dec-002).**
+*A check that passes while failing to do its job.* The failure mode of a check
+is not a wrong answer — it is **no answer, reported as a right one**. F102, F103,
+F105 and F106 are the same thing in four other places, and every one of them was
+green when it was wrong.
+
 ## 81 · F81 — Korean costs 6.5 times English on one vocabulary and 4.1 on another, and neither is a fact about Korean (B-379, §3.15, DEC-002)
 
 **`mcf explain` now answers *what does each language cost here*.** One
@@ -7953,7 +7998,76 @@ floor is too loose to see. The floor was measured against a clean engine and two
 gross defects (F34); nothing has yet measured what a *subtle* one looks like at
 4B. That is a question about the floor, and it is not this.
 
+## 108 · F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)
+
+**Chosen by asking which rules a machine does not hold.** B16 asks for the
+machine-checked form of every rule and names the number to drive down: how much
+of the discipline depends on somebody remembering. Fifteen rules rested on
+review alone. Two of them — C5, *identifiers are stable for life*, and C6,
+*nothing is deleted* — are the same promise from two sides, and both are about
+namespaces that have already left this machine's control.
+
+**What they protect is not cosmetic.**
+
+* A **taxonomy code** appears in the record, in an export, and — once §XIV ships
+  — in another machine's copy of this one's evidence. Renaming one silently
+  reinterprets every record that carries it.
+* An **entry kind's position** in `EntryKind::ALL` is what the derived index
+  stores. The list says so in a comment: *appended rather than sorted in*.
+  Reordering it does not fail; it reinterprets every entry ever written.
+* A **register identifier** is what a finding, a rule and a commit message cite.
+* A **format version** that moves is a schema change, which §7.30 makes an
+  interface event rather than an edit.
+
+None of these can be renamed by a careful edit. They can only be renamed by an
+edit nobody noticed — which is precisely the class of thing a review does not
+catch and a ledger does.
+
+**The mechanism.** `checks/identifiers.tsv`: 641 lines, one per published
+identifier, with the meaning where the identifier has one and the position where
+the position is the interface. The check recomputes the set from the source and
+the documents; an identifier in the ledger and not in the tree is a removal or a
+rename, and one in the tree and not in the ledger is an addition that fails until
+somebody writes the line. That friction is the mechanism, not a side effect: the
+ledger's diff is the only place a reader can see what this project has promised
+to keep.
+
+**Three negative controls, each firing by name**: two kinds swapped in
+`EntryKind::ALL` (reported as the two positions that moved), a code's meaning
+rewritten (reported as the old meaning gone), and the bundle format version
+bumped from 1 to 2.
+
+**And the citation half found a live one.** `every_identifier_citation_resolves`
+resolved rules, resolutions, laboratories, milestones and proposals — and not
+findings, the namespace every evidence-bearing decision cites. Adding `F` to it
+found that **`F80` had been cited four times and its section had never been
+written**: twice in this file, once in its own table of six defects, once in the
+register's changelog. The commit that fixed the defect said *F79, F80* and wrote
+only F79.
+
+[F80](#80--f80--the-registers-headline-was-wrong-by-five-items-and-the-check-was-green-because-it-skipped-what-it-could-not-parse-b-383-c5-a1-a2-35)
+is written now, from that commit and the register's Version 193 entry, and marked
+as reconstructed. Its own subject is *a check that passes while failing to do its
+job* — the shape F102, F103, F105 and F106 each found somewhere else — so a
+dangling citation to it was, for a day, a small instance of what it describes.
+
+**What this did not establish.** Whether any *earlier* citation resolved to
+nothing and was quietly fixed by renumbering. Git would answer it and the ledger
+begins today; from here a removal fails the build, which is the property that
+was wanted rather than an audit of the past.
+
+**Thirteen rules still rest on review alone**, and the honest ones among them —
+A1, *never lose information* — are not reducible to a mechanism. B16 asks for the
+number to fall, not to reach zero.
+
 ## Changelog
+
+### Version 93 — an identifier is stable for life
+
+F108. C5 and C6 stop resting on review: a ledger of every published identifier
+refuses a removal, a rename, a reordering or a reuse. Writing the citation half
+of it found `F80` cited four times with no section behind it, and F80 is written
+here from the commit that promised it.
 
 ### Version 92 — the oracle's disagreement was the instrument's
 

@@ -293,6 +293,11 @@ fn every_identifier_citation_resolves() {
         "only {} proposals were found, so this check is reading proposals.md wrong",
         identifiers.proposals.len()
     );
+    assert!(
+        identifiers.findings.len() >= 100,
+        "only {} findings were found, so this check is reading findings.md wrong",
+        identifiers.findings.len()
+    );
 
     let mut dangling = Vec::new();
     for document in &documents {
@@ -316,6 +321,10 @@ fn every_identifier_citation_resolves() {
                         identifiers.rules.contains(&token) || identifiers.proposals.contains(&token)
                     }
                     'D' => identifiers.resolutions.contains(&token),
+                    // Findings, which every decision that rests on evidence
+                    // cites. `F80` was cited four times while its section did
+                    // not exist, because this match had no arm for `F` (F108).
+                    'F' => identifiers.findings.contains(&token),
                     'L' => identifiers.laboratories.contains(&token),
                     'M' => identifiers.milestones.contains(&token),
                     _ => continue,
