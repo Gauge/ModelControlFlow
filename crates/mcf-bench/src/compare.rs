@@ -565,6 +565,11 @@ pub struct Finding {
     withheld: Option<Withheld>,
     declared: Option<String>,
     arms: (Arm, Arm),
+    /// How much of the machine was already busy (B-217, F95).
+    ///
+    /// `None` where nothing read it — an older record, or a construction that
+    /// never had a machine. A7: not known is not *the machine was free*.
+    headroom: Option<mcf_core::hardware::headroom::Headroom>,
 }
 
 /// Why a comparison has no delta to give.
@@ -689,6 +694,11 @@ pub struct Comparison<K: ClockKind> {
     discipline: Discipline,
     cut_short: Option<String>,
     body: Body<K>,
+    /// How much of the machine was busy while this ran (B-217, F95).
+    ///
+    /// `None` where nothing read it, which A7 keeps distinct from *the
+    /// machine was free*.
+    headroom: Option<mcf_core::hardware::headroom::Headroom>,
 }
 
 /// What a comparison holds, which depends on how it was built.
@@ -947,7 +957,22 @@ impl<K: ClockKind> Comparison<K> {
             withheld,
             declared: self.declared.clone(),
             arms: (self.left.arm().clone(), self.right.arm().clone()),
+            headroom: self.headroom,
         }
+    }
+
+    /// Records how much of the machine was busy while this ran (B-217, F95).
+    ///
+    /// Taken by the runner, which is the only thing that knows: a comparison
+    /// assembled from a record cannot go back and ask what the machine was
+    /// doing, and A7 makes that `None` rather than a guess.
+    #[must_use]
+    pub const fn on_a_machine_with(
+        mut self,
+        headroom: mcf_core::hardware::headroom::Headroom,
+    ) -> Self {
+        self.headroom = Some(headroom);
+        self
     }
 
     /// A comparison read back out of one session's trials.
@@ -1061,6 +1086,7 @@ impl<K: ClockKind> Comparison<K> {
             discipline,
             cut_short: None,
             body: Body::Paired { session, pairs },
+            headroom: None,
         })
     }
 
@@ -1105,6 +1131,7 @@ impl<K: ClockKind> Comparison<K> {
                 left: of_left,
                 right: of_right,
             },
+            headroom: None,
         })
     }
 }
@@ -1349,6 +1376,7 @@ impl<K: ClockKind> Interleaving<K> {
                     session,
                     pairs: Vec::new(),
                 },
+                headroom: None,
             },
             next_position: 0,
             // Zero is the one seed a xorshift cannot leave, so it is moved
@@ -1495,3 +1523,61 @@ fn percent(held: PartsPerMillion) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Why a comparison is a real measurement that may not travel (B-217, F92,
+/// F95).
+///
+/// **Distinct from [`Withheld`], which suppresses the delta.** A confounded
+/// comparison has no delta to report; these have one, and it stands. What they
+/// lose is the right to be contributed — the operator's decision of
+/// 2026-08-28: *run, and mark the result unpublishable*. A4 keeps what the run
+/// produced and A1 keeps the record of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NotFitToContribute {
+    /// The machine was busier than the band DEC-007's measurement established
+    /// (B-217, F95).
+    OutsideTheBand(mcf_core::hardware::headroom::Headroom),
+    /// The order is established and the size is not, at the resolution asked
+    /// about (F92).
+    SizeNotEstablished,
+    /// There is no delta at all, for a reason [`Withheld`] names.
+    NoDelta(Withheld),
+}
+
+impl fmt::Display for NotFitToContribute {
+    fn fmt(&self, form: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutsideTheBand(held) => write!(form, "{held}"),
+            Self::SizeNotEstablished => form.write_str(
+                "the order is established and the size is not, at the resolution asked about \
+                 (F92)",
+            ),
+            Self::NoDelta(why) => write!(form, "there is no delta: {why}"),
+        }
+    }
+}
+
+impl Finding {
+    /// Whether this may be contributed, and why not where it may not.
+    ///
+    /// **Every reason, not the first.** A run can be outside the band *and*
+    /// fail to establish its size, and a reader told only one of them will fix
+    /// that one and be surprised again (A1).
+    #[must_use]
+    pub fn not_fit_to_contribute(&self) -> Vec<NotFitToContribute> {
+        let mut found = Vec::new();
+        if let Some(held) = self.headroom
+            && !held.within_band()
+        {
+            found.push(NotFitToContribute::OutsideTheBand(held));
+        }
+        if matches!(self.verdict, Some(crate::enough::Verdict::Ordered { .. })) {
+            found.push(NotFitToContribute::SizeNotEstablished);
+        }
+        if let Some(why) = self.withheld {
+            found.push(NotFitToContribute::NoDelta(why));
+        }
+        found
+    }
+}

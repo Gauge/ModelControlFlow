@@ -122,6 +122,7 @@ forward as one.
 | 93 | [F93 — Every measurement MCF has taken is attributed to an instrument it cannot identify (§3.4, A1, A2, A7, §6.16)](#93--f93--every-measurement-mcf-has-taken-is-attributed-to-an-instrument-it-cannot-identify-34-a1-a2-a7-616) |
 | 94 | [F94 — A19 was applied to everything MCF computes and nothing MCF measures (A19, §6.16, F90, F91, F92, F93)](#94--f94--a19-was-applied-to-everything-mcf-computes-and-nothing-mcf-measures-a19-616-f90-f91-f92-f93) |
 | 95 | [F95 — The band is at a third of the machine, and half a machine free is not enough (DEC-007, B-217, B-084, §3.8, F90, F92)](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92) |
+| 96 | [F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)](#96--f96--the-pre-flight-marks-rather-than-refuses-and-the-band-it-uses-says-whose-machine-measured-it-b-217-dec-007-f95-a21-a20-a4) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -6878,11 +6879,75 @@ a single 32-token cold generation takes about 1.5 seconds idle and about 60
 seconds at 75 % load — **forty times slower**. A comparison that finishes in
 half a minute on a quiet machine took twelve minutes.
 
+**Two levels were planned and not taken.** The sweep was designed for six
+levels to 125 % of capacity and was stopped after four. The reason is itself a
+measurement: at 100 % of capacity a single comparison did not finish inside the
+fifteen-minute cap the harness allows it, having taken about thirty seconds on
+an idle machine. Estimating the sweep at forty-five to ninety minutes was
+wrong by more than a factor of two, for the same reason the finding is about —
+work on a saturated machine does not slow down proportionally. The four levels
+taken bracket the band; the two not taken would have confirmed a trend already
+unambiguous across them, at the cost of another hour of somebody's machine.
+
 **What this does not settle.** The bracket is 30–51 % and no finer: nothing was
 measured between them, so the departure could be anywhere in that range. One
 model pair, one token budget, one machine, three repeats a level. The shape is
 clear and the edge is not, and locating it would take a second sweep across
 31–50 % rather than a wider one.
+
+## 96 · F96 — The pre-flight marks rather than refuses, and the band it uses says whose machine measured it (B-217, DEC-007, F95, A21, A20, A4)
+
+**B-217, asked for as a refusal and built as a marking.** The item wanted a
+laboratory that *refuses to begin on a contended machine rather than producing
+an invalid result*. [F71](#71--f71--the-machine-either-side-of-a-run-is-a-condition-not-a-gate-b-217-dec-007-34-38-a6-a7)
+built the measurement and left the refusal, because the threshold would have
+been a figure MCF chose. [F95](#95--f95--the-band-is-at-a-third-of-the-machine-and-half-a-machine-free-is-not-enough-dec-007-b-217-b-084-38-f90-f92)
+measured the threshold. This is what was built on top of it, and it is not a
+refusal:
+
+```
+NOT FIT TO CONTRIBUTE — 84.3% of this machine was already busy (27.00 of 32
+core(s)) — OUTSIDE the band of 30.0%, so this is a real measurement that is
+not fit to contribute (B-217, DEC-007). The band is DECLARED from one
+32-thread machine, one model pair, 32 tokens (F95); `prototypes/contention-band`
+measures it here (A21, A20)
+```
+
+**Why marking and not refusing** (the operator, 2026-08-28). A run outside the
+band still happened, and A4 keeps what it produced: the pairs are real, the
+verdict stands, the record is complete. What it loses is the right to travel.
+Refusing to start would deny a result to anyone whose machine is simply busy,
+and this project's answer to that has been the same in three findings now —
+measure the condition, attach it, and let the reader judge.
+
+**A fraction of capacity, not a count of cores.** Sixteen busy threads is half
+of a thirty-two-thread machine and a sixteenth of a large one, and F95 measured
+the departure at a *fraction*. So `Headroom` divides by what
+`available_parallelism` reports, and the same absolute load is inside the band
+on one machine and outside it on another — which is DEC-007's *quiet is
+relative* expressed in the units that predict the harm.
+
+**The band is somebody else's measurement, and says so** (A21, B34, A20).
+Thirty percent came from one machine, one model pair, one token budget. That
+makes it **declared** here in exactly the sense F42's declared context length is
+declared: far better than a figure chosen out of the air, and not the same as a
+local measurement. The rendering carries the provenance and names
+`prototypes/contention-band` as what replaces it — an estimate replaced by a
+measurement, never promoted into one.
+
+**Every reason, not the first.** `Finding::not_fit_to_contribute` returns a
+list. A run can be outside the band *and* fail to establish its size (F92), and
+a reader told only one of those will fix that one and be surprised again (A1).
+
+**Distinct from `Withheld`, which was the temptation.** `Withheld::Confounded`
+and `Withheld::MixedReuse` suppress the delta — those comparisons have no delta
+to give. A busy machine is not that: the delta exists, it is real, and it is
+worth less. Reusing `Withheld` would have thrown away a measurement in order to
+mark it, which is the opposite of what the operator chose.
+
+**And a machine nobody read is not a machine that was free** (A7). `Headroom`
+is `Option` on the comparison, absent for anything built from a record that
+never carried it, and an absent reading marks nothing and claims nothing.
 
 ## Changelog
 

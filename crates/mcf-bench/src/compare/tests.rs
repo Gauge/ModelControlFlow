@@ -1208,3 +1208,98 @@ fn the_second_run_of_a_pair_is_not_attempted_without_the_first() {
         "the pair's second run was never asked for, because its first did not happen"
     );
 }
+
+/// What stops a real measurement travelling (B-217, F92, F95).
+mod fitness {
+    use mcf_core::hardware::headroom::Headroom;
+    use mcf_core::measurement::PartsPerMillion;
+    use mcf_core::trial::Arm;
+
+    use super::super::{Comparison, NotFitToContribute};
+    use super::{arms, from_trials, laid_out, session};
+
+    /// Twelve alternating trials, whose values the caller supplies.
+    fn pairs_of(values: &[u64]) -> Comparison<mcf_core::time::Simulated> {
+        let (left, right) = arms();
+        let order: Vec<&Arm> = (0..values.len())
+            .map(|at| if at % 2 == 0 { &left } else { &right })
+            .collect();
+        let scaled: Vec<u64> = values
+            .iter()
+            .map(|held| held.saturating_mul(1_000_000))
+            .collect();
+        let trials = laid_out(&order, &scaled, &session());
+        from_trials(&trials, &left, &right).expect("interleaved trials pair")
+    }
+
+    /// A busy machine marks the result and does not suppress it.
+    #[test]
+    fn a_run_outside_the_band_is_marked_and_kept() {
+        let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133])
+            .on_a_machine_with(Headroom {
+                competing: 27_000,
+                capacity: 32_000,
+                band: mcf_core::hardware::headroom::MEASURED,
+            });
+        let finding = held.finding(PartsPerMillion(50_000));
+        assert!(
+            finding.verdict().is_some(),
+            "the delta stands: a busy machine is not a confound, it is a condition (A4)"
+        );
+        let why = finding.not_fit_to_contribute();
+        assert!(
+            why.iter()
+                .any(|held| matches!(held, NotFitToContribute::OutsideTheBand(_))),
+            "and it is marked: {why:?}"
+        );
+    }
+
+    /// A quiet machine leaves nothing to mark.
+    #[test]
+    fn a_run_inside_the_band_is_fit() {
+        let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133])
+            .on_a_machine_with(Headroom {
+                competing: 1_260,
+                capacity: 32_000,
+                band: mcf_core::hardware::headroom::MEASURED,
+            });
+        assert!(
+            held.finding(PartsPerMillion(50_000))
+                .not_fit_to_contribute()
+                .is_empty()
+        );
+    }
+
+    /// A machine nobody read is not a machine that was free (A7).
+    #[test]
+    fn an_unread_machine_marks_nothing_and_claims_nothing() {
+        let held = pairs_of(&[100, 130, 100, 132, 100, 128, 100, 131, 100, 129, 100, 133]);
+        assert!(
+            held.finding(PartsPerMillion(50_000))
+                .not_fit_to_contribute()
+                .is_empty(),
+            "an absent reading cannot mark a run unfit, and must not claim it fit either — the \
+             claim is made by what is rendered, and nothing is rendered here"
+        );
+    }
+
+    /// Every reason, not the first one found.
+    #[test]
+    fn a_run_that_fails_twice_says_both() {
+        // Ordered (the size straddles five percent) on a busy machine.
+        let held = pairs_of(&[100, 101, 100, 140, 100, 103, 100, 160, 100, 102, 100, 150])
+            .on_a_machine_with(Headroom {
+                competing: 27_000,
+                capacity: 32_000,
+                band: mcf_core::hardware::headroom::MEASURED,
+            });
+        let why = held
+            .finding(PartsPerMillion(50_000))
+            .not_fit_to_contribute();
+        assert!(
+            why.len() >= 2,
+            "a reader told only one reason will fix that one and be surprised again (A1): \
+             {why:?}"
+        );
+    }
+}

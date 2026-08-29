@@ -25,6 +25,7 @@
 
 mod accelerator;
 mod contention;
+pub mod headroom;
 mod load;
 mod nvml;
 mod processor;

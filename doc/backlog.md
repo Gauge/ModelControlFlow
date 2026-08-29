@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 209 |
+| **Version** | 210 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **283 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 228 build items (132 done, 1 dropped, 15 in progress,
+decided, 23 resolved) and 228 build items (133 done, 1 dropped, 14 in progress,
 36 blocked on a decision, 44 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
@@ -324,7 +324,7 @@ first and importance second.
 | B-203 | A custom-workload result cannot be constructed into a contribution, and is marked non-comparable at production | B42, §6.37, A25 | The marking exists before export, not at it | done The marking is on the row from production (`Workload::Custom`), and both routes into a contribution refuse it — a complete condition set does not rescue it, because the objection is that nobody else has the workload. A marking applied at export is one that can be forgotten at export. F87. |
 | B-204 | Each lab declares what its workload slot accepts and refuses what it cannot grade | B42, [PR1](proposals.md#pr1--customizable-workloads) | An ungradable workload is refused at load, never run | open |
 | B-205 | Workload slot format, loader and validator: a documented data format per slot kind — labels, documents, schemas, constraints, tasks, test suites — with authoring documentation aimed at someone who has never read the intent document | [PR1](proposals.md#pr1--customizable-workloads), B42, D7 | A user authors a workload for at least three labs from the documentation alone and gets a marked, non-comparable, local result | open |
-| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | in progress The measurement is built and the refusal is not (F71). `contention::steadiness` reports a machine's own spread across successive readings, and every comparison now records the competing processor time before it and after it, rendered as a condition: *the level moved N% across the run, which is a condition and not a verdict*. Exercised both ways on this machine — 0.0% quiet, 1740% with load started mid-run, the latter still reporting its verdict beside the fact that the floor moved. The refusal itself stays blocked on DEC-007, which now has measurements to be decided from: a threshold invented here would be exactly the figure that decision exists to derive. **Unblocked (F95).** The band DEC-007 left open is measured: interval width stays inside the machine's own quiet variability to 30% of capacity and is six to thirty times wider by 51%. The refusal a pre-flight needs now has a measured basis rather than a chosen figure, and the criterion generalises — every machine has its own baseline and its own capacity. What remains is to build it, and to measure the edge inside the 30–51% bracket. |
+| B-217 | Quiet-machine pre-flight: a laboratory refuses to begin on a contended machine rather than producing an invalid result, using B-216's snapshot | [PR5](proposals.md#pr5--contention-diagnosis), D8, B35, §3.8 | A lab started while another process holds the accelerator refuses with the contender named, and does not run | done The measurement was built first and the refusal deliberately was not (F71). `contention::steadiness` reports a machine's own spread across successive readings, and every comparison now records the competing processor time before it and after it, rendered as a condition: *the level moved N% across the run, which is a condition and not a verdict*. Exercised both ways on this machine — 0.0% quiet, 1740% with load started mid-run, the latter still reporting its verdict beside the fact that the floor moved. The refusal itself stays blocked on DEC-007, which now has measurements to be decided from: a threshold invented here would be exactly the figure that decision exists to derive. **Unblocked (F95).** The band DEC-007 left open is measured: interval width stays inside the machine's own quiet variability to 30% of capacity and is six to thirty times wider by 51%. The refusal a pre-flight needs now has a measured basis rather than a chosen figure, and the criterion generalises — every machine has its own baseline and its own capacity. What remains is to build it, and to measure the edge inside the 30–51% bracket. **Built (F96).** `hardware::headroom::Headroom` measures what was busy as a fraction of this machine's own capacity and judges it against F95's measured band; a comparison carries it, and `Finding::not_fit_to_contribute` lists every reason a real measurement may not travel — outside the band, size not established (F92), or no delta at all. It **marks rather than refuses**, which is the operator's decision and A4's: the run happened, the pairs are real, and what it loses is the right to be contributed. The band is DECLARED from one machine and says so, naming `prototypes/contention-band` as what replaces it (A21, A20). |
 | B-162 | Idle cost is invariant to the number of labs compiled in | B30, §3.22, §3.13 | Measured idle CPU, memory and wakeups are identical with three labs and thirty | open |
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | done `mcf_core::instrumentation::Timed` cannot be constructed without a `Profile`: the profile is a field, not a possibility. The condition floor's free-text entry was enough to note a profile and not enough to refuse on one. F89. |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | done `Timed::new` is fallible and refuses `Profile::Deep`. `Light` is admitted because it carries a measured residual — characterized against the same run unwatched — which makes the perturbation a condition; `Deep` has no single residual to carry, since tracing overhead is a distribution that depends on what the model did. No threshold anywhere: B31 asks that the overhead be characterized, not that it be small. F89. |
@@ -400,6 +400,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 210 — the pre-flight marks rather than refuses
+
+B-217 done, on F95's measured band. It marks rather than refuses: a run on a
+busy machine is a real measurement that cannot travel, not a run that did not
+happen. F96.
 
 ### Version 209 — the band, measured
 

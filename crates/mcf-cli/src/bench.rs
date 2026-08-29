@@ -343,6 +343,18 @@ fn scaled(at: Duration<Monotonic>) -> String {
     )
 }
 
+/// How much of this machine was already busy while a run happened
+/// (B-217, F95).
+///
+/// The busier of the two readings taken either side, because a run is only as
+/// measurable as its worst moment — and the band DEC-007 left open is measured
+/// now, so a run outside it can be marked. Marked rather than refused: the
+/// operator's decision of 2026-08-28, and refusing would deny a result to
+/// anyone whose machine is simply busy.
+fn headroom_of(machine: &MachineHeld) -> mcf_core::hardware::headroom::Headroom {
+    mcf_core::hardware::headroom::Headroom::taken(machine.before.max(machine.after))
+}
+
 /// The machine either side of the run, from the reading taken before it and
 /// one taken now (B-217).
 ///
@@ -520,6 +532,7 @@ pub(crate) fn bench_where(
     }
 
     let machine = watched(&before);
+    let held = held.on_a_machine_with(headroom_of(&machine));
     let finding = held.finding(resolving);
     // B24, PR5: a run that could not decide is one whose next question is
     // *what was competing with it*, and MCF is the only thing positioned to
@@ -1048,6 +1061,12 @@ fn report(
         ),
         format!("  order    {left_first} left-first, {right_first} right-first"),
     ];
+    // Everything that stops this travelling, all of it (A1): a run can be
+    // outside the band *and* fail to establish its size, and a reader told
+    // only one will fix that one and be surprised again.
+    for why in finding.not_fit_to_contribute() {
+        lines.push(format!("  NOT FIT TO CONTRIBUTE — {why}"));
+    }
     if let Some(proposal) = planned.proposal.as_ref() {
         // §3.1: *ran 6 of 20* is always accompanied by the fourteen, and the
         // fourteen are in the record rather than only on the screen.

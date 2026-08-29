@@ -96,6 +96,13 @@ fn every_constructor_establishes_or_disclaims_the_pairing() {
                 None => break,
             }
         }
+        // **Joined lines leave a space after the paren.** A signature long
+        // enough for `rustfmt` to break becomes `fn taking( mut self, …`, and
+        // matching `(mut self` then misses a method that plainly takes it —
+        // which is F81's shape a third time: a check that is really about
+        // where a formatter broke a line rather than about the code. Collapse
+        // it, so the check is about the signature.
+        let signature = signature.replace("( ", "(");
         // A constructor makes a comparison out of trials; a method that takes
         // `self` transforms one that already exists and cannot be a way in.
         // `Interleaving::finish` and `Comparison::declaring` are the two, and
