@@ -60,7 +60,20 @@ const PROMPT: &str = "The capital of France is";
 fn main() -> std::process::ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if arguments.first().is_some_and(|first| first == "ladder") {
-        return ladder(arguments.get(1..).unwrap_or_default());
+        let rest = arguments.get(1..).unwrap_or_default();
+        // `ladder --threads N …` pins the count; without it the machine's own
+        // is used. Pinning it to one is how the ladder separates *the engine's
+        // arithmetic scales with work* from *the partition scales better on
+        // bigger products*, which are two different explanations for the same
+        // curve (F99, B-366).
+        if rest.first().is_some_and(|first| first == "--threads") {
+            let count = rest
+                .get(1)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(1);
+            return ladder(rest.get(2..).unwrap_or_default(), Threads::stated(count));
+        }
+        return ladder(rest, Threads::what_the_machine_reports());
     }
     if arguments.first().is_some_and(|first| first == "shapes") {
         let Some(path) = arguments.get(1) else {
@@ -165,7 +178,7 @@ fn main() -> std::process::ExitCode {
 /// Every model is loaded, timed over a fixed token budget at the thread count
 /// the machine reports, and reported with its parameter count — so the shape of
 /// the relationship is visible rather than assumed to be linear.
-fn ladder(paths: &[String]) -> std::process::ExitCode {
+fn ladder(paths: &[String], threads: Threads) -> std::process::ExitCode {
     /// How many tokens each model generates. Small, because the largest model
     /// in a ladder decides how long the whole thing takes and the per-token
     /// cost is what is wanted.
@@ -178,7 +191,6 @@ fn ladder(paths: &[String]) -> std::process::ExitCode {
         eprintln!("usage: mcf-prototype-thread-scaling ladder <model.gguf>...");
         return std::process::ExitCode::FAILURE;
     }
-    let threads = Threads::what_the_machine_reports();
     println!("machine  {}", threads.describe());
     println!("run      {TOKENS} token(s) after a {PROMPT:?} prompt, greedy, seed 0");
     println!("load     {} at the start", said_load());
@@ -303,7 +315,7 @@ impl Rung {
 
     fn render(&self) -> String {
         format!(
-            "{:>44}{:>11}{:>12}{:>12}{:>9}{:>11}{:>12}",
+            "{:>44}{:>11}{:>12}{:>12}{:>8}{:>11}{:>12}{:>12}",
             self.name,
             self.elements
                 .and_then(|value| value.checked_div(1_000_000))
@@ -319,6 +331,15 @@ impl Rung {
             self.per_token
                 .map_or_else(|| "-".to_owned(), |value| format!("{value} ms")),
             self.projected.map_or_else(|| "-".to_owned(), as_duration),
+            // Microseconds of work per million multiplied elements: the rate
+            // that says whether the curve is the arithmetic or the partition.
+            match (self.per_token, self.multiplied) {
+                (Some(each), Some(work)) => each
+                    .saturating_mul(1000)
+                    .checked_div(work.checked_div(1_000_000).unwrap_or(1).max(1))
+                    .map_or_else(|| "-".to_owned(), |rate| format!("{rate}us")),
+                _ => "-".to_owned(),
+            },
         )
     }
 }
