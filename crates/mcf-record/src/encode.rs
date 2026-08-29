@@ -24,7 +24,7 @@ use mcf_core::build_identity::BuildIdentity;
 use mcf_core::degradation::{Degradation, Degraded};
 use mcf_core::failure::Failure;
 use mcf_core::hardware::{Accelerator, Characterization, Machine};
-use mcf_core::measurement::{ConditionValue, Conditions, Measurement, Quantity};
+use mcf_core::measurement::{ConditionValue, Conditions, Floor, Measurement, Quantity};
 use mcf_core::provenance::{
     Checksum, Decay, Licence, Observation, Origin, Provenance, ToolIdentity, Transformation,
     TransformationKind,
@@ -346,6 +346,69 @@ pub fn conditions(conditions: &Conditions) -> Value {
         .collect();
     floor.push(("mcf".to_owned(), build_identity(conditions.mcf())));
     Value::map(floor)
+}
+
+/// The conditions a record entry carries, read back (B-160).
+///
+/// **The inverse of [`conditions`], and it exists because a contribution has to
+/// refuse.** `mcf share` selects rows out of the record, and whether a row may
+/// travel is decided by its condition floor — an absolute without one is a
+/// number from a stranger's machine that nobody can scale (B54). Deciding that
+/// needs the floor as a value rather than as text, so the record is read rather
+/// than the rendering parsed (C1).
+///
+/// `None` where the value is not a condition set at all. A floor question that
+/// is absent or null reads back as [`Attested::Unknown`], which is what it was
+/// written as: what was not known is still not known, and A7 forbids the
+/// round-trip inventing an answer.
+#[must_use]
+pub fn conditions_from(value: &Value) -> Option<Conditions> {
+    let identity = value.get("mcf")?;
+    let read = |question: &str| match value.get(question) {
+        Some(Value::Text(text)) => Attested::Known(ConditionValue::text(text.clone())),
+        Some(Value::Integer(number)) => Attested::Known(ConditionValue::Integer(*number)),
+        _ => Attested::Unknown,
+    };
+    Some(Conditions::new(
+        BuildIdentity {
+            version: leaked(identity.get("version")?.as_text()?),
+            revision: match identity.get("revision").and_then(Value::as_text) {
+                Some(revision) => mcf_core::build_identity::SourceRevision::Known(leaked(revision)),
+                None => mcf_core::build_identity::SourceRevision::Unknown,
+            },
+            rustc: leaked(identity.get("rustc")?.as_text()?),
+            target: leaked(identity.get("target")?.as_text()?),
+            profile: leaked(identity.get("profile")?.as_text()?),
+        },
+        Floor {
+            hardware_state: read("hardware_state"),
+            thermal_state: read("thermal_state"),
+            driver_versions: read("driver_versions"),
+            runtime_versions: read("runtime_versions"),
+            quantization: read("quantization"),
+            context_length: read("context_length"),
+            batch_shape: read("batch_shape"),
+            mcf_configuration: read("mcf_configuration"),
+            realized_placement: read("realized_placement"),
+            instrumentation: read("instrumentation"),
+            artifact_storage: read("artifact_storage"),
+            seed_set: read("seed_set"),
+            reuse: read("reuse"),
+        },
+    ))
+}
+
+/// A build identity's fields are `&'static str` because they are compiled in;
+/// one read back from a record is not, and this is where that difference is
+/// paid for.
+///
+/// **Deliberate and bounded.** A record read back holds a handful of build
+/// identities — one per entry a share considers — and each is a few dozen
+/// bytes that live as long as the process. The alternative is making the
+/// identity own its strings everywhere, which would put an allocation on the
+/// path of every measurement MCF takes to serve one that reads them back.
+fn leaked(text: &str) -> &'static str {
+    Box::leak(text.to_owned().into_boxed_str())
 }
 
 /// A measurement: its trials, its count, its spread and its conditions.

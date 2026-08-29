@@ -129,8 +129,13 @@ fn the_terms_say_what_leaves_and_that_it_cannot_be_undone() {
     );
 }
 
+/// A contribution renders **the rows**, not a description of them (A24, B-160).
+///
+/// This asserted the count alone, because that was all there was to render. A24
+/// requires that a person deciding whether to publish something irreversible be
+/// shown what it says — and a count is exactly the substitute the rule names.
 #[test]
-fn a_contribution_says_what_it_holds() {
+fn a_contribution_shows_the_rows_it_would_send_and_then_counts_them() {
     let held = Contribution::empty()
         .and_comparison(comparison(Workload::Declared))
         .expect("declared")
@@ -138,9 +143,21 @@ fn a_contribution_says_what_it_holds() {
             Absolute::new(Arm::new("a"), 1, everything_known(), Workload::Declared)
                 .expect("complete"),
         );
-    assert_eq!(
-        held.to_string(),
-        "2 row(s): 1 comparison(s) and 1 absolute(s)"
+    let rendered = held.to_string();
+
+    // The rows themselves: both arms, the direction, the size and the pairs.
+    assert!(
+        rendered.contains("comparison · a quicker than b by 12.0%, over 40 pair(s)"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("absolute · a took 1 ns"), "{rendered}");
+    // Each row says where its workload came from, because a row from somebody's
+    // own workload is one nobody else can interpret (B42).
+    assert_eq!(rendered.matches("· workload ").count(), 2, "{rendered}");
+    // And the count, after them rather than instead of them.
+    assert!(
+        rendered.ends_with("2 row(s): 1 comparison(s) and 1 absolute(s)"),
+        "{rendered}"
     );
 }
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 99 |
+| **Version** | 100 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -142,6 +142,7 @@ forward as one.
 | 112 | [F112 — Two absolute rules named checks that did not exist, and one of them had a hole on a shipped surface (B-073, B-072, A6, A22, B16, D27)](#112--f112--two-absolute-rules-named-checks-that-did-not-exist-and-one-of-them-had-a-hole-on-a-shipped-surface-b-073-b-072-a6-a22-b16-d27) |
 | 113 | [F113 — The load tier found a race in the laboratory, and it was six runs in a thousand of a file being written and executed at once (B-191, B-009, §3.17, D26, A13)](#113--f113--the-load-tier-found-a-race-in-the-laboratory-and-it-was-six-runs-in-a-thousand-of-a-file-being-written-and-executed-at-once-b-191-b-009-317-d26-a13) |
 | 114 | [F114 — MCF was keeping its own probe traffic in the store meant for the operator's private text (B-146, B-392, §6.8, A17, A25, B9)](#114--f114--mcf-was-keeping-its-own-probe-traffic-in-the-store-meant-for-the-operators-private-text-b-146-b-392-68-a17-a25-b9) |
+| 115 | [F115 — A16's fifth gate was in the rule and nowhere in the code, and every comparison MCF had recorded was uncontributable for saying nothing (B-160, B-039, A16, A24, B-203, B42, §3.20)](#115--f115--a16s-fifth-gate-was-in-the-rule-and-nowhere-in-the-code-and-every-comparison-mcf-had-recorded-was-uncontributable-for-saying-nothing-b-160-b-039-a16-a24-b-203-b42-320) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8478,7 +8479,76 @@ that moves a person's text is exactly the thing this finding is about. They are
 in `content/`, they are mostly MCF's, and this paragraph is the only honest
 place to say so.
 
+## 115 · F115 — A16's fifth gate was in the rule and nowhere in the code, and every comparison MCF had recorded was uncontributable for saying nothing (B-160, B-039, A16, A24, B-203, B42, §3.20)
+
+**Two things, found by building A24's check.**
+
+**One: four of five.** A16 is absolute and names five categories that are always
+gated — untrusted execution, large irrecoverable use, network exposure,
+destruction, and *publishing anything off this machine*. Its own check says *the
+five categories are enumerable in code*. Four were. The enum's comment read
+**"All four, in the order §6.14 names them"**, and §6.14 does name four: the
+fifth comes from §3.20, which A16 absorbs and which nothing enumerated. The
+missing one is the only one of the five that cannot be undone, which is why A24
+exists as its own rule.
+
+It is there now as an **absence** rather than a gate — MCF sends nothing
+anywhere, there is no destination, no address to configure and no path that
+opens one — which is the strongest statement available and the weakest position:
+it holds only while it is true. So the absence is *checked* rather than
+asserted. `nothing_sends_anything_anywhere` walks every shipped source for a
+connection to somewhere else; three sites are declared with what each is for.
+Writing it found two of them, and its first version reported a false positive —
+a `use` line for a type name — which is why it matches what *opens* a connection
+rather than what mentions one.
+
+**Two: nothing MCF has ever recorded can be contributed.** `mcf share` selects
+comparisons out of the record, and on this machine's 70 of them the answer is
+none — for two different reasons, both of which it prints:
+
+| rows | why not |
+|---|---|
+| 38 | no established size: the arms did not separate, the comparison was confounded, or the size was not established at the resolution asked about |
+| **32** | **the workload is the operator's own** |
+
+The first is honest and expected: *no difference* is a real result and it is not
+a size (A9, A8). The second was not. B-203 requires that the marking of where a
+workload came from **travel from production, on the row** — *a marking added at
+the boundary is one that can be forgotten at the boundary* — and `mcf bench`
+never wrote it. So every timing comparison MCF has ever recorded was refused for
+**saying nothing**, and the default that refused them was the safe direction
+rather than the row's own answer.
+
+The row says it now, and it says `custom`, which is not a placeholder: `mcf
+bench` takes its prompt from `--prompt`, so the work is the operator's own by
+construction today. A row produced from a workload MCF ships will say `declared`
+— and that is the day this becomes a choice rather than a fact.
+
+**And the confirmation shows the rows.** `Contribution`'s only rendering was
+*2 row(s): 1 comparison(s) and 1 absolute(s)* — precisely the description A24
+forbids being shown **instead of** the rows. It renders every row in full now,
+with the count after them rather than in place of them, and there is no second
+rendering that could drop one. The file written holds the same text the operator
+read, because a file whose contents differ from the confirmation is a
+confirmation of something else.
+
+**A mistake in the verification, worth recording.** The first check that `mcf
+bench` had begun writing the marking ran the command with its output discarded,
+found no new row, and looked like a build that had not taken. The command had in
+fact refused: a benchmark runs through the daemon and none was listening,
+because the previous demonstration had stopped it. Discarding the output of a
+command whose *output is the evidence* wasted three attempts — the same shape as
+F113's first diagnosis, one step earlier.
+
 ## Changelog
+
+### Version 100 — the fifth gate, and a share that can send nothing
+
+F115. A16 names five gated categories and the code enumerated four; the missing
+one is publication, the only one that cannot be undone. And `mcf share` finds
+that none of the 70 comparisons in this record can travel — 38 have no
+established size, and 32 were refused because `mcf bench` never recorded where
+its workload came from, which B-203 requires travel from production.
 
 ### Version 99 — MCF's own traffic was in the operator's store
 

@@ -150,6 +150,18 @@ fn method(held: &Method) -> Value {
                 digest.finish().hex()
             }),
         ),
+        // **Where the work came from, on the row** (B-203, B42, §6.37). A
+        // contribution refuses a result whose workload nobody else has, and
+        // B-203 requires that marking travel *from production* rather than be
+        // applied at the export boundary. It was not written at all, so every
+        // timing comparison MCF ever recorded was refused for saying nothing
+        // rather than for what it said (F116).
+        //
+        // `custom`, and not as a placeholder: `mcf bench` takes the prompt from
+        // `--prompt`, so the work is the operator's own by construction today.
+        // A row produced from a workload MCF ships will say `declared`, and
+        // that is the day this becomes a choice rather than a fact.
+        ("workload", Value::text("custom")),
         ("resolving_ppm", parts_per_million(held.resolving)),
         ("ceiling", count(held.ceiling)),
         (

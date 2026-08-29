@@ -28,6 +28,7 @@ mod run;
 mod say;
 mod segment;
 mod serve;
+mod share;
 mod show;
 mod support;
 mod verify;
@@ -45,6 +46,12 @@ use mcf_core::build_identity::BuildIdentity;
 enum Request<'a> {
     /// Report what this binary is and what built it.
     Version,
+    /// Show what would leave this machine, row by row, and write it (B-160,
+    /// A24).
+    Share {
+        /// Where the file goes.
+        into: Option<&'a str>,
+    },
     /// State the licence, and the obligations that come with conveying this
     /// binary (B-330, D28).
     Licence {
@@ -491,6 +498,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["show", _, argument, ..] => Request::UnexpectedArgument {
             command: "show",
+            argument,
+        },
+        ["share"] => Request::Share { into: None },
+        ["share", "--into", into] => Request::Share { into: Some(into) },
+        ["share", argument, ..] => Request::UnexpectedArgument {
+            command: "share",
             argument,
         },
         ["status"] => Request::Status,
@@ -1270,6 +1283,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             into,
         } => provision::remove(name, *because, *into),
         Request::Embed { model, text } => embed::run(model, text),
+        Request::Share { into } => share::run(*into),
         Request::Status => serve::status(),
         Request::Stop { because } => serve::stop(because.unwrap_or_default()),
         Request::Support { into } => support::run(*into),
