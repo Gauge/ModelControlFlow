@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 95 |
+| **Version** | 96 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -138,6 +138,7 @@ forward as one.
 | 108 | [F108 — Two rules rested on somebody remembering, and one identifier had been cited four times with nothing behind it (B-394, C5, C6, B16, F80, §7.30)](#108--f108--two-rules-rested-on-somebody-remembering-and-one-identifier-had-been-cited-four-times-with-nothing-behind-it-b-394-c5-c6-b16-f80-730) |
 | 109 | [F109 — A rule of thumb that cannot be read as a result, cannot be recorded, and expires when the laboratory lands (B-380, DEC-002, A21, A25, §3.15, §3.18)](#109--f109--a-rule-of-thumb-that-cannot-be-read-as-a-result-cannot-be-recorded-and-expires-when-the-laboratory-lands-b-380-dec-002-a21-a25-315-318) |
 | 110 | [F110 — A probe for each modality, or a reason: what a language costs, whether an artifact embeds, and three declinations in writing (B-057, D42, F81, F106, A7, A21, §X)](#110--f110--a-probe-for-each-modality-or-a-reason-what-a-language-costs-whether-an-artifact-embeds-and-three-declinations-in-writing-b-057-d42-f81-f106-a7-a21-x) |
+| 111 | [F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)](#111--f111--the-budget-tier-fired-on-its-first-run-in-two-days-and-most-of-what-it-caught-had-been-there-for-one-of-them-b-011-b20-d24-b-185-b38) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -8198,7 +8199,79 @@ files and the list was still three. It reads the directory now: the same lesson
 F103, F105 and F106 each paid for, met once more while adding the thing that
 triggered it.
 
+## 111 · F111 — The budget tier fired on its first run in two days, and most of what it caught had been there for one of them (B-011, B20, D24, B-185, B38)
+
+**What happened.** The exclusive window came free after four days of stale
+tiers, the performance budget ran, and it failed on its first figure:
+
+```
+core binary, no engines   4635304 B (4.4 MiB) — within
+  before 4054184 B, after 4635304 B (+14.3 %)
+FAILED: regressed against a tolerance of 2.0 % (B20, B-011)
+```
+
+Two things are true at once and the report says both: the binary is **within**
+D24's ceiling of 40 MiB, with an order of magnitude to spare, and it has grown
+14.3 % since the last recorded reading. The ceiling is the promise; the
+tolerance is B20's *no silent regression*, and it is the one that fired.
+
+**Attributed rather than re-baselined on a guess.** The binary was built at each
+first-parent merge since the baseline and measured:
+
+| merge | bytes | Δ |
+|---|---|---|
+| the era the baseline was taken in (27 Aug) | 4,094,000 | — |
+| the measurement work — the benchmark and its findings (28 Aug) | 4,564,688 | **+470,688** |
+| B-366, threads | 4,574,656 | +9,968 |
+| B-384, B-053, B-182 | 4,593,456 | +18,800 |
+| B-391, B-392, B-054 | 4,634,552 | +41,096 |
+| B-394, the identifier ledger | 4,634,552 | 0 |
+| B-380, touchstones | 4,637,576 | +3,024 |
+
+**Eighty per cent of the growth landed on 28 August**, in one merge, and the
+four merges of the day this fired account for 63 KB between them — 1.4 %, under
+the tolerance. The sections say it is code rather than a blob: 3.78 MB of
+`.text` against 562 KB of `.rodata`, with nothing anomalous in either.
+
+**So the finding is not the growth. It is what the staleness cost.** The tier
+that would have caught this in one merge did not run for a day and a half, and
+in that interval the thing it watches moved seven times its tolerance. A stale
+tier is not a neutral state — it is a **growing blind spot**, and the size of the
+blind spot is exactly what accumulated while nobody looked. B-185 already
+refuses a *release* on a stale tier and `ci.sh` already prints the ages on every
+run; what neither could say is what the debt was worth, and now one instance of
+it has a number.
+
+**And the reason it was stale is worth writing down too**, because it is not
+carelessness: every heavy tier takes this machine's exclusive window, and for
+most of the day the window was held by other projects — one holding for
+thirty-seven minutes with two more queued behind it. The discipline that
+protects a timing measurement from a busy machine is the same discipline that
+delays the tier which measures it. That is a real cost of B35's window and not
+an argument against it; the answer is to run the tiers when the window frees,
+which is what happened here.
+
+**The re-baseline, with its reason**, follows the precedent B-011's row set the
+last time this happened: a re-baseline naming the features that account for the
+growth, never a tolerance widened. What accounts for it is the measurement work
+of 28 August — the paired comparison machinery, the effect-size interval, the
+seed set and the instrument cross-checks — plus this day's probes, content
+store and touchstones.
+
+**What this did not establish.** Whether 470 KB is a *reasonable* price for that
+body of work. Nothing here measures what a feature ought to cost, and inventing a
+figure to compare against would be exactly the invented intent A23 forbids. What
+is established is what it did cost, when, and that the artifact remains an order
+of magnitude inside the ceiling it promised.
+
 ## Changelog
+
+### Version 96 — what a stale tier cost, measured
+
+F111. The budget tier ran for the first time in two days and failed: the core
+binary is 14.3% over its last reading, against a 2% tolerance and comfortably
+inside D24's ceiling. Attributed per merge rather than re-baselined on a guess —
+80% of it landed a day before the tier fired, which is what the staleness cost.
 
 ### Version 95 — a probe for each modality, or a reason
 
