@@ -480,6 +480,245 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     let mut act = None;
     let actions_at = area.bottom() - 160.0;
 
+    let chose = model_list(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, area.y, list, actions_at - area.y),
+    );
+    act = chose.or(act);
+
+    act = actions_panel(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, actions_at, list, area.bottom() - actions_at),
+    )
+    .or(act);
+
+    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
+        paint.say_at(
+            right,
+            area.y,
+            "Choose a model on the left.",
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        return act;
+    };
+    let after = detail(
+        paint,
+        Box::new(right, area.y, area.right() - right, area.h),
+        held,
+    );
+    settings_table(
+        paint,
+        desk,
+        mouse,
+        Box::new(
+            right,
+            after + 18.0,
+            area.right() - right,
+            (area.bottom() - after - 18.0).max(10.0),
+        ),
+    )
+    .or(act)
+}
+
+/// Every setting the chosen model would be hosted under, with what MCF
+/// recommended beside anything somebody has moved.
+///
+/// **These were not shown before, and one of them was wrong.** The engine was
+/// started with the layer count written into the source as zero, so a model
+/// resolved to a graphics card ran on the processor and nothing said so. A
+/// default nobody can see is a decision nobody made (§3.15, F133).
+fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    if let Some(why) = &desk.no_settings {
+        spaced(paint, area.x, area.y, "settings", ink.faint);
+        let lines = paint.wrap(why, Weight::Regular, size::SMALL, area.w.min(430.0));
+        let mut y = area.y + 24.0;
+        for line in lines.iter().take(3) {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.warn);
+            y += 16.0;
+        }
+        return None;
+    }
+    let (Some(settings), Some(recommended)) = (desk.settings.as_ref(), desk.recommended.as_ref())
+    else {
+        return None;
+    };
+    let wide = area.w.min(430.0);
+    let mut act = None;
+    let table = Box::new(area.x, area.y, wide, 0.0);
+    let mut y = heads(
+        paint,
+        table,
+        "settings",
+        &[Column {
+            head: "value",
+            at: wide,
+            right: true,
+        }],
+    );
+
+    for (at, setting) in settings.listed(recommended).into_iter().enumerate() {
+        if y > area.bottom() - 40.0 {
+            break;
+        }
+        let moved = setting.value != setting.recommended;
+        // Only the settings with a small set of sensible values can be
+        // cycled; the engine and the device are what MCF resolved together,
+        // and moving one without the other would be asking a build to use a
+        // device it cannot.
+        let can_cycle = matches!(at, 0 | 1 | 4 | 5 | 6 | 7 | 8);
+        let hit = Box::new(area.x - 6.0, y - 4.0, wide + 12.0, 21.0);
+        if can_cycle && mouse.over(hit) {
+            paint.panel(hit, 6.0, ink.line, 90);
+        }
+        paint.say_at(
+            area.x,
+            y,
+            setting.name,
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        let colour = if moved { ink.warn } else { ink.ink };
+        let shown = paint.elide(&setting.value, Weight::Bold, size::BODY, wide - 170.0);
+        paint.say_right(area.x + wide, y, &shown, Weight::Bold, size::BODY, colour);
+        if can_cycle && mouse.clicked(hit) {
+            act = Some(Act::Cycle(at));
+        }
+        y += 21.0;
+        // What MCF advised, under anything moved off it — a run under a
+        // changed setting is not a run under the recommended one, and both
+        // are facts (A6, §3.15).
+        if moved {
+            paint.say_right(
+                area.x + wide,
+                y,
+                &format!("MCF recommends {}", setting.recommended),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            y += 17.0;
+        }
+    }
+
+    if !settings.differs_from(recommended).is_empty() {
+        let (reset, _) = ui::fitted(
+            paint,
+            mouse,
+            (area.x - 8.0, y + 4.0),
+            "Back to recommended",
+            Kind::Quiet,
+        );
+        if reset {
+            act = Some(Act::Recommended);
+        }
+    }
+    act
+}
+
+/// What can be done with the model on the left, and where it is reachable
+/// when it is being held.
+fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let list = area.w;
+    let actions_at = area.y;
+    let mut act = None;
+    // The actions, under the list, where they were asked to be.
+    spaced(paint, area.x, actions_at, "actions", ink.faint);
+    let mut y = actions_at + 26.0;
+    // Whether *this* model is the one being held, rather than whether
+    // anything is: a person looking at one model and told *stop hosting* when
+    // a different one is up has been told something false about what they are
+    // looking at.
+    let this_one = desk
+        .hosted
+        .as_ref()
+        .zip(desk.chosen.and_then(|at| desk.models.get(at)))
+        .is_some_and(|((hosting, _), held)| *hosting == held.path);
+    let actions: [(&str, Kind, Act); 3] = if this_one {
+        [
+            ("Ask it something", Kind::Primary, Act::Go(Page::Hosting)),
+            ("Stop hosting", Kind::Ordinary, Act::StopHosting),
+            ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
+        ]
+    } else {
+        [
+            ("Host this model", Kind::Primary, Act::HostIt),
+            (
+                "Run diagnostics",
+                Kind::Ordinary,
+                Act::Go(Page::Diagnostics),
+            ),
+            ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
+        ]
+    };
+    for (label, kind, what) in actions {
+        let where_ = Box::new(area.x, y, list - 20.0, 30.0);
+        let needs_one = what != Act::Go(Page::Adding);
+        if ui::button(paint, mouse, where_, label, kind) && (!needs_one || desk.chosen.is_some()) {
+            act = Some(what);
+        }
+        y += 36.0;
+    }
+    // Where a caller reaches it. The one fact an API is for.
+    if let Some((_, address)) = &desk.hosted {
+        paint.say_at(
+            area.x,
+            y + 4.0,
+            "reachable at",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        let shown = paint.elide(address, Weight::Bold, size::SMALL, list - 20.0);
+        paint.say_at(
+            area.x,
+            y + 20.0,
+            &shown,
+            Weight::Bold,
+            size::SMALL,
+            ink.accent,
+        );
+    } else if let Doing::Hosting(job) = &desk.doing {
+        let said = job.refused.clone().unwrap_or_else(|| {
+            if job.finished {
+                String::new()
+            } else {
+                "starting — a large model takes a moment to load".to_owned()
+            }
+        });
+        let colour = if job.refused.is_some() {
+            ink.bad
+        } else {
+            ink.quiet
+        };
+        let mut at = y + 6.0;
+        for line in paint
+            .wrap(&said, Weight::Regular, size::SMALL, list - 16.0)
+            .iter()
+            .take(4)
+        {
+            paint.say_at(area.x, at, line, Weight::Regular, size::SMALL, colour);
+            at += 16.0;
+        }
+    }
+
+    act
+}
+
+/// The models this machine holds, one row each.
+fn model_list(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let list = area.w;
+    let actions_at = area.bottom();
+    let mut act = None;
     spaced(paint, area.x, area.y, "models", ink.faint);
     let mut y = area.y + 26.0;
     if desk.models.is_empty() {
@@ -541,47 +780,11 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
         y += 24.0;
     }
 
-    // The actions, under the list, where they were asked to be.
-    spaced(paint, area.x, actions_at, "actions", ink.faint);
-    let mut y = actions_at + 26.0;
-    for (label, kind, what) in [
-        ("Host this model", Kind::Primary, Act::Go(Page::Hosting)),
-        (
-            "Run diagnostics",
-            Kind::Ordinary,
-            Act::Go(Page::Diagnostics),
-        ),
-        ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
-    ] {
-        let where_ = Box::new(area.x, y, list - 20.0, 30.0);
-        let needs_one = what != Act::Go(Page::Adding);
-        if ui::button(paint, mouse, where_, label, kind) && (!needs_one || desk.chosen.is_some()) {
-            act = Some(what);
-        }
-        y += 36.0;
-    }
-
-    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
-        paint.say_at(
-            right,
-            area.y,
-            "Choose a model on the left.",
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        return act;
-    };
-    detail(
-        paint,
-        Box::new(right, area.y, area.right() - right, area.h),
-        held,
-    );
     act
 }
 
 /// Everything known about one model, as the console lists it.
-fn detail(paint: &mut Painter, area: Box, held: &Model) {
+fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     let ink = paint.ink;
     let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
     paint.say_at(area.x, area.y, &name, Weight::Bold, size::HEAD, ink.ink);
@@ -682,7 +885,9 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) {
             size::SMALL,
             ink.faint,
         );
+        y += 20.0;
     }
+    y
 }
 
 // ── Diagnostics ──────────────────────────────────────────────────────────────

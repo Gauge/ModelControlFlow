@@ -1,0 +1,449 @@
+//! Every setting a hosted model runs under, and what MCF recommends.
+//!
+//! **Nothing here was exposed before, and one of the hidden values was
+//! wrong.** The engine was started with `--ctx-size 0 -ngl 0` written into the
+//! source: no context of MCF's choosing, and *no layers on the graphics card*.
+//! So MCF resolved a model to a card, said so, and then ran it on the
+//! processor — a stated condition that was not the condition (A6, A12). On
+//! this machine that cost 4.9× (F133).
+//!
+//! **A default is a decision, so it is one somebody can see and change.**
+//! §3.15: MCF doing something other than the plain thing must never be
+//! invisible. Every field below is settable, every field has a recommendation
+//! MCF computed from the model and the machine, and [`Hosting::differs_from`]
+//! says which of them somebody has moved — so the record can carry what was
+//! chosen *and* what was recommended, and the two can disagree in writing.
+//!
+//! **The API is the engine's, and MCF says so.** MCF does not implement an
+//! inference API; it provisions an engine that has one and supervises it. What
+//! hosting does is bind that engine to a port with these settings and write
+//! down what it started. Claiming the API as MCF's own would be claiming
+//! authorship of the thing A19 says not to advertise.
+
+use mcf_record::json::Value;
+
+/// Where a hosted model listens.
+///
+/// The loopback address only, and stated rather than defaulted silently: a
+/// model bound to every interface is a model on the network, and that is a
+/// decision somebody makes rather than one MCF makes for them (§3.7).
+pub const LOOPBACK: &str = "127.0.0.1";
+
+/// The port MCF asks for when nobody has said.
+///
+/// **Not a port anything else is known to want.** The first value chosen here
+/// was 11434, on the reasoning that nothing common uses it — which was wrong:
+/// it is Ollama's default, and on the machine this was written on Ollama had
+/// it. The lesson is not the number but that the guess was made instead of
+/// the check, so [`Hosting::port_is_free`] now runs before an engine is
+/// started and the refusal says what happened (A2).
+pub const DEFAULT_PORT: u16 = 17817;
+
+/// How a model is held and answered with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hosting {
+    /// How long a conversation it can hold, in tokens.
+    ///
+    /// A power of two, never past what the model was trained for and never
+    /// past what the device's memory holds — the same arithmetic
+    /// [`crate::engines::resolve`] does, because it is the same question.
+    pub context: u64,
+    /// How many of the model's layers go on the graphics card.
+    ///
+    /// The one that was hardcoded to zero. `0` is the processor; a number at
+    /// or above the model's layer count is all of it.
+    pub gpu_layers: u32,
+    /// Which provisioned engine.
+    pub engine: String,
+    /// Which device, as the engine names it.
+    pub device: String,
+    /// How many processor threads the engine uses.
+    pub threads: u32,
+    /// How many tokens of prompt are read at once.
+    pub batch: u32,
+    /// Whether to use the attention kernel that reads less memory.
+    pub flash_attention: bool,
+    /// Whether to keep the model's pages resident rather than paged.
+    pub keep_resident: bool,
+    /// The port it listens on.
+    pub port: u16,
+    /// A key callers must present, where somebody set one.
+    ///
+    /// `None` is no key, which on the loopback address is the ordinary case
+    /// and is stated rather than assumed.
+    pub api_key: Option<String>,
+}
+
+/// How a hosted model turns a prompt into text.
+///
+/// Separate from [`Hosting`] because these can change per request and those
+/// cannot: a context size is chosen when the model is loaded, and a
+/// temperature is chosen when somebody asks a question.
+/// **In thousandths, as whole numbers.** These are fractions, and a shipped
+/// crate holds no float — a NaN one division away from a record is how a
+/// measurement starts lying (A6, A1). A temperature of 0.7 is `700` here, and
+/// the engine is given `0.700`; the conversion is [`Sampling::as_decimal`] and
+/// it happens once, on the way out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sampling {
+    /// How much of the distribution's tail is admitted, in thousandths. Zero
+    /// is greedy.
+    pub temperature: u32,
+    /// Nucleus sampling's mass, in thousandths.
+    pub top_p: u32,
+    /// How many candidates are considered at all. Not a fraction.
+    pub top_k: u32,
+    /// The smallest probability admitted relative to the best, in thousandths.
+    pub min_p: u32,
+    /// How much a repeated token is discouraged, in thousandths.
+    pub repeat_penalty: u32,
+    /// The seed, which is a condition of the answer (D19).
+    pub seed: u64,
+}
+
+impl Default for Sampling {
+    /// Greedy, and seeded at zero.
+    ///
+    /// **Not the engine's defaults.** An engine samples at a temperature
+    /// because it is answering a person; MCF's business is measurement, and a
+    /// measurement taken under sampling is a measurement of the sampler as
+    /// much as the model. Greedy is reproducible, so it is what MCF asks for
+    /// unless somebody says otherwise — and the record says which it was
+    /// (D19, A6).
+    fn default() -> Self {
+        Self {
+            temperature: 0,
+            top_p: 1_000,
+            top_k: 0,
+            min_p: 0,
+            repeat_penalty: 1_000,
+            seed: 0,
+        }
+    }
+}
+
+impl Sampling {
+    /// One thousandth-valued setting as the engine's command line wants it.
+    #[must_use]
+    pub fn as_decimal(thousandths: u32) -> String {
+        #[expect(
+            clippy::integer_division,
+            reason = "thousandths into a whole part and a remainder, exactly"
+        )]
+        let (whole, rest) = (thousandths / 1_000, thousandths % 1_000);
+        format!("{whole}.{rest:03}")
+    }
+
+    /// The arguments these become on the engine's command line.
+    #[must_use]
+    pub fn arguments(&self) -> Vec<String> {
+        vec![
+            "--temp".to_owned(),
+            Self::as_decimal(self.temperature),
+            "--top-p".to_owned(),
+            Self::as_decimal(self.top_p),
+            "--top-k".to_owned(),
+            self.top_k.to_string(),
+            "--min-p".to_owned(),
+            Self::as_decimal(self.min_p),
+            "--repeat-penalty".to_owned(),
+            Self::as_decimal(self.repeat_penalty),
+            "--seed".to_owned(),
+            self.seed.to_string(),
+        ]
+    }
+}
+
+/// What one setting is, for a surface that lists them all.
+#[derive(Debug, Clone)]
+pub struct Setting {
+    /// What it is called.
+    pub name: &'static str,
+    /// What it is set to now.
+    pub value: String,
+    /// What MCF recommended.
+    pub recommended: String,
+    /// What it does, in a sentence.
+    pub because: &'static str,
+}
+
+impl Hosting {
+    /// What MCF recommends for this model on this machine.
+    ///
+    /// **Every value here is derived from something measured, and the ones
+    /// that are not are named.** The context is arithmetic over the model's
+    /// own header and the device's free memory. The layer count is all of
+    /// them where the weights and the cache fit on the card and none where
+    /// they do not — there is no half-way that is not a guess. The thread
+    /// count is the machine's cores. The batch size is the engine's own
+    /// default, restated here so that changing it is a change to a number
+    /// somebody can see rather than to a default nobody knew about.
+    #[must_use]
+    pub fn recommended(
+        engine: &str,
+        device: &str,
+        on_a_card: bool,
+        context: u64,
+        cores: Option<usize>,
+        fits_on_the_card: bool,
+    ) -> Self {
+        Self {
+            context,
+            // The whole model, or none of it. A partial offload is a real
+            // configuration and a poor default: it is slower than the card
+            // and harder to account for than the processor, and choosing how
+            // many layers needs a measurement nobody has taken yet.
+            gpu_layers: if on_a_card && fits_on_the_card {
+                999
+            } else {
+                0
+            },
+            engine: engine.to_owned(),
+            device: device.to_owned(),
+            threads: cores
+                .and_then(|cores| u32::try_from(cores).ok())
+                .unwrap_or(4)
+                .max(1),
+            batch: 2048,
+            // Reads less memory per token at the same answer, where the
+            // engine has it. Off where the model runs on the processor,
+            // because that is where it has been seen to help least.
+            flash_attention: on_a_card && fits_on_the_card,
+            keep_resident: false,
+            port: DEFAULT_PORT,
+            api_key: None,
+        }
+    }
+
+    /// The arguments this becomes on the engine's command line.
+    ///
+    /// One place, so that what MCF asked for and what MCF records are built
+    /// from the same values — a record assembled separately from the command
+    /// is a record that can describe a run that did not happen (A6).
+    #[must_use]
+    pub fn arguments(&self, model: &str, bind: &str) -> Vec<String> {
+        let mut out = vec![
+            "--model".to_owned(),
+            model.to_owned(),
+            "--host".to_owned(),
+            bind.to_owned(),
+            "--ctx-size".to_owned(),
+            self.context.to_string(),
+            "--n-gpu-layers".to_owned(),
+            self.gpu_layers.to_string(),
+            "--threads".to_owned(),
+            self.threads.to_string(),
+            "--batch-size".to_owned(),
+            self.batch.to_string(),
+            // MCF draws its own interface and reads its own answers; a web
+            // page served alongside is a surface nobody asked for.
+            "--no-webui".to_owned(),
+        ];
+        if self.flash_attention {
+            out.push("--flash-attn".to_owned());
+            out.push("on".to_owned());
+        }
+        if self.keep_resident {
+            out.push("--mlock".to_owned());
+        }
+        if let Some(key) = &self.api_key {
+            out.push("--api-key".to_owned());
+            out.push(key.clone());
+        }
+        out
+    }
+
+    /// Every setting, in the order a person reads them, with what MCF
+    /// recommended beside what it is set to.
+    #[must_use]
+    pub fn listed(&self, against: &Self) -> Vec<Setting> {
+        let layers = |held: u32| {
+            if held == 0 {
+                "none — the processor".to_owned()
+            } else if held >= 999 {
+                "all of them".to_owned()
+            } else {
+                held.to_string()
+            }
+        };
+        let yes_no = |held: bool| if held { "on" } else { "off" }.to_owned();
+        vec![
+            Setting {
+                name: "context window",
+                value: format!("{} tokens", self.context),
+                recommended: format!("{} tokens", against.context),
+                because: "how long a conversation it can hold. Every token of it costs \
+                          memory on the device the model runs on",
+            },
+            Setting {
+                name: "layers on the card",
+                value: layers(self.gpu_layers),
+                recommended: layers(against.gpu_layers),
+                because: "how much of the model the graphics card holds. All of it is \
+                          several times quicker where it fits",
+            },
+            Setting {
+                name: "engine",
+                value: self.engine.clone(),
+                recommended: against.engine.clone(),
+                because: "which build MCF starts. They differ in what they can compute on",
+            },
+            Setting {
+                name: "device",
+                value: self.device.clone(),
+                recommended: against.device.clone(),
+                because: "what it runs on",
+            },
+            Setting {
+                name: "threads",
+                value: self.threads.to_string(),
+                recommended: against.threads.to_string(),
+                because: "how many processor threads the engine uses",
+            },
+            Setting {
+                name: "batch size",
+                value: self.batch.to_string(),
+                recommended: against.batch.to_string(),
+                because: "how many tokens of a prompt are read at once",
+            },
+            Setting {
+                name: "flash attention",
+                value: yes_no(self.flash_attention),
+                recommended: yes_no(against.flash_attention),
+                because: "an attention kernel that reads less memory for the same answer",
+            },
+            Setting {
+                name: "keep resident",
+                value: yes_no(self.keep_resident),
+                recommended: yes_no(against.keep_resident),
+                because: "hold the model's pages in memory rather than letting them page out",
+            },
+            Setting {
+                name: "port",
+                value: self.port.to_string(),
+                recommended: against.port.to_string(),
+                because: "where the API listens, on this computer only",
+            },
+            Setting {
+                name: "API key",
+                value: self
+                    .api_key
+                    .as_ref()
+                    .map_or_else(|| "none".to_owned(), |_| "set".to_owned()),
+                recommended: "none".to_owned(),
+                because: "a key callers must present. On this computer's own address, \
+                          usually not needed",
+            },
+        ]
+    }
+
+    /// Which settings have been moved off what MCF recommended.
+    ///
+    /// The record carries both, because *what was chosen* and *what was
+    /// advised* are two facts and a run under a changed setting is not a run
+    /// under the recommended one (A6, §3.15).
+    #[must_use]
+    pub fn differs_from(&self, recommended: &Self) -> Vec<String> {
+        self.listed(recommended)
+            .into_iter()
+            .filter(|setting| setting.value != setting.recommended)
+            .map(|setting| {
+                format!(
+                    "{}: {} rather than {}",
+                    setting.name, setting.value, setting.recommended
+                )
+            })
+            .collect()
+    }
+
+    /// As the record and the control plane carry it.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        Value::map([
+            (
+                "context",
+                Value::Integer(i64::try_from(self.context).unwrap_or(i64::MAX)),
+            ),
+            ("gpu_layers", Value::Integer(i64::from(self.gpu_layers))),
+            ("engine", Value::text(self.engine.clone())),
+            ("device", Value::text(self.device.clone())),
+            ("threads", Value::Integer(i64::from(self.threads))),
+            ("batch", Value::Integer(i64::from(self.batch))),
+            ("flash_attention", Value::Bool(self.flash_attention)),
+            ("keep_resident", Value::Bool(self.keep_resident)),
+            ("port", Value::Integer(i64::from(self.port))),
+            // The key itself is never written down. That it exists is a
+            // condition of the hosting; what it is is a secret, and a record
+            // is a thing MCF publishes (A25, §3.20).
+            ("api_key_set", Value::Bool(self.api_key.is_some())),
+        ])
+    }
+
+    /// Read back from what the control plane carried.
+    ///
+    /// Absent fields keep the recommendation rather than a zero: a client that
+    /// did not mention a setting has not asked for its lowest value (A7, D43).
+    #[must_use]
+    pub fn from_value(value: &Value, recommended: &Self) -> Self {
+        let number = |key: &str| value.get(key).and_then(Value::as_integer);
+        let flag = |key: &str, fallback: bool| match value.get(key) {
+            Some(Value::Bool(held)) => *held,
+            _ => fallback,
+        };
+        Self {
+            context: number("context")
+                .and_then(|held| u64::try_from(held).ok())
+                .unwrap_or(recommended.context),
+            gpu_layers: number("gpu_layers")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.gpu_layers),
+            engine: value
+                .get("engine")
+                .and_then(Value::as_text)
+                .unwrap_or(&recommended.engine)
+                .to_owned(),
+            device: value
+                .get("device")
+                .and_then(Value::as_text)
+                .unwrap_or(&recommended.device)
+                .to_owned(),
+            threads: number("threads")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.threads)
+                .max(1),
+            batch: number("batch")
+                .and_then(|held| u32::try_from(held).ok())
+                .unwrap_or(recommended.batch)
+                .max(1),
+            flash_attention: flag("flash_attention", recommended.flash_attention),
+            keep_resident: flag("keep_resident", recommended.keep_resident),
+            port: number("port")
+                .and_then(|held| u16::try_from(held).ok())
+                .unwrap_or(recommended.port),
+            api_key: value
+                .get("api_key")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+        }
+    }
+
+    /// Whether anything is already listening where this would bind.
+    ///
+    /// Asked before the engine is started, because an engine that exits
+    /// because its port was taken exits with a status and no sentence — and
+    /// *the provisioned server stopped before it began answering* is a true
+    /// report of the wrong thing (A2).
+    #[must_use]
+    pub fn port_is_free(&self) -> bool {
+        std::net::TcpListener::bind((LOOPBACK, self.port)).is_ok()
+    }
+
+    /// Where a caller reaches a model hosted under these settings.
+    #[must_use]
+    pub fn address(&self) -> String {
+        format!("http://{LOOPBACK}:{}", self.port)
+    }
+}
+
+#[cfg(test)]
+mod tests;

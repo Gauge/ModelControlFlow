@@ -325,6 +325,26 @@ fn estimated_seconds(ladder: &[u64], bytes: Option<u64>) -> (u64, u64) {
     (low, high)
 }
 
+/// A model MCF is holding for callers.
+#[derive(Debug)]
+struct Holding {
+    /// The engine.
+    ///
+    /// Held and never read: dropping it is what stops the server, so the
+    /// field's whole job is to be owned until somebody unhosts (A27).
+    #[expect(dead_code, reason = "owning it is what keeps the engine alive")]
+    served: crate::served::Served,
+    /// Which model.
+    model: PathBuf,
+    /// What it was started under.
+    settings: crate::hosting::Hosting,
+    /// What MCF had recommended, so that what was chosen and what was advised
+    /// can both be read back (§3.15).
+    recommended: crate::hosting::Hosting,
+    /// When it started.
+    since: Timestamp,
+}
+
 /// The hub MCF reads when nobody has named another.
 const DEFAULT_HUB: &str = "https://huggingface.co/";
 
@@ -347,6 +367,13 @@ fn said_of(verdict: &mcf_hub::fitment::Verdict) -> String {
 /// A running daemon.
 #[derive(Debug)]
 pub struct Daemon {
+    /// The model being held for callers, if any, with what it was started
+    /// under.
+    ///
+    /// One at a time. Two would be two models competing for the same card,
+    /// and every figure either reported would be a figure about the other
+    /// one being there too (A6).
+    holding: std::sync::Mutex<Option<Holding>>,
     places: Places,
     /// The engines found when this daemon started, with what each can compute
     /// on. Asked once: finding them is a directory listing, but asking what
@@ -457,6 +484,7 @@ impl Daemon {
                 .collect()
         };
         let daemon = Self {
+            holding: std::sync::Mutex::new(None),
             places,
             listener,
             started,
@@ -943,6 +971,10 @@ impl Daemon {
             Request::Offered { reference, from } => {
                 (Self::offered(reference, from.as_deref()), None)
             }
+            Request::Settings { model } => (self.settings_for(model), None),
+            Request::Host { model, settings } => (self.host(model, settings), None),
+            Request::Hosted => (Answer::served(self.hosted()), None),
+            Request::Unhost => (Answer::served(self.unhost()), None),
             // Handled before `respond` is reached; here so the match is
             // total and a future request type is a compile error rather than a
             // silent fall-through.
@@ -1331,6 +1363,202 @@ impl Daemon {
             )),
         };
         say(writer, &answer);
+    }
+
+    /// What MCF would run a model under, and what it recommends.
+    ///
+    /// Nothing is started. A surface asks this to fill in a form.
+    fn settings_for(&self, named: &str) -> Answer {
+        match self.recommend(named) {
+            Ok((recommended, _)) => Answer::served(Value::map([
+                ("model", Value::text(named.to_owned())),
+                ("recommended", recommended.to_value()),
+                ("settings", recommended.to_value()),
+                (
+                    "explains",
+                    Value::List(
+                        recommended
+                            .listed(&recommended)
+                            .into_iter()
+                            .map(|setting| {
+                                Value::map([
+                                    ("name", Value::text(setting.name)),
+                                    ("value", Value::text(setting.value)),
+                                    ("recommended", Value::text(setting.recommended)),
+                                    ("because", Value::text(setting.because)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])),
+            Err(failure) => Answer::refused(&failure),
+        }
+    }
+
+    /// What MCF recommends for a model, and the path it resolved to.
+    fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf)> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let bytes = std::fs::metadata(&path)
+            .map(|about| about.len())
+            .map_err(|error| {
+                crate::control::refused("a model this machine is not holding", &error.to_string())
+            })?;
+        let file = header_of(&path).ok_or_else(|| {
+            crate::control::refused("a file whose header MCF could not read", named)
+        })?;
+        let architecture = file.architecture().map(str::to_owned);
+        let trained = architecture.as_ref().and_then(|held| {
+            file.get(&format!("{held}.context_length"))
+                .and_then(mcf_standin::gguf::Value::as_integer)
+                .and_then(|value| u64::try_from(value).ok())
+        });
+        let cache = crate::engines::cache_bytes_per_token(&file);
+        let trained = trained.ok_or_else(|| {
+            crate::control::refused(
+                "a model whose header does not say how long a conversation it was trained for",
+                named,
+            )
+        })?;
+        let choice = crate::engines::resolve(&self.engines, bytes, cache, trained)
+            .map_err(|refused| crate::control::refused(&refused.says(), named))?;
+        let on_a_card = matches!(choice.device.kind, crate::engines::Kind::Gpu);
+        // Whether the whole thing fits where it is going: the weights plus
+        // the cache at the window MCF settled on. This is the figure the
+        // layer recommendation turns on, and it is arithmetic rather than a
+        // guess (A6).
+        let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(choice.context));
+        let fits = choice.device.free.is_none_or(|free| wanted <= free);
+        Ok((
+            crate::hosting::Hosting::recommended(
+                &choice.engine,
+                &choice.device.name,
+                on_a_card,
+                choice.context,
+                std::thread::available_parallelism().ok().map(Into::into),
+                fits,
+            ),
+            path,
+        ))
+    }
+
+    /// Holds a model and answers on a port under these settings.
+    fn host(&self, named: &str, asked: &Value) -> Answer {
+        let (recommended, path) = match self.recommend(named) {
+            Ok(held) => held,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let settings = crate::hosting::Hosting::from_value(asked, &recommended);
+
+        // **The engine named in the settings, not whichever one is found.**
+        // Looking one up by shape returned the processor build while the
+        // settings said the CUDA one — so MCF would have resolved a model to
+        // a card, said so, and started the build that cannot use it. That is
+        // the same defect as the hardcoded layer count, one level up (F133).
+        let Some((engine, _)) = self
+            .engines
+            .iter()
+            .find(|(engine, _)| engine.name == settings.engine)
+        else {
+            return Answer::refused(&crate::control::refused(
+                "no provisioned engine by that name: `mcf provision` builds one",
+                &settings.engine,
+            ));
+        };
+        let llama = crate::adapters::ProvisionedLlama {
+            prefix: engine.prefix.clone(),
+            commit: engine.commit.clone(),
+        };
+        // Whatever was held before goes first: two servers on one port is a
+        // second that never starts, and two on one card is two figures each
+        // about the other (A6).
+        let mut holding = match self.holding.lock() {
+            Ok(holding) => holding,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        drop(holding.take());
+
+        // And then the port, before anything is spawned. An engine that
+        // cannot bind exits with a status and no sentence, and reporting
+        // *the server stopped before it began answering* would be a true
+        // report of the wrong thing (A2).
+        if !settings.port_is_free() {
+            return Answer::refused(&crate::control::refused(
+                "something is already listening on that port, so MCF did not start a second \
+                 thing there — choose another port, or stop what is on it",
+                &settings.port.to_string(),
+            ));
+        }
+
+        match crate::served::Served::hosted(&llama, &path, &settings) {
+            Ok(served) => {
+                let at = Timestamp::now();
+                let moved = settings.differs_from(&recommended);
+                *holding = Some(Holding {
+                    served,
+                    model: path.clone(),
+                    settings: settings.clone(),
+                    recommended: recommended.clone(),
+                    since: at,
+                });
+                Answer::served(Value::map([
+                    ("hosting", Value::text(path.display().to_string())),
+                    ("address", Value::text(settings.address())),
+                    ("settings", settings.to_value()),
+                    ("recommended", recommended.to_value()),
+                    // What was moved off the recommendation, in writing,
+                    // because a run under a changed setting is not a run
+                    // under the recommended one (§3.15, A6).
+                    (
+                        "changed",
+                        Value::List(moved.into_iter().map(Value::text).collect()),
+                    ),
+                    ("since", Value::text(at.to_string())),
+                ]))
+            }
+            Err(failure) => Answer::refused(&failure),
+        }
+    }
+
+    /// What is being held, if anything.
+    fn hosted(&self) -> Value {
+        let holding = match self.holding.lock() {
+            Ok(holding) => holding,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match holding.as_ref() {
+            None => Value::map([("hosting", Value::Null)]),
+            Some(held) => Value::map([
+                ("hosting", Value::text(held.model.display().to_string())),
+                ("address", Value::text(held.settings.address())),
+                ("settings", held.settings.to_value()),
+                ("recommended", held.recommended.to_value()),
+                (
+                    "changed",
+                    Value::List(
+                        held.settings
+                            .differs_from(&held.recommended)
+                            .into_iter()
+                            .map(Value::text)
+                            .collect(),
+                    ),
+                ),
+                ("since", Value::text(held.since.to_string())),
+            ]),
+        }
+    }
+
+    /// Stops holding it.
+    fn unhost(&self) -> Value {
+        let mut holding = match self.holding.lock() {
+            Ok(holding) => holding,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let was = holding.take().map(|held| held.model.display().to_string());
+        Value::map([
+            ("stopped", Value::Bool(was.is_some())),
+            ("was", was.map_or(Value::Null, Value::text)),
+        ])
     }
 
     /// What a repository publishes, and which of it will run on this machine.

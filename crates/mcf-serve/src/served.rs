@@ -112,6 +112,50 @@ pub struct Completed {
     pub produced: Vec<usize>,
 }
 
+/// Whether a hosted engine is answering yet.
+///
+/// One line of HTTP over a loopback socket rather than a client: what is being
+/// asked is *are you up*, and a client for that would be a client MCF
+/// maintains for one question.
+fn ready_on(port: u16) -> bool {
+    use std::io::{Read as _, Write as _};
+    let Ok(mut connection) = std::net::TcpStream::connect((crate::hosting::LOOPBACK, port)) else {
+        return false;
+    };
+    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    // A blank line ends the head, and a request without one is a request the
+    // server is still waiting for. `writeln!` would end it `\r\n\n`, which is
+    // not that — and the symptom is a health check that hangs rather than one
+    // that fails, which is the worst shape a check can have.
+    if write!(
+        connection,
+        "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    )
+    .and_then(|()| connection.flush())
+    .is_err()
+    {
+        return false;
+    }
+    let mut said = String::new();
+    // Bounded: what is wanted is the first line and a short body, and a server
+    // that streamed forever must not become a read that never ends.
+    let mut held = [0_u8; 4096];
+    while let Ok(read) = connection.read(&mut held) {
+        if read == 0 {
+            break;
+        }
+        said.push_str(&String::from_utf8_lossy(
+            held.get(..read).unwrap_or_default(),
+        ));
+        if said.len() > 8192 {
+            break;
+        }
+    }
+    // `200` and a body that says so. A `503 Loading model` is the engine
+    // answering that it is not ready, which is a different thing from up.
+    said.contains("200 OK") && said.contains("\"status\":\"ok\"")
+}
+
 /// A running `llama-server`, holding one model.
 ///
 /// The model stays loaded between requests, which is the residency F36 left
@@ -138,6 +182,97 @@ impl Served {
     /// `engine.hang.no_output` if it never begins listening.
     pub fn start(llama: &ProvisionedLlama, model: &Path, runtime: &Path) -> Result<Self, Failure> {
         Self::start_within(llama, model, runtime, ATTEMPTS)
+    }
+
+    /// Starts a server under settings somebody chose, listening on a port.
+    ///
+    /// **This is what hosting is.** MCF does not implement an inference API;
+    /// it provisions an engine that has one and binds it where a caller can
+    /// reach it, under settings that are written down. What is returned holds
+    /// the child so that dropping it stops the server (A27).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start`].
+    pub fn hosted(
+        llama: &ProvisionedLlama,
+        model: &Path,
+        settings: &crate::hosting::Hosting,
+    ) -> Result<Self, Failure> {
+        let binary = llama.prefix.join("build").join("bin").join("llama-server");
+        if !binary.exists() {
+            return Err(Failure::new(
+                Category::EngineSpawnNotFound,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::served"),
+                "this provisioned prefix has no llama-server: it was built before MCF asked for \
+                 one, and `mcf provision llama.cpp` again produces it",
+            )
+            .with_context("looked_for", binary.display().to_string()));
+        }
+        let mut command = Command::new(&binary);
+        command
+            .args(settings.arguments(&model.display().to_string(), crate::hosting::LOOPBACK))
+            .arg("--port")
+            .arg(settings.port.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = command.spawn().map_err(|error| {
+            Failure::new(
+                Category::EngineSpawnRefused,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::served"),
+                "the provisioned server could not be started",
+            )
+            .with_context("error", error.to_string())
+        })?;
+        // A hosted server answers over a port rather than a socket, so the
+        // socket field names where it *would* have been rather than a file
+        // that exists. Nothing reads it for a hosted server, and leaving it
+        // empty would make a path field that is sometimes a path.
+        let mut served = Self {
+            child,
+            socket: PathBuf::from(settings.address()),
+            model: model.to_path_buf(),
+            commit: llama.commit.clone(),
+        };
+        served.wait_until_answering(settings.port, ATTEMPTS)?;
+        Ok(served)
+    }
+
+    /// Waits for a hosted server to report itself ready.
+    ///
+    /// A model is loaded before it answers, and on a large one that is tens of
+    /// seconds — during which the engine answers `503 Loading model`. Treating
+    /// that as *up* would hand a caller a server that refuses everything.
+    fn wait_until_answering(&mut self, port: u16, attempts: usize) -> Result<(), Failure> {
+        for _ in 0..attempts.saturating_mul(4) {
+            if let Some(status) = self.child.try_wait().ok().flatten() {
+                return Err(Failure::new(
+                    Category::EngineSpawnRefused,
+                    Attribution::Machine,
+                    Disposition::Refused,
+                    Subsystem::new("mcf-serve::served"),
+                    "the provisioned server stopped before it began answering",
+                )
+                .with_context("status", status.to_string()));
+            }
+            if ready_on(port) {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        Err(Failure::new(
+            Category::EngineHangNoOutput,
+            Attribution::Machine,
+            Disposition::Refused,
+            Subsystem::new("mcf-serve::served"),
+            "the provisioned server did not begin answering",
+        )
+        .with_context("port", port.to_string()))
     }
 
     /// The same, waiting a stated number of attempts.

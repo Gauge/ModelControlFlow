@@ -526,6 +526,14 @@ pub enum Act {
     Result(usize),
     /// Turn one test on or off.
     Toggle(usize),
+    /// Move one hosting setting on to its next value.
+    Cycle(usize),
+    /// Put every setting back to what MCF recommended.
+    Recommended,
+    /// Hold the chosen model under the settings as they stand.
+    HostIt,
+    /// Stop holding it.
+    StopHosting,
     /// Close the window.
     Close,
     /// Ask a model what has been typed.
@@ -550,6 +558,8 @@ pub enum Act {
 pub enum Doing {
     /// Nothing.
     Nothing,
+    /// Starting a model on a port.
+    Hosting(job::Job),
     /// Asking a hub what it publishes.
     Listing(job::Job),
     /// Fetching a model.
@@ -569,7 +579,8 @@ impl Doing {
             Self::Listing(job)
             | Self::Downloading(job)
             | Self::Measuring(job)
-            | Self::Answering(job) => Some(job),
+            | Self::Answering(job)
+            | Self::Hosting(job) => Some(job),
         }
     }
 
@@ -604,6 +615,17 @@ pub struct Desk {
     pub said: String,
     /// The tests offered on the diagnostics screen.
     pub tests: Vec<Test>,
+    /// What the chosen model would be hosted under, and what MCF advised.
+    ///
+    /// Both, because a run under a changed setting is not a run under the
+    /// recommended one and a person needs to see which they have (§3.15).
+    pub settings: Option<mcf_serve::hosting::Hosting>,
+    /// What MCF recommended for the chosen model.
+    pub recommended: Option<mcf_serve::hosting::Hosting>,
+    /// Why there are no settings, where there are none.
+    pub no_settings: Option<String>,
+    /// What is being hosted: where it is reachable, and since when.
+    pub hosted: Option<(String, String)>,
     /// The context window a measurement is set up for.
     ///
     /// Choosing it implies every power of two below it, which is why the
@@ -637,6 +659,10 @@ impl Desk {
             doing: Doing::Nothing,
             said: String::new(),
             tests: tests(),
+            settings: None,
+            recommended: None,
+            no_settings: None,
+            hosted: None,
             window: 8192,
             open: None,
             showing: None,
@@ -670,7 +696,8 @@ impl Desk {
             Doing::Listing(job)
             | Doing::Downloading(job)
             | Doing::Measuring(job)
-            | Doing::Answering(job) => job.drain(),
+            | Doing::Answering(job)
+            | Doing::Hosting(job) => job.drain(),
         };
         if !heard {
             return false;
@@ -693,6 +720,13 @@ impl Desk {
             && job.refused.is_none()
         {
             self.refresh();
+        }
+        // A model that has just started answering is one MCF is holding, and
+        // the screen says where it is without anybody asking it to.
+        if let Doing::Hosting(job) = &self.doing
+            && job.finished
+        {
+            self.read_hosted();
         }
         if let Doing::Measuring(job) = &self.doing
             && job.finished
@@ -813,6 +847,10 @@ impl Desk {
                     test.chosen = !test.chosen;
                 }
             }
+            Act::Cycle(at) => self.cycle(at),
+            Act::Recommended => self.settings.clone_from(&self.recommended),
+            Act::HostIt => self.host_it(),
+            Act::StopHosting => self.stop_hosting(),
             Act::Close => {}
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
@@ -821,6 +859,135 @@ impl Desk {
             }
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
+        }
+    }
+
+    /// Asks MCF what the chosen model would run under.
+    ///
+    /// Nothing is started: this fills in a form. It is asked again whenever
+    /// the chosen model changes, because a recommendation is about a model
+    /// and a machine and neither is the one it was computed for any more.
+    pub fn read_settings(&mut self) {
+        self.settings = None;
+        self.recommended = None;
+        self.no_settings = None;
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            return;
+        };
+        let asked = Request::Settings {
+            model: held.path.clone(),
+        };
+        match ask(&self.socket, &asked) {
+            Ok(answer) if answer.served => {
+                let recommended = answer.body.get("recommended").map(|held| {
+                    mcf_serve::hosting::Hosting::from_value(
+                        held,
+                        &mcf_serve::hosting::Hosting::recommended("", "", false, 0, None, false),
+                    )
+                });
+                self.settings.clone_from(&recommended);
+                self.recommended = recommended;
+            }
+            Ok(answer) => {
+                self.no_settings = Some(
+                    answer
+                        .body
+                        .get("what")
+                        .and_then(Value::as_text)
+                        .unwrap_or("MCF did not say why")
+                        .to_owned(),
+                );
+            }
+            Err(why) => self.no_settings = Some(why),
+        }
+    }
+
+    /// Asks MCF what it is holding.
+    pub fn read_hosted(&mut self) {
+        self.hosted = match ask(&self.socket, &Request::Hosted) {
+            Ok(answer) if answer.served => {
+                match answer.body.get("hosting").and_then(Value::as_text) {
+                    Some(model) => Some((
+                        model.to_owned(),
+                        answer
+                            .body
+                            .get("address")
+                            .and_then(Value::as_text)
+                            .unwrap_or("")
+                            .to_owned(),
+                    )),
+                    None => None,
+                }
+            }
+            _ => None,
+        };
+    }
+
+    /// Holds the chosen model under the settings as they stand.
+    pub fn host_it(&mut self) {
+        let (Some(held), Some(settings)) = (
+            self.chosen.and_then(|at| self.models.get(at)),
+            self.settings.clone(),
+        ) else {
+            return;
+        };
+        self.doing = Doing::Hosting(job::Job::start(
+            self.socket.clone(),
+            Request::Host {
+                model: held.path.clone(),
+                settings: settings.to_value(),
+            },
+            format!("holding {}", held.name),
+        ));
+    }
+
+    /// Stops holding whatever is held.
+    pub fn stop_hosting(&mut self) {
+        let _answered = ask(&self.socket, &Request::Unhost);
+        self.hosted = None;
+    }
+
+    /// Moves one setting on to its next value.
+    ///
+    /// Cycling rather than typing, because every one of these has a small set
+    /// of values that make sense and a field would let somebody type a
+    /// context of seven.
+    pub fn cycle(&mut self, at: usize) {
+        let (Some(settings), Some(recommended)) =
+            (self.settings.as_mut(), self.recommended.as_ref())
+        else {
+            return;
+        };
+        match at {
+            // Powers of two, never past what MCF worked out fits.
+            0 => {
+                settings.context = if settings.context >= recommended.context {
+                    512
+                } else {
+                    settings.context.saturating_mul(2)
+                };
+            }
+            1 => settings.gpu_layers = if settings.gpu_layers == 0 { 999 } else { 0 },
+            4 => {
+                settings.threads = match settings.threads {
+                    held if held >= 64 => 1,
+                    held => held.saturating_mul(2),
+                };
+            }
+            5 => {
+                settings.batch = match settings.batch {
+                    held if held >= 4096 => 256,
+                    held => held.saturating_mul(2),
+                };
+            }
+            6 => settings.flash_attention = !settings.flash_attention,
+            7 => settings.keep_resident = !settings.keep_resident,
+            8 => settings.port = settings.port.saturating_add(1),
+            // The engine, the device and the key are not cycled: the first
+            // two are what MCF resolved and changing one without the other
+            // would be asking for a build to use a device it cannot, and a
+            // key is typed rather than chosen.
+            _ => {}
         }
     }
 
@@ -958,7 +1125,8 @@ impl Desk {
             Doing::Listing(job)
             | Doing::Downloading(job)
             | Doing::Measuring(job)
-            | Doing::Answering(job) => (
+            | Doing::Answering(job)
+            | Doing::Hosting(job) => (
                 if job.finished {
                     "IDLE".to_owned()
                 } else {
@@ -1114,6 +1282,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut desk = Desk::new(socket);
     desk.refresh();
     desk.sample();
+    desk.read_hosted();
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
@@ -1164,6 +1333,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     key if key == u32::from(b'r') && !desk.takes_typing() => {
                         desk.refresh();
                         desk.sample();
+                        desk.read_hosted();
                     }
                     _ => {}
                 },

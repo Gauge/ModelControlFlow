@@ -20,6 +20,7 @@ mod doctor;
 mod embed;
 mod explain;
 mod history;
+mod hosting;
 mod licence;
 mod log;
 mod measure;
@@ -238,6 +239,22 @@ enum Request<'a> {
         /// Which published file.
         file: &'a str,
     },
+    /// What MCF would run a model under.
+    Settings {
+        /// The model.
+        model: &'a str,
+    },
+    /// Hold a model and answer on a port.
+    Host {
+        /// The model.
+        model: &'a str,
+        /// Settings to move off what MCF recommends.
+        changes: Vec<(String, mcf_record::json::Value)>,
+    },
+    /// What is being hosted.
+    Hosted,
+    /// Stop hosting.
+    Unhost,
     /// Time a model at doubling depths.
     Measure {
         /// The model: a path, or something `mcf list` names.
@@ -409,6 +426,16 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["cross-check"] => Request::MissingArgument {
             command: "cross-check",
             needs: "<model>",
+        },
+        ["settings", model] => Request::Settings { model },
+        ["hosted"] => Request::Hosted,
+        ["unhost"] => Request::Unhost,
+        ["host", model, rest @ ..] => match host_options(rest) {
+            Ok(changes) => Request::Host { model, changes },
+            Err(argument) => Request::UnexpectedArgument {
+                command: "host",
+                argument,
+            },
         },
         ["offered", reference] => Request::Offered { reference },
         ["acquire", reference, file] => Request::Acquire { reference, file },
@@ -716,6 +743,52 @@ fn export(to: &std::path::Path) -> Response {
 ///
 /// Total: an option it does not have is named back, and a count that is not a
 /// number is a refusal rather than a default quietly substituted (A7).
+/// The settings a `host` command moves off MCF's recommendation.
+///
+/// Every one is optional and anything unnamed keeps what MCF advised — a
+/// caller who said nothing has not asked for a setting's lowest value (A7,
+/// D43).
+fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>, &'static str> {
+    use mcf_record::json::Value;
+    let mut changes = Vec::new();
+    let mut at = 0;
+    while at < rest.len() {
+        let Some(flag) = rest.get(at) else { break };
+        let said = rest.get(at + 1).copied();
+        let number = |name: &str| -> Result<(String, Value), &'static str> {
+            let held: i64 = said
+                .ok_or("a setting with no value")?
+                .parse()
+                .map_err(|_| "a setting whose value is not a number")?;
+            Ok((name.to_owned(), Value::Integer(held)))
+        };
+        let change = match *flag {
+            "--context" => number("context")?,
+            "--gpu-layers" => number("gpu_layers")?,
+            "--threads" => number("threads")?,
+            "--batch" => number("batch")?,
+            "--port" => number("port")?,
+            "--engine" => (
+                "engine".to_owned(),
+                Value::text(said.ok_or("--engine with no value")?),
+            ),
+            "--api-key" => (
+                "api_key".to_owned(),
+                Value::text(said.ok_or("--api-key with no value")?),
+            ),
+            "--flash-attention" => (
+                "flash_attention".to_owned(),
+                Value::Bool(said == Some("on")),
+            ),
+            "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
+            _ => return Err("a setting mcf host does not take"),
+        };
+        changes.push(change);
+        at += 2;
+    }
+    Ok(changes)
+}
+
 fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut kind = None;
     let mut last = None;
@@ -1351,6 +1424,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Bundle { id, into } => bundle::run(id, *into),
         Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
+        Request::Settings { model } => hosting::settings(model),
+        Request::Host { model, changes } => hosting::host(model, changes),
+        Request::Hosted => hosting::held(),
+        Request::Unhost => hosting::unhost(),
         Request::Offered { reference } => acquire::offered(reference, None),
         Request::Acquire { reference, file } => acquire::acquire(reference, file, None),
         Request::Measure {

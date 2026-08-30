@@ -79,6 +79,25 @@ const REACHES: &[Reaches] = &[
         module: "crates/mcf-cli/src/acquire.rs",
         subcommand: Some("offered"),
     },
+    // One module, four subcommands: reading what a model would run under,
+    // starting it, asking what is up, and stopping it are one act seen from
+    // four sides.
+    Reaches {
+        module: "crates/mcf-cli/src/hosting.rs",
+        subcommand: Some("settings"),
+    },
+    Reaches {
+        module: "crates/mcf-cli/src/hosting.rs",
+        subcommand: Some("host"),
+    },
+    Reaches {
+        module: "crates/mcf-cli/src/hosting.rs",
+        subcommand: Some("hosted"),
+    },
+    Reaches {
+        module: "crates/mcf-cli/src/hosting.rs",
+        subcommand: Some("unhost"),
+    },
     Reaches {
         module: "crates/mcf-cli/src/acquire.rs",
         subcommand: Some("acquire"),

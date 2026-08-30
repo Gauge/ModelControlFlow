@@ -101,13 +101,17 @@ const DECLARED: &[Spawns] = &[
     },
     Spawns {
         file: "crates/mcf-serve/src/served.rs",
-        sites: 1,
+        sites: 2,
         what: "the same provisioned prefix's server rather than its completion tool (B-376), \
                so that a turn of token identifiers can reach an engine and the engine can say \
                why it stopped — the two things a probe needs and a command line cannot carry. \
-               It is given a model file as *input* and binds a Unix socket under MCF's own \
-               runtime directory, never a port: nothing listens on the network, and the \
-               program is still one MCF built, never one it acquired (D39, B-032, §XVII)",
+               It is given a model file as *input*, and the program is one MCF built rather \
+               than one it acquired (D39, B-032, §XVII). Twice, and the second one listens: a \
+               probe's server binds a Unix socket under MCF's own runtime directory and \
+               nothing on the network can reach it, while a *hosted* model binds a TCP port, \
+               because being reachable is the whole of what hosting is. It binds 127.0.0.1 and \
+               only that — putting somebody's model on their network is a decision they make \
+               rather than one MCF makes for them (§3.7, B-416)",
     },
     Spawns {
         file: "crates/mcf-cli/src/provision.rs",

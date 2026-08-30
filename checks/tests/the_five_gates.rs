@@ -126,11 +126,24 @@ fn nothing_listens_where_another_machine_could_reach_it() {
     // because A22 and B19 put the laboratory in the product, and it is declared
     // here for the same reason every deletion is: so that a second listener
     // cannot appear without somebody writing down what it is for.
-    let declared: &[(&str, &str)] = &[(
-        "crates/mcf-lab/src/serving.rs",
-        "the laboratory's hub on a socket: a port the kernel chooses on 127.0.0.1, so that \
-         code which talks to an operating system can be tested against something that answers",
-    )];
+    let declared: &[(&str, &str)] = &[
+        (
+            "crates/mcf-lab/src/serving.rs",
+            "the laboratory's hub on a socket: a port the kernel chooses on 127.0.0.1, so that \
+             code which talks to an operating system can be tested against something that \
+             answers",
+        ),
+        (
+            "crates/mcf-serve/src/hosting.rs",
+            "asking whether a port is free before a hosted engine is told to bind it. The \
+             bind here is the *question* — the listener is dropped immediately and nothing is \
+             served from it — and it exists because an engine that cannot bind exits with a \
+             status and no sentence, which would be reported as the wrong failure (A2). What \
+             a hosted model itself listens on is 127.0.0.1 and only that: putting somebody's \
+             model on their network is a decision they make, not one MCF makes for them \
+             (§3.7, B-416)",
+        ),
+    ];
 
     let root = mcf_checks::workspace::root();
     let mut reachable = Vec::new();
@@ -149,7 +162,12 @@ fn nothing_listens_where_another_machine_could_reach_it() {
             if trimmed.contains("UnixListener") {
                 continue;
             }
-            let loopback = trimmed.contains("127.0.0.1") || trimmed.contains("[::1]");
+            // The address, literally or by the one constant that names it.
+            // The constant is admitted only after reading what it is: a
+            // constant called `LOOPBACK` that held `0.0.0.0` would put every
+            // model on every interface and read as though it did not.
+            let by_name = trimmed.contains("LOOPBACK") && loopback_is_loopback(&root);
+            let loopback = trimmed.contains("127.0.0.1") || trimmed.contains("[::1]") || by_name;
             let allowed = declared.iter().any(|(file, _)| *file == relative);
             if !(loopback && allowed) {
                 reachable.push(format!("{relative}: {trimmed}"));
@@ -260,7 +278,28 @@ const DECLARED: &[(&str, &str)] = &[
      connection to this process from this process, which reaches no other machine and \
      carries nothing (B-028, D26)",
     ),
+    (
+        "crates/mcf-serve/src/served.rs",
+        "asking a hosted engine on 127.0.0.1 whether it has finished loading. A model is \
+     loaded before it answers, and on a large one that is tens of seconds during which the \
+     engine refuses everything — so treating *started* as *ready* would hand a caller a \
+     server that says no to everything. It is one GET to a process on this machine that MCF \
+     itself started a moment earlier, and it carries nothing out (B-416, §3.7)",
+    ),
 ];
+
+/// Whether `mcf_serve::hosting::LOOPBACK` is in fact the loopback address.
+///
+/// The check above admits a bind written against that constant rather than
+/// against the literal, so what the constant *is* has to be read rather than
+/// taken from its name. A name is not evidence (A21).
+fn loopback_is_loopback(root: &std::path::Path) -> bool {
+    let source = read(&root.join("crates/mcf-serve/src/hosting.rs"));
+    source
+        .lines()
+        .filter(|line| line.contains("pub const LOOPBACK"))
+        .any(|line| line.contains("\"127.0.0.1\""))
+}
 
 /// Nothing sends anything anywhere, which is why publication has no gate yet.
 ///

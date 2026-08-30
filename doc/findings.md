@@ -160,6 +160,7 @@ forward as one.
 | 130 | [F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)](#130-f130-two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16) |
 | 131 | [F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)](#131-f131-the-window-was-a-terminal-with-a-mouse-pointer-over-it-and-every-test-passed-one-sdl-constant-was-written-from-memory-and-named-the-wrong-event-b-409-f129-a6-a11) |
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
+| 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9384,6 +9385,80 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 133 · F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)
+
+**The operator asked why there were no settings when choosing a model to host.
+There were none, and one of the values nobody could see was wrong.** The
+provisioned engine was started with its arguments written into the source:
+
+    --ctx-size 0  -ngl 0
+
+`-ngl 0` is *no layers on the graphics card*. So `engines::resolve` did its
+arithmetic, chose the CUDA build and an RTX 5080, reported **runs on NVIDIA
+GeForce RTX 5080** — and then MCF started an engine that put none of the model
+there. Every generation MCF served through a provisioned engine, and every
+figure the depth measurement produced, was taken on the processor under a
+label that said otherwise.
+
+**Measured, on the same model and the same build:**
+
+| Layers on the card | Tokens a second |
+|---|---|
+| none | 158.4 |
+| all | 770.5 |
+
+Four point nine times. A6 asks that no number appear without its conditions;
+this was worse than a missing condition, because the condition was *stated and
+false*. A12 says reality wins over the simulator, and what MCF reported was
+neither — it was a plan, printed as though it were what happened.
+
+**A second one, one level up.** Fixing the flag was not enough: the daemon
+found its engine by asking for *a* provisioned llama, which returned the
+processor build while the settings said the CUDA one. So the first corrected
+run still had 97 MiB of card memory in use and the CPU binary in `ps`. The
+engine is now taken by name from the list the daemon probed at start, and the
+card holds 1,167 MiB.
+
+**The remedy is not a better default, it is a visible one.** §3.15: MCF doing
+something other than the plain thing must never be invisible. Every setting a
+hosted model runs under is now a field with a recommendation MCF computed —
+context, layers, engine, device, threads, batch, flash attention, residency,
+port, key — and both surfaces list them with what was advised beside anything
+somebody moved. What was chosen and what was recommended are two facts, and
+the record carries both so they can disagree in writing.
+
+**And hosting means something now: the engine listens.** MCF does not
+implement an inference API and does not claim to — it provisions an engine
+that has one, starts it under settings that are written down, and supervises
+it. What answers is `llama-server`'s own OpenAI-compatible interface on
+`127.0.0.1`, and both surfaces say whose it is. Binding every interface would
+put somebody's model on their network, which is a decision they make rather
+than one MCF makes for them, so the loopback address is not a default but the
+only address MCF binds — and the gate check now reads the constant rather than
+trusting its name.
+
+**Three smaller things the work turned up, each a guess where a check would
+have done.**
+
+The default port was 11434, chosen with a comment saying nothing common used
+it. That is Ollama's default, and Ollama had it on this machine. The port
+moved, but the lesson is the comment: the guess was written down as though it
+were a finding. MCF now *asks* whether the port is free before starting
+anything, because an engine that cannot bind exits with a status and no
+sentence — and *the server stopped before it began answering* is a true report
+of the wrong thing (A2).
+
+The readiness probe was written with `writeln!`, which ended the request
+`\r\n\n`. HTTP wants a blank line, so the server waited for a request that
+never finished and MCF waited for an answer that never came: a health check
+that **hangs** rather than fails, which is the worst shape a check can have.
+
+And the sampling settings were `f32`. A shipped crate holds no floating point,
+because a NaN one division from a record is how a measurement starts lying —
+they are thousandths as whole numbers now, converted to a decimal once, on the
+way to the engine's command line.
+
 
 ## 132 · F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)
 

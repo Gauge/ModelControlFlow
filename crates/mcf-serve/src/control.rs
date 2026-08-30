@@ -152,6 +152,28 @@ pub enum Request {
         /// number meant nothing.
         deepest: u64,
     },
+    /// What MCF would run this model under, and what it recommends.
+    ///
+    /// Reading, never starting: a surface asks this to fill in a form, and a
+    /// form that started a server to be drawn would be a form nobody could
+    /// open twice.
+    Settings {
+        /// A path, or a name under the daemon's store.
+        model: String,
+    },
+    /// Hold a model and answer on a port under these settings.
+    Host {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// What to run it under. Anything absent keeps what MCF recommends —
+        /// a caller who said nothing has not asked for a setting's lowest
+        /// value (A7, D43).
+        settings: Value,
+    },
+    /// What is being hosted, if anything.
+    Hosted,
+    /// Stop holding it.
+    Unhost,
 }
 
 /// An optional string, as the protocol carries one.
@@ -231,6 +253,17 @@ impl Request {
                 ("file", Value::text(file.clone())),
                 ("from", maybe(from.as_deref())),
             ]),
+            Self::Settings { model } => Value::map([
+                ("ask", Value::text("settings")),
+                ("model", Value::text(model.clone())),
+            ]),
+            Self::Host { model, settings } => Value::map([
+                ("ask", Value::text("host")),
+                ("model", Value::text(model.clone())),
+                ("settings", settings.clone()),
+            ]),
+            Self::Hosted => Value::map([("ask", Value::text("hosted"))]),
+            Self::Unhost => Value::map([("ask", Value::text("unhost"))]),
             Self::Measure {
                 model,
                 engine,
@@ -316,6 +349,23 @@ impl Request {
                     .ok_or_else(|| refused("an acquisition naming no file", line))?
                     .to_owned(),
                 from: optional("from"),
+            }),
+            Some("hosted") => Ok(Self::Hosted),
+            Some("unhost") => Ok(Self::Unhost),
+            Some("settings") => Ok(Self::Settings {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a settings request naming no model", line))?
+                    .to_owned(),
+            }),
+            Some("host") => Ok(Self::Host {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a hosting request naming no model", line))?
+                    .to_owned(),
+                settings: value.get("settings").cloned().unwrap_or(Value::Null),
             }),
             Some("measure") => Ok(Self::Measure {
                 model: value
