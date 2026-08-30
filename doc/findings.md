@@ -155,6 +155,7 @@ forward as one.
 | 125 | [F125 — Five ways to state a speed, scored against each other: one probe and the header beats measuring everything, and beats the file alone (B-400, F124, A6, A18, A20)](#125-f125-five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20) |
 | 126 | [F126 — A probe's length is not a free knob: short probes read optimistically, and with that fixed every size to 70B fits five minutes (B-400, F125, A6, A20, D19)](#126-f126-a-probes-length-is-not-a-free-knob-short-probes-read-optimistically-and-with-that-fixed-every-size-to-70b-fits-five-minutes-b-400-f125-a6-a20-d19) |
 | 127 | [F127 — The sampling rules made machine-checkable, and the GPU that cannot be tested because the engine has no backend for it (B-400, F126, A2, A21, B16)](#127-f127-the-sampling-rules-made-machine-checkable-and-the-gpu-that-cannot-be-tested-because-the-engine-has-no-backend-for-it-b-400-f126-a2-a21-b16) |
+| 128 | [F128 — A CUDA build provisioned, the first GPU timings taken, and the CPU's constants do not transfer to it (B-400, F127, A12, A21, F31)](#128-f128-a-cuda-build-provisioned-the-first-gpu-timings-taken-and-the-cpus-constants-do-not-transfer-to-it-b-400-f127-a12-a21-f31) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9263,6 +9264,70 @@ plan that promised five minutes may not take six. Under a 300-second cap
 Qwen3-8B takes *both ends* at 85–209s rather than *every depth*, whose 259s
 point estimate could reach 447s. The accuracy quoted falls from 0.4% to 0.8%
 along with it, so the cheaper plan cannot borrow the fuller one's precision.
+
+## 128 · F128 — A CUDA build provisioned, the first GPU timings taken, and the CPU's constants do not transfer to it (B-400, F127, A12, A21, F31)
+
+**Rule 3 asks for CPU and GPU both, and MCF could not do it.** The provisioned
+llama.cpp answered `--list-devices` with `(none)`, so every timing in this
+repository was a CPU timing. A second component now builds the same commit with
+a CUDA backend, and getting there found three defects.
+
+**A semicolon in a configure flag was a shell command.** `CMAKE_CUDA_ARCHITECTURES`
+takes a semicolon-separated list, and the recipe pasted the flags into a bash
+script unquoted. Bash ended the cmake line at the semicolon and tried to run
+`120` as a command: exit 127, after a *clean* configure that had silently
+dropped the architecture flag. Every configure argument is now shell-quoted, so
+the next flag with a metacharacter in it does not find the same hole.
+
+**The recipe assumed one package manager.** It said `dnf` and `rpm` outright,
+which was true of the only image there was. The CUDA toolkit ships on Ubuntu,
+and the second component failed on `dnf: command not found` before compiling
+anything. Packaging is now declared per component.
+
+**And F31's lesson had to be learned twice.** The first working build linked the
+container's `libcudart.so.12` and would not start on this host, which carries
+CUDA 13 — the same shape as the shared-library failure that made
+`BUILD_SHARED_LIBS=OFF` necessary. `CMAKE_CUDA_RUNTIME_LIBRARY=Static` was not
+enough on its own; cuBLAS and NCCL were still dynamic, and it took
+`GGML_STATIC=ON` and `GGML_CUDA_NCCL=OFF` before the binary ran where it landed.
+
+**The first GPU measurements.** RTX 5080 against this machine's CPU, same
+models, same depths:
+
+| model | CPU ms/token | GPU ms/token | speedup |
+|---|---|---|---|
+| SmolLM2-135M | 2.30–4.86 | 0.91–1.01 | **2.5–4.8×** |
+| Qwen3-0.6B | 13.9–27.1 | 1.56–2.54 | 8.9–10.7× |
+| gemma-2-2b | 35.0–43.3 | 3.26–3.66 | 10.7–11.8× |
+| Phi-3-mini | 47.8–59.7 | 4.03–4.76 | 11.9–12.6× |
+| Qwen3-8B | 89.0–107.9 | 6.43–7.66 | **13.8–14.5×** |
+
+Median 11.8×, and the speedup rises with model size — which is the bandwidth
+story restating itself, since a larger model is more thoroughly bandwidth-bound
+and the card has an order of magnitude more of it.
+
+**The constants do not transfer, and that is the finding.** Substituting a GPU
+bandwidth into the same formula:
+
+| | median ratio | range |
+|---|---|---|
+| intercept | 1.00 | 0.17–1.35 |
+| slope | **1.70** | 1.29–2.44 |
+
+The slope is wrong by seventy per cent everywhere, and the bandwidth implied by
+the intercepts (642 GB/s) and by the slopes (1095 GB/s) disagree by a factor of
+1.7 about a card specified near 960. `achieved_fraction` was fitted against a
+CPU's cache hierarchy and describes nothing about a GPU's.
+
+SmolLM2-135M is the sharpest case at 0.17: its 92 MB of weights take almost no
+time to read at GPU bandwidth, so its intercept is not a bandwidth term at all
+but a floor — about 0.9 ms of per-token launch overhead that the CPU model has
+no term for.
+
+So the constants are **per device**, not per machine, and a GPU needs its own
+fit with a term the CPU form does not have. What survives the crossing is the
+*shape* — a straight line in depth, from a cache re-read once per token — which
+is what has been carrying the method all along.
 
 ## Changelog
 

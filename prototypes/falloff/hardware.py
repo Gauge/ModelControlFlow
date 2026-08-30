@@ -123,6 +123,9 @@ def affordable_context(weight_bytes, kv_bytes_per_token, device, trained,
     budget = device["available"] * HEADROOM - OVERHEAD_BYTES - weight_bytes
     if budget <= 0:
         return 0, "the weights alone do not fit"
+    if kv_bytes_per_token <= 0:
+        # No growing cache: the window costs nothing beyond the weights.
+        return min(trained, 1 << 20), "no cache to bound the window"
     context = floor
     best = 0
     while context <= trained:

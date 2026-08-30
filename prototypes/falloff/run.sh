@@ -34,8 +34,13 @@ readonly OUT="${MCF_FALLOFF_OUT:-/tmp/falloff}"
 root=$(cd "$(dirname "$0")/../.." && pwd)
 probe="$root/prototypes/falloff/depth_probe.py"
 
-server=$(command -v llama-server || true)
-[ -n "$server" ] || server=$(find "$HOME/.local/share/mcf" -name llama-server -type f 2>/dev/null | head -1)
+# Which build, and how many layers go to the card. The CPU build reports no
+# devices at all, so -ngl on it is silently nothing; naming the engine is how a
+# reading says which device it was taken on (rule 3, F127).
+readonly NGL="${MCF_FALLOFF_NGL:-0}"
+server="${MCF_FALLOFF_ENGINE:-}"
+[ -n "$server" ] || server=$(command -v llama-server || true)
+[ -n "$server" ] || server=$(find "$HOME/.local/share/mcf" -path '*llama.cpp@*' -name llama-server -type f 2>/dev/null | head -1)
 [ -x "${server:-}" ] || { printf 'cannot measure: no provisioned llama-server\n' >&2; exit 2; }
 
 mkdir -p "$OUT"
@@ -70,7 +75,7 @@ trap 'stop' EXIT INT TERM
 
 start() { # start <model-path> <allocation>
     stop
-    "$server" -m "$1" --host 127.0.0.1 --port "$PORT" -c "$2" -ngl 0 --no-warmup >/dev/null 2>&1 &
+    "$server" -m "$1" --host 127.0.0.1 --port "$PORT" -c "$2" -ngl "$NGL" --no-warmup >/dev/null 2>&1 &
     server_pid=$!
     export MCF_FALLOFF_SERVER_PID="$server_pid"
     for _ in $(seq 1 600); do
@@ -86,47 +91,29 @@ start() { # start <model-path> <allocation>
 # MCF_FALLOFF_ONLY selects the models by substring. The order arm has to be
 # pointed at the model whose allocation effect is in question, which is not
 # whichever two sort first.
-# What depths this model can actually be asked about. A fixed ladder assumes
-# every model has the context of the one it was written for: the first corpus
-# sweep asked 4096 of a model trained to 128 and lost five models to HTTP 400.
+# What depths this model can be asked about — from plan.py, which is the one
+# planner and the one the rules are checked against. This used to be a second
+# implementation living here, and it drifted: it appended `context - 256` as a
+# final depth, so the readings it produced are full of 7936 and 16128 while
+# lab_rules.py reported no violations, because it was checking the other one.
 plan() { # plan <model-path> -> "<allocation> <depth> <depth> ..."
-    # the heredoc is quoted, so the prototype's path is passed as an argument
-    # rather than interpolated
     python3 - "$1" "$root/prototypes/falloff" <<'PLAN'
 import sys
 sys.path.insert(0, sys.argv[2])
-import physics
+import physics, plan as planner, hardware
+
 geo = physics.geometry(sys.argv[1])
-trained = (geo or {}).get("trained") or 0
-if not trained:
-    # A state-space or recurrent model declares no context length, and
-    # correctly so: it keeps a fixed state rather than a growing cache. That
-    # is precisely the model whose curve should be FLAT, so it is the one
-    # most worth probing. The depths are assumed rather than declared, which
-    # the reading says (A21).
-    if (geo or {}).get("verdict") == "no-growing-cache":
-        print("4096 512 1024 2048 3584")
-    else:
-        print("")
+# no-growing-cache is planned too: a flat curve is the control that shows the
+# rising ones are real, and it can only be shown by measuring it.
+if geo.get("verdict") not in ("described", "no-growing-cache"):
+    print("")
     raise SystemExit
-allocation = min(int(trained), 16384)
-# 128 tokens are generated at each depth, and the engine needs headroom for
-# them, so the deepest probe stops short of the allocation.
-ceiling = allocation - 256
-depths, d = [], 512
-while d <= ceiling:
-    depths.append(d)
-    d *= 2
-# One more depth as deep as the context allows. A doubling ladder stops at
-# the last power of two that fits, which for a model whose sliding window IS
-# a power of two means never probing past the window -- exactly the region
-# where the window changes the slope. gemma-2's window is 4096 and its
-# context 8192: without this it is measured only where it looks ordinary.
-if depths and ceiling >= depths[-1] * 1.4:
-    depths.append(ceiling)
-if not depths and ceiling >= 64:
-    depths = [max(64, ceiling // 2)]   # a small-context model still has a curve
-print(" ".join(str(x) for x in [allocation] + depths))
+device = hardware.system_memory()
+got = planner.for_device(sys.argv[1], geo, device)
+if not got.get("probes"):
+    print("")
+    raise SystemExit
+print(" ".join(str(x) for x in [got["context"]] + got["probes"]))
 PLAN
 }
 

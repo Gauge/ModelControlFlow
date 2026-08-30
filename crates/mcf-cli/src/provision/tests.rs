@@ -1,6 +1,6 @@
 //! What the recipe table has to keep true without a container in sight.
 
-use super::{COMPONENTS, Component, prefix_for, script_for};
+use super::{COMPONENTS, Component, Packaging, prefix_for, script_for};
 
 /// Every component pins everything a rerun needs: an image digest, a full
 /// commit, at least one package and one target.
@@ -91,8 +91,86 @@ fn a_component_is_data() {
         source: "https://example.invalid/repo.git",
         commit: "0000000000000000000000000000000000000000",
         packages: &["nothing"],
+        packaging: Packaging::Dnf,
         configure: &[],
         targets: &["something"],
     };
     assert_eq!(component.name, "example");
+}
+
+/// A configure flag holding a shell metacharacter is an argument, not a
+/// command.
+///
+/// `CMAKE_CUDA_ARCHITECTURES` takes a semicolon-separated list. Unquoted, bash
+/// ended the cmake line at the semicolon and ran `120` as the next command —
+/// exit 127, after a configure that had reported success while silently
+/// dropping the flag (F128). The failure was invisible in the configure log,
+/// which is why it is pinned here rather than left to be noticed again.
+#[test]
+fn a_configure_flag_cannot_become_a_command() {
+    let component = Component {
+        name: "example",
+        role: "a test",
+        image: "example:1",
+        image_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        source: "https://example.invalid/repo.git",
+        commit: "0000000000000000000000000000000000000000",
+        packages: &["nothing"],
+        packaging: Packaging::Apt,
+        configure: &["-DCMAKE_CUDA_ARCHITECTURES=89;120", "-DWITH SPACE=a b"],
+        targets: &["something"],
+    };
+    let script = script_for(&component);
+    let configure = script
+        .lines()
+        .find(|line| line.starts_with("cmake -S"))
+        .expect("the script configures");
+
+    assert!(
+        configure.contains("'-DCMAKE_CUDA_ARCHITECTURES=89;120'"),
+        "the semicolon must sit inside quotes, not end the command: {configure}"
+    );
+    assert!(
+        configure.contains("'-DWITH SPACE=a b'"),
+        "a space must not split one argument into two: {configure}"
+    );
+    // Nothing outside the redirect may follow the quoted arguments: an
+    // unquoted `;` would leave a second command on this line.
+    let after = configure
+        .split_once("> /work/configure.log")
+        .expect("the configure output is redirected")
+        .0;
+    assert!(
+        !after
+            .replace("'-DCMAKE_CUDA_ARCHITECTURES=89;120'", "")
+            .contains(';'),
+        "no bare separator may survive quoting: {configure}"
+    );
+}
+
+/// Each image installs the way its own distribution does.
+///
+/// The recipe said `dnf` and `rpm` outright, which was true of the one image
+/// there was and false the moment a CUDA toolkit image arrived — it failed on
+/// `dnf: command not found` before compiling anything (F128).
+#[test]
+fn packaging_follows_the_image() {
+    for component in COMPONENTS {
+        let script = script_for(component);
+        match component.packaging {
+            Packaging::Dnf => {
+                assert!(script.contains("dnf -q install"), "{}", component.name);
+                assert!(script.contains("rpm -q"), "{}", component.name);
+            }
+            Packaging::Apt => {
+                assert!(script.contains("apt-get -qq install"), "{}", component.name);
+                assert!(script.contains("dpkg-query -W"), "{}", component.name);
+                assert!(
+                    script.contains("apt-get -qq update"),
+                    "a Debian image ships no package lists: {}",
+                    component.name
+                );
+            }
+        }
+    }
 }

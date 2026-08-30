@@ -35,6 +35,48 @@ use crate::Response;
 
 const WHERE: Subsystem = Subsystem::new("mcf-cli::provision");
 
+/// How a base image installs and reports its packages.
+///
+/// The recipe used to say `dnf` and `rpm` outright, which was true of the one
+/// image there was. The CUDA toolkit ships on Ubuntu, and a second component
+/// made the assumption visible by failing on it — `dnf: command not found`,
+/// exit 127, before a single file was compiled (F128).
+#[derive(Clone, Copy)]
+pub(crate) enum Packaging {
+    /// Fedora and its relatives.
+    Dnf,
+    /// Debian and its relatives, which is what the CUDA images are built on.
+    Apt,
+}
+
+impl Packaging {
+    /// Install the named packages, quietly, without prompting.
+    fn install(self, packages: &str) -> String {
+        match self {
+            Self::Dnf => format!("dnf -q install -y {packages}"),
+            // `update` first, because a Debian image ships no package lists and
+            // an install without one fails on every name.
+            Self::Apt => format!(
+                "export DEBIAN_FRONTEND=noninteractive\n\
+                 apt-get -qq update > /dev/null\n\
+                 apt-get -qq install -y --no-install-recommends {packages} > /dev/null"
+            ),
+        }
+    }
+
+    /// Write down exactly what was installed. A version that is not recorded is
+    /// a condition of the artifact nobody can restate (§3.4).
+    fn record(self, packages: &str) -> String {
+        match self {
+            Self::Dnf => format!("rpm -q {packages} glibc > /work/toolchain.txt"),
+            Self::Apt => format!(
+                "dpkg-query -W -f='${{Package}} ${{Version}}\\n' {packages} libc6 \
+                 > /work/toolchain.txt"
+            ),
+        }
+    }
+}
+
 /// One component MCF knows how to provision.
 pub(crate) struct Component {
     /// The name the operator types.
@@ -50,49 +92,104 @@ pub(crate) struct Component {
     /// The packages the build needs, installed inside the container and
     /// recorded with their exact versions.
     pub packages: &'static [&'static str],
+    /// How this image installs them.
+    pub packaging: Packaging,
     /// How it is configured and what is built.
     pub configure: &'static [&'static str],
     pub targets: &'static [&'static str],
 }
 
 /// Everything MCF can provision.
-pub(crate) const COMPONENTS: &[Component] = &[Component {
-    name: "llama.cpp",
-    role: "the reference implementation MCF's own engine is checked against (B-368): \
+pub(crate) const COMPONENTS: &[Component] = &[
+    Component {
+        name: "llama.cpp",
+        role: "the reference implementation MCF's own engine is checked against (B-368): \
            tokenizers compared exactly, generations at a measured margin, embeddings \
            at a measured floor",
-    image: "registry.fedoraproject.org/fedora:44",
-    image_digest: "sha256:5a4a491c33973b8173e6134d6f00e77f27cebef581c9b34420b2b6183a6398df",
-    source: "https://github.com/ggml-org/llama.cpp.git",
-    commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
-    packages: &["gcc-c++", "cmake", "git", "make"],
-    configure: &[
-        "-DCMAKE_BUILD_TYPE=Release",
-        // Portable rather than tuned: a provisioned binary is a condition of
-        // measurements, and `-march=native` would make it a condition nobody
-        // can restate on another machine (§3.4).
-        "-DGGML_NATIVE=OFF",
-        // Self-contained, because the artifact outlives the container that
-        // built it. A shared build bakes the *container's* library path into
-        // every binary — `/work/build/bin`, a directory that exists nowhere on
-        // the host — so the first provisioned oracle loaded nothing without an
-        // incantation (F31). What is provisioned must run where it lands.
-        "-DBUILD_SHARED_LIBS=OFF",
-        "-DLLAMA_CURL=OFF",
-        "-DLLAMA_BUILD_TESTS=OFF",
-        "-DLLAMA_BUILD_EXAMPLES=ON",
-    ],
-    // The server is the one reference tool that exposes the model's
-    // distribution — `n_probs` on its completion endpoint — which is what a
-    // comparison of logits rather than texts needs (B-373). Nothing else in
-    // the reference prints a logit.
-    targets: &[
-        "llama-tokenize",
-        "llama-completion",
-        "llama-embedding",
-        "llama-server",
-    ],
-}];
+        image: "registry.fedoraproject.org/fedora:44",
+        image_digest: "sha256:5a4a491c33973b8173e6134d6f00e77f27cebef581c9b34420b2b6183a6398df",
+        source: "https://github.com/ggml-org/llama.cpp.git",
+        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        packages: &["gcc-c++", "cmake", "git", "make"],
+        packaging: Packaging::Dnf,
+        configure: &[
+            "-DCMAKE_BUILD_TYPE=Release",
+            // Portable rather than tuned: a provisioned binary is a condition of
+            // measurements, and `-march=native` would make it a condition nobody
+            // can restate on another machine (§3.4).
+            "-DGGML_NATIVE=OFF",
+            // Self-contained, because the artifact outlives the container that
+            // built it. A shared build bakes the *container's* library path into
+            // every binary — `/work/build/bin`, a directory that exists nowhere on
+            // the host — so the first provisioned oracle loaded nothing without an
+            // incantation (F31). What is provisioned must run where it lands.
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DLLAMA_CURL=OFF",
+            "-DLLAMA_BUILD_TESTS=OFF",
+            "-DLLAMA_BUILD_EXAMPLES=ON",
+        ],
+        // The server is the one reference tool that exposes the model's
+        // distribution — `n_probs` on its completion endpoint — which is what a
+        // comparison of logits rather than texts needs (B-373). Nothing else in
+        // the reference prints a logit.
+        targets: &[
+            "llama-tokenize",
+            "llama-completion",
+            "llama-embedding",
+            "llama-server",
+        ],
+    },
+    Component {
+        name: "llama.cpp-cuda",
+        role: "the same reference, built with a CUDA backend, so a measurement can \
+           be taken on the GPU as well as the CPU. Without it MCF's engine \
+           reports no devices and every timing on this machine is a CPU timing \
+           whether or not a card is installed (F127, F128)",
+        // A CUDA toolkit image, because nvcc is what the backend needs and the
+        // Fedora image beside this one carries none. Compiling needs the toolkit;
+        // it does not need a GPU, so this build is as reproducible as the other.
+        image: "docker.io/nvidia/cuda:12.9.1-devel-ubuntu24.04",
+        image_digest: "sha256:020bc241a628776338f4d4053fed4c38f6f7f3d7eb5919fecb8de313bb8ba47c",
+        source: "https://github.com/ggml-org/llama.cpp.git",
+        // The SAME commit as the CPU build. Two backends of one source are
+        // comparable; two backends of two sources are not, and putting one against
+        // the other is the whole point of having both.
+        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
+        packages: &["build-essential", "cmake", "git"],
+        packaging: Packaging::Apt,
+        configure: &[
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DGGML_NATIVE=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DLLAMA_CURL=OFF",
+            "-DLLAMA_BUILD_TESTS=OFF",
+            "-DLLAMA_BUILD_EXAMPLES=ON",
+            "-DGGML_CUDA=ON",
+            // The architectures compiled for are a condition of the artifact, the
+            // way `-march` would be, so they are stated rather than left to the
+            // toolkit's default. 89 is Ada, 120 is Blackwell — the card here is the
+            // latter, and a binary that ran only here would be one nobody could
+            // restate a measurement with (§3.4).
+            "-DCMAKE_CUDA_ARCHITECTURES=89;120",
+            // Static, for the same reason `BUILD_SHARED_LIBS=OFF` is: what is
+            // provisioned must run where it lands (F31). The first CUDA build
+            // linked the container's libcudart.so.12 and would not start on this
+            // host, which carries CUDA 13. cudart alone was not enough — cuBLAS and
+            // NCCL were still dynamic, and NCCL is for spreading one model across
+            // several cards, which this is not doing. The driver library is the one
+            // thing that must come from the machine, and it does.
+            "-DCMAKE_CUDA_RUNTIME_LIBRARY=Static",
+            "-DGGML_STATIC=ON",
+            "-DGGML_CUDA_NCCL=OFF",
+        ],
+        targets: &[
+            "llama-tokenize",
+            "llama-completion",
+            "llama-embedding",
+            "llama-server",
+        ],
+    },
+];
 
 /// Where a component lands when the operator does not say.
 ///
@@ -464,8 +561,8 @@ fn script_for(component: &Component) -> String {
         "#!/usr/bin/env bash\n\
          # Written by `mcf provision {name}`; what ran is part of what is recorded.\n\
          set -o errexit -o nounset -o pipefail\n\
-         dnf -q install -y {packages}\n\
-         rpm -q {packages} glibc > /work/toolchain.txt\n\
+         {install}\n\
+         {record}\n\
          rm -rf /work/source /work/build\n\
          git clone -q {source} /work/source\n\
          git -c safe.directory=/work/source -C /work/source checkout -q {commit}\n\
@@ -473,12 +570,30 @@ fn script_for(component: &Component) -> String {
          cmake -S /work/source -B /work/build {configure} > /work/configure.log 2>&1\n\
          cmake --build /work/build -j --target {targets} > /work/build.log 2>&1\n",
         name = component.name,
-        packages = component.packages.join(" "),
+        install = component.packaging.install(&component.packages.join(" ")),
+        record = component.packaging.record(&component.packages.join(" ")),
         source = component.source,
         commit = component.commit,
-        configure = component.configure.join(" "),
+        configure = component
+            .configure
+            .iter()
+            .map(|flag| shell_quoted(flag))
+            .collect::<Vec<_>>()
+            .join(" "),
         targets = component.targets.join(" "),
     )
+}
+
+/// One argument, safe to paste into a shell.
+///
+/// The configure flags are written into a script and run by bash, so an
+/// argument holding a shell metacharacter is a command. `CMAKE_CUDA_ARCHITECTURES`
+/// takes a semicolon-separated list, and unquoted it ended the cmake command
+/// and made `120` the next one — exit 127, after a configure that reported
+/// success while silently dropping the flag (F128). Quoting every argument
+/// rather than that one keeps the next flag from finding the same hole.
+fn shell_quoted(argument: &str) -> String {
+    format!("'{}'", argument.replace('\'', "'\\''"))
 }
 
 /// Where `podman` is, or the refusal F30 promised.

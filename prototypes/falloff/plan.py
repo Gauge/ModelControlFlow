@@ -64,10 +64,21 @@ def prefill_rate(weight_bytes):
 
 
 def ms_per_token(weight_bytes, geo, depth):
-    per = physics.achieved_fraction(geo["per_layer_read"], geo["query_per_kv_head"])
-    growing = physics.growing_bytes_at(geo, depth) or geo["growing_bytes_per_depth_token"]
-    return (weight_bytes * geo["active_weight_fraction"] / (BW * WEIGHTS_ACHIEVED) * 1e3
-            + depth * growing / (BW * per) * 1e3)
+    """The weights term always; the depth term only where there is a cache.
+
+    A state-space model has no attention geometry in its header at all — no
+    per-layer read, no KV heads — because it keeps no per-token cache. Its cost
+    is the weights and nothing else, which is why its curve is flat, and asking
+    the cache arithmetic for a number would be asking about something that does
+    not exist."""
+    weights = (weight_bytes * geo.get("active_weight_fraction", 1.0)
+               / (BW * WEIGHTS_ACHIEVED) * 1e3)
+    read = geo.get("per_layer_read")
+    growing = physics.growing_bytes_at(geo, depth) if read else 0
+    if not read or not growing:
+        return weights
+    per = physics.achieved_fraction(read, geo.get("query_per_kv_head", 1.0))
+    return weights + depth * growing / (BW * per) * 1e3
 
 
 def probe_seconds(weight_bytes, geo, depth):
@@ -75,14 +86,24 @@ def probe_seconds(weight_bytes, geo, depth):
             + PROBE_TOKENS * ms_per_token(weight_bytes, geo, depth) / 1e3)
 
 
+# A state-space or recurrent model declares no context length, correctly: it
+# keeps a fixed state rather than a growing cache. It still has a curve to
+# measure — a FLAT one — and it is the control that shows the flatness is real,
+# so it is planned against an assumed window rather than skipped. The window is
+# a stated assumption, not a reading (A21).
+ASSUMED_WINDOW_NO_CACHE = 4096
+
+
 def ceiling(weight_bytes, geo, device):
     """Rule 1 and rule 3: a power of two, no larger than the trained context,
     no larger than this device can hold."""
+    if geo.get("verdict") == "no-growing-cache":
+        return ASSUMED_WINDOW_NO_CACHE, "assumed: the header declares no context, and there is no cache to bound"
     trained = geo.get("trained") or 0
     if not trained:
         return 0, "the header declares no context length"
     return hardware.affordable_context(
-        weight_bytes, geo["bytes_per_depth_token"], device, int(trained))
+        weight_bytes, geo.get("bytes_per_depth_token") or 0, device, int(trained))
 
 
 def depths(context):
@@ -99,6 +120,9 @@ def depths(context):
 
 
 def for_device(path, geo, device, budget_seconds=None):
+    if geo.get("verdict") not in ("described", "no-growing-cache"):
+        return {"device": device["name"], "context": 0, "why": geo.get("why") or "",
+                "plan": "cannot run", "probes": [], "seconds": 0.0}
     weight_bytes = os.path.getsize(path)
     context, why = ceiling(weight_bytes, geo, device)
     if context < SHALLOWEST * 2:
@@ -151,13 +175,20 @@ def announce(path, budget_seconds=None, engine=None, use=("cpu", "gpu")):
     devices = [d for d in ([hardware.system_memory()] + hardware.gpus())
                if d["kind"] in use]
     usable = hardware.engine_devices(engine) if engine else []
+    # The budget is what the OPERATOR waits for, so it is shared across the
+    # devices rather than granted to each. Two devices under a five-minute
+    # budget got five minutes apiece, and the plan announced eight while
+    # claiming to have honoured five.
+    runnable = [d for d in devices
+                if not (d["kind"] == "gpu" and engine and not usable)]
+    share = (budget_seconds / len(runnable)) if (budget_seconds and runnable) else budget_seconds
     plans, total = [], 0.0
     for device in devices:
         if device["kind"] == "gpu" and engine and not usable:
             print(f"    {device['name']:<32} NOT TESTED — the provisioned engine "
                   f"has no GPU backend")
             continue
-        got = for_device(path, geo, device, budget_seconds)
+        got = for_device(path, geo, device, share)
         plans.append(got)
         total += got["seconds"]
         if got["plan"] == "cannot run":
@@ -172,8 +203,12 @@ def announce(path, budget_seconds=None, engine=None, use=("cpu", "gpu")):
         print(f"      {got['how']}")
     if total:
         low, high = as_range(total)
-        print(f"    TOTAL {low:.0f}-{high:.0f}s"
-              + (f", held under the {budget_seconds:.0f}s you set" if budget_seconds else ""))
+        ran = sum(1 for g in plans if g.get("probes"))
+        print(f"    TOTAL {low:.0f}-{high:.0f}s across {ran} device(s)"
+              + (f", against the {budget_seconds:.0f}s you set" if budget_seconds else ""))
+        if budget_seconds and high > budget_seconds:
+            print(f"    OVER: the budget could not be met and the plan says so "
+                  f"rather than quietly running long")
         print(f"    The range is measured, not hedged: over 136 probes the estimate")
         print(f"    ran 0.58x to 1.42x of the truth, and the budget uses the slow end.")
     return plans
