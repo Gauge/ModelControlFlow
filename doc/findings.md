@@ -153,6 +153,7 @@ forward as one.
 | 123 | [F123 — Counted rather than inferred: a token reads the whole model and the whole cache, so both halves of the curve are in the file (B-400, F121, F122, A11, A21, D19)](#123-f123-counted-rather-than-inferred-a-token-reads-the-whole-model-and-the-whole-cache-so-both-halves-of-the-curve-are-in-the-file-b-400-f121-f122-a11-a21-d19) |
 | 124 | [F124 — The whole curve from the file, on seven architectures, with a state-space model as the control that has no curve at all (B-400, F123, A6, A7, A12, A21)](#124-f124-the-whole-curve-from-the-file-on-seven-architectures-with-a-state-space-model-as-the-control-that-has-no-curve-at-all-b-400-f123-a6-a7-a12-a21) |
 | 125 | [F125 — Five ways to state a speed, scored against each other: one probe and the header beats measuring everything, and beats the file alone (B-400, F124, A6, A18, A20)](#125-f125-five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20) |
+| 126 | [F126 — A probe's length is not a free knob: short probes read optimistically, and with that fixed every size to 70B fits five minutes (B-400, F125, A6, A20, D19)](#126-f126-a-probes-length-is-not-a-free-knob-short-probes-read-optimistically-and-with-that-fixed-every-size-to-70b-fits-five-minutes-b-400-f125-a6-a20-d19) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9156,6 +9157,64 @@ because attention re-reads a cache growing linearly. The synthetic laboratory
 fitted an unknown form and was ~41% wrong past its range with no way to know.
 Knowing it is a line is what lets one probe reach eight times beyond itself.
 The physics bought the shape, and the shape is what extrapolates.
+
+## 126 · F126 — A probe's length is not a free knob: short probes read optimistically, and with that fixed every size to 70B fits five minutes (B-400, F125, A6, A20, D19)
+
+**The operator asked whether 26 seconds was only because the models were
+small, and offered a five-minute budget for very accurate numbers.** It was:
+26s was a mean over mostly small models. Measured per model, the full sweep is
+7 seconds for SmolLM2-135M and 174 for Qwen3-8B.
+
+**One assumption had to be tested before any projection could be believed.**
+Every cost estimate rests on how many tokens a probe times, and 128 was a
+number chosen when the first probe was written, not measured. Cutting it to 32
+would have quartered every large-model estimate. Measured at depth 2048,
+against a long reference:
+
+| tokens timed | Qwen3-1.7B | Qwen3-8B |
+|---|---|---|
+| 8 | **−14.2%** | — |
+| 16 | −6.2% | — |
+| 32 | −3.7% | **−2.6%** |
+| 64 | −2.2% | −2.0% |
+| 128 | −0.6% | −0.6% |
+| 256 | reference | +0.0% |
+
+**A short probe is biased, not merely noisy**, and biased in the flattering
+direction: the tokens immediately after a prefill still hit a warm cache, so
+they run fast and the model is reported quicker than it is. SmolLM2-135M shows
+none of it — its cache never left L3 to begin with, which is the same boundary
+that has explained every other exception here.
+
+The bias does not worsen with model size: −0.6% at 128 tokens on both a 1.7B
+and an 8B. So 128 is right, and 32 would have cost 2.6–3.7% against a method
+whose entire error budget is 2.2%. The knob was not free and the cheaper
+projections were wrong.
+
+**Prefill scales more gently than decode**, measured across 27 models: rate
+= 662 × GB^−0.77 tokens per second. Not −1.0, because prefill is batched and
+does not re-read the weights per token. For a large model at a deep probe the
+*prefill* is the expensive half, not the tokens being timed — which is why a
+plan that insists on the deepest depth throws itself away when a shallower
+second probe would have fitted.
+
+**What five minutes buys, by size:**
+
+| model | plan | probes | deepest | takes | median | worst |
+|---|---|---|---|---|---|---|
+| 0.6B–8B | every depth | 6 | 16384 | 56s–4.3m | **0.4%** | 3.5% |
+| 14B | both ends | 2 | 16384 | 3.1m | 0.8% | 4.6% |
+| 32B | both ends | 2 | 8192 | 3.8m | 0.8% | 4.6% |
+| 70B | both ends | 2 | 2048 | 4.5m | 0.8% | 4.6% |
+
+Every size to 70B comes inside the budget at 0.8% median or better. At a
+60-second budget the same planner degrades honestly instead of overrunning:
+70B falls back to the computed curve at 4.2%, 32B to a single anchored probe at
+2.2%, and the accuracy quoted changes with it.
+
+Those accuracy figures are the held-out measurements of
+[F125](#125--f125--five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20),
+not estimates of what the plan might achieve.
 
 ## Changelog
 
