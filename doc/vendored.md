@@ -214,6 +214,70 @@ headers — thirteen packages, named in `provision.rs` and installed inside the
 container, not on the operator's machine. What is *linked* is neither: SDL loads
 a windowing system at run time, so one artifact runs under either.
 
+### stb_truetype — outlines to pixels, and nothing else
+
+**What it is for.** §XI's window needs text a person can read: proportional,
+at real sizes, at whatever density the display has. SDL3 carries an 8×8 bitmap
+font and `SDL_RenderDebugText`, and the first window used it — which is why
+that window looked like a terminal somebody had put a mouse pointer over
+(B-409, F131). A bitmap font at one size is not a typographic stack, and no
+arrangement of it becomes one.
+
+**Why this one, and not the usual one.** The usual answer is FreeType, which
+is a tree with a build system, a configuration surface and dependencies of its
+own; behind SDL3_ttf it is two components rather than one. `stb_truetype` is a
+single file of 5,079 lines that rasterises TrueType and CFF outlines and does
+nothing else — no layout, no shaping, no font management, no I/O. MCF wanted
+exactly the part FreeType keeps at its centre, and none of what surrounds it.
+
+**What that costs, stated rather than discovered.** No hinting, no kerning, no
+complex-script shaping. Hinting is invisible above about twelve pixels and MCF
+draws nothing smaller; kerning is a real loss and shows as slightly loose
+letter pairs; shaping means Arabic, Devanagari and the Indic scripts would
+render as unjoined letters. The last is the one that matters, and it bounds
+what this window may claim: it is a Latin interface, and B-411 carries the
+requirement rather than leaving it as something nobody wrote down (A19).
+
+| | |
+|---|---|
+| **Declares** | MIT **or** public domain (Unlicense), at the recipient's choice |
+| **Pinned** | `stb_truetype.h` v1.26, from commit `2c980bb59875b0d32144a71867fbdebb2f77cd20` |
+| **Digest** | `ecd30b05e0dd4fea3a13c26810dd9e1992dc379049482c393d5a19e6b5090aab` |
+| **Verified** | The file, and then the object built from it |
+| **Verdict** | **Compatible.** Either alternative composes with GPL-3.0-only |
+| **Tier** | Vendored in the tree, at `crates/mcf-desk/csrc/` |
+
+**Why this one is in the tree and SDL3 is not.** SDL3 is 1,370 source files
+and a CMake build, so it is provisioned into a container and its artifact
+inspected. This is one file with no build system: `build.rs` hands it to the
+machine's own C compiler. Vendoring it *is* the pin — there is no fetch at
+build time and nothing to resolve — which is the property §3.12 asks for, and
+the digest above is of the file as committed.
+
+**The tree here is the file, and the file is one author's.** SDL3's finding
+turned on the tree carrying other people's code that the artifact did not
+(Vulkan headers, HIDAPI), which is why a declaration is not a verification.
+That question was asked again here and the answer was different:
+
+| Checked | Found |
+|---|---|
+| Copyright notices in the file | One: `Copyright (c) 2017 Sean Barrett` |
+| Licence blocks | One, at the end, offering the two alternatives above |
+| Named contributors | The credits list names people who sent fixes; none carries separate terms |
+| Other stb headers pulled in | None — the object's strings name `stb_truetype.h` and nothing else |
+
+**And then the artifact was read, because a declaration is still not a
+verification.** `libmcffont.a` holds 203 defined symbols: 102 `stbtt_*`, three
+`mcf_*` written here, and the file-local rest. What it leaves undefined is the
+C library and the maths library — `malloc`, `free`, `memcpy`, `memset`,
+`strlen`, `sqrt`, `sqrtf`, `pow`, `fmod`, `cos`, `acos`, `__assert_fail` —
+which is §3a's existing floor and adds nothing to it.
+
+**The patents that used to be here have expired.** TrueType hinting was
+covered by Apple patents that lapsed in 2010, and the header's own comments
+still carry the note. It is moot twice over: the patents are gone, and
+`stb_truetype` does not implement hinting.
+
 ## 2b · Data, not code
 
 One component in the tree is neither a crate nor a library: a pair of **tables**
@@ -401,3 +465,17 @@ a gate something has already gone through.
 The declared terms in §4 were fetched rather than recalled, and the digests are
 recorded — but they remain *declared* under A21, because a project's own licence
 file is a statement about itself and what MCF would ship is a tree.
+
+**v7 · stb_truetype, and a window that can be looked at.** §2 gains a second
+vendored component, and the shape of the finding is the same as SDL3's asked
+for: declared terms, then the tree, then the artifact. The answers differed —
+SDL3's tree carried code its artifact did not, and this file carries one
+author and one licence block — and that difference is the reason both were
+checked rather than one being taken as evidence for the other.
+
+What is admitted alongside it is a *capability* rather than a component: the
+window can now be drawn into a buffer with no display (`mcf_desk::paper`), so
+the interface is something a test can read. That is not a licence matter and
+it is recorded here because it is the reason the component was worth admitting
+at all — a text stack whose output nothing could see would have been the same
+mistake in a different font.

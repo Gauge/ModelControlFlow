@@ -158,6 +158,7 @@ forward as one.
 | 128 | [F128 — A CUDA build provisioned, the first GPU timings taken, and the CPU's constants do not transfer to it (B-400, F127, A12, A21, F31)](#128-f128-a-cuda-build-provisioned-the-first-gpu-timings-taken-and-the-cpus-constants-do-not-transfer-to-it-b-400-f127-a12-a21-f31) |
 | 129 | [F129 — A second surface arrived and the tripwire watching for one did not fire, because it was written against four guesses at its name (B-401, B-072, A22, B16)](#129-f129-a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16) |
 | 130 | [F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)](#130-f130-two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16) |
+| 131 | [F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)](#131-f131-the-window-was-a-terminal-with-a-mouse-pointer-over-it-and-every-test-passed-one-sdl-constant-was-written-from-memory-and-named-the-wrong-event-b-409-f129-a6-a11) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9382,6 +9383,68 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 131 · F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)
+
+**The operator said it was entirely unusable, and they were describing a
+decision rather than a defect.** The window shared `mcf_tui`'s character grid
+so that one layout could serve both surfaces, and drew it with SDL's 8×8 debug
+font. Every test of that code passed, because the tests checked the layout's
+arithmetic — that rows were the right width, that the frame closed — and what
+was wrong was what the arithmetic produced.
+
+**Nothing could see it.** Checking the appearance meant opening it on a machine
+with a display, so it could not be checked in a test, in CI, or by anything
+holding only a terminal. Two rounds of *that was terrible* is what a surface
+with no observable output costs, and the fix is not a better eye: the window
+now draws to a buffer as readily as to a screen, through the same painter, so
+an assertion about the interface comes from the interface. Five such tests
+exist and two of them found real faults within an hour of being written:
+
+- *Will not run* and *Not measured* were both the warning colour. The two
+  states a person most needs to tell apart — this cannot run, and nobody has
+  timed this — were the same swatch. No test that read the words would have
+  noticed, because the words were right.
+- The dark theme's rule was eight steps of lightness from the well it divided.
+  A hairline is meant to be quiet; that one was invisible. The palette moved,
+  not the threshold.
+
+**A constant was written from memory, and named the wrong event.**
+`EVENT_WINDOW_RESIZED` was `0x203`. `0x203` is `SDL_EVENT_WINDOW_HIDDEN`;
+resized is `0x206`. The window therefore re-laid itself out whenever it was
+hidden and never when it was resized. The provisioned headers were on this
+machine the whole time and the number came from recollection instead — which is
+A6 in its smallest form, a value carried without the source that fixes it.
+Every constant in `sdl.rs` has since been read out of the header, and the
+enumeration was counted rather than eyeballed, because the ones that matter had
+no explicit value beside them.
+
+**What replaced the grid.** One vendored file — `stb_truetype`, 5,079 lines,
+MIT or public domain — and a painter of MCF's own above it: proportional type
+at any size, antialiased rounded corners from a single rasterised mask, a
+palette named for what each colour does, and six widgets. No toolkit. The
+window found Cantarell on this machine and drew with it; the search names
+sixteen families and ends with ones nobody picks on looks, because a window
+that opens in Liberation Sans is a window that opens.
+
+**And the vocabulary changed, which was most of what made it unusable.** The
+first window said *Monitor*, *Diagnostics*, `tokens/second`, `context 32768`,
+`Unknown`. Those are the names of MCF's internals. What it says now is *116
+words a second — about 29× faster than you can read*, *remembers about 25,000
+words*, and *Not measured yet* beside the button that measures it. Nothing was
+thrown away: the record still holds milliseconds and tokens, and every figure
+the plain sentences replaced is one disclosure down the same page (A1). The two
+constants that conversion rests on — 0.75 words to a token, 240 words a minute
+— are stated in the interface, because a person told they read at a certain
+speed is owed the number (A6).
+
+**The seventh instance's cousin.** [F129](#129--f129--a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16)
+and [F130](#130--f130--two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16)
+were guards written against a *name* rather than a shape. This is the same
+error against a *number*: a constant recalled rather than read. The remedy is
+identical in kind — go to the thing itself — and the reason it keeps recurring
+is that recollection is always available and the source always costs a lookup.
+
 
 ## 130 · F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)
 

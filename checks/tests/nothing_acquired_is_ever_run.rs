@@ -45,6 +45,17 @@ struct Spawns {
 /// Every place MCF's shipped code starts a process.
 const DECLARED: &[Spawns] = &[
     Spawns {
+        file: "crates/mcf-desk/build.rs",
+        sites: 4,
+        what: "the machine's own C toolchain, at build time: a compiler asked for its version \
+               so that one that is not installed is found before it is used, the compiler \
+               itself on `csrc/font.c`, and the archiver on what it produced. What is compiled \
+               is a file in MCF's own tree — `stb_truetype.h`, vendored and digested in \
+               doc/vendored.md — and never anything MCF acquired at run time. It is `cc`, \
+               `gcc`, `clang` and `ar`, or whatever `CC` and `AR` name, which is the same \
+               toolchain that built the rest of this program (B-409, D39)",
+    },
+    Spawns {
         file: "crates/mcf-lab/src/catalogue/engine.rs",
         sites: 5,
         what: "the laboratory's stand-ins for an engine that dies: a shell told to exit, a \

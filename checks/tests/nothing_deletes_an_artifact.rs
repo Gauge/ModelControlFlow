@@ -44,6 +44,16 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-desk/build.rs",
+        calls: 1,
+        what: "a stale `libmcffont.a` in this build's own output directory, before the \
+               archiver writes a new one. `ar rcs` adds members rather than replacing an \
+               archive, so an object from an earlier build would otherwise survive into this \
+               one — which is the opposite of what a reproducible build wants. What is \
+               destroyed is a build product under `OUT_DIR` that this build script created \
+               and is about to recreate (B-409, A27)",
+    },
+    Deletes {
         file: "crates/mcf-cli/src/serve.rs",
         calls: 1,
         what: "a control socket with nothing behind it, before starting a daemon that would \
