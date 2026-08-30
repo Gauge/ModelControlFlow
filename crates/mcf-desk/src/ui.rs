@@ -9,6 +9,12 @@
 //! What that leaves is this file: hit testing against boxes, and the drawing
 //! of the six things a person can press.
 
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "the step counters in the two drawn glyphs below, which never \
+              exceed five"
+)]
+
 use crate::font::Weight;
 use crate::paint::{Box, Painter, Rgb};
 
@@ -248,6 +254,64 @@ pub fn progress(paint: &mut Painter, area: Box, fraction: Option<f32>) {
                 255,
             );
         }
+    }
+}
+
+/// The triangle on a dropdown, drawn rather than set.
+///
+/// **A control's furniture is not text.** Asking the font for `▾` worked on a
+/// face that has it and drew a notdef box on the one this machine offers —
+/// which is how a chevron becomes a narrow rectangle nobody recognises. Three
+/// rows of rectangle always look like a triangle, on every face, at every
+/// size.
+pub fn chevron(paint: &mut Painter, at: (f32, f32), colour: Rgb) {
+    let (wide, tall) = (9.0_f32, 5.0_f32);
+    let rows = 5_i32;
+    for step in 0..rows {
+        let along = step as f32 / rows as f32;
+        paint.wash(
+            Box::new(
+                at.0 + wide * along / 2.0,
+                at.1 + tall * along,
+                wide * (1.0 - along),
+                tall / rows as f32 + 0.6,
+            ),
+            colour,
+            255,
+        );
+    }
+}
+
+/// The mark in a checked box, drawn rather than set, for the same reason.
+pub fn tick(paint: &mut Painter, area: Box, colour: Rgb) {
+    // Two strokes: down-right, then up-right and longer. Drawn as a run of
+    // small squares so that the diagonal has no gaps at any size.
+    let unit = area.w / 8.0;
+    for step in 0..4 {
+        let along = step as f32;
+        paint.wash(
+            Box::new(
+                area.x + unit * (1.0 + along * 0.7),
+                area.y + unit * (3.4 + along * 0.7),
+                unit * 1.5,
+                unit * 1.5,
+            ),
+            colour,
+            255,
+        );
+    }
+    for step in 0..5 {
+        let along = step as f32;
+        paint.wash(
+            Box::new(
+                area.x + unit * (3.4 + along * 0.8),
+                area.y + unit * (5.4 - along * 0.8),
+                unit * 1.5,
+                unit * 1.5,
+            ),
+            colour,
+            255,
+        );
     }
 }
 

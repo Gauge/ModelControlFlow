@@ -1,16 +1,20 @@
-//! The screens, drawn in pixels and operated with a pointer.
+//! The console's screens, drawn in pixels.
 //!
-//! **Nothing here is shared with the terminal console, and that is the
-//! point.** The first window drew the console's character grid at a larger
-//! scale, which made it a terminal somebody had put a mouse pointer over. A
-//! console screen is a table of cells that reads top to bottom; these are
-//! cards, panels and buttons that are scanned and clicked. The two surfaces
-//! now share their *data* and their *daemon* and nothing about their drawing.
+//! **The layout is the terminal's; the drawing is not.** The console's three
+//! screens — the machine live, a model with everything known about it, and a
+//! measurement being set up — are what an operator asked for and worked
+//! through, and a window that invented its own arrangement of the same facts
+//! threw that away. So this draws *those* screens: the same sections in the
+//! same order, the same columns, the same words.
 //!
-//! **What is on a card is what somebody wants to know.** Not the file size,
-//! the engine or the context length — the two questions a person actually
-//! arrives with, which are whether a model will run and whether it is quick.
-//! Everything else is a disclosure away, and nothing is thrown out (A1).
+//! **What the window adds is room and type, not a different idea.** A cell
+//! grid can right-align a column; it cannot set a heading in a lighter weight,
+//! give a table a hairline, or put a button under a list at the size a pointer
+//! wants. Those are the differences and they are the only ones.
+//!
+//! **Where the console says `Unknown`, so does this.** A7 is not a terminal
+//! convention: a figure nobody measured is absent on every surface, and the
+//! two say so in the same word.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -21,543 +25,1060 @@
               font size. They are bounded by the size of a window — a few \
               thousand — which is exactly representable in f32 and far inside \
               i64, and the conversions are between the integer a buffer is \
-              indexed by and the float geometry is done in. A cast that could \
-              actually lose something would be a coordinate larger than any \
-              display, and `Painter` clamps and `Paper` bounds-checks before \
-              any of them reaches memory"
+              indexed by and the float geometry is done in"
 )]
 
 use crate::font::Weight;
-use crate::paint::{Box, Painter};
+use crate::paint::{Box, Painter, Rgb};
 use crate::ui::{self, Kind, Mouse};
 use crate::words;
 use crate::{Act, Desk, Doing, Model, Page};
 use mcf_record::json::Value;
 
-/// How wide the navigation column is, in points.
-const SIDEBAR: f32 = 208.0;
-/// The breathing room around the content of a screen.
-const PAD: f32 = 30.0;
+/// The bar across the top, in points.
+const MENU: f32 = 46.0;
+/// The breathing room around a screen's content.
+const PAD: f32 = 26.0;
 
-/// The type scale. Five sizes, and an interface that wants a sixth wants
-/// rethinking rather than another number.
+/// The type scale.
 mod size {
-    /// The label over a figure.
+    /// A column heading: small, spaced, quiet.
     pub(super) const LABEL: f32 = 9.5;
-    /// A caption, a unit, a footnote.
+    /// A caption or a unit.
     pub(super) const SMALL: f32 = 12.0;
-    /// Body text.
+    /// A table row.
     pub(super) const BODY: f32 = 13.5;
-    /// A card's name, a section heading.
+    /// A section heading.
     pub(super) const HEAD: f32 = 17.0;
-    /// The one figure a screen is about.
-    pub(super) const DISPLAY: f32 = 38.0;
 }
+
+/// What the console prints where it has no figure. The same word, because it
+/// is the same absence (A7).
+pub const UNKNOWN: &str = "Unknown";
 
 /// Draws everything, and returns what the click meant.
 pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
     let (width, height) = paint.size();
-    let ink = paint.ink;
     paint.begin();
-
-    // The navigation column, which is a well rather than a panel: it sits
-    // behind the content instead of on top of it.
-    paint.rect(Box::new(0.0, 0.0, SIDEBAR, height), ink.sunk);
-    paint.rule((SIDEBAR, 0.0), (SIDEBAR, height), ink.line, 255);
-
-    let mut going = sidebar(paint, desk, mouse, height).map(Act::Go);
+    let mut act = menu_bar(paint, desk, mouse, width);
 
     let main = Box::new(
-        SIDEBAR + PAD,
         PAD,
-        (width - SIDEBAR - PAD * 2.0).max(10.0),
-        (height - PAD * 2.0).max(10.0),
+        MENU + PAD,
+        (width - PAD * 2.0).max(10.0),
+        (height - MENU - PAD * 2.0).max(10.0),
     );
     let went = match desk.page {
-        Page::Models => models(paint, desk, mouse, main),
-        Page::Model(at) => one_model(paint, desk, mouse, main, at),
-        Page::Add => add(paint, desk, mouse, main),
-        Page::Use => use_one(paint, desk, mouse, main),
-        Page::Speed => speed(paint, desk, mouse, main),
-        Page::Computer => computer(paint, desk, mouse, main),
+        Page::Monitor => monitor(paint, desk, main),
+        Page::Host | Page::Models => host(paint, desk, mouse, main),
+        Page::Diagnostics => diagnostics(paint, desk, mouse, main),
+        Page::Adding => adding(paint, desk, mouse, main),
+        Page::Hosting => hosting(paint, desk, mouse, main),
+        Page::Settings => settings(paint, main),
+        Page::Exit => leaving(paint, mouse, main),
     };
-    going = went.or(going);
-
+    act = went.or(act);
     paint.end();
-    going
+    act
 }
 
-/// A row of buttons under a heading, for the screens that offer a choice of
-/// depth or a model.
-fn model_strip(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
+/// The menu across the top: the console's entries, in the console's order.
+fn menu_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, width: f32) -> Option<Act> {
     let ink = paint.ink;
+    paint.rect(Box::new(0.0, 0.0, width, MENU), ink.sunk);
+    paint.rule((0.0, MENU), (width, MENU), ink.line, 255);
+
+    let mut act = None;
+    let mut x = 14.0;
+    for (page, label) in Page::MENU {
+        let wide = paint.measure(label, Weight::Bold, size::BODY) + 26.0;
+        let area = Box::new(x, 8.0, wide, 30.0);
+        let here = desk.page.section() == *page;
+        if here {
+            paint.panel(area, ui::RADIUS, ink.accent, 255);
+        } else if mouse.over(area) {
+            paint.panel(area, ui::RADIUS, ink.line, 130);
+        }
+        paint.say_centred(
+            area,
+            label,
+            if here { Weight::Bold } else { Weight::Regular },
+            size::BODY,
+            if here { ink.accent_ink } else { ink.quiet },
+        );
+        if mouse.clicked(area) {
+            act = Some(Act::Go(*page));
+        }
+        x += wide + 4.0;
+    }
+
+    // What MCF is, at the right, where the console puts it.
+    let said = desk.state_word();
+    paint.say_right(
+        width - 16.0,
+        15.0,
+        &said,
+        Weight::Bold,
+        size::SMALL,
+        ink.faint,
+    );
+    act
+}
+
+/// A column in a table: where it ends, and whether its figures are flush right.
+struct Column {
+    /// The heading.
+    head: &'static str,
+    /// Where the column ends, in points from the table's left edge.
+    at: f32,
+    /// Whether the value is set flush against `at`.
+    right: bool,
+}
+
+/// Draws a table's heading row and returns the row below it.
+fn heads(paint: &mut Painter, area: Box, first: &str, columns: &[Column]) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, first, ink.faint);
+    for column in columns {
+        if column.right {
+            let wide = spaced_width(paint, column.head);
+            spaced(
+                paint,
+                area.x + column.at - wide,
+                area.y,
+                column.head,
+                ink.faint,
+            );
+        } else {
+            spaced(paint, area.x + column.at, area.y, column.head, ink.faint);
+        }
+    }
+    let under = area.y + 17.0;
+    paint.rule((area.x, under), (area.right(), under), ink.line, 255);
+    under + 10.0
+}
+
+/// One row of a table.
+fn row(paint: &mut Painter, area: Box, y: f32, first: &str, cells: &[(&Column, String)]) {
+    let ink = paint.ink;
+    let room = cells.first().map_or(area.w, |(column, _)| column.at - 14.0);
+    let shortened = paint.elide(first, Weight::Regular, size::BODY, room);
+    paint.say_at(
+        area.x,
+        y,
+        &shortened,
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    for (column, value) in cells {
+        // An absent figure is drawn quietly and a present one is not, so that
+        // a table of unknowns reads as an absence rather than as data (A7).
+        let colour = if value == UNKNOWN || value == "—" {
+            ink.faint
+        } else {
+            ink.ink
+        };
+        if column.right {
+            paint.say_right(
+                area.x + column.at,
+                y,
+                value,
+                Weight::Bold,
+                size::BODY,
+                colour,
+            );
+        } else {
+            paint.say_at(
+                area.x + column.at,
+                y,
+                value,
+                Weight::Bold,
+                size::BODY,
+                colour,
+            );
+        }
+    }
+}
+
+/// A heading in small capitals with a little tracking, as the console sets its
+/// column headings — by hand, because a run of glyphs has no such thing.
+fn spaced(paint: &mut Painter, x: f32, y: f32, text: &str, colour: Rgb) {
+    let shouted = text.to_uppercase();
+    let mut pen = x;
+    for letter in shouted.chars() {
+        let one = letter.to_string();
+        paint.say_at(pen, y, &one, Weight::Bold, size::LABEL, colour);
+        pen += paint.measure(&one, Weight::Bold, size::LABEL) + 0.7;
+    }
+}
+
+/// How wide [`spaced`] will draw something.
+fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
+    text.to_uppercase()
+        .chars()
+        .map(|letter| paint.measure(&letter.to_string(), Weight::Bold, size::LABEL) + 0.7)
+        .sum()
+}
+
+// ── Monitor ──────────────────────────────────────────────────────────────────
+
+/// **The machine, live.** Three tables and a line saying what MCF is doing, in
+/// the console's order.
+fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let wide = area.w.min(700.0);
+    let mut y = processors_table(paint, Box::new(area.x, area.y, wide, 0.0), desk);
+    y = memory_table(paint, Box::new(area.x, y + 16.0, wide, 0.0), desk);
+    let _bottom = storage_table(
+        paint,
+        Box::new(area.x, y + 16.0, wide, area.bottom() - y - 90.0),
+        desk,
+    );
+
+    // The divider and the state line sit against the bottom, as the console
+    // has them, so the tables above can grow without moving them.
+    let divider = area.bottom() - 64.0;
+    paint.rule((area.x, divider), (area.x + wide, divider), ink.line, 255);
+    let (word, said) = desk.state_line();
+    paint.say_at(
+        area.x,
+        divider + 22.0,
+        &word,
+        Weight::Bold,
+        size::BODY,
+        ink.accent,
+    );
+    paint.say_at(
+        area.x + 82.0,
+        divider + 22.0,
+        &said,
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    None
+}
+
+/// The processor and every card, with what each is doing.
+fn processors_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
+    let reading = &desk.reading;
+    let dash = || "—".to_owned();
+    let processors = [
+        Column {
+            head: "load",
+            at: 270.0,
+            right: true,
+        },
+        Column {
+            head: "temp",
+            at: 360.0,
+            right: true,
+        },
+        Column {
+            head: "power",
+            at: 450.0,
+            right: true,
+        },
+        Column {
+            head: "clock",
+            at: 560.0,
+            right: true,
+        },
+        Column {
+            head: "cores",
+            at: 650.0,
+            right: true,
+        },
+    ];
+    let mut y = heads(paint, table, "processor", &processors);
+    let cpu = &reading.processor;
+    row(
+        paint,
+        table,
+        y,
+        "CPU",
+        &[
+            (
+                &processors[0],
+                cpu.load
+                    .map_or_else(dash, |load| format!("{} %", load.whole())),
+            ),
+            (
+                &processors[1],
+                cpu.temperature
+                    .map_or_else(dash, |held| format!("{held} °C")),
+            ),
+            (&processors[2], dash()),
+            (
+                &processors[3],
+                cpu.clock
+                    .map_or_else(dash, |mhz| format!("{:.2} GHz", f64::from(mhz) / 1000.0)),
+            ),
+            (
+                &processors[4],
+                cpu.cores.map_or_else(dash, |held| held.to_string()),
+            ),
+        ],
+    );
+    y += 23.0;
+    for card in &reading.cards {
+        row(
+            paint,
+            table,
+            y,
+            &format!("GPU  {}", card.name),
+            &[
+                (
+                    &processors[0],
+                    card.load
+                        .map_or_else(dash, |load| format!("{} %", load.whole())),
+                ),
+                (
+                    &processors[1],
+                    card.temperature
+                        .map_or_else(dash, |held| format!("{held} °C")),
+                ),
+                (
+                    &processors[2],
+                    card.power.map_or_else(dash, |watts| format!("{watts} W")),
+                ),
+                (&processors[3], dash()),
+                (&processors[4], dash()),
+            ],
+        );
+        y += 23.0;
+    }
+    y
+}
+
+/// System memory and each card's, used against total.
+fn memory_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
+    let reading = &desk.reading;
+    let dash = || "—".to_owned();
+    let memory = [
+        Column {
+            head: "used",
+            at: 270.0,
+            right: true,
+        },
+        Column {
+            head: "total",
+            at: 375.0,
+            right: true,
+        },
+        Column {
+            head: "free",
+            at: 480.0,
+            right: true,
+        },
+    ];
+    let mut y = heads(paint, table, "memory", &memory);
+    let gigabytes =
+        |bytes: Option<u64>| bytes.map_or_else(dash, |held| format!("{:.2} GB", held as f64 / 1e9));
+    let system = &reading.memory;
+    row(
+        paint,
+        table,
+        y,
+        "System",
+        &[
+            (
+                &memory[0],
+                gigabytes(match (system.total, system.available) {
+                    (Some(total), Some(free)) => Some(total.saturating_sub(free)),
+                    _ => None,
+                }),
+            ),
+            (&memory[1], gigabytes(system.total)),
+            (&memory[2], gigabytes(system.available)),
+        ],
+    );
+    y += 23.0;
+    for card in &reading.cards {
+        row(
+            paint,
+            table,
+            y,
+            "Graphics",
+            &[
+                (&memory[0], gigabytes(card.used)),
+                (&memory[1], gigabytes(card.total)),
+                (
+                    &memory[2],
+                    gigabytes(match (card.total, card.used) {
+                        (Some(total), Some(used)) => Some(total.saturating_sub(used)),
+                        _ => None,
+                    }),
+                ),
+            ],
+        );
+        y += 23.0;
+    }
+    y
+}
+
+/// Every disk with traffic worth showing.
+fn storage_table(paint: &mut Painter, table: Box, desk: &Desk) -> f32 {
+    let reading = &desk.reading;
+    let dash = || "—".to_owned();
+    let storage = [
+        Column {
+            head: "read",
+            at: 270.0,
+            right: true,
+        },
+        Column {
+            head: "write",
+            at: 375.0,
+            right: true,
+        },
+        Column {
+            head: "temp",
+            at: 480.0,
+            right: true,
+        },
+    ];
+    let mut y = heads(paint, table, "storage", &storage);
+    let rate = |bytes: Option<u64>| {
+        bytes.map_or_else(dash, |held| format!("{:.1} MB/s", held as f64 / 1e6))
+    };
+    for disk in &reading.disks {
+        row(
+            paint,
+            table,
+            y,
+            &disk.name,
+            &[
+                (&storage[0], rate(disk.read)),
+                (&storage[1], rate(disk.written)),
+                (
+                    &storage[2],
+                    disk.temperature
+                        .map_or_else(dash, |held| format!("{held} °C")),
+                ),
+            ],
+        );
+        y += 23.0;
+        if y > table.bottom() {
+            break;
+        }
+    }
+    y
+}
+
+// ── Host, and Models, which is the same screen ───────────────────────────────
+
+/// **A model and everything known about it.** A narrow list on the left with
+/// the actions under it, and every statistic on the right — the console's
+/// arrangement, and the reason it is this way round: the list is what you move
+/// through, the detail is what you read.
+fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let list = 250.0_f32;
+    let right = area.x + list + 40.0;
+    let mut act = None;
+    let actions_at = area.bottom() - 160.0;
+
+    spaced(paint, area.x, area.y, "models", ink.faint);
+    let mut y = area.y + 26.0;
     if desk.models.is_empty() {
         paint.say_at(
             area.x,
-            area.y,
-            "There are no models on this computer yet. Add one first.",
+            y,
+            "none held",
             Weight::Regular,
             size::BODY,
-            ink.quiet,
+            ink.faint,
         );
-        return (None, area.y + 28.0);
     }
-    let mut act = None;
-    let (mut x, mut y) = (area.x, area.y);
     for (at, held) in desk.models.iter().enumerate() {
-        let label = paint.elide(&held.name, Weight::Bold, size::SMALL, 210.0);
-        let width = paint.measure(&label, Weight::Bold, size::SMALL) + 26.0;
-        if x + width > area.right() {
-            x = area.x;
-            y += 34.0;
+        if y > actions_at - 46.0 {
+            paint.say_at(
+                area.x,
+                y,
+                &format!("… and {} more", desk.models.len().saturating_sub(at)),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            break;
         }
-        let where_ = Box::new(x, y, width, 28.0);
+        let where_ = Box::new(area.x - 6.0, y - 4.0, list, 24.0);
         let chosen = desk.chosen == Some(at);
         if chosen {
-            paint.panel(where_, ui::RADIUS, ink.accent, 255);
-        } else {
-            paint.edge(where_, ui::RADIUS, ink.line, ink.card);
+            paint.panel(where_, 6.0, ink.accent_soft, 255);
+        } else if mouse.over(where_) {
+            paint.panel(where_, 6.0, ink.line, 110);
         }
-        paint.say_centred(
-            where_,
-            &label,
-            Weight::Bold,
+        let name = paint.elide(&held.name, Weight::Regular, size::BODY, list - 80.0);
+        paint.say_at(
+            area.x,
+            y,
+            &name,
+            if chosen {
+                Weight::Bold
+            } else {
+                Weight::Regular
+            },
+            size::BODY,
+            if chosen { ink.accent } else { ink.ink },
+        );
+        paint.say_right(
+            area.x + list - 14.0,
+            y,
+            &held.bytes.map_or_else(
+                || UNKNOWN.to_owned(),
+                |bytes| format!("{:.2}G", bytes as f64 / 1e9),
+            ),
+            Weight::Regular,
             size::SMALL,
-            if chosen { ink.accent_ink } else { ink.ink },
+            ink.faint,
         );
         if mouse.clicked(where_) {
             act = Some(Act::Choose(at));
         }
-        x += width + 8.0;
+        y += 24.0;
     }
-    (act, y + 40.0)
+
+    // The actions, under the list, where they were asked to be.
+    spaced(paint, area.x, actions_at, "actions", ink.faint);
+    let mut y = actions_at + 26.0;
+    for (label, kind, what) in [
+        ("Host this model", Kind::Primary, Act::Go(Page::Hosting)),
+        (
+            "Run diagnostics",
+            Kind::Ordinary,
+            Act::Go(Page::Diagnostics),
+        ),
+        ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
+    ] {
+        let where_ = Box::new(area.x, y, list - 20.0, 30.0);
+        let needs_one = what != Act::Go(Page::Adding);
+        if ui::button(paint, mouse, where_, label, kind) && (!needs_one || desk.chosen.is_some()) {
+            act = Some(what);
+        }
+        y += 36.0;
+    }
+
+    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
+        paint.say_at(
+            right,
+            area.y,
+            "Choose a model on the left.",
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        return act;
+    };
+    detail(
+        paint,
+        Box::new(right, area.y, area.right() - right, area.h),
+        held,
+    );
+    act
 }
 
-/// The navigation column.
-fn sidebar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, height: f32) -> Option<Page> {
+/// Everything known about one model, as the console lists it.
+fn detail(paint: &mut Painter, area: Box, held: &Model) {
     let ink = paint.ink;
-    paint.say_at(20.0, 22.0, "MCF", Weight::Bold, size::HEAD, ink.ink);
+    let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
+    paint.say_at(area.x, area.y, &name, Weight::Bold, size::HEAD, ink.ink);
+    let mut y = area.y + 36.0;
+    let unknown = || UNKNOWN.to_owned();
 
-    let mut going = None;
-    let mut y = 66.0;
-    for (page, label) in Page::MENU {
-        let area = Box::new(10.0, y, SIDEBAR - 20.0, 34.0);
-        // A model's own page is reached from the list, so the list stays lit
-        // while you are on it — the column shows where you are, and a person
-        // who has clicked into a model has not left their models.
-        let here = desk.page.section() == *page;
-        if ui::nav(paint, mouse, area, label, here) {
-            going = Some(*page);
-        }
-        y += 38.0;
+    let said = |paint: &mut Painter, y: f32, name: &str, value: &str, colour: Rgb| {
+        paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
+        let shown = paint.elide(value, Weight::Bold, size::BODY, area.w - 200.0);
+        paint.say_at(area.x + 190.0, y, &shown, Weight::Bold, size::BODY, colour);
+    };
+
+    for (name, value) in [
+        (
+            "size",
+            held.bytes
+                .map_or_else(unknown, |bytes| format!("{:.2} GB", bytes as f64 / 1e9)),
+        ),
+        (
+            "architecture",
+            held.architecture.clone().unwrap_or_else(unknown),
+        ),
+        (
+            "trained context",
+            held.trained
+                .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
+        ),
+        (
+            "cache per token",
+            held.cache_per_token.map_or_else(unknown, |bytes| {
+                #[expect(clippy::integer_division, reason = "bytes into whole kibibytes")]
+                let kibibytes = bytes / 1024;
+                format!("{kibibytes} KiB")
+            }),
+        ),
+    ] {
+        let colour = if value == UNKNOWN { ink.faint } else { ink.ink };
+        said(paint, y, name, &value, colour);
+        y += 22.0;
     }
+    y += 14.0;
 
-    // What this is, in one sentence, at the bottom where a footer goes. It is
-    // the single most reassuring fact about MCF and most people will never
-    // read the documentation that says it.
-    let note = paint.wrap(
-        "Everything runs on this computer. Nothing is sent anywhere.",
+    match &held.refused {
+        Some(why) => {
+            let lines = paint.wrap(why, Weight::Regular, size::BODY, area.w);
+            for line in lines.iter().take(3) {
+                paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
+                y += 20.0;
+            }
+        }
+        None => {
+            for (name, value) in [
+                ("engine", held.engine.clone().unwrap_or_else(unknown)),
+                ("runs on", held.device.clone().unwrap_or_else(unknown)),
+                (
+                    "largest window",
+                    held.context
+                        .map_or_else(unknown, |held| format!("{} tokens", words::grouped(held))),
+                ),
+            ] {
+                let colour = if value == UNKNOWN { ink.faint } else { ink.ink };
+                said(paint, y, name, &value, colour);
+                y += 22.0;
+            }
+        }
+    }
+    y += 20.0;
+
+    // What has been measured, which for most models is nothing — and the
+    // console says so in this many words, so this does too (A7, A9).
+    let wide = area.w.min(430.0);
+    let speed = Column {
+        head: "speed",
+        at: wide,
+        right: true,
+    };
+    let table = Box::new(area.x, y, wide, 0.0);
+    y = heads(paint, table, "measured", &[speed]);
+    let speed = Column {
+        head: "speed",
+        at: wide,
+        right: true,
+    };
+    for (what, value) in [
+        ("at 512 tokens", held.speed_at_512()),
+        ("at the largest window", held.speed_at_window()),
+        ("cold start", held.cold_start()),
+    ] {
+        row(paint, table, y, what, &[(&speed, value)]);
+        y += 22.0;
+    }
+    if !held.measured() {
+        paint.say_at(
+            area.x,
+            y + 8.0,
+            "run diagnostics to fill these in",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+}
+
+// ── Diagnostics ──────────────────────────────────────────────────────────────
+
+/// **Setting up a measurement.** Two buttons with what they cost, what will be
+/// measured, and the tests — the console's arrangement.
+fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let running = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
+    let wide = area.w.min(680.0);
+
+    let quick = Box::new(area.x, area.y, 150.0, 34.0);
+    let selected = Box::new(quick.right() + 18.0, area.y, 170.0, 34.0);
+    if ui::button(paint, mouse, quick, "Quick Run", Kind::Primary) && !running {
+        act = Some(Act::Measure {
+            deepest: desk.quick_depth(),
+        });
+    }
+    if ui::button(paint, mouse, selected, "Run Selected", Kind::Ordinary) && !running {
+        act = Some(Act::Measure {
+            deepest: desk.window,
+        });
+    }
+    let (low, high) = desk.estimate(true);
+    paint.say_centred(
+        Box::new(quick.x, quick.bottom(), quick.w, 20.0),
+        &span(low, high),
         Weight::Regular,
         size::SMALL,
-        SIDEBAR - 40.0,
+        ink.faint,
     );
-    let mut foot = height - 28.0 - note.len() as f32 * 16.0;
+    let (low, high) = desk.estimate(false);
+    paint.say_centred(
+        Box::new(selected.x, selected.bottom(), selected.w, 20.0),
+        &span(low, high),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let mut y = area.y + 78.0;
+
+    spaced(paint, area.x, y, "what to measure", ink.faint);
+    y += 28.0;
+
+    let chosen = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone());
+    for (label, value, act_of) in [
+        ("model", chosen, Act::Go(Page::Host)),
+        (
+            "context window",
+            format!("{} tokens", words::grouped(desk.window)),
+            Act::NextWindow,
+        ),
+    ] {
+        paint.say_at(area.x, y, label, Weight::Regular, size::BODY, ink.quiet);
+        let picker = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
+        let hot = mouse.over(picker);
+        paint.edge(
+            picker,
+            ui::RADIUS,
+            ink.line,
+            if hot { ink.sunk } else { ink.card },
+        );
+        let shown = paint.elide(&value, Weight::Regular, size::BODY, picker.w - 44.0);
+        paint.say_at(
+            picker.x + 12.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::BODY,
+            ink.ink,
+        );
+        ui::chevron(paint, (picker.right() - 22.0, y + 7.0), ink.faint);
+        if mouse.clicked(picker) {
+            act = Some(act_of);
+        }
+        y += 34.0;
+    }
+
+    // Choosing a window implies every power of two below it, so the depths are
+    // stated under it rather than offered as a second set of choices somebody
+    // could contradict the first with.
+    paint.say_at(area.x, y, "samples", Weight::Regular, size::BODY, ink.quiet);
+    paint.say_at(
+        area.x + 190.0,
+        y,
+        &desk.ladder_line(),
+        Weight::Regular,
+        size::BODY,
+        ink.ink,
+    );
+    paint.say_right(
+        area.x + wide,
+        y,
+        "every step",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 42.0;
+
+    let (chose, below) = tests_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0));
+    act = chose.or(act);
+    readings(
+        paint,
+        desk,
+        Box::new(area.x, below, wide, area.bottom() - below),
+    );
+    act
+}
+
+/// The tests, one row each, with what each needs and what each costs.
+fn tests_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, table: Box) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let wide = table.w;
+    let mut act = None;
+    let mut y = heads(
+        paint,
+        table,
+        "tests",
+        &[
+            Column {
+                head: "devices",
+                at: wide - 130.0,
+                right: true,
+            },
+            Column {
+                head: "time",
+                at: wide,
+                right: true,
+            },
+        ],
+    );
+    for (at, test) in desk.tests.iter().enumerate() {
+        let hit = Box::new(table.x - 6.0, y - 5.0, wide - 100.0, 24.0);
+        if mouse.over(hit) {
+            paint.panel(hit, 6.0, ink.line, 90);
+        }
+        let mark = Box::new(table.x, y + 2.0, 13.0, 13.0);
+        if test.chosen {
+            paint.panel(mark, 3.0, ink.accent, 255);
+            ui::tick(paint, mark, ink.accent_ink);
+        } else {
+            paint.edge(mark, 3.0, ink.line, ink.card);
+        }
+        let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 290.0);
+        paint.say_at(
+            table.x + 26.0,
+            y,
+            &name,
+            Weight::Regular,
+            size::BODY,
+            ink.ink,
+        );
+        paint.say_right(
+            table.x + wide - 130.0,
+            y,
+            test.devices,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        paint.say_right(
+            table.x + wide,
+            y,
+            &clock(test.seconds),
+            Weight::Bold,
+            size::BODY,
+            ink.ink,
+        );
+        if mouse.clicked(hit) {
+            act = Some(Act::Toggle(at));
+        }
+        y += 24.0;
+    }
+    y += 12.0;
+
+    let picked = desk.tests.iter().filter(|test| test.chosen).count();
+    let (low, high) = desk.estimate(false);
+    paint.say_at(
+        table.x,
+        y,
+        "selected",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    paint.say_at(
+        table.x + 90.0,
+        y,
+        &format!("{picked} of {}", desk.tests.len()),
+        Weight::Bold,
+        size::SMALL,
+        ink.ink,
+    );
+    paint.say_at(
+        table.x + 200.0,
+        y,
+        "estimate",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+    paint.say_at(
+        table.x + 290.0,
+        y,
+        &span(low, high),
+        Weight::Bold,
+        size::SMALL,
+        ink.ink,
+    );
+    (act, y + 30.0)
+}
+
+/// What a run has said so far, under the setup rather than instead of it.
+fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
+    let ink = paint.ink;
+    let Doing::Measuring(job) = &desk.doing else {
+        return;
+    };
+    let mut y = area.y;
+    if let Some(why) = &job.refused {
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w)
+            .iter()
+            .take(2)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
+            y += 20.0;
+        }
+        return;
+    }
     paint.rule(
-        (20.0, foot - 16.0),
-        (SIDEBAR - 20.0, foot - 16.0),
+        (area.x, y - 12.0),
+        (area.x + area.w, y - 12.0),
         ink.line,
         255,
     );
-    for line in note {
-        paint.say_at(20.0, foot, &line, Weight::Regular, size::SMALL, ink.faint);
-        foot += 16.0;
-    }
-    going
-}
-
-/// A sentence with its first letter raised.
-///
-/// A refusal arrives from the daemon in the daemon's own words and is never
-/// rewritten — but where it is shown it begins a sentence, and starting one in
-/// lower case reads as a fragment. This changes how it looks and not what it
-/// says.
-fn as_a_sentence(said: &str) -> String {
-    let mut letters = said.chars();
-    letters.next().map_or_else(String::new, |first| {
-        first.to_uppercase().collect::<String>() + letters.as_str()
-    })
-}
-
-/// A screen's heading and its one-line subtitle.
-fn heading(paint: &mut Painter, area: Box, title: &str, sub: &str) -> f32 {
-    let ink = paint.ink;
-    paint.say_at(area.x, area.y, title, Weight::Bold, 25.0, ink.ink);
-    paint.say_at(
-        area.x,
-        area.y + 34.0,
-        sub,
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
-    area.y + 66.0
-}
-
-/// A row of facts in one panel, divided by rules rather than made of separate
-/// panels — four boxes read as four things, and these are four aspects of one.
-fn fact_panel(paint: &mut Painter, at: Box, facts: &[(&str, String)]) -> f32 {
-    let ink = paint.ink;
-    let panel = Box::new(at.x, at.y, at.w, 72.0);
-    ui::card(paint, panel, false);
-    if facts.is_empty() {
-        return panel.bottom();
-    }
-    let cell = panel.w / facts.len() as f32;
-    for (which, (name, value)) in facts.iter().enumerate() {
-        let x = panel.x + cell * which as f32;
-        if which > 0 {
-            paint.rule(
-                (x, panel.y + 12.0),
-                (x, panel.bottom() - 12.0),
-                ink.line,
-                255,
-            );
-        }
+    for answer in &job.answers {
+        let Some(reading) = answer.get("reading") else {
+            continue;
+        };
+        let depth = reading
+            .get("depth")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
         paint.say_at(
-            x + 16.0,
-            panel.y + 15.0,
-            &name.to_uppercase(),
-            Weight::Bold,
-            size::LABEL,
+            area.x,
+            y,
+            &format!(
+                "at {} tokens",
+                words::grouped(u64::try_from(depth).unwrap_or(0))
+            ),
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        let (said, colour) = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
+            (
+                reading
+                    .get("ms_per_token")
+                    .and_then(Value::as_text)
+                    .map_or_else(|| UNKNOWN.to_owned(), |ms| format!("{ms} ms a token")),
+                ink.ink,
+            )
+        } else {
+            (UNKNOWN.to_owned(), ink.faint)
+        };
+        paint.say_at(area.x + 190.0, y, &said, Weight::Bold, size::BODY, colour);
+        y += 22.0;
+        if y > area.bottom() - 24.0 {
+            return;
+        }
+    }
+    if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
+        // B65 and D31: a timing from MCF's own stand-in measures the stand-in.
+        // Which engine ran is a condition of every number above it.
+        let ran = conditions
+            .get("engine_ran")
+            .and_then(Value::as_text)
+            .unwrap_or("MCF did not say");
+        let shown = paint.elide(
+            &format!("measured on {ran}"),
+            Weight::Regular,
+            size::SMALL,
+            area.w,
+        );
+        paint.say_at(
+            area.x,
+            y + 6.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
             ink.faint,
         );
-        let shortened = paint.elide(value, Weight::Bold, size::BODY, cell - 32.0);
-        paint.say_at(
-            x + 16.0,
-            panel.y + 38.0,
-            &shortened,
-            Weight::Bold,
-            size::BODY,
-            ink.ink,
-        );
     }
-    panel.bottom()
 }
 
-/// The one figure a model's page is about, or the fact that there is not one.
-///
-/// The unit goes beside the number rather than above it, because a figure is
-/// read as part of a sentence and *116 words a second* is the sentence.
-fn headline_speed(paint: &mut Painter, area: Box, y: f32, held: &Model) -> f32 {
-    let ink = paint.ink;
-    if let (Some(figure), Some(compared)) = (
-        words::speed_figure(held.speed),
-        words::against_reading(held.speed),
-    ) {
-        let end = paint.say(
-            area.x,
-            y + 34.0,
-            &figure,
-            Weight::Bold,
-            size::DISPLAY,
-            ink.ink,
-        );
-        paint.say_at(
-            end + 10.0,
-            y + 18.0,
-            &format!("words a second — {compared}"),
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        return y + 62.0;
+/// Seconds as the console writes them.
+fn clock(seconds: u64) -> String {
+    if seconds < 60 {
+        return format!("{seconds} s");
     }
-    paint.say_at(area.x, y, words::UNMEASURED, Weight::Bold, 22.0, ink.warn);
-    paint.say_at(
-        area.x,
-        y + 28.0,
-        "MCF has not timed this model on your computer.",
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
-    y + 58.0
+    #[expect(clippy::integer_division, reason = "whole minutes and the rest")]
+    let (minutes, rest) = (seconds / 60, seconds % 60);
+    format!("{minutes} min {rest:02} s")
 }
 
-/// **Screen one.** Every model, as cards.
-fn models(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    let ready = desk.models.iter().filter(|held| held.will_run()).count();
-    let sub = match desk.models.len() {
-        0 => "None on this computer yet.".to_owned(),
-        1 if ready == 1 => "One on this computer. It will run.".to_owned(),
-        held => format!(
-            "{held} on this computer. {} will run.",
-            if ready == held {
-                "All of them".to_owned()
-            } else {
-                format!("{ready} of them")
-            }
-        ),
-    };
-    let top = heading(paint, area, "Your models", &sub);
-
-    if let Some(why) = &desk.refusal {
-        return refusal(paint, Box::new(area.x, top, area.w, area.h), why);
-    }
-    if desk.models.is_empty() {
-        paint.say_at(
-            area.x,
-            top + 8.0,
-            "When you add one it will appear here.",
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        return None;
-    }
-
-    // As many columns as fit at a comfortable card width, and never so many
-    // that a card becomes a strip.
-    let widest = 300.0_f32;
-    let gap = 14.0;
-    let columns = ((area.w + gap) / (widest + gap)).floor().max(1.0);
-    let card_width = (area.w - gap * (columns - 1.0)) / columns;
-    let card_height = 126.0;
-
-    let mut going = None;
-    for (at, held) in desk.models.iter().enumerate() {
-        let column = (at as f32) % columns;
-        let row = ((at as f32) / columns).floor();
-        let where_ = Box::new(
-            area.x + column * (card_width + gap),
-            top + row * (card_height + gap) - desk.scroll,
-            card_width,
-            card_height,
-        );
-        if where_.bottom() < top - 20.0 || where_.y > area.bottom() {
-            continue;
-        }
-        if model_card(paint, mouse, where_, held) {
-            going = Some(Act::Go(Page::Model(at)));
-        }
-    }
-    going
+/// A range of seconds, as the console writes one.
+fn span(low: u64, high: u64) -> String {
+    format!("{} – {}", clock(low), clock(high))
 }
 
-/// One card. Returns true if it was opened.
-fn model_card(paint: &mut Painter, mouse: &Mouse, area: Box, held: &Model) -> bool {
+// ── The two screens the actions lead to ──────────────────────────────────────
+
+/// Fetching a model that is not here yet.
+fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let hot = mouse.over(area);
-    ui::card(paint, area, hot);
-
-    let inner = area.x + 16.0;
-    let room = area.w - 32.0;
-
-    // The state, as a colour and a word at once.
-    // Three states, three colours. A model that cannot run and a model
-    // nobody has timed are not the same thing, and drawing them alike was
-    // exactly the failure the console's palette test was written against: a
-    // refusal must not look like anything else.
-    let (ground, colour, word) = if !held.will_run() {
-        (ink.bad_soft, ink.bad, "Will not run")
-    } else if held.speed.is_none() {
-        (ink.warn_soft, ink.warn, "Not measured")
-    } else {
-        (ink.accent_soft, ink.accent, "Ready")
-    };
-    let _width = ui::tag(paint, (inner, area.y + 14.0), word, ground, colour);
-
-    let name = paint.elide(&held.name, Weight::Bold, size::HEAD, room);
-    paint.say_at(
-        inner,
-        area.y + 40.0,
-        &name,
-        Weight::Bold,
-        size::HEAD,
-        ink.ink,
-    );
-
-    // The sentence that says what this model is for, on this machine.
-    let sentence = as_a_sentence(&held.in_a_sentence());
-    let lines = paint.wrap(&sentence, Weight::Regular, size::SMALL, room);
-    let mut y = area.y + 66.0;
-    for line in lines.iter().take(2) {
-        paint.say_at(inner, y, line, Weight::Regular, size::SMALL, ink.quiet);
-        y += 17.0;
-    }
-
-    let button = Box::new(inner, area.bottom() - 12.0 - 26.0, 100.0, 26.0);
-    let pressed = ui::button(paint, mouse, button, "Details", Kind::Ordinary);
-    // The whole card is a target, not only the button on it — a card that
-    // looks like one thing should behave like one thing, and reaching for the
-    // name is what people try first.
-    pressed || mouse.clicked(area)
-}
-
-/// **Screen two.** One model, opening with what it means rather than what it is.
-fn one_model(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box, at: usize) -> Option<Act> {
-    let ink = paint.ink;
-    let Some(held) = desk.models.get(at) else {
-        return Some(Act::Go(Page::Models));
-    };
-    let where_ = as_a_sentence(&held.where_it_runs());
-    let top = heading(paint, area, &held.name, &where_);
-
-    let mut y = headline_speed(paint, area, top, held);
-
-    let facts = [
-        ("Memory", held.memory_sentence()),
-        (
-            "Remembers",
-            words::remembers(held.context).unwrap_or_else(|| words::UNMEASURED.to_owned()),
-        ),
-        (
-            "Wakes up in",
-            words::wakes_in(held.wakes).unwrap_or_else(|| words::UNMEASURED.to_owned()),
-        ),
-        (
-            "Long conversations",
-            words::holds_up(held.fastest, held.slowest)
-                .unwrap_or_else(|| words::UNMEASURED.to_owned()),
-        ),
-    ];
-    y = fact_panel(paint, Box::new(area.x, y, area.w.min(720.0), 0.0), &facts) + 20.0;
-
-    let mut going = None;
-    let (measure, area_of) = ui::fitted(
-        paint,
-        mouse,
-        (area.x, y),
-        if held.speed.is_some() {
-            "Measure it again"
-        } else {
-            "Measure it"
-        },
-        Kind::Primary,
-    );
-    if measure {
-        going = Some(Act::Measure { at, deepest: 8192 });
-    }
-    let (back, _) = ui::fitted(
-        paint,
-        mouse,
-        (area_of.right() + 10.0, y),
-        "Back",
-        Kind::Ordinary,
-    );
-    if back {
-        going = Some(Act::Go(Page::Models));
-    }
-    y += ui::BUTTON + 26.0;
-
-    // Everything the interface decided not to lead with. Nothing is thrown
-    // away; it is ordered (A1).
-    paint.rule((area.x, y), (area.x + area.w.min(720.0), y), ink.line, 255);
-    y += 14.0;
+    spaced(paint, area.x, area.y, "add a model", ink.faint);
+    let mut y = area.y + 28.0;
     paint.say_at(
         area.x,
         y,
-        "Technical details",
-        Weight::Bold,
-        size::SMALL,
+        "Name a model published on a hub, in the form owner/repository.",
+        Weight::Regular,
+        size::BODY,
         ink.quiet,
     );
-    y += 24.0;
-    for (name, value) in held.technical() {
-        if value.is_empty() {
-            continue;
-        }
-        paint.say_at(area.x, y, &name, Weight::Regular, size::SMALL, ink.quiet);
-        let shortened = paint.elide(&value, Weight::Regular, size::SMALL, area.w - 220.0);
-        paint.say_at(
-            area.x + 210.0,
-            y,
-            &shortened,
-            Weight::Regular,
-            size::SMALL,
-            ink.ink,
-        );
-        y += 19.0;
-        if y > area.bottom() - 20.0 {
-            break;
-        }
-    }
-    going
-}
+    y += 30.0;
 
-/// **Screen three.** Add a model: find one, see what it costs, fetch it.
-fn add(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    let top = heading(
-        paint,
-        area,
-        "Add a model",
-        // B28: MCF names no reference model in its own interface. The shape
-        // of a reference is what somebody needs to see, so the example is a
-        // shape and not a repository anybody publishes.
-        "Type the name of a model published on a hub, in the form owner/repository.",
-    );
     let mut act = None;
-
-    let field = Box::new(area.x, top, (area.w - 130.0).min(560.0), ui::BUTTON);
-    if ui::field(paint, mouse, field, &desk.typed, "owner/repository", true) {
-        act = None;
-    }
+    let field = Box::new(area.x, y, (area.w - 130.0).min(520.0), 32.0);
+    let _clicked = ui::field(paint, mouse, field, &desk.typed, "owner/repository", true);
     let (looked, _) = ui::fitted(
         paint,
         mouse,
-        (field.right() + 10.0, top),
+        (field.right() + 10.0, y),
         "Look up",
         Kind::Primary,
     );
     if looked && !desk.doing.busy() {
         act = Some(Act::LookUp);
     }
-    let mut y = top + ui::BUTTON + 22.0;
+    y += 50.0;
 
-    // What is happening, if something is.
     match &desk.doing {
         Doing::Listing(job) if !job.finished => {
             paint.say_at(area.x, y, &job.what, Weight::Regular, size::BODY, ink.quiet);
             return act;
         }
         Doing::Downloading(job) => {
-            let name = job.what.clone();
-            paint.say_at(area.x, y, &name, Weight::Bold, size::BODY, ink.ink);
+            paint.say_at(area.x, y, &job.what, Weight::Bold, size::BODY, ink.ink);
             y += 24.0;
-            let bar = Box::new(area.x, y, area.w.min(560.0), 8.0);
-            ui::progress(paint, bar, job.fraction());
-            y += 20.0;
-            let said = downloading_line(job);
-            paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.quiet);
-            y += 26.0;
-            if job.finished {
-                let (done, _) = ui::fitted(paint, mouse, (area.x, y), "Done", Kind::Primary);
-                if done {
-                    act = Some(Act::Dismiss);
-                }
-            }
+            ui::progress(
+                paint,
+                Box::new(area.x, y, area.w.min(520.0), 8.0),
+                job.fraction(),
+            );
+            y += 22.0;
+            paint.say_at(
+                area.x,
+                y,
+                &downloading_line(job),
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
             return act;
         }
         _ => {}
     }
-
-    if let Some(job) = desk.doing.job() {
-        if let Some(why) = &job.refused {
-            return refusal(paint, Box::new(area.x, y, area.w, area.h), why);
+    let Some(job) = desk.doing.job() else {
+        return act;
+    };
+    if let Some(why) = &job.refused {
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w.min(560.0))
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
+            y += 20.0;
         }
-        if let Some(found) = job.conclusion().or_else(|| job.latest()) {
-            act = published(
-                paint,
-                mouse,
-                Box::new(area.x, y, area.w, area.bottom() - y),
-                found,
-            )
-            .or(act);
-        }
+        return act;
     }
-    act
+    let found = job.conclusion().or_else(|| job.latest())?;
+    published(
+        paint,
+        mouse,
+        Box::new(area.x, y, area.w, area.bottom() - y),
+        found,
+    )
+    .or(act)
 }
 
 /// The files a repository publishes, one row each.
@@ -572,26 +1093,22 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         .get("files")
         .and_then(Value::as_list)
         .map(<[Value]>::to_vec)?;
+    let wide = area.w.min(640.0);
     let mut y = area.y;
     paint.say_at(area.x, y, &repository, Weight::Bold, size::HEAD, ink.ink);
-    y += 28.0;
-
-    // A19 and A7: where MCF could not judge whether these will run, it says
-    // so once, here, rather than leaving every row silently unjudged.
+    y += 30.0;
     if let Some(why) = found.get("no_plan").and_then(Value::as_text) {
-        let lines = paint.wrap(
-            &format!("MCF cannot say which of these will run on your computer: {why}"),
+        for line in paint.wrap(
+            &format!("MCF cannot say which of these would run here: {why}"),
             Weight::Regular,
             size::SMALL,
-            area.w.min(620.0),
-        );
-        for line in lines {
+            wide,
+        ) {
             paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
             y += 16.0;
         }
-        y += 8.0;
+        y += 10.0;
     }
-
     let mut act = None;
     for file in files.iter().take(12) {
         let name = file
@@ -603,36 +1120,31 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
             .get("bytes")
             .and_then(Value::as_integer)
             .and_then(|bytes| u64::try_from(bytes).ok());
-        let row = Box::new(area.x, y, area.w.min(620.0), 40.0);
-        if mouse.over(row) {
-            paint.panel(row, ui::RADIUS, ink.sunk, 255);
+        let where_ = Box::new(area.x - 6.0, y - 5.0, wide, 30.0);
+        if mouse.over(where_) {
+            paint.panel(where_, 6.0, ink.line, 110);
         }
-        let shown = paint.elide(&name, Weight::Regular, size::BODY, row.w - 200.0);
-        paint.say_at(
-            row.x + 10.0,
-            row.y + 11.0,
-            &shown,
-            Weight::Regular,
-            size::BODY,
-            ink.ink,
-        );
-        let size = words::size_in_words(bytes).unwrap_or_else(|| words::UNMEASURED.to_owned());
+        let shown = paint.elide(&name, Weight::Regular, size::BODY, wide - 230.0);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.ink);
         paint.say_right(
-            row.right() - 96.0,
-            row.y + 11.0,
-            &size,
+            area.x + wide - 110.0,
+            y,
+            &bytes.map_or_else(
+                || UNKNOWN.to_owned(),
+                |held| format!("{:.2} GB", held as f64 / 1e9),
+            ),
             Weight::Bold,
             size::SMALL,
             ink.quiet,
         );
-        let get = Box::new(row.right() - 84.0, row.y + 6.0, 76.0, 28.0);
+        let get = Box::new(area.x + wide - 90.0, y - 3.0, 76.0, 26.0);
         if ui::button(paint, mouse, get, "Get", Kind::Ordinary) {
             act = Some(Act::Download {
                 reference: repository.clone(),
                 file: name.clone(),
             });
         }
-        y += 44.0;
+        y += 32.0;
         if y > area.bottom() - 20.0 {
             break;
         }
@@ -649,20 +1161,15 @@ fn downloading_line(job: &crate::job::Job) -> String {
         return "Done. It is on this computer and MCF has written down where it came from."
             .to_owned();
     }
-    let arrived = latest
-        .get("arrived")
-        .and_then(Value::as_integer)
-        .and_then(|held| u64::try_from(held).ok());
-    let total = latest
-        .get("bytes")
-        .and_then(Value::as_integer)
-        .and_then(|held| u64::try_from(held).ok());
+    let held = |key: &str| {
+        latest
+            .get(key)
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+    };
     match latest.get("doing").and_then(Value::as_text) {
-        // The bytes are all here and the work is not over: the file is being
-        // read back to check it is what it should be. On a large model that
-        // is long enough that saying nothing looks like a stall (A2).
         Some("checking") => "checking that what arrived is what was published".to_owned(),
-        _ => match (arrived, total) {
+        _ => match (held("arrived"), held("bytes")) {
             (Some(arrived), Some(total)) => format!(
                 "{} of {}",
                 words::size_in_words(Some(arrived)).unwrap_or_default(),
@@ -673,18 +1180,34 @@ fn downloading_line(job: &crate::job::Job) -> String {
     }
 }
 
-/// **Screen four.** Asking a model something.
-fn use_one(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+/// A model, held and answering.
+fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let top = heading(
-        paint,
-        area,
-        "Chat",
-        "Pick a model and ask it something. It runs on this computer.",
+    let Some(held) = desk.chosen.and_then(|at| desk.models.get(at)) else {
+        paint.say_at(
+            area.x,
+            area.y,
+            "Choose a model on the Host screen first.",
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        return None;
+    };
+    spaced(paint, area.x, area.y, "hosting", ink.faint);
+    let name = paint.elide(&held.name, Weight::Bold, size::HEAD, area.w);
+    paint.say_at(
+        area.x,
+        area.y + 24.0,
+        &name,
+        Weight::Bold,
+        size::HEAD,
+        ink.ink,
     );
-    let (mut act, mut y) = model_strip(paint, desk, mouse, Box::new(area.x, top, area.w, 0.0));
+    let mut y = area.y + 62.0;
 
-    let field = Box::new(area.x, y, (area.w - 120.0).min(620.0), ui::BUTTON);
+    let mut act = None;
+    let field = Box::new(area.x, y, (area.w - 120.0).min(640.0), 32.0);
     let _clicked = ui::field(paint, mouse, field, &desk.typed, "Ask it something", true);
     let (asked, _) = ui::fitted(
         paint,
@@ -699,24 +1222,20 @@ fn use_one(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     {
         act = Some(Act::Ask { at });
     }
-    y += ui::BUTTON + 20.0;
-
-    if desk.chosen.is_none() {
-        paint.say_at(
-            area.x,
-            y,
-            "Choose a model above first.",
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        return act;
-    }
+    y += 50.0;
 
     if let Doing::Answering(job) = &desk.doing
         && let Some(why) = &job.refused
     {
-        return refusal(paint, Box::new(area.x, y, area.w, area.h), why).or(act);
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w.min(640.0))
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::BODY, ink.bad);
+            y += 20.0;
+        }
+        return act;
     }
     if desk.said.is_empty() {
         if desk.doing.busy() {
@@ -731,8 +1250,7 @@ fn use_one(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         }
         return act;
     }
-
-    let panel = Box::new(area.x, y, area.w.min(620.0), (area.bottom() - y).max(60.0));
+    let panel = Box::new(area.x, y, area.w.min(640.0), (area.bottom() - y).max(60.0));
     ui::card(paint, panel, false);
     let lines = paint.wrap(&desk.said, Weight::Regular, size::BODY, panel.w - 32.0);
     let mut at = panel.y + 14.0;
@@ -753,335 +1271,47 @@ fn use_one(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     act
 }
 
-/// **Screen five.** Measuring, and what came of it.
-fn speed(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+/// How MCF is set up, which is nothing yet — and the console says so in these
+/// words, so this does too.
+fn settings(paint: &mut Painter, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let top = heading(
-        paint,
-        area,
-        "Speed tests",
-        "Timing a model on this computer, at conversations of doubling length.",
-    );
-    let (mut act, mut y) = model_strip(paint, desk, mouse, Box::new(area.x, top, area.w, 0.0));
-
-    if let Some(at) = desk.chosen {
-        let running = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
-        let (run, _) = ui::fitted(
-            paint,
-            mouse,
-            (area.x, y),
-            if running {
-                "Measuring…"
-            } else {
-                "Measure it"
-            },
-            Kind::Primary,
-        );
-        if run && !running {
-            act = Some(Act::Measure { at, deepest: 8192 });
-        }
-        y += ui::BUTTON + 22.0;
-    }
-
-    let Doing::Measuring(job) = &desk.doing else {
-        return act;
-    };
-    if let Some(why) = &job.refused {
-        return refusal(paint, Box::new(area.x, y, area.w, area.h), why).or(act);
-    }
-
-    // The estimate, which went out before any of it started. A person who is
-    // told a run is four minutes can decide not to wait; one who is told
-    // nothing cannot.
-    if let Some(first) = job.answers.first()
-        && let (Some(low), Some(high)) = (
-            first
-                .get("estimate_low_seconds")
-                .and_then(Value::as_integer),
-            first
-                .get("estimate_high_seconds")
-                .and_then(Value::as_integer),
-        )
-    {
-        let said = if job.finished {
-            format!("It took somewhere between {low} and {high} seconds, as expected.")
-        } else {
-            format!("This takes somewhere between {low} and {high} seconds.")
-        };
-        paint.say_at(area.x, y, &said, Weight::Regular, size::SMALL, ink.quiet);
-        y += 24.0;
-    }
-
-    let readings: Vec<&Value> = job
-        .answers
-        .iter()
-        .filter_map(|answer| answer.get("reading"))
-        .collect::<Vec<_>>()
-        .iter()
-        .map(|held| held as &Value)
-        .collect();
-    let _ = readings;
-    y = depth_table(paint, Box::new(area.x, y, area.w.min(620.0), 0.0), job);
-
-    if !job.finished {
-        let bar = Box::new(area.x, y, area.w.min(620.0), 8.0);
-        let done = job
-            .latest()
-            .and_then(|latest| {
-                Some((
-                    latest.get("so_far").and_then(Value::as_integer)?,
-                    latest.get("of").and_then(Value::as_integer)?,
-                ))
-            })
-            .and_then(|(so_far, of)| (of > 0).then(|| (so_far as f32 / of as f32).clamp(0.0, 1.0)));
-        ui::progress(paint, bar, done);
-    } else if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
-        // B65 and D31: a timing taken from MCF's own reference engine
-        // measures the reference engine, which is written to be read rather
-        // than to be fast. Which engine ran is a condition of every number
-        // above it, so it is on the screen and not in a log (A6).
-        let ran = conditions
-            .get("engine_ran")
-            .and_then(Value::as_text)
-            .unwrap_or("MCF did not say");
-        let shown = paint.elide(
-            &format!("measured on {ran}"),
-            Weight::Regular,
-            size::SMALL,
-            area.w.min(620.0),
-        );
-        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.faint);
-        y += 18.0;
-        if matches!(conditions.get("is_the_stand_in"), Some(Value::Bool(true))) {
-            let lines = paint.wrap(
-                "These are timings of MCF's own reference engine, which is written to be read \
-                 rather than to be fast. They are not what this model does on a real engine.",
-                Weight::Regular,
-                size::SMALL,
-                area.w.min(620.0),
-            );
-            for line in lines {
-                paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.warn);
-                y += 16.0;
-            }
-        }
-    }
-    act
-}
-
-/// The readings so far, one row a depth.
-fn depth_table(paint: &mut Painter, area: Box, job: &crate::job::Job) -> f32 {
-    let ink = paint.ink;
-    let mut y = area.y;
-    let mut any = false;
-    for answer in &job.answers {
-        let Some(reading) = answer.get("reading") else {
-            continue;
-        };
-        any = true;
-        let depth = reading
-            .get("depth")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        let words_deep = words::remembers(u64::try_from(depth).ok())
-            .unwrap_or_else(|| format!("{depth} tokens"));
-        paint.say_at(
-            area.x,
-            y,
-            &words_deep,
-            Weight::Regular,
-            size::BODY,
-            ink.quiet,
-        );
-        if matches!(reading.get("measured"), Some(Value::Bool(true))) {
-            let per_token: Option<f64> = reading
-                .get("ms_per_token")
-                .and_then(Value::as_text)
-                .and_then(|held| held.parse().ok());
-            // Milliseconds a token is what was measured; words a second is
-            // what somebody can use. The record keeps the first (A1).
-            let said = per_token
-                .filter(|ms| *ms > 0.0)
-                .and_then(|ms| words::speed_in_words(Some(1000.0 / ms)))
-                .unwrap_or_else(|| words::UNMEASURED.to_owned());
-            paint.say_at(area.x + 210.0, y, &said, Weight::Bold, size::BODY, ink.ink);
-        } else {
-            // A9: a depth that would not separate is a result, and it is on
-            // the screen rather than left out of the list.
-            let why = reading
-                .get("why")
-                .and_then(Value::as_text)
-                .unwrap_or("not measured");
-            let shown = paint.elide(why, Weight::Regular, size::SMALL, area.w - 220.0);
-            paint.say_at(
-                area.x + 210.0,
-                y + 1.0,
-                &shown,
-                Weight::Regular,
-                size::SMALL,
-                ink.warn,
-            );
-        }
-        y += 24.0;
-    }
-    if any { y + 10.0 } else { y }
-}
-
-/// **Screen four.** What this computer can do, with the gauges below it.
-fn computer(paint: &mut Painter, desk: &Desk, _mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    let reading = &desk.reading;
-
-    let headline = desk.capability_sentence();
-    let top = heading(paint, area, "Your computer", &headline);
-    let mut y = top;
-
-    // The four things that decide what will run here.
-    let facts = [
-        ("Graphics card", desk.card_sentence()),
-        ("Memory", desk.memory_sentence()),
-        ("Processor", desk.processor_sentence()),
-        ("Right now", desk.doing_sentence()),
-    ];
-    y = fact_panel(paint, Box::new(area.x, y, area.w.min(760.0), 0.0), &facts) + 26.0;
-
-    // The gauges, which are what the old Monitor screen was made entirely of.
-    // They are here because when something is wrong they are what tells you,
-    // and below the fold because when nothing is wrong they tell you nothing.
+    spaced(paint, area.x, area.y, "settings", ink.faint);
     paint.say_at(
         area.x,
-        y,
-        "Live readings",
-        Weight::Bold,
-        size::SMALL,
+        area.y + 28.0,
+        "nothing to set yet",
+        Weight::Regular,
+        size::BODY,
         ink.quiet,
     );
-    y += 26.0;
-
-    let rows: [(&str, String); 4] = [
-        ("Processor", reading_cpu(reading)),
-        ("Graphics card", reading_gpu(reading)),
-        ("Memory", reading_memory(reading)),
-        ("Disk", reading_disk(reading)),
-    ];
-    for (name, value) in rows {
-        paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
-        paint.say_at(
-            area.x + 150.0,
-            y,
-            &value,
-            Weight::Regular,
-            size::BODY,
-            ink.ink,
-        );
-        y += 24.0;
-    }
     None
 }
 
-/// What the processor is doing, in one line.
-fn reading_cpu(reading: &mcf_tui::machine::Reading) -> String {
-    let mut said = Vec::new();
-    if let Some(load) = reading.processor.load {
-        said.push(format!("{}% busy", load.whole()));
-    }
-    if let Some(temperature) = reading.processor.temperature {
-        said.push(format!("{temperature} °C"));
-    }
-    if let Some(clock) = reading.processor.clock {
-        said.push(format!("{:.2} GHz", f64::from(clock) / 1000.0));
-    }
-    if said.is_empty() {
-        words::UNMEASURED.to_owned()
-    } else {
-        said.join(" · ")
-    }
-}
-
-/// What the graphics card is doing.
-fn reading_gpu(reading: &mcf_tui::machine::Reading) -> String {
-    let Some(card) = reading.cards.first() else {
-        return "None found".to_owned();
-    };
-    let mut said = Vec::new();
-    if let Some(load) = card.load {
-        said.push(format!("{}% busy", load.whole()));
-    }
-    if let Some(temperature) = card.temperature {
-        said.push(format!("{temperature} °C"));
-    }
-    if let Some(power) = card.power {
-        said.push(format!("{power} W"));
-    }
-    if said.is_empty() {
-        words::UNMEASURED.to_owned()
-    } else {
-        said.join(" · ")
-    }
-}
-
-/// How much memory is in use.
-fn reading_memory(reading: &mcf_tui::machine::Reading) -> String {
-    match (reading.memory.total, reading.memory.available) {
-        (Some(total), Some(free)) => format!(
-            "{} in use of {}",
-            words::size_in_words(Some(total.saturating_sub(free))).unwrap_or_default(),
-            words::size_in_words(Some(total)).unwrap_or_default()
-        ),
-        _ => words::UNMEASURED.to_owned(),
-    }
-}
-
-/// What the disks are doing.
-fn reading_disk(reading: &mcf_tui::machine::Reading) -> String {
-    let Some(disk) = reading.disks.first() else {
-        return words::UNMEASURED.to_owned();
-    };
-    let mut said = Vec::new();
-    if let Some(read) = disk.read {
-        said.push(format!("{:.1} MB/s read", read as f64 / 1e6));
-    }
-    if let Some(written) = disk.written {
-        said.push(format!("{:.1} MB/s written", written as f64 / 1e6));
-    }
-    if let Some(temperature) = disk.temperature {
-        said.push(format!("{temperature} °C"));
-    }
-    if said.is_empty() {
-        words::UNMEASURED.to_owned()
-    } else {
-        said.join(" · ")
-    }
-}
-
-/// What is drawn when MCF itself could not be reached.
-///
-/// It says what happened and what it means, and does not print the socket path
-/// at somebody who has never heard of one.
-fn refusal(paint: &mut Painter, area: Box, why: &str) -> Option<Act> {
+/// Leaving.
+fn leaving(paint: &mut Painter, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let panel = Box::new(area.x, area.y, area.w.min(560.0), 116.0);
-    paint.panel(panel, 10.0, ink.warn_soft, 255);
     paint.say_at(
-        panel.x + 20.0,
-        panel.y + 18.0,
-        "MCF is not answering",
+        area.x,
+        area.y,
+        "Close MCF?",
         Weight::Bold,
         size::HEAD,
-        ink.warn,
+        ink.ink,
     );
-    let lines = paint.wrap(why, Weight::Regular, size::SMALL, panel.w - 40.0);
-    let mut y = panel.y + 48.0;
-    for line in lines.iter().take(3) {
-        paint.say_at(
-            panel.x + 20.0,
-            y,
-            line,
-            Weight::Regular,
-            size::SMALL,
-            ink.quiet,
-        );
-        y += 17.0;
-    }
-    None
+    paint.say_at(
+        area.x,
+        area.y + 30.0,
+        "Anything MCF is holding is dropped. Nothing measured is lost.",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let (close, _) = ui::fitted(
+        paint,
+        mouse,
+        (area.x, area.y + 62.0),
+        "Close",
+        Kind::Primary,
+    );
+    close.then_some(Act::Close)
 }

@@ -42,7 +42,9 @@ fn nothing_in_the_menu_leads_nowhere() {
         );
     }
     // A model's own page is reached from the list and belongs to it.
-    assert_eq!(Page::Model(3).section(), Page::Models);
+    // The two screens Host's actions lead to belong to Host.
+    assert_eq!(Page::Adding.section(), Page::Host);
+    assert_eq!(Page::Hosting.section(), Page::Host);
 }
 
 /// A model MCF cannot run says so, and does not also claim to be ready.
@@ -234,10 +236,20 @@ fn a_daemon_that_is_not_there_is_said_in_words() {
 /// (A22, B-412).
 #[test]
 fn every_menu_entry_reaches_something_built() {
+    // The console's six, in the console's order — not a menu invented here.
     let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
-    assert!(named.contains(&"Add a model"), "{named:?}");
-    assert!(named.contains(&"Chat"), "{named:?}");
-    assert!(named.contains(&"Speed tests"), "{named:?}");
+    assert_eq!(
+        named,
+        [
+            "Monitor",
+            "Host",
+            "Diagnostics",
+            "Models",
+            "Settings",
+            "Exit"
+        ],
+        "the window's menu has drifted from the console's"
+    );
     for (page, label) in Page::MENU {
         assert_eq!(page.section(), *page, "{label} is not a section of its own");
     }
@@ -251,14 +263,20 @@ fn every_menu_entry_reaches_something_built() {
 #[test]
 fn typing_is_only_typing_where_something_takes_it() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    for page in [Page::Add, Page::Use] {
+    for page in [Page::Adding, Page::Hosting] {
         desk.page = page;
         assert!(
             desk.takes_typing(),
             "{page:?} has a field and does not take typing"
         );
     }
-    for page in [Page::Models, Page::Model(0), Page::Speed, Page::Computer] {
+    for page in [
+        Page::Monitor,
+        Page::Host,
+        Page::Models,
+        Page::Diagnostics,
+        Page::Settings,
+    ] {
         desk.page = page;
         assert!(
             !desk.takes_typing(),
@@ -275,7 +293,7 @@ fn typing_is_only_typing_where_something_takes_it() {
 #[test]
 fn an_empty_field_asks_for_nothing() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.page = Page::Add;
+    desk.page = Page::Adding;
     desk.typed = "   ".to_owned();
     desk.look_up();
     assert!(

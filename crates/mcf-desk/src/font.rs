@@ -95,7 +95,15 @@ fn repertoire() -> Vec<u32> {
         0x2022, 0x2026, // bullet, ellipsis
         0x2190, 0x2191, 0x2192, 0x2193, // arrows
         0x2713, 0x2717, // check, cross
+        // The furniture of a control: the triangle on a dropdown, and the
+        // markers a list uses. Without these a chevron is simply absent, and
+        // a control that looks like a field but opens like a menu is one
+        // nobody presses.
+        0x25B2, 0x25B4, 0x25B6, 0x25B8, 0x25BC, 0x25BE, 0x25C0, 0x25C4, 0x2022,
+        0x00B7, // bullet, middot
     ]);
+    wanted.sort_unstable();
+    wanted.dedup();
     wanted
 }
 

@@ -82,45 +82,56 @@ pub const ACTIONS: &[Action] = &[
 /// Which screen is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    /// Every model on this computer.
+    /// The machine, live.
+    Monitor,
+    /// Choosing a model, and everything known about it.
+    Host,
+    /// Setting up a measurement.
+    Diagnostics,
+    /// Everything held — the same screen as [`Self::Host`], as the console
+    /// has it, because *what is held* and *what to host* are one list.
     Models,
-    /// One of them, by its position in the list.
-    Model(usize),
-    /// Finding and fetching one that is not here yet.
-    Add,
-    /// Measuring.
-    Speed,
-    /// Asking a model something.
-    Use,
-    /// What this machine can do.
-    Computer,
+    /// How MCF is set up.
+    Settings,
+    /// Leave.
+    Exit,
+    /// Fetching a model that is not here yet. Reached from Host's actions
+    /// rather than the menu, the way the console's screens lead onward.
+    Adding,
+    /// A model, held and answering.
+    Hosting,
 }
 
 impl Page {
     /// The navigation column, in order.
     ///
-    /// Five entries, and each one does what it says. A column entry that led
-    /// nowhere would be advertising what MCF cannot do, and a person who
-    /// clicked it would have no way to know which of the others to trust
-    /// (A19) — so an entry arrives here when the thing behind it works, and
-    /// these five do.
+    /// The console's menu, in the console's order.
+    ///
+    /// Not a menu invented for the window: an operator worked this one out,
+    /// and a second surface that rearranged the same six entries would make
+    /// *where things are* a fact about which surface you happened to open
+    /// (B-072).
     pub const MENU: &'static [(Self, &'static str)] = &[
-        (Self::Models, "Your models"),
-        (Self::Add, "Add a model"),
-        (Self::Use, "Chat"),
-        (Self::Speed, "Speed tests"),
-        (Self::Computer, "Your computer"),
+        (Self::Monitor, "Monitor"),
+        (Self::Host, "Host"),
+        (Self::Diagnostics, "Diagnostics"),
+        (Self::Models, "Models"),
+        (Self::Settings, "Settings"),
+        (Self::Exit, "Exit"),
     ];
 
     /// Which entry in the column should be lit while this page shows.
     #[must_use]
     pub fn section(self) -> Self {
         match self {
-            Self::Model(_) | Self::Models => Self::Models,
-            Self::Add => Self::Add,
-            Self::Use => Self::Use,
-            Self::Speed => Self::Speed,
-            Self::Computer => Self::Computer,
+            Self::Monitor => Self::Monitor,
+            // The two screens Host's actions lead to belong to Host, so the
+            // menu still shows where you came from.
+            Self::Host | Self::Adding | Self::Hosting => Self::Host,
+            Self::Diagnostics => Self::Diagnostics,
+            Self::Models => Self::Models,
+            Self::Settings => Self::Settings,
+            Self::Exit => Self::Exit,
         }
     }
 }
@@ -143,6 +154,10 @@ pub struct Model {
     pub trained: Option<u64>,
     /// The longest conversation it can hold on this machine.
     pub context: Option<u64>,
+    /// Bytes of cache one token of context costs — what the largest window is
+    /// arithmetic over, and a figure the console shows because it is what
+    /// makes the answer checkable rather than a claim (A6).
+    pub cache_per_token: Option<u64>,
     /// The engine MCF would use.
     pub engine: Option<String>,
     /// The device it would run on.
@@ -159,6 +174,60 @@ pub struct Model {
     pub fastest: Option<f64>,
     /// Milliseconds a token at the longest.
     pub slowest: Option<f64>,
+}
+
+/// One measurement that can be asked for, as the console lists them.
+#[derive(Debug, Clone)]
+pub struct Test {
+    /// What it measures, in words.
+    pub name: &'static str,
+    /// Which devices it needs.
+    pub devices: &'static str,
+    /// Roughly how long, in seconds, at this machine's speed.
+    pub seconds: u64,
+    /// Whether it is selected.
+    pub chosen: bool,
+}
+
+/// The tests MCF knows how to run.
+///
+/// The console's list, because it is the same set of measurements and a second
+/// surface offering a different five would make *what MCF can measure* a fact
+/// about which surface you opened.
+#[must_use]
+pub fn tests() -> Vec<Test> {
+    vec![
+        Test {
+            name: "Generation speed against depth",
+            devices: "both",
+            seconds: 180,
+            chosen: true,
+        },
+        Test {
+            name: "Cold start cost",
+            devices: "both",
+            seconds: 25,
+            chosen: true,
+        },
+        Test {
+            name: "Memory ceiling — largest context",
+            devices: "both",
+            seconds: 120,
+            chosen: false,
+        },
+        Test {
+            name: "CPU and GPU agree on the output",
+            devices: "needs both",
+            seconds: 90,
+            chosen: false,
+        },
+        Test {
+            name: "Prompt reading speed",
+            devices: "both",
+            seconds: 45,
+            chosen: false,
+        },
+    ]
 }
 
 impl Model {
@@ -210,6 +279,39 @@ impl Model {
             || words::UNMEASURED.to_owned(),
             |size| format!("Uses {size}"),
         )
+    }
+
+    /// What was measured at the shallowest depth, or that nothing was.
+    #[must_use]
+    pub fn speed_at_512(&self) -> String {
+        self.fastest.map_or_else(
+            || crate::view::UNKNOWN.to_owned(),
+            |ms| format!("{ms:.2} ms/token"),
+        )
+    }
+
+    /// What was measured at the largest window this machine allows.
+    #[must_use]
+    pub fn speed_at_window(&self) -> String {
+        self.slowest.map_or_else(
+            || crate::view::UNKNOWN.to_owned(),
+            |ms| format!("{ms:.2} ms/token"),
+        )
+    }
+
+    /// How long it takes to become ready.
+    #[must_use]
+    pub fn cold_start(&self) -> String {
+        self.wakes.map_or_else(
+            || crate::view::UNKNOWN.to_owned(),
+            |seconds| format!("{seconds:.1} s"),
+        )
+    }
+
+    /// Whether anything has been measured about it.
+    #[must_use]
+    pub fn measured(&self) -> bool {
+        self.fastest.is_some() || self.slowest.is_some() || self.wakes.is_some()
     }
 
     /// Everything the screen decided not to lead with.
@@ -312,6 +414,7 @@ fn model_from(held: &Value) -> Model {
         engine: known.then(|| resolved_text("engine")).flatten(),
         device: known.then(|| resolved_text("device")).flatten(),
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
+        cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
         // Nothing below has been measured yet by anything the daemon answers,
         // and an absent measurement is left absent (A7). When the diagnostic
@@ -357,13 +460,17 @@ pub enum Act {
         /// The file within it.
         file: String,
     },
-    /// Time a model.
+    /// Time the chosen model.
     Measure {
-        /// Which, by position in the list.
-        at: usize,
         /// The deepest context to sample.
         deepest: u64,
     },
+    /// Move the context window on to the next power of two, wrapping.
+    NextWindow,
+    /// Turn one test on or off.
+    Toggle(usize),
+    /// Close the window.
+    Close,
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -438,6 +545,14 @@ pub struct Desk {
     pub doing: Doing,
     /// What a model has said so far, this turn.
     pub said: String,
+    /// The tests offered on the diagnostics screen.
+    pub tests: Vec<Test>,
+    /// The context window a measurement is set up for.
+    ///
+    /// Choosing it implies every power of two below it, which is why the
+    /// depths are stated under it rather than offered as a second set of
+    /// choices somebody could contradict the first with.
+    pub window: u64,
     sampler: mcf_tui::machine::Sampler,
 }
 
@@ -456,6 +571,8 @@ impl Desk {
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
+            tests: tests(),
+            window: 8192,
             sampler: mcf_tui::machine::Sampler::new(),
         }
     }
@@ -463,14 +580,14 @@ impl Desk {
     /// Whether the screen showing has a field somebody could be typing into.
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        matches!(self.page, Page::Add | Page::Use)
+        matches!(self.page, Page::Adding | Page::Hosting)
     }
 
     /// What pressing Return means on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
-            Page::Add => self.look_up(),
-            Page::Use => {
+            Page::Adding => self.look_up(),
+            Page::Hosting => {
                 if let Some(at) = self.chosen {
                     self.ask(at);
                 }
@@ -519,7 +636,7 @@ impl Desk {
             Act::Go(page) => {
                 if page != self.page {
                     self.scroll = 0.0;
-                    if page.section() == Page::Computer {
+                    if page.section() == Page::Monitor {
                         self.sample();
                     }
                     self.page = page;
@@ -527,10 +644,27 @@ impl Desk {
             }
             Act::LookUp => self.look_up(),
             Act::Download { reference, file } => self.download(&reference, &file),
-            Act::Measure { at, deepest } => {
-                self.page = Page::Speed;
-                self.measure(at, deepest);
+            Act::Measure { deepest } => {
+                if let Some(at) = self.chosen {
+                    self.page = Page::Diagnostics;
+                    self.measure(at, deepest);
+                }
             }
+            // Powers of two, wrapping — the console's dropdown, and the
+            // reason it is powers of two is that a context window is asked
+            // for in them.
+            Act::NextWindow => {
+                self.window = match self.window {
+                    held if held >= 65_536 => 1_024,
+                    held => held.saturating_mul(2),
+                };
+            }
+            Act::Toggle(at) => {
+                if let Some(test) = self.tests.get_mut(at) {
+                    test.chosen = !test.chosen;
+                }
+            }
+            Act::Close => {}
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => self.chosen = Some(at),
             Act::Clear => self.typed.clear(),
@@ -643,6 +777,97 @@ impl Desk {
     /// Takes a reading of the machine.
     pub fn sample(&mut self) {
         self.reading = self.sampler.read();
+    }
+
+    /// The word at the right of the menu bar.
+    #[must_use]
+    pub fn state_word(&self) -> String {
+        if self.refusal.is_some() {
+            "not answering".to_owned()
+        } else if self.doing.busy() {
+            "working".to_owned()
+        } else {
+            "MCF".to_owned()
+        }
+    }
+
+    /// The line under the monitor's divider: what MCF is doing, and what that
+    /// means. The console's two states, in the console's words.
+    #[must_use]
+    pub fn state_line(&self) -> (String, String) {
+        if let Some(why) = &self.refusal {
+            return ("NOT UP".to_owned(), why.clone());
+        }
+        match &self.doing {
+            Doing::Nothing => (
+                "IDLE".to_owned(),
+                "nothing is being served — Host holds a model here".to_owned(),
+            ),
+            Doing::Listing(job)
+            | Doing::Downloading(job)
+            | Doing::Measuring(job)
+            | Doing::Answering(job) => (
+                if job.finished {
+                    "IDLE".to_owned()
+                } else {
+                    "BUSY".to_owned()
+                },
+                job.what.clone(),
+            ),
+        }
+    }
+
+    /// The depths a run would sample, as the console states them.
+    #[must_use]
+    pub fn ladder_line(&self) -> String {
+        let mut depths = Vec::new();
+        let mut depth = 512_u64;
+        while depth <= self.window {
+            depths.push(depth.to_string());
+            depth = depth.saturating_mul(2);
+        }
+        depths.join(" · ")
+    }
+
+    /// The window a Quick Run uses: the shallowest rung and one above it, so
+    /// that it is a fall-off rather than a single number, and quick.
+    #[must_use]
+    pub fn quick_depth(&self) -> u64 {
+        1024
+    }
+
+    /// Roughly how long a run takes, as a range.
+    ///
+    /// A range because MCF's own estimates land between 0.58× and 1.42× of
+    /// what runs actually take, and a single number would be a promise it
+    /// cannot keep.
+    #[must_use]
+    pub fn estimate(&self, quick: bool) -> (u64, u64) {
+        let seconds: u64 = if quick {
+            // A quick run is the first test only, and only to 1 024.
+            #[expect(
+                clippy::integer_division,
+                reason = "a sixth of a test, in whole seconds"
+            )]
+            let sixth = self.tests.first().map_or(30, |test| test.seconds / 6);
+            sixth
+        } else {
+            self.tests
+                .iter()
+                .filter(|test| test.chosen)
+                .map(|test| test.seconds)
+                .sum()
+        };
+        #[expect(
+            clippy::integer_division,
+            reason = "a range in whole seconds; the remainder of a second is \
+                      far inside the width of the range itself"
+        )]
+        let bounds = (
+            seconds.saturating_mul(58) / 100,
+            seconds.saturating_mul(142) / 100,
+        );
+        bounds
     }
 
     /// The headline on *Your computer*: what this machine can run.
@@ -806,8 +1031,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         // A second between readings, and only where they are shown — the same
         // rule the console follows, for the same reason: an idle window should
         // not be why a fan is running (B-071).
-        let due =
-            desk.page == Page::Computer && last.elapsed() >= std::time::Duration::from_secs(1);
+        let due = desk.page == Page::Monitor && last.elapsed() >= std::time::Duration::from_secs(1);
         if due {
             desk.sample();
             last = std::time::Instant::now();

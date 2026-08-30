@@ -42,6 +42,7 @@ fn four_models() -> Desk {
             wakes: Some(1.9),
             fastest: Some(6.43),
             slowest: Some(7.66),
+            cache_per_token: Some(114_688),
             refused: None,
         },
         Model {
@@ -100,7 +101,13 @@ fn drawn(desk: &Desk, ink: Ink, name: &str) -> mcf_desk::paper::Paper {
 fn every_screen_draws_something_in_both_themes() {
     let mut desk = four_models();
     for ink in [NIGHT, DAY] {
-        for page in [Page::Models, Page::Model(0), Page::Speed, Page::Computer] {
+        for page in [
+            Page::Monitor,
+            Page::Host,
+            Page::Diagnostics,
+            Page::Models,
+            Page::Settings,
+        ] {
             desk.page = page;
             let paper = drawn(&desk, ink, "scratch");
             if paper.width == 1 {
@@ -115,34 +122,64 @@ fn every_screen_draws_something_in_both_themes() {
     }
 }
 
-/// The three states a model can be in are three different colours.
+/// A model that will not run does not look like one nobody has measured.
 ///
-/// **This was wrong when it was first drawn.** *Will not run* and *not
-/// measured* were both the warning colour, so the two states a person most
-/// needs to tell apart looked the same — a model that cannot run and a model
-/// nobody has timed. Colour is doing the work here, and a test that only read
-/// the words would not have noticed.
+/// **This was wrong when the window first drew it.** Both states were the
+/// warning colour, so the two a person most needs to tell apart — *this
+/// cannot run* and *nobody has timed this* — were the same swatch. The
+/// console's layout says them differently: a refusal is the reason, in the
+/// refusal colour, where the engine would have been; an unmeasured model has
+/// `Unknown` in the quiet one. A test that read only the words would not
+/// notice either, because the words were right both times.
 #[test]
 fn a_refusal_does_not_look_like_anything_else() {
     let mut desk = four_models();
-    desk.page = Page::Models;
+    desk.page = Page::Host;
     for ink in [NIGHT, DAY] {
-        let paper = drawn(&desk, ink, "scratch");
-        if paper.width == 1 {
+        // The second model runs and has never been timed; the third will not
+        // run at all.
+        desk.chosen = Some(1);
+        let unmeasured = drawn(&desk, ink, "scratch");
+        if unmeasured.width == 1 {
             return;
         }
-        // The three tags sit at the top left of each card, in list order.
-        let ready = paper.at(258, 119);
-        let unmeasured = paper.at(258, 259);
-        let refused = paper.at(722, 259);
-        assert_ne!(
-            ready, unmeasured,
-            "ready and unmeasured are the same colour"
+        desk.chosen = Some(2);
+        let refused = drawn(&desk, ink, "scratch");
+
+        // Near the colour, not exactly it: glyphs are antialiased, so most of
+        // a letter's pixels are the ink blended with what is behind them and
+        // only the middle of a stroke lands on the value itself.
+        let counted = |paper: &mcf_desk::paper::Paper, colour: (u8, u8, u8)| {
+            let mut found = 0_usize;
+            for y in 0..paper.height {
+                for x in 0..paper.width {
+                    let Some((red, green, blue)) = paper.at(x, y) else {
+                        continue;
+                    };
+                    let apart = u32::from(red.abs_diff(colour.0))
+                        + u32::from(green.abs_diff(colour.1))
+                        + u32::from(blue.abs_diff(colour.2));
+                    if apart < 40 {
+                        found += 1;
+                    }
+                }
+            }
+            found
+        };
+        // A short sentence at thirteen points is a few hundred pixels of ink
+        // and only its stroke centres reach the colour itself, so the figures
+        // are small — what matters is that one screen has the refusal colour
+        // on it and the other has essentially none.
+        let (on_refused, on_unmeasured) =
+            (counted(&refused, ink.bad), counted(&unmeasured, ink.bad));
+        assert!(
+            on_refused > 8,
+            "a model that will not run is not drawn in the refusal colour: {on_refused} pixels"
         );
-        assert_ne!(ready, refused, "ready and refused are the same colour");
-        assert_ne!(
-            unmeasured, refused,
-            "a model that will not run looks like one nobody has measured"
+        assert!(
+            on_unmeasured * 3 < on_refused,
+            "a model that merely has not been measured is drawn like a refusal: \
+             {on_unmeasured} against {on_refused}"
         );
     }
 }
@@ -207,7 +244,8 @@ fn separation(one: (u8, u8, u8), two: (u8, u8, u8)) -> f32 {
 #[test]
 fn a_model_that_will_not_run_says_so_on_its_own_page() {
     let mut desk = four_models();
-    desk.page = Page::Model(2);
+    desk.page = Page::Host;
+    desk.chosen = Some(2);
     let paper = drawn(&desk, NIGHT, "refused");
     if paper.width == 1 {
         return;
@@ -220,28 +258,38 @@ fn a_model_that_will_not_run_says_so_on_its_own_page() {
     );
 }
 
-/// The window with no daemon behind it draws the refusal, not an empty list.
+/// A daemon that is not answering looks different from one that is.
+///
+/// The console puts what MCF is doing on one line under the monitor's
+/// divider, and *not up* is one of the things it can say there. What must not
+/// happen is the two states drawing identically — a window that looked the
+/// same whether or not MCF was running would be a window nobody could use to
+/// find out (A2).
 #[test]
-fn a_daemon_that_is_not_answering_is_drawn() {
+fn a_daemon_that_is_not_answering_looks_different() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
-    desk.refusal = Some("MCF is not answering on this computer".to_owned());
-    desk.page = Page::Models;
-    let paper = drawn(&desk, NIGHT, "refusal");
-    if paper.width == 1 {
+    desk.page = Page::Monitor;
+    let answering = drawn(&desk, NIGHT, "scratch");
+    if answering.width == 1 {
         return;
     }
-    // The refusal panel is a wash of the warning colour, which nothing else on
-    // an empty screen draws.
-    let mut warned = 0_usize;
-    for y in (140..260).step_by(3) {
-        for x in (240..760).step_by(3) {
-            if paper.at(x, y) == Some(NIGHT.warn_soft) {
-                warned += 1;
+    desk.refusal = Some("MCF is not answering on this computer".to_owned());
+    let silent = drawn(&desk, NIGHT, "refusal");
+
+    let mut differ = 0_usize;
+    for y in 0..silent.height {
+        for x in 0..silent.width {
+            if silent.at(x, y) != answering.at(x, y) {
+                differ += 1;
             }
         }
     }
     assert!(
-        warned > 200,
-        "the refusal panel is not there: {warned} pixels"
+        differ > 300,
+        "a daemon that is answering and one that is not draw the same: {differ} pixels differ"
     );
+    // And the words themselves, which pixels cannot be read for.
+    let (word, said) = desk.state_line();
+    assert_eq!(word, "NOT UP");
+    assert!(said.contains("not answering"), "{said}");
 }
