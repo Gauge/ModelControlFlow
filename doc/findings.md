@@ -154,6 +154,7 @@ forward as one.
 | 124 | [F124 — The whole curve from the file, on seven architectures, with a state-space model as the control that has no curve at all (B-400, F123, A6, A7, A12, A21)](#124-f124-the-whole-curve-from-the-file-on-seven-architectures-with-a-state-space-model-as-the-control-that-has-no-curve-at-all-b-400-f123-a6-a7-a12-a21) |
 | 125 | [F125 — Five ways to state a speed, scored against each other: one probe and the header beats measuring everything, and beats the file alone (B-400, F124, A6, A18, A20)](#125-f125-five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20) |
 | 126 | [F126 — A probe's length is not a free knob: short probes read optimistically, and with that fixed every size to 70B fits five minutes (B-400, F125, A6, A20, D19)](#126-f126-a-probes-length-is-not-a-free-knob-short-probes-read-optimistically-and-with-that-fixed-every-size-to-70b-fits-five-minutes-b-400-f125-a6-a20-d19) |
+| 127 | [F127 — The sampling rules made machine-checkable, and the GPU that cannot be tested because the engine has no backend for it (B-400, F126, A2, A21, B16)](#127-f127-the-sampling-rules-made-machine-checkable-and-the-gpu-that-cannot-be-tested-because-the-engine-has-no-backend-for-it-b-400-f126-a2-a21-b16) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9215,6 +9216,53 @@ Every size to 70B comes inside the budget at 0.8% median or better. At a
 Those accuracy figures are the held-out measurements of
 [F125](#125--f125--five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20),
 not estimates of what the plan might achieve.
+
+## 127 · F127 — The sampling rules made machine-checkable, and the GPU that cannot be tested because the engine has no backend for it (B-400, F126, A2, A21, B16)
+
+**Four rules, set by the operator, enforced rather than described.**
+`lab_rules.py` puts every model on this machine through every device and every
+budget — 576 plans — and fails by rule number. Two defects were found by writing
+them down.
+
+**The planner was breaking rule 2 already.** It appended `context − 256` as a
+final depth so that a windowed model would be probed past its window, which
+produced depths of 7936 and 16128 — sitting in readings this repository
+already holds. The cap is now taken by halving: the deepest sampled depth is
+half the window, which leaves room for the probe's own generated tokens without
+ever leaving the powers of two.
+
+**Nothing had ever asked whether the window fitted in memory.** The ceiling had
+been the model's trained context alone. It is now the smaller of that and what
+the device's free memory holds — weights, cache at that depth, and the engine's
+buffers, with headroom. On this machine Qwen3-8B is capped at 32768 by its
+trained context on the CPU, and the 2.1 GB card cannot hold its weights at all
+and is told so.
+
+**And rule 3 surfaced something no measurement here had.** It asks for CPU and
+GPU both. This machine has an RTX 5080 with 16.3 GB and CUDA 13.1 installed —
+and MCF provisions llama.cpp in a Fedora container carrying neither, with
+`GGML_NATIVE=OFF` and no `GGML_CUDA`. The binary answers `--list-devices` with
+`(none)`.
+
+So **every timing in this repository is a CPU timing**, and the GPU arm cannot
+be run until a CUDA-enabled build is provisioned. That was true before this rule
+existed; what is new is that the plan says so instead of silently reporting the
+CPU as though it were the machine (A21: what the engine can do is not what the
+hardware has).
+
+**The estimate is a range, because it was scored.** Rule 4 wants a time before
+the test starts. The point estimate is unbiased — median ratio 0.96 over 136
+measured probes — but it runs 0.58× at the 5th percentile and 1.42× at the 95th,
+because prefill throughput varies with quantization in a way neither model size
+nor attention geometry predicts. A two-term physical fit, separating the
+per-token matmul from the O(depth²) attention, was no better and worse in the
+tail.
+
+So the quote is a range and **the budget is tested against the slow end**: a
+plan that promised five minutes may not take six. Under a 300-second cap
+Qwen3-8B takes *both ends* at 85–209s rather than *every depth*, whose 259s
+point estimate could reach 447s. The accuracy quoted falls from 0.4% to 0.8%
+along with it, so the cheaper plan cannot borrow the fuller one's precision.
 
 ## Changelog
 

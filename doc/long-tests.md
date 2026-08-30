@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Discipline — the burden a slow test carries, and an audit of every slow test here |
-| **Version** | 1 |
+| **Version** | 2 |
 | **Status** | Living. Verdicts follow measurement; a test's entry changes when something cheaper is measured. |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v17, governed by [rules.md](rules.md) |
 | **Answers** | Raised by the operator: long tests must prove no cheaper route exists |
@@ -73,6 +73,36 @@ because every point in it is a measurement and none is an extrapolation.
 | budget | MCF's own cost against its ceiling | **kept** — needs the exclusive window, which is most of its wall clock |
 | seed set | the published seeds are representative | **kept** — bounded by the seed count |
 
+## The sampling rules
+
+Set by the operator, enforced in `prototypes/falloff/plan.py`, and checked by
+`lab_rules.py` over every model, every device and every budget — 576 plans,
+because a rule stated only in prose drifts the first time the planner is edited
+(B16).
+
+1. **Nothing is sampled above the model's trained context.** A window it was
+   never trained for is not a window a reading may describe.
+2. **Every window and every sampled depth is a power of two.** There is no code
+   path that produces another number: the ladder doubles, and the cap is taken
+   by halving rather than by subtracting headroom. An earlier planner appended
+   `context − 256`, giving depths of 7936 and 16128, and that is gone.
+3. **The window is the highest the machine can afford, decided per device.**
+   The ceiling is the smaller of the trained context and what the device's free
+   memory holds — weights, cache and the engine's own buffers. CPU and GPU are
+   both planned unless the operator excludes one, and a device the *engine*
+   cannot use is reported as untested rather than quietly skipped: this
+   machine's RTX 5080 has 16 GB free and the provisioned llama.cpp has no GPU
+   backend at all, which is a fact about the build and not about the machine.
+4. **The estimate comes before the test and the caller may cap it.** Under a
+   cap the plan degrades to a cheaper shape and the accuracy quoted changes with
+   it, so a shortened test never borrows a full test's precision.
+
+And the general rule behind them: **every diagnostic estimates its own runtime
+from the hardware before it starts.** The estimate is quoted as a range because
+it has been scored — over 136 measured probes it ran between 0.58× and 1.42× of
+the truth — and the budget is tested against the slow end, so a plan that
+promised five minutes cannot take six.
+
 ## What replaced the long path here
 
 The fall-off is attention re-reading the whole KV cache once per generated
@@ -93,6 +123,19 @@ A diagnostic that reaches for (3) without an argument against (1) and (2) is
 not being careful. It is being slow.
 
 ## Changelog
+
+### Version 2 — the operator's sampling rules, and a GPU that cannot be tested
+
+Four rules added and made machine-checkable rather than described. Enforcing
+them found two defects: the planner had been appending `context − 256` as a
+final depth, producing 7936 and 16128 in the readings this repository already
+holds, and nothing had ever asked whether the window fitted in memory rather
+than merely in the model.
+
+The third rule also surfaced something no measurement here had: MCF provisions
+llama.cpp with `GGML_NATIVE=OFF` in a Fedora container carrying no CUDA, so the
+binary reports no devices at all. Every timing in this repository is a CPU
+timing, which was true before and is now said out loud.
 
 ### Version 1 — the ladder that was twenty times longer than it needed to be
 
