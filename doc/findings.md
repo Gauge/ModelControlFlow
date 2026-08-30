@@ -152,6 +152,7 @@ forward as one.
 | 122 | [F122 — The predictor generalised by being made to refuse: two architectures agree to 8%, and every model it cannot describe now says so (B-400, F121, A2, A7, A9, A21)](#122-f122-the-predictor-generalised-by-being-made-to-refuse-two-architectures-agree-to-8-and-every-model-it-cannot-describe-now-says-so-b-400-f121-a2-a7-a9-a21) |
 | 123 | [F123 — Counted rather than inferred: a token reads the whole model and the whole cache, so both halves of the curve are in the file (B-400, F121, F122, A11, A21, D19)](#123-f123-counted-rather-than-inferred-a-token-reads-the-whole-model-and-the-whole-cache-so-both-halves-of-the-curve-are-in-the-file-b-400-f121-f122-a11-a21-d19) |
 | 124 | [F124 — The whole curve from the file, on seven architectures, with a state-space model as the control that has no curve at all (B-400, F123, A6, A7, A12, A21)](#124-f124-the-whole-curve-from-the-file-on-seven-architectures-with-a-state-space-model-as-the-control-that-has-no-curve-at-all-b-400-f123-a6-a7-a12-a21) |
+| 125 | [F125 — Five ways to state a speed, scored against each other: one probe and the header beats measuring everything, and beats the file alone (B-400, F124, A6, A18, A20)](#125-f125-five-ways-to-state-a-speed-scored-against-each-other-one-probe-and-the-header-beats-measuring-everything-and-beats-the-file-alone-b-400-f124-a6-a18-a20) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9087,6 +9088,74 @@ whose weights fit in L3 is re-read from cache, not memory, and an intercept at
 DRAM speed over-predicts it — Llama-160M holds about 100 MB against a 64 MiB L3
 and was out by a factor of two. The model is not wrong there; it is being
 applied where it does not hold, and it now says so instead.
+
+## 125 · F125 — Five ways to state a speed, scored against each other: one probe and the header beats measuring everything, and beats the file alone (B-400, F124, A6, A18, A20)
+
+**The operator asked whether the curve is reliable or the approach needs
+rethinking.** Both, as it turns out: the curve holds up, and it is not the best
+use of it.
+
+**First, the accuracy claim was in-sample.** F124's 3.6% was measured against
+the same readings its constants were fitted to. Holding out one architecture
+entirely and refitting without it:
+
+| | median | 90th | worst |
+|---|---|---|---|
+| in-sample | 3.5% | — | — |
+| **held out** | **4.2%** | 7.9% | 13.7% |
+
+The gap is small, which is the reassuring answer — the model is not memorising
+architectures. But it is the held-out number that a user's unseen model faces,
+and it is the one to quote.
+
+**Then every approach, scored on depths it was not given.** Cost is per model,
+taken from the readings themselves.
+
+| approach | median | 90th | worst | cost | needs |
+|---|---|---|---|---|---|
+| scalar rate | 14.2% | 45.6% | 65.2% | 3s | one generation |
+| predicted | 4.2% | 8.6% | 14.3% | **0s** | the file only |
+| **anchored** | **2.2%** | **5.0%** | 11.8% | **3s** | one probe + header |
+| two point | 0.8% | 2.9% | 4.6% | 11s | two probes |
+| every point | 0.4% | 1.8% | 3.5% | 26s | a probe per depth |
+
+The top row is what MCF does today and what nearly every published
+tokens-per-second figure is. It is wrong by 14% at the median and 65% at worst,
+for the same three seconds that buys 2.2%.
+
+**And past the measured range the ordering changes.** Two probes carry
+measurement noise in their slope, and extrapolation amplifies it; the header's
+slope carries none. Over every extrapolated point:
+
+| | median | 90th | worst |
+|---|---|---|---|
+| two probes | 2.7% | 11.0% | 19.7% |
+| **anchored** | 2.7% | **5.1%** | **11.8%** |
+| predicted | 4.3% | 9.4% | 14.3% |
+
+Same median as two probes, **half the tail, a third of the cost**, and at 8×
+beyond the probe it is 2.5% where two probes are 7.6%.
+
+**It also dissolves F124's declined band.** Weights that fit in L3 are re-read
+from cache, which broke the computed intercept — Llama-160M by a factor of two.
+That failure was only ever in the intercept; a growing cache leaves L3 whatever
+the weights do. Measuring the intercept absorbs the residency without modelling
+it:
+
+| | computed | anchored |
+|---|---|---|
+| weights reach DRAM | 3.5% median, 13.3% worst | **1.5%**, 11.4% |
+| weights near L3 — *was declined* | 1.5%, 9.1% | **1.4%, 3.7%** |
+
+There is no longer a band of models the tool has to refuse.
+
+**What the physics was actually for.** Not the numbers — the anchored method
+takes its intercept from a measurement and beats the fully computed curve. What
+the arithmetic supplies is the *shape*: that cost is a straight line in depth,
+because attention re-reads a cache growing linearly. The synthetic laboratory
+fitted an unknown form and was ~41% wrong past its range with no way to know.
+Knowing it is a line is what lets one probe reach eight times beyond itself.
+The physics bought the shape, and the shape is what extrapolates.
 
 ## Changelog
 
