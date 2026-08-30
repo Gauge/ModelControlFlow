@@ -62,6 +62,15 @@ const DECLARED: &[Spawns] = &[
                program is never something MCF acquired (D39, B-032)",
     },
     Spawns {
+        file: "crates/mcf-cli/src/serve.rs",
+        sites: 1,
+        what: "MCF itself, asked to serve, when a surface finds no daemon listening. The \
+               program started is the one already running — `current_exe` — with one \
+               argument and no file of any kind. A person opening a console expects the \
+               tools to be working, and starting the daemon is MCF's job rather than \
+               something to report to them as their problem (B-408, D39)",
+    },
+    Spawns {
         file: "crates/mcf-tui/src/machine.rs",
         sites: 1,
         what: "the graphics vendor's own reporting tool, asked what the card is doing, so the \

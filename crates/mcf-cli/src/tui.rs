@@ -22,6 +22,15 @@ pub(crate) fn run() -> Response {
         };
     };
 
+    // A person opening this expects the tools to be working. Starting a daemon
+    // is MCF's job, not something to be reported to them as their problem.
+    if let Some(why) = crate::serve::ensure_running(&socket) {
+        return Response {
+            text: format!("mcf: MCF could not start\n  {why}"),
+            served: false,
+        };
+    }
+
     match mcf_tui::run(socket) {
         Ok(()) => Response {
             text: String::new(),

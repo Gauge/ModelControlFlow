@@ -20,7 +20,8 @@
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use mcf_record::json::Value;
@@ -66,6 +67,55 @@ fn places() -> Option<Places> {
 }
 
 /// Starts the daemon and stays there.
+/// Makes sure a daemon is up, starting one where there is not.
+///
+/// **A person opening a window expects the tools to be working.** MCF's
+/// surfaces are clients of a daemon, which is right — but it was the operator
+/// who had to know that, and a console that draws *MCF is not running* at
+/// somebody who has just opened it is a console reporting its own architecture
+/// as their problem.
+///
+/// So a surface asks for a daemon and gets one. If something is already
+/// listening, that is the daemon and nothing is started. If a socket is there
+/// with nothing behind it — a daemon that was killed, which is a state this
+/// machine reached more than once — the stale file is cleared first, because
+/// otherwise the new daemon refuses to bind over it.
+///
+/// Returns what went wrong in words, or nothing where a daemon is now there.
+pub(crate) fn ensure_running(socket: &Path) -> Option<String> {
+    if UnixStream::connect(socket).is_ok() {
+        return None;
+    }
+    // Something is at that path and nothing is behind it.
+    if socket.exists() {
+        let _cleared = std::fs::remove_file(socket);
+    }
+    let Ok(binary) = std::env::current_exe() else {
+        return Some("MCF could not find its own program to start a daemon with".to_owned());
+    };
+    // The same binary, asked to serve. Detached, so closing the window does not
+    // take the daemon with it — a model held resident should outlive the thing
+    // that was looking at it.
+    let started = Command::new(binary)
+        .arg("serve")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    if let Err(error) = started {
+        return Some(format!("a daemon could not be started: {error}"));
+    }
+    // Binding is quick but not instant, and answering before it is ready would
+    // be reporting a failure that has not happened.
+    for _ in 0..100 {
+        if UnixStream::connect(socket).is_ok() {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    Some("a daemon was started and did not begin listening".to_owned())
+}
+
 /// What engines this machine has, in one line a person can read.
 ///
 /// The daemon used to say "no vendored engine yet" whatever was on the disk,

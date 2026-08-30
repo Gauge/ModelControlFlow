@@ -44,6 +44,15 @@ const DECLARED: &[Deletes] = &[
                it acquired (B-367, A27)",
     },
     Deletes {
+        file: "crates/mcf-cli/src/serve.rs",
+        calls: 1,
+        what: "a control socket with nothing behind it, before starting a daemon that would \
+               otherwise refuse to bind over it. A killed daemon leaves the file, and this \
+               machine reached that state more than once. A socket is a name for a running \
+               process rather than a thing anybody stored: it holds no bytes, and the one \
+               removed here has already been shown to answer nothing (B-408, A27)",
+    },
+    Deletes {
         file: "crates/mcf-serve/src/served.rs",
         calls: 2,
         what: "the Unix socket the provisioned server listens on — once before binding, in \
