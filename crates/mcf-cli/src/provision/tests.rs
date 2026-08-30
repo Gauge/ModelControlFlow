@@ -44,15 +44,56 @@ fn the_script_is_the_recipe_and_only_the_recipe() {
         }
         // Portability is part of the recipe: a tuned build is a condition
         // nobody can restate elsewhere.
-        assert!(
-            script.contains("-DGGML_NATIVE=OFF"),
-            "{}: the build must not tune to this machine",
-            component.name
-        );
+        //
+        // Checked by the property rather than by one project's flag. This used
+        // to assert `-DGGML_NATIVE=OFF` on every component, which was llama.cpp
+        // spelled as a rule — and the second component to arrive failed it for
+        // not being llama.cpp rather than for tuning to anything.
+        for flag in component.configure {
+            let tuned = flag.contains("-march=native")
+                || flag.contains("-mtune=native")
+                || flag.to_ascii_uppercase().ends_with("NATIVE=ON");
+            assert!(!tuned, "{}: {flag} tunes to this machine", component.name);
+        }
+        // And where a component HAS such a switch, it is turned off rather
+        // than left to whatever the project defaults to.
+        let has_native_switch = component
+            .configure
+            .iter()
+            .any(|flag| flag.to_ascii_uppercase().contains("NATIVE"));
+        if has_native_switch {
+            assert!(
+                component
+                    .configure
+                    .iter()
+                    .any(|flag| flag.to_ascii_uppercase().ends_with("NATIVE=OFF")),
+                "{}: a native switch that is not off",
+                component.name
+            );
+        }
         // And self-containment: a shared build carries the container's own
         // library path, which exists nowhere on the host (F31).
+        //
+        // By the property again, not by one project's spelling: CMake calls it
+        // BUILD_SHARED_LIBS, SDL calls it SDL_SHARED and SDL_STATIC, and a
+        // check that knows only the first refuses the second for the wrong
+        // reason.
+        let asks_for_shared = component
+            .configure
+            .iter()
+            .any(|flag| flag.to_ascii_uppercase().ends_with("SHARED=ON"));
         assert!(
-            script.contains("-DBUILD_SHARED_LIBS=OFF"),
+            !asks_for_shared,
+            "{}: a shared build carries the container's library path, which exists nowhere \
+             on the host (F31)",
+            component.name
+        );
+        let self_contained = component.configure.iter().any(|flag| {
+            let flag = flag.to_ascii_uppercase();
+            flag.ends_with("SHARED_LIBS=OFF") || flag.ends_with("SHARED=OFF")
+        });
+        assert!(
+            self_contained,
             "{}: the artifact must run where it lands, without the container",
             component.name
         );

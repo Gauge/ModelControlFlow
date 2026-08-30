@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — what MCF ships, what it declined to ship, and why |
-| **Version** | 5 |
+| **Version** | 6 |
 | **Status** | Living |
 | **Authority** | Governed by [rules.md](rules.md); the licence is D28, the tiers are D23, the stand-in is D31 |
 | **Registers to** | B-192, B-320, B-321, B-330 in [backlog.md](backlog.md) |
 
-**One component is vendored: the TLS stack MCF needs to reach a hub.** Nothing
-else. This file existed before it was admitted, because B-330's condition is
+**Two components are vendored: the TLS stack MCF needs to reach a hub, and the
+window its desktop application draws in.** Nothing else. This file existed before it was admitted, because B-330's condition is
 that *no component ships without a recorded compatibility finding* — a register
 written after the fact is a register that describes what happened rather than
 one that gated it.
@@ -152,6 +152,68 @@ what MCF writes itself: a stand-in engine, so that coverage is true and the
 vendored engine has something to be checked against, and B65 settles that a
 stand-in can never report a speed.
 
+### SDL3 — a window, and nothing that draws in it
+
+**What it is for.** §XI's window needs three things from a library: somewhere to
+put pixels, keyboard and mouse events, and a way to draw. It does not need
+widgets. The terminal console (B-401, B-404) already carries MCF's own panels,
+columns, tables and clipping, written and tested, so the desktop application is
+the same layout at a different scale — and admitting a widget toolkit would be
+admitting a second implementation of something that exists.
+
+**Nor a font.** SDL3 carries an 8×8 bitmap font and `SDL_RenderDebugText`, so
+text costs no second component. That single fact decided the choice: every
+alternative needed FreeType behind it, which is a tree rather than a library.
+
+| | |
+|---|---|
+| **Declares** | Zlib |
+| **Pinned** | `release-3.4.14`, commit `147a8ee32dbf9ac02f3794964490687b6bbda1bc` |
+| **Verified** | The tree at that commit, and then the artifact built from it |
+| **Verdict** | **Compatible.** Everything compiled in is permissive |
+| **Tier** | Vendored, built by `mcf provision SDL3` |
+
+**The tree is not all zlib, and that is why a declaration is not a
+verification.** 1,083 of 1,370 C and header files carry SDL's own zlib notice.
+The rest are other people's:
+
+| In the tree | Terms | In MCF's artifact? |
+|---|---|---|
+| SDL's own source | Zlib | Yes — the bulk of it |
+| `src/libm` | SunPro, permissive with notice retained | Yes — 25 objects |
+| `src/video/yuv2rgb` | BSD-3-Clause | Yes — 3 objects |
+| `src/hidapi` (the HIDAPI library) | GPL-3.0 **or** BSD-style **or** original, at the user's choice | **No** |
+| `src/video/khronos/vulkan` | Apache-2.0 | **No** |
+| `src/video/openvr` | BSD-3-Clause (Valve) | **No** |
+| `test/` | Public domain | **No** |
+
+**How the last four were kept out, and how that was checked.** The provisioned
+build sets `SDL_HIDAPI=OFF`, `SDL_VULKAN=OFF`, `SDL_RENDER_VULKAN=OFF`,
+`SDL_OPENVR=OFF` and `SDL_TESTS=OFF` — the list is in `provision.rs` beside the
+reason. Switching a subsystem off is a *declaration* that it is gone; the
+artifact was then read:
+
+- Six Vulkan objects compile, each **960 bytes with no defined symbols** — empty
+  stubs. `nm` finds **no Vulkan entry point** in `libSDL3.a`.
+- One hidapi object compiles and does carry code, and it is **SDL's own file**:
+  `src/hidapi/SDL_hidapi.c` opens with SDL's zlib notice. `nm` finds 31
+  `SDL_hid_*` symbols and **zero bare `hid_*`**, which is HIDAPI's own naming.
+  The tri-licensed library is not there.
+- OpenVR and the tests compile nothing at all.
+
+**What this changes about the verdict.** Assessed at the level of the tree, SDL3
+is compatible with GPL-3.0-only *because MCF is GPL-3.0* — Apache-2.0 and
+HIDAPI's GPL-3.0 option are both incompatible with GPL-2.0. Assessed at the level
+of the artifact, neither is present, and what ships is Zlib, SunPro and
+BSD-3-Clause: permissive throughout, and compatible with far more than MCF
+needs. The narrower answer is the true one, and it was only available by
+building the thing and reading it.
+
+**What it costs the machine.** The build needs X11 and Wayland development
+headers — thirteen packages, named in `provision.rs` and installed inside the
+container, not on the operator's machine. What is *linked* is neither: SDL loads
+a windowing system at run time, so one artifact runs under either.
+
 ## 2b · Data, not code
 
 One component in the tree is neither a crate nor a library: a pair of **tables**
@@ -249,6 +311,26 @@ is a check of the tree that is actually vendored, at the revision that is
 actually pinned, and it is what turns a row in §4 into a row in §2.
 
 ## Changelog
+
+### Version 6 — the second admission, and why the artifact is the thing to verify
+
+SDL3 admitted for §XI's window. It is the only thing vendored for it: the
+terminal console already carries MCF's own panels, tables and columns, so no
+widget toolkit was needed, and SDL's built-in 8×8 font meant no font library
+either. That second fact decided the choice — every alternative had FreeType
+behind it, which is a tree rather than a library.
+
+The finding is the first one where **verifying the tree and verifying the
+artifact gave different answers**. SDL3's tree holds Apache-2.0 (a Khronos
+header) and a tri-licensed HIDAPI with GPL-3.0 among its options, so at tree
+level it is compatible only because MCF is GPL-3.0 rather than GPL-2.0. Built
+with the subsystems MCF does not use switched off, neither is present: the
+Vulkan objects are 960-byte stubs with no defined symbols, and the one hidapi
+object is SDL's own zlib-licensed file, with 31 `SDL_hid_*` symbols and no bare
+`hid_*` at all. What ships is Zlib, SunPro and BSD-3-Clause.
+
+Switching a subsystem off is a declaration. Reading `nm` over the archive is the
+verification, and §1 asks for the second.
 
 ### Version 5 — two tables that are data rather than code
 

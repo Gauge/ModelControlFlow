@@ -189,6 +189,74 @@ pub(crate) const COMPONENTS: &[Component] = &[
             "llama-server",
         ],
     },
+    Component {
+        name: "SDL3",
+        role: "a window, keyboard and mouse events, and a 2D renderer for the desktop \
+               application (B-405). It is the ONLY thing vendored for it: MCF draws every \
+               panel, table and button itself, with the layout the terminal console already \
+               uses, so no widget toolkit is admitted and no font library is needed — SDL \
+               carries an 8x8 font of its own",
+        image: "registry.fedoraproject.org/fedora:44",
+        image_digest: "sha256:5a4a491c33973b8173e6134d6f00e77f27cebef581c9b34420b2b6183a6398df",
+        source: "https://github.com/libsdl-org/SDL.git",
+        // release-3.4.14.
+        commit: "147a8ee32dbf9ac02f3794964490687b6bbda1bc",
+        packages: &[
+            "gcc",
+            "cmake",
+            "git",
+            "make",
+            // The windowing systems SDL talks to. Loaded at runtime rather than
+            // linked, so the built library runs on a machine with either.
+            "libX11-devel",
+            "libXext-devel",
+            "libXrandr-devel",
+            "libXcursor-devel",
+            "libXfixes-devel",
+            "libXi-devel",
+            "libXScrnSaver-devel",
+            "libXtst-devel",
+            "libxkbcommon-devel",
+            "wayland-devel",
+            "wayland-protocols-devel",
+            "mesa-libGL-devel",
+            "mesa-libEGL-devel",
+        ],
+        packaging: Packaging::Dnf,
+        configure: &[
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DSDL_SHARED=OFF",
+            // Static, for the same reason every other provisioned artifact is:
+            // what is provisioned must run where it lands (F31).
+            "-DSDL_STATIC=ON",
+            // Everything below is off because MCF does not use it — and because
+            // each one is a part of the tree that is NOT zlib. Switching them
+            // off is not tidiness: it is what makes the shipped tree almost
+            // entirely one licence, and the finding in vendored.md rests on
+            // this exact list.
+            //
+            //   HIDAPI   tri-licensed, one option being GPL-3.0
+            //   VULKAN   pulls a Khronos header under Apache-2.0
+            //   OPENVR   Valve's, BSD-3-Clause
+            //   TESTS    public domain, and not shipped anyway
+            "-DSDL_HIDAPI=OFF",
+            "-DSDL_HIDAPI_JOYSTICK=OFF",
+            "-DSDL_VULKAN=OFF",
+            "-DSDL_RENDER_VULKAN=OFF",
+            "-DSDL_OPENVR=OFF",
+            "-DSDL_TESTS=OFF",
+            "-DSDL_EXAMPLES=OFF",
+            // Subsystems a measuring instrument has no use for. Less code is
+            // less to verify and less to go wrong.
+            "-DSDL_AUDIO=OFF",
+            "-DSDL_CAMERA=OFF",
+            "-DSDL_HAPTIC=OFF",
+            "-DSDL_JOYSTICK=OFF",
+            "-DSDL_SENSOR=OFF",
+            "-DSDL_POWER=OFF",
+        ],
+        targets: &["SDL3-static"],
+    },
 ];
 
 /// Where a component lands when the operator does not say.
