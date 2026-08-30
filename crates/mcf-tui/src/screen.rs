@@ -147,6 +147,14 @@ impl Screen {
         }
     }
 
+    /// What is at a position, for a caller that must not paint over it.
+    #[must_use]
+    pub fn at(&self, column: usize, row: usize) -> char {
+        self.cells
+            .get(row * self.width + column)
+            .map_or(' ', |cell| cell.what)
+    }
+
     /// One row as plain text, with no escape sequences in it.
     ///
     /// What the operator would read if the colours were taken away. Tests

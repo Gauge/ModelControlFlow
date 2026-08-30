@@ -62,6 +62,14 @@ const DECLARED: &[Spawns] = &[
                program is never something MCF acquired (D39, B-032)",
     },
     Spawns {
+        file: "crates/mcf-tui/src/machine.rs",
+        sites: 1,
+        what: "the graphics vendor's own reporting tool, asked what the card is doing, so the \
+               console can draw a load and a temperature. It is given a query and a format and \
+               no file at all; it is a program the operator's system already has, never \
+               anything MCF acquired (B-025, §6.4)",
+    },
+    Spawns {
         file: "crates/mcf-serve/src/engines.rs",
         sites: 2,
         what: "a provisioned engine asked what devices it can use, and nothing else. The \

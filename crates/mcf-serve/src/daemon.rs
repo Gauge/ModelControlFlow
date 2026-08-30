@@ -66,6 +66,33 @@ pub struct Places {
     pub models: PathBuf,
 }
 
+/// A model's header, from a bounded read of the front of the file.
+///
+/// **Never the whole file.** `gguf::read` reads every byte, which is right when
+/// the weights are wanted and catastrophic when only the header is: this
+/// machine holds 21 GB of models, and answering *what is held* by reading all
+/// of them made the daemon appear to hang. The directory sits at the front, so
+/// a few mebibytes answers every question this needs — and where a header is
+/// unusually large the read grows once rather than giving up.
+fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
+    use std::io::Read as _;
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [4_u64 << 20, 64 << 20] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .ok()?;
+        if let Ok(model) = mcf_standin::gguf::parse(&prefix) {
+            return Some(model);
+        }
+        if take >= held {
+            return None;
+        }
+    }
+    None
+}
+
 /// Memory free for a new process, or `None` where the platform will not say.
 ///
 /// Available rather than total: what matters is what a model could take now,
@@ -289,6 +316,77 @@ impl Daemon {
                 })
                 .collect(),
         )
+    }
+
+    /// What MCF worked out about running one model: its shape, and which
+    /// engine and device would take it.
+    ///
+    /// **Answered here rather than by each surface.** A console that opened the
+    /// model store itself would be a surface reaching past the wire, and two
+    /// surfaces reading the same file could disagree about it. The daemon holds
+    /// the models and the engines, so the daemon is where the question is
+    /// answered — once, the same way, for everybody (A22).
+    fn runs(&self, path: &std::path::Path, bytes: u64) -> Value {
+        let Some(file) = header_of(path) else {
+            return Value::map([
+                ("known", Value::Bool(false)),
+                ("why", Value::text("MCF could not read this file's header")),
+            ]);
+        };
+        let architecture = file.architecture().map(str::to_owned);
+        let trained = architecture.as_ref().and_then(|held| {
+            file.get(&format!("{held}.context_length"))
+                .and_then(mcf_standin::gguf::Value::as_integer)
+                .and_then(|value| u64::try_from(value).ok())
+        });
+        let cache = crate::engines::cache_bytes_per_token(&file);
+        let shape = |value: Option<u64>| {
+            value.map_or(Value::Null, |held| {
+                Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+            })
+        };
+        let resolved = match trained {
+            Some(trained) => crate::engines::resolve(&self.engines, bytes, cache, trained)
+                .map_or_else(
+                    |refused| {
+                        Value::map([
+                            ("known", Value::Bool(false)),
+                            ("why", Value::text(refused.says())),
+                        ])
+                    },
+                    |choice| {
+                        Value::map([
+                            ("known", Value::Bool(true)),
+                            ("engine", Value::text(choice.engine)),
+                            ("device", Value::text(choice.device.name)),
+                            (
+                                "device_kind",
+                                Value::text(match choice.device.kind {
+                                    crate::engines::Kind::Cpu => "cpu",
+                                    crate::engines::Kind::Gpu => "gpu",
+                                }),
+                            ),
+                            ("context", shape(Some(choice.context))),
+                        ])
+                    },
+                ),
+            None => Value::map([
+                ("known", Value::Bool(false)),
+                (
+                    "why",
+                    Value::text(crate::engines::Refused::HeaderIncomplete.says()),
+                ),
+            ]),
+        };
+        Value::map([
+            (
+                "architecture",
+                architecture.map_or(Value::Null, Value::text),
+            ),
+            ("trained_context", shape(trained)),
+            ("cache_bytes_per_token", shape(cache)),
+            ("resolved", resolved),
+        ])
     }
 
     /// What this daemon cannot do, in words a person can act on.
@@ -715,6 +813,7 @@ impl Daemon {
                                             }
                                         },
                                     ),
+                                    ("runs", self.runs(&held.path, held.bytes)),
                                 ])
                             })
                             .collect(),

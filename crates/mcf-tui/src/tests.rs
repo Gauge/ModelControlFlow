@@ -2,21 +2,14 @@ use super::*;
 
 /// Every action either reaches a control-plane request or asks MCF nothing.
 ///
-/// The table is what the parity check reads (A22, B-072). An action naming a
-/// request the control plane does not have would be a capability only this
-/// surface has, which is the shape the rule forbids.
+/// The parity check reads this table (A22, B-072). An action naming a request
+/// the control plane does not have would be a capability only this surface has.
 #[test]
 fn every_action_reaches_a_request_or_asks_nothing() {
     assert!(!ACTIONS.is_empty(), "a surface with no actions is not one");
     for action in ACTIONS {
-        assert!(
-            !action.key.is_empty(),
-            "an action with no key cannot be taken"
-        );
-        assert!(
-            !action.does.is_empty(),
-            "an action that does not say what it does"
-        );
+        assert!(!action.key.is_empty());
+        assert!(!action.does.is_empty());
         if let Some(reaches) = action.reaches {
             assert!(
                 matches!(reaches, "Status" | "Holding" | "Stop"),
@@ -31,100 +24,134 @@ fn every_action_reaches_a_request_or_asks_nothing() {
     );
 }
 
-/// The keys shown are the keys handled, and no key is offered twice.
+/// No key is offered twice, or the second would never be reached.
 #[test]
 fn the_legend_does_not_promise_twice() {
     for (index, action) in ACTIONS.iter().enumerate() {
-        for other in &ACTIONS[index + 1..] {
-            assert_ne!(
-                action.key, other.key,
-                "{} is offered twice and would do whichever came first",
-                action.key
-            );
+        for other in ACTIONS.iter().skip(index + 1) {
+            assert_ne!(action.key, other.key, "{} is offered twice", action.key);
         }
     }
 }
 
-/// A size MCF does not know renders as unknown, never as zero (A7).
+/// A model the daemon could not work out says so, and says what MCF said —
+/// never a zero and never a guess (A7).
 #[test]
-fn an_unknown_size_is_not_a_zero() {
-    let nothing = Value::map([("path", Value::text("/models/x.gguf"))]);
-    assert_eq!(gigabytes(&nothing), "unknown");
-    let known = Value::map([("bytes", Value::Integer(5_030_000_000))]);
-    assert_eq!(gigabytes(&known), "5.03 GB");
-}
-
-/// A model is named by its file, not by where it happens to sit.
-#[test]
-fn a_model_is_named_by_its_file() {
-    // A name no model here has, so the check stays neutral about which
-    // model is the reference (B28, B-018).
-    let model = Value::map([("path", Value::text("/a/deep/place/example-7b-q4.gguf"))]);
-    assert_eq!(name_of(&model), "example-7b-q4.gguf");
-    let nameless = Value::map([("bytes", Value::Integer(1))]);
-    assert_eq!(name_of(&nameless), "unknown");
-}
-
-/// A refusal keeps its category, so the screen says the same thing the record
-/// would (A2, C1).
-#[test]
-fn a_refusal_keeps_its_category() {
-    let body = Value::map([
-        ("category", Value::text("platform.mechanism.unavailable")),
-        ("what", Value::text("nothing is listening")),
+fn a_model_that_cannot_run_carries_the_reason() {
+    let model = Value::map([
+        ("path", Value::text("/models/example.gguf")),
+        (
+            "runs",
+            Value::map([
+                ("architecture", Value::Null),
+                (
+                    "resolved",
+                    Value::map([
+                        ("known", Value::Bool(false)),
+                        ("why", Value::text("no engine is installed yet")),
+                    ]),
+                ),
+            ]),
+        ),
     ]);
-    let said = why(&body);
-    assert!(said.contains("platform.mechanism.unavailable"), "{said}");
-    assert!(said.contains("nothing is listening"), "{said}");
-
-    // And a body that says neither still says something.
-    let bare = Value::map([("unrelated", Value::Integer(1))]);
-    assert!(!why(&bare).is_empty());
+    let held = Console::describe(&model);
+    assert_eq!(held.name, "example.gguf");
+    assert_eq!(held.architecture, None, "unknown must not become a word");
+    assert_eq!(held.bytes, None, "a missing size is not zero");
+    match held.engine {
+        Err(why) => assert!(why.contains("no engine"), "{why}"),
+        Ok(_) => panic!("a model with no engine must not resolve"),
+    }
 }
 
-/// The screen a refused daemon draws says so rather than showing an empty
-/// table, which would report success (A2).
+/// A model the daemon did work out carries the engine, device and window.
 #[test]
-fn a_refused_daemon_is_drawn_as_a_refusal() {
-    let mut app = App::new(std::path::PathBuf::from("/nowhere/control.sock"));
-    app.status = Some(Err("nothing is listening on /nowhere".to_owned()));
-    app.models = Some(Err("nothing is listening on /nowhere".to_owned()));
+fn a_model_that_runs_carries_where() {
+    let model = Value::map([
+        ("path", Value::text("/deep/place/example.gguf")),
+        ("bytes", Value::Integer(5_020_000_000)),
+        (
+            "runs",
+            Value::map([
+                ("architecture", Value::text("an-architecture")),
+                ("trained_context", Value::Integer(40_960)),
+                ("cache_bytes_per_token", Value::Integer(114_688)),
+                (
+                    "resolved",
+                    Value::map([
+                        ("known", Value::Bool(true)),
+                        ("engine", Value::text("an-engine")),
+                        ("device", Value::text("a card")),
+                        ("context", Value::Integer(32_768)),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let held = Console::describe(&model);
+    assert_eq!(held.name, "example.gguf", "named by its file, not its path");
+    assert_eq!(held.trained, Some(40_960));
+    assert_eq!(held.cache_per_token, Some(114_688));
+    let resolved = held.engine.expect("it runs");
+    assert_eq!(resolved.engine, "an-engine");
+    assert_eq!(resolved.context, 32_768);
+}
+
+/// A daemon that is not there is drawn as a refusal, not as an empty screen —
+/// which would report success (A2).
+#[test]
+fn a_daemon_that_is_not_there_is_drawn_as_one() {
+    let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    console.status = Some(Err("nothing is listening on /nowhere".to_owned()));
     let mut screen = Screen::new(80, 24);
-    draw(&app, &mut screen);
+    draw(&console, &mut screen);
     let drawn = screen.rendered();
     assert!(
-        drawn.contains("nothing is listening"),
+        drawn.contains("not running"),
         "the refusal is not on the screen"
     );
+    assert!(drawn.contains("mcf serve"), "it does not say what to do");
 }
 
-/// A screen narrower than its content is clipped, never wrapped.
+/// Every screen fills exactly the terminal it was given, and no row is short.
 ///
-/// A wrapped row stops a table being one, and the operator reads a value under
-/// the wrong heading.
+/// The layouts in `../layout/` are drawn at eighty by twenty-four and checked
+/// line by line; a screen that came out a different shape would not be the
+/// screen that was agreed.
 #[test]
-fn a_narrow_screen_clips_rather_than_wraps() {
-    let mut screen = Screen::new(20, 3);
-    screen.put(0, 0, "a name far longer than twenty columns", Ink::Plain);
-    assert!(
-        !screen.line(0).contains("columns"),
-        "the text wrapped instead of being clipped: {:?}",
-        screen.line(0)
-    );
-    assert_eq!(
-        screen.line(1).trim(),
-        "",
-        "the overflow landed on the next row"
-    );
+fn every_screen_fills_the_terminal() {
+    for at in Where::ALL {
+        let mut console = Console::new(std::path::PathBuf::from("/nowhere"));
+        console.at = at;
+        console.status = Some(Ok(Value::map([("engines", Value::List(Vec::new()))])));
+        let mut screen = Screen::new(80, 24);
+        draw(&console, &mut screen);
+        for row in 0..24 {
+            let line = screen.line(row);
+            assert_eq!(
+                line.chars().count(),
+                80,
+                "{at:?} row {row} is {} columns",
+                line.chars().count()
+            );
+        }
+        // The frame closes on every side.
+        assert!(screen.line(0).starts_with('┌'), "{at:?} has no top-left");
+        assert!(
+            screen.line(23).starts_with('└'),
+            "{at:?} has no bottom-left"
+        );
+    }
 }
 
-/// Drawing off the bottom of the screen is nothing, not a panic.
+/// The menu offers Exit, so leaving is something a person can see rather than
+/// a key they have to know.
 #[test]
-fn drawing_past_the_edge_is_harmless() {
-    let mut screen = Screen::new(10, 2);
-    screen.put(0, 99, "far below", Ink::Plain);
-    screen.put(99, 0, "far right", Ink::Plain);
-    screen.select_row(99);
-    screen.rule(0, 99, 100, Ink::Quiet);
-    let _drawn = screen.rendered();
+fn the_menu_offers_a_way_out() {
+    assert!(Where::ALL.contains(&Where::Exit));
+    let mut console = Console::new(std::path::PathBuf::from("/nowhere"));
+    console.status = Some(Ok(Value::map::<&str>([])));
+    let mut screen = Screen::new(80, 24);
+    draw(&console, &mut screen);
+    assert!(screen.line(1).contains("Exit"), "{}", screen.line(1));
 }

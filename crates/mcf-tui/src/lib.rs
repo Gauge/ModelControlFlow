@@ -20,7 +20,9 @@
 //! screen that reports success (A2).
 
 pub mod keys;
+pub mod machine;
 pub mod screen;
+pub mod screens;
 pub mod terminal;
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -32,16 +34,17 @@ use mcf_serve::control::{Answer, Request};
 
 use keys::Key;
 use screen::{Ink, Screen};
+use screens::Where;
+use screens::host::{Held, Resolved};
 
 /// One thing the operator can do, and the control-plane request it reaches.
 ///
-/// The `reaches` field is why this table exists. An action reaching nothing
-/// would be a capability this surface has and the command line does not, which
-/// is the shape A22 forbids, and the parity check reads this rather than a list
-/// somebody maintained beside it.
+/// An action reaching nothing would be a capability this surface has and the
+/// command line does not, which is the shape A22 forbids. The parity check
+/// reads this table rather than a list somebody maintained beside it.
 #[derive(Debug, Clone, Copy)]
 pub struct Action {
-    /// The key, as it is shown to the operator.
+    /// The key, as it is shown.
     pub key: &'static str,
     /// What it does, in the words on screen.
     pub does: &'static str,
@@ -53,24 +56,29 @@ pub struct Action {
 /// Every action, and there are no others.
 pub const ACTIONS: &[Action] = &[
     Action {
+        key: "←→",
+        does: "move along the menu",
+        reaches: None,
+    },
+    Action {
+        key: "⏎",
+        does: "open",
+        reaches: Some("Holding"),
+    },
+    Action {
+        key: "↑↓",
+        does: "choose",
+        reaches: None,
+    },
+    Action {
         key: "r",
         does: "refresh",
         reaches: Some("Status"),
     },
     Action {
-        key: "m",
-        does: "models",
-        reaches: Some("Holding"),
-    },
-    Action {
         key: "S",
         does: "stop the daemon",
         reaches: Some("Stop"),
-    },
-    Action {
-        key: "↑↓",
-        does: "move",
-        reaches: None,
     },
     Action {
         key: "q",
@@ -79,14 +87,26 @@ pub const ACTIONS: &[Action] = &[
     },
 ];
 
-/// What MCF last said, and what the operator is looking at.
+/// What MCF last said, and where the operator is looking.
 #[derive(Debug)]
-struct App {
+struct Console {
     socket: std::path::PathBuf,
+    /// Which menu item the cursor is on.
+    cursor: usize,
+    /// Which screen is open.
+    at: Where,
+    /// Row within whatever list the screen shows.
+    row: usize,
+    /// Which button, on a screen that has them.
+    button: usize,
+    /// Whether the cursor is in the buttons rather than the list.
+    on_buttons: bool,
     status: Option<Result<Value, String>>,
-    models: Option<Result<Vec<Value>, String>>,
-    at: usize,
+    models: Vec<Held>,
+    tests: Vec<screens::diagnostics::Test>,
     said: Option<(String, Ink)>,
+    sampler: machine::Sampler,
+    reading: machine::Reading,
     confirming: bool,
 }
 
@@ -107,61 +127,120 @@ fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
 
 /// What a refusal says, in one line, from the record's own shape.
 fn why(body: &Value) -> String {
-    let category = body
-        .get("category")
+    body.get("what")
         .and_then(Value::as_text)
-        .unwrap_or("refused");
-    let what = body
-        .get("what")
-        .and_then(Value::as_text)
-        .unwrap_or("MCF did not say why");
-    format!("{category}: {what}")
+        .unwrap_or("MCF did not say why")
+        .to_owned()
 }
 
-impl App {
+/// The name a model is known by: the file, not where it sits.
+fn name_of(model: &Value) -> String {
+    model
+        .get("path")
+        .and_then(Value::as_text)
+        .and_then(|path| path.rsplit('/').next())
+        .unwrap_or("unknown")
+        .to_owned()
+}
+
+impl Console {
     fn new(socket: std::path::PathBuf) -> Self {
         Self {
             socket,
+            cursor: 0,
+            at: Where::Monitor,
+            row: 0,
+            button: 0,
+            on_buttons: false,
             status: None,
-            models: None,
-            at: 0,
+            models: Vec::new(),
+            tests: screens::diagnostics::tests(),
             said: None,
+            sampler: machine::Sampler::new(),
+            reading: machine::Reading::default(),
             confirming: false,
         }
     }
 
+    /// Everything the daemon knows, asked once and kept.
     fn refresh(&mut self) {
         self.status = Some(match ask(&self.socket, &Request::Status) {
             Ok(answer) if answer.served => Ok(answer.body),
             Ok(answer) => Err(why(&answer.body)),
             Err(error) => Err(error),
         });
-        self.models = Some(match ask(&self.socket, &Request::Holding) {
-            Ok(answer) if answer.served => Ok(answer
+        self.models = match ask(&self.socket, &Request::Holding) {
+            Ok(answer) if answer.served => answer
                 .body
                 .get("models")
                 .and_then(Value::as_list)
-                .map(<[Value]>::to_vec)
-                .unwrap_or_default()),
-            Ok(answer) => Err(why(&answer.body)),
-            Err(error) => Err(error),
-        });
-        let held = self.held().len();
-        if self.at >= held {
-            self.at = held.saturating_sub(1);
+                .map(|models| models.iter().map(Self::describe).collect())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        if self.row >= self.models.len() {
+            self.row = self.models.len().saturating_sub(1);
         }
     }
 
-    fn held(&self) -> &[Value] {
-        match &self.models {
-            Some(Ok(models)) => models,
-            _ => &[],
+    /// One model, as the daemon described it.
+    ///
+    /// The daemon answers this: it holds the models and the engines, so it is
+    /// where the question is answered — once, the same way, for every surface.
+    /// A console that opened the store itself would be reaching past the wire.
+    fn describe(model: &Value) -> Held {
+        let runs = model.get("runs");
+        let number = |key: &str| -> Option<u64> {
+            runs?
+                .get(key)
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+        };
+        let resolved = runs.and_then(|held| held.get("resolved"));
+        let engine = match resolved {
+            Some(held) if matches!(held.get("known"), Some(Value::Bool(true))) => Ok(Resolved {
+                engine: held
+                    .get("engine")
+                    .and_then(Value::as_text)
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                device: held
+                    .get("device")
+                    .and_then(Value::as_text)
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                context: held
+                    .get("context")
+                    .and_then(Value::as_integer)
+                    .and_then(|value| u64::try_from(value).ok())
+                    .unwrap_or(0),
+            }),
+            Some(held) => Err(held
+                .get("why")
+                .and_then(Value::as_text)
+                .unwrap_or("MCF did not say why")
+                .to_owned()),
+            None => Err("MCF has not looked at this model yet".to_owned()),
+        };
+        Held {
+            name: name_of(model),
+            bytes: model
+                .get("bytes")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            architecture: runs
+                .and_then(|held| held.get("architecture"))
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+            trained: number("trained_context"),
+            cache_per_token: number("cache_bytes_per_token"),
+            engine,
         }
     }
 
     fn stop(&mut self) {
         let request = Request::Stop {
-            reason: "asked to stop from the terminal application".to_owned(),
+            reason: "asked to stop from the console".to_owned(),
         };
         match ask(&self.socket, &request) {
             Ok(answer) if answer.served => {
@@ -172,145 +251,88 @@ impl App {
         }
         self.refresh();
     }
+
+    /// How many rows the open screen has to move through.
+    fn rows(&self) -> usize {
+        match self.at {
+            Where::Host | Where::Models => self.models.len(),
+            Where::Diagnostics => self.tests.len(),
+            _ => 0,
+        }
+    }
 }
 
-/// The name a model is known by: the file, not the path it happens to sit at.
-fn name_of(model: &Value) -> String {
-    model
-        .get("path")
+fn draw(console: &Console, into: &mut Screen) {
+    let serving = console
+        .status
+        .as_ref()
+        .and_then(|held| held.as_ref().ok())
+        .and_then(|status| status.get("resident"))
         .and_then(Value::as_text)
-        .and_then(|path| path.rsplit('/').next())
-        .unwrap_or("unknown")
-        .to_owned()
-}
+        .is_some();
+    let state = match (&console.status, serving) {
+        (Some(Err(_)), _) => Some(("not running", Ink::Refusal)),
+        (_, true) => Some(("Serving", Ink::Held)),
+        _ => Some(("Idle", Ink::Quiet)),
+    };
+    let from = screens::frame(into, console.at, console.cursor, state);
 
-/// A size, in gigabytes, to two places.
-///
-/// Done in integers rather than floats, and the `integer_division` allow is the
-/// point rather than an escape from it: a byte count can exceed what an `f64`
-/// counts one by one, so dividing first and converting second would round a
-/// size before printing it. Whole and hundredths are both exact here, and A6
-/// asks that a number a person reads be the number MCF holds.
-#[allow(
-    clippy::integer_division,
-    reason = "the division is exact and a float would not be"
-)]
-fn gigabytes(model: &Value) -> String {
-    model.get("bytes").and_then(Value::as_integer).map_or_else(
-        // A size MCF does not know is not a zero (A7).
-        || "unknown".to_owned(),
-        |bytes| {
-            let whole = bytes / 1_000_000_000;
-            let hundredths = (bytes % 1_000_000_000) / 10_000_000;
-            format!("{whole}.{hundredths:02} GB")
-        },
-    )
-}
-
-fn draw(app: &App, into: &mut Screen) {
-    let width = into.width();
-    let inner = width.saturating_sub(2);
-
-    // ── the daemon ────────────────────────────────────────────────────────
-    into.put(0, 0, "MCF", Ink::Heading);
-    match &app.status {
-        Some(Ok(body)) => {
-            let version = body
-                .get("build")
-                .and_then(|build| build.get("version"))
-                .and_then(Value::as_text)
-                .unwrap_or("unknown");
-            let held = body
-                .get("recovered")
-                .and_then(|r| r.get("models_held"))
-                .and_then(Value::as_integer)
-                .unwrap_or(0);
-            let entries = body
-                .get("recovered")
-                .and_then(|r| r.get("record_entries"))
-                .and_then(Value::as_integer)
-                .unwrap_or(0);
-            into.put(4, 0, version, Ink::Figure);
-            into.put_right(
-                width,
-                0,
-                &format!("{held} models   {entries} entries"),
-                Ink::Quiet,
-            );
-            if let Some(cannot) = body.get("cannot").and_then(Value::as_list)
-                && let Some(first) = cannot.first().and_then(Value::as_text)
-            {
-                into.put(0, 1, &format!("cannot {first}"), Ink::Quiet);
-            }
-        }
-        Some(Err(error)) => into.put(4, 0, error, Ink::Refusal),
-        None => into.put(4, 0, "asking…", Ink::Quiet),
-    }
-    into.rule(0, 2, width, Ink::Quiet);
-
-    // ── what is held ──────────────────────────────────────────────────────
-    into.put(0, 3, "MODELS HELD", Ink::Heading);
-    let first_row = 5;
-    let last_row = into.height().saturating_sub(3);
-    match &app.models {
-        Some(Err(error)) => into.put(2, first_row, error, Ink::Refusal),
-        Some(Ok(models)) if models.is_empty() => {
-            into.put(
-                2,
-                first_row,
-                "nothing — `mcf pull` brings a model here",
-                Ink::Quiet,
-            );
-        }
-        Some(Ok(models)) => {
-            // Only what fits, and scrolled so the selected row is on screen.
-            let room = last_row.saturating_sub(first_row);
-            let from = app.at.saturating_sub(room.saturating_sub(1)).min(app.at);
-            for (offset, model) in models.iter().skip(from).take(room).enumerate() {
-                let row = first_row + offset;
-                let index = from + offset;
-                let here = index == app.at;
-                if here {
-                    into.select_row(row);
-                    into.put(0, row, "›", Ink::Selected);
-                }
-                let ink = if here { Ink::Selected } else { Ink::Plain };
-                into.put(2, row, &name_of(model), ink);
-                into.put_right(inner, row, &gigabytes(model), ink);
-            }
-            if models.len() > room {
-                into.put_right(
-                    width,
-                    3,
-                    &format!("{} of {}", app.at + 1, models.len()),
-                    Ink::Quiet,
-                );
-            }
-        }
-        None => into.put(2, first_row, "asking…", Ink::Quiet),
+    if let Some(Err(error)) = &console.status {
+        into.put(2, from + 1, "MCF is not running", Ink::Refusal);
+        into.put(2, from + 3, error, Ink::Quiet);
+        into.put(2, from + 5, "`mcf serve` starts it", Ink::Quiet);
+        screens::close(into, from);
+        return;
     }
 
-    // ── what was said, and what can be pressed ────────────────────────────
-    let foot = into.height().saturating_sub(1);
-    if app.confirming {
+    match console.at {
+        Where::Monitor => {
+            screens::monitor::draw(into, from, &console.reading, &screens::monitor::Doing::Idle);
+        }
+        Where::Host | Where::Models => screens::host::draw(
+            into,
+            from + 1,
+            &console.models,
+            console.row,
+            console.button,
+            console.on_buttons,
+        ),
+        Where::Diagnostics => {
+            let model = console
+                .models
+                .get(console.row)
+                .map_or("nothing selected", |held| held.name.as_str());
+            let window = console
+                .models
+                .get(console.row)
+                .and_then(|held| held.engine.as_ref().ok())
+                .map(|resolved| resolved.context);
+            screens::diagnostics::draw(into, from, model, window, &console.tests, console.row);
+        }
+        Where::Settings => {
+            into.put(2, from + 1, "SETTINGS", Ink::Heading);
+            into.put(2, from + 3, "nothing to set yet", Ink::Quiet);
+        }
+        Where::Exit => {
+            into.put(2, from + 1, "Press Enter to leave", Ink::Heading);
+        }
+    }
+
+    let last = into.height().saturating_sub(2);
+    if console.confirming {
         into.put(
-            0,
-            foot.saturating_sub(1),
+            2,
+            last,
             "Stop the daemon? It finishes what is in hand and exits.  [y/n]",
             Ink::Refusal,
         );
-    } else if let Some((said, ink)) = &app.said {
-        into.put(0, foot.saturating_sub(1), said, *ink);
+    } else if let Some((said, ink)) = &console.said {
+        into.put(2, last, said, *ink);
     }
-    let legend = ACTIONS
-        .iter()
-        .map(|action| format!("[{}] {}", action.key, action.does))
-        .collect::<Vec<_>>()
-        .join("   ");
-    into.put(0, foot, &legend, Ink::Quiet);
+    screens::close(into, from);
 }
 
-/// Runs until the operator quits.
+/// Runs until the operator leaves.
 ///
 /// # Errors
 ///
@@ -318,70 +340,143 @@ fn draw(app: &App, into: &mut Screen) {
 /// one, which is a fact and not a fault.
 pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut restored = terminal::take()?;
-    let mut app = App::new(socket);
-    app.refresh();
+    let mut console = Console::new(socket);
+    console.refresh();
+    console.reading = console.sampler.read();
 
     let mut input = std::io::stdin();
     let mut pending: Vec<u8> = Vec::new();
     let mut buffer = [0_u8; 64];
 
     loop {
+        // Live on the monitor, still everywhere else. This is the whole of it:
+        // a read that gives up is a screen that redraws, and a read that waits
+        // is a process asleep.
+        terminal::wait_for_a_key(console.at != Where::Monitor);
+        if console.at == Where::Monitor {
+            console.reading = console.sampler.read();
+        }
+
         let (width, height) = terminal::size();
         let mut screen = Screen::new(width, height);
-        draw(&app, &mut screen);
+        draw(&console, &mut screen);
         let mut out = std::io::stdout();
         let _drawn = out
             .write_all(screen.rendered().as_bytes())
             .and_then(|()| out.flush());
 
-        // Blocks here, and this is the whole of B-071: nothing happens until a
-        // key does.
-        let read = input
-            .read(&mut buffer)
-            .map_err(|error| format!("the terminal stopped answering: {error}"))?;
+        let read = match input.read(&mut buffer) {
+            Ok(read) => read,
+            // A read that gave up with nothing is the monitor's clock, not an
+            // end: come round, sample, draw again.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(format!("the terminal stopped answering: {error}")),
+        };
         if read == 0 {
+            // Nothing more is coming, so a sequence left half-decoded was all
+            // there ever was of it.
+            if !pending.is_empty() {
+                let settled = keys::flush_incomplete(&pending);
+                pending.clear();
+                if matches!(settled, Key::Escape) {
+                    console.said = None;
+                }
+            }
+            if console.at == Where::Monitor {
+                continue;
+            }
             break;
         }
-        // `get` rather than a slice index: `read` comes from the platform and
-        // a length MCF did not compute is a length MCF does not assume.
         pending.extend_from_slice(buffer.get(..read).unwrap_or(&buffer));
 
         while let Some((key, used)) = keys::decode(&pending) {
-            // Consumed from the front without slicing: rotate what is left to
-            // the start and drop the tail.
             let used = used.min(pending.len());
             pending.rotate_left(used);
             pending.truncate(pending.len() - used);
-            if app.confirming {
-                app.confirming = false;
+
+            if console.confirming {
+                console.confirming = false;
                 if matches!(key, Key::Character('y' | 'Y')) {
-                    app.stop();
+                    console.stop();
                 } else {
-                    app.said = Some(("the daemon was left running".to_owned(), Ink::Quiet));
+                    console.said = Some(("the daemon was left running".to_owned(), Ink::Quiet));
                 }
                 continue;
             }
-            match key {
-                Key::Character('q') | Key::Interrupt => {
-                    restored.now();
-                    return Ok(());
-                }
-                Key::Character('r' | 'm') => {
-                    app.said = None;
-                    app.refresh();
-                }
-                Key::Character('S') => app.confirming = true,
-                Key::Up => app.at = app.at.saturating_sub(1),
-                Key::Down => {
-                    let held = app.held().len();
-                    app.at = (app.at + 1).min(held.saturating_sub(1));
-                }
-                _ => {}
+            if act(&mut console, key) == Leaving::Yes {
+                restored.now();
+                return Ok(());
             }
         }
     }
     restored.now();
     Ok(())
+}
+
+/// Whether the operator is done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Leaving {
+    /// Yes.
+    Yes,
+    /// No.
+    No,
+}
+
+/// One key, acted on.
+fn act(console: &mut Console, key: Key) -> Leaving {
+    {
+        match key {
+            Key::Character('q') | Key::Interrupt => {
+                return Leaving::Yes;
+            }
+            Key::Left => console.cursor = console.cursor.saturating_sub(1),
+            Key::Right => {
+                console.cursor = (console.cursor + 1).min(Where::ALL.len() - 1);
+            }
+            Key::Enter => {
+                let chosen = Where::ALL
+                    .get(console.cursor)
+                    .copied()
+                    .unwrap_or(Where::Monitor);
+                if chosen == Where::Exit {
+                    return Leaving::Yes;
+                }
+                console.at = chosen;
+                console.said = None;
+                console.on_buttons = false;
+                if matches!(chosen, Where::Host | Where::Models | Where::Diagnostics) {
+                    console.refresh();
+                }
+            }
+            Key::Up => {
+                if console.on_buttons {
+                    console.button = console.button.saturating_sub(1);
+                } else {
+                    console.row = console.row.saturating_sub(1);
+                }
+            }
+            Key::Down => {
+                if console.on_buttons {
+                    console.button = (console.button + 1).min(screens::host::BUTTONS.len() - 1);
+                } else {
+                    console.row = (console.row + 1).min(console.rows().saturating_sub(1));
+                }
+            }
+            Key::Character('\t') => console.on_buttons = !console.on_buttons,
+            Key::Character('r') => {
+                console.said = None;
+                console.refresh();
+            }
+            Key::Character('S') => console.confirming = true,
+            Key::Character(' ') if console.at == Where::Diagnostics => {
+                if let Some(test) = console.tests.get_mut(console.row) {
+                    test.chosen = !test.chosen;
+                }
+            }
+            _ => {}
+        }
+    }
+    Leaving::No
 }
 
 #[cfg(test)]

@@ -92,6 +92,21 @@ pub fn take() -> Result<Restored, String> {
     Ok(Restored { saved, done: false })
 }
 
+/// Whether a read waits for a key, or gives up after a moment.
+///
+/// **This is the whole of the live monitor.** Waiting means the process is
+/// asleep in `read` and costs nothing, which is what every screen but one
+/// wants. The monitor wants to redraw about once a second whether or not
+/// anybody typed, so on that screen alone the read gives up after a tenth of a
+/// second and the loop comes round — live where it is looked at, still
+/// everywhere else, and never a thread spinning to keep a clock.
+pub fn wait_for_a_key(should: bool) {
+    #[cfg(unix)]
+    unix::wait_for_a_key(should);
+    #[cfg(windows)]
+    let _ = should; // the console reads with a timeout of its own
+}
+
 /// How many columns and rows there are, or a usable pair if the platform will
 /// not say.
 #[must_use]
@@ -201,6 +216,31 @@ mod unix {
             return Err("the terminal would not be put into raw mode".to_owned());
         }
         Ok(saved)
+    }
+
+    /// Switches between waiting for a key and giving up after a tenth of a
+    /// second. `VMIN` is how many characters a read must have; `VTIME` is how
+    /// many tenths it will wait for them.
+    pub(super) fn wait_for_a_key(should: bool) {
+        let mut held = Termios {
+            input: 0,
+            output: 0,
+            control: 0,
+            local: 0,
+            line: 0,
+            characters: [0; 32],
+            input_speed: 0,
+            output_speed: 0,
+        };
+        if unsafe { tcgetattr(STDIN, &raw mut held) } != 0 {
+            return;
+        }
+        held.characters[VMIN] = u8::from(should);
+        // Tenths of a second. Ten is one second, which is as often as a person
+        // can read a changing figure and slow enough that a laptop does not
+        // notice the console is open.
+        held.characters[VTIME] = if should { 0 } else { 10 };
+        let _set = unsafe { tcsetattr(STDIN, TCSANOW, &raw const held) };
     }
 
     pub(super) fn restore(saved: &Termios) {
