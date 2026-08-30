@@ -17,6 +17,8 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
+use std::time::Instant;
+
 use mcf_record::json::Value;
 use mcf_serve::control::{Answer, Request, Streamed};
 
@@ -32,6 +34,9 @@ pub struct Job {
     pub refused: Option<String>,
     /// Whether the daemon said it was finished.
     pub finished: bool,
+    /// When it was started, so how long it took is measured rather than
+    /// estimated (A7: the screen may only show a figure it actually took).
+    started: Instant,
 }
 
 /// One thing heard from the daemon.
@@ -131,7 +136,18 @@ impl Job {
             answers: Vec::new(),
             refused: None,
             finished: false,
+            started: Instant::now(),
         }
+    }
+
+    /// How long this job has been running, in whole seconds.
+    ///
+    /// **Measured from the moment the request went out**, which is what an
+    /// operator waited, rather than the daemon's own idea of the work. A run
+    /// still going reports what it has taken so far.
+    #[must_use]
+    pub fn ran(&self) -> u64 {
+        self.started.elapsed().as_secs()
     }
 
     /// Takes everything said since the last frame. Returns whether anything was.

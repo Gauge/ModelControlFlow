@@ -32,7 +32,7 @@ use crate::font::Weight;
 use crate::paint::{Box, Painter, Rgb};
 use crate::ui::{self, Kind, Mouse};
 use crate::words;
-use crate::{Act, Desk, Doing, Model, Page};
+use crate::{Act, Desk, Doing, Model, Page, Picker, windows};
 use mcf_record::json::Value;
 
 /// The bar across the top, in points.
@@ -728,39 +728,32 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     spaced(paint, area.x, y, "what to measure", ink.faint);
     y += 28.0;
 
-    let chosen = desk
+    // **The two pickers are dropdowns now, and were not before.** The model
+    // one navigated to the Host page and the window one cycled to the next
+    // power of two, while both wore a chevron. The list each opens is drawn
+    // last, over the table below, because in immediate mode the last thing
+    // painted is the thing on top.
+    let mut menu: Option<(Picker, Box)> = None;
+    let chosen_model = desk
         .chosen
         .and_then(|at| desk.models.get(at))
         .map_or_else(|| "none chosen".to_owned(), |held| held.name.clone());
-    for (label, value, act_of) in [
-        ("model", chosen, Act::Go(Page::Host)),
+    for (picker, label, value) in [
+        (Picker::Model, "model", chosen_model),
         (
+            Picker::Window,
             "context window",
             format!("{} tokens", words::grouped(desk.window)),
-            Act::NextWindow,
         ),
     ] {
         paint.say_at(area.x, y, label, Weight::Regular, size::BODY, ink.quiet);
-        let picker = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
-        let hot = mouse.over(picker);
-        paint.edge(
-            picker,
-            ui::RADIUS,
-            ink.line,
-            if hot { ink.sunk } else { ink.card },
-        );
-        let shown = paint.elide(&value, Weight::Regular, size::BODY, picker.w - 44.0);
-        paint.say_at(
-            picker.x + 12.0,
-            y,
-            &shown,
-            Weight::Regular,
-            size::BODY,
-            ink.ink,
-        );
-        ui::chevron(paint, (picker.right() - 22.0, y + 7.0), ink.faint);
-        if mouse.clicked(picker) {
-            act = Some(act_of);
+        let box_of = Box::new(area.x + 190.0, y - 6.0, 340.0, 28.0);
+        let open = desk.open == Some(picker);
+        if ui::picker(paint, mouse, box_of, &value, open) {
+            act = Some(Act::Open(picker));
+        }
+        if open {
+            menu = Some((picker, box_of));
         }
         y += 34.0;
     }
@@ -794,12 +787,61 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         desk,
         Box::new(area.x, below, wide, area.bottom() - below),
     );
+    if let Some((picker, at)) = menu
+        && let Some(picked) = open_menu(paint, desk, mouse, picker, at)
+    {
+        act = Some(picked);
+    }
     act
 }
 
-/// The tests, one row each, with what each needs and what each costs.
+/// Draws whichever dropdown is open, and says what was picked from it.
+fn open_menu(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    picker: Picker,
+    at: Box,
+) -> Option<Act> {
+    match picker {
+        Picker::Model => {
+            // **Every model this computer holds**, which is the same list Host
+            // shows: a measurement is of a model, so the question is answered
+            // where it is asked rather than by sending the reader elsewhere.
+            let labels: Vec<String> = desk.models.iter().map(|held| held.name.clone()).collect();
+            if labels.is_empty() {
+                return None;
+            }
+            ui::options(paint, mouse, at, &labels, desk.chosen).map(Act::Choose)
+        }
+        Picker::Window => {
+            let offered = windows();
+            let labels: Vec<String> = offered
+                .iter()
+                .map(|held| format!("{} tokens", words::grouped(*held)))
+                .collect();
+            let on = offered.iter().position(|held| *held == desk.window);
+            ui::options(paint, mouse, at, &labels, on)
+                .and_then(|index| offered.get(index).copied())
+                .map(Act::SetWindow)
+        }
+    }
+}
+
+/// The tests, one row each: what each needs, what it should cost, what it
+/// actually cost, and a way into what it found.
+///
+/// **There used to be a second table under this one** — *selected 2 of 5* and
+/// an estimate — and it said nothing this screen was not already saying: the
+/// estimate for the selection is printed under the Run Selected button it
+/// belongs to, and a count of ticks is a thing the ticks themselves show. It
+/// was two tables where one would do, so the columns it was standing in for
+/// are columns now.
+///
+/// **`time` became `estimate` because two different numbers cannot share a
+/// heading.** MCF's estimate lands between 0.58x and 1.42x of a real run, so
+/// the guess and the measurement sit in columns that say which they are.
 fn tests_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, table: Box) -> (Option<Act>, f32) {
-    let ink = paint.ink;
     let wide = table.w;
     let mut act = None;
     let mut y = heads(
@@ -809,95 +851,138 @@ fn tests_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, table: Box) -> (
         &[
             Column {
                 head: "devices",
-                at: wide - 130.0,
+                at: wide - 250.0,
                 right: true,
             },
             Column {
-                head: "time",
+                head: "estimate",
+                at: wide - 160.0,
+                right: true,
+            },
+            Column {
+                head: "run time",
+                at: wide - 76.0,
+                right: true,
+            },
+            Column {
+                head: "results",
                 at: wide,
                 right: true,
             },
         ],
     );
-    for (at, test) in desk.tests.iter().enumerate() {
-        let hit = Box::new(table.x - 6.0, y - 5.0, wide - 100.0, 24.0);
-        if mouse.over(hit) {
-            paint.panel(hit, 6.0, ink.line, 90);
-        }
-        let mark = Box::new(table.x, y + 2.0, 13.0, 13.0);
-        if test.chosen {
-            paint.panel(mark, 3.0, ink.accent, 255);
-            ui::tick(paint, mark, ink.accent_ink);
-        } else {
-            paint.edge(mark, 3.0, ink.line, ink.card);
-        }
-        let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 290.0);
-        paint.say_at(
-            table.x + 26.0,
-            y,
-            &name,
-            Weight::Regular,
-            size::BODY,
-            ink.ink,
-        );
-        paint.say_right(
-            table.x + wide - 130.0,
-            y,
-            test.devices,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        paint.say_right(
-            table.x + wide,
-            y,
-            &clock(test.seconds),
-            Weight::Bold,
-            size::BODY,
-            ink.ink,
-        );
-        if mouse.clicked(hit) {
-            act = Some(Act::Toggle(at));
+    for at in 0..desk.tests.len() {
+        if let Some(said) = test_row(paint, desk, mouse, Box::new(table.x, y, wide, 0.0), at) {
+            act = Some(said);
         }
         y += 24.0;
     }
     y += 12.0;
+    y = found(paint, desk, Box::new(table.x, y, wide, 0.0));
+    (act, y + 18.0)
+}
 
-    let picked = desk.tests.iter().filter(|test| test.chosen).count();
-    let (low, high) = desk.estimate(false);
-    paint.say_at(
-        table.x,
+/// One test's row. Returns what a click on it meant.
+fn test_row(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at_row: Box,
+    at: usize,
+) -> Option<Act> {
+    let ink = paint.ink;
+    let (x, y, wide) = (at_row.x, at_row.y, at_row.w);
+    let test = desk.tests.get(at)?;
+    let mut act = None;
+    // The row's hit area stops short of the results button, so a click meant
+    // for the button never also toggles the test under it.
+    let hit = Box::new(x - 6.0, y - 5.0, wide - 80.0, 24.0);
+    if mouse.over(hit) {
+        paint.panel(hit, 6.0, ink.line, 90);
+    }
+    let mark = Box::new(x, y + 2.0, 13.0, 13.0);
+    if test.chosen {
+        paint.panel(mark, 3.0, ink.accent, 255);
+        ui::tick(paint, mark, ink.accent_ink);
+    } else {
+        paint.edge(mark, 3.0, ink.line, ink.card);
+    }
+    let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 420.0);
+    paint.say_at(x + 26.0, y, &name, Weight::Regular, size::BODY, ink.ink);
+    paint.say_right(
+        x + wide - 250.0,
         y,
-        "selected",
+        test.devices,
         Weight::Regular,
         size::SMALL,
-        ink.quiet,
+        ink.faint,
     );
-    paint.say_at(
-        table.x + 90.0,
+    paint.say_right(
+        x + wide - 160.0,
         y,
-        &format!("{picked} of {}", desk.tests.len()),
-        Weight::Bold,
-        size::SMALL,
-        ink.ink,
-    );
-    paint.say_at(
-        table.x + 200.0,
-        y,
-        "estimate",
+        &clock(test.seconds),
         Weight::Regular,
-        size::SMALL,
+        size::BODY,
         ink.quiet,
     );
-    paint.say_at(
-        table.x + 290.0,
-        y,
-        &span(low, high),
-        Weight::Bold,
-        size::SMALL,
-        ink.ink,
+    // **A test that has never run has no run time, and says so** (A7). A zero
+    // here would read as *instant*, which is the one thing it is not.
+    let (ran, weight, colour) = test.ran.map_or_else(
+        || (UNKNOWN.to_owned(), Weight::Regular, ink.faint),
+        |seconds| (clock(seconds), Weight::Bold, ink.ink),
     );
-    (act, y + 30.0)
+    paint.say_right(x + wide - 76.0, y, &ran, weight, size::BODY, colour);
+    // **The button only exists where there is something to read, and where
+    // there is not, the column is empty.** It said `Unknown` at first, beside
+    // the `Unknown` in the run-time column — two of them in a row, saying one
+    // thing. The run time is the reading that is absent (A7); a results button
+    // is furniture, and absent furniture is drawn by drawing nothing.
+    if test.result.is_some() {
+        let open = desk.showing == Some(at);
+        let button = Box::new(x + wide - 66.0, y - 4.0, 66.0, 22.0);
+        if ui::button(
+            paint,
+            mouse,
+            button,
+            if open { "Hide" } else { "View" },
+            if open { Kind::Primary } else { Kind::Ordinary },
+        ) {
+            act = Some(Act::Result(at));
+        }
+    }
+    if mouse.clicked(hit) {
+        act = Some(Act::Toggle(at));
+    }
+    act
+}
+
+/// What the run of one test found, opened under the table rather than over it.
+///
+/// **Under, because the table is the thing being read.** A panel that covered
+/// the rows would answer *what did this find* by hiding *which of them it was
+/// about*.
+fn found(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
+    let ink = paint.ink;
+    let Some(at) = desk.showing else {
+        return area.y;
+    };
+    let Some(test) = desk.tests.get(at) else {
+        return area.y;
+    };
+    let Some(lines) = test.result.as_ref() else {
+        return area.y;
+    };
+    let mut y = area.y;
+    paint.rule((area.x, y), (area.x + area.w, y), ink.line, 255);
+    y += 12.0;
+    paint.say_at(area.x, y, test.name, Weight::Bold, size::BODY, ink.ink);
+    y += 22.0;
+    for line in lines {
+        let shown = paint.elide(line, Weight::Regular, size::BODY, area.w);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.quiet);
+        y += 20.0;
+    }
+    y
 }
 
 /// What a run has said so far, under the setup rather than instead of it.

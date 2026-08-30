@@ -316,6 +316,107 @@ pub fn tick(paint: &mut Painter, area: Box, colour: Rgb) {
 }
 
 /// A card: the ground everything on these screens sits on.
+/// Draws a closed dropdown — the value, and the chevron that promises a list.
+///
+/// **Returns whether it was clicked**, which is the caller's cue to open it.
+/// The chevron is the whole contract: a control wearing one that does anything
+/// but expand is teaching the reader that the furniture is decoration.
+pub fn picker(paint: &mut Painter, mouse: &Mouse, area: Box, value: &str, open: bool) -> bool {
+    let ink = paint.ink;
+    let hot = mouse.over(area);
+    paint.edge(
+        area,
+        RADIUS,
+        if open { ink.accent } else { ink.line },
+        if hot || open { ink.sunk } else { ink.card },
+    );
+    let shown = paint.elide(value, Weight::Regular, 13.5, area.w - 44.0);
+    paint.say_at(
+        area.x + 12.0,
+        area.y + 6.0,
+        &shown,
+        Weight::Regular,
+        13.5,
+        ink.ink,
+    );
+    chevron(paint, (area.right() - 22.0, area.y + 13.0), ink.faint);
+    mouse.clicked(area)
+}
+
+/// How tall one row of an open dropdown is, in points.
+pub const OPTION: f32 = 26.0;
+
+/// Draws an open dropdown's list and says which option was chosen.
+///
+/// **It is drawn over whatever is beneath it**, which is why the caller defers
+/// it to the end of the screen: in immediate mode the last thing painted is
+/// the thing on top, and a list that drew in place would appear under the
+/// table it is supposed to cover.
+///
+/// **The option that is already set is marked**, because a list that did not
+/// say which one you are on makes the reader open it to find out and close it
+/// no wiser.
+pub fn options(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    below: Box,
+    labels: &[String],
+    at: Option<usize>,
+) -> Option<usize> {
+    let ink = paint.ink;
+    let tall = OPTION.mul_add(
+        f32::from(u16::try_from(labels.len()).unwrap_or(u16::MAX)),
+        12.0,
+    );
+    let list = Box::new(below.x, below.bottom() + 2.0, below.w, tall);
+    // A shadow, so the list reads as sitting above the page rather than as a
+    // second panel that happens to be there.
+    paint.panel(
+        Box::new(list.x + 2.0, list.y + 3.0, list.w, list.h),
+        RADIUS,
+        ink.ink,
+        30,
+    );
+    paint.edge(list, RADIUS, ink.accent, ink.card);
+    let mut chosen = None;
+    for (index, label) in labels.iter().enumerate() {
+        let row = Box::new(
+            list.x + 4.0,
+            OPTION.mul_add(
+                f32::from(u16::try_from(index).unwrap_or(u16::MAX)),
+                list.y + 6.0,
+            ),
+            list.w - 8.0,
+            OPTION,
+        );
+        if mouse.over(row) {
+            paint.panel(row, 6.0, ink.sunk, 255);
+        }
+        let here = at == Some(index);
+        let shown = paint.elide(label, Weight::Regular, 13.5, row.w - 34.0);
+        paint.say_at(
+            row.x + 22.0,
+            row.y + 5.0,
+            &shown,
+            Weight::Regular,
+            13.5,
+            ink.ink,
+        );
+        if here {
+            tick(
+                paint,
+                Box::new(row.x + 5.0, row.y + 7.0, 12.0, 12.0),
+                ink.accent,
+            );
+        }
+        if mouse.clicked(row) {
+            chosen = Some(index);
+        }
+    }
+    chosen
+}
+
+/// A card: the ground everything on these screens sits on.
 pub fn card(paint: &mut Painter, area: Box, lifted: bool) {
     let ink = paint.ink;
     paint.edge(

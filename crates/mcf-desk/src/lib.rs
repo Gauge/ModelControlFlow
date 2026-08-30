@@ -183,10 +183,25 @@ pub struct Test {
     pub name: &'static str,
     /// Which devices it needs.
     pub devices: &'static str,
-    /// Roughly how long, in seconds, at this machine's speed.
+    /// Roughly how long, in seconds, at this machine's speed. An estimate, and
+    /// named one on the screen: MCF's own estimate lands between 0.58x and
+    /// 1.42x of what a run takes, so a column headed `time` beside a column of
+    /// measured times would have read as the same kind of number.
     pub seconds: u64,
     /// Whether it is selected.
     pub chosen: bool,
+    /// How long the last run of this test actually took, in seconds.
+    ///
+    /// **`None` until it has run, and `None` is not zero** (A7). A test that
+    /// has never run has no run time, and the screen draws a dash rather than
+    /// a figure somebody could read as *instant*.
+    pub ran: Option<u64>,
+    /// What the last run found, in the words the daemon used.
+    ///
+    /// **Absent until there is a result to show**, which is what the results
+    /// button on the screen is enabled by. Nothing here is written by the
+    /// window: every line comes from the answer MCF sent.
+    pub result: Option<Vec<String>>,
 }
 
 /// The tests MCF knows how to run.
@@ -202,30 +217,40 @@ pub fn tests() -> Vec<Test> {
             devices: "both",
             seconds: 180,
             chosen: true,
+            ran: None,
+            result: None,
         },
         Test {
             name: "Cold start cost",
             devices: "both",
             seconds: 25,
             chosen: true,
+            ran: None,
+            result: None,
         },
         Test {
             name: "Memory ceiling — largest context",
             devices: "both",
             seconds: 120,
             chosen: false,
+            ran: None,
+            result: None,
         },
         Test {
             name: "CPU and GPU agree on the output",
             devices: "needs both",
             seconds: 90,
             chosen: false,
+            ran: None,
+            result: None,
         },
         Test {
             name: "Prompt reading speed",
             devices: "both",
             seconds: 45,
             chosen: false,
+            ran: None,
+            result: None,
         },
     ]
 }
@@ -442,6 +467,25 @@ fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
     Answer::read(line.trim_end()).map_err(|failure| failure.to_string())
 }
 
+/// Which dropdown a click was about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Picker {
+    /// Which model the measurement is of.
+    Model,
+    /// How deep a context it is set up for.
+    Window,
+}
+
+/// The context windows a measurement can be set up for.
+///
+/// **Powers of two, because a context window is asked for in them**, and every
+/// one below the chosen depth is sampled — which is why this is a list to pick
+/// from rather than a number to type.
+#[must_use]
+pub const fn windows() -> [u64; 7] {
+    [1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536]
+}
+
 /// One thing a screen asks the window to do.
 ///
 /// Immediate mode has no callbacks: a screen draws, notices it was clicked,
@@ -465,8 +509,21 @@ pub enum Act {
         /// The deepest context to sample.
         deepest: u64,
     },
-    /// Move the context window on to the next power of two, wrapping.
-    NextWindow,
+    /// Open a dropdown, or close it if it is the one already open.
+    ///
+    /// **The screen had two controls drawn as dropdowns that were not
+    /// dropdowns**: the model picker navigated to another page and the window
+    /// picker cycled to the next power of two. Both wore a chevron, which is
+    /// the promise that a list will appear. A control that looks like a
+    /// dropdown and does something else teaches the operator that the
+    /// furniture is decoration.
+    Open(Picker),
+    /// Close whatever dropdown is open, choosing nothing.
+    Shut,
+    /// Set the context window to one of the offered powers of two.
+    SetWindow(u64),
+    /// Show, or hide, what one test's last run found.
+    Result(usize),
     /// Turn one test on or off.
     Toggle(usize),
     /// Close the window.
@@ -553,6 +610,14 @@ pub struct Desk {
     /// depths are stated under it rather than offered as a second set of
     /// choices somebody could contradict the first with.
     pub window: u64,
+    /// Which dropdown is expanded, if any.
+    ///
+    /// **One at a time.** Two open lists would overlap each other and the
+    /// screen under both, and a click landing in the overlap would belong to
+    /// whichever happened to be drawn second.
+    pub open: Option<Picker>,
+    /// Which test's last run is being read, if any.
+    pub showing: Option<usize>,
     sampler: mcf_tui::machine::Sampler,
 }
 
@@ -573,6 +638,8 @@ impl Desk {
             said: String::new(),
             tests: tests(),
             window: 8192,
+            open: None,
+            showing: None,
             sampler: mcf_tui::machine::Sampler::new(),
         }
     }
@@ -627,7 +694,77 @@ impl Desk {
         {
             self.refresh();
         }
+        if let Doing::Measuring(job) = &self.doing
+            && job.finished
+        {
+            self.keep_the_run();
+        }
         true
+    }
+
+    /// Writes a finished measurement onto the test it was a run of.
+    ///
+    /// **A run of the whole ladder is a run of one test**, "Generation speed
+    /// against depth" — that is what `Request::Measure` asks for, so that is
+    /// the row whose run time and result it fills. Nothing is written onto the
+    /// other four, because nothing measured them: a screen that spread one
+    /// run's timing across five rows would be reporting four measurements that
+    /// never happened (A7).
+    ///
+    /// **The lines are the daemon's, not the window's.** Each is a depth and
+    /// what was read at it, and a depth MCF could not measure says so rather
+    /// than being dropped from the list — an absent row would read as a run
+    /// that had nothing to say about that depth.
+    fn keep_the_run(&mut self) {
+        let Doing::Measuring(job) = &self.doing else {
+            return;
+        };
+        let ran = job.ran();
+        let mut lines: Vec<String> = Vec::new();
+        if let Some(why) = &job.refused {
+            lines.push(why.clone());
+        } else {
+            for answer in &job.answers {
+                let Some(reading) = answer.get("reading") else {
+                    continue;
+                };
+                let depth = reading
+                    .get("depth")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+                    .unwrap_or(0);
+                let said = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
+                    reading
+                        .get("ms_per_token")
+                        .and_then(Value::as_text)
+                        .map_or_else(
+                            || crate::view::UNKNOWN.to_owned(),
+                            |ms| format!("{ms} ms a token"),
+                        )
+                } else {
+                    crate::view::UNKNOWN.to_owned()
+                };
+                lines.push(format!("at {} tokens   {said}", words::grouped(depth)));
+            }
+            if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
+                // B65 and D31: which engine ran is a condition of every figure
+                // above it, so it travels with them rather than being read off
+                // a screen that has moved on.
+                let engine = conditions
+                    .get("engine_ran")
+                    .and_then(Value::as_text)
+                    .unwrap_or("MCF did not say");
+                lines.push(format!("measured on {engine}"));
+            }
+        }
+        if let Some(test) = self
+            .tests
+            .iter_mut()
+            .find(|test| test.name == "Generation speed against depth")
+        {
+            test.ran = Some(ran);
+            test.result = Some(lines);
+        }
     }
 
     /// Does what a screen said a click meant.
@@ -650,13 +787,25 @@ impl Desk {
                     self.measure(at, deepest);
                 }
             }
-            // Powers of two, wrapping — the console's dropdown, and the
-            // reason it is powers of two is that a context window is asked
-            // for in them.
-            Act::NextWindow => {
-                self.window = match self.window {
-                    held if held >= 65_536 => 1_024,
-                    held => held.saturating_mul(2),
+            // A second click on the open picker shuts it, which is what every
+            // dropdown does and what a reader tries first.
+            Act::Open(picker) => {
+                self.open = if self.open == Some(picker) {
+                    None
+                } else {
+                    Some(picker)
+                };
+            }
+            Act::Shut => self.open = None,
+            Act::SetWindow(window) => {
+                self.window = window;
+                self.open = None;
+            }
+            Act::Result(at) => {
+                self.showing = if self.showing == Some(at) {
+                    None
+                } else {
+                    Some(at)
                 };
             }
             Act::Toggle(at) => {
@@ -666,7 +815,10 @@ impl Desk {
             }
             Act::Close => {}
             Act::Ask { at } => self.ask(at),
-            Act::Choose(at) => self.chosen = Some(at),
+            Act::Choose(at) => {
+                self.chosen = Some(at);
+                self.open = None;
+            }
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
         }

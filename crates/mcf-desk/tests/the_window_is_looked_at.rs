@@ -293,3 +293,115 @@ fn a_daemon_that_is_not_answering_looks_different() {
     assert_eq!(word, "NOT UP");
     assert!(said.contains("not answering"), "{said}");
 }
+
+/// An open dropdown appears, and appears over what is under it.
+///
+/// **This is the check the old pickers would have passed.** They drew a
+/// chevron and did something else entirely — navigated to another page,
+/// cycled a number — and every test passed, because what was wrong was that
+/// nothing appeared when you clicked. Only a picture can see that, which is
+/// what this file is for.
+///
+/// It asserts two things a wrong implementation fails differently: that the
+/// open screen differs from the closed one at all, and that the difference is
+/// **below the picker**, where the list drops down, rather than anywhere else.
+#[test]
+fn an_open_dropdown_is_drawn_over_the_page() {
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+
+    let shut = drawn(&desk, NIGHT, "diagnostics-shut");
+    if shut.width == 1 {
+        return; // no font here
+    }
+    desk.open = Some(mcf_desk::Picker::Window);
+    let open = drawn(&desk, NIGHT, "diagnostics-open");
+
+    // **The extent, not the count.** Counting changed pixels passed with the
+    // list disabled, because opening a picker also lights its own box — 28
+    // points tall. A list that dropped down changes a band several times
+    // that, so the height of the change is what says one appeared. Planting
+    // the list out is what found this: the first version of this test passed
+    // with nothing dropping down at all.
+    let (mut first, mut last, mut differing) = (None, 0_u32, 0_usize);
+    for y in 0..open.height {
+        let mut row = false;
+        for x in 0..open.width {
+            if shut.at(x, y) != open.at(x, y) {
+                differing += 1;
+                row = true;
+            }
+        }
+        if row {
+            first.get_or_insert(y);
+            last = y;
+        }
+    }
+    let Some(first) = first else {
+        panic!("opening a dropdown changed nothing at all");
+    };
+    assert!(
+        differing > 2_000,
+        "opening a dropdown changed {differing} pixels: nothing dropped down"
+    );
+    assert!(
+        last - first > 100,
+        "the change is {} points tall, which is the picker's own box and not a \
+         list under it: nothing dropped down",
+        last - first
+    );
+}
+
+/// A run's result opens under the table, and does not cover it.
+///
+/// The table is the thing being read: a panel over the rows would answer
+/// *what did this find* by hiding *which of them it was about*.
+#[test]
+fn a_result_opens_under_the_tests_rather_than_over_them() {
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+    if let Some(test) = desk.tests.first_mut() {
+        test.ran = Some(184);
+        test.result = Some(vec![
+            "at 512 tokens   6.43 ms a token".to_owned(),
+            "at 1 024 tokens   6.71 ms a token".to_owned(),
+            "measured on llama.cpp-cuda".to_owned(),
+        ]);
+    }
+    let shut = drawn(&desk, NIGHT, "result-shut");
+    if shut.width == 1 {
+        return; // no font here
+    }
+    desk.showing = Some(0);
+    let open = drawn(&desk, NIGHT, "result-open");
+
+    // The first test's own row must be identical: the panel is under the
+    // table, so opening it cannot have redrawn the row it belongs to.
+    let mut changed_low = 0_usize;
+    let mut changed_high = 0_usize;
+    // Halved to say *above or below*; the exact middle row does not matter.
+    #[expect(clippy::integer_division, reason = "a midpoint, in whole rows")]
+    let half = open.height / 2;
+    for y in 0..open.height {
+        for x in 0..open.width {
+            if shut.at(x, y) != open.at(x, y) {
+                if y < half {
+                    changed_low += 1;
+                } else {
+                    changed_high += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        changed_high > changed_low,
+        "the result drew {changed_low} pixels in the top half and {changed_high} \
+         in the bottom: it is not opening under the table"
+    );
+    assert!(
+        changed_high > 500,
+        "the result drew {changed_high} pixels: nothing opened"
+    );
+}

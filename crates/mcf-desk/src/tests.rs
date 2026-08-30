@@ -325,3 +325,104 @@ fn only_one_thing_runs_at_a_time() {
         "starting a download did not replace what was running"
     );
 }
+
+/// A control that wears a chevron opens a list, and does not do something else.
+///
+/// **Both pickers on the diagnostics screen used to lie.** The model one ran
+/// `Act::Go(Page::Host)` — it navigated away from the screen the reader was
+/// setting up — and the window one ran a `NextWindow` that cycled to the next
+/// power of two. Each drew a chevron, which is the promise that a list will
+/// appear. A reader who wanted the third window of seven had to click six
+/// times and count, and a reader who wanted to see the models had the page
+/// taken away from them.
+#[test]
+fn a_picker_opens_a_list_rather_than_going_somewhere() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Diagnostics;
+    assert_eq!(desk.open, None, "a picker is closed until it is opened");
+
+    desk.act(crate::Act::Open(crate::Picker::Model));
+    assert_eq!(desk.open, Some(crate::Picker::Model));
+    assert_eq!(
+        desk.page,
+        Page::Diagnostics,
+        "opening the model picker navigated away, which is what it used to do"
+    );
+
+    // The same click again shuts it, which is what every dropdown does.
+    desk.act(crate::Act::Open(crate::Picker::Model));
+    assert_eq!(desk.open, None, "a second click did not shut the list");
+
+    // Opening the other one replaces it: two open lists would overlap.
+    desk.act(crate::Act::Open(crate::Picker::Model));
+    desk.act(crate::Act::Open(crate::Picker::Window));
+    assert_eq!(desk.open, Some(crate::Picker::Window));
+}
+
+/// A window is picked from the list, not counted up to.
+#[test]
+fn a_window_is_picked_and_never_cycled() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let offered = crate::windows();
+    assert!(
+        offered.contains(&desk.window),
+        "the window it starts on is not one of the ones offered"
+    );
+    // Every option is reachable in one click, which is the whole difference.
+    for wanted in offered {
+        desk.act(crate::Act::Open(crate::Picker::Window));
+        desk.act(crate::Act::SetWindow(wanted));
+        assert_eq!(desk.window, wanted);
+        assert_eq!(desk.open, None, "picking did not shut the list");
+    }
+    // And they are powers of two, because a context window is asked for in them.
+    for held in offered {
+        assert!(held.is_power_of_two(), "{held} is not a power of two");
+    }
+}
+
+/// Choosing a model from the list shuts it and leaves the reader where they were.
+#[test]
+fn choosing_a_model_shuts_the_list_and_stays_on_the_screen() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Diagnostics;
+    desk.models = vec![Model::default(), Model::default()];
+    desk.act(crate::Act::Open(crate::Picker::Model));
+    desk.act(crate::Act::Choose(1));
+    assert_eq!(desk.chosen, Some(1));
+    assert_eq!(desk.open, None, "choosing did not shut the list");
+    assert_eq!(
+        desk.page,
+        Page::Diagnostics,
+        "choosing a model took the reader off the screen they were setting up"
+    );
+}
+
+/// A test nobody has run has no run time and no result (A7).
+///
+/// **Not a zero, and not an empty result panel.** A zero in the run-time
+/// column reads as *instant*, which is the one thing it is not, and a results
+/// button over nothing is a button that does nothing when pressed.
+#[test]
+fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
+    for test in crate::tests() {
+        assert_eq!(test.ran, None, "{} claims a run time", test.name);
+        assert_eq!(test.result, None, "{} claims a result", test.name);
+        assert!(test.seconds > 0, "{} has no estimate", test.name);
+    }
+}
+
+/// The results button opens what a run found, and the same button closes it.
+#[test]
+fn a_result_is_opened_and_closed_by_the_one_button() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    assert_eq!(desk.showing, None);
+    desk.act(crate::Act::Result(0));
+    assert_eq!(desk.showing, Some(0));
+    desk.act(crate::Act::Result(0));
+    assert_eq!(desk.showing, None, "the same button did not close it");
+    // A different row replaces it rather than opening a second panel.
+    desk.act(crate::Act::Result(0));
+    desk.act(crate::Act::Result(3));
+    assert_eq!(desk.showing, Some(3));
+}
