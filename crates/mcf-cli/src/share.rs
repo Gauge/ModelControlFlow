@@ -37,6 +37,34 @@ use mcf_record::json::Value;
 use crate::Response;
 
 /// Builds a contribution from what the record holds and shows it.
+/// The name of an arm, as a row may carry it.
+///
+/// **A path is not an outcome.** The record names an arm by the file it ran,
+/// which is right for a local record and wrong for a row that leaves: the terms
+/// say what travels is *scores, classifications, conditions and effect sizes*,
+/// and that no file leaves. A path is none of those, and it carries the
+/// operator's user name and the shape of their disk with it —
+/// `/home/somebody/.local/share/mcf/models/…` was what a contribution actually
+/// held before this existed.
+///
+/// What travels is the file's own name, which is the model's identity and the
+/// only part anybody else can use.
+fn publishable(arm: &str) -> Arm {
+    // The last part that is actually a name. Falling back to the whole string
+    // would have let `/` through unchanged, which is a separator and not a
+    // name — found by asking what happens to the degenerate cases.
+    let name = arm
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or("");
+    if name.is_empty() {
+        // An arm that names no file names nothing anybody else can use, and
+        // saying so is better than passing a separator along (A7).
+        return Arm::new("unnamed");
+    }
+    Arm::new(name)
+}
+
 pub(crate) fn run(into: Option<&str>) -> Response {
     let Some(journal) = mcf_record::journal::default_path() else {
         return Response {
@@ -136,8 +164,8 @@ fn read_comparison(entry: &Entry) -> Option<Comparison> {
     );
     let pairs = usize::try_from(outcome.get("pairs").and_then(Value::as_integer)?).ok()?;
     let left_quicker = outcome.get("quicker").and_then(Value::as_text)? == "left";
-    let left = Arm::new(body.get("left")?.get("arm").and_then(Value::as_text)?);
-    let right = Arm::new(body.get("right")?.get("arm").and_then(Value::as_text)?);
+    let left = publishable(body.get("left")?.get("arm").and_then(Value::as_text)?);
+    let right = publishable(body.get("right")?.get("arm").and_then(Value::as_text)?);
     Some(Comparison {
         left,
         right,

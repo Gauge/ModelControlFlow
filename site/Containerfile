@@ -1,0 +1,31 @@
+# The companion site, in an image holding the binary and nothing else.
+#
+# `FROM scratch` over a static musl build: no shell, no package manager, no
+# libc, so what runs is the thing that was built. Both images are pinned by
+# digest — a tag is a name somebody else may move, and an image that moved is a
+# condition of what ran that nobody restates.
+#
+# The site is NOT MCF. It binds a port and receives files from strangers, and
+# MCF refuses both by construction. That separation is the point of this being
+# a different program in a different workspace.
+
+FROM docker.io/library/rust:1.98-alpine@sha256:a10e64dd139b7387337c7fbe8aca31b959b57b2fd4c8ae20a02cf1d6ea424dce AS build
+RUN apk add --no-cache musl-dev
+WORKDIR /src
+# The site's own workspace, and the one MCF crate it shares a format with.
+COPY site ./site
+COPY crates/mcf-core ./crates/mcf-core
+WORKDIR /src/site
+RUN cargo build --release --locked --target x86_64-unknown-linux-musl
+
+FROM scratch
+COPY --from=build /src/site/target/x86_64-unknown-linux-musl/release/mcf-site /mcf-site
+
+# The archive is a volume, because publication cannot be undone and an archive
+# that lived in the container would be undone by a restart.
+VOLUME ["/contributions"]
+ENV MCF_SITE_ADDRESS=0.0.0.0 \
+    MCF_SITE_PORT=8080 \
+    MCF_SITE_ARCHIVE=/contributions
+EXPOSE 8080
+ENTRYPOINT ["/mcf-site"]

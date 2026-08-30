@@ -1,0 +1,8 @@
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-env-changed=MCF_BUILD_COMMIT
+cargo:rerun-if-env-changed=RUSTC
+cargo:rerun-if-env-changed=TARGET
+cargo:rerun-if-env-changed=PROFILE
+cargo:rustc-env=MCF_BUILD_RUSTC=rustc 1.98.0 (88d9e12ae 2026-08-18)
+cargo:rustc-env=MCF_BUILD_TARGET=x86_64-unknown-linux-gnu
+cargo:rustc-env=MCF_BUILD_PROFILE=debug
