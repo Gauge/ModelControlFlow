@@ -91,6 +91,7 @@ version = "0.1.0-m0"
 dependencies = [
  "mcf-bench",
  "mcf-core",
+ "mcf-desk",
  "mcf-hub",
  "mcf-lab",
  "mcf-record",
@@ -102,6 +103,16 @@ dependencies = [
 [[package]]
 name = "mcf-core"
 version = "0.1.0-m0"
+
+[[package]]
+name = "mcf-desk"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+ "mcf-record",
+ "mcf-serve",
+ "mcf-tui",
+]
 
 [[package]]
 name = "mcf-helper"

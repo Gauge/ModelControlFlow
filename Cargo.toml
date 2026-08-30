@@ -18,6 +18,7 @@ members = [
     "crates/mcf-helper",
     "crates/mcf-hub",
     "crates/mcf-serve",
+    "crates/mcf-desk",
     "crates/mcf-tui",
     "crates/mcf-bench",
     "crates/mcf-cli",

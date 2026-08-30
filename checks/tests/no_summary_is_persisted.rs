@@ -113,11 +113,22 @@ fn no_shipped_type_holds_a_float() {
 /// Named as paths rather than as crates so that admitting one file does not
 /// admit the crate around it: `mcf-lab` is a large crate and only its model
 /// builder writes weights.
+/// Crates where a float is a coordinate or a weight, never a measurement.
+///
+/// `mcf-standin` computes with weights. `mcf-desk` places pixels: SDL's own
+/// interface takes `f32` for a rectangle and for where a glyph goes, so the
+/// alternative to a float there is not an integer, it is not drawing.
+///
+/// The exemption is paid for below, and the payment is checked rather than
+/// argued: neither crate can reach the one that persists anything.
+const EXEMPT: [&str; 2] = ["mcf-standin", "mcf-desk"];
+
 fn exempt(path: &Path) -> bool {
-    if path
-        .components()
-        .any(|component| component.as_os_str() == "mcf-standin")
-    {
+    if path.components().any(|component| {
+        EXEMPT
+            .iter()
+            .any(|crate_name| component.as_os_str() == *crate_name)
+    }) {
         return true;
     }
     relative(path) == "crates/mcf-lab/src/fixture.rs"
@@ -127,15 +138,29 @@ fn exempt(path: &Path) -> bool {
 ///
 /// Two facts, and either alone would be enough. The record's own format has no
 /// floating-point representation — a `Value` cannot hold one, so there is
-/// nothing to write even for a caller that wanted to. And `mcf-record` does not
-/// depend on `mcf-standin`, so the crate where floats live cannot reach the
-/// crate that persists anything.
+/// nothing to write even for a caller that wanted to. And the crate that
+/// persists anything depends on none of the exempt crates, so a float cannot
+/// travel from one to the other.
+///
+/// The second fact used to be a sentence about one crate. It is now read from
+/// the manifest, for every crate on the list — because an exemption whose
+/// payment nobody checks is an exemption that outlives its reason.
 #[test]
 fn a_float_cannot_reach_the_record() {
     let codec = std::fs::read_to_string(
         mcf_checks::workspace::root().join("crates/mcf-record/src/json.rs"),
     )
     .expect("the record's codec is in the tree");
+    let manifest =
+        std::fs::read_to_string(mcf_checks::workspace::root().join("crates/mcf-record/Cargo.toml"))
+            .expect("the record's manifest is in the tree");
+    for crate_name in EXEMPT {
+        assert!(
+            !manifest.contains(crate_name),
+            "mcf-record depends on {crate_name}, where floats live — the exemption is no \
+             longer paid for"
+        );
+    }
     for float in ["F32(", "F64(", "Float("] {
         assert!(
             !codec.contains(float),

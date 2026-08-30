@@ -229,6 +229,11 @@ pub(crate) const COMPONENTS: &[Component] = &[
             // Static, for the same reason every other provisioned artifact is:
             // what is provisioned must run where it lands (F31).
             "-DSDL_STATIC=ON",
+            // Position-independent, because what links it is a Rust binary and
+            // Rust links a position-independent executable. Without this the
+            // archive builds, and then the link fails on a relocation nobody
+            // reading the recipe would have predicted.
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
             // Everything below is off because MCF does not use it — and because
             // each one is a part of the tree that is NOT zlib. Switching them
             // off is not tidiness: it is what makes the shipped tree almost

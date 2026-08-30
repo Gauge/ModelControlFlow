@@ -14,6 +14,7 @@ mod bench;
 mod bundle;
 mod check;
 mod crosscheck;
+mod desk;
 mod doctor;
 mod embed;
 mod explain;
@@ -102,6 +103,11 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Open MCF in a window and stay there.
+    ///
+    /// A third surface and a client of the same control plane (A22, B-072),
+    /// drawing the console's own screens at another scale.
+    Desk,
     /// Open MCF as a terminal application and stay there.
     ///
     /// A second surface and a client of the same control plane (A22, B-072).
@@ -346,6 +352,11 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["serve"] => Request::Serve,
         ["tui"] => Request::Tui,
+        ["desk"] => Request::Desk,
+        ["desk", argument, ..] => Request::UnexpectedArgument {
+            command: "desk",
+            argument,
+        },
         ["tui", argument, ..] => Request::UnexpectedArgument {
             command: "tui",
             argument,
@@ -1244,6 +1255,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         } => pull::run(reference, *from, *into, *offered),
         Request::Serve => serve::run(),
         Request::Tui => tui::run(),
+        Request::Desk => desk::run(),
         Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Check {
             only,

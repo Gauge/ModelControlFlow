@@ -155,6 +155,16 @@ impl Screen {
             .map_or(' ', |cell| cell.what)
     }
 
+    /// What a cell is, for a renderer that draws colours rather than escape
+    /// sequences. The window needs this; the terminal does not, because there
+    /// the ink becomes a sequence on the way out.
+    #[must_use]
+    pub fn ink(&self, column: usize, row: usize) -> Ink {
+        self.cells
+            .get(row * self.width + column)
+            .map_or(Ink::Plain, |cell| cell.ink)
+    }
+
     /// One row as plain text, with no escape sequences in it.
     ///
     /// What the operator would read if the colours were taken away. Tests

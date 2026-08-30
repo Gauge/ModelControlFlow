@@ -164,6 +164,13 @@ const SURFACES: &[Surface] = &[
         table: None,
     },
     Surface {
+        krate: "mcf-desk",
+        table: Some((
+            "crates/mcf-desk/src/lib.rs",
+            "pub const ACTIONS: &[Action] = &[",
+        )),
+    },
+    Surface {
         krate: "mcf-tui",
         table: Some((
             "crates/mcf-tui/src/lib.rs",
@@ -188,10 +195,16 @@ fn surfaces_in_the_tree() -> Vec<String> {
         if name == "mcf-serve" {
             continue;
         }
+        // By what the crate DOES, not by how it spelled an import. Looking for
+        // the literal `control::Request` missed a surface that wrote
+        // `control::{Answer, Request}` — the same defect as the tripwire this
+        // replaced, one layer down.
         let reaches = sources(&format!("crates/{name}")).into_iter().any(|path| {
-            std::fs::read_to_string(path)
-                .unwrap_or_default()
-                .contains("control::Request")
+            let source = std::fs::read_to_string(path).unwrap_or_default();
+            source.contains("mcf_serve::control")
+                && operations()
+                    .iter()
+                    .any(|operation| source.contains(&format!("Request::{operation}")))
         });
         if reaches {
             found.push(name);

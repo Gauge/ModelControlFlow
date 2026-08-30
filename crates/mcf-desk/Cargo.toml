@@ -1,0 +1,15 @@
+[package]
+name = "mcf-desk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mcf-core = { path = "../mcf-core" }
+mcf-record = { path = "../mcf-record" }
+mcf-serve = { path = "../mcf-serve" }
+mcf-tui = { path = "../mcf-tui" }
+
+[lints]
+workspace = true

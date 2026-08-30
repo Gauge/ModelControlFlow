@@ -79,6 +79,13 @@ const REACHES: &[Reaches] = &[
         module: "crates/mcf-cli/src/tui.rs",
         subcommand: Some("tui"),
     },
+    // The window is a client of the same socket, for the same reason the
+    // console is. It runs until it is closed and no tier drives it, but being
+    // written down is what keeps that true (F104).
+    Reaches {
+        module: "crates/mcf-cli/src/desk.rs",
+        subcommand: Some("desk"),
+    },
 ];
 
 /// How a tier says it brought its own: the helper in `scripts/lib-tiers.sh`.

@@ -113,6 +113,16 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core", "mcf-record", "mcf-serve"],
     },
     Member {
+        name: "mcf-desk",
+        path: "crates/mcf-desk",
+        // `mcf-tui` because the window draws the CONSOLE's screens rather than
+        // screens of its own: one layout, two scales, and neither surface can
+        // drift from the other. The edge points this way because the console is
+        // the one that works with no display attached, which A22 makes the
+        // surface everything else is measured against.
+        depends_on: &["mcf-core", "mcf-record", "mcf-serve", "mcf-tui"],
+    },
+    Member {
         name: "mcf-cli",
         path: "crates/mcf-cli",
         // `mcf-standin` because `mcf run` drives MCF's own engine: D31 put it
@@ -128,6 +138,7 @@ pub const MEMBERS: &[Member] = &[
             "mcf-serve",
             "mcf-bench",
             "mcf-tui",
+            "mcf-desk",
         ],
     },
     Member {
