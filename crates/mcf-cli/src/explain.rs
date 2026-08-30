@@ -619,7 +619,7 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
         ),
         (
             "context for planning",
-            format!("{} tokens", crate::pull::PLANNING_CONTEXT),
+            format!("{} tokens", mcf_hub::offer::PLANNING_CONTEXT),
             "what `mcf pull` plans against, stated in crates/mcf-cli/src/pull.rs".to_owned(),
         ),
         (

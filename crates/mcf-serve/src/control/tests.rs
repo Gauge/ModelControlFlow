@@ -117,3 +117,69 @@ fn an_answer_says_whether_it_is_one() {
         Some("config.invalid")
     );
 }
+
+/// The three requests the window added survive the wire unchanged.
+///
+/// A request that reads back as something else is a request that does
+/// something else, and the three added here carry a repository name, a file
+/// name and a depth — each of which changes what happens (B-412).
+#[test]
+fn the_new_requests_survive_the_wire() {
+    let asked = [
+        Request::Offered {
+            reference: "owner/repository".to_owned(),
+            from: None,
+        },
+        Request::Offered {
+            reference: "owner/repository".to_owned(),
+            from: Some("https://elsewhere.example/".to_owned()),
+        },
+        Request::Acquire {
+            reference: "owner/repository".to_owned(),
+            file: "a-model.gguf".to_owned(),
+            from: None,
+        },
+        Request::Measure {
+            model: "a-model.gguf".to_owned(),
+            engine: None,
+            deepest: 8192,
+        },
+        Request::Measure {
+            model: "a-model.gguf".to_owned(),
+            engine: Some("stand-in".to_owned()),
+            deepest: 512,
+        },
+    ];
+    for request in asked {
+        let line = request.to_line();
+        let read = Request::read(&line).expect("a request MCF wrote is a request MCF reads");
+        assert_eq!(format!("{request:?}"), format!("{read:?}"), "{line}");
+    }
+}
+
+/// A measurement with no depth is refused rather than given one.
+///
+/// A ladder with no ceiling runs until the machine runs out, which is not a
+/// diagnostic but an accident. The caller says how deep, always (A7).
+#[test]
+fn a_measurement_must_say_how_deep() {
+    let line = r#"{"protocol":1,"ask":"measure","model":"a-model.gguf"}"#;
+    assert!(
+        Request::read(line).is_err(),
+        "a measurement with no depth was accepted"
+    );
+}
+
+/// An acquisition names both a repository and a file.
+///
+/// Which variant to fetch is the operator's choice, not MCF's: `Offered` said
+/// what each costs and choosing between them is §3.15's business, so a request
+/// that named only a repository would be asking MCF to decide.
+#[test]
+fn an_acquisition_must_name_the_file() {
+    let line = r#"{"protocol":1,"ask":"acquire","reference":"owner/repository"}"#;
+    assert!(
+        Request::read(line).is_err(),
+        "an acquisition with no file was accepted"
+    );
+}

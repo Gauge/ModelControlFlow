@@ -19,6 +19,7 @@
 //! command line already sends, and [`ACTIONS`] names which (A22, B-072).
 
 pub mod font;
+pub mod job;
 pub mod paint;
 pub mod paper;
 pub mod sdl;
@@ -85,8 +86,12 @@ pub enum Page {
     Models,
     /// One of them, by its position in the list.
     Model(usize),
+    /// Finding and fetching one that is not here yet.
+    Add,
     /// Measuring.
     Speed,
+    /// Asking a model something.
+    Use,
     /// What this machine can do.
     Computer,
 }
@@ -94,12 +99,15 @@ pub enum Page {
 impl Page {
     /// The navigation column, in order.
     ///
-    /// Three entries, because three are built. A column offering *Chat* and
-    /// *Add a model* before either works would be advertising what MCF cannot
-    /// do, and a person who clicks one and finds nothing has been told
-    /// something false about the whole application (A19).
+    /// Five entries, and each one does what it says. A column entry that led
+    /// nowhere would be advertising what MCF cannot do, and a person who
+    /// clicked it would have no way to know which of the others to trust
+    /// (A19) — so an entry arrives here when the thing behind it works, and
+    /// these five do.
     pub const MENU: &'static [(Self, &'static str)] = &[
         (Self::Models, "Your models"),
+        (Self::Add, "Add a model"),
+        (Self::Use, "Chat"),
         (Self::Speed, "Speed tests"),
         (Self::Computer, "Your computer"),
     ];
@@ -109,6 +117,8 @@ impl Page {
     pub fn section(self) -> Self {
         match self {
             Self::Model(_) | Self::Models => Self::Models,
+            Self::Add => Self::Add,
+            Self::Use => Self::Use,
             Self::Speed => Self::Speed,
             Self::Computer => Self::Computer,
         }
@@ -329,6 +339,83 @@ fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
     Answer::read(line.trim_end()).map_err(|failure| failure.to_string())
 }
 
+/// One thing a screen asks the window to do.
+///
+/// Immediate mode has no callbacks: a screen draws, notices it was clicked,
+/// and says what that meant. Everything that changes state happens in one
+/// place, which is why a click can never leave the window half-changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Act {
+    /// Show another screen.
+    Go(Page),
+    /// Ask a hub what it publishes under what has been typed.
+    LookUp,
+    /// Fetch one published file.
+    Download {
+        /// The repository.
+        reference: String,
+        /// The file within it.
+        file: String,
+    },
+    /// Time a model.
+    Measure {
+        /// Which, by position in the list.
+        at: usize,
+        /// The deepest context to sample.
+        deepest: u64,
+    },
+    /// Ask a model what has been typed.
+    Ask {
+        /// Which, by position in the list.
+        at: usize,
+    },
+    /// Choose a model without leaving the screen.
+    Choose(usize),
+    /// Empty the field.
+    Clear,
+    /// Forget what just ran, so the screen goes back to its resting state.
+    Dismiss,
+}
+
+/// What long-running thing the window is waiting on, if any.
+///
+/// One at a time, deliberately. Two measurements at once would be two
+/// measurements of a machine that was running a measurement, and the second
+/// would be a reading of the first (A6).
+#[derive(Debug)]
+pub enum Doing {
+    /// Nothing.
+    Nothing,
+    /// Asking a hub what it publishes.
+    Listing(job::Job),
+    /// Fetching a model.
+    Downloading(job::Job),
+    /// Timing one.
+    Measuring(job::Job),
+    /// Waiting for a model to answer.
+    Answering(job::Job),
+}
+
+impl Doing {
+    /// The job behind it, whatever it is.
+    #[must_use]
+    pub fn job(&self) -> Option<&job::Job> {
+        match self {
+            Self::Nothing => None,
+            Self::Listing(job)
+            | Self::Downloading(job)
+            | Self::Measuring(job)
+            | Self::Answering(job) => Some(job),
+        }
+    }
+
+    /// Whether something is still running.
+    #[must_use]
+    pub fn busy(&self) -> bool {
+        self.job().is_some_and(|job| !job.finished)
+    }
+}
+
 /// The window's state.
 #[derive(Debug)]
 pub struct Desk {
@@ -343,6 +430,14 @@ pub struct Desk {
     pub reading: mcf_tui::machine::Reading,
     /// Why MCF could not be reached, when it could not.
     pub refusal: Option<String>,
+    /// What is being typed, on the screen that has a field.
+    pub typed: String,
+    /// Which model a measurement or a question is about.
+    pub chosen: Option<usize>,
+    /// What is running.
+    pub doing: Doing,
+    /// What a model has said so far, this turn.
+    pub said: String,
     sampler: mcf_tui::machine::Sampler,
 }
 
@@ -357,8 +452,165 @@ impl Desk {
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
+            typed: String::new(),
+            chosen: None,
+            doing: Doing::Nothing,
+            said: String::new(),
             sampler: mcf_tui::machine::Sampler::new(),
         }
+    }
+
+    /// Whether the screen showing has a field somebody could be typing into.
+    #[must_use]
+    pub fn takes_typing(&self) -> bool {
+        matches!(self.page, Page::Add | Page::Use)
+    }
+
+    /// What pressing Return means on the screen showing.
+    pub fn entered(&mut self) {
+        match self.page {
+            Page::Add => self.look_up(),
+            Page::Use => {
+                if let Some(at) = self.chosen {
+                    self.ask(at);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Takes whatever a running job has said. Returns whether anything had.
+    pub fn hear(&mut self) -> bool {
+        let heard = match &mut self.doing {
+            Doing::Nothing => false,
+            Doing::Listing(job)
+            | Doing::Downloading(job)
+            | Doing::Measuring(job)
+            | Doing::Answering(job) => job.drain(),
+        };
+        if !heard {
+            return false;
+        }
+        // A generation arrives a token at a time, so the text is built as it
+        // comes rather than waiting for the end — which is the difference
+        // between watching a model answer and watching a blank panel.
+        if let Doing::Answering(job) = &self.doing {
+            self.said = job
+                .answers
+                .iter()
+                .filter_map(|answer| answer.get("token").and_then(Value::as_text))
+                .collect::<Vec<_>>()
+                .concat();
+        }
+        // A model that has just arrived is one this window is holding, and
+        // the list says so without anybody asking it to.
+        if let Doing::Downloading(job) = &self.doing
+            && job.finished
+            && job.refused.is_none()
+        {
+            self.refresh();
+        }
+        true
+    }
+
+    /// Does what a screen said a click meant.
+    pub fn act(&mut self, act: Act) {
+        match act {
+            Act::Go(page) => {
+                if page != self.page {
+                    self.scroll = 0.0;
+                    if page.section() == Page::Computer {
+                        self.sample();
+                    }
+                    self.page = page;
+                }
+            }
+            Act::LookUp => self.look_up(),
+            Act::Download { reference, file } => self.download(&reference, &file),
+            Act::Measure { at, deepest } => {
+                self.page = Page::Speed;
+                self.measure(at, deepest);
+            }
+            Act::Ask { at } => self.ask(at),
+            Act::Choose(at) => self.chosen = Some(at),
+            Act::Clear => self.typed.clear(),
+            Act::Dismiss => self.doing = Doing::Nothing,
+        }
+    }
+
+    /// Asks a hub what it publishes under what has been typed.
+    pub fn look_up(&mut self) {
+        let asked = self.typed.trim().to_owned();
+        if asked.is_empty() {
+            return;
+        }
+        self.doing = Doing::Listing(job::Job::start(
+            self.socket.clone(),
+            Request::Offered {
+                reference: asked.clone(),
+                from: None,
+            },
+            format!("looking up {asked}"),
+        ));
+    }
+
+    /// Fetches one published file.
+    pub fn download(&mut self, reference: &str, file: &str) {
+        self.doing = Doing::Downloading(job::Job::start(
+            self.socket.clone(),
+            Request::Acquire {
+                reference: reference.to_owned(),
+                file: file.to_owned(),
+                from: None,
+            },
+            format!("getting {file}"),
+        ));
+    }
+
+    /// Times the chosen model.
+    pub fn measure(&mut self, at: usize, deepest: u64) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
+        self.chosen = Some(at);
+        self.doing = Doing::Measuring(job::Job::start(
+            self.socket.clone(),
+            Request::Measure {
+                model: held.path.clone(),
+                engine: None,
+                deepest,
+            },
+            format!("measuring {}", held.name),
+        ));
+    }
+
+    /// Asks the chosen model what has been typed.
+    pub fn ask(&mut self, at: usize) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
+        let question = self.typed.trim().to_owned();
+        if question.is_empty() {
+            return;
+        }
+        self.said.clear();
+        self.doing = Doing::Answering(job::Job::start(
+            self.socket.clone(),
+            Request::Generate {
+                model: held.path.clone(),
+                prompt: question,
+                limit: Some(256),
+                seed: 0,
+                tokens: None,
+                engine: None,
+                // A person's, which is what this window is for. B-146 and
+                // §6.8: whose text it is travels with the request rather than
+                // being inferred at the far end, and a window is never a
+                // probe.
+                whose: mcf_record::content::Whose::User,
+            },
+            format!("asking {}", held.name),
+        ));
     }
 
     /// Asks MCF what it is holding.
@@ -479,6 +731,9 @@ impl Desk {
 /// could be found on this computer.
 pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut paint = paint::Painter::open("MCF", 1180, 760, paint::NIGHT)?;
+    if let Some(window) = paint.window() {
+        window.start_typing();
+    }
     let mut desk = Desk::new(socket);
     desk.refresh();
     desk.sample();
@@ -508,10 +763,28 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     mouse.click = Some(mouse.at);
                 }
                 sdl::EVENT_MOUSE_WHEEL => mouse.wheel = sdl::event_wheel(&event),
+                // Typing. It arrives already composed, so a layout, a
+                // modifier or an input method is the platform's business and
+                // not something this spells out of keycodes.
+                sdl::EVENT_TEXT_INPUT => {
+                    if desk.takes_typing()
+                        && let Some(text) = sdl::event_text(&event)
+                    {
+                        desk.typed.push_str(&text);
+                    }
+                }
                 sdl::EVENT_KEY_DOWN => match sdl::event_key(&event) {
                     sdl::KEY_ESCAPE => return Ok(()),
-                    key if key == u32::from(b'q') => return Ok(()),
-                    key if key == u32::from(b'r') => {
+                    sdl::KEY_BACKSPACE if desk.takes_typing() => {
+                        let _removed = desk.typed.pop();
+                    }
+                    sdl::KEY_RETURN if desk.takes_typing() => desk.entered(),
+                    // `q` closes the window — except where somebody is
+                    // typing, when it is a letter. A field that ate the
+                    // application on the letter q would be a field nobody
+                    // could type a name into.
+                    key if key == u32::from(b'q') && !desk.takes_typing() => return Ok(()),
+                    key if key == u32::from(b'r') && !desk.takes_typing() => {
                         desk.refresh();
                         desk.sample();
                     }
@@ -525,6 +798,11 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             desk.scroll = (desk.scroll - mouse.wheel * 48.0).max(0.0);
         }
 
+        // Anything a running job has said since the last frame.
+        if desk.hear() {
+            acted = true;
+        }
+
         // A second between readings, and only where they are shown — the same
         // rule the console follows, for the same reason: an idle window should
         // not be why a fan is running (B-071).
@@ -536,14 +814,9 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
             acted = true;
         }
 
-        if let Some(going) = view::draw(&mut paint, &desk, &mouse)
-            && going != desk.page
-        {
-            desk.scroll = 0.0;
-            if going.section() == Page::Computer {
-                desk.sample();
-            }
-            desk.page = going;
+        if let Some(act) = view::draw(&mut paint, &desk, &mouse) {
+            desk.act(act);
+            acted = true;
         }
         let _ = acted;
 

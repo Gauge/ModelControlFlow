@@ -1,0 +1,169 @@
+//! `mcf offered` and `mcf acquire`: the two things the window's *Add a model*
+//! screen does, without the window.
+//!
+//! **Why these exist beside `mcf pull`.** `pull` does the same work in this
+//! process, and needs no daemon; these ask the daemon to do it. That is not
+//! two implementations — both end at `mcf_hub::acquisition::one` — but it is
+//! two *paths*, and the daemon's is the one the window drives. A22 forbids a
+//! capability reachable only through a client, and a path nothing headless
+//! exercises is a path the laboratory cannot test (B-072, A22).
+//!
+//! **They print what the daemon said.** No summarising, no rewording of a
+//! refusal: a second opinion about what happened is not something a client is
+//! for (A2).
+
+use std::io::{BufRead as _, BufReader, Write as _};
+use std::os::unix::net::UnixStream;
+
+use mcf_record::json::Value;
+use mcf_serve::control::{Answer, Request};
+
+use crate::Response;
+
+/// What a repository publishes, and which of it will run here.
+pub(crate) fn offered(reference: &str, from: Option<&str>) -> Response {
+    ask(
+        &Request::Offered {
+            reference: reference.to_owned(),
+            from: from.map(str::to_owned),
+        },
+        &published,
+    )
+}
+
+/// Fetches one published file into this machine's store.
+pub(crate) fn acquire(reference: &str, file: &str, from: Option<&str>) -> Response {
+    ask(
+        &Request::Acquire {
+            reference: reference.to_owned(),
+            file: file.to_owned(),
+            from: from.map(str::to_owned),
+        },
+        &arriving,
+    )
+}
+
+/// Sends one request and renders every line it answers with.
+fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
+    let Some(socket) = crate::serve::socket_path() else {
+        return Response {
+            text: "mcf: MCF has nowhere to put a control socket on this machine".to_owned(),
+            served: false,
+        };
+    };
+    if let Some(why) = crate::serve::ensure_running(&socket) {
+        return Response {
+            text: format!("mcf: MCF could not start\n  {why}"),
+            served: false,
+        };
+    }
+    let Ok(mut connection) = UnixStream::connect(&socket) else {
+        return Response {
+            text: "mcf: MCF is not answering".to_owned(),
+            served: false,
+        };
+    };
+    // No read deadline: a transfer is as long as the file and the network make
+    // it, and a timeout here would report a working download as a broken
+    // daemon.
+    if writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .is_err()
+    {
+        return Response {
+            text: "mcf: the request could not be sent".to_owned(),
+            served: false,
+        };
+    }
+
+    let mut lines = Vec::new();
+    let mut served = true;
+    for read in BufReader::new(&connection).lines() {
+        let Ok(read) = read else { break };
+        let Ok(answer) = Answer::read(read.trim_end()) else {
+            continue;
+        };
+        if !answer.served {
+            served = false;
+            lines.push(format!(
+                "mcf: refused\n  {}",
+                answer
+                    .body
+                    .get("what")
+                    .and_then(Value::as_text)
+                    .unwrap_or("MCF did not say why")
+            ));
+            break;
+        }
+        lines.extend(render(&answer.body));
+        if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            break;
+        }
+    }
+    Response {
+        text: lines.join("\n"),
+        served,
+    }
+}
+
+/// A listing, one row a published file.
+fn published(body: &Value) -> Vec<String> {
+    let mut lines = vec![format!(
+        "{} at {}",
+        body.get("repository")
+            .and_then(Value::as_text)
+            .unwrap_or("?"),
+        body.get("revision")
+            .and_then(Value::as_text)
+            .unwrap_or("an unstated revision")
+    )];
+    // A7 and A19: where MCF could not judge whether these would run, it says
+    // so once rather than leaving every row silently unjudged.
+    if let Some(why) = body.get("no_plan").and_then(Value::as_text) {
+        lines.push(format!(
+            "  MCF cannot say which of these would run here: {why}"
+        ));
+    }
+    for file in body.get("files").and_then(Value::as_list).unwrap_or(&[]) {
+        let name = file.get("file").and_then(Value::as_text).unwrap_or("?");
+        let bytes = file.get("bytes").and_then(Value::as_integer).unwrap_or(0);
+        let verdict = file
+            .get("why")
+            .and_then(Value::as_text)
+            .map_or_else(String::new, |why| format!(" — {why}"));
+        lines.push(format!("  {name} — {bytes} bytes{verdict}"));
+    }
+    lines
+}
+
+/// A transfer, one line each time it says how far it has got.
+fn arriving(body: &Value) -> Vec<String> {
+    let file = body
+        .get("acquiring")
+        .and_then(Value::as_text)
+        .unwrap_or("?");
+    if matches!(body.get("done"), Some(Value::Bool(true))) {
+        let path = body.get("path").and_then(Value::as_text).unwrap_or("?");
+        let mut lines = vec![format!("{file} is here: {path}")];
+        match body.get("recorded").and_then(Value::as_text) {
+            Some(where_) => lines.push(format!("  written down in {where_}")),
+            // A24: an acquisition MCF cannot account for is worse than one it
+            // did not make, so a record that would not write is said out loud.
+            None => lines.push("  MCF could not write this acquisition to its record".to_owned()),
+        }
+        return lines;
+    }
+    let arrived = body.get("arrived").and_then(Value::as_integer);
+    let total = body.get("bytes").and_then(Value::as_integer);
+    match (body.get("doing").and_then(Value::as_text), arrived, total) {
+        (Some("checking"), _, _) => {
+            vec![format!(
+                "  {file}: checking that what arrived is what was published"
+            )]
+        }
+        (_, Some(arrived), Some(total)) => {
+            vec![format!("  {file}: {arrived} of {total} bytes")]
+        }
+        _ => vec![format!("  {file}: starting")],
+    }
+}

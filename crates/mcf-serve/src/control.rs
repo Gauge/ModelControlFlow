@@ -109,6 +109,54 @@ pub enum Request {
         /// failure §6.8 exists to prevent.
         whose: mcf_record::content::Whose,
     },
+    /// What a hub publishes under a reference, and which of it will run here.
+    ///
+    /// **Reading, never fetching.** This is what a person is asking when they
+    /// name a repository and no file: not *what exists* but *which of these is
+    /// for my machine* (PR3, B-213). It acquires nothing, so it is safe to
+    /// send while somebody is still typing.
+    Offered {
+        /// The reference, as a person wrote it.
+        reference: String,
+        /// A hub other than the default, where the caller says.
+        from: Option<String>,
+    },
+    /// Fetch one published file into this machine's store.
+    ///
+    /// The file is named rather than chosen by MCF: [`Self::Offered`] said
+    /// which would run and what each costs, and choosing between them is the
+    /// operator's (§3.15). What comes back is one line per step of progress
+    /// and a last line carrying the provenance that was written down.
+    Acquire {
+        /// The reference, as a person wrote it.
+        reference: String,
+        /// Which published file.
+        file: String,
+        /// A hub other than the default.
+        from: Option<String>,
+    },
+    /// Time a model on this machine, at doubling depths.
+    ///
+    /// One line per depth as it is measured, so that a window can show a bar
+    /// moving and an estimate narrowing, and a last line carrying the readings
+    /// and the conditions they were taken under (A6).
+    Measure {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// Which engine, where the caller says. Absent means the daemon's
+        /// stated rule.
+        engine: Option<String>,
+        /// The deepest context to sample, which implies every power of two
+        /// below it — the shallow points are what the deep one is read
+        /// against, so a run that skipped them would be a run whose deepest
+        /// number meant nothing.
+        deepest: u64,
+    },
+}
+
+/// An optional string, as the protocol carries one.
+fn maybe(held: Option<&str>) -> Value {
+    held.map_or(Value::Null, Value::text)
 }
 
 impl Request {
@@ -168,6 +216,34 @@ impl Request {
                 ),
                 ("whose", Value::text(whose.as_str())),
             ]),
+            Self::Offered { reference, from } => Value::map([
+                ("ask", Value::text("offered")),
+                ("reference", Value::text(reference.clone())),
+                ("from", maybe(from.as_deref())),
+            ]),
+            Self::Acquire {
+                reference,
+                file,
+                from,
+            } => Value::map([
+                ("ask", Value::text("acquire")),
+                ("reference", Value::text(reference.clone())),
+                ("file", Value::text(file.clone())),
+                ("from", maybe(from.as_deref())),
+            ]),
+            Self::Measure {
+                model,
+                engine,
+                deepest,
+            } => Value::map([
+                ("ask", Value::text("measure")),
+                ("model", Value::text(model.clone())),
+                ("engine", maybe(engine.as_deref())),
+                (
+                    "deepest",
+                    Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
+                ),
+            ]),
         };
         let Value::Map(mut fields) = body else {
             return String::new();
@@ -185,6 +261,12 @@ impl Request {
     /// megabyte back would be a way of writing to MCF's own output (§3.7, A1).
     /// `exchange.schema.unreadable` for a protocol version this build does not
     /// speak, which is a different thing from a request it does not have.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm a request, and splitting it would put the wire format \
+                  of a request somewhere other than beside the wire format of \
+                  every other request"
+    )]
     pub fn read(line: &str) -> Result<Self> {
         if line.len() > REQUEST_CEILING {
             return Err(refused(
@@ -211,8 +293,46 @@ impl Request {
             None => return Err(refused("a request naming no protocol version", line)),
         }
 
+        let optional = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
         match value.get("ask").and_then(Value::as_text) {
             Some("status") => Ok(Self::Status),
+            Some("offered") => Ok(Self::Offered {
+                reference: value
+                    .get("reference")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a listing naming no reference", line))?
+                    .to_owned(),
+                from: optional("from"),
+            }),
+            Some("acquire") => Ok(Self::Acquire {
+                reference: value
+                    .get("reference")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("an acquisition naming no reference", line))?
+                    .to_owned(),
+                file: value
+                    .get("file")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("an acquisition naming no file", line))?
+                    .to_owned(),
+                from: optional("from"),
+            }),
+            Some("measure") => Ok(Self::Measure {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a measurement naming no model", line))?
+                    .to_owned(),
+                engine: optional("engine"),
+                // A measurement with no ceiling would be one that runs until
+                // the machine runs out, which is not a diagnostic but an
+                // accident. The caller says how deep, always.
+                deepest: value
+                    .get("deepest")
+                    .and_then(Value::as_integer)
+                    .and_then(|deepest| u64::try_from(deepest).ok())
+                    .ok_or_else(|| refused("a measurement naming no depth", line))?,
+            }),
             Some("holding") => Ok(Self::Holding),
             Some("stop") => Ok(Self::Stop {
                 reason: value

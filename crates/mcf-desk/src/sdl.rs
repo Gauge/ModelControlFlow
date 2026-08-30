@@ -96,6 +96,20 @@ pub const KEY_UP: u32 = KEY_MASK | 0x52;
 pub const KEY_RETURN: u32 = 0x0D;
 /// Escape.
 pub const KEY_ESCAPE: u32 = 0x1B;
+/// Backspace.
+pub const KEY_BACKSPACE: u32 = 0x08;
+
+/// Text arriving from the keyboard, already composed.
+///
+/// Typing is not reading keycodes: a keycode is a physical key and text is
+/// what the layout, the modifiers and any input method made of it. A field
+/// that spelled its own characters from keycodes would work on one keyboard.
+pub const EVENT_TEXT_INPUT: u32 = 0x303;
+
+/// Where the pointer to that text sits in `SDL_TextInputEvent`: type,
+/// reserved, timestamp, window — then, after the padding the pointer's
+/// alignment requires, the pointer.
+pub const TEXT_OFFSET: usize = 24;
 
 /// A rectangle in the renderer's own floating-point coordinates.
 #[repr(C)]
@@ -160,6 +174,7 @@ unsafe extern "C" {
     fn SDL_DestroyTexture(texture: *mut c_void);
     fn SDL_GetWindowDisplayScale(window: *mut c_void) -> f32;
     fn SDL_SetWindowMinimumSize(window: *mut c_void, w: i32, h: i32) -> bool;
+    fn SDL_StartTextInput(window: *mut c_void) -> bool;
 }
 
 /// A texture the window owns.
@@ -381,6 +396,18 @@ impl Window {
         }
     }
 
+    /// Asks the platform to start sending composed text.
+    ///
+    /// Without this, a key press is a keycode and nothing more — which is
+    /// enough to move a cursor and not enough to type a name.
+    #[cfg(have_sdl)]
+    pub fn start_typing(&self) {
+        // SAFETY: the window pointer is live for the life of this struct.
+        unsafe {
+            let _started = SDL_StartTextInput(self.handle);
+        }
+    }
+
     /// How much larger this display draws things than a low-density one.
     ///
     /// One on an ordinary screen, two on a dense one. Every size in the
@@ -449,6 +476,8 @@ impl Window {
     pub fn scale(&self) -> f32 {
         1.0
     }
+    /// Unreachable: `open` refused.
+    pub fn start_typing(&self) {}
     /// Unreachable: `open` refused.
     #[must_use]
     pub fn size(&self) -> (i32, i32) {
@@ -529,6 +558,25 @@ pub fn event_mouse(event: &[u8; EVENT_BYTES]) -> (f32, f32) {
 #[must_use]
 pub fn event_wheel(event: &[u8; EVENT_BYTES]) -> f32 {
     float_at(event, WHEEL_Y_OFFSET)
+}
+
+/// The composed text a text-input event carries.
+///
+/// SDL owns the string and keeps it only until the next event is pumped, so
+/// it is copied here before anything else happens.
+#[must_use]
+pub fn event_text(event: &[u8; EVENT_BYTES]) -> Option<String> {
+    let held = event.get(TEXT_OFFSET..TEXT_OFFSET + 8)?;
+    let mut eight = [0_u8; 8];
+    eight.copy_from_slice(held);
+    let pointer = usize::from_ne_bytes(eight) as *const std::ffi::c_char;
+    if pointer.is_null() {
+        return None;
+    }
+    // SAFETY: SDL guarantees a NUL-terminated string here for the duration of
+    // this event, and it is copied before returning.
+    let text = unsafe { std::ffi::CStr::from_ptr(pointer) };
+    Some(text.to_string_lossy().into_owned())
 }
 
 /// Whether a button event is the left button — the only one MCF acts on.

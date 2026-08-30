@@ -38,6 +38,8 @@ use mcf_core::time::{Clock as _, Instant, Monotonic, SystemClock, Timestamp};
 use mcf_record::journal::{Entry, EntryId, EntryKind};
 use mcf_record::json::Value;
 
+use mcf_hub::source::Source as _;
+
 use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
 
 const WHERE: Subsystem = Subsystem::new("mcf-serve::daemon");
@@ -106,6 +108,240 @@ fn system_memory_free() -> Option<u64> {
         }
     }
     None
+}
+
+/// The last line of an acquisition: where the model went, and what was
+/// written down about it.
+fn acquired(file: &str, done: &mcf_hub::acquisition::Done) -> Answer {
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    let bytes = Value::Integer(i64::try_from(done.acquired.bytes).unwrap_or(i64::MAX));
+    Answer::served(Value::map([
+        ("acquiring", Value::text(file.to_owned())),
+        ("doing", Value::text("done")),
+        ("done", Value::Bool(true)),
+        (
+            "path",
+            Value::text(done.acquired.path.display().to_string()),
+        ),
+        ("arrived", bytes.clone()),
+        ("bytes", bytes),
+        ("attempts", count(done.acquired.attempts)),
+        (
+            "recorded",
+            match &done.recorded {
+                Ok(where_) => Value::text(where_.display().to_string()),
+                Err(_) => Value::Null,
+            },
+        ),
+    ]))
+}
+
+/// The last line of a measurement: every reading, and what they were taken
+/// under.
+///
+/// The conditions are not a footnote. A speed without them is a number nobody
+/// can use or reproduce, and the engine that *ran* is the condition that
+/// matters most — a timing taken from MCF's own stand-in measures the
+/// stand-in, which is written to be read rather than to be fast (A6, B65, D31).
+fn measured(
+    named: &str,
+    path: &Path,
+    bytes: Option<u64>,
+    asked: Option<&str>,
+    ran_on: Option<&str>,
+    readings: Vec<Value>,
+) -> Answer {
+    Answer::served(Value::map([
+        ("measuring", Value::text(named.to_owned())),
+        ("readings", Value::List(readings)),
+        ("done", Value::Bool(true)),
+        (
+            "conditions",
+            Value::map([
+                ("model", Value::text(path.display().to_string())),
+                (
+                    "bytes",
+                    bytes.map_or(Value::Null, |bytes| {
+                        Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+                    }),
+                ),
+                (
+                    "engine_asked",
+                    asked.map_or(Value::Null, |engine| Value::text(engine.to_owned())),
+                ),
+                (
+                    "engine_ran",
+                    ran_on.map_or(Value::Null, |engine| Value::text(engine.to_owned())),
+                ),
+                (
+                    "is_the_stand_in",
+                    Value::Bool(ran_on.is_some_and(is_the_stand_in)),
+                ),
+                ("repeats", Value::Integer(i64::from(REPEATS))),
+                (
+                    "tokens_per_reading",
+                    Value::Integer(i64::from(SETTLED_AS_F32)),
+                ),
+                (
+                    "method",
+                    Value::text(
+                        "two runs a depth, one token and seventeen; the difference over sixteen, \
+                         so that loading and prefill cancel",
+                    ),
+                ),
+                ("loaded", Value::text("per_request")),
+            ]),
+        ),
+    ]))
+}
+
+/// One timed generation: how long it took, and what actually ran it.
+///
+/// **Nanoseconds, as a whole number.** Floating point does not appear in a
+/// shipped crate, because a NaN one division away from a record is how a
+/// measurement starts lying (A6, A1) — and a duration is a count of ticks
+/// anyway. Everything below divides and formats integers.
+#[derive(Debug)]
+struct Timed {
+    /// Wall-clock nanoseconds.
+    ns: u64,
+    /// The engine the account says served it, which is not necessarily the
+    /// one that was asked for.
+    engine: Option<String>,
+}
+
+/// Nanoseconds as milliseconds, to three places, without a float.
+fn as_milliseconds(ns: u64) -> String {
+    #[expect(
+        clippy::integer_division,
+        reason = "nanoseconds to microseconds, then to milliseconds and a remainder; \
+                  the discarded part is under a nanosecond"
+    )]
+    let micros = ns / 1_000;
+    #[expect(
+        clippy::integer_division,
+        reason = "whole milliseconds and thousandths"
+    )]
+    let (whole, thousandths) = (micros / 1_000, micros % 1_000);
+    format!("{whole}.{thousandths:03}")
+}
+
+/// Whether an engine name is MCF's own reference implementation.
+fn is_the_stand_in(engine: &str) -> bool {
+    engine == mcf_core::build_identity::stand_in_engine() || engine.contains("stand-in")
+}
+
+/// The median of a set of samples, sorting them on the way.
+///
+/// The median rather than the mean, because one run that met a busy machine
+/// should not move the answer — and with three samples the mean would let it.
+fn middle(samples: &mut [u64]) -> Option<u64> {
+    if samples.is_empty() {
+        return None;
+    }
+    samples.sort_unstable();
+    #[expect(
+        clippy::integer_division,
+        reason = "the middle of a list, which is what a median is"
+    )]
+    let at = samples.len() / 2;
+    samples.get(at).copied()
+}
+
+/// How many times each depth is measured.
+///
+/// Three: enough for a median to mean something, few enough that a ladder of
+/// eight depths does not become a coffee break.
+const REPEATS: u32 = 3;
+
+/// How many tokens a reading is taken over, past the first.
+///
+/// Sixteen: enough that the difference between the two runs is dominated by
+/// generation rather than by the noise in either, and few enough that a ladder
+/// of eight depths is a minute rather than ten.
+const SETTLED: u32 = 16;
+/// The same, where arithmetic wants it.
+const SETTLED_AS_F32: u16 = 16;
+
+/// The shallowest depth worth measuring.
+///
+/// Below this the per-token cost is the same as at this depth to within the
+/// noise, so a rung there would cost time and add nothing.
+const SHALLOWEST: u64 = 512;
+
+/// Every power of two from the shallowest up to and including `deepest`.
+///
+/// Powers of two because that is how context windows are asked for, and every
+/// rung because a deep reading with no shallow one to compare against is not a
+/// fall-off — it is a single number.
+fn depth_ladder(deepest: u64) -> Vec<u64> {
+    let mut ladder = Vec::new();
+    let mut depth = SHALLOWEST;
+    while depth <= deepest {
+        ladder.push(depth);
+        depth = depth.saturating_mul(2);
+        if depth == 0 {
+            break;
+        }
+    }
+    ladder
+}
+
+/// Roughly how long a ladder will take, as a range.
+///
+/// The arithmetic below converts byte counts and depths into seconds. Both are
+/// far inside f64's exact range — the largest model anybody holds is a few
+/// hundred billion bytes and the mantissa runs out four thousand times higher
+/// — and the result is clamped positive before it becomes a whole number.
+///
+/// Crude on purpose. What it is for is letting somebody decide not to wait,
+/// and a range that is honestly wide serves that better than a single number
+/// that is precisely wrong. MCF's estimates have been measured against what
+/// runs actually take and land between 0.58× and 1.42× of them, so those are
+/// the bounds rather than something invented here.
+#[expect(
+    clippy::integer_division,
+    reason = "an estimate in whole seconds, and the remainder of a second is \
+              far inside the range the answer is given as"
+)]
+fn estimated_seconds(ladder: &[u64], bytes: Option<u64>) -> (u64, u64) {
+    // Milliseconds throughout, so that the arithmetic is whole numbers and
+    // the rounding happens once, at the end.
+    //
+    // A model is read once per request at roughly half a gigabyte a second on
+    // an ordinary machine, and a rung is two requests times the repeats.
+    let per_load_ms = bytes.map_or(2_000, |bytes| bytes / 500_000);
+    let prefill_ms: u64 = ladder.iter().map(|depth| depth / 4).sum();
+    let runs = u64::from(REPEATS).saturating_mul(2);
+    let middle_ms = (ladder.len() as u64)
+        .saturating_mul(per_load_ms)
+        .saturating_add(prefill_ms)
+        .saturating_mul(runs);
+    // MCF's estimates have been measured against what runs actually take and
+    // land between 0.58× and 1.42× of them, so those are the bounds rather
+    // than something invented here.
+    let low = (middle_ms.saturating_mul(58) / 100_000).max(1);
+    let high = (middle_ms.saturating_mul(142) / 100_000).max(2);
+    (low, high)
+}
+
+/// The hub MCF reads when nobody has named another.
+const DEFAULT_HUB: &str = "https://huggingface.co/";
+
+/// A verdict about whether a published file will run here, in a sentence.
+fn said_of(verdict: &mcf_hub::fitment::Verdict) -> String {
+    match verdict {
+        mcf_hub::fitment::Verdict::Fits { needs, .. } => format!("fits — needs {needs}"),
+        mcf_hub::fitment::Verdict::FitsWithoutContextHeadroom {
+            needs,
+            longest_context,
+        } => format!(
+            "fits, but holds a shorter conversation — {longest_context} tokens, needing {needs}"
+        ),
+        mcf_hub::fitment::Verdict::DoesNotFit { needs, short_by } => {
+            format!("needs {needs}, which is {short_by} more than this machine has free")
+        }
+    }
 }
 
 /// A running daemon.
@@ -575,6 +811,22 @@ impl Daemon {
                     );
                     return None;
                 }
+                Ok(Request::Measure {
+                    model,
+                    engine,
+                    deepest,
+                }) => {
+                    self.measuring(&model, engine.as_deref(), deepest, &mut writer);
+                    return None;
+                }
+                Ok(Request::Acquire {
+                    reference,
+                    file,
+                    from,
+                }) => {
+                    self.acquiring(&reference, &file, from.as_deref(), &mut writer);
+                    return None;
+                }
                 Ok(request) => {
                     let (answer, stop) = self.respond(&request);
                     let _written = writeln!(writer, "{}", answer.to_line());
@@ -688,13 +940,16 @@ impl Daemon {
         match request {
             Request::Status => (Answer::served(self.status()), None),
             Request::Holding => (Answer::served(self.holding()), None),
+            Request::Offered { reference, from } => {
+                (Self::offered(reference, from.as_deref()), None)
+            }
             // Handled before `respond` is reached; here so the match is
             // total and a future request type is a compile error rather than a
             // silent fall-through.
-            Request::Generate { .. } => (
+            Request::Generate { .. } | Request::Acquire { .. } | Request::Measure { .. } => (
                 Answer::refused(&crate::control::refused(
-                    "a generation reached the one-answer path",
-                    "generate",
+                    "a request that answers in many lines reached the one-answer path",
+                    "generate, acquire or measure",
                 )),
                 None,
             ),
@@ -708,6 +963,478 @@ impl Daemon {
                 }),
             ),
         }
+    }
+
+    /// Times a model on this machine, at doubling depths.
+    ///
+    /// **Two runs a depth, and the difference is the answer.** A single timed
+    /// generation at depth *d* measures three things at once: loading the
+    /// model, reading *d* tokens of prompt, and producing the tokens asked
+    /// for. Only the third is what *speed at depth* means. So each depth is
+    /// run twice — once producing one token, once producing seventeen — and
+    /// the per-token cost is the difference over sixteen. Whatever the load
+    /// and the prefill cost, they are in both and cancel.
+    ///
+    /// That matters more here than it usually would: the daemon loads a model
+    /// for every request and drops it after (DEC-018), so an unsubtracted
+    /// reading at a shallow depth would be mostly the loading.
+    ///
+    /// **The ladder is powers of two and every rung is climbed.** A run that
+    /// measured 8 192 and skipped 2 048 would have no shallow point to read
+    /// the deep one against, which is the whole of what a fall-off is.
+    ///
+    /// **An estimate goes out before any of it starts**, as a range, so that
+    /// somebody can decide not to wait. MCF's own estimates land between
+    /// 0.58× and 1.42× of what runs take, and a single number would be a
+    /// promise it cannot keep.
+    fn measuring(&self, named: &str, engine: Option<&str>, deepest: u64, writer: &mut &UnixStream) {
+        let say = |writer: &mut &UnixStream, answer: &Answer| {
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+        };
+
+        let ladder = depth_ladder(deepest);
+        if ladder.is_empty() {
+            return say(
+                writer,
+                &Answer::refused(&crate::control::refused(
+                    "a depth below the shallowest MCF measures",
+                    &deepest.to_string(),
+                )),
+            );
+        }
+        let path = crate::generation::resolved(&self.places.models, named);
+        let held = std::fs::metadata(&path).map(|about| about.len()).ok();
+
+        // Before anything runs. The estimate is arithmetic over the ladder and
+        // the model's size, and it is a range because it is an estimate (A6).
+        let guess = estimated_seconds(&ladder, held);
+        say(
+            writer,
+            &Answer::served(Value::map([
+                ("measuring", Value::text(named.to_owned())),
+                (
+                    "depths",
+                    Value::List(
+                        ladder
+                            .iter()
+                            .map(|depth| Value::Integer(i64::try_from(*depth).unwrap_or(i64::MAX)))
+                            .collect(),
+                    ),
+                ),
+                (
+                    "estimate_low_seconds",
+                    Value::Integer(i64::try_from(guess.0).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "estimate_high_seconds",
+                    Value::Integer(i64::try_from(guess.1).unwrap_or(i64::MAX)),
+                ),
+                ("done", Value::Bool(false)),
+            ])),
+        );
+
+        let mut readings: Vec<Value> = Vec::new();
+        let mut ran_on: Option<String> = None;
+        for depth in &ladder {
+            let (reading, engine) = self.one_depth(named, engine, *depth);
+            ran_on = ran_on.take().or(engine);
+            readings.push(reading.clone());
+            say(
+                writer,
+                &Answer::served(Value::map([
+                    ("measuring", Value::text(named.to_owned())),
+                    ("reading", reading),
+                    (
+                        "of",
+                        Value::Integer(i64::try_from(ladder.len()).unwrap_or(i64::MAX)),
+                    ),
+                    (
+                        "so_far",
+                        Value::Integer(i64::try_from(readings.len()).unwrap_or(i64::MAX)),
+                    ),
+                    ("done", Value::Bool(false)),
+                ])),
+            );
+        }
+
+        say(
+            writer,
+            &measured(named, &path, held, engine, ran_on.as_deref(), readings),
+        );
+    }
+
+    /// One rung of the ladder: the repeats, the median, and what ran them.
+    fn one_depth(&self, named: &str, engine: Option<&str>, depth: u64) -> (Value, Option<String>) {
+        // Repeats, because one pair is one sample and a fall-off read off
+        // single samples is a reading of the noise. The median is taken
+        // rather than the mean: a run that hit a scheduler hiccup should not
+        // move the answer (F53).
+        let mut samples: Vec<u64> = Vec::new();
+        let mut first_token: Vec<u64> = Vec::new();
+        let mut ran_on: Option<String> = None;
+        for _ in 0..REPEATS {
+            let one = self.timed_generation(named, engine, depth, 1);
+            let many = self.timed_generation(named, engine, depth, 1 + SETTLED);
+            if let Some(short) = &one {
+                ran_on = ran_on.take().or_else(|| short.engine.clone());
+            }
+            if let (Some(short), Some(long)) = (&one, &many)
+                && long.ns > short.ns
+            {
+                #[expect(
+                    clippy::integer_division,
+                    reason = "a difference in nanoseconds over sixteen tokens; the \
+                              remainder is under a nanosecond a token"
+                )]
+                let per_token = (long.ns - short.ns) / u64::from(SETTLED);
+                samples.push(per_token);
+                first_token.push(short.ns);
+            }
+        }
+        let at_depth = Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX));
+        let reading = match middle(&mut samples) {
+            Some(per_token) => {
+                let spread = samples
+                    .last()
+                    .copied()
+                    .unwrap_or(per_token)
+                    .saturating_sub(samples.first().copied().unwrap_or(per_token));
+                Value::map([
+                    ("depth", at_depth),
+                    ("ms_per_token", Value::text(as_milliseconds(per_token))),
+                    (
+                        "first_token_ms",
+                        middle(&mut first_token)
+                            .map_or(Value::Null, |ns| Value::text(as_milliseconds(ns))),
+                    ),
+                    ("spread_ms", Value::text(as_milliseconds(spread))),
+                    (
+                        "samples",
+                        Value::Integer(i64::try_from(samples.len()).unwrap_or(i64::MAX)),
+                    ),
+                    ("measured", Value::Bool(true)),
+                ])
+            }
+            // No pair came back in the right order, so nothing here is a
+            // per-token cost. The honest reading is that there is none —
+            // never a zero, and never the unsubtracted number standing in for
+            // the subtracted one (A7, A9).
+            None => Value::map([
+                ("depth", at_depth),
+                ("measured", Value::Bool(false)),
+                (
+                    "why",
+                    Value::text(
+                        "no pair of runs at this depth separated: the longer one finished no \
+                         later than the shorter, so their difference is not a cost",
+                    ),
+                ),
+            ]),
+        };
+        (reading, ran_on)
+    }
+
+    /// One generation, timed, or `None` if it produced nothing.
+    ///
+    /// The prompt is a run of identifiers rather than text: what is being
+    /// measured is depth, and depth is a count of tokens. Sending text would
+    /// make the reading depend on how the text happened to segment.
+    fn timed_generation(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        depth: u64,
+        produce: u32,
+    ) -> Option<Timed> {
+        let how_many = usize::try_from(depth).ok()?;
+        // Identifier 1 is inside every vocabulary MCF can address. What it
+        // means does not matter; that there are `depth` of them does.
+        let tokens: Vec<usize> = vec![1; how_many];
+        let mcf_home = self
+            .places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
+
+        // A generation streams its tokens to whoever asked. Nothing is
+        // asking here — what is wanted is how long it took — so the far end
+        // of a socket pair is handed over and drained. This runs the
+        // *same* generation path a client's request runs, rather than a
+        // second one written to be measured, which is the difference between
+        // timing MCF and timing something that resembles it (A11, A12).
+        let (mine, theirs) = UnixStream::pair().ok()?;
+        let drain = std::thread::spawn(move || {
+            let mut end = &theirs;
+            let _emptied = std::io::copy(&mut end, &mut std::io::sink());
+        });
+
+        let clock = SystemClock;
+        let started = clock.now();
+        let produced = {
+            let mut writer = &mine;
+            crate::generation::serve_generation(
+                &self.places.models,
+                &mcf_home,
+                &self.resident,
+                &self.server,
+                self.places
+                    .socket
+                    .parent()
+                    .unwrap_or_else(|| Path::new("/tmp")),
+                named,
+                "",
+                Some(usize::try_from(produce).unwrap_or(1)),
+                0,
+                Some(&tokens),
+                engine,
+                &mut writer,
+            )
+        };
+        let took = clock.now().saturating_duration_since(started);
+        drop(mine);
+        let _joined = drain.join();
+
+        produced.said.is_some().then(|| Timed {
+            ns: took.as_nanos(),
+            engine: produced
+                .account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("engine"))
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+        })
+    }
+
+    /// Fetches one published file, saying how far along it is as it goes.
+    ///
+    /// **Progress is read off the disk, not reported by the transfer.** The
+    /// bytes land in a partial file whose size is the answer, so what a window
+    /// shows is the file that exists rather than a count something kept. A
+    /// transfer that claimed more than it had written would be exactly the
+    /// kind of claim §3.7 says not to take on trust — and this cannot make
+    /// that claim, because it is not the thing counting.
+    ///
+    /// One line a second while it runs, then one last line saying where the
+    /// model went and what was written down about it.
+    fn acquiring(&self, reference: &str, file: &str, from: Option<&str>, writer: &mut &UnixStream) {
+        let say = |writer: &mut &UnixStream, answer: &Answer| {
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+        };
+
+        let parsed = match mcf_hub::reference::parse(reference) {
+            Ok(parsed) => parsed,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let base = match mcf_hub::http::Url::parse(from.unwrap_or(DEFAULT_HUB)) {
+            Ok(base) => base,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let base_again = base.clone();
+        let wire = match mcf_hub::wire::for_url(&base) {
+            Ok(wire) => wire,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let hub = mcf_hub::client::Hub::at(base, wire);
+        let listing = match hub.list(&parsed) {
+            Ok(listing) => listing,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let Some(entry) = listing.entry(file).cloned() else {
+            return say(
+                writer,
+                &Answer::refused(&crate::control::refused(
+                    "a file this repository does not publish",
+                    file,
+                )),
+            );
+        };
+        let root = self.places.models.clone();
+        let arriving = mcf_hub::acquisition::arriving_at(&root, &listing, &entry);
+        let total = entry.size;
+
+        say(
+            writer,
+            &Answer::served(Value::map([
+                ("acquiring", Value::text(entry.path.clone())),
+                (
+                    "bytes",
+                    Value::Integer(i64::try_from(total).unwrap_or(i64::MAX)),
+                ),
+                ("doing", Value::text("fetching")),
+                ("done", Value::Bool(false)),
+            ])),
+        );
+
+        // The transfer runs on its own thread so that this one can keep
+        // saying how far it has got. The connection is not shared — a `Wire`
+        // is not `Send`, and making one would have been a change to the
+        // network layer for the sake of a progress bar. The thread opens its
+        // own, which is one more connection to a hub that was going to be
+        // asked for a file anyway.
+        drop(hub);
+        let (listing_for_thread, entry_for_thread) = (listing.clone(), entry.clone());
+        let where_from = base_again.clone();
+        let handle = std::thread::spawn(move || {
+            let wire = mcf_hub::wire::for_url(&where_from)?;
+            let hub = mcf_hub::client::Hub::at(where_from, wire);
+            mcf_hub::acquisition::one(&hub, &listing_for_thread, &entry_for_thread, &root)
+        });
+
+        // The last size actually seen. A partial file that is not there is
+        // not a transfer that has delivered nothing — at the start it has not
+        // been created, and at the end it has been renamed to its
+        // destination. Reporting zero for either would put a progress bar
+        // back to the beginning at the moment it finished, which is the same
+        // error as reporting an unknown as a measurement (A7).
+        let mut furthest = 0_u64;
+        while !handle.is_finished() {
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            if let Ok(about) = std::fs::metadata(&arriving) {
+                furthest = furthest.max(about.len());
+            }
+            // Once every byte is here the transfer is not over: what remains
+            // is reading the whole file back to check its digest, which on a
+            // large model takes longer than a person will wait without being
+            // told what is happening (A2).
+            let checking = furthest >= total && total > 0;
+            say(
+                writer,
+                &Answer::served(Value::map([
+                    ("acquiring", Value::text(entry.path.clone())),
+                    (
+                        "arrived",
+                        Value::Integer(i64::try_from(furthest).unwrap_or(i64::MAX)),
+                    ),
+                    (
+                        "bytes",
+                        Value::Integer(i64::try_from(total).unwrap_or(i64::MAX)),
+                    ),
+                    (
+                        "doing",
+                        Value::text(if checking { "checking" } else { "fetching" }),
+                    ),
+                    ("done", Value::Bool(false)),
+                ])),
+            );
+        }
+
+        let answer = match handle.join() {
+            Ok(Ok(done)) => acquired(&entry.path, &done),
+            Ok(Err(failure)) => Answer::refused(&failure),
+            // A thread that died left no failure to report, and saying
+            // nothing would leave a window waiting forever (A2).
+            Err(_) => Answer::refused(&crate::control::refused(
+                "the transfer stopped without saying why",
+                &entry.path,
+            )),
+        };
+        say(writer, &answer);
+    }
+
+    /// What a repository publishes, and which of it will run on this machine.
+    ///
+    /// **It fetches nothing.** A listing and a configuration are read; no
+    /// weights move. That is what makes it safe to send while somebody is
+    /// still typing a name, and it is why the window can show what a
+    /// repository holds before anybody has committed to a download.
+    ///
+    /// **A gated repository is a refusal with a reason**, not an empty list. A
+    /// person who is told nothing is published concludes something false about
+    /// the repository; a person told it needs a token knows what to do (A2,
+    /// A7).
+    fn offered(reference: &str, from: Option<&str>) -> Answer {
+        let parsed = match mcf_hub::reference::parse(reference) {
+            Ok(parsed) => parsed,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let base = match mcf_hub::http::Url::parse(from.unwrap_or(DEFAULT_HUB)) {
+            Ok(base) => base,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let wire = match mcf_hub::wire::for_url(&base) {
+            Ok(wire) => wire,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        let hub = mcf_hub::client::Hub::at(base, wire);
+        let listing = match hub.list(&parsed) {
+            Ok(listing) => listing,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        // What is free, read the way the daemon reads it for everything else
+        // — B4 keeps hardware sampling out of the serving path, so the plan
+        // is handed a number rather than going and taking one.
+        let planned = match system_memory_free() {
+            Some(free) => {
+                mcf_hub::offer::plan_for(&hub, &listing, mcf_core::measurement::Bytes(free))
+            }
+            None => Err("this machine will not say how much memory is free".to_owned()),
+        };
+
+        // Every published file MCF can read, with what is known about each.
+        // The verdict is attached where there is one and left absent where
+        // there is not — a file with no verdict is not a file that will not
+        // run (A7).
+        let verdicts: std::collections::BTreeMap<String, &mcf_hub::fitment::Verdict> = planned
+            .as_ref()
+            .map(|plan| {
+                plan.verdicts
+                    .iter()
+                    .map(|(name, verdict)| (name.clone(), verdict))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let files: Vec<Value> = listing
+            .entries
+            .iter()
+            .filter(|entry| {
+                std::path::Path::new(&entry.path)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+            })
+            .map(|entry| {
+                let verdict = verdicts.get(&entry.path);
+                Value::map([
+                    ("file", Value::text(entry.path.clone())),
+                    (
+                        "bytes",
+                        Value::Integer(i64::try_from(entry.size).unwrap_or(i64::MAX)),
+                    ),
+                    (
+                        "fits",
+                        verdict.map_or(Value::Null, |verdict| {
+                            Value::Bool(matches!(verdict, mcf_hub::fitment::Verdict::Fits { .. }))
+                        }),
+                    ),
+                    (
+                        "why",
+                        verdict.map_or(Value::Null, |verdict| Value::text(said_of(verdict))),
+                    ),
+                ])
+            })
+            .collect();
+
+        Answer::served(Value::map([
+            ("repository", Value::text(listing.reference.repository())),
+            (
+                "revision",
+                listing.revision.clone().map_or(Value::Null, Value::text),
+            ),
+            ("files", Value::List(files)),
+            (
+                "planned_at_context",
+                Value::Integer(i64::try_from(mcf_hub::offer::PLANNING_CONTEXT).unwrap_or(i64::MAX)),
+            ),
+            (
+                "no_plan",
+                match &planned {
+                    Ok(_) => Value::Null,
+                    Err(why) => Value::text(why.clone()),
+                },
+            ),
+        ]))
     }
 
     /// What this daemon is.

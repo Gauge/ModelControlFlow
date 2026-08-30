@@ -24,23 +24,18 @@
 
 use std::path::{Path, PathBuf};
 
-use mcf_core::attested::Attested;
 use mcf_core::failure::Failure;
-use mcf_core::hardware::Machine;
-use mcf_core::measurement::Bytes;
-use mcf_core::provenance::{
-    Checksum, Origin, Provenance, Repository, Revision, Transformation, TransformationKind,
-};
+use mcf_core::provenance::Provenance;
 use mcf_core::time::Timestamp;
 use mcf_hub::client::Hub;
 use mcf_hub::credentials::{self, Credential, Origin as Held, Secret};
-use mcf_hub::fetch::{Acquired, Verification, acquire};
-use mcf_hub::fitment::{self, Requirement, Shape, Verdict};
+use mcf_hub::fetch::{Acquired, Verification};
+use mcf_hub::fitment::{self, Verdict};
 use mcf_hub::http::Url;
-use mcf_hub::reference::{self, Reference};
+use mcf_hub::offer::{PLANNING_CONTEXT, Plan, plan_for};
+use mcf_hub::reference::{self};
 use mcf_hub::source::{Entry, Listing, Source as _};
-use mcf_hub::store;
-use mcf_hub::wire::{Tcp, Tls, Wire};
+use mcf_hub::wire::for_url;
 use mcf_record::journal::{Entry as Record, EntryKind, Journal};
 use mcf_record::json::Value;
 
@@ -116,7 +111,7 @@ pub(crate) fn run(
         },
     };
 
-    let wire = match wire_for(&base) {
+    let wire = match for_url(&base) {
         Ok(wire) => wire,
         Err(failure) => return refused("nothing was acquired", &failure),
     };
@@ -146,7 +141,7 @@ pub(crate) fn run(
         // The plan is what an operator is really asking for when they name a
         // repository and no file: not *what is published* but *which of these
         // will run here* (PR3, B-213).
-        let planned = plan_for(&hub, &listing);
+        let planned = free_memory().and_then(|free| plan_for(&hub, &listing, free));
         // And it is kept, whichever way it came out. A9 makes *does not fit
         // here* a finding rather than a refusal, and a finding printed once and
         // not written down cannot answer *what has this machine already been
@@ -176,48 +171,40 @@ pub(crate) fn run(
     acquire_one(&hub, &listing, &entry, &root)
 }
 
-/// Fetches one file and writes down everything about it.
-fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Response {
-    let into = destination(root, &listing.reference, &entry.path);
-    if let Some(parent) = into.parent()
-        && let Err(error) = std::fs::create_dir_all(parent)
-    {
-        return Response {
-            text: format!(
-                "mcf: nothing was acquired — {} could not be made\n  {error}",
-                parent.display()
-            ),
-            served: false,
-        };
+/// How much memory this machine has free, read because somebody ran a command.
+///
+/// B4 keeps hardware sampling out of anything that runs unasked, which is why
+/// `mcf_hub::offer::plan_for` takes the figure rather than going for it: the
+/// same plan is made by the daemon, and a daemon that read thermal and memory
+/// counters to answer a question would be one of the competitors it reports
+/// (§3.8). Here it is a command line, and a command line is somebody asking.
+fn free_memory() -> Result<mcf_core::measurement::Bytes, String> {
+    match mcf_core::hardware::Machine::read().memory.available {
+        mcf_core::attested::Attested::Known(available) => Ok(available),
+        mcf_core::attested::Attested::Unknown => {
+            Err("this machine will not say how much memory is free".to_owned())
+        }
     }
+}
 
-    let acquired = match acquire(hub, &listing.reference, entry, &into) {
-        Ok(acquired) => acquired,
+/// Fetches one file and says what happened.
+///
+/// The fetching, the provenance and the journal entry are `mcf_hub`'s, so that
+/// the daemon does the same thing when the window asks. What is this surface's
+/// is the last paragraph: PR3's re-reading of the plan *after* the file is
+/// here, and the sentences.
+fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Response {
+    let done = match mcf_hub::acquisition::one(hub, listing, entry, root) {
+        Ok(done) => done,
         Err(failure) => return refused("nothing was acquired", &failure),
     };
-
-    let at = Timestamp::now();
-    let provenance = provenance_of(listing, &acquired, at);
-    let sidecar = match store::record_provenance(&into, &provenance) {
-        Ok(sidecar) => sidecar,
-        Err(failure) => {
-            return refused(
-                "the model was acquired and its provenance could not be written beside it, so \
-                 MCF is holding a file it cannot account for",
-                &failure,
-            );
-        }
-    };
-
-    let recorded = record(hub, listing, entry, &acquired, at);
     // The plan is made from what a hub declares, before anything is fetched.
     // What is true *now* is a different question, and PR3 asks it explicitly:
     // the machine may have less memory than it had, and the file that arrived
     // may not be the size the listing promised. Both are re-read here rather
     // than assumed to have held.
-    let again = match plan_for(hub, listing) {
-        Ok(plan) => plan
-            .lines()
+    let again = match free_memory().and_then(|free| plan_for(hub, listing, free)) {
+        Ok(plan) => plan_lines(&plan)
             .into_iter()
             .find(|line| line.contains(&entry.path))
             .ok_or_else(|| {
@@ -230,177 +217,14 @@ fn acquire_one(hub: &Hub, listing: &Listing, entry: &Entry, root: &Path) -> Resp
     };
     Response {
         text: render(
-            &acquired,
+            &done.acquired,
             listing,
-            &sidecar,
-            &provenance,
-            recorded.as_ref(),
+            &done.sidecar,
+            &done.provenance,
+            done.recorded.as_ref(),
             &again,
         ),
         served: true,
-    }
-}
-
-/// Where an artifact lives: under the store, by the repository that published
-/// it, at the path the repository gave it.
-///
-/// The revision is not in the path. A pin belongs in the provenance beside the
-/// file, and a directory named for a commit would make the ordinary case — one
-/// model, acquired once — unreadable to a person looking for it.
-fn destination(root: &Path, reference: &Reference, path: &str) -> PathBuf {
-    root.join(&reference.owner).join(&reference.name).join(path)
-}
-
-/// What MCF knows about where this came from.
-///
-/// Everything read, nothing assumed: the revision is what the hub said the
-/// listing was of, and where it said nothing the field stays unknown rather
-/// than becoming the branch that was asked for (A7, B-019).
-fn provenance_of(listing: &Listing, acquired: &Acquired, at: Timestamp) -> Provenance {
-    let mut provenance = Provenance::acquired(
-        Origin::hub(
-            Repository::new(listing.reference.repository()),
-            listing.revision.as_deref().map(Revision::new),
-        ),
-        at,
-    );
-    if let Verification::Digest { digest } | Verification::LengthOnly { digest } =
-        &acquired.verification
-        && let Some(checksum) = Checksum::sha256(digest)
-    {
-        provenance = provenance.with_integrity(checksum);
-    }
-    if let Some(declared) = listing.declared_licence.as_deref()
-        && let Some(licence) = mcf_hub::licence::recognize(declared)
-    {
-        provenance = provenance.with_licence(licence);
-    }
-    if let Some(lineage) = &listing.lineage {
-        // §XII's hard case, written down: what these bytes were made from, what
-        // was done to them, and by whom — as far as the publisher said, and no
-        // further. The tool and the moment are the publisher's pipeline, which
-        // is not MCF's to interrogate, so they stay unknown rather than being
-        // filled with this machine's clock (A7, B-019).
-        provenance = provenance
-            .transformed(Transformation::new(
-                kind_of(lineage.relation.as_deref()),
-                match &lineage.relation {
-                    Some(relation) => Attested::Known(format!(
-                        "the publisher calls it {relation}, from {}",
-                        lineage.base
-                    )),
-                    None => Attested::Known(format!(
-                        "the publisher names {} as the base and does not say what was done",
-                        lineage.base
-                    )),
-                },
-                Attested::Unknown,
-                Attested::Unknown,
-            ))
-            .derived_from(Provenance::known_of(Origin::hub(
-                Repository::new(lineage.base.clone()),
-                // Which revision of the upstream this was made from is a thing
-                // the publisher does not say, and MCF will not guess at: an
-                // unpinned base is exactly the break in the chain §XII is
-                // about.
-                None,
-            )));
-    }
-    provenance
-}
-
-/// What the publisher's own word maps to.
-///
-/// `Other` keeps the word where MCF has no kind for it, which is A7's habit
-/// applied to somebody else's vocabulary: a relation filed under the nearest
-/// known kind would make the record say something nobody claimed.
-fn kind_of(relation: Option<&str>) -> TransformationKind {
-    match relation {
-        Some("quantized") => TransformationKind::Quantization,
-        Some("finetune" | "merge" | "adapter") | None => {
-            TransformationKind::Other(relation.unwrap_or("derived from").to_owned())
-        }
-        Some(other) => TransformationKind::Other(other.to_owned()),
-    }
-}
-
-/// Writes the acquisition to the journal.
-///
-/// Returns where it was written, or the failure. A failure here does not undo
-/// the acquisition — the model is on the disk and its provenance is beside it —
-/// so it is reported rather than propagated: A4's shape, and A2's requirement
-/// that it be said rather than swallowed.
-fn record(
-    hub: &Hub,
-    listing: &Listing,
-    entry: &Entry,
-    acquired: &Acquired,
-    at: Timestamp,
-) -> Result<PathBuf, Failure> {
-    let Some(path) = mcf_record::journal::default_path() else {
-        return Err(mcf_core::failure::Failure::new(
-            mcf_core::failure::Category::RecordUnwritable,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Refused,
-            mcf_core::failure::Subsystem::new("mcf-cli::pull"),
-            "there is nowhere to record the acquisition",
-        ));
-    };
-    let mut journal = Journal::open(&path)?;
-    journal.append(&Record::new(
-        EntryKind::ArtifactAcquired,
-        at,
-        Value::map([
-            ("repository", Value::text(listing.reference.repository())),
-            (
-                "revision",
-                match listing.revision.as_deref() {
-                    Some(revision) => Value::text(revision),
-                    None => Value::Null,
-                },
-            ),
-            ("file", Value::text(entry.path.clone())),
-            ("source", Value::text(hub.describe())),
-            ("identity", Value::text(hub.identity().to_string())),
-            ("path", Value::text(acquired.path.display().to_string())),
-            (
-                "bytes",
-                Value::Integer(i64::try_from(acquired.bytes).unwrap_or(i64::MAX)),
-            ),
-            (
-                "verification",
-                match &acquired.verification {
-                    Verification::Digest { digest } => Value::map([
-                        ("state", Value::text("verified")),
-                        ("digest", Value::text(digest.clone())),
-                    ]),
-                    Verification::LengthOnly { digest } => Value::map([
-                        ("state", Value::text("held_unverified")),
-                        ("digest", Value::text(digest.clone())),
-                    ]),
-                },
-            ),
-            (
-                "attempts",
-                Value::Integer(i64::try_from(acquired.attempts).unwrap_or(i64::MAX)),
-            ),
-            ("resumed", Value::Bool(acquired.resumed)),
-        ]),
-    ))?;
-    Ok(path)
-}
-
-/// How MCF reaches this hub.
-///
-/// TLS where the hub is encrypted, a plain socket where it is not. Chosen from
-/// the URL rather than configured, because *which one* is not a preference: a
-/// wire that cannot keep a secret refuses to carry one, and an `https` request
-/// over a plain socket is refused before it is opened (B-024, B-322).
-pub(crate) fn wire_for(base: &Url) -> Result<Box<dyn Wire>, mcf_core::failure::Failure> {
-    if base.scheme() == "https" {
-        Ok(Box::new(Tls::new()?))
-    } else {
-        Ok(Box::new(Tcp::default()))
     }
 }
 
@@ -484,100 +308,15 @@ fn what_is_lying_around(look_up: &dyn Fn(&str) -> Option<String>) -> String {
     lines.join("\n")
 }
 
-/// How much context a plan is made at when nobody has said.
+/// The plan as an operator reads it.
 ///
-/// Four thousand and ninety-six tokens: the length most engines default to, and
-/// a number stated here rather than buried, because the answer *this fits*
-/// means nothing without the context it fits at (A6, §3.4).
-pub(crate) const PLANNING_CONTEXT: u64 = 4096;
-
-/// How many bytes one cached element takes.
-///
-/// Two, for the half-precision caches engines use by default. A parameter of
-/// the run rather than a fact about the model, and the reason [`Shape`] takes
-/// it rather than reading it.
-const CACHE_ELEMENT: u64 = 2;
-
-/// Which of the variants a repository publishes will run on this machine.
-///
-/// `Err` carries *why there is no plan*, in a sentence an operator can act on.
-/// A7 asks that an unknown stay unknown; A2 asks that the reason not be
-/// swallowed. Before this said which, a repository whose configuration MCF
-/// could not parse and one that publishes none read identically — and the first
-/// is a defect in MCF while the second is a fact about the repository
-/// ([findings.md](../../../doc/findings.md) F16).
-fn plan_for(hub: &Hub, listing: &Listing) -> std::result::Result<Plan, String> {
-    let configuration = match hub.configuration(listing) {
-        Ok(Some(configuration)) => configuration,
-        Ok(None) => {
-            return Err(
-                "this repository publishes no configuration, and a plan needs one".to_owned(),
-            );
-        }
-        Err(failure) => {
-            return Err(format!("its configuration could not be read — {failure}"));
-        }
-    };
-    let Some(shape) = Shape::from_configuration(&configuration, CACHE_ELEMENT) else {
-        return Err(
-            "its configuration does not say how many blocks, key/value heads and head \
-             dimensions the model has, and MCF will not guess at a shape (A7)"
-                .to_owned(),
-        );
-    };
-    let available = match Machine::read().memory.available {
-        Attested::Known(available) => available,
-        Attested::Unknown => {
-            return Err("this machine will not say how much memory is free".to_owned());
-        }
-    };
-
-    let requirements: Vec<Requirement> = listing
-        .entries
-        .iter()
-        // Case-insensitively, because a repository's file names are its own:
-        // `.GGUF` is the same format and a plan that skipped it would leave a
-        // variant out of the list without saying so (A1).
-        .filter(|entry| {
-            std::path::Path::new(&entry.path)
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-        })
-        .map(|entry| Requirement {
-            name: entry.path.clone(),
-            weights: Bytes(entry.size),
-            shape,
-        })
-        .collect();
-    if requirements.is_empty() {
-        return Err("this repository publishes nothing in a format MCF reads".to_owned());
-    }
-
-    let verdicts = fitment::plan(&requirements, PLANNING_CONTEXT, available)
-        .map_err(|failure| format!("the arithmetic would not add up — {failure}"))?;
-    Ok(Plan {
-        available,
-        verdicts,
-    })
-}
-
-/// What MCF judged about a repository's variants, kept rather than rendered.
-///
-/// The verdicts themselves rather than the sentences they print, because the
-/// same plan is written to the record (B-086) and shown to the operator, and a
-/// plan that existed only as prose could be written to one of those and not the
-/// other.
-#[derive(Debug)]
-struct Plan {
-    available: Bytes,
-    verdicts: Vec<(String, Verdict)>,
-}
-
-impl Plan {
-    /// The plan as an operator reads it.
-    fn lines(&self) -> Vec<String> {
-        let available = self.available;
-        self.verdicts
+/// A free function rather than a method: the judgement is `mcf_hub`'s, and how
+/// a terminal renders it is this surface's. The window renders the same
+/// verdicts differently, which is the point of keeping them apart.
+fn plan_lines(plan: &Plan) -> Vec<String> {
+    {
+        let available = plan.available;
+        plan.verdicts
             .iter()
             .map(|(name, verdict)| match verdict {
                 Verdict::Fits { needs, headroom } => format!(
@@ -670,7 +409,7 @@ fn offer(listing: &Listing, planned: &std::result::Result<Plan, String>) -> Stri
             lines.push(format!(
                 "\nat {PLANNING_CONTEXT} tokens of context, on this machine:"
             ));
-            lines.extend(plan.lines());
+            lines.extend(plan_lines(plan));
         }
         // The reason, not just the absence: a repository that publishes no
         // configuration and one whose configuration MCF could not read are

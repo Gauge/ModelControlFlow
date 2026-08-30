@@ -225,3 +225,85 @@ fn a_daemon_that_is_not_there_is_said_in_words() {
     );
     assert_eq!(desk.doing_sentence(), "MCF is not answering");
 }
+
+/// A menu entry now exists for each of the things the window can do.
+///
+/// Five, and each one leads to a screen that works. The three added — adding a
+/// model, asking one something, timing one — are the three the operator asked
+/// for, and each reaches the daemon rather than doing the work in the window
+/// (A22, B-412).
+#[test]
+fn every_menu_entry_reaches_something_built() {
+    let named: Vec<&str> = Page::MENU.iter().map(|(_, label)| *label).collect();
+    assert!(named.contains(&"Add a model"), "{named:?}");
+    assert!(named.contains(&"Chat"), "{named:?}");
+    assert!(named.contains(&"Speed tests"), "{named:?}");
+    for (page, label) in Page::MENU {
+        assert_eq!(page.section(), *page, "{label} is not a section of its own");
+    }
+}
+
+/// Typing goes to a field only where there is one.
+///
+/// The letter `q` closes the window, and a field that ate the application when
+/// somebody typed a model name with a q in it would be a field nobody could
+/// use.
+#[test]
+fn typing_is_only_typing_where_something_takes_it() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    for page in [Page::Add, Page::Use] {
+        desk.page = page;
+        assert!(
+            desk.takes_typing(),
+            "{page:?} has a field and does not take typing"
+        );
+    }
+    for page in [Page::Models, Page::Model(0), Page::Speed, Page::Computer] {
+        desk.page = page;
+        assert!(
+            !desk.takes_typing(),
+            "{page:?} has no field and takes typing"
+        );
+    }
+}
+
+/// Nothing is asked for on an empty field.
+///
+/// A lookup of nothing is a request to a hub for a repository nobody named,
+/// and an empty question is a generation nobody asked for. Both cost
+/// something, so neither happens.
+#[test]
+fn an_empty_field_asks_for_nothing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.page = Page::Add;
+    desk.typed = "   ".to_owned();
+    desk.look_up();
+    assert!(
+        matches!(desk.doing, crate::Doing::Nothing),
+        "a lookup was started for an empty name"
+    );
+    desk.models = vec![Model::default()];
+    desk.chosen = Some(0);
+    desk.ask(0);
+    assert!(
+        matches!(desk.doing, crate::Doing::Nothing),
+        "a question was asked with nothing in it"
+    );
+}
+
+/// One long-running thing at a time.
+///
+/// Two measurements at once would be two measurements of a machine that was
+/// running a measurement, and the second would be a reading of the first (A6).
+#[test]
+fn only_one_thing_runs_at_a_time() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.typed = "owner/repository".to_owned();
+    desk.look_up();
+    assert!(matches!(desk.doing, crate::Doing::Listing(_)));
+    desk.download("owner/repository", "a-model.gguf");
+    assert!(
+        matches!(desk.doing, crate::Doing::Downloading(_)),
+        "starting a download did not replace what was running"
+    );
+}

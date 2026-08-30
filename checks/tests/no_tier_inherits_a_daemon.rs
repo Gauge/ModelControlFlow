@@ -69,6 +69,21 @@ const REACHES: &[Reaches] = &[
         subcommand: Some("probe"),
     },
     Reaches {
+        module: "crates/mcf-cli/src/measure.rs",
+        subcommand: Some("measure"),
+    },
+    // One module, two subcommands: they send the two halves of the same act
+    // — what is published, and fetch one of it — and splitting them into two
+    // files to satisfy a table would be arranging the code around the check.
+    Reaches {
+        module: "crates/mcf-cli/src/acquire.rs",
+        subcommand: Some("offered"),
+    },
+    Reaches {
+        module: "crates/mcf-cli/src/acquire.rs",
+        subcommand: Some("acquire"),
+    },
+    Reaches {
         module: "crates/mcf-cli/src/crosscheck.rs",
         subcommand: Some("cross-check"),
     },

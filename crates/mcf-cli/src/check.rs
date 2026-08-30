@@ -48,7 +48,8 @@ use mcf_record::json::Value;
 
 use crate::Response;
 use crate::models;
-use crate::pull::{DEFAULT_HUB, Offered, credential, wire_for};
+use crate::pull::{DEFAULT_HUB, Offered, credential};
+use mcf_hub::wire::for_url;
 
 /// How much of the question to ask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -320,7 +321,7 @@ fn hub_for(from: Option<&str>, offered: Offered<'_>) -> std::result::Result<Hub,
         served: false,
     };
     let base = Url::parse(from.unwrap_or(DEFAULT_HUB)).map_err(|failure| refuse(&failure))?;
-    let wire = wire_for(&base).map_err(|failure| refuse(&failure))?;
+    let wire = for_url(&base).map_err(|failure| refuse(&failure))?;
     let look_up = |name: &str| std::env::var(name).ok();
     match credential(offered, &look_up) {
         Ok(None) => Ok(Hub::at(base, wire)),

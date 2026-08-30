@@ -159,6 +159,7 @@ forward as one.
 | 129 | [F129 — A second surface arrived and the tripwire watching for one did not fire, because it was written against four guesses at its name (B-401, B-072, A22, B16)](#129-f129-a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16) |
 | 130 | [F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)](#130-f130-two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16) |
 | 131 | [F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)](#131-f131-the-window-was-a-terminal-with-a-mouse-pointer-over-it-and-every-test-passed-one-sdl-constant-was-written-from-memory-and-named-the-wrong-event-b-409-f129-a6-a11) |
+| 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9383,6 +9384,79 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 132 · F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)
+
+**The window can now fetch a model, time one, and talk to one**, and each of
+those is a control-plane request the command line also sends — `Offered`,
+`Acquire`, `Measure`, and the `Generate` that was already there. What the
+daemon does behind them is `mcf_hub`'s, which both surfaces now call, so *this
+model will run here* cannot come out differently depending on which of MCF's
+own surfaces asked.
+
+**Three defects were caught by the check suite rather than by use, and each
+was a rule this repository already had.**
+
+*A progress bar that reported zero at the moment it finished.* Download
+progress is read off the partial file's size, because a transfer that reported
+its own progress would be making a claim §3.7 says not to take on trust. But
+the partial file is *renamed* when the transfer completes, so the last reading
+before completion found no file and reported `0`. A bar would have jumped back
+to the beginning at the moment it filled. The fault is the `unwrap_or(0)` —
+the same conflation of *absent* with *zero* that A7 exists to forbid, written
+by the person enforcing it. It now keeps the furthest size actually seen, and
+a file that is not there moves nothing.
+
+*A plan that sampled hardware from the serving path.* Judging which published
+variant fits needs to know free memory, and the function that did it called
+`Machine::read()`. That was correct while only the command line called it, and
+became wrong the moment the daemon did: B4 forbids MCF sampling hardware from
+anywhere that runs unasked, because a daemon reading counters to answer a
+question is one of the competitors it reports (§3.8). The remedy was not an
+exemption — the figure is now a *parameter*, so the command line reads the
+machine because somebody ran a command, and the daemon passes what it already
+knew. The number used is in the answer either way, which A6 wanted anyway.
+
+*A timing in floating point.* The measurement computed milliseconds per token
+in `f64`. A shipped crate holds no float, because a NaN one division away from
+a record is how a measurement starts lying (A6, A1). All of it is integer
+nanoseconds now, formatted to milliseconds only where a person reads it —
+which is also more honest, since a duration is a count of ticks.
+
+**The measurement subtracts, and that is the whole of its method.** A single
+timed generation at depth measures loading the model, reading the prompt, and
+producing the tokens. Only the third is what *speed at depth* means. So each
+depth is run twice, producing one token and seventeen, and the per-token cost
+is the difference over sixteen; whatever loading and prefill cost, they are in
+both. That matters more here than it usually would, because the daemon loads a
+model per request and drops it (DEC-018) — unsubtracted, a shallow reading
+would be mostly the loading. Measured on this machine, with three repeats a
+depth and the median taken:
+
+| Depth | Milliseconds a token |
+|---|---|
+| 512 | 8.012 |
+| 1 024 | 8.243 |
+| 2 048 | 9.107 |
+| 4 096 | 10.236 |
+
+**And it records which engine *ran*, not which was asked for.** The first
+version put the engine that was requested in the conditions, which for a
+request that named none was `null` — a measurement whose most important
+condition was absent. B65 and D31 are explicit that a timing taken from MCF's
+own stand-in measures the stand-in, which is written to be read rather than to
+be fast. The engine is now read out of the account the generation returned,
+and where it *is* the stand-in both surfaces say so in the sentence beside the
+numbers rather than in a footnote.
+
+**What a real repository then said about MCF.** The listing works and the
+fitness judgement usually cannot run: the common GGUF publishers ship no
+`config.json`, so MCF has no shape to compute a cache size from and answers
+that it cannot say which variant would run. That is the honest half of F16 and
+it is a poor answer — the GGUF header carries the block and head counts, and
+the hub serves ranges, so a few megabytes of prefix would settle it. B-413
+carries that rather than leaving the gap as something a user discovers.
+
 
 ## 131 · F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)
 

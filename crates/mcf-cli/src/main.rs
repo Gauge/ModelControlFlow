@@ -10,6 +10,7 @@
 //! and what MCF will and will not promise here, and writes the whole thing to
 //! the record.
 
+mod acquire;
 mod bench;
 mod bundle;
 mod check;
@@ -21,6 +22,7 @@ mod explain;
 mod history;
 mod licence;
 mod log;
+mod measure;
 mod models;
 mod probe;
 mod provision;
@@ -224,6 +226,28 @@ enum Request<'a> {
         model: &'a str,
     },
     /// Ask a model to do the thing, and report what it did.
+    /// What a repository publishes, and which of it will run here.
+    Offered {
+        /// The repository.
+        reference: &'a str,
+    },
+    /// Fetch one published file, through the daemon.
+    Acquire {
+        /// The repository.
+        reference: &'a str,
+        /// Which published file.
+        file: &'a str,
+    },
+    /// Time a model at doubling depths.
+    Measure {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// The deepest context to sample, which implies every power of two
+        /// below it.
+        deepest: u64,
+        /// Which engine to ask through, if the caller named one.
+        engine: Option<&'a str>,
+    },
     Probe {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
@@ -385,6 +409,35 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         ["cross-check"] => Request::MissingArgument {
             command: "cross-check",
             needs: "<model>",
+        },
+        ["offered", reference] => Request::Offered { reference },
+        ["acquire", reference, file] => Request::Acquire { reference, file },
+        ["measure", model] => Request::Measure {
+            model,
+            deepest: 8192,
+            engine: None,
+        },
+        ["measure", model, "--deepest", deepest] => match deepest.parse::<u64>() {
+            // Powers of two only, because a context window is asked for in
+            // powers of two and a ladder that ended somewhere else would have
+            // a top rung nobody could ask a model to run at.
+            Ok(deepest) if deepest.is_power_of_two() && deepest >= 512 => Request::Measure {
+                model,
+                deepest,
+                engine: None,
+            },
+            // A power of two, because that is how a context window is asked
+            // for, and 512 at least, because below it the per-token cost is
+            // the same to within the noise.
+            _ => Request::UnexpectedArgument {
+                command: "measure --deepest (wants a power of two, 512 or larger)",
+                argument: deepest,
+            },
+        },
+        ["measure", model, "--engine", engine] => Request::Measure {
+            model,
+            deepest: 8192,
+            engine: Some(engine),
         },
         ["probe", model] => Request::Probe {
             model,
@@ -1298,6 +1351,13 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Bundle { id, into } => bundle::run(id, *into),
         Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
+        Request::Offered { reference } => acquire::offered(reference, None),
+        Request::Acquire { reference, file } => acquire::acquire(reference, file, None),
+        Request::Measure {
+            model,
+            deepest,
+            engine,
+        } => measure::run(model, *deepest, *engine),
         Request::Probe {
             model,
             engine,

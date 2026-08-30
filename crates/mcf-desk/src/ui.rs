@@ -172,6 +172,85 @@ pub fn label(paint: &mut Painter, x: f32, y: f32, text: &str) {
     }
 }
 
+/// A line of text somebody is typing into.
+///
+/// Immediate mode, like everything else: the caller owns the string and this
+/// draws it. Focus is the caller's too — there is one field on a screen at a
+/// time, and a focus stack would be machinery for a case that does not exist.
+pub fn field(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    held: &str,
+    placeholder: &str,
+    focused: bool,
+) -> bool {
+    let ink = paint.ink;
+    let edge = if focused { ink.accent } else { ink.line };
+    paint.edge(area, RADIUS, edge, ink.card);
+    let inner = area.x + 12.0;
+    let room = area.w - 24.0;
+    if held.is_empty() {
+        let shown = paint.elide(placeholder, Weight::Regular, 13.5, room);
+        paint.say_at(
+            inner,
+            area.y + 8.0,
+            &shown,
+            Weight::Regular,
+            13.5,
+            ink.faint,
+        );
+    } else {
+        // The *end* of what has been typed, not the beginning: somebody
+        // typing a long name needs to see the characters they are putting in.
+        let width = paint.measure(held, Weight::Regular, 13.5);
+        let from = if width > room {
+            let mut kept = held;
+            while paint.measure(kept, Weight::Regular, 13.5) > room && !kept.is_empty() {
+                kept = kept
+                    .get(kept.char_indices().nth(1).map_or(kept.len(), |(at, _)| at)..)
+                    .unwrap_or("");
+            }
+            kept.to_owned()
+        } else {
+            held.to_owned()
+        };
+        let ended = {
+            paint.say_at(inner, area.y + 8.0, &from, Weight::Regular, 13.5, ink.ink);
+            inner + paint.measure(&from, Weight::Regular, 13.5)
+        };
+        if focused {
+            paint.wash(
+                Box::new(ended + 1.0, area.y + 8.0, 1.5, 17.0),
+                ink.accent,
+                255,
+            );
+        }
+    }
+    mouse.clicked(area)
+}
+
+/// How far along something is.
+///
+/// `None` is drawn as a track with no fill and the word beside it — a bar at
+/// zero says *nothing has happened yet*, and *MCF cannot say how far along
+/// this is* is a different thing that must not be drawn as the first (A7).
+pub fn progress(paint: &mut Painter, area: Box, fraction: Option<f32>) {
+    let ink = paint.ink;
+    paint.panel(area, area.h / 2.0, ink.sunk, 255);
+    if let Some(fraction) = fraction {
+        let filled = (area.w * fraction.clamp(0.0, 1.0)).max(0.0);
+        if filled > 1.0 {
+            paint.panel(
+                Box::new(area.x, area.y, filled, area.h),
+                area.h / 2.0,
+                ink.accent,
+                255,
+            );
+        }
+    }
+}
+
 /// A card: the ground everything on these screens sits on.
 pub fn card(paint: &mut Painter, area: Box, lifted: bool) {
     let ink = paint.ink;

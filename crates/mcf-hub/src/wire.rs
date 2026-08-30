@@ -655,3 +655,20 @@ fn unwritable(error: &std::io::Error) -> Failure {
 
 #[cfg(test)]
 mod tests;
+
+/// The transport a URL calls for.
+///
+/// One line of logic, in one place, because both surfaces that reach a hub
+/// need it and a surface that chose differently would be a surface reaching
+/// the network on terms nobody else's did.
+///
+/// # Errors
+///
+/// What building the TLS client said.
+pub fn for_url(base: &crate::http::Url) -> Result<Box<dyn Wire>> {
+    if base.scheme() == "https" {
+        Ok(Box::new(Tls::new()?))
+    } else {
+        Ok(Box::new(Tcp::default()))
+    }
+}

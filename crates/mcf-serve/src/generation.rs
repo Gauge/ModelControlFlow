@@ -275,7 +275,7 @@ fn choose_engine(mcf_home: &Path, asked: Option<&str>) -> Result<Chosen, Failure
 ///
 /// Written once: three engines resolved it identically, and a fourth reader —
 /// the derived configuration — would have made four.
-fn resolved(store: &Path, named: &str) -> std::path::PathBuf {
+pub(crate) fn resolved(store: &Path, named: &str) -> std::path::PathBuf {
     let given = Path::new(named);
     if given.is_file() {
         given.to_path_buf()

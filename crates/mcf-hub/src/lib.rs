@@ -14,6 +14,7 @@
 //! which M0 explicitly does not have; keeping the two apart is what lets the
 //! laboratory exercise every branch of the first without a hub (D26).
 
+pub mod acquisition;
 pub mod client;
 pub mod credentials;
 pub mod decay;
@@ -22,6 +23,7 @@ pub mod fitment;
 pub mod http;
 pub mod inspect;
 pub mod licence;
+pub mod offer;
 pub mod recommendation;
 pub mod reference;
 pub mod source;

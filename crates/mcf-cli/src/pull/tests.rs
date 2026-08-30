@@ -14,7 +14,10 @@ fn no_plan() -> std::result::Result<super::Plan, String> {
     Err("this repository publishes no configuration, and a plan needs one".to_owned())
 }
 
-use super::{DEFAULT_HUB, Offered, PLANNING_CONTEXT, credential, licence_of, offer, run, wire_for};
+use mcf_hub::offer::PLANNING_CONTEXT;
+use mcf_hub::wire::for_url as wire_for;
+
+use super::{DEFAULT_HUB, Offered, credential, licence_of, offer, run};
 use mcf_hub::http::Url;
 
 fn a_listing() -> Listing {
@@ -120,7 +123,8 @@ fn a_hub_that_is_not_a_url_is_refused() {
 /// without the length it fits at (A6, §3.4).
 #[test]
 fn a_plan_is_offered_at_a_stated_context() {
-    let plan = super::Plan {
+    let plan = mcf_hub::offer::Plan {
+        context: PLANNING_CONTEXT,
         available: mcf_core::measurement::Bytes(2),
         verdicts: vec![(
             "Q4_K_M.gguf".to_owned(),
