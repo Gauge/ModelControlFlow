@@ -31,6 +31,7 @@ mod serve;
 mod share;
 mod show;
 mod support;
+mod tui;
 mod verify;
 
 use std::process::ExitCode;
@@ -101,6 +102,12 @@ enum Request<'a> {
     },
     /// Start the daemon and stay there.
     Serve,
+    /// Open MCF as a terminal application and stay there.
+    ///
+    /// A second surface and a client of the same control plane (A22, B-072).
+    /// It adds no capability: every action it offers is a request a command
+    /// here already sends.
+    Tui,
     /// Read the record back.
     Log {
         /// Only entries of this kind.
@@ -338,6 +345,11 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             },
         },
         ["serve"] => Request::Serve,
+        ["tui"] => Request::Tui,
+        ["tui", argument, ..] => Request::UnexpectedArgument {
+            command: "tui",
+            argument,
+        },
         ["serve", argument, ..] => Request::UnexpectedArgument {
             command: "serve",
             argument,
@@ -1231,6 +1243,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             offered,
         } => pull::run(reference, *from, *into, *offered),
         Request::Serve => serve::run(),
+        Request::Tui => tui::run(),
         Request::Log { kind, last, full } => log::run(*kind, *last, *full),
         Request::Check {
             only,

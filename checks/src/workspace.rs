@@ -102,6 +102,17 @@ pub const MEMBERS: &[Member] = &[
         depends_on: &["mcf-core", "mcf-record", "mcf-serve"],
     },
     Member {
+        name: "mcf-tui",
+        path: "crates/mcf-tui",
+        // A second surface, and a client of the control plane exactly as the
+        // command line is (A22, B-072). It depends on `mcf-serve` for the
+        // requests it sends and on `mcf-record` for the shape MCF answers in;
+        // it depends on no store, no engine and no laboratory, because a
+        // surface that could reach past the wire would be a surface with a
+        // capability the wire does not have.
+        depends_on: &["mcf-core", "mcf-record", "mcf-serve"],
+    },
+    Member {
         name: "mcf-cli",
         path: "crates/mcf-cli",
         // `mcf-standin` because `mcf run` drives MCF's own engine: D31 put it
@@ -116,6 +127,7 @@ pub const MEMBERS: &[Member] = &[
             "mcf-hub",
             "mcf-serve",
             "mcf-bench",
+            "mcf-tui",
         ],
     },
     Member {

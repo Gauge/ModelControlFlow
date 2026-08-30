@@ -156,6 +156,7 @@ forward as one.
 | 126 | [F126 — A probe's length is not a free knob: short probes read optimistically, and with that fixed every size to 70B fits five minutes (B-400, F125, A6, A20, D19)](#126-f126-a-probes-length-is-not-a-free-knob-short-probes-read-optimistically-and-with-that-fixed-every-size-to-70b-fits-five-minutes-b-400-f125-a6-a20-d19) |
 | 127 | [F127 — The sampling rules made machine-checkable, and the GPU that cannot be tested because the engine has no backend for it (B-400, F126, A2, A21, B16)](#127-f127-the-sampling-rules-made-machine-checkable-and-the-gpu-that-cannot-be-tested-because-the-engine-has-no-backend-for-it-b-400-f126-a2-a21-b16) |
 | 128 | [F128 — A CUDA build provisioned, the first GPU timings taken, and the CPU's constants do not transfer to it (B-400, F127, A12, A21, F31)](#128-f128-a-cuda-build-provisioned-the-first-gpu-timings-taken-and-the-cpus-constants-do-not-transfer-to-it-b-400-f127-a12-a21-f31) |
+| 129 | [F129 — A second surface arrived and the tripwire watching for one did not fire, because it was written against four guesses at its name (B-401, B-072, A22, B16)](#129-f129-a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9328,6 +9329,58 @@ So the constants are **per device**, not per machine, and a GPU needs its own
 fit with a term the CPU form does not have. What survives the crossing is the
 *shape* — a straight line in depth, from a cache re-read once per token — which
 is what has been carrying the method all along.
+
+## 129 · F129 — A second surface arrived and the tripwire watching for one did not fire, because it was written against four guesses at its name (B-401, B-072, A22, B16)
+
+**MCF now has a terminal application**, and building it set off three checks
+and failed to set off a fourth — which is the finding.
+
+**The one that did not fire.** B-072 left a tripwire for the day a second
+surface appeared: an assertion that no crate existed under any of
+`mcf-window`, `mcf-web`, `mcf-ui` or `mcf-client`, so that whoever added one
+would be made to enumerate its actions. The surface arrived as **`mcf-tui`**
+and the check passed. Four guesses, none of them right.
+
+This is the sixth time in this project a guard has covered the shape of the
+place it was written for rather than the property it was written about — after
+F103, F105, F106, F112 and F113 — and the correction is the same one every
+time. A surface is now recognised by *what it does*: a crate that reaches
+`control::Request` is a client of the control plane, whatever it is called.
+Both halves are verified by breaking them — an undeclared crate that reaches
+the wire fails by name, and an action naming a request the control plane lacks
+fails by name.
+
+**The three that did fire, and were right to.**
+
+* `no_tier_inherits_a_daemon` required the new module be written down, so no
+  test tier can drive it and inherit a running daemon (F104).
+* `reference_model_neutrality` refused a test that used a real model's filename
+  as an example. B28 keeps MCF neutral about which model is *the* reference, and
+  a name in a test is a name in the tree.
+* `workspace_shape` refused the crate until its dependency edges were declared.
+  It also refused an edge that was not needed: the checks read the action table
+  as source text, so linking the crate was a dependency that bought nothing.
+
+**What the application is.** Zero dependencies, on both platforms. Raw input is
+`tcgetattr` where there is a termios and `SetConsoleMode` where there is a
+console, both declared by hand — the `unsafe_code` opt-in the workspace
+anticipated, taken per module with the reason at the site, which is exactly what
+the lint's own comment asks for.
+
+It costs nothing while nobody types: the terminal is put into a mode where a
+read blocks until a key arrives, so the loop is a thread asleep in `read` rather
+than a loop that spins. There is no timer and no redraw not caused by a key,
+which is B-071's requirement met by having nothing to do rather than by doing it
+efficiently.
+
+The terminal is given back on three paths and not one — the guard on every
+ordinary return, a panic hook for the path `Drop` does not run on, and an
+explicit call before returning. A terminal left raw is a terminal that stops
+echoing what the operator types, and they will not know why.
+
+**And it refuses where there is no terminal**, rather than drawing at nothing:
+piped output is a fact about where MCF was pointed, not a fault, so the refusal
+names the two commands that answer the same questions with no display attached.
 
 ## Changelog
 

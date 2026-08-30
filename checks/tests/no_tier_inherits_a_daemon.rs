@@ -72,6 +72,13 @@ const REACHES: &[Reaches] = &[
         module: "crates/mcf-cli/src/crosscheck.rs",
         subcommand: Some("cross-check"),
     },
+    // The terminal application is a client of the same socket. It runs until
+    // the operator quits and no tier drives it, but being written down is what
+    // keeps that true (F104).
+    Reaches {
+        module: "crates/mcf-cli/src/tui.rs",
+        subcommand: Some("tui"),
+    },
 ];
 
 /// How a tier says it brought its own: the helper in `scripts/lib-tiers.sh`.

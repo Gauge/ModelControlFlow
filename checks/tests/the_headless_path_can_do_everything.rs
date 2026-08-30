@@ -147,15 +147,35 @@ fn the_operations_a_person_can_ask_for_are_commands() {
     );
 }
 
-/// There is no second surface yet, and when there is, it joins this check.
-///
-/// Stated as an assertion rather than a comment so that the day a window crate
-/// appears, this fails and somebody extends the enumeration instead of
-/// discovering six months later that A22 was checked against one client.
-#[test]
-fn a_second_surface_would_have_to_be_enumerated_here() {
+/// A surface, and where it writes down what it can do.
+struct Surface {
+    /// The crate.
+    krate: &'static str,
+    /// The file holding its action table and the line the table starts on.
+    /// `None` for the headless path, which IS the enumeration everything else
+    /// is checked against.
+    table: Option<(&'static str, &'static str)>,
+}
+
+/// Every surface MCF has.
+const SURFACES: &[Surface] = &[
+    Surface {
+        krate: "mcf-cli",
+        table: None,
+    },
+    Surface {
+        krate: "mcf-tui",
+        table: Some((
+            "crates/mcf-tui/src/lib.rs",
+            "pub const ACTIONS: &[Action] = &[",
+        )),
+    },
+];
+
+/// A crate is a surface if it reaches the control plane.
+fn surfaces_in_the_tree() -> Vec<String> {
     let crates = mcf_checks::workspace::root().join("crates");
-    let mut surfaces = Vec::new();
+    let mut found = Vec::new();
     for entry in std::fs::read_dir(&crates)
         .expect("the crates directory is in the tree")
         .flatten()
@@ -163,16 +183,140 @@ fn a_second_surface_would_have_to_be_enumerated_here() {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        // A surface is a thing a person looks at. The window (§XI) is the one
-        // A22 was written for; these are the names it could arrive under.
-        if ["mcf-window", "mcf-web", "mcf-ui", "mcf-client"].contains(&name.as_str()) {
-            surfaces.push(name);
+        // The control plane's own crate defines the requests rather than
+        // sending them.
+        if name == "mcf-serve" {
+            continue;
+        }
+        let reaches = sources(&format!("crates/{name}")).into_iter().any(|path| {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .contains("control::Request")
+        });
+        if reaches {
+            found.push(name);
         }
     }
+    found.sort();
+    found
+}
+
+/// Every surface in the tree is declared above.
+///
+/// **This replaces a tripwire that did not fire, and the reason it did not is
+/// the finding.** The check used to assert that no crate existed under any of
+/// four names it guessed a window might arrive as — `mcf-window`, `mcf-web`,
+/// `mcf-ui`, `mcf-client`. A terminal application arrived as `mcf-tui` and the
+/// check passed, because a guard written against the names somebody imagined
+/// is a guard against those names and nothing else.
+///
+/// So a surface is now recognised by what it does: a crate that reaches the
+/// control plane is a client of it, whatever it is called.
+#[test]
+fn every_surface_in_the_tree_is_declared() {
+    let found = surfaces_in_the_tree();
+    let undeclared: Vec<&String> = found
+        .iter()
+        .filter(|name| !SURFACES.iter().any(|known| known.krate == name.as_str()))
+        .collect();
     assert!(
-        surfaces.is_empty(),
-        "a second surface exists: {surfaces:#?}. A22 says the interface may not be the only way \
-         to do anything, so its actions must be enumerated and matched against the control \
-         plane here — which is the half of B-072 that could not be written before it existed"
+        undeclared.is_empty(),
+        "a crate reaches the control plane and is not declared a surface: {undeclared:#?}. \
+         A22 says the interface may not be the only way to do anything, so its actions have \
+         to be enumerated and matched against the control plane here"
     );
+    assert!(
+        found.len() >= SURFACES.len(),
+        "a surface is declared that no longer reaches the control plane: declared {:#?}, \
+         found {found:#?}",
+        SURFACES.iter().map(|s| s.krate).collect::<Vec<_>>()
+    );
+}
+
+/// Every action every surface offers is reachable with no display attached.
+#[test]
+fn every_surface_action_has_a_command() {
+    let operations = operations();
+    let headless = sources("crates/mcf-cli")
+        .into_iter()
+        .map(|path| std::fs::read_to_string(path).unwrap_or_default())
+        .collect::<String>();
+
+    for surface in SURFACES {
+        let Some((file, marker)) = surface.table else {
+            continue;
+        };
+        let source = read(file);
+        let (_, after) = source
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("{} enumerates its actions in {file}", surface.krate));
+        let body = after.split_once("];").map_or(after, |(held, _)| held);
+
+        let mut reached = Vec::new();
+        for line in body.lines() {
+            let Some((_, rest)) = line.split_once("reaches:") else {
+                continue;
+            };
+            let rest = rest.trim();
+            // `None` is an action that moves the cursor and asks MCF nothing,
+            // which cannot be a capability the command line lacks.
+            if rest.starts_with("None") {
+                continue;
+            }
+            let name = rest
+                .trim_start_matches("Some(")
+                .trim_start_matches('"')
+                .split('"')
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            assert!(
+                !name.is_empty(),
+                "{}: an action reaches something unreadable: {line}",
+                surface.krate
+            );
+            reached.push(name);
+        }
+        assert!(
+            !reached.is_empty(),
+            "{} declares a table that reaches nothing; A22's second half depends on it \
+             being legible here",
+            surface.krate
+        );
+
+        for action in &reached {
+            assert!(
+                operations.contains(action),
+                "{} reaches `{action}`, which the control plane does not have. An action \
+                 only a surface can take is the shape A22 forbids",
+                surface.krate
+            );
+            assert!(
+                headless.contains(&format!("Request::{action}")),
+                "{} reaches `{action}` and no command does; A22 says the interface may not \
+                 be the only way to do anything",
+                surface.krate
+            );
+        }
+    }
+}
+
+/// Starting a surface is itself a command.
+#[test]
+fn every_surface_is_opened_by_a_command() {
+    let cli = sources("crates/mcf-cli")
+        .into_iter()
+        .map(|path| std::fs::read_to_string(path).unwrap_or_default())
+        .collect::<String>();
+    for surface in SURFACES {
+        if surface.table.is_none() {
+            continue;
+        }
+        let module = surface.krate.replace('-', "_");
+        assert!(
+            cli.contains(&format!("{module}::run")),
+            "no command starts {}",
+            surface.krate
+        );
+    }
 }

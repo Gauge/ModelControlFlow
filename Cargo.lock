@@ -96,6 +96,7 @@ dependencies = [
  "mcf-record",
  "mcf-serve",
  "mcf-standin",
+ "mcf-tui",
 ]
 
 [[package]]
@@ -184,6 +185,15 @@ name = "mcf-standin"
 version = "0.1.0-m0"
 dependencies = [
  "mcf-core",
+]
+
+[[package]]
+name = "mcf-tui"
+version = "0.1.0-m0"
+dependencies = [
+ "mcf-core",
+ "mcf-record",
+ "mcf-serve",
 ]
 
 [[package]]

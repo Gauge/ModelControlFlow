@@ -20,4 +20,5 @@ mcf-lab = { path = "../mcf-lab" }
 mcf-hub = { path = "../mcf-hub" }
 mcf-standin = { path = "../mcf-standin" }
 mcf-serve = { path = "../mcf-serve" }
+mcf-tui = { path = "../mcf-tui" }
 mcf-bench = { path = "../mcf-bench" }
