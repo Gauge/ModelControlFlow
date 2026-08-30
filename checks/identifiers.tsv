@@ -384,6 +384,8 @@ register	B-398
 register	B-399
 register	B-400
 register	B-401
+register	B-402
+register	B-403
 register	DEC-001
 register	DEC-002
 register	DEC-003
@@ -568,6 +570,7 @@ finding	F126
 finding	F127
 finding	F128
 finding	F129
+finding	F130
 rule	A1
 rule	A2
 rule	A3

@@ -1480,11 +1480,15 @@ fn the_daemon_starts_stays_up_and_stops_when_asked() {
         }
     }
     assert!(said.contains("mcf is up on"), "{said}");
-    assert!(
-        said.contains("serves models through MCF's own engine"),
-        "{said}"
-    );
-    assert!(said.contains("idle costs nothing"), "{said}");
+    // This machine has nothing provisioned, and the banner says so plainly and
+    // says what would fix it. It used to say "no vendored engine yet (B-320)"
+    // whatever was on the disk.
+    assert!(said.contains("no engine is installed yet"), "{said}");
+    assert!(said.contains("provision"), "{said}");
+    assert!(said.contains("costs nothing"), "{said}");
+    for cited in ["B-320", "D38", "B65", "§3.13"] {
+        assert!(!said.contains(cited), "a citation reached a person: {said}");
+    }
 
     // A second daemon refuses rather than sharing the record.
     let second = machine.run(&["serve"]);
@@ -1760,7 +1764,13 @@ fn running_something_that_is_not_a_model_is_refused_legibly() {
     assert!(!refused.status.success());
     let said = error_text(&refused);
     assert!(said.contains("did not run"), "{said}");
-    assert!(said.contains("no vendored engine"), "{said}");
+    // What to do about it, in words — not a reference to a document the person
+    // reading this has never seen.
+    assert!(said.contains("provision"), "{said}");
+    assert!(
+        !said.contains("B-320"),
+        "a citation reached a person: {said}"
+    );
 }
 
 fn walk(directory: &Path, into: &mut Vec<PathBuf>) {

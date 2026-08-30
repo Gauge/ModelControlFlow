@@ -67,9 +67,17 @@ fn a_file_that_is_not_a_model_is_refused_legibly() {
     let response = without_a_daemon(file.to_str().unwrap_or_default(), "hello", None, 0, None);
     assert!(!response.served);
     assert!(response.text.contains("did not run"), "{}", response.text);
+    // The refusal says what MCF's reader handles and what to do about a model
+    // it will not take. It no longer cites a rule at somebody who has never
+    // read one.
     assert!(
-        response.text.contains("no vendored engine"),
-        "{}",
+        response.text.contains("provision"),
+        "the refusal must say what to do: {}",
+        response.text
+    );
+    assert!(
+        !response.text.contains("B-320"),
+        "a citation reached a person: {}",
         response.text
     );
 

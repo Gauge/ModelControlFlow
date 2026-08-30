@@ -576,8 +576,8 @@ fn render(path: &Path, prompt: &str, seed: u64, said: &Said) -> String {
 /// own: MCF's reader is strict because there is nothing else to fall back to.
 fn refused(path: &Path, failure: &Failure) -> String {
     format!(
-        "{}\n  MCF's own engine reads GGUF and implements {}: a model it refuses is one a \
-         vendored engine would take, and there is no vendored engine yet (D31, B-320)",
+        "{}\n  MCF's own reader handles {}. A model it refuses may still run on a \
+         provisioned engine — `mcf provision llama.cpp` builds one",
         crate::say::refusal(&format!("{} did not run", path.display()), failure),
         // Said rather than counted, so that the sentence cannot go stale the
         // way "one architecture" did once there were four.

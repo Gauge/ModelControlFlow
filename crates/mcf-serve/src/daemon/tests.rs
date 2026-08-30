@@ -123,8 +123,18 @@ fn its_status_says_what_it_cannot_do() {
         .filter_map(Value::as_text)
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(cannot.contains("serve a model"), "{cannot}");
-    assert!(cannot.contains("no inference engine"), "{cannot}");
+    // This machine has nothing provisioned, so the daemon says so and says
+    // what would fix it. It used to say the same sentence whatever was on the
+    // disk, with two rule identifiers in it — which is how two provisioned
+    // engines sat on the operator's machine while the daemon reported none.
+    assert!(cannot.contains("no engine is installed"), "{cannot}");
+    assert!(cannot.contains("build one"), "{cannot}");
+    for cited in ["B-320", "D32"] {
+        assert!(
+            !cannot.contains(cited),
+            "a citation reached a person: {cannot}"
+        );
+    }
 
     let _stopped = ask(
         &socket,

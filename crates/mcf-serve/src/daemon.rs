@@ -66,10 +66,30 @@ pub struct Places {
     pub models: PathBuf,
 }
 
+/// Memory free for a new process, or `None` where the platform will not say.
+///
+/// Available rather than total: what matters is what a model could take now,
+/// not what the machine has in principle.
+fn system_memory_free() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            let kibibytes: u64 = rest.split_whitespace().next()?.parse().ok()?;
+            return Some(kibibytes * 1024);
+        }
+    }
+    None
+}
+
 /// A running daemon.
 #[derive(Debug)]
 pub struct Daemon {
     places: Places,
+    /// The engines found when this daemon started, with what each can compute
+    /// on. Asked once: finding them is a directory listing, but asking what
+    /// devices they have means running them, and a status request that starts
+    /// processes is a status request that costs something (§3.13).
+    engines: Vec<(crate::engines::Engine, Vec<crate::engines::Device>)>,
     listener: UnixListener,
     started: Timestamp,
     since: Instant<Monotonic>,
@@ -160,12 +180,26 @@ impl Daemon {
             .map_err(|error| unusable("the control socket", &places.socket, &error))?;
 
         let started = Timestamp::now();
+        // Before the struct takes ownership of `places`: asked once, here, and
+        // not again while this daemon is up.
+        let engines = {
+            let home = places.models.parent().unwrap_or(&places.models).to_owned();
+            let free = system_memory_free();
+            crate::engines::discover(&home)
+                .into_iter()
+                .map(|engine| {
+                    let devices = engine.devices(free).unwrap_or_default();
+                    (engine, devices)
+                })
+                .collect()
+        };
         let daemon = Self {
             places,
             listener,
             started,
             since: SystemClock.now(),
             recovered,
+            engines,
             resident: std::sync::Mutex::new(None),
             server: std::sync::Mutex::new(None),
         };
@@ -205,6 +239,72 @@ impl Daemon {
                 None
             }
         }
+    }
+
+    /// The engines this machine has, and what each can compute on.
+    ///
+    /// **Asked once, when the daemon starts.** Finding the engines is a
+    /// directory listing, but finding their *devices* means running each one to
+    /// ask — and a status request that starts two processes is a status request
+    /// that costs something. §3.13 makes idle free; it would be a poor trade to
+    /// make being asked expensive instead. What a build can compute on does not
+    /// change while it sits on the disk.
+    fn engines_as_value(&self) -> Value {
+        Value::List(
+            self.engines
+                .iter()
+                .map(|(engine, devices)| {
+                    Value::map([
+                        ("name", Value::text(engine.name.clone())),
+                        ("commit", Value::text(engine.commit.clone())),
+                        (
+                            "devices",
+                            Value::List(
+                                devices
+                                    .iter()
+                                    .map(|device| {
+                                        Value::map([
+                                            ("name", Value::text(device.name.clone())),
+                                            (
+                                                "kind",
+                                                Value::text(match device.kind {
+                                                    crate::engines::Kind::Cpu => "cpu",
+                                                    crate::engines::Kind::Gpu => "gpu",
+                                                }),
+                                            ),
+                                            (
+                                                "free_bytes",
+                                                device.free.map_or(Value::Null, |free| {
+                                                    Value::Integer(
+                                                        i64::try_from(free).unwrap_or(i64::MAX),
+                                                    )
+                                                }),
+                                            ),
+                                        ])
+                                    })
+                                    .collect(),
+                            ),
+                        ),
+                    ])
+                })
+                .collect(),
+        )
+    }
+
+    /// What this daemon cannot do, in words a person can act on.
+    ///
+    /// It used to say one sentence with two rule identifiers in it, and it said
+    /// it whether or not an engine was there — which was how two provisioned
+    /// engines sat on this machine while the daemon reported none. A citation is
+    /// for the record, where it can be followed; on a screen it is noise nobody
+    /// can use.
+    fn cannot(&self) -> Value {
+        if self.engines.is_empty() {
+            return Value::List(vec![Value::text(
+                "run a model: no engine is installed yet — MCF can build one for you",
+            )]);
+        }
+        Value::List(Vec::new())
     }
 
     /// What this daemon recovered, in the record's own shape.
@@ -560,12 +660,8 @@ impl Daemon {
                     ),
                 ]),
             ),
-            (
-                "cannot",
-                Value::List(vec![Value::text(
-                    "serve a model: no inference engine is vendored yet (B-320, D32)",
-                )]),
-            ),
+            ("engines", self.engines_as_value()),
+            ("cannot", self.cannot()),
         ])
     }
 

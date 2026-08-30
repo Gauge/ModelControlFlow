@@ -62,6 +62,16 @@ const DECLARED: &[Spawns] = &[
                program is never something MCF acquired (D39, B-032)",
     },
     Spawns {
+        file: "crates/mcf-serve/src/engines.rs",
+        sites: 2,
+        what: "a provisioned engine asked what devices it can use, and nothing else. The \
+               program is one MCF built itself in a container from a pinned source; it is \
+               given a single flag, no model and no acquired file of any kind. Asking is the \
+               only honest way to know what a build's backends are — a CPU build answers with \
+               nothing however many cards are installed, so declaring support would be a \
+               claim about a compile nobody can see (A21, D39, B-032)",
+    },
+    Spawns {
         file: "crates/mcf-serve/src/served.rs",
         sites: 1,
         what: "the same provisioned prefix's server rather than its completion tool (B-376), \

@@ -157,6 +157,7 @@ forward as one.
 | 127 | [F127 — The sampling rules made machine-checkable, and the GPU that cannot be tested because the engine has no backend for it (B-400, F126, A2, A21, B16)](#127-f127-the-sampling-rules-made-machine-checkable-and-the-gpu-that-cannot-be-tested-because-the-engine-has-no-backend-for-it-b-400-f126-a2-a21-b16) |
 | 128 | [F128 — A CUDA build provisioned, the first GPU timings taken, and the CPU's constants do not transfer to it (B-400, F127, A12, A21, F31)](#128-f128-a-cuda-build-provisioned-the-first-gpu-timings-taken-and-the-cpus-constants-do-not-transfer-to-it-b-400-f127-a12-a21-f31) |
 | 129 | [F129 — A second surface arrived and the tripwire watching for one did not fire, because it was written against four guesses at its name (B-401, B-072, A22, B16)](#129-f129-a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16) |
+| 130 | [F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)](#130-f130-two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9381,6 +9382,58 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 130 · F130 — Two engines were provisioned and invisible, because discovery matched a name; and sixty-four sentences a person reads cite a document they have never seen (B-402, B-403, A21, A7, B16)
+
+**The operator asked why they had no engines. They had two.**
+`llama.cpp` and `llama.cpp-cuda` were both built and sitting on this machine,
+and the daemon reported none — because discovery matched `component ==
+"llama.cpp"` exactly. The CUDA build, provisioned earlier the same day, was
+filtered out by its own name. It was never broken; it was never looked at.
+
+That is the same defect as the surface tripwire in
+[F129](#129--f129--a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16),
+two days running and the seventh instance overall: **a guard written against
+the name of the thing it was looking for, rather than the shape of it.** An
+engine is now a prefix with provenance and a server in it, whatever it is
+called.
+
+**What a build can compute on is asked, not assumed.** A backend is a property
+of how a binary was compiled, and the only honest way to know is to run it: the
+CPU build answers `--list-devices` with nothing however many cards are
+installed. So MCF asks each engine once, at start — once, because a status
+request that starts two processes is a status request that costs something, and
+§3.13 makes idle free rather than making being asked expensive. Status now
+answers in 16 ms with the devices already known.
+
+    llama.cpp and llama.cpp-cuda ready, on the processor and 1 card
+
+**What runs where is arithmetic, and it is exact.** The weights are a file size
+and the cache is a size per token the header states, so the largest window a
+device can hold is a division: a power of two, never past the trained context,
+never past what the memory holds with headroom. On this machine every model
+resolves — a 5 GB model to the card at 32 768, a small one to the card at
+32 768, and a state-space model to its own declared limit, because it keeps no
+cache that grows and its window costs nothing beyond the weights. Without that
+last case it read as *the file does not say how it is shaped*, which is true of
+the fields and false about the model.
+
+**And the citations.** The operator's other complaint was that the interface
+cites documents. It did: `no inference engine is vendored yet (B-320, D32)`,
+printed whether or not an engine was there. Both halves of that sentence were
+wrong — the claim and the citation.
+
+Rewriting it was easy; finding the rest was the point. A check that reads every
+string literal on a non-comment line in the three crates a person sees, and
+looks for the *shape* of a citation rather than a list of the ones that exist,
+found **sixty-four** of them across fifteen files.
+
+That is too many to rewrite in one change: several are asserted on by tests
+that would have to move with them, and three such tests had to be updated for
+the four strings fixed here. So the number is written down and the check is a
+ratchet — adding one fails the build, and removing one fails it too, with the
+instruction to lower the constant. The count can only go down. B-403 is the row
+that takes it to zero.
 
 ## Changelog
 

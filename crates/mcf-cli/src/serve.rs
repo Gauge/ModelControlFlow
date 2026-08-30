@@ -66,6 +66,44 @@ fn places() -> Option<Places> {
 }
 
 /// Starts the daemon and stays there.
+/// What engines this machine has, in one line a person can read.
+///
+/// The daemon used to say "no vendored engine yet" whatever was on the disk,
+/// which is how two provisioned engines sat here while it reported none. This
+/// reads the disk instead of repeating a sentence.
+fn engines_line() -> String {
+    const NONE: &str = "no engine is installed yet — `mcf provision llama.cpp` builds one";
+    let Some(models) = crate::models::default_root() else {
+        return NONE.to_owned();
+    };
+    let home = models.parent().unwrap_or(&models);
+    let engines = mcf_serve::engines::discover(home);
+    if engines.is_empty() {
+        return NONE.to_owned();
+    }
+    let cards: usize = engines
+        .iter()
+        .map(|engine| {
+            engine
+                .devices(None)
+                .unwrap_or_default()
+                .iter()
+                .filter(|device| device.kind == mcf_serve::engines::Kind::Gpu)
+                .count()
+        })
+        .sum();
+    let names: Vec<&str> = engines.iter().map(|engine| engine.name.as_str()).collect();
+    if cards == 0 {
+        format!("{} ready, on the processor", names.join(" and "))
+    } else {
+        format!(
+            "{} ready, on the processor and {cards} card{}",
+            names.join(" and "),
+            if cards == 1 { "" } else { "s" }
+        )
+    }
+}
+
 pub(crate) fn run() -> Response {
     let Some(places) = places() else {
         return Response {
@@ -90,12 +128,15 @@ pub(crate) fn run() -> Response {
     // next thing this process does is block in `accept` until somebody asks it
     // for something.
     let recovered = daemon.recovered();
+    // No rule identifiers here. This is the first thing a person ever sees from
+    // MCF, and a citation in it sends them to a document they have never read
+    // to explain a sentence they could have understood. The rules are cited in
+    // the code and carried in the record, which is where a citation is useful.
     println!(
         "mcf is up on {}\n  \
          recovered {} record entr{} and {} model file{}{}\n  \
-         it serves models through MCF's own engine, marked as such (D38, B65); \
-         no vendored engine yet (B-320)\n  \
-         idle costs nothing — this process is blocked in accept until asked (§3.13)",
+         {}\n  \
+         it costs nothing while nobody is asking",
         daemon.socket().display(),
         recovered.entries,
         if recovered.entries == 1 { "y" } else { "ies" },
@@ -104,7 +145,8 @@ pub(crate) fn run() -> Response {
         match &recovered.unreadable {
             Some(what) => format!("\n  PART OF THE RECORD COULD NOT BE READ: {what}"),
             None => String::new(),
-        }
+        },
+        engines_line(),
     );
 
     match daemon.serve() {
