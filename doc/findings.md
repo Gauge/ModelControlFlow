@@ -161,6 +161,7 @@ forward as one.
 | 131 | [F131 — The window was a terminal with a mouse pointer over it, and every test passed; one SDL constant was written from memory and named the wrong event (B-409, F129, A6, A11)](#131-f131-the-window-was-a-terminal-with-a-mouse-pointer-over-it-and-every-test-passed-one-sdl-constant-was-written-from-memory-and-named-the-wrong-event-b-409-f129-a6-a11) |
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
+| 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9385,6 +9386,46 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 134 · F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)
+
+**B-416 wanted every setting a hosted model runs under to be visible, so it
+wrote a `Sampling` type**: temperature, top-p, top-k, a repetition penalty and
+a seed, held in thousandths as whole numbers because a shipped crate holds no
+floating point and a NaN one division from a record is how a measurement
+starts lying. The reasoning was sound and every part of the answer already
+existed.
+
+`mcf_core::configuration::Sampling` holds the same five things. It holds them
+in `Thousandths`, which is the same representation for the same reason, and
+which renders as `{}.{:03}` — the same decimal the copy formatted by hand.
+It has been there since the configuration model was written.
+
+**And the original carries a distinction the copy did not.** Each of its
+values is an `Attested`: declared, verified, or unknown. A temperature a
+publisher wrote in a model's metadata and one a sweep measured are not the
+same kind of fact, and B-281 is the item that turns on exactly that — a
+recommended sampling renders as *declared* until a sweep promotes it. The copy
+had plain numbers, so anything built on it would have had to invent that
+distinction again or lose it.
+
+**What it cost was nothing and what it nearly cost was the rule.** The copy was
+never wired to anything: it shipped as dead code and was removed the moment
+somebody looked. Had it been wired first, MCF would have had two answers to
+*what sampling is this* and a check would eventually have found them
+disagreeing — which is the shape of
+[F129](#129--f129--a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16),
+[F130](#130--f130--two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16)
+and F133 one more time, in a different material: a thing that was really there
+and invisible to the person writing next to it.
+
+**The remedy is the same as those, and this one has no check.** A name-match
+can be caught mechanically (B-417); *somebody wrote a type that existed*
+cannot, not usefully — the shapes are too varied and the false positives would
+swamp it. What is left is the habit: search before writing, and treat a
+representation that feels obviously right as evidence that somebody has
+already had the thought.
+
 
 ## 133 · F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)
 

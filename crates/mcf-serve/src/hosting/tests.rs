@@ -1,6 +1,6 @@
 //! What a hosting settings may and may not do.
 
-use super::{DEFAULT_PORT, Hosting, LOOPBACK, Sampling};
+use super::{DEFAULT_PORT, Hosting, LOOPBACK};
 use mcf_record::json::Value;
 
 fn on_a_card() -> Hosting {
@@ -132,23 +132,6 @@ fn an_unmentioned_setting_keeps_its_recommendation() {
         read.context, recommended.context,
         "an unmentioned field moved"
     );
-}
-
-/// Sampling defaults to greedy, because a measurement under sampling measures
-/// the sampler.
-#[test]
-fn sampling_is_reproducible_unless_somebody_says_otherwise() {
-    let sampling = Sampling::default();
-    // Exactly zero, and compared as such deliberately: *greedy* is the value
-    // nought and not a value near it, and a temperature that had drifted to
-    // 0.000001 would be sampling.
-    assert_eq!(sampling.temperature, 0, "sampling is not greedy by default");
-    assert_eq!(sampling.seed, 0);
-    // And the thousandths become a decimal the engine reads, exactly.
-    assert_eq!(Sampling::as_decimal(0), "0.000");
-    assert_eq!(Sampling::as_decimal(700), "0.700");
-    assert_eq!(Sampling::as_decimal(1_000), "1.000");
-    assert_eq!(Sampling::as_decimal(1_150), "1.150");
 }
 
 /// A hosted model is reachable on this computer and nowhere else.

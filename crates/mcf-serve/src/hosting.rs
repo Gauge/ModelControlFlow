@@ -14,6 +14,18 @@
 //! says which of them somebody has moved — so the record can carry what was
 //! chosen *and* what was recommended, and the two can disagree in writing.
 //!
+//! **Sampling is not here, and once was.** This module briefly carried its own
+//! `Sampling` type — temperature, top-p, top-k, a repetition penalty and a
+//! seed, held in thousandths as whole numbers so that no float reached a
+//! record. Every part of that was right and all of it already existed:
+//! `mcf_core::configuration::Sampling` holds the same five things in
+//! `Thousandths`, which even renders as the same decimal. It also holds each
+//! of them as [`mcf_core::attested::Attested`], which the copy did not — and
+//! that is the distinction B-281 turns on, because a sampling value a
+//! publisher declared and one a sweep measured are not the same kind of fact.
+//! The copy was never wired to anything, so what it cost was a second answer
+//! to a question already answered (B-419, A1).
+//!
 //! **The API is the engine's, and MCF says so.** MCF does not implement an
 //! inference API; it provisions an engine that has one and supervises it. What
 //! hosting does is bind that engine to a port with these settings and write
@@ -79,81 +91,6 @@ pub struct Hosting {
 /// Separate from [`Hosting`] because these can change per request and those
 /// cannot: a context size is chosen when the model is loaded, and a
 /// temperature is chosen when somebody asks a question.
-/// **In thousandths, as whole numbers.** These are fractions, and a shipped
-/// crate holds no float — a NaN one division away from a record is how a
-/// measurement starts lying (A6, A1). A temperature of 0.7 is `700` here, and
-/// the engine is given `0.700`; the conversion is [`Sampling::as_decimal`] and
-/// it happens once, on the way out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Sampling {
-    /// How much of the distribution's tail is admitted, in thousandths. Zero
-    /// is greedy.
-    pub temperature: u32,
-    /// Nucleus sampling's mass, in thousandths.
-    pub top_p: u32,
-    /// How many candidates are considered at all. Not a fraction.
-    pub top_k: u32,
-    /// The smallest probability admitted relative to the best, in thousandths.
-    pub min_p: u32,
-    /// How much a repeated token is discouraged, in thousandths.
-    pub repeat_penalty: u32,
-    /// The seed, which is a condition of the answer (D19).
-    pub seed: u64,
-}
-
-impl Default for Sampling {
-    /// Greedy, and seeded at zero.
-    ///
-    /// **Not the engine's defaults.** An engine samples at a temperature
-    /// because it is answering a person; MCF's business is measurement, and a
-    /// measurement taken under sampling is a measurement of the sampler as
-    /// much as the model. Greedy is reproducible, so it is what MCF asks for
-    /// unless somebody says otherwise — and the record says which it was
-    /// (D19, A6).
-    fn default() -> Self {
-        Self {
-            temperature: 0,
-            top_p: 1_000,
-            top_k: 0,
-            min_p: 0,
-            repeat_penalty: 1_000,
-            seed: 0,
-        }
-    }
-}
-
-impl Sampling {
-    /// One thousandth-valued setting as the engine's command line wants it.
-    #[must_use]
-    pub fn as_decimal(thousandths: u32) -> String {
-        #[expect(
-            clippy::integer_division,
-            reason = "thousandths into a whole part and a remainder, exactly"
-        )]
-        let (whole, rest) = (thousandths / 1_000, thousandths % 1_000);
-        format!("{whole}.{rest:03}")
-    }
-
-    /// The arguments these become on the engine's command line.
-    #[must_use]
-    pub fn arguments(&self) -> Vec<String> {
-        vec![
-            "--temp".to_owned(),
-            Self::as_decimal(self.temperature),
-            "--top-p".to_owned(),
-            Self::as_decimal(self.top_p),
-            "--top-k".to_owned(),
-            self.top_k.to_string(),
-            "--min-p".to_owned(),
-            Self::as_decimal(self.min_p),
-            "--repeat-penalty".to_owned(),
-            Self::as_decimal(self.repeat_penalty),
-            "--seed".to_owned(),
-            self.seed.to_string(),
-        ]
-    }
-}
-
 /// What one setting is, for a surface that lists them all.
 #[derive(Debug, Clone)]
 pub struct Setting {
