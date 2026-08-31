@@ -216,6 +216,13 @@ impl core::fmt::Display for Url {
 pub struct Request {
     url: Url,
     from: Option<u64>,
+    /// The last byte wanted, where the caller wants a bounded range.
+    ///
+    /// A resumption is open-ended — *everything from here* — and reading a
+    /// header is not: what is wanted is a prefix, and asking for the whole of
+    /// a forty-gigabyte file to read its first four megabytes would be
+    /// acquiring a model to answer a question about it.
+    to: Option<u64>,
     credential: Option<String>,
 }
 
@@ -226,6 +233,7 @@ impl Request {
         Self {
             url,
             from: None,
+            to: None,
             credential: None,
         }
     }
@@ -234,6 +242,19 @@ impl Request {
     #[must_use]
     pub fn resuming(mut self, offset: u64) -> Self {
         self.from = Some(offset);
+        self
+    }
+
+    /// The first `bytes` of the file and no more.
+    ///
+    /// For reading a header without acquiring what is behind it. A hub that
+    /// ignores the range answers with the whole file, which the caller has to
+    /// be ready for — so the bound is enforced again on the reading side
+    /// rather than trusted here (§3.7).
+    #[must_use]
+    pub fn first(mut self, bytes: u64) -> Self {
+        self.from = Some(0);
+        self.to = Some(bytes.saturating_sub(1));
         self
     }
 
@@ -270,6 +291,10 @@ impl Request {
         Self {
             url: to,
             from: self.from,
+            // The bound travels with the redirect for the same reason the
+            // offset does: a request that lost it on the way to a CDN would
+            // ask for the whole file.
+            to: self.to,
             credential: if carrying_the_credential {
                 self.credential.clone()
             } else {
@@ -291,9 +316,10 @@ impl Request {
     /// transfers is one the laboratory would have to simulate to test either.
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        let range = match self.from {
-            Some(from) => format!("Range: bytes={from}-\r\n"),
-            None => String::new(),
+        let range = match (self.from, self.to) {
+            (Some(from), Some(to)) => format!("Range: bytes={from}-{to}\r\n"),
+            (Some(from), None) => format!("Range: bytes={from}-\r\n"),
+            (None, _) => String::new(),
         };
         let authorization = match &self.credential {
             Some(token) => format!("Authorization: Bearer {token}\r\n"),

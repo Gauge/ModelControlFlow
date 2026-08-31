@@ -345,6 +345,97 @@ struct Holding {
     since: Timestamp,
 }
 
+/// The plan, from whichever place this repository says how its model is shaped.
+///
+/// The configuration first, because it can say which blocks are full-attention
+/// and a header cannot. The header second, because most repositories that
+/// publish GGUFs publish no configuration at all — and *MCF cannot say* about
+/// nearly everything anybody would download is a poor answer when the file
+/// itself carries the numbers (B-413).
+///
+/// Returns the plan and whether the shape came from the header, because where
+/// it came from is a condition of every verdict in it (A6).
+fn plan_however_the_shape_can_be_found(
+    hub: &mcf_hub::client::Hub,
+    listing: &mcf_hub::source::Listing,
+) -> (core::result::Result<mcf_hub::offer::Plan, String>, bool) {
+    // What is free, read the way the daemon reads it for everything else — B4
+    // keeps hardware sampling out of the serving path, so the plan is handed a
+    // number rather than going and taking one.
+    let Some(free) = system_memory_free() else {
+        return (
+            Err("this machine will not say how much memory is free".to_owned()),
+            false,
+        );
+    };
+    let available = mcf_core::measurement::Bytes(free);
+    match mcf_hub::offer::shape_from_configuration(hub, listing) {
+        Ok(shape) => (mcf_hub::offer::plan_with(listing, shape, available), false),
+        Err(why) => match shape_from_a_published_header(hub, listing) {
+            Some(shape) => (mcf_hub::offer::plan_with(listing, shape, available), true),
+            None => (Err(why), false),
+        },
+    }
+}
+
+/// A model's shape, read from the header of the first GGUF a repository
+/// publishes.
+///
+/// **A few megabytes, not the model.** The hub serves ranges, so the header
+/// arrives without acquiring what is behind it — and the sizes tried are the
+/// ones `header_of` uses for a file on this disk, for the same reason: a GGUF
+/// puts its metadata first but a tokenizer vocabulary can be megabytes of it.
+///
+/// **Smallest first, and not every smallest file has a header.** A large model
+/// is published in parts, and the second part of a split GGUF is smaller than
+/// the first and carries no metadata at all — on a seventy-billion-parameter
+/// repository the smallest file is exactly that. Rather than read the naming
+/// convention for split parts, which would be guessing from a name again
+/// (B-417), this simply tries the next candidate: a part with no header does
+/// not parse, and one that does not parse is not the file to ask.
+///
+/// Four candidates at most. Every variant of one model shares its shape, so
+/// the answer is in the first file that has a header, and a repository where
+/// four in a row have none is one MCF says it cannot judge.
+fn shape_from_a_published_header(
+    hub: &mcf_hub::client::Hub,
+    listing: &mcf_hub::source::Listing,
+) -> Option<mcf_hub::fitment::Shape> {
+    let mut candidates: Vec<&mcf_hub::source::Entry> = listing
+        .entries
+        .iter()
+        .filter(|entry| {
+            std::path::Path::new(&entry.path)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+        })
+        .collect();
+    candidates.sort_by_key(|entry| entry.size);
+
+    for entry in candidates.into_iter().take(4) {
+        for prefix in [4_u64 << 20, 16 << 20] {
+            let Ok(held) = hub.prefix_of(&listing.reference, entry, prefix) else {
+                break;
+            };
+            if held.is_empty() {
+                break;
+            }
+            if let Ok(model) = mcf_standin::gguf::parse(&held)
+                && let Some(shape) = crate::engines::shape_of(&model)
+            {
+                return Some(shape);
+            }
+            // A prefix that did not reach the end of the metadata parses as
+            // nothing rather than as something shorter, so a larger one is
+            // the only way to tell *not yet* from *not there* (A7).
+            if prefix >= entry.size {
+                break;
+            }
+        }
+    }
+    None
+}
+
 /// The newest measurement of each model, from the record.
 ///
 /// **Through the index and by kind**, not by replaying the journal: a daemon
@@ -1710,12 +1801,7 @@ impl Daemon {
         // What is free, read the way the daemon reads it for everything else
         // — B4 keeps hardware sampling out of the serving path, so the plan
         // is handed a number rather than going and taking one.
-        let planned = match system_memory_free() {
-            Some(free) => {
-                mcf_hub::offer::plan_for(&hub, &listing, mcf_core::measurement::Bytes(free))
-            }
-            None => Err("this machine will not say how much memory is free".to_owned()),
-        };
+        let (planned, from_the_header) = plan_however_the_shape_can_be_found(&hub, &listing);
 
         // Every published file MCF can read, with what is known about each.
         // The verdict is attached where there is one and left absent where
@@ -1777,6 +1863,25 @@ impl Daemon {
                 match &planned {
                     Ok(_) => Value::Null,
                     Err(why) => Value::text(why.clone()),
+                },
+            ),
+            // Where the shape came from is a condition of every verdict above
+            // it: a header read from a prefix says how many blocks cache, and
+            // unlike a configuration it cannot say which of them are
+            // full-attention — so a hybrid model's cache is overstated and the
+            // verdict errs toward refusing something that would fit (A6, A7).
+            // Where the shape came from, and `null` where none was found —
+            // saying *the configuration* about a plan that was never made
+            // would be naming a source for an answer that does not exist
+            // (A7).
+            (
+                "shape_from",
+                match (planned.is_ok(), from_the_header) {
+                    (false, _) => Value::Null,
+                    (true, true) => {
+                        Value::text("the model's own header, read from the first megabytes")
+                    }
+                    (true, false) => Value::text("the repository's configuration"),
                 },
             ),
         ]))

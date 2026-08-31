@@ -223,6 +223,58 @@ const NO_GROWING_CACHE: &[&str] = &[
     "jamba",
 ];
 
+/// How a model is shaped, from its own GGUF header.
+///
+/// **Because most repositories publish no configuration.** `config.json` is
+/// where `mcf_hub::offer` looks first and it is absent from nearly every
+/// repository that publishes GGUFs — so *will this run here* came back as *MCF
+/// cannot say* for almost everything somebody would try to download. The
+/// header carries the same three numbers, and the hub serves ranges, so a few
+/// megabytes of prefix answers it without acquiring the model (B-413, PR3).
+///
+/// The numbers are read the same way [`cache_bytes_per_token`] reads them,
+/// including the convention that where a header omits the key length it is the
+/// embedding width divided across the heads.
+#[must_use]
+pub fn shape_of(model: &mcf_standin::gguf::Model) -> Option<mcf_hub::fitment::Shape> {
+    let architecture = model.architecture()?;
+    let number = |suffix: &str| -> Option<u64> {
+        model
+            .get(&format!("{architecture}.{suffix}"))
+            .and_then(mcf_standin::gguf::Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+            .filter(|held| *held > 0)
+    };
+    let heads = number("attention.head_count");
+    let head_dimension = number("attention.key_length").or_else(|| {
+        let width = number("embedding_length")?;
+        let heads = heads?;
+        // Exact by the convention above: the width divides across the heads,
+        // and a float here would round a dimension before a layer count
+        // multiplies it.
+        #[allow(
+            clippy::integer_division,
+            reason = "the division is exact by convention"
+        )]
+        {
+            Some(width / heads)
+        }
+    })?;
+    Some(mcf_hub::fitment::Shape {
+        // Every block caches. A GGUF header does not carry the per-layer
+        // attention types a configuration can, so a hybrid model's cache is
+        // overstated here — which errs toward refusing a model that would fit
+        // rather than accepting one that would not, and is stated rather than
+        // silent (A7, F16).
+        blocks: number("block_count")?,
+        key_value_heads: number("attention.head_count_kv").or(heads)?,
+        head_dimension,
+        // Half precision, as every engine caches by default. The same
+        // parameter `Shape::from_configuration` is given.
+        bytes_per_element: 2,
+    })
+}
+
 /// How many bytes of cache one token of context costs.
 ///
 /// Layers times KV heads times key and value lengths, two bytes each — the

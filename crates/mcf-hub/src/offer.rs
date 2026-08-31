@@ -65,6 +65,19 @@ pub struct Plan {
 /// arithmetic over a number somebody else established, which is also why the
 /// number it used is in the answer (A6).
 pub fn plan_for(hub: &Hub, listing: &Listing, available: Bytes) -> Result<Plan, String> {
+    let shape = shape_from_configuration(hub, listing)?;
+    plan_with(listing, shape, available)
+}
+
+/// The model's shape, from the repository's own configuration.
+///
+/// # Errors
+///
+/// Says which of the two it was: a repository that publishes no configuration
+/// and one whose configuration MCF could not read are different facts, and the
+/// first is about the repository while the second is about MCF ([findings.md]
+/// (findings.md) F16).
+pub fn shape_from_configuration(hub: &Hub, listing: &Listing) -> Result<Shape, String> {
     let configuration = match hub.configuration(listing) {
         Ok(Some(configuration)) => configuration,
         Ok(None) => {
@@ -76,13 +89,25 @@ pub fn plan_for(hub: &Hub, listing: &Listing, available: Bytes) -> Result<Plan, 
             return Err(format!("its configuration could not be read — {failure}"));
         }
     };
-    let Some(shape) = Shape::from_configuration(&configuration, CACHE_ELEMENT) else {
-        return Err(
-            "its configuration does not say how many blocks, key/value heads and head \
-             dimensions the model has, and MCF will not guess at a shape (A7)"
-                .to_owned(),
-        );
-    };
+    Shape::from_configuration(&configuration, CACHE_ELEMENT).ok_or_else(|| {
+        "its configuration does not say how many blocks, key/value heads and head dimensions \
+         the model has, and MCF will not guess at a shape (A7)"
+            .to_owned()
+    })
+}
+
+/// The same plan, from a shape somebody else established.
+///
+/// **Because the configuration is not the only place a shape is written.** A
+/// GGUF says how a model is shaped in its own header, and most repositories
+/// that publish GGUFs publish nothing else — so a caller that can read one
+/// supplies the shape and gets the same arithmetic. The judgement stays here;
+/// only where the shape came from differs, and the caller says which (B-413).
+///
+/// # Errors
+///
+/// As [`plan_for`], for the arithmetic.
+pub fn plan_with(listing: &Listing, shape: Shape, available: Bytes) -> Result<Plan, String> {
     let requirements: Vec<Requirement> = listing
         .entries
         .iter()

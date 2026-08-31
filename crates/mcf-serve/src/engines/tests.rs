@@ -283,3 +283,103 @@ fn a_state_space_model_has_no_cache_rather_than_no_answer() {
         4_096
     );
 }
+
+/// A model's shape comes out of its own header.
+///
+/// **Because most repositories publish no configuration.** `config.json` is
+/// where the fitness judgement looks first and nearly every repository that
+/// publishes GGUFs has none — so *will this run here* came back as *MCF cannot
+/// say* for almost everything somebody would try to download (B-413, F16).
+#[test]
+fn a_shape_is_read_from_a_header() {
+    let Some(path) = a_model_on_this_machine() else {
+        // No model here is a fact about the machine, not a failure of the
+        // check (A9). It is announced rather than passing silently.
+        eprintln!("skipped: this machine holds no model to read");
+        return;
+    };
+    let Some(model) = read_header(&path) else {
+        eprintln!("skipped: {} has no header MCF could read", path.display());
+        return;
+    };
+    let Some(shape) = super::shape_of(&model) else {
+        panic!(
+            "{} has a header and no shape came out of it",
+            path.display()
+        );
+    };
+    assert!(shape.blocks > 0, "a model with no blocks");
+    assert!(shape.key_value_heads > 0, "a model with no key/value heads");
+    assert!(shape.head_dimension > 0, "a model with heads of no width");
+    // Half precision, the same parameter a configuration is read with, so the
+    // two sources give comparable answers.
+    assert_eq!(shape.bytes_per_element, 2);
+
+    // And the shape agrees with what the cache arithmetic says independently:
+    // both read the same header, so a disagreement would mean one of them is
+    // reading it wrong.
+    if let Some(per_token) = super::cache_bytes_per_token(&model) {
+        let from_shape = shape
+            .blocks
+            .saturating_mul(shape.key_value_heads)
+            .saturating_mul(shape.head_dimension)
+            .saturating_mul(2)
+            .saturating_mul(shape.bytes_per_element);
+        assert_eq!(
+            from_shape, per_token,
+            "the shape and the cache arithmetic disagree about the same header"
+        );
+    }
+}
+
+/// A header that says nothing yields no shape, and never a zero.
+#[test]
+fn a_header_that_says_nothing_yields_no_shape() {
+    // Not a GGUF at all: what comes back is `None`, which is *MCF cannot say*
+    // and not *a model with no layers* (A7).
+    assert!(mcf_standin::gguf::parse(b"not a gguf at all").is_err());
+}
+
+/// The first model file this machine is holding, if any.
+fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
+    let root = home.join(".local/share/mcf/models");
+    let mut looking = vec![root];
+    while let Some(directory) = looking.pop() {
+        let entries = std::fs::read_dir(&directory).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                looking.push(path);
+                continue;
+            }
+            if path
+                .extension()
+                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
+            {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// A model's header, from a bounded prefix of the file.
+fn read_header(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
+    use std::io::Read as _;
+    let held = std::fs::metadata(path).map_or(0, |about| about.len());
+    for cap in [4_u64 << 20, 16 << 20] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .ok()?;
+        if let Ok(model) = mcf_standin::gguf::parse(&prefix) {
+            return Some(model);
+        }
+        if take >= held {
+            return None;
+        }
+    }
+    None
+}

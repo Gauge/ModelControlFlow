@@ -1428,6 +1428,18 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         }
         y += 10.0;
     }
+    // Where the shape came from, which is a condition of every verdict below.
+    if let Some(from) = found.get("shape_from").and_then(Value::as_text) {
+        paint.say_at(
+            area.x,
+            y,
+            &format!("shape read from {from}"),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 22.0;
+    }
     let mut act = None;
     for file in files.iter().take(12) {
         let name = file

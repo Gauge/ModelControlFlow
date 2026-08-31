@@ -124,6 +124,13 @@ fn published(body: &Value) -> Vec<String> {
             "  MCF cannot say which of these would run here: {why}"
         ));
     }
+    // Where the shape came from is a condition of every verdict below it: a
+    // configuration can say which blocks are full-attention and a header
+    // cannot, so a hybrid model judged from a header has its cache overstated
+    // — which errs toward refusing something that would fit (A6, F16).
+    if let Some(from) = body.get("shape_from").and_then(Value::as_text) {
+        lines.push(format!("  shape read from {from}"));
+    }
     for file in body.get("files").and_then(Value::as_list).unwrap_or(&[]) {
         let name = file.get("file").and_then(Value::as_text).unwrap_or("?");
         let bytes = file.get("bytes").and_then(Value::as_integer).unwrap_or(0);

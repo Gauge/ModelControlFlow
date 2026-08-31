@@ -252,6 +252,41 @@ impl Hub {
     }
 
     /// Fetches a file, appending or truncating, and digests what arrives.
+    /// The first `bytes` of a published file, without acquiring it.
+    ///
+    /// **For reading a header.** A GGUF says how a model is shaped in its own
+    /// metadata, and a repository that publishes no `config.json` — which is
+    /// most of them — leaves that the only place the answer is. Fetching the
+    /// whole file to read its first megabytes would be acquiring a model to
+    /// answer a question about it (§3.7, PR3).
+    ///
+    /// **The bound is enforced here as well as asked for.** A hub that ignores
+    /// the range answers with the whole file, and a reader that trusted the
+    /// range would then hold a forty-gigabyte model in memory. The sink stops
+    /// keeping at its ceiling, so what comes back is bounded whatever the far
+    /// end sends.
+    ///
+    /// # Errors
+    ///
+    /// What the exchange said, or that the hub's answer was not one.
+    pub fn prefix_of(&self, reference: &Reference, entry: &Entry, bytes: u64) -> Result<Vec<u8>> {
+        let revision = reference
+            .revision
+            .clone()
+            .unwrap_or_else(|| "main".to_owned());
+        let url = self.resolve_url(reference, &revision, &entry.path)?;
+        let request = self.asking(url.clone()).first(bytes);
+        // The bounded sink that is already here: past its ceiling it keeps
+        // counting and stops keeping, so a hub that ignores the range and
+        // answers with the whole file is noticed rather than allowed to fill
+        // this machine.
+        let mut held = Bounded::new(bytes);
+        let _exchanged = wire::vetted(self.wire.as_ref(), &request, &mut held, &|response| {
+            self.status_is_an_answer(response, &url, reference)
+        })?;
+        Ok(held.held)
+    }
+
     fn transfer(
         &self,
         reference: &Reference,
