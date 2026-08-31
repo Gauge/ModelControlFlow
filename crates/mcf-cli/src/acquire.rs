@@ -128,8 +128,14 @@ fn published(body: &Value) -> Vec<String> {
     // configuration can say which blocks are full-attention and a header
     // cannot, so a hybrid model judged from a header has its cache overstated
     // — which errs toward refusing something that would fit (A6, F16).
+    // A21: declared, verified, unknown. Every verdict below rests on a number
+    // the repository supplied — MCF has not fetched the weights, and saying
+    // *fits* about a claim without saying it is one would make a plan read as
+    // a finding.
     if let Some(from) = body.get("shape_from").and_then(Value::as_text) {
-        lines.push(format!("  shape read from {from}"));
+        lines.push(format!("  these rest on {from}"));
+        lines
+            .push("  the arithmetic is MCF's; the shape it is over is the repository's".to_owned());
     }
     for file in body.get("files").and_then(Value::as_list).unwrap_or(&[]) {
         let name = file.get("file").and_then(Value::as_text).unwrap_or("?");

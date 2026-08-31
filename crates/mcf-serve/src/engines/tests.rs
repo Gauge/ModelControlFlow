@@ -383,3 +383,56 @@ fn read_header(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     }
     None
 }
+
+/// A header that is not describing the file it came with is refused.
+///
+/// **A shape fetched from a hub is a claim, and this is the one part of it MCF
+/// can check without the file.** The header's own tensor table says where the
+/// last tensor ends, and that has to be inside the published file and account
+/// for nearly all of it — measured across seven architectures on this machine,
+/// the declared extent is between 96.2% and 100.0% of the published size.
+///
+/// The deception that matters is a small shape against a large file: it makes
+/// a forty-gigabyte model look like it needs almost nothing, and MCF would
+/// answer *fits* about something that does not (§3.7, B-022, A21).
+#[test]
+fn a_header_that_does_not_describe_its_file_is_refused() {
+    let Some(path) = a_model_on_this_machine() else {
+        eprintln!("skipped: this machine holds no model");
+        return;
+    };
+    let Some(model) = read_header(&path) else {
+        eprintln!("skipped: {} has no header MCF can read", path.display());
+        return;
+    };
+    let held = std::fs::metadata(&path).map_or(0, |about| about.len());
+    let Some(declared) = model.data_bytes_required() else {
+        eprintln!(
+            "skipped: {} uses a quantization MCF cannot size",
+            path.display()
+        );
+        return;
+    };
+
+    // Against the file it actually came with: accepted.
+    assert!(
+        crate::daemon::header_describes_this_file(&model, held),
+        "a header was refused for the file it is actually describing"
+    );
+
+    // The deception: the same truthful header, offered for a file a thousand
+    // times larger. Every number in it is correct and none is about that file.
+    assert!(
+        !crate::daemon::header_describes_this_file(&model, held.saturating_mul(1_000)),
+        "a header describing a fraction of the published file was accepted, so a large model \
+         can be made to look small by publishing a small model's header"
+    );
+
+    // And a header claiming more data than the file holds, which cannot be
+    // true of any file.
+    assert!(
+        !crate::daemon::header_describes_this_file(&model, declared.saturating_sub(1)),
+        "a header claiming more data than the file has was accepted"
+    );
+    assert!(!crate::daemon::header_describes_this_file(&model, 0));
+}

@@ -1429,16 +1429,23 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
         y += 10.0;
     }
     // Where the shape came from, which is a condition of every verdict below.
+    // A21: every verdict below rests on a number the repository supplied. The
+    // arithmetic is MCF's; the shape it is over is not, and MCF has not
+    // fetched the weights to check it.
     if let Some(from) = found.get("shape_from").and_then(Value::as_text) {
-        paint.say_at(
-            area.x,
-            y,
-            &format!("shape read from {from}"),
+        for line in paint.wrap(
+            &format!(
+                "These rest on {from}. The arithmetic is MCF's; the shape is the \
+                      repository's."
+            ),
             Weight::Regular,
             size::SMALL,
-            ink.faint,
-        );
-        y += 22.0;
+            wide,
+        ) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.faint);
+            y += 16.0;
+        }
+        y += 8.0;
     }
     let mut act = None;
     for file in files.iter().take(12) {

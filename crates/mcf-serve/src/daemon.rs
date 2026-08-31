@@ -345,6 +345,42 @@ struct Holding {
     since: Timestamp,
 }
 
+/// Whether a header is describing the file it came from.
+///
+/// **A shape fetched from a hub is a claim, and this is the one part of it MCF
+/// can check without the file.** The header's own tensor table says where the
+/// last tensor ends, and that has to be inside the file the listing describes
+/// and account for nearly all of it. Measured across seven architectures on
+/// this machine, the declared extent is between 96.2% and 100.0% of the
+/// published size.
+///
+/// So two things are caught. A header claiming *more* data than the file holds
+/// is describing something else — definitively, since a file cannot contain
+/// more than it contains. And a header claiming a fraction of it is the
+/// deception that would matter here: a tiny shape against a large file makes a
+/// forty-gigabyte model look like it needs almost nothing, and MCF would
+/// answer *fits* (§3.7, B-022, A21).
+///
+/// What this cannot check is whether the weights are what the header says they
+/// are. That needs the weights, and the point of reading a prefix is not to
+/// fetch them — which is why the plan built on this says it rests on a
+/// declaration.
+pub(crate) fn header_describes_this_file(model: &mcf_standin::gguf::Model, published: u64) -> bool {
+    let Some(extent) = model.data_bytes_required() else {
+        // A quantization MCF cannot size is not a lie; it is a thing MCF
+        // cannot check, and an unknown is not a failure (A7). The plan is
+        // refused rather than built on something unexamined.
+        return false;
+    };
+    if published == 0 || extent > published {
+        return false;
+    }
+    // Half. The observed floor is 96%, and the margin is for a small model
+    // whose metadata is a large share of it rather than for a header that is
+    // describing something else.
+    extent.saturating_mul(2) >= published
+}
+
 /// The plan, from whichever place this repository says how its model is shaped.
 ///
 /// The configuration first, because it can say which blocks are full-attention
@@ -421,6 +457,7 @@ fn shape_from_a_published_header(
                 break;
             }
             if let Ok(model) = mcf_standin::gguf::parse(&held)
+                && header_describes_this_file(&model, entry.size)
                 && let Some(shape) = crate::engines::shape_of(&model)
             {
                 return Some(shape);
@@ -1914,10 +1951,12 @@ impl Daemon {
                 "shape_from",
                 match (planned.is_ok(), from_the_header) {
                     (false, _) => Value::Null,
-                    (true, true) => {
-                        Value::text("the model's own header, read from the first megabytes")
-                    }
-                    (true, false) => Value::text("the repository's configuration"),
+                    (true, true) => Value::text(
+                        "what the model's own header declares, read from its first megabytes \
+                         and checked against the published size — the weights have not been \
+                         read",
+                    ),
+                    (true, false) => Value::text("what the repository's configuration declares"),
                 },
             ),
         ]))
