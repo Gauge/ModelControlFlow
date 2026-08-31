@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 135 | [F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)](#135-f135-one-change-made-three-register-entries-false-and-none-of-them-said-so-a-status-is-prose-and-prose-does-not-fail-a-build-b-036-b-038-b-040-a1) |
 | — | [Changelog](#changelog) |
 
 ## 1 · F1 — The adversarial prototype (§7.19, DEC-019)
@@ -9386,6 +9387,43 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 135 · F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)
+
+**B-416 gave MCF a port, engine resolution and recorded settings. It also made
+three statements in the register untrue, and the register kept making them.**
+
+- B-036 said MCF was local *by construction rather than by configuration*:
+  *there is no bind address, no port and no flag, so exposure is not something
+  a mistake can do because it is not something MCF can do.* Hosting a model is
+  being reachable. The port arrived and the sentence stayed.
+- B-038 said `mcf explain` shows *what MCF would choose*. It showed *refused:
+  more than one is provisioned* and *placement: the processor* for a model MCF
+  resolves to a graphics card.
+- B-040 said what remained was *a timed answer, and `serve` handing a model to
+  a client rather than a command loading one per request*. Both had landed —
+  in B-412 and B-416 — under other item numbers.
+
+**None of these is a code defect and all three are the same failure.** The
+register's totals are checked: `the_register_counts_itself` reads every row
+and refuses a headline that disagrees with the table. What no check reads is
+whether a *status* is still true, because a status is a paragraph of English
+and there is nothing in it a machine can compare against the code.
+
+**The first of the three was the dangerous one.** A stale safety claim is
+worse than an absent one: somebody reads *exposure is not something MCF can
+do*, believes it, and stops looking. The other two cost a reader's trust in
+the screen; that one could cost somebody their assumption about a network.
+
+**The remedy is not another check, it is an order of operations.** When a
+change lands, the items it touched are re-read before the next one is started
+— and where a claim narrowed, it is narrowed in writing and given a check that
+holds the narrower version. B-036 now has one: what the loopback constant is,
+that no setting carries an address, and that the control plane never grew a
+port. That is the shape to aim for. A claim worth making in the register is
+usually a claim worth checking, and the ones that cannot be checked are the
+ones to re-read by hand.
+
 
 ## 134 · F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)
 
