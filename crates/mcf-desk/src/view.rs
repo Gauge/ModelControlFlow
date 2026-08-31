@@ -1416,6 +1416,23 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     let mut y = area.y;
     paint.say_at(area.x, y, &repository, Weight::Bold, size::HEAD, ink.ink);
     y += 30.0;
+    // Before the files, because it is the thing somebody may need in order to
+    // decide not to download at all — and after the download is too late
+    // (B-023).
+    if let Some(terms) = found.get("terms").and_then(Value::as_text) {
+        // An unknown or unidentified licence is not a detail: it is the state
+        // that needs a person's attention, and it is coloured accordingly.
+        let colour = if terms.contains("unknown") || terms.contains("could not identify") {
+            ink.warn
+        } else {
+            ink.quiet
+        };
+        for line in paint.wrap(terms, Weight::Regular, size::SMALL, wide) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, colour);
+            y += 16.0;
+        }
+        y += 8.0;
+    }
     if let Some(why) = found.get("no_plan").and_then(Value::as_text) {
         for line in paint.wrap(
             &format!("MCF cannot say which of these would run here: {why}"),

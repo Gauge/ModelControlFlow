@@ -165,7 +165,13 @@ pub fn family(licence: &Licence) -> Option<Family> {
 #[must_use]
 pub fn describe(licence: Option<&Licence>) -> String {
     match licence {
-        None => "licence: unknown — the repository declared none (A7)".to_owned(),
+        // The sentence is complete without a rule number: what a reader needs
+        // is that nothing was declared and that MCF did not fill it in, and
+        // both are said. A citation here would send somebody to a document
+        // they have never seen to learn what they have just been told.
+        None => {
+            "licence: unknown — the repository declared none, and MCF has not guessed".to_owned()
+        }
         Some(Licence::Stated) => {
             "licence: terms are present and MCF could not identify them — read them before use"
                 .to_owned()

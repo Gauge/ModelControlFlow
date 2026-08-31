@@ -117,6 +117,11 @@ fn published(body: &Value) -> Vec<String> {
             .and_then(Value::as_text)
             .unwrap_or("an unstated revision")
     )];
+    // Before the files, because it is the thing a person may need to decide
+    // not to download at all (B-023).
+    if let Some(terms) = body.get("terms").and_then(Value::as_text) {
+        lines.push(format!("  {terms}"));
+    }
     // A7 and A19: where MCF could not judge whether these would run, it says
     // so once rather than leaving every row silently unjudged.
     if let Some(why) = body.get("no_plan").and_then(Value::as_text) {
@@ -178,5 +183,90 @@ fn arriving(body: &Value) -> Vec<String> {
             vec![format!("  {file}: {arrived} of {total} bytes")]
         }
         _ => vec![format!("  {file}: starting")],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::published;
+    use mcf_record::json::Value;
+
+    /// Terms are shown before the files, not after the download.
+    ///
+    /// **Downloading is a use.** B-023 asks that a licence be surfaced before
+    /// one, and a person who learns what a model's terms are once it is on
+    /// their disk has learned it too late to decide. The Add-a-model flow
+    /// showed a list of files and a button and no terms anywhere.
+    #[test]
+    fn the_terms_come_before_the_files() {
+        let answered = Value::map([
+            ("repository", Value::text("owner/repository")),
+            ("terms", Value::text("licence: apache-2.0 (permissive)")),
+            (
+                "files",
+                Value::List(vec![Value::map([
+                    ("file", Value::text("a-model.gguf")),
+                    ("bytes", Value::Integer(1_000)),
+                ])]),
+            ),
+        ]);
+        let lines = published(&answered);
+        let terms = lines
+            .iter()
+            .position(|line| line.contains("apache-2.0"))
+            .expect("the terms are shown");
+        let file = lines
+            .iter()
+            .position(|line| line.contains("a-model.gguf"))
+            .expect("the files are shown");
+        assert!(
+            terms < file,
+            "the terms are printed after the files, so a reader meets the button first"
+        );
+    }
+
+    /// A repository that declares nothing says so, and MCF does not fill it in.
+    ///
+    /// A7: the three states stay distinct and none of them is a default. A
+    /// plausible guess at a licence is the one answer worse than no answer.
+    #[test]
+    fn nothing_declared_is_said_and_never_guessed() {
+        let answered = Value::map([
+            ("repository", Value::text("owner/repository")),
+            (
+                "terms",
+                Value::text(
+                    "licence: unknown — the repository declared none, and MCF has not guessed",
+                ),
+            ),
+            ("files", Value::List(Vec::new())),
+        ]);
+        let lines = published(&answered).join("\n");
+        assert!(lines.contains("unknown"), "{lines}");
+        assert!(lines.contains("has not guessed"), "{lines}");
+        // And no licence name is invented anywhere in it.
+        for invented in ["apache", "mit", "gpl", "permissive"] {
+            assert!(
+                !lines.to_lowercase().contains(invented),
+                "a licence was named for a repository that declared none: {lines}"
+            );
+        }
+    }
+
+    /// A listing with no terms at all still lists its files.
+    ///
+    /// An older daemon answers without the field, and a client that refused to
+    /// render anything would turn a missing line into a missing screen.
+    #[test]
+    fn a_listing_without_terms_still_lists() {
+        let answered = Value::map([
+            ("repository", Value::text("owner/repository")),
+            (
+                "files",
+                Value::List(vec![Value::map([("file", Value::text("a-model.gguf"))])]),
+            ),
+        ]);
+        let lines = published(&answered).join("\n");
+        assert!(lines.contains("a-model.gguf"), "{lines}");
     }
 }

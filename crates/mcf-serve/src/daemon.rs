@@ -1927,6 +1927,23 @@ impl Daemon {
                 listing.revision.clone().map_or(Value::Null, Value::text),
             ),
             ("files", Value::List(files)),
+            // **Before the download, not after it.** B-023 asks that terms be
+            // surfaced before use, and downloading is a use: a person who
+            // learns what a model's licence is once it is on their disk has
+            // learned it too late to decide. The three states stay distinct
+            // and none of them is a default — an identifier MCF recognises,
+            // terms present that it could not identify, and nothing declared
+            // at all, which is `Unknown` and never a plausible guess (A7).
+            (
+                "terms",
+                Value::text(mcf_hub::licence::describe(
+                    listing
+                        .declared_licence
+                        .as_deref()
+                        .and_then(mcf_hub::licence::recognize)
+                        .as_ref(),
+                )),
+            ),
             (
                 "planned_at_context",
                 Value::Integer(i64::try_from(mcf_hub::offer::PLANNING_CONTEXT).unwrap_or(i64::MAX)),
