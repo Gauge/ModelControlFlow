@@ -166,11 +166,33 @@ pub enum EntryKind {
     /// apart on purpose: a probe writes the verified half of a capability and
     /// never a default.
     ModelProbed,
+    /// How quickly a model produces text on this machine, and under what
+    /// conditions (B-414, A1, A6).
+    ///
+    /// **Because a measurement nobody can find later is the same as one not
+    /// taken.** The depth measurement streamed its readings to whichever
+    /// surface asked and kept none, so a model's own page said `Unknown`
+    /// about speed the moment a run finished, and a second run could not be
+    /// compared with a first.
+    ///
+    /// Distinct from [`Self::ModelProbed`], which is what a model *can do*:
+    /// this is what it *costs here*, and the two go stale for different
+    /// reasons. A capability is a fact about the model and survives a new
+    /// graphics card; a speed is a fact about the model, the engine, the
+    /// device and the settings together, and survives none of them. That is
+    /// why the conditions in this entry are not a footnote — the engine that
+    /// actually ran is in it, because a timing taken from MCF's own stand-in
+    /// measures the stand-in (B65, D31).
+    ///
+    /// Distinct from [`Self::Comparison`] too: a comparison is two arms and a
+    /// verdict, and this is one model at a ladder of depths with no arm to be
+    /// against.
+    ModelTimed,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -190,6 +212,7 @@ impl EntryKind {
         Self::FitmentPlanned,
         Self::ContentionSnapshot,
         Self::ModelProbed,
+        Self::ModelTimed,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -216,6 +239,7 @@ impl EntryKind {
             Self::FitmentPlanned => "fitment_planned",
             Self::ContentionSnapshot => "contention_snapshot",
             Self::ModelProbed => "model_probed",
+            Self::ModelTimed => "model_timed",
         }
     }
 

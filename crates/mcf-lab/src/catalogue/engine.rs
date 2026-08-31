@@ -246,6 +246,10 @@ fn server_never_listens(world: &World) -> Outcome {
             &world.scratch().join("no-such-model.gguf"),
             world.scratch(),
             3,
+            // No layers on the card: this scenario is about a server that
+            // never begins listening, and putting a model nowhere is the
+            // quickest way to reach that.
+            0,
         );
         match waited {
             Ok(_) => {

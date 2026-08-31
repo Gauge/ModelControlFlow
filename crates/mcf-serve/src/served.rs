@@ -180,8 +180,13 @@ impl Served {
     /// `engine.spawn.not_found` if the binary is not in the prefix,
     /// `engine.spawn.refused` if it cannot be started, and
     /// `engine.hang.no_output` if it never begins listening.
-    pub fn start(llama: &ProvisionedLlama, model: &Path, runtime: &Path) -> Result<Self, Failure> {
-        Self::start_within(llama, model, runtime, ATTEMPTS)
+    pub fn start(
+        llama: &ProvisionedLlama,
+        model: &Path,
+        runtime: &Path,
+        gpu_layers: u32,
+    ) -> Result<Self, Failure> {
+        Self::start_within(llama, model, runtime, ATTEMPTS, gpu_layers)
     }
 
     /// Starts a server under settings somebody chose, listening on a port.
@@ -290,6 +295,7 @@ impl Served {
         model: &Path,
         runtime: &Path,
         attempts: usize,
+        gpu_layers: u32,
     ) -> Result<Self, Failure> {
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
@@ -321,8 +327,14 @@ impl Served {
             .arg(&socket)
             .arg("--ctx-size")
             .arg("0")
+            // **How much of the model goes on the card.** This was the
+            // literal `0` — no layers, ever — so MCF resolved a model to a
+            // graphics card, said so, and ran it on the processor. It cost
+            // 4.9× on this machine and every figure MCF produced through a
+            // provisioned engine carried a device label that was false
+            // (F133).
             .arg("-ngl")
-            .arg("0")
+            .arg(gpu_layers.to_string())
             .arg("--no-webui")
             .arg("--no-warmup")
             .stdin(Stdio::null())

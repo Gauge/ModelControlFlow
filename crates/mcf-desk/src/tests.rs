@@ -426,3 +426,101 @@ fn a_result_is_opened_and_closed_by_the_one_button() {
     desk.act(crate::Act::Result(3));
     assert_eq!(desk.showing, Some(3));
 }
+
+/// A measurement in the record reaches the model's page.
+///
+/// **Until this, a run's readings went to the screen and nowhere else**, so a
+/// model said `Unknown` about its speed the moment a run finished and a second
+/// run could not be compared with a first (B-414, A1).
+#[test]
+fn a_measurement_in_the_record_reaches_the_model() {
+    let answered = Value::map([
+        ("path", Value::text("/models/a-model.gguf")),
+        ("bytes", Value::Integer(420_000_000)),
+        (
+            "runs",
+            Value::map([
+                ("architecture", Value::text("an-architecture")),
+                (
+                    "measured",
+                    Value::map([(
+                        "readings",
+                        Value::List(vec![
+                            Value::map([
+                                ("depth", Value::Integer(512)),
+                                ("ms_per_token", Value::text("1.529")),
+                                ("measured", Value::Bool(true)),
+                            ]),
+                            // A rung that would not separate: a result, and
+                            // not a slow one. It must not become the deepest
+                            // reading (A7, A9).
+                            Value::map([
+                                ("depth", Value::Integer(1024)),
+                                ("measured", Value::Bool(false)),
+                            ]),
+                            Value::map([
+                                ("depth", Value::Integer(2048)),
+                                ("ms_per_token", Value::text("1.412")),
+                                ("measured", Value::Bool(true)),
+                            ]),
+                        ]),
+                    )]),
+                ),
+            ]),
+        ),
+    ]);
+    let held = model_from(&answered);
+    assert!(held.measured(), "a measured model reads as unmeasured");
+    assert_eq!(held.fastest, Some(1.529));
+    assert_eq!(held.slowest, Some(1.412));
+    assert_eq!(held.speed_at_512(), "1.53 ms/token");
+    assert_eq!(held.speed_at_window(), "1.41 ms/token");
+    // Nothing measured the cold start, so nothing claims to have.
+    assert_eq!(held.cold_start(), crate::view::UNKNOWN);
+}
+
+/// A model with no measurement in the record says so, and does not say zero.
+#[test]
+fn a_model_nothing_measured_stays_unmeasured() {
+    let answered = Value::map([
+        ("path", Value::text("/models/b-model.gguf")),
+        ("runs", Value::map([("architecture", Value::text("llama"))])),
+    ]);
+    let held = model_from(&answered);
+    assert!(!held.measured());
+    assert_eq!(held.fastest, None);
+    assert_eq!(held.speed, None);
+    assert_eq!(held.speed_at_512(), crate::view::UNKNOWN);
+}
+
+/// A ladder where nothing separated is a ladder with no reading.
+///
+/// Every rung is a result (A9) and none of them is a speed, so the model's
+/// page shows what it showed before: nothing measured.
+#[test]
+fn a_ladder_that_never_separated_yields_no_speed() {
+    let answered = Value::map([
+        ("path", Value::text("/models/c-model.gguf")),
+        (
+            "runs",
+            Value::map([(
+                "measured",
+                Value::map([(
+                    "readings",
+                    Value::List(vec![Value::map([
+                        ("depth", Value::Integer(512)),
+                        ("measured", Value::Bool(false)),
+                        (
+                            "why",
+                            Value::text("no pair of runs at this depth separated"),
+                        ),
+                    ])]),
+                )]),
+            )]),
+        ),
+    ]);
+    let held = model_from(&answered);
+    assert!(!held.measured());
+    assert_eq!(held.fastest, None);
+    assert_eq!(held.slowest, None);
+}

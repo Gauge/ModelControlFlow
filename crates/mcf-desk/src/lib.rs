@@ -412,6 +412,10 @@ fn model_from(held: &Value) -> Model {
             .and_then(Value::as_integer)
             .and_then(|number| u64::try_from(number).ok())
     };
+    let measured = runs
+        .as_ref()
+        .and_then(|runs| runs.get("measured"))
+        .map(measured_ends);
     let resolved = runs.as_ref().and_then(|runs| runs.get("resolved"));
     let known = matches!(
         resolved.as_ref().and_then(|resolved| resolved.get("known")),
@@ -441,15 +445,61 @@ fn model_from(held: &Value) -> Model {
         on_a_card: resolved_text("device_kind").as_deref() == Some("gpu"),
         cache_per_token: number_from_runs("cache_bytes_per_token"),
         refused: if known { None } else { resolved_text("why") },
-        // Nothing below has been measured yet by anything the daemon answers,
-        // and an absent measurement is left absent (A7). When the diagnostic
-        // writes them into the record, they are read here and every sentence
-        // above changes on its own.
-        speed: None,
+        // What was measured, from the record, and absent where nothing was
+        // (A7). The shallowest reading and the deepest are what the console's
+        // MEASURED table shows; the whole ladder is in the entry for anything
+        // that wants the shape rather than the ends.
+        speed: measured
+            .as_ref()
+            .and_then(|held| held.fastest)
+            .map(per_second),
         wakes: None,
-        fastest: None,
-        slowest: None,
+        fastest: measured.as_ref().and_then(|held| held.fastest),
+        slowest: measured.as_ref().and_then(|held| held.slowest),
     }
+}
+
+/// Milliseconds a token, as tokens a second.
+fn per_second(ms: f64) -> f64 {
+    if ms > 0.0 { 1000.0 / ms } else { 0.0 }
+}
+
+/// The ends of a measured ladder: the shallowest reading and the deepest.
+#[derive(Debug, Default)]
+struct Measured {
+    /// Milliseconds a token at the shallowest depth that separated.
+    fastest: Option<f64>,
+    /// The same at the deepest.
+    slowest: Option<f64>,
+}
+
+/// Reads the ends out of what the record kept.
+///
+/// Only the depths that *separated*: a rung the arithmetic could not measure
+/// is not a slow one, and letting it stand in for the deepest reading would
+/// put a number where there is none (A7, A9).
+fn measured_ends(held: &Value) -> Measured {
+    let mut ends = Measured::default();
+    let Some(readings) = held.get("readings").and_then(Value::as_list) else {
+        return ends;
+    };
+    for reading in readings {
+        if !matches!(reading.get("measured"), Some(Value::Bool(true))) {
+            continue;
+        }
+        let Some(ms) = reading
+            .get("ms_per_token")
+            .and_then(Value::as_text)
+            .and_then(|held| held.parse::<f64>().ok())
+        else {
+            continue;
+        };
+        if ends.fastest.is_none() {
+            ends.fastest = Some(ms);
+        }
+        ends.slowest = Some(ms);
+    }
+    ends
 }
 
 /// Asks the daemon one question.

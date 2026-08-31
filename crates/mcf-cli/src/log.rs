@@ -172,6 +172,26 @@ pub(crate) fn summarize(entry: &Entry) -> String {
 }
 
 /// The entry, as one line, before any erratum is attached.
+/// A timing entry, in one line.
+///
+/// A9: the rungs that would not separate are results too, so the count says
+/// both rather than only the ones that worked.
+fn timed(body: &Value) -> String {
+    let readings = body.get("readings").and_then(Value::as_list).unwrap_or(&[]);
+    let measured = readings
+        .iter()
+        .filter(|reading| matches!(reading.get("measured"), Some(Value::Bool(true))))
+        .count();
+    format!(
+        "timed at {} depth(s), {measured} measured, on {}",
+        readings.len(),
+        body.get("conditions")
+            .and_then(|conditions| conditions.get("engine_ran"))
+            .and_then(Value::as_text)
+            .unwrap_or("an engine MCF did not name")
+    )
+}
+
 fn described(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
@@ -192,6 +212,7 @@ fn described(entry: &Entry) -> String {
         EntryKind::SelfCost => {
             text(body, "figure").unwrap_or_else(|| "what MCF cost on this machine".to_owned())
         }
+        EntryKind::ModelTimed => timed(body),
         EntryKind::Trials => format!(
             "{} trial(s)",
             body.get("trials")

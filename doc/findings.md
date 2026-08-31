@@ -9515,6 +9515,33 @@ depth and the median taken:
 | 2 048 | 9.107 |
 | 4 096 | 10.236 |
 
+**A third one, found while making measurements durable (B-414), and it is the
+ninth instance of the same pattern.** Fixing the hosting path left the
+*generation* path untouched, and that path found its engine through
+`adapters::provisioned_llama`, which matched `component == "llama.cpp"`
+exactly. `llama.cpp-cuda` was invisible to it. So every generation MCF served
+and every depth reading it took went through the processor build — not because
+of the layer count this time, but because the CUDA build was never a
+candidate. That is
+[F129](#129--f129--a-second-surface-arrived-and-the-tripwire-watching-for-one-did-not-fire-because-it-was-written-against-four-guesses-at-its-name-b-401-b-072-a22-b16)
+and
+[F130](#130--f130--two-engines-were-provisioned-and-invisible-because-discovery-matched-a-name-and-sixty-four-sentences-a-person-reads-cite-a-document-they-have-never-seen-b-402-b-403-a21-a7-b16)
+again, in a copy of the discovery that was fixed in `engines.rs` and not here.
+
+Matching by shape then made *two* engines visible, and the generation path
+refused to choose between them — correctly, because choosing is not its
+business. The daemon already resolves a model to an engine and a device, so it
+now passes that answer down rather than letting the generation path ask the
+question again. The measurement moved from 7.3–9.3 milliseconds a token to
+1.3–1.5:
+
+| Depth | Processor build | CUDA build |
+|---|---|---|
+| 512 | 7.337 | 1.529 |
+| 1 024 | 7.641 | 1.333 |
+| 2 048 | 8.536 | 1.342 |
+| 4 096 | 9.315 | 1.412 |
+
 **And it records which engine *ran*, not which was asked for.** The first
 version put the engine that was requested in the conditions, which for a
 request that named none was `null` — a measurement whose most important

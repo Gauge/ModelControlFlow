@@ -140,6 +140,14 @@ pub(crate) fn serve_generation(
     seed: u64,
     tokens: Option<&[usize]>,
     engine: Option<&str>,
+    // The engine the daemon resolved for this model, and how many of the
+    // model's layers go on the card. Passed in rather than decided here:
+    // which build to use and what device to use it on is one question, the
+    // daemon is the only thing that knows what the machine has, and it has
+    // answered. A generation that chose again for itself would be a second
+    // answer to a question already settled — and when it did, it chose the
+    // processor build every time, because it matched a name (§3.15, F133).
+    picked: Option<(crate::adapters::ProvisionedLlama, u32)>,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -162,13 +170,19 @@ pub(crate) fn serve_generation(
     };
     let tokens = wrapped.as_deref().or(tokens);
 
-    let chosen = choose_engine(mcf_home, engine);
+    let (chosen, gpu_layers) = match (picked, engine) {
+        // A caller that asked for MCF's own engine gets it, whatever was
+        // resolved: naming the engine is the point of the argument (§3.15).
+        (_, Some("stand-in")) => (Ok(Chosen::StandIn), 0),
+        (Some((llama, layers)), _) => (Ok(Chosen::Provisioned(llama)), layers),
+        (None, asked) => (choose_engine(mcf_home, asked), 0),
+    };
     let produced = match chosen {
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
         Ok(Chosen::Provisioned(llama)) => match tokens {
             Some(tokens) => through_served(
-                store, &llama, server, runtime, named, tokens, limit, seed, writer,
+                store, &llama, server, runtime, named, tokens, limit, seed, gpu_layers, writer,
             ),
             None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
         },
@@ -330,6 +344,7 @@ fn through_served(
     tokens: &[usize],
     limit: usize,
     seed: u64,
+    gpu_layers: u32,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     let given = Path::new(named);
@@ -357,7 +372,7 @@ fn through_served(
     let reused = slot.as_ref().is_some_and(|held| held.model == path);
     if !reused {
         *slot = None;
-        *slot = Some(Served::start(llama, &path, runtime)?);
+        *slot = Some(Served::start(llama, &path, runtime, gpu_layers)?);
     }
     let engine = slot.as_ref().ok_or_else(|| {
         Failure::new(

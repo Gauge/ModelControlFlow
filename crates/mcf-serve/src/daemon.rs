@@ -345,6 +345,51 @@ struct Holding {
     since: Timestamp,
 }
 
+/// The newest measurement of each model, from the record.
+///
+/// **Through the index and by kind**, not by replaying the journal: a daemon
+/// start that parsed the whole history would cost seconds on a record that has
+/// been measuring for a while (F14), and a listing that re-read it once a
+/// model would cost the record's whole length once a row (F118). What this
+/// reads is the entries whose kind says they are timings, newest last, and it
+/// keeps one per model.
+fn newest_timings(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> {
+    let mut newest = std::collections::BTreeMap::new();
+    if !journal.exists() {
+        return newest;
+    }
+    let Ok(index) = mcf_record::journal::Index::over(
+        journal,
+        &mcf_record::journal::index::default_path(journal),
+    ) else {
+        // A record MCF cannot index is a record it reads nothing from, and
+        // saying nothing about speed is the honest outcome — never a zero
+        // (A7). The daemon's own start line already reports the loss.
+        return newest;
+    };
+    for located in index.entries() {
+        if located.kind() != EntryKind::ModelTimed {
+            continue;
+        }
+        let Ok(entry) = index.read(located) else {
+            continue;
+        };
+        let Some(model) = entry
+            .body()
+            .get("conditions")
+            .and_then(|conditions| conditions.get("model"))
+            .and_then(Value::as_text)
+        else {
+            continue;
+        };
+        // Later entries overwrite earlier ones, and the index is in order, so
+        // what is left is the newest. Nothing is merged: two runs under
+        // different settings are two facts (A1).
+        let _replaced = newest.insert(PathBuf::from(model), entry.body().clone());
+    }
+    newest
+}
+
 /// The hub MCF reads when nobody has named another.
 const DEFAULT_HUB: &str = "https://huggingface.co/";
 
@@ -367,6 +412,13 @@ fn said_of(verdict: &mcf_hub::fitment::Verdict) -> String {
 /// A running daemon.
 #[derive(Debug)]
 pub struct Daemon {
+    /// The newest measurement of each model, read from the record when the
+    /// daemon starts and added to as runs finish.
+    ///
+    /// Held rather than re-read: answering *what is held* walks every model,
+    /// and re-reading a journal of thousands of entries once a model would
+    /// make a listing cost the record's whole length (F118).
+    timings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     /// The model being held for callers, if any, with what it was started
     /// under.
     ///
@@ -484,6 +536,7 @@ impl Daemon {
                 .collect()
         };
         let daemon = Self {
+            timings: std::sync::Mutex::new(newest_timings(&places.journal)),
             holding: std::sync::Mutex::new(None),
             places,
             listener,
@@ -646,6 +699,13 @@ impl Daemon {
             (
                 "architecture",
                 architecture.map_or(Value::Null, Value::text),
+            ),
+            // What was measured about it, from the record. Absent where
+            // nothing has been — never a zero, which would read as a model
+            // that produces nothing (A7).
+            (
+                "measured",
+                self.last_measurement(path).unwrap_or(Value::Null),
             ),
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
@@ -904,6 +964,12 @@ impl Daemon {
             .models
             .parent()
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
+        // Which build and which device this model resolves to, so the engine
+        // that is started is the one MCF said would run it. Without this,
+        // discovery matched a name, found the processor build every time, and
+        // every generation ran there under a label that said otherwise
+        // (F133).
+        let picked = self.picked_engine(named);
         let produced = crate::generation::serve_generation(
             &self.places.models,
             &mcf_home,
@@ -919,6 +985,7 @@ impl Daemon {
             seed,
             tokens,
             engine,
+            picked,
             writer,
         );
         // The account goes to the record and what the model said goes to the
@@ -1066,10 +1133,14 @@ impl Daemon {
             ])),
         );
 
+        // The build and the device the model resolves to decide how the
+        // engine is started, so a measurement is taken on the device it says
+        // it was taken on (A6, A12, F133).
+        let picked = self.picked_engine(named);
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
         for depth in &ladder {
-            let (reading, engine) = self.one_depth(named, engine, *depth);
+            let (reading, engine) = self.one_depth(named, engine, *depth, picked.as_ref());
             ran_on = ran_on.take().or(engine);
             readings.push(reading.clone());
             say(
@@ -1090,14 +1161,58 @@ impl Daemon {
             );
         }
 
-        say(
-            writer,
-            &measured(named, &path, held, engine, ran_on.as_deref(), readings),
-        );
+        let last = measured(named, &path, held, engine, ran_on.as_deref(), readings);
+        // Written down as it is sent, the way a generation's account is. A
+        // measurement nobody can find later is the same as one not taken
+        // (A1), and until this existed a model's page said `Unknown` about
+        // speed the moment a run finished.
+        let _recorded = self.note(EntryKind::ModelTimed, Timestamp::now(), last.body.clone());
+        // And into what the daemon holds, so the next listing has it without
+        // re-reading the record.
+        if let Ok(mut timings) = self.timings.lock() {
+            let _replaced = timings.insert(path.clone(), last.body.clone());
+        }
+        say(writer, &last);
+    }
+
+    /// The engine and layer count this model resolves to.
+    ///
+    /// `None` where MCF cannot work it out — a header it could not read, no
+    /// provisioned engine — and the generation path then falls back to its own
+    /// discovery, which is what it did before there was anything to resolve.
+    fn picked_engine(&self, named: &str) -> Option<(crate::adapters::ProvisionedLlama, u32)> {
+        let (recommended, _) = self.recommend(named).ok()?;
+        let (engine, _) = self
+            .engines
+            .iter()
+            .find(|(engine, _)| engine.name == recommended.engine)?;
+        Some((
+            crate::adapters::ProvisionedLlama {
+                prefix: engine.prefix.clone(),
+                commit: engine.commit.clone(),
+            },
+            recommended.gpu_layers,
+        ))
+    }
+
+    /// The most recent measurement of a model, from the record.
+    ///
+    /// The newest wins, and nothing is merged: two runs under different
+    /// settings are two facts, and averaging them would produce a figure
+    /// neither run produced (A1, A6).
+    fn last_measurement(&self, model: &Path) -> Option<Value> {
+        let held = self.timings.lock().ok()?;
+        held.get(model).cloned()
     }
 
     /// One rung of the ladder: the repeats, the median, and what ran them.
-    fn one_depth(&self, named: &str, engine: Option<&str>, depth: u64) -> (Value, Option<String>) {
+    fn one_depth(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        depth: u64,
+        picked: Option<&(crate::adapters::ProvisionedLlama, u32)>,
+    ) -> (Value, Option<String>) {
         // Repeats, because one pair is one sample and a fall-off read off
         // single samples is a reading of the noise. The median is taken
         // rather than the mean: a run that hit a scheduler hiccup should not
@@ -1106,8 +1221,8 @@ impl Daemon {
         let mut first_token: Vec<u64> = Vec::new();
         let mut ran_on: Option<String> = None;
         for _ in 0..REPEATS {
-            let one = self.timed_generation(named, engine, depth, 1);
-            let many = self.timed_generation(named, engine, depth, 1 + SETTLED);
+            let one = self.timed_generation(named, engine, depth, 1, picked.cloned());
+            let many = self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned());
             if let Some(short) = &one {
                 ran_on = ran_on.take().or_else(|| short.engine.clone());
             }
@@ -1178,6 +1293,7 @@ impl Daemon {
         engine: Option<&str>,
         depth: u64,
         produce: u32,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32)>,
     ) -> Option<Timed> {
         let how_many = usize::try_from(depth).ok()?;
         // Identifier 1 is inside every vocabulary MCF can address. What it
@@ -1220,6 +1336,7 @@ impl Daemon {
                 0,
                 Some(&tokens),
                 engine,
+                picked,
                 &mut writer,
             )
         };

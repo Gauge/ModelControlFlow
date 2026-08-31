@@ -243,11 +243,16 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
         let Ok(value) = mcf_record::json::parse(text.trim()) else {
             continue;
         };
-        if value
+        // **By shape, not by name.** This matched `component == "llama.cpp"`
+        // exactly, so `llama.cpp-cuda` was invisible to every generation and
+        // every measurement MCF took — the same defect as F129 and F130, in a
+        // copy that was fixed in `engines.rs` and not here. What makes a
+        // prefix an engine is that it holds one, which is checked below.
+        let component = value
             .get("component")
             .and_then(mcf_record::json::Value::as_text)
-            != Some("llama.cpp")
-        {
+            .unwrap_or_default();
+        if !component.starts_with("llama.cpp") {
             continue;
         }
         let commit = value
