@@ -234,9 +234,20 @@ exactly the part FreeType keeps at its centre, and none of what surrounds it.
 complex-script shaping. Hinting is invisible above about twelve pixels and MCF
 draws nothing smaller; kerning is a real loss and shows as slightly loose
 letter pairs; shaping means Arabic, Devanagari and the Indic scripts would
-render as unjoined letters. The last is the one that matters, and it bounds
-what this window may claim: it is a Latin interface, and B-411 carries the
-requirement rather than leaving it as something nobody wrote down (A19).
+render as unjoined letters even where the glyphs are there. The last is the
+one that matters, and it bounds what this window may claim: it is a Latin
+interface (A19).
+
+**And the face is a second limit, larger than the rasteriser's.** What MCF
+finds on a machine is whichever of sixteen families is installed, and those
+cover Latin, Latin-1 and a little furniture — a model named in Japanese,
+Arabic, Devanagari or Han has characters no glyph exists for. B-411 found that
+those characters were being *skipped*: `モデル-7B` drew as `-7B`, a name
+silently shorter than the name, and two differently-named models rendering
+identically. Each one is now an empty box, which is the universal convention
+and, more to the point, visible — somebody reading a name with three of them
+in it knows there are three characters they are not being shown. A limit is
+fine; a limit that hides itself is a lie about the data (A1, A2).
 
 | | |
 |---|---|

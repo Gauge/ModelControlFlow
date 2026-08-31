@@ -526,3 +526,47 @@ fn nothing_is_drawn_from_a_single_reading() {
         "a single reading put something on the screen"
     );
 }
+
+/// A name MCF cannot draw does not silently become a shorter name.
+///
+/// **The face MCF finds covers Latin and a little furniture.** A model named
+/// in Japanese, Arabic, Devanagari or Han has characters it has never seen,
+/// and skipping them drew `モデル-7B` as `-7B`: a name silently shorter than
+/// the name, and two differently-named models rendering identically. A limit
+/// is fine and a limit that hides itself is not (A1, A2, B-411).
+#[test]
+fn a_name_in_another_script_does_not_vanish() {
+    use mcf_desk::font::Weight;
+
+    let Ok(mut paint) = Painter::on_paper(600, 200, 1.0, NIGHT) else {
+        return;
+    };
+    let latin_only = paint.measure("-7B", Weight::Regular, 15.0);
+    for name in ["モデル-7B", "نموذج-7B", "मॉडल-7B", "模型-7B"] {
+        let whole = paint.measure(name, Weight::Regular, 15.0);
+        assert!(
+            whole > latin_only * 1.5,
+            "{name} measures {whole}, barely more than the {latin_only} of the part MCF can \
+             draw — the rest is being skipped rather than shown"
+        );
+    }
+
+    // And two names differing only in characters MCF cannot draw do not
+    // measure the same: a list of them stays a list of distinct things.
+    let three = paint.measure("モデル-7B", Weight::Regular, 15.0);
+    let five = paint.measure("نموذج-7B", Weight::Regular, 15.0);
+    assert!(
+        (three - five).abs() > 1.0,
+        "a three-character name and a five-character one measure the same: {three} against {five}"
+    );
+
+    // The boxes are drawn, not merely counted: something is on the screen.
+    paint.begin();
+    let ink = paint.ink;
+    paint.say_at(16.0, 20.0, "モデル", Weight::Regular, 15.0, ink.ink);
+    let Some(paper) = paint.paper() else { return };
+    assert!(
+        paper.inked(NIGHT.ground) > 40,
+        "a name MCF cannot draw put nothing at all on the screen"
+    );
+}

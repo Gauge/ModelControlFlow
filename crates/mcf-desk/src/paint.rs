@@ -589,8 +589,17 @@ impl Painter {
             return x;
         };
         let (mut pen, base) = (x * self.scale, y * self.scale);
+        // Where a character has no glyph, a box is drawn in its place and the
+        // pen moves by the box's width. Skipping it would make a name shorter
+        // than the name and two different models look identical (A1, A2,
+        // B-411).
+        let mut boxes: Vec<(f32, f32, f32)> = Vec::new();
+        let missing = atlas.missing_width();
+        let above = atlas.ascent;
         for ch in text.chars() {
             let Some(glyph) = atlas.glyph(ch) else {
+                boxes.push((pen, base, missing));
+                pen += missing;
                 continue;
             };
             let width = f32::from(glyph.x1 - glyph.x0);
@@ -616,7 +625,55 @@ impl Painter {
             }
             pen += glyph.advance;
         }
+        // After the glyphs, so a box is never half-covered by a neighbour's
+        // overhang.
+        for (at, base, wide) in boxes {
+            self.hollow(at, base, wide, above, colour);
+        }
         pen / self.scale.max(0.1)
+    }
+
+    /// An empty rectangle where a character MCF cannot draw would have been.
+    ///
+    /// The universal convention for it, and the point is that it is *visible*:
+    /// somebody reading a name with three of them in it knows there are three
+    /// characters they are not being shown, which is the whole difference
+    /// between a limit and a lie (A1).
+    fn hollow(&mut self, pen: f32, base: f32, wide: f32, above: f32, colour: Rgb) {
+        let inset = wide * 0.12;
+        let left = pen + inset;
+        let width = (wide - inset * 2.0).max(1.0);
+        let top = base - above * 0.78;
+        let height = above * 0.78;
+        let edge = self.scale.max(1.0);
+        for side in [
+            Rect {
+                x: left,
+                y: top,
+                w: width,
+                h: edge,
+            },
+            Rect {
+                x: left,
+                y: top + height - edge,
+                w: width,
+                h: edge,
+            },
+            Rect {
+                x: left,
+                y: top,
+                w: edge,
+                h: height,
+            },
+            Rect {
+                x: left + width - edge,
+                y: top,
+                w: edge,
+                h: height,
+            },
+        ] {
+            self.surface.fill_with(side, colour, 170);
+        }
     }
 
     /// Draws one line of text with its baseline set from the top of a box —

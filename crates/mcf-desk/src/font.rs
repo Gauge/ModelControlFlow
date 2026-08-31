@@ -144,6 +144,36 @@ impl Atlas {
         self.glyphs.get(at).copied()
     }
 
+    /// How wide one character is, including one this face cannot draw.
+    ///
+    /// **A character with no glyph is not a character of no width.** The face
+    /// MCF found covers Latin and a little furniture; a model named in
+    /// Japanese, Arabic, Devanagari or Han has characters it has never seen.
+    /// Skipping them drew `モデル-7B` as `-7B` — a name silently shorter than
+    /// the name, and two different models that render identically (A1, A2).
+    /// Each one takes the width of the box drawn in its place.
+    #[must_use]
+    pub fn advance_of(&self, ch: char) -> f32 {
+        self.glyph(ch)
+            .map_or_else(|| self.missing_width(), |glyph| glyph.advance)
+    }
+
+    /// How wide the box standing in for a character this face cannot draw.
+    ///
+    /// Measured off a character the face certainly has, so the box is in
+    /// proportion at every size rather than a constant that is right at one.
+    #[must_use]
+    pub fn missing_width(&self) -> f32 {
+        self.glyph('n')
+            .map_or(self.ascent * 0.6, |glyph| glyph.advance)
+    }
+
+    /// Whether this face can draw a character at all.
+    #[must_use]
+    pub fn can_draw(&self, ch: char) -> bool {
+        self.glyph(ch).is_some()
+    }
+
     /// How wide a string is, in pixels, laid out at this size.
     ///
     /// The same walk the drawing does, so a measurement and a drawing cannot
@@ -151,10 +181,7 @@ impl Atlas {
     /// alignment and every hit test depend on.
     #[must_use]
     pub fn width_of(&self, text: &str) -> f32 {
-        text.chars()
-            .filter_map(|ch| self.glyph(ch))
-            .map(|glyph| glyph.advance)
-            .sum()
+        text.chars().map(|ch| self.advance_of(ch)).sum()
     }
 
     /// The longest prefix of `text` that fits in `room`, and whether anything
@@ -172,7 +199,7 @@ impl Atlas {
         let mut kept = String::new();
         let mut used = 0.0_f32;
         for ch in text.chars() {
-            let step = self.glyph(ch).map_or(0.0, |glyph| glyph.advance);
+            let step = self.advance_of(ch);
             if used + step + dots > room {
                 break;
             }
