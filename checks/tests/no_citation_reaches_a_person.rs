@@ -130,7 +130,7 @@ fn citation_in(text: &str) -> Option<String> {
 /// So the number is written down: adding one fails the build, and removing one
 /// fails it too — with the instruction to lower this constant. The count can
 /// only go down, and it reaches zero when B-403 is done.
-const STILL_CITING: usize = 64;
+const STILL_CITING: usize = 63;
 
 /// No new sentence a person reads carries a rule, a register item or a clause.
 #[test]

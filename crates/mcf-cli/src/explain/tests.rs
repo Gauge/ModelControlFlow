@@ -146,3 +146,104 @@ fn a_model_that_is_not_there_is_said() {
         response.text
     );
 }
+
+/// What `explain` says MCF would choose is what MCF would choose.
+///
+/// **Both of the choices that matter were wrong here.** The engine row read
+/// *more than one is provisioned and MCF will not choose*, and the placement
+/// row read *the processor — MCF's stand-in has no accelerator path*. Neither
+/// had been true since engine resolution landed: MCF does choose, by
+/// arithmetic over the model's header and what each device has free, and on a
+/// machine with a card it chooses the card. A screen whose whole job is *no
+/// hidden choices* being wrong about the choice is worse than no screen
+/// (§3.15, B-038, F133).
+///
+/// So this asserts the two are the same function's answer rather than two
+/// answers that happen to agree today.
+#[test]
+fn the_placement_shown_is_the_placement_resolved() {
+    let Some(path) = a_model_on_this_machine() else {
+        eprintln!("skipped: this machine holds no model");
+        return;
+    };
+    let Some(file) = header_of(&path) else {
+        eprintln!("skipped: {} has no header MCF can read", path.display());
+        return;
+    };
+    let rows = super::chosen(&path, &file);
+    let value = |name: &str| {
+        rows.iter()
+            .find(|(row, _, _)| *row == name)
+            .map(|(_, value, _)| value.clone())
+    };
+
+    match super::resolved_here(&path, &file) {
+        Some(choice) => {
+            assert_eq!(
+                value("placement").as_deref(),
+                Some(choice.device.name.as_str()),
+                "the placement shown is not the placement resolved"
+            );
+            assert_eq!(
+                value("engine").as_deref(),
+                Some(choice.engine.as_str()),
+                "the engine shown is not the engine resolved"
+            );
+            // And neither is the sentence that was wrong: a resolved model is
+            // never described as running on the stand-in's processor.
+            let placement = value("placement").unwrap_or_default();
+            assert_ne!(placement, "the processor", "the stale placement is back");
+        }
+        None => {
+            // A7: MCF could not work it out is not *the processor*.
+            assert_eq!(
+                value("placement").as_deref(),
+                Some("Unknown"),
+                "a placement MCF could not resolve is being reported as one it could"
+            );
+        }
+    }
+}
+
+/// The first model file this machine is holding, if any.
+fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
+    let root = crate::models::default_root()?;
+    let mut looking = vec![root];
+    while let Some(directory) = looking.pop() {
+        let entries = std::fs::read_dir(&directory).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                looking.push(path);
+                continue;
+            }
+            if path
+                .extension()
+                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
+            {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// A model's header, from a bounded prefix.
+fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
+    use std::io::Read as _;
+    let held = std::fs::metadata(path).map_or(0, |about| about.len());
+    for cap in [4_u64 << 20, 16 << 20] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .ok()?;
+        if let Ok(model) = mcf_standin::gguf::parse(&prefix) {
+            return Some(model);
+        }
+        if take >= held {
+            return None;
+        }
+    }
+    None
+}

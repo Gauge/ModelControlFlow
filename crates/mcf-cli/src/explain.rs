@@ -499,6 +499,87 @@ pub(crate) fn quantizations(file: &Model) -> String {
 /// `--engine` overrides either. What is here is what `mcf run` would use, and
 /// every line names where it is written down so that a reader can go and
 /// disagree with it.
+/// What MCF would actually run this model on, worked out here the way the
+/// daemon works it out.
+///
+/// **This screen said the wrong thing about the two choices that matter.** The
+/// engine row read *more than one is provisioned and MCF will not choose*, and
+/// the placement row read *the processor — MCF's stand-in has no accelerator
+/// path*. Both came from an older path that predates engine resolution: MCF
+/// does choose, by arithmetic over the model's own header and what each device
+/// has free, and on this machine it chooses a graphics card. A defaults screen
+/// that is wrong about the default is worse than no defaults screen (§3.15,
+/// B-038, F133).
+///
+/// The same `mcf_serve::engines::resolve` the daemon calls, so the two cannot
+/// disagree. No daemon is started to ask: resolution is arithmetic over this
+/// machine, and `mcf explain` reads rather than runs.
+fn resolved_here(path: &Path, file: &Model) -> Option<mcf_serve::engines::Choice> {
+    let home = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))?;
+    let bytes = std::fs::metadata(path).ok()?.len();
+    let architecture = file.architecture()?;
+    let trained = file
+        .get(&format!("{architecture}.context_length"))
+        .and_then(mcf_standin::gguf::Value::as_integer)
+        .and_then(|held| u64::try_from(held).ok())?;
+    let cache = mcf_serve::engines::cache_bytes_per_token(file);
+    let free = mcf_core::hardware::Machine::read().memory.available;
+    let free = match free {
+        mcf_core::attested::Attested::Known(bytes) => Some(bytes.0),
+        mcf_core::attested::Attested::Unknown => None,
+    };
+    let engines: Vec<(mcf_serve::engines::Engine, Vec<mcf_serve::engines::Device>)> =
+        mcf_serve::engines::discover(&home)
+            .into_iter()
+            .map(|engine| {
+                let devices = engine.devices(free).unwrap_or_default();
+                (engine, devices)
+            })
+            .collect();
+    mcf_serve::engines::resolve(&engines, bytes, cache, trained).ok()
+}
+
+/// The engine row: what MCF resolved, or what it would fall back to.
+fn engine_row(
+    path: &Path,
+    resolution: Option<&mcf_serve::engines::Choice>,
+) -> (String, &'static str) {
+    let _ = path;
+    if let Some(choice) = resolution {
+        (
+            choice.engine.clone(),
+            "what MCF resolved for this model on this machine: the build that can compute on \
+             the device below, chosen by arithmetic rather than by preference. `--engine \
+             stand-in` asks for MCF's own instead",
+        )
+    } else {
+        match crate::models::default_root()
+            .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+            .map(|home| {
+                mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home))
+            }) {
+            Some(Ok(Some(llama))) => (
+                format!(
+                    "provisioned llama.cpp @{}, from {}",
+                    llama.commit.get(..12).unwrap_or(&llama.commit),
+                    llama.prefix.display()
+                ),
+                "the one engine provisioned on this machine (B-032, D39); `--engine stand-in` \
+             asks for MCF's own instead",
+            ),
+            Some(Err(_)) => (
+                "refused: more than one llama.cpp is provisioned".to_owned(),
+                "MCF will not choose between builds; `mcf provision --list` shows them (§3.15)",
+            ),
+            _ => (
+                "MCF's own stand-in".to_owned(),
+                "nothing is provisioned here (D39); `mcf provision llama.cpp` would change this line",
+            ),
+        }
+    }
+}
+
 /// The engine in force, named the way a configuration records it.
 ///
 /// The same spelling `mcf probe` writes down, because a comparison between two
@@ -531,28 +612,12 @@ fn derived_all(path: &Path) -> mcf_serve::configured::Derived {
 
 fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
     let engine_now = engine_identity();
-    let engine = match crate::models::default_root()
-        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
-        .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)))
-    {
-        Some(Ok(Some(llama))) => (
-            format!(
-                "provisioned llama.cpp @{}, from {}",
-                llama.commit.get(..12).unwrap_or(&llama.commit),
-                llama.prefix.display()
-            ),
-            "the one engine provisioned on this machine (B-032, D39); `--engine stand-in` \
-             asks for MCF's own instead",
-        ),
-        Some(Err(_)) => (
-            "refused: more than one llama.cpp is provisioned".to_owned(),
-            "MCF will not choose between builds; `mcf provision --list` shows them (§3.15)",
-        ),
-        _ => (
-            "MCF's own stand-in".to_owned(),
-            "nothing is provisioned here (D39); `mcf provision llama.cpp` would change this line",
-        ),
-    };
+    // What MCF would actually use, by the same arithmetic the daemon does.
+    // Where that answers it *is* the answer, because it is the answer the
+    // daemon will act on; what follows is for a machine with nothing
+    // provisioned, where there is nothing to resolve.
+    let resolution = resolved_here(path, file);
+    let engine = engine_row(path, resolution.as_ref());
     // How MCF will address this model. It is the first row because it is the
     // one that changed under M3, and because a page whose job is to have no
     // hidden choices (§3.15) must not omit the choice somebody made
@@ -622,11 +687,27 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
             format!("{} tokens", mcf_hub::offer::PLANNING_CONTEXT),
             "what `mcf pull` plans against, stated in crates/mcf-cli/src/pull.rs".to_owned(),
         ),
-        (
-            "placement",
-            "the processor".to_owned(),
-            "MCF's stand-in has no accelerator path (D31, §3.2)".to_owned(),
-        ),
+        match &resolution {
+            Some(choice) => (
+                "placement",
+                choice.device.name.clone(),
+                format!(
+                    "worked out from this model's own header and what the device has free: \
+                     {} tokens of context fit there. `mcf settings <model>` shows every \
+                     setting it would run under",
+                    choice.context
+                ),
+            ),
+            // A7: MCF could not work it out is not *the processor*. Which it
+            // is decides where every figure about this model comes from.
+            None => (
+                "placement",
+                "Unknown".to_owned(),
+                "MCF could not work out where this would run: either no engine is \
+                 provisioned, or this file's header does not say how it is shaped"
+                    .to_owned(),
+            ),
+        },
     ]
 }
 
