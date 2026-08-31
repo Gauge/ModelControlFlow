@@ -1702,6 +1702,29 @@ impl Daemon {
             Ok(served) => {
                 let at = Timestamp::now();
                 let moved = settings.differs_from(&recommended);
+                // §6.12: network exposure is an explicit act rather than a
+                // side effect, and an act nobody wrote down is
+                // indistinguishable from a side effect. This is the one thing
+                // MCF does that another program can see, and it goes on doing
+                // it after the request that started it has returned.
+                let _recorded = self.note(
+                    EntryKind::ModelHosted,
+                    at,
+                    Value::map([
+                        ("model", Value::text(path.display().to_string())),
+                        ("address", Value::text(settings.address())),
+                        // Stated rather than implied: what a hosted model is
+                        // reachable from is the question §6.12 asks, and the
+                        // answer is on this machine and nowhere else.
+                        ("reachable_from", Value::text("this computer only")),
+                        ("settings", settings.to_value()),
+                        ("recommended", recommended.to_value()),
+                        (
+                            "changed",
+                            Value::List(moved.iter().cloned().map(Value::text).collect()),
+                        ),
+                    ]),
+                );
                 *holding = Some(Holding {
                     served,
                     model: path.clone(),
@@ -1763,6 +1786,19 @@ impl Daemon {
             Err(poisoned) => poisoned.into_inner(),
         };
         let was = holding.take().map(|held| held.model.display().to_string());
+        // A26: a thing that can only be killed leaves no account of why it
+        // stopped. After this nothing is listening, and this line is the only
+        // thing that says anything ever was.
+        if let Some(model) = was.clone() {
+            let _recorded = self.note(
+                EntryKind::ModelUnhosted,
+                Timestamp::now(),
+                Value::map([
+                    ("model", Value::text(model)),
+                    ("reason", Value::text("asked")),
+                ]),
+            );
+        }
         Value::map([
             ("stopped", Value::Bool(was.is_some())),
             ("was", was.map_or(Value::Null, Value::text)),

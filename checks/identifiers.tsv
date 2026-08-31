@@ -688,3 +688,5 @@ finding	F133
 register	B-416
 entry-kind	17	model_timed
 register	B-417
+entry-kind	18	model_hosted
+entry-kind	19	model_unhosted

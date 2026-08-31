@@ -188,11 +188,34 @@ pub enum EntryKind {
     /// verdict, and this is one model at a ladder of depths with no arm to be
     /// against.
     ModelTimed,
+    /// A model was held for callers, on a port, under stated settings
+    /// (B-036, §6.12, §3.10).
+    ///
+    /// **Because hosting is the one thing MCF does that another program can
+    /// see.** Everything else it does is a file it wrote or a number it
+    /// reported; this starts a process that listens and answers, and it goes
+    /// on doing so after the command that started it has returned. §6.12 asks
+    /// that network exposure be an explicit act rather than a side effect,
+    /// and an act nobody wrote down is indistinguishable from a side effect.
+    ///
+    /// It carries what was chosen *and* what MCF recommended, because a model
+    /// held under a changed setting is not the one MCF advised and both are
+    /// facts (§3.15, A6). It never carries the key: that one is set is a
+    /// condition, what it is is a secret, and a record is something MCF
+    /// publishes (A25).
+    ModelHosted,
+    /// A held model was let go, and on whose word (A26, B-036).
+    ///
+    /// The pair to [`Self::ModelHosted`] the way [`Self::DaemonStopped`] pairs
+    /// with [`Self::DaemonStarted`], and for the same reason: after the stop
+    /// nothing is listening, and this line is the only thing that says
+    /// anything ever was.
+    ModelUnhosted,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 20] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -213,6 +236,8 @@ impl EntryKind {
         Self::ContentionSnapshot,
         Self::ModelProbed,
         Self::ModelTimed,
+        Self::ModelHosted,
+        Self::ModelUnhosted,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -240,6 +265,8 @@ impl EntryKind {
             Self::ContentionSnapshot => "contention_snapshot",
             Self::ModelProbed => "model_probed",
             Self::ModelTimed => "model_timed",
+            Self::ModelHosted => "model_hosted",
+            Self::ModelUnhosted => "model_unhosted",
         }
     }
 

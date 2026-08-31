@@ -172,6 +172,28 @@ pub(crate) fn summarize(entry: &Entry) -> String {
 }
 
 /// The entry, as one line, before any erratum is attached.
+/// A hosting entry, in one line.
+///
+/// What it is reachable from is in it because that is the question §6.12 asks,
+/// and the settings somebody moved because a model held under a changed one is
+/// not the one MCF advised (§3.15).
+fn hosted(body: &Value) -> String {
+    let said = |key: &str| body.get(key).and_then(Value::as_text);
+    let moved = match body.get("changed").and_then(Value::as_list) {
+        Some(changed) if !changed.is_empty() => format!(
+            " ({} setting(s) moved off what MCF recommended)",
+            changed.len()
+        ),
+        _ => String::new(),
+    };
+    format!(
+        "hosting {} at {}, reachable from {}{moved}",
+        said("model").unwrap_or_default(),
+        said("address").unwrap_or_default(),
+        said("reachable_from").unwrap_or("MCF did not say"),
+    )
+}
+
 /// A timing entry, in one line.
 ///
 /// A9: the rungs that would not separate are results too, so the count says
@@ -213,6 +235,12 @@ fn described(entry: &Entry) -> String {
             text(body, "figure").unwrap_or_else(|| "what MCF cost on this machine".to_owned())
         }
         EntryKind::ModelTimed => timed(body),
+        EntryKind::ModelHosted => hosted(body),
+        EntryKind::ModelUnhosted => format!(
+            "stopped hosting {}: {}",
+            text(body, "model").unwrap_or_default(),
+            text(body, "reason").unwrap_or_else(|| "MCF did not say".to_owned())
+        ),
         EntryKind::Trials => format!(
             "{} trial(s)",
             body.get("trials")
