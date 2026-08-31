@@ -589,8 +589,13 @@ fn engine_identity() -> String {
         .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
         .map(|home| mcf_serve::adapters::only_one(mcf_serve::adapters::provisioned_llama(&home)));
     match found {
+        // The component's own name, not a literal: a run on `llama.cpp-cuda`
+        // and one on `llama.cpp` recorded the same identity while their paths
+        // said otherwise, and a comparison between two names for one engine
+        // reports a moved condition that did not move (F45, A6).
         Some(Ok(Some(llama))) => format!(
-            "provisioned llama.cpp @{}",
+            "provisioned {} @{}",
+            llama.component,
             llama.commit.get(..12).unwrap_or(&llama.commit)
         ),
         _ => "stand-in".to_owned(),

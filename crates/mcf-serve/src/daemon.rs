@@ -1327,6 +1327,7 @@ impl Daemon {
             crate::adapters::ProvisionedLlama {
                 prefix: engine.prefix.clone(),
                 commit: engine.commit.clone(),
+                component: engine.name.clone(),
             },
             recommended.gpu_layers,
         ))
@@ -1722,6 +1723,7 @@ impl Daemon {
         let llama = crate::adapters::ProvisionedLlama {
             prefix: engine.prefix.clone(),
             commit: engine.commit.clone(),
+            component: engine.name.clone(),
         };
         // Whatever was held before goes first: two servers on one port is a
         // second that never starts, and two on one card is two figures each

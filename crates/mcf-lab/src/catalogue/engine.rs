@@ -216,6 +216,7 @@ fn server_never_listens(world: &World) -> Outcome {
     let llama = mcf_serve::adapters::ProvisionedLlama {
         prefix,
         commit: "cccccccccccc".to_owned(),
+        component: "llama.cpp".to_owned(),
     };
     // Three attempts rather than the six hundred a real start is given: the
     // bound is a parameter so that this scenario can exist at all (A13).

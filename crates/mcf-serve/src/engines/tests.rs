@@ -436,3 +436,51 @@ fn a_header_that_does_not_describe_its_file_is_refused() {
     );
     assert!(!crate::daemon::header_describes_this_file(&model, 0));
 }
+
+/// An engine is named by what it is, not by what its family is called.
+///
+/// **Every generation recorded `provisioned llama.cpp` however it was built.**
+/// A run on the CUDA build and a run on the processor build wrote the same
+/// engine name, and the path printed beside it said otherwise — so the record
+/// held two engines under one identity while contradicting itself in the same
+/// sentence. `engine_ran` is the field a timing's honesty rests on (B65, D31),
+/// and a comparison between two names for one engine reports a moved
+/// condition that did not move (F45, A6, B-420).
+#[test]
+fn an_engine_records_its_own_component_name() {
+    let Some(home) = std::env::var_os("HOME") else {
+        eprintln!("skipped: this machine says nothing about where its home is");
+        return;
+    };
+    let home = std::path::PathBuf::from(home).join(".local/share/mcf");
+    let engines = super::discover(&home);
+    if engines.is_empty() {
+        eprintln!("skipped: nothing is provisioned on this machine");
+        return;
+    }
+    for engine in &engines {
+        // The name is the component's, and the prefix is named for it: a
+        // prefix that does not carry its own component's name would mean the
+        // two came from different places.
+        let prefix = engine.prefix.display().to_string();
+        assert!(
+            prefix.contains(&engine.name),
+            "{} is named {} and lives in {prefix}, so the name and the place disagree",
+            engine.commit,
+            engine.name
+        );
+    }
+    // And where two are provisioned, their names differ — which is the whole
+    // point: one recorded identity for two engines is what this prevents.
+    if engines.len() > 1 {
+        let mut names: Vec<&str> = engines.iter().map(|engine| engine.name.as_str()).collect();
+        names.sort_unstable();
+        let held = names.len();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            held,
+            "two provisioned engines share a name, so a record cannot tell them apart"
+        );
+    }
+}

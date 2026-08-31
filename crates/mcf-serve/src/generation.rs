@@ -398,7 +398,8 @@ fn through_served(
     let _flushed = writer.flush();
 
     let engine_name = format!(
-        "provisioned llama.cpp server @{} from {}",
+        "provisioned {} server @{} from {}",
+        llama.component,
         llama.commit.get(..12).unwrap_or(&llama.commit),
         llama.prefix.display()
     );
@@ -480,7 +481,8 @@ fn through_provisioned(
     });
 
     let engine_name = format!(
-        "provisioned llama.cpp @{} from {}",
+        "provisioned {} @{} from {}",
+        llama.component,
         llama.commit.get(..12).unwrap_or(&llama.commit),
         llama.prefix.display()
     );

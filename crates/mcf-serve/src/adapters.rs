@@ -173,6 +173,15 @@ pub struct ProvisionedLlama {
     pub prefix: PathBuf,
     /// The pinned commit, from its provenance.
     pub commit: String,
+    /// What the component is called, from its provenance.
+    ///
+    /// **Because the account used to spell it from a literal.** Every
+    /// generation recorded its engine as `provisioned llama.cpp @<commit>`
+    /// however it had been built, so a run on `llama.cpp-cuda` and a run on
+    /// `llama.cpp` wrote the same name — and the path beside it said
+    /// otherwise. Two engines with one recorded identity is a comparison that
+    /// reports no moved condition when one moved (A6, F45).
+    pub component: String,
 }
 
 impl ProvisionedLlama {
@@ -233,7 +242,7 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
     let Ok(entries) = std::fs::read_dir(&root) else {
         return Found::None;
     };
-    let mut prefixes: Vec<(PathBuf, String)> = Vec::new();
+    let mut prefixes: Vec<(PathBuf, String, String)> = Vec::new();
     for entry in entries.flatten() {
         let prefix = entry.path();
         let provenance = prefix.join("mcf-provenance.json");
@@ -266,16 +275,20 @@ pub fn provisioned_llama(mcf_home: &Path) -> Found {
             .join("llama-completion")
             .is_file()
         {
-            prefixes.push((prefix, commit));
+            prefixes.push((prefix, commit, component.to_owned()));
         }
     }
     match prefixes.len() {
         0 => Found::None,
         1 => match prefixes.pop() {
-            Some((prefix, commit)) => Found::One(ProvisionedLlama { prefix, commit }),
+            Some((prefix, commit, component)) => Found::One(ProvisionedLlama {
+                prefix,
+                commit,
+                component,
+            }),
             None => Found::None,
         },
-        _ => Found::Several(prefixes.into_iter().map(|(prefix, _)| prefix).collect()),
+        _ => Found::Several(prefixes.into_iter().map(|(prefix, _, _)| prefix).collect()),
     }
 }
 
