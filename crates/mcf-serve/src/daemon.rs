@@ -927,6 +927,15 @@ impl Daemon {
                 }
             };
             if let Some(stopped) = self.answer_one(&connection) {
+                // **A model being held is let go in writing, before the daemon
+                // is.** The engine does stop — dropping what holds it is what
+                // stops it — but a record carrying `model_hosted` and never
+                // `model_unhosted` says a model is still being served, and
+                // somebody reading it later would believe that. The record
+                // keeps these in pairs for exactly this reason: after the stop
+                // the entry is the only thing that says anything was ever
+                // listening (A26, A1, B-210).
+                self.let_go("the daemon stopped");
                 // A26: a stop has an account, and the account is in the record
                 // rather than only in what the client was told.
                 self.note(
@@ -1716,12 +1725,15 @@ impl Daemon {
         };
         // Whatever was held before goes first: two servers on one port is a
         // second that never starts, and two on one card is two figures each
-        // about the other (A6).
+        // about the other (A6). **And it is let go in writing**, through the
+        // one place that does that — dropping it quietly here would leave a
+        // record with two hostings and one release, which reads as a model
+        // still being served (A1, A26, B-210).
+        let _released = self.let_go("another model was hosted in its place");
         let mut holding = match self.holding.lock() {
             Ok(holding) => holding,
             Err(poisoned) => poisoned.into_inner(),
         };
-        drop(holding.take());
 
         // And then the port, before anything is spawned. An engine that
         // cannot bind exits with a status and no sentence, and reporting
@@ -1816,26 +1828,31 @@ impl Daemon {
         }
     }
 
-    /// Stops holding it.
-    fn unhost(&self) -> Value {
+    /// Lets go of whatever is being held, and says so in the record.
+    ///
+    /// Returns what was let go, or `None` where nothing was.
+    fn let_go(&self, why: &str) -> Option<String> {
         let mut holding = match self.holding.lock() {
             Ok(holding) => holding,
             Err(poisoned) => poisoned.into_inner(),
         };
         let was = holding.take().map(|held| held.model.display().to_string());
-        // A26: a thing that can only be killed leaves no account of why it
-        // stopped. After this nothing is listening, and this line is the only
-        // thing that says anything ever was.
         if let Some(model) = was.clone() {
             let _recorded = self.note(
                 EntryKind::ModelUnhosted,
                 Timestamp::now(),
                 Value::map([
                     ("model", Value::text(model)),
-                    ("reason", Value::text("asked")),
+                    ("reason", Value::text(why.to_owned())),
                 ]),
             );
         }
+        was
+    }
+
+    /// Stops holding it, because somebody asked.
+    fn unhost(&self) -> Value {
+        let was = self.let_go("asked");
         Value::map([
             ("stopped", Value::Bool(was.is_some())),
             ("was", was.map_or(Value::Null, Value::text)),
