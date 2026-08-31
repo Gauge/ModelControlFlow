@@ -853,6 +853,13 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     }
     y += 20.0;
 
+    what_was_measured(paint, Box::new(area.x, y, area.w, area.h), held)
+}
+
+/// The MEASURED table, and under it the shape the table cannot carry.
+fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
+    let ink = paint.ink;
+    let mut y = area.y;
     // What has been measured, which for most models is nothing — and the
     // console says so in this many words, so this does too (A7, A9).
     let wide = area.w.min(430.0);
@@ -885,12 +892,34 @@ fn detail(paint: &mut Painter, area: Box, held: &Model) -> f32 {
             size::SMALL,
             ink.faint,
         );
-        y += 20.0;
+        return y + 20.0;
+    }
+
+    // The shape, which the table above cannot carry. Two readings are a line
+    // and one is a point, so nothing is drawn until there are two (A11).
+    if held.ladder.len() >= 2 {
+        y += 12.0;
+        paint.say_at(
+            area.x,
+            y,
+            &format!(
+                "does it slow down as the conversation grows?   {}",
+                words::holds_up(held.fastest, held.slowest)
+                    .unwrap_or_else(|| UNKNOWN.to_owned())
+                    .to_lowercase()
+            ),
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        y = crate::chart::falloff(
+            paint,
+            Box::new(area.x, y + 20.0, area.w.min(430.0), 72.0),
+            &held.ladder,
+        );
     }
     y
 }
-
-// ── Diagnostics ──────────────────────────────────────────────────────────────
 
 /// **Setting up a measurement.** Two buttons with what they cost, what will be
 /// measured, and the tests — the console's arrangement.

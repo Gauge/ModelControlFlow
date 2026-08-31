@@ -18,6 +18,7 @@
 //! **It is a client, and adds nothing.** Every action turns into a request the
 //! command line already sends, and [`ACTIONS`] names which (A22, B-072).
 
+pub mod chart;
 pub mod font;
 pub mod job;
 pub mod paint;
@@ -174,6 +175,12 @@ pub struct Model {
     pub fastest: Option<f64>,
     /// Milliseconds a token at the longest.
     pub slowest: Option<f64>,
+    /// Every depth that separated, in order — the shape rather than its ends.
+    ///
+    /// Kept whole because a table can say what a cost is at a depth and only a
+    /// picture can say whether it is going anywhere, which is the question
+    /// somebody actually has (B-410).
+    pub ladder: Vec<crate::chart::Reading>,
 }
 
 /// One measurement that can be asked for, as the console lists them.
@@ -456,6 +463,7 @@ fn model_from(held: &Value) -> Model {
         wakes: None,
         fastest: measured.as_ref().and_then(|held| held.fastest),
         slowest: measured.as_ref().and_then(|held| held.slowest),
+        ladder: measured.map(|held| held.ladder).unwrap_or_default(),
     }
 }
 
@@ -471,6 +479,8 @@ struct Measured {
     fastest: Option<f64>,
     /// The same at the deepest.
     slowest: Option<f64>,
+    /// Every depth that separated, in order.
+    ladder: Vec<crate::chart::Reading>,
 }
 
 /// Reads the ends out of what the record kept.
@@ -498,6 +508,13 @@ fn measured_ends(held: &Value) -> Measured {
             ends.fastest = Some(ms);
         }
         ends.slowest = Some(ms);
+        if let Some(depth) = reading
+            .get("depth")
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+        {
+            ends.ladder.push(crate::chart::Reading { depth, ms });
+        }
     }
     ends
 }

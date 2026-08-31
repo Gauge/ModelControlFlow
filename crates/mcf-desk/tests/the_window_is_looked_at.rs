@@ -43,6 +43,7 @@ fn four_models() -> Desk {
             fastest: Some(6.43),
             slowest: Some(7.66),
             cache_per_token: Some(114_688),
+            ladder: Vec::new(),
             refused: None,
         },
         Model {
@@ -403,5 +404,125 @@ fn a_result_opens_under_the_tests_rather_than_over_them() {
     assert!(
         changed_high > 500,
         "the result drew {changed_high} pixels: nothing opened"
+    );
+}
+
+/// A small rise is drawn as a small rise.
+///
+/// **The point of the chart, and the one way it could lie.** A plot whose
+/// vertical axis began at the smallest reading would draw this machine's
+/// 1.333 to 1.412 milliseconds a token — a rise of six per cent — as a line
+/// climbing from the floor to the ceiling. Suppressing a zero is how a picture
+/// tells a lie the numbers under it do not (A6, A11).
+///
+/// So: two ladders, one nearly flat and one that trebles, drawn into the same
+/// box. The flat one must occupy a small part of the height and the steep one
+/// most of it. If the axis were ever changed to start at the minimum, both
+/// would fill the box and this fails.
+#[test]
+fn a_six_per_cent_rise_is_not_drawn_as_a_cliff() {
+    use mcf_desk::chart::{Reading, falloff};
+    use mcf_desk::paint::Box;
+
+    let spread_of = |readings: &[Reading]| -> Option<u32> {
+        let mut paint = Painter::on_paper(400, 200, 1.0, NIGHT).ok()?;
+        paint.begin();
+        let _under = falloff(&mut paint, Box::new(20.0, 20.0, 360.0, 120.0), readings);
+        let paper = paint.paper()?;
+        // How many rows the accent — the line and its points — appears on.
+        let mut top = None;
+        let mut bottom = None;
+        for y in 0..paper.height {
+            let mut on_this_row = false;
+            for x in 0..paper.width {
+                if paper.at(x, y) == Some(NIGHT.accent) {
+                    on_this_row = true;
+                    break;
+                }
+            }
+            if on_this_row {
+                top.get_or_insert(y);
+                bottom = Some(y);
+            }
+        }
+        Some(bottom?.saturating_sub(top?))
+    };
+
+    let flat = [
+        Reading {
+            depth: 512,
+            ms: 1.529,
+        },
+        Reading {
+            depth: 1024,
+            ms: 1.333,
+        },
+        Reading {
+            depth: 2048,
+            ms: 1.342,
+        },
+        Reading {
+            depth: 4096,
+            ms: 1.412,
+        },
+    ];
+    let steep = [
+        Reading {
+            depth: 512,
+            ms: 1.5,
+        },
+        Reading {
+            depth: 1024,
+            ms: 2.4,
+        },
+        Reading {
+            depth: 2048,
+            ms: 3.4,
+        },
+        Reading {
+            depth: 4096,
+            ms: 4.5,
+        },
+    ];
+    let (Some(gentle), Some(sharp)) = (spread_of(&flat), spread_of(&steep)) else {
+        return; // no font on this machine
+    };
+    assert!(
+        gentle < 30,
+        "a six per cent rise covers {gentle} rows: the axis is suppressing its zero"
+    );
+    assert!(
+        sharp > gentle * 2,
+        "a threefold rise ({sharp} rows) is not drawn as much steeper than a six per cent one \
+         ({gentle} rows)"
+    );
+}
+
+/// One reading is a point, and a point is not a trend.
+#[test]
+fn nothing_is_drawn_from_a_single_reading() {
+    use mcf_desk::chart::{Reading, falloff};
+    use mcf_desk::paint::Box;
+
+    let Ok(mut paint) = Painter::on_paper(400, 200, 1.0, NIGHT) else {
+        return;
+    };
+    paint.begin();
+    let one = [Reading {
+        depth: 512,
+        ms: 1.5,
+    }];
+    let under = falloff(&mut paint, Box::new(20.0, 20.0, 360.0, 120.0), &one);
+    // The row it hands back is the row it was given: nothing was drawn, so
+    // nothing was used.
+    assert!(
+        (under - 20.0).abs() < f32::EPSILON,
+        "a chart was drawn from one reading"
+    );
+    let Some(paper) = paint.paper() else { return };
+    assert_eq!(
+        paper.inked(NIGHT.ground),
+        0,
+        "a single reading put something on the screen"
     );
 }
