@@ -1934,6 +1934,12 @@ impl Daemon {
             ("protocol", Value::Integer(VERSION)),
             ("build", mcf_record::encode::build_identity(identity)),
             ("resident", self.resident_value()),
+            // What another program can see. Everything else in this answer is
+            // about what MCF is holding for itself; this is the one thing it
+            // is holding for anybody else, and a status that omitted it would
+            // leave the most consequential fact about the process to be found
+            // by looking at the ports (§6.12, B-418).
+            ("hosting", self.hosted()),
             ("started_at", mcf_record::encode::timestamp(self.started)),
             (
                 "up_nanoseconds",

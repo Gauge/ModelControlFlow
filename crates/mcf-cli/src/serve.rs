@@ -218,6 +218,45 @@ pub(crate) fn run() -> Response {
     }
 }
 
+/// What another program can reach.
+///
+/// Separate from the rest of a status because it is a different kind of fact:
+/// everything else is what MCF holds for itself, and this is what it holds for
+/// anybody else. A status that omitted it would leave the most consequential
+/// thing about the process to be found by looking at the ports (§6.12, B-418).
+fn exposed(status: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    match status.get("hosting").and_then(|held| held.get("hosting")) {
+        Some(Value::Text(model)) => {
+            let address = status
+                .get("hosting")
+                .and_then(|held| held.get("address"))
+                .and_then(Value::as_text)
+                .unwrap_or("somewhere MCF did not say");
+            lines.push(format!("  hosting: {model}"));
+            lines.push(format!(
+                "    reachable at {address}, from this computer only"
+            ));
+            let changed = status
+                .get("hosting")
+                .and_then(|held| held.get("changed"))
+                .and_then(Value::as_list)
+                .map(<[Value]>::to_vec)
+                .unwrap_or_default();
+            for one in &changed {
+                if let Some(said) = one.as_text() {
+                    lines.push(format!("    {said}"));
+                }
+            }
+        }
+        _ => lines.push(
+            "  hosting: nothing — `mcf host <model>` holds one where a program can reach it"
+                .to_owned(),
+        ),
+    }
+    lines
+}
+
 /// Asks a running daemon what it is and what it is holding.
 ///
 /// A22: the headless surface is the complete one. A daemon that answered
@@ -289,6 +328,7 @@ pub(crate) fn status() -> Response {
         )),
         _ => lines.push("  resident: nothing — the first generation loads its model and holds it".to_owned()),
     }
+    lines.extend(exposed(&status));
     for cannot in status
         .get("cannot")
         .and_then(Value::as_list)
