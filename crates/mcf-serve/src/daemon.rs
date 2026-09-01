@@ -68,6 +68,60 @@ pub struct Places {
     pub models: PathBuf,
 }
 
+/// How many tokens each generation in a prompt report may produce.
+///
+/// Enough for an answer worth comparing and small enough that a report of nine
+/// generations finishes: what is being compared is whether two answers differ,
+/// which a short answer settles as well as a long one.
+const PROMPT_REPORT_LIMIT: usize = 160;
+
+/// A prompt report, as a client reads it.
+fn prompt_report_value(report: &crate::prompt::Report, generations: usize) -> Value {
+    Value::map([
+        ("baseline", Value::text(report.baseline.clone())),
+        (
+            "floor_parts_per_million",
+            Value::Integer(i64::try_from(report.floor).unwrap_or(i64::MAX)),
+        ),
+        (
+            "clauses",
+            Value::List(
+                report
+                    .clauses
+                    .iter()
+                    .map(|clause| {
+                        Value::map([
+                            ("text", Value::text(clause.text.clone())),
+                            ("changed", Value::Bool(clause.changed)),
+                            (
+                                "moved_parts_per_million",
+                                Value::Integer(i64::try_from(clause.moved).unwrap_or(i64::MAX)),
+                            ),
+                            ("without", Value::text(clause.without.clone())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "clauses_over_the_cap",
+            Value::Integer(i64::try_from(report.clauses_over_the_cap).unwrap_or(i64::MAX)),
+        ),
+        (
+            "seeds_asked",
+            Value::Integer(i64::try_from(report.settled.asked).unwrap_or(i64::MAX)),
+        ),
+        (
+            "distinct_answers",
+            Value::Integer(i64::try_from(report.settled.distinct).unwrap_or(i64::MAX)),
+        ),
+        (
+            "generations",
+            Value::Integer(i64::try_from(generations).unwrap_or(i64::MAX)),
+        ),
+    ])
+}
+
 /// A model's header, from a bounded read of the front of the file.
 ///
 /// **Never the whole file.** `gguf::read` reads every byte, which is right when
@@ -1044,6 +1098,18 @@ impl Daemon {
                     self.measuring(&model, engine.as_deref(), deepest, &mut writer);
                     return None;
                 }
+                Ok(Request::PromptReport {
+                    model,
+                    prompt,
+                    seed,
+                }) => {
+                    // Many generations and one report: a request that takes
+                    // minutes says what it is doing as it goes, for the same
+                    // reason a measurement does — a client cannot tell a long
+                    // run from a hung one (B-227).
+                    self.prompt_report(&model, &prompt, seed, &mut writer);
+                    return None;
+                }
                 Ok(Request::Acquire {
                     reference,
                     file,
@@ -1167,11 +1233,71 @@ impl Daemon {
         }
     }
 
+    /// Takes a prompt apart and says which of it reached the answer.
+    ///
+    /// **One generation per sentence, plus the seeds.** Expensive by
+    /// construction and never done on the way past: what it buys is the one
+    /// question a person cannot answer by looking at their own prompt — which
+    /// of it the model actually used (§3.8).
+    ///
+    /// Each generation runs the same path a client's request runs, with the
+    /// stream drained rather than suppressed — timing MCF rather than
+    /// something that resembles it is the same reason a measurement does it
+    /// this way (A11, A12).
+    fn prompt_report(&self, named: &str, prompt: &str, seed: u64, writer: &mut &UnixStream) {
+        let mcf_home = self
+            .places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
+        let picked = self.picked_engine(named);
+        let mut asked = 0_usize;
+        let mut ask = |prompt: &str, seed: u64| {
+            asked = asked.saturating_add(1);
+            let Ok((mine, theirs)) = UnixStream::pair() else {
+                return String::new();
+            };
+            let drain = std::thread::spawn(move || {
+                let mut end = &theirs;
+                let _emptied = std::io::copy(&mut end, &mut std::io::sink());
+            });
+            let produced = {
+                let mut into = &mine;
+                crate::generation::serve_generation(
+                    &self.places.models,
+                    &mcf_home,
+                    &self.resident,
+                    &self.server,
+                    self.places
+                        .socket
+                        .parent()
+                        .unwrap_or_else(|| Path::new("/tmp")),
+                    named,
+                    prompt,
+                    Some(PROMPT_REPORT_LIMIT),
+                    seed,
+                    None,
+                    None,
+                    picked.clone(),
+                    &mut into,
+                )
+            };
+            drop(mine);
+            let _joined = drain.join();
+            produced.said.map(|held| held.text).unwrap_or_default()
+        };
+        let report = crate::prompt::measure(prompt, seed, &mut ask);
+        let answer = Answer::served(prompt_report_value(&report, asked));
+        let _written = writeln!(writer, "{}", answer.to_line());
+        let _flushed = writer.flush();
+    }
+
     /// What MCF says to each request.
     fn respond(&self, request: &Request) -> (Answer, Option<Stopped>) {
         match request {
             Request::Status => (Answer::served(self.status()), None),
             Request::Holding => (Answer::served(self.holding()), None),
+            Request::Components => (Answer::served(self.components()), None),
             Request::Offered { reference, from } => {
                 (Self::offered(reference, from.as_deref()), None)
             }
@@ -1182,7 +1308,10 @@ impl Daemon {
             // Handled before `respond` is reached; here so the match is
             // total and a future request type is a compile error rather than a
             // silent fall-through.
-            Request::Generate { .. } | Request::Acquire { .. } | Request::Measure { .. } => (
+            Request::Generate { .. }
+            | Request::Acquire { .. }
+            | Request::Measure { .. }
+            | Request::PromptReport { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
                     "generate, acquire or measure",
@@ -1317,7 +1446,10 @@ impl Daemon {
     /// `None` where MCF cannot work it out — a header it could not read, no
     /// provisioned engine — and the generation path then falls back to its own
     /// discovery, which is what it did before there was anything to resolve.
-    fn picked_engine(&self, named: &str) -> Option<(crate::adapters::ProvisionedLlama, u32)> {
+    fn picked_engine(
+        &self,
+        named: &str,
+    ) -> Option<(crate::adapters::ProvisionedLlama, u32, u64)> {
         let (recommended, _) = self.recommend(named).ok()?;
         let (engine, _) = self
             .engines
@@ -1330,6 +1462,10 @@ impl Daemon {
                 component: engine.name.clone(),
             },
             recommended.gpu_layers,
+            // The window MCF resolved for this model on this machine, so the
+            // engine opens the one that was planned against rather than the
+            // whole trained context.
+            recommended.context,
         ))
     }
 
@@ -1349,7 +1485,7 @@ impl Daemon {
         named: &str,
         engine: Option<&str>,
         depth: u64,
-        picked: Option<&(crate::adapters::ProvisionedLlama, u32)>,
+        picked: Option<&(crate::adapters::ProvisionedLlama, u32, u64)>,
     ) -> (Value, Option<String>) {
         // Repeats, because one pair is one sample and a fall-off read off
         // single samples is a reading of the noise. The median is taken
@@ -1431,7 +1567,7 @@ impl Daemon {
         engine: Option<&str>,
         depth: u64,
         produce: u32,
-        picked: Option<(crate::adapters::ProvisionedLlama, u32)>,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     ) -> Option<Timed> {
         let how_many = usize::try_from(depth).ok()?;
         // Identifier 1 is inside every vocabulary MCF can address. What it
@@ -2073,6 +2209,70 @@ impl Daemon {
     }
 
     /// What this machine is holding, read from the disk rather than remembered.
+    /// What MCF can build, and which of it is here.
+    ///
+    /// **The catalogue and the disk, paired.** The catalogue
+    /// ([`mcf_core::component::COMPONENTS`]) is what MCF knows how to build;
+    /// the prefix directory beside the model store is what has actually been
+    /// built. A surface needs both, because *not provisioned* is a thing to
+    /// say rather than an absence to leave a person guessing at (A7).
+    ///
+    /// Read-only. Building is a command, not a request.
+    fn components(&self) -> Value {
+        let mcf_home = self
+            .places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
+        let under = mcf_home.join("provisioned");
+        let engines = crate::engines::discover(&mcf_home);
+        Value::map([
+            ("under", Value::text(under.display().to_string())),
+            (
+                "components",
+                Value::List(
+                    mcf_core::component::COMPONENTS
+                        .iter()
+                        .map(|component| {
+                            let short: String =
+                                component.commit.chars().take(12).collect();
+                            let prefix = under.join(format!("{}@{short}", component.name));
+                            // Complete means the provenance beside it, which
+                            // is what the builder writes last — not merely a
+                            // directory, which is what a run that stopped
+                            // partway also leaves.
+                            let present = prefix.is_dir();
+                            let complete = prefix.join("mcf-provenance.json").is_file();
+                            Value::map([
+                                ("name", Value::text(component.name)),
+                                ("commit", Value::text(component.commit)),
+                                ("role", Value::text(component.role)),
+                                ("image", Value::text(component.image)),
+                                ("image_digest", Value::text(component.image_digest)),
+                                ("source", Value::text(component.source)),
+                                ("present", Value::Bool(present)),
+                                ("provisioned", Value::Bool(complete)),
+                                ("prefix", Value::text(prefix.display().to_string())),
+                                // An engine MCF can actually reach. Not every
+                                // component is one — a window library is not —
+                                // so this is an extra fact about engines, never
+                                // the test of whether a component is here.
+                                (
+                                    "usable_engine",
+                                    Value::Bool(
+                                        engines
+                                            .iter()
+                                            .any(|engine| engine.name == component.name),
+                                    ),
+                                ),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+
     fn holding(&self) -> Value {
         match mcf_hub::store::held(&self.places.models) {
             Err(failure) => Value::map([

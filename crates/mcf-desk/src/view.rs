@@ -74,6 +74,8 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Diagnostics => diagnostics(paint, desk, mouse, main),
         Page::Adding => adding(paint, desk, mouse, main),
         Page::Hosting => hosting(paint, desk, mouse, main),
+        Page::Prompt => prompt(paint, desk, mouse, main),
+        Page::Components => components(paint, desk, main),
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
@@ -225,14 +227,161 @@ fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
 
 /// **The machine, live.** Three tables and a line saying what MCF is doing, in
 /// the console's order.
+/// What is being served, and where a caller reaches it.
+///
+/// Returns the bottom of the card, so what follows does not need to know how
+/// tall it was.
+fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
+    let ink = paint.ink;
+    ui::card(paint, at, desk.hosted.is_some());
+    let Some(hosting) = &desk.hosted else {
+        paint.say_at(
+            at.x + 14.0,
+            at.y + 20.0,
+            "nothing is being served",
+            Weight::Bold,
+            size::BODY,
+            ink.quiet,
+        );
+        paint.say_at(
+            at.x + 14.0,
+            at.y + 42.0,
+            "Models holds one here, and this screen then says where it answers.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return at.bottom();
+    };
+
+    // The name, not the path: a path is where a file is, and the question this
+    // screen answers is what is answering.
+    let name = hosting
+        .model
+        .rsplit('/')
+        .next()
+        .unwrap_or(&hosting.model)
+        .to_owned();
+    let shown = paint.elide(&name, Weight::Bold, size::HEAD, at.w - 190.0);
+    paint.say_at(
+        at.x + 14.0,
+        at.y + 14.0,
+        &shown,
+        Weight::Bold,
+        size::HEAD,
+        ink.ink,
+    );
+    let _wide = ui::tag(
+        paint,
+        (at.right() - 120.0, at.y + 15.0),
+        "Resident",
+        ink.accent_soft,
+        ink.good,
+    );
+
+    paint.say_at(
+        at.x + 14.0,
+        at.y + 40.0,
+        "reachable at",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let after = paint.measure("reachable at", Weight::Regular, size::SMALL);
+    paint.say_at(
+        at.x + 14.0 + after + 8.0,
+        at.y + 40.0,
+        &hosting.address,
+        Weight::Bold,
+        size::BODY,
+        ink.accent,
+    );
+    paint.say_at(
+        at.x + 14.0,
+        at.y + 58.0,
+        "an OpenAI-compatible endpoint: give this to a tool as its base URL",
+        Weight::Regular,
+        size::SMALL,
+        ink.quiet,
+    );
+
+    // What it is held under. Conditions, beside the thing they condition.
+    let context = hosting.context.map_or_else(
+        || UNKNOWN.to_owned(),
+        |context| format!("{context} tokens"),
+    );
+    paint.say_at(
+        at.x + 14.0,
+        at.y + 76.0,
+        &format!("context {context}   ·   since {}", hosting.since),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    at.bottom()
+}
+
+/// What using it costs.
+///
+/// **Nothing has been timed, so nothing is claimed.** An empty figure carrying
+/// the reason it is empty beats a zero that reads as a measurement (A7, §3.4).
+fn cost_tiles(paint: &mut Painter, at: Box) {
+    let ink = paint.ink;
+    let across = (at.w - 3.0 * 10.0) / 4.0;
+    for (index, (label, why)) in [
+        ("Generation", "no engine is provisioned"),
+        ("Prompt reading", "no engine is provisioned"),
+        ("First token", "no engine is provisioned"),
+        ("Energy", "this machine publishes no counter"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "four tiles: the index is never large enough to lose one"
+        )]
+        let tile = Box::new(at.x + (across + 10.0) * index as f32, at.y, across, 58.0);
+        ui::card(paint, tile, false);
+        spaced(paint, tile.x + 12.0, tile.y + 12.0, label, ink.faint);
+        paint.say_at(
+            tile.x + 12.0,
+            tile.y + 28.0,
+            words::UNMEASURED,
+            Weight::Bold,
+            size::BODY,
+            ink.quiet,
+        );
+        let reason = paint.elide(why, Weight::Regular, size::SMALL, across - 24.0);
+        paint.say_at(
+            tile.x + 12.0,
+            tile.y + 44.0,
+            &reason,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+}
+
 fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    let wide = area.w.min(700.0);
-    let mut y = processors_table(paint, Box::new(area.x, area.y, wide, 0.0), desk);
-    y = memory_table(paint, Box::new(area.x, y + 16.0, wide, 0.0), desk);
+    let wide = area.w.min(940.0);
+
+    // Section one: what is being served, and what it costs to use.
+    spaced(paint, area.x, area.y, "hosted", ink.faint);
+    let mut y = hosted_card(paint, desk, Box::new(area.x, area.y + 20.0, wide, 96.0));
+    cost_tiles(paint, Box::new(area.x, y + 12.0, wide, 58.0));
+
+    // Section two: the machine every one of those figures would be taken on.
+    y += 82.0;
+    spaced(paint, area.x, y, "this machine", ink.faint);
+    y += 20.0;
+    y = processors_table(paint, Box::new(area.x, y, wide, 0.0), desk);
+    y = memory_table(paint, Box::new(area.x, y + 14.0, wide, 0.0), desk);
     let _bottom = storage_table(
         paint,
-        Box::new(area.x, y + 16.0, wide, area.bottom() - y - 90.0),
+        Box::new(area.x, y + 14.0, wide, area.bottom() - y - 88.0),
         desk,
     );
 
@@ -641,7 +790,7 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         .hosted
         .as_ref()
         .zip(desk.chosen.and_then(|at| desk.models.get(at)))
-        .is_some_and(|((hosting, _), held)| *hosting == held.path);
+        .is_some_and(|(hosting, held)| hosting.model == held.path);
     let actions: [(&str, Kind, Act); 3] = if this_one {
         [
             ("Ask it something", Kind::Primary, Act::Go(Page::Hosting)),
@@ -668,7 +817,7 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         y += 36.0;
     }
     // Where a caller reaches it. The one fact an API is for.
-    if let Some((_, address)) = &desk.hosted {
+    if let Some(hosting) = &desk.hosted {
         paint.say_at(
             area.x,
             y + 4.0,
@@ -677,7 +826,7 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
             size::SMALL,
             ink.quiet,
         );
-        let shown = paint.elide(address, Weight::Bold, size::SMALL, list - 20.0);
+        let shown = paint.elide(&hosting.address, Weight::Bold, size::SMALL, list - 20.0);
         paint.say_at(
             area.x,
             y + 20.0,
@@ -940,6 +1089,12 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         act = Some(Act::Measure {
             deepest: desk.window,
         });
+    }
+    // A prompt is a diagnostic about a prompt rather than about the model, so
+    // it is reached from here and not from the column (B-072).
+    let taking = Box::new(selected.right() + 18.0, area.y, 170.0, 34.0);
+    if ui::button(paint, mouse, taking, "Take a prompt apart", Kind::Ordinary) && !running {
+        act = Some(Act::Go(Page::Prompt));
     }
     let (low, high) = desk.estimate(true);
     paint.say_centred(
@@ -1542,7 +1697,7 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         paint.say_at(
             area.x,
             area.y,
-            "Choose a model on the Host screen first.",
+            "Choose a model on the Models screen first.",
             Weight::Regular,
             size::BODY,
             ink.quiet,
@@ -1628,6 +1783,258 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 
 /// How MCF is set up, which is nothing yet — and the console says so in these
 /// words, so this does too.
+/// What a prompt does to the chosen model.
+///
+/// **A client of one request, like the command line** (A22). The measuring is
+/// the daemon's — one generation per sentence and one per seed — and what is
+/// here is a field, a button and the reading. A screen that computed its own
+/// answer would be a second answer to a question already served.
+fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "prompt", ink.faint);
+    let named = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .map_or("no model chosen", |held| held.name.as_str());
+    paint.say_at(
+        area.x,
+        area.y + 28.0,
+        &format!("what a prompt does to {named}, sentence by sentence"),
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+
+    let mut act = None;
+    let y = area.y + 52.0;
+    let field = Box::new(area.x, y, (area.w - 150.0).min(680.0), 32.0);
+    let _clicked = ui::field(paint, mouse, field, &desk.typed, "a prompt to take apart", true);
+    let (asked, _) = ui::fitted(
+        paint,
+        mouse,
+        (field.right() + 10.0, y),
+        "Take it apart",
+        Kind::Primary,
+    );
+    if asked && !desk.doing.busy() && desk.chosen.is_some() {
+        act = Some(Act::ReportPrompt);
+    }
+
+    let mut at = y + 50.0;
+    if let Doing::Reporting(job) = &desk.doing
+        && !job.finished
+    {
+        paint.say_at(area.x, at, &job.what, Weight::Regular, size::BODY, ink.quiet);
+        paint.say_at(
+            area.x,
+            at + 20.0,
+            "one generation for the prompt, one for each sentence left out, one for each seed",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return act;
+    }
+    let Some(job) = desk.doing.job() else {
+        return act;
+    };
+    if let Some(why) = &job.refused {
+        for line in paint.wrap(why, Weight::Regular, size::BODY, area.w.min(600.0)).iter().take(3) {
+            paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
+            at += 20.0;
+        }
+        return act;
+    }
+    let Some(found) = job.conclusion().or_else(|| job.latest()) else {
+        return act;
+    };
+    at = steering(paint, desk, Box::new(area.x, at, area.w, area.bottom() - at), found);
+    let distinct = found
+        .get("distinct_answers")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let seeds = found
+        .get("seeds_asked")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    paint.say_at(
+        area.x,
+        at + 12.0,
+        &if distinct <= 1 {
+            format!("{seeds} seed(s) gave one answer: this prompt settles it on this model")
+        } else {
+            format!("{seeds} seed(s) gave {distinct} answers: this prompt does not settle it")
+        },
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    act
+}
+
+/// How much each sentence steered the answer, drawn as bars.
+fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let floor = found
+        .get("floor_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let clauses = found.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let wide = area.w.min(820.0);
+    let mut y = area.y;
+    for clause in clauses.iter().take(8) {
+        let moved = clause
+            .get("moved_parts_per_million")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
+        let bar = Box::new(area.x, y + 4.0, 180.0, 10.0);
+        paint.panel(bar, 5.0, ink.sunk, 255);
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a bar's width in points; a part of a point is not drawn"
+        )]
+        let filled = (moved as f32 / 1_000_000.0).clamp(0.0, 1.0) * bar.w;
+        paint.panel(
+            Box::new(bar.x, bar.y, filled.max(1.0), bar.h),
+            5.0,
+            // Above the floor is the accent; at or under it is quiet, because
+            // what is at the floor steered nothing that is visible.
+            if moved > floor { ink.accent } else { ink.line },
+            255,
+        );
+        let shown = paint.elide(said, Weight::Regular, size::BODY, wide - 200.0);
+        paint.say_at(
+            bar.right() + 12.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::BODY,
+            if moved > floor { ink.ink } else { ink.quiet },
+        );
+        y += 24.0;
+    }
+    if !clauses.is_empty() {
+        paint.say_at(
+            area.x,
+            y + 6.0,
+            "an ordering, not relevance: removing anything shifts what follows it",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 26.0;
+    }
+    y
+}
+
+/// What MCF can build, and which of it is here.
+///
+/// **Read-only, and says so.** Building takes minutes and writes a record of
+/// its own, so it is a command rather than something a window waits on a
+/// socket for — and a screen that offered a button it could not honour would
+/// be worse than one that names the command (A7).
+fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "components", ink.faint);
+    paint.say_at(
+        area.x,
+        area.y + 28.0,
+        "each built from pinned source in a pinned container, and removable without residue",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+
+    if desk.components.is_empty() {
+        paint.say_at(
+            area.x,
+            area.y + 58.0,
+            words::UNMEASURED,
+            Weight::Regular,
+            size::BODY,
+            ink.faint,
+        );
+        return None;
+    }
+
+    let mut y = area.y + 58.0;
+    let wide = area.w.min(920.0);
+    for component in &desk.components {
+        let tall = 86.0;
+        let card = Box::new(area.x, y, wide, tall);
+        if y + tall > area.bottom() {
+            break;
+        }
+        ui::card(paint, card, component.provisioned);
+
+        // The name, and exactly which source it was built from.
+        paint.say_at(
+            card.x + 14.0,
+            card.y + 14.0,
+            &component.name,
+            Weight::Bold,
+            size::BODY,
+            ink.ink,
+        );
+        let after = paint.measure(&component.name, Weight::Bold, size::BODY);
+        paint.say_at(
+            card.x + 14.0 + after + 8.0,
+            card.y + 14.0,
+            &format!("@{}", component.commit),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+
+        // What it is, wrapped rather than cut: the sentence is the reason to
+        // have it, and half of one is not a reason.
+        let mut at = card.y + 34.0;
+        for line in paint
+            .wrap(&component.role, Weight::Regular, size::SMALL, wide - 190.0)
+            .iter()
+            .take(2)
+        {
+            paint.say_at(card.x + 14.0, at, line, Weight::Regular, size::SMALL, ink.quiet);
+            at += 16.0;
+        }
+
+        // Three states, not two. The middle one is a run that stopped partway:
+        // a prefix with no provenance beside it. Saying that plainly is what
+        // keeps a person from reading a half-build as a build (A7).
+        //
+        // Whether MCF can reach it as an ENGINE is a separate fact, said
+        // below — not every component is an engine, and a window library that
+        // reported itself unreachable would be answering a question nobody
+        // asked.
+        let (word, ground, colour) = if component.provisioned {
+            ("Provisioned", ink.accent_soft, ink.good)
+        } else if component.present {
+            ("Incomplete", ink.warn_soft, ink.warn)
+        } else {
+            ("Not provisioned", ink.sunk, ink.quiet)
+        };
+        let _wide = ui::tag(paint, (card.right() - 130.0, card.y + 13.0), word, ground, colour);
+
+        paint.say_right(
+            card.right() - 14.0,
+            card.bottom() - 24.0,
+            &if component.usable_engine {
+                format!("{} — MCF reaches this as an engine", component.prefix)
+            } else if component.present {
+                component.prefix.clone()
+            } else {
+                format!("mcf provision {}", component.name)
+            },
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += tall + 10.0;
+    }
+    None
+}
+
 fn settings(paint: &mut Painter, area: Box) -> Option<Act> {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "settings", ink.faint);

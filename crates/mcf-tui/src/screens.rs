@@ -22,12 +22,19 @@ use crate::screen::{Ink, Screen};
 pub enum Where {
     /// The machine, live.
     Monitor,
-    /// Choosing a model to host.
-    Host,
     /// Setting up a measurement.
     Diagnostics,
     /// Everything held.
     Models,
+    /// What MCF can build, and what it has.
+    Components,
+    /// What a prompt does to a model.
+    ///
+    /// Not a column entry: the row holds every item at once and has four
+    /// columns of slack where a seventh needs nine. It is reached from
+    /// Diagnostics, where a model is already chosen, and the window reaches it
+    /// the same way (B-072).
+    Prompt,
     /// How MCF is set up.
     Settings,
     /// Leave.
@@ -38,9 +45,9 @@ impl Where {
     /// Every item, in the order they sit along the top.
     pub const ALL: [Self; 6] = [
         Self::Monitor,
-        Self::Host,
-        Self::Diagnostics,
         Self::Models,
+        Self::Diagnostics,
+        Self::Components,
         Self::Settings,
         Self::Exit,
     ];
@@ -50,9 +57,10 @@ impl Where {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Monitor => "Monitor",
-            Self::Host => "Host",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
+            Self::Components => "Components",
+            Self::Prompt => "Prompt",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
         }
@@ -64,9 +72,10 @@ impl Where {
     pub const fn title(self) -> &'static str {
         match self {
             Self::Monitor => "MCF",
-            Self::Host => "Host a model",
             Self::Diagnostics => "Diagnostics",
             Self::Models => "Models",
+            Self::Components => "What MCF can build",
+            Self::Prompt => "What a prompt does",
             Self::Settings => "Settings",
             Self::Exit => "Exit",
         }
