@@ -184,6 +184,28 @@ pub struct ProvisionedLlama {
     pub component: String,
 }
 
+/// How long a window one request needs.
+///
+/// **Counted in bytes rather than tokens, deliberately.** Sizing this properly
+/// would mean tokenizing the prompt, which needs the vocabulary, which needs
+/// the model this command exists to hand to a subprocess. A token is several
+/// bytes, so counting bytes over-counts — the safe direction for a window, and
+/// still four orders of magnitude below the trained context that was being
+/// opened instead.
+///
+/// Doubled, because a prompt and its answer both sit in the window and neither
+/// is known exactly here; floored, because a window smaller than the smallest
+/// useful one buys nothing.
+fn window_for(prompt: &str, limit: usize) -> u64 {
+    const SMALLEST: u64 = 4096;
+    let prompt_bytes = u64::try_from(prompt.len()).unwrap_or(SMALLEST);
+    let asked = u64::try_from(limit).unwrap_or(SMALLEST);
+    prompt_bytes
+        .saturating_add(asked)
+        .saturating_mul(2)
+        .max(SMALLEST)
+}
+
 impl ProvisionedLlama {
     /// The completion tool inside the prefix.
     #[must_use]
@@ -207,6 +229,17 @@ impl ProvisionedLlama {
             .arg(prompt)
             .arg("-n")
             .arg(limit.to_string())
+            // **A window sized to this request, not to the model.** Nothing
+            // was passed here, and llama.cpp reads that as *the model's whole
+            // trained context*: 131,072 tokens on a 14.5 GB model held
+            // **81.3 GB resident** to generate a few hundred tokens, on every
+            // request, because the tool is started once per generation. It is
+            // F133's defect exactly — a hidden value that was not the stated
+            // condition — in the tool beside the server where it was fixed,
+            // and it went unseen because nothing measured what a request
+            // costs (F146).
+            .arg("--ctx-size")
+            .arg(window_for(prompt, limit).to_string())
             .arg("--temp")
             .arg("0")
             .arg("--seed")

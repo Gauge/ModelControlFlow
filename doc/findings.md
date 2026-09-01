@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 146 | [F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)](#146-f146-the-completion-tool-was-never-given-a-window-so-every-generation-opened-the-models-whole-trained-context-813-gb-resident-to-produce-a-few-hundred-tokens-f133-a6-a12-3-15) |
 | 145 | [F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)](#145-f145-mcf-probe-held-the-whole-model-in-the-console-beside-the-engine-already-holding-it-247-gb-for-a-145-gb-file-and-the-memory-nothing-could-account-for-b-372-a22-f140) |
 | 144 | [F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)](#144-f144-mcf-planned-against-the-machine-while-running-inside-a-limit-and-its-fixed-overhead-constant-is-thirteen-times-too-small-a21-a19-b-372) |
 | 143 | [F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)](#143-f143-two-surfaces-counted-one-store-and-got-ten-and-eleven-the-daemon-sent-the-distinction-and-the-console-dropped-it-b-422-b-072) |
@@ -9396,6 +9397,53 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 146 · F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)
+
+**F145 ended with something still unexplained**, and this is it. Runs kept
+dying at their memory limit within seconds while `llama-server`, measured on
+its own, sat comfortably inside it. Tracing every process in the group twice a
+second found the answer in one line: the process was not `llama-server`.
+
+    cur=68.1G anon=67.9G llama-completio:81.3G
+
+**`llama-completion` at 81.3 GB resident**, for a 14.5 GB model, to generate a
+few hundred tokens. MCF starts it once per generation and never passed it a
+window at all, and llama.cpp reads an absent `--ctx-size` as *the model's whole
+trained context* — 131,072 tokens, whose cache is most of that figure.
+
+**This is F133, in the argument list beside where F133 was fixed.** The comment
+in `served.rs` describes the identical defect for the server, at length: *this
+was the literal `0`, which llama.cpp reads as the model's whole trained
+context … the engine then allocated a cache for a window nobody asked for:
+42 GiB resident for a 17.6 GiB model.* The server was given the window MCF
+resolved. The completion tool, twenty lines away in `adapters.rs`, was given
+nothing, and stayed that way.
+
+**Why it survived being fixed next door.** Nothing measures what a request
+costs. The window is invisible in the account, the tool is spawned and reaped
+per request so no `mcf status` shows it, and the answers were correct
+throughout — the model produced good text while holding eighty gigabytes to do
+it. It only became visible when a memory limit turned an invisible cost into a
+dead process, and even then it hid behind two other real defects (F144, F145)
+that had to be fixed first before this one was the last one left.
+
+**Sized to the request now**, in bytes rather than tokens: sizing it properly
+would mean tokenizing the prompt, which needs the vocabulary, which needs the
+model this command exists to hand to a subprocess. A token is several bytes so
+counting bytes over-counts, which is the safe direction, and it is still four
+orders of magnitude below what was being opened.
+
+Measured on the same eval, same model, same cap: the group's charged memory
+falls from **68.1 GB to 8.5 GB**, and the tool's resident size from 81.3 GB to
+22.0 GB.
+
+**The sequence is the lesson.** Three findings deep, each one real, each one
+fixed, and the symptom unchanged until the last. The first two were found by
+reasoning about where memory goes; this one was found by watching, once a
+second, which process actually had it. When an explanation has been wrong
+twice, the next step is not a third explanation.
+
 
 ## 145 · F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)
 
