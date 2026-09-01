@@ -152,8 +152,17 @@ fn a_model_that_does_not_fit_says_by_how_much() {
     )];
     let refusal = resolve(&engines, 20_000_000_000, Some(114_688), 40_960).expect_err("too big");
     let said = refusal.says();
-    assert!(said.contains("20."), "{said}");
+    // **What it needs, which is more than what it weighs.** Twenty gigabytes
+    // of weights, the engine's overhead beside them, and the smallest window
+    // worth opening: about thirty. The figure a reader needs is what running
+    // it costs, and quoting the weights alone was the shape of the error that
+    // had MCF proposing windows the engine could not hold (F144).
+    assert!(said.contains("30.0"), "{said}");
     assert!(said.contains("2.00 GB"), "{said}");
+    assert!(
+        said.contains("85%"),
+        "the refusal names two numbers that do not entail it without the fraction: {said}"
+    );
 }
 
 /// Every refusal is written for a person: no rule identifiers, no clause
