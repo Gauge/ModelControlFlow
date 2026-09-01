@@ -231,6 +231,55 @@ fn spaced_width(paint: &mut Painter, text: &str) -> f32 {
 ///
 /// Returns the bottom of the card, so what follows does not need to know how
 /// tall it was.
+/// What a context window of this size costs, in bytes of cache and with the
+/// weights beside it.
+///
+/// **The window is the part somebody chooses, and it was the part nobody
+/// could see.** A model's weights are what they are; the context is a setting,
+/// and on a large machine MCF's recommendation is the whole trained window —
+/// which reserved three times the model's own size on one held here. A setting
+/// whose cost only appears in `free -h` after the fact is a decision made
+/// blind (§3.15).
+#[must_use]
+pub fn reserve_of(held: &Model, context: u64) -> Option<(u64, Option<u64>)> {
+    let cache = held.cache_per_token?.saturating_mul(context);
+    Some((cache, held.bytes.map(|held| held.saturating_add(cache))))
+}
+
+/// Bytes as a figure a person reads.
+fn gigabytes(bytes: u64) -> String {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a memory figure shown to one decimal place"
+    )]
+    let held = bytes as f64 / 1e9;
+    format!("{held:.1} GB")
+}
+
+/// What one context window reserves, as a line.
+#[must_use]
+pub fn reserve_line(held: &Model, context: u64) -> Option<String> {
+    let (cache, total) = reserve_of(held, context)?;
+    Some(match total {
+        Some(total) => format!(
+            "{} of cache reserved — {} with the weights",
+            gigabytes(cache),
+            gigabytes(total)
+        ),
+        None => format!("{} of cache reserved", gigabytes(cache)),
+    })
+}
+
+/// What the window now being held is costing, where that can be said.
+///
+/// Asked before the card is laid out as well as inside it, because a card
+/// sized for four lines and drawn with five puts the fifth through its own
+/// border.
+fn held_window_cost(desk: &Desk) -> Option<String> {
+    let context = desk.hosted.as_ref()?.context?;
+    reserve_line(desk.hosted_model()?, context)
+}
+
 fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     let ink = paint.ink;
     ui::card(paint, at, desk.hosted.is_some());
@@ -318,6 +367,20 @@ fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
         size::SMALL,
         ink.faint,
     );
+    // **And what that window is costing right now.** The context is the one
+    // condition on this card somebody chose, and until this line it was the
+    // one whose price was invisible: a model of 17.5 GB held 38.6 GB, and the
+    // difference was the window (§3.15).
+    if let Some(said) = held_window_cost(desk) {
+        paint.say_at(
+            at.x + 14.0,
+            at.y + 93.0,
+            &said,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+    }
     at.bottom()
 }
 
@@ -370,7 +433,13 @@ fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
 
     // Section one: what is being served, and what it costs to use.
     spaced(paint, area.x, area.y, "hosted", ink.faint);
-    let mut y = hosted_card(paint, desk, Box::new(area.x, area.y + 20.0, wide, 96.0));
+    // Tall enough for what it will actually say.
+    let tall = if held_window_cost(desk).is_some() {
+        116.0
+    } else {
+        96.0
+    };
+    let mut y = hosted_card(paint, desk, Box::new(area.x, area.y + 20.0, wide, tall));
     cost_tiles(paint, Box::new(area.x, y + 12.0, wide, 58.0));
 
     // Section two: the machine every one of those figures would be taken on.
@@ -741,6 +810,14 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
             act = Some(Act::Cycle(at));
         }
         y += 21.0;
+        // **What this window will reserve, under the window itself.** The
+        // context is chosen here and paid for in memory later, and the two
+        // were on different screens — one of them `free -h`, after the fact.
+        // It is recomputed from the value shown rather than fetched, so it
+        // moves when the setting moves (§3.15, B-423).
+        if at == 0 {
+            y = what_the_window_costs(paint, desk, (area.x + wide, y), settings.context, recommended.context);
+        }
         // What MCF advised, under anything moved off it — a run under a
         // changed setting is not a run under the recommended one, and both
         // are facts (A6, §3.15).
@@ -770,6 +847,46 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
         }
     }
     act
+}
+
+/// The chosen window's price, written under the window itself.
+///
+/// Returns where the next row starts, which is unmoved when there is no figure
+/// to give: a model whose header does not say what a token of cache costs is
+/// one MCF cannot price, and a blank where a number belongs is better than a
+/// zero that reads like one (A7).
+fn what_the_window_costs(
+    paint: &mut Painter,
+    desk: &Desk,
+    at: (f32, f32),
+    context: u64,
+    largest: u64,
+) -> f32 {
+    let ink = paint.ink;
+    let (right, mut y) = at;
+    let Some(said) = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .and_then(|held| reserve_line(held, context))
+    else {
+        return y;
+    };
+    let ceiling = context >= largest;
+    let colour = if ceiling { ink.warn } else { ink.faint };
+    paint.say_right(right, y, &said, Weight::Regular, size::SMALL, colour);
+    y += 17.0;
+    if ceiling {
+        paint.say_right(
+            right,
+            y,
+            "the largest window this machine can hold",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 17.0;
+    }
+    y
 }
 
 /// What can be done with the model on the left, and where it is reachable

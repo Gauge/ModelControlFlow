@@ -1224,6 +1224,20 @@ impl Desk {
         self.hosted = None;
     }
 
+    /// The model behind whatever is being held, where this window is also
+    /// listing it.
+    ///
+    /// `Hosted` carries the path the daemon holds it under; everything else
+    /// worth saying about it — what a token of context costs, how large the
+    /// weights are — is already on the list entry, and asking the daemon again
+    /// for figures this window has would be a second answer to a settled
+    /// question.
+    #[must_use]
+    pub fn hosted_model(&self) -> Option<&Model> {
+        let hosting = self.hosted.as_ref()?;
+        self.models.iter().find(|held| held.path == hosting.model)
+    }
+
     /// Moves one setting on to its next value.
     ///
     /// Cycling rather than typing, because every one of these has a small set

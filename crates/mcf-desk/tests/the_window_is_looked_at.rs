@@ -806,3 +806,105 @@ fn the_analysis_can_be_taken_out_of_the_window() {
         "a control offering to copy nothing is a control that lies"
     );
 }
+
+/// The arithmetic behind the figure, on its own.
+///
+/// A window costs what a token of cache costs multiplied by the window, and
+/// the weights sit beside it because what the operator is deciding is how much
+/// of the machine this model will take altogether (B-423).
+#[test]
+fn a_window_costs_the_cache_it_reserves() {
+    let held = &four_models().models[0];
+    let (cache, total) = mcf_desk::view::reserve_of(held, 32_768).expect("this model is priced");
+    assert_eq!(cache, 114_688 * 32_768, "a window is cache per token by tokens");
+    assert_eq!(
+        total,
+        Some(5_020_000_000 + 114_688 * 32_768),
+        "what it comes to is the window and the weights"
+    );
+    // Doubling the window doubles the cache: the point of showing it is that
+    // it is the term that moves.
+    let (twice, _) = mcf_desk::view::reserve_of(held, 65_536).expect("still priced");
+    assert_eq!(twice, cache * 2);
+}
+
+/// A model whose header does not price a token is not priced.
+///
+/// A7: a blank where a number belongs, rather than a zero that reads as a
+/// measurement of nothing.
+#[test]
+fn a_model_that_cannot_be_priced_is_not_given_a_price() {
+    let mut held = four_models().models[0].clone();
+    held.cache_per_token = None;
+    assert!(mcf_desk::view::reserve_of(&held, 32_768).is_none());
+    assert!(mcf_desk::view::reserve_line(&held, 32_768).is_none());
+}
+
+/// The price is on the screen where the window is chosen, before it is paid.
+#[test]
+fn the_price_of_a_window_is_shown_where_it_is_chosen() {
+    // The settings table only draws once the daemon has said what it would
+    // run this model under, which is also when a window can be chosen.
+    let settings = mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp-cuda",
+        "a-device",
+        true,
+        32_768,
+        Some(8),
+        true,
+    );
+    let mut priced = four_models();
+    priced.chosen = Some(0);
+    priced.page = Page::Models;
+    priced.settings = Some(settings.clone());
+    priced.recommended = Some(settings.clone());
+    let mut unpriced = four_models();
+    unpriced.chosen = Some(0);
+    unpriced.page = Page::Models;
+    unpriced.settings = Some(settings.clone());
+    unpriced.recommended = Some(settings);
+    unpriced.models[0].cache_per_token = None;
+
+    let with = drawn(&priced, DAY, "window-priced");
+    let without = drawn(&unpriced, DAY, "window-unpriced");
+    let ground = DAY.ground;
+    assert!(
+        with.inked(ground) > without.inked(ground),
+        "the cost of the chosen window is not on the screen that chooses it: {} marks against \
+         {} (§3.15, B-423)",
+        with.inked(ground),
+        without.inked(ground)
+    );
+}
+
+/// And on the monitor, for the window actually being held.
+#[test]
+fn the_monitor_says_what_the_held_window_costs() {
+    let mut desk = four_models();
+    desk.page = Page::Monitor;
+    desk.hosted = Some(mcf_desk::Hosted {
+        model: desk.models[0].path.clone(),
+        address: "http://127.0.0.1:17817".to_owned(),
+        since: "a moment ago".to_owned(),
+        context: Some(32_768),
+    });
+    // The same window, held under a model this list does not carry: the
+    // address and the context still show, the price cannot.
+    let mut unknown = four_models();
+    unknown.page = Page::Monitor;
+    unknown.hosted = Some(mcf_desk::Hosted {
+        model: "/models/one-this-window-is-not-listing.gguf".to_owned(),
+        address: "http://127.0.0.1:17817".to_owned(),
+        since: "a moment ago".to_owned(),
+        context: Some(32_768),
+    });
+
+    let ground = DAY.ground;
+    let priced = drawn(&desk, DAY, "monitor-priced").inked(ground);
+    let bare = drawn(&unknown, DAY, "monitor-unpriced").inked(ground);
+    assert!(
+        priced > bare,
+        "the monitor does not say what the window it is holding costs: {priced} marks against \
+         {bare} (§3.15)"
+    );
+}
