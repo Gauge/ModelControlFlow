@@ -920,8 +920,28 @@ fn a_report() -> mcf_desk::Desk {
             ("without", Value::text("a different answer".to_owned())),
         ])
     };
+    let ranked = |text: &str, rank: Option<i64>| {
+        Value::map([
+            ("text", Value::text(text.to_owned())),
+            ("rank", rank.map_or(Value::Null, Value::Integer)),
+            ("engine_said", Value::Null),
+        ])
+    };
     let found = Value::map([
-        ("floor_parts_per_million", Value::Integer(0)),
+        ("floor_parts_per_million", Value::Integer(879_000)),
+        ("ranked_depth", Value::Integer(60)),
+        (
+            "expected",
+            Value::List(vec![
+                ranked(" class", None),
+                ranked(" each", None),
+                ranked(" handles", Some(29)),
+                ranked(" output", Some(19)),
+                ranked("#.", Some(16)),
+                ranked(" the", Some(1)),
+                ranked(" function", Some(1)),
+            ]),
+        ),
         ("distinct_answers", Value::Integer(1)),
         ("seeds_asked", Value::Integer(3)),
         ("clauses_over_the_cap", Value::Integer(2)),

@@ -849,6 +849,169 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
     act
 }
 
+/// How many answers several seeds gave, and what that can mean here.
+fn how_many_answers(paint: &mut Painter, at: (f32, f32), found: &Value) {
+    let ink = paint.ink;
+    let area = Box::new(at.0, at.1, 0.0, 0.0);
+    let distinct = found
+        .get("distinct_answers")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let seeds = found
+        .get("seeds_asked")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    paint.say_at(
+        area.x,
+        area.y,
+        &{
+            let asked = count_of(usize::try_from(seeds).unwrap_or(0), "seed");
+            if distinct <= 1 {
+                // **Not "this prompt settles it".** Every generation is asked
+                // at temperature 0, which takes the likeliest token every
+                // time, so the seed changes nothing and this line said the
+                // same for every prompt on every model. It was reporting the
+                // sampler (F147).
+                format!("{asked} gave one answer — under temperature 0 they could not differ")
+            } else {
+                format!("{asked} gave {distinct} answers, which temperature 0 should not do")
+            }
+        },
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+}
+
+/// Which words the model did not expect, in the space beside the bars.
+///
+/// **A second reading of the prompt that does not compare two answers.** The
+/// bars measure what changed when a sentence was removed, and removing
+/// anything shifts everything after it. This asks where each token ranked
+/// against what the model would have written there itself: first means the
+/// writer supplied nothing, outside the list means the prompt said something
+/// the model did not expect. Drift does not touch it, because nothing is
+/// compared to anything (§3.8).
+fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
+    let ink = paint.ink;
+    let ranked = found.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+    if ranked.is_empty() {
+        // Why it is missing, where it is missing: an empty column and one MCF
+        // could not fill look the same (A7).
+        if let Some(why) = found.get("expected_refused").and_then(Value::as_text) {
+            spaced(paint, area.x, area.y, "not expected", ink.faint);
+            for line in paint
+                .wrap(why, Weight::Regular, size::SMALL, area.w)
+                .iter()
+                .take(3)
+            {
+                paint.say_at(area.x, area.y + 20.0, line, Weight::Regular, size::SMALL, ink.faint);
+            }
+        }
+        return;
+    }
+    let depth = found
+        .get("ranked_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let mut surprising: Vec<(i64, String)> = Vec::new();
+    let mut first_choice = 0_usize;
+    for held in ranked {
+        let said = held
+            .get("text")
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned();
+        match held.get("rank").and_then(Value::as_integer) {
+            None => surprising.push((i64::MAX, said)),
+            Some(1) => first_choice = first_choice.saturating_add(1),
+            Some(rank) => surprising.push((rank, said)),
+        }
+    }
+    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    spaced(paint, area.x, area.y, "words it did not expect", ink.faint);
+    let mut y = area.y + 22.0;
+    for (rank, said) in surprising.iter().take(8) {
+        if y > area.bottom() - 34.0 {
+            break;
+        }
+        let where_it_sat = if *rank == i64::MAX {
+            format!("past {depth}")
+        } else {
+            format!("#{rank}")
+        };
+        paint.say_at(area.x, y, &where_it_sat, Weight::Bold, size::SMALL, ink.warn);
+        let shown = paint.elide(said.trim(), Weight::Regular, size::SMALL, area.w - 56.0);
+        paint.say_at(area.x + 52.0, y, &shown, Weight::Regular, size::SMALL, ink.ink);
+        y += 17.0;
+    }
+    for line in paint
+        .wrap(
+            &format!(
+                "{first_choice} of {} were its own first choice — a word it would have written \
+                 anyway carries nothing from the writer",
+                ranked.len()
+            ),
+            Weight::Regular,
+            size::SMALL,
+            area.w,
+        )
+        .iter()
+        .take(3)
+    {
+        paint.say_at(area.x, y + 8.0, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 15.0;
+    }
+}
+
+/// Where the floor swamps the column, that is the finding.
+///
+/// **A run that separated nothing and one that worked drew the same screen.**
+/// A floor of 87.9% means removing a sentence carrying no instruction moved
+/// almost the whole answer, so no bar below it means anything — and the bars
+/// were drawn first, in full colour, with the number that invalidates them in
+/// grey underneath. A reader reads the bars (§3.15, A7, F147).
+fn a_run_that_separated_nothing(paint: &mut Painter, at: (f32, f32), found: &Value) -> f32 {
+    let ink = paint.ink;
+    let floor = found
+        .get("floor_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    if floor < 500_000 {
+        return at.1;
+    }
+    paint.say_at(
+        at.0,
+        at.1,
+        "This run cannot separate your sentences.",
+        Weight::Bold,
+        size::BODY,
+        ink.bad,
+    );
+    paint.say_at(
+        at.0,
+        at.1 + 19.0,
+        &format!(
+            "removing a sentence carrying no instruction moved {} of the answer — a bar near \
+             that has told you nothing",
+            as_percent(floor)
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.warn,
+    );
+    paint.say_at(
+        at.0,
+        at.1 + 35.0,
+        "usually the answer is long and open-ended: try one whose answer is short, or ask for \
+         one part at a time",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    at.1 + 58.0
+}
+
 /// The chosen window's price, written under the window itself.
 ///
 /// Returns where the next row starts, which is unmoved when there is no figure
@@ -1976,6 +2139,7 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     let Some(found) = job.conclusion().or_else(|| job.latest()) else {
         return act;
     };
+    at = a_run_that_separated_nothing(paint, (area.x, at), found);
     let (after, pressed) = steering(
         paint,
         desk,
@@ -1983,33 +2147,21 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         Box::new(area.x, at, area.w, area.bottom() - at),
         found,
     );
+    // Beside the bars rather than under them: the screen is wider than the
+    // column and this window does not scroll.
+    let column = 820.0_f32.min(area.w - 260.0).max(0.0);
+    if area.w - column > 200.0 {
+        not_expected(
+            paint,
+            Box::new(area.x + column + 20.0, at, area.w - column - 30.0, area.bottom() - at),
+            found,
+        );
+    }
     at = after;
     act = pressed.or(act);
     act = copy_out(paint, desk, mouse, Box::new(area.x, at + 6.0, area.w, 30.0)).or(act);
     at += 40.0;
-    let distinct = found
-        .get("distinct_answers")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let seeds = found
-        .get("seeds_asked")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    paint.say_at(
-        area.x,
-        at + 12.0,
-        &{
-            let asked = count_of(usize::try_from(seeds).unwrap_or(0), "seed");
-            if distinct <= 1 {
-                format!("{asked} gave one answer: this prompt settles it on this model")
-            } else {
-                format!("{asked} gave {distinct} answers: this prompt does not settle it")
-            }
-        },
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
+    how_many_answers(paint, (area.x, at + 12.0), found);
     the_answer(
         paint,
         desk,
