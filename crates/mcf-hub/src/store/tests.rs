@@ -477,3 +477,94 @@ fn a_removal_takes_the_provenance_with_the_artifact() {
     assert!(sidecar.exists(), "the provenance did not come back");
     assert!(provenance_of(&model).is_ok());
 }
+
+/// The parts of a model are the model, not four models.
+///
+/// F: a multi-part GGUF was held as one entry per file. The store offered each
+/// part to be hosted, `mcf explain` could not size one, and the check that a
+/// header describes its file refused every first part — correctly, because that
+/// header describes the whole set and the part is one file of it. Eight of the
+/// sixteen files on the machine this was found on were parts of three models,
+/// and they were the three largest (B-422).
+#[test]
+fn the_parts_of_a_model_are_gathered_into_the_model() {
+    // The pattern the reference implementation itself looks for.
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model-00001-of-00004.gguf")),
+        Some(("a-model".to_owned(), 1))
+    );
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model-00003-of-00004.gguf")),
+        Some(("a-model".to_owned(), 3))
+    );
+
+    // A whole model is not a part, however it is named.
+    assert_eq!(super::part_of_a_set(std::path::Path::new("/m/a-model.gguf")), None);
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model-Q4_K_M.gguf")),
+        None
+    );
+    // Numbering starts at one; a name saying otherwise is not this pattern.
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model-00000-of-00004.gguf")),
+        None
+    );
+    // "of" that is not the separator, and letters where digits belong.
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/best-of-breed.gguf")),
+        None
+    );
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model-0000x-of-00004.gguf")),
+        None
+    );
+}
+
+/// A set is one entry, carrying the whole set's length.
+#[test]
+fn a_set_is_one_entry_of_the_whole_length() {
+    let part = |name: &str, bytes: u64| super::Held {
+        path: std::path::PathBuf::from(format!("/m/{name}")),
+        bytes,
+        parts: 1,
+        provenance: Err(None),
+    };
+    let gathered = super::gathered(vec![
+        part("a-model-00001-of-00002.gguf", 40),
+        part("a-model-00002-of-00002.gguf", 30),
+        part("whole.gguf", 7),
+    ]);
+    assert_eq!(gathered.len(), 2, "two models, not three files");
+
+    let set = gathered
+        .iter()
+        .find(|held| held.path.ends_with("a-model-00001-of-00002.gguf"))
+        .expect("the set is named by its first part, which is what an engine is pointed at");
+    assert_eq!(set.bytes, 70, "the set's length, not the first part's");
+    assert_eq!(set.parts, 2);
+
+    let whole = gathered
+        .iter()
+        .find(|held| held.path.ends_with("whole.gguf"))
+        .expect("a model in one file is untouched");
+    assert_eq!(whole.bytes, 7);
+    assert_eq!(whole.parts, 1);
+}
+
+/// A set with no first part is not a model MCF can name.
+///
+/// Inventing one from the parts that did arrive would report an artifact
+/// nobody has (A7).
+#[test]
+fn a_set_missing_its_first_part_is_not_offered() {
+    let gathered = super::gathered(vec![super::Held {
+        path: std::path::PathBuf::from("/m/a-model-00002-of-00002.gguf"),
+        bytes: 30,
+        parts: 1,
+        provenance: Err(None),
+    }]);
+    assert!(
+        gathered.is_empty(),
+        "there is no first part to point an engine at, so there is no model to offer"
+    );
+}

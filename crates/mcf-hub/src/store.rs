@@ -54,9 +54,21 @@ const WHERE: Subsystem = Subsystem::new("mcf-hub::store");
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Held {
     /// Where the artifact is.
+    ///
+    /// For a model published in parts, the first of them — which is what an
+    /// engine is pointed at, and what the others are found from.
     pub path: PathBuf,
-    /// How many bytes it is.
+    /// How many bytes it is, or how many the whole set is.
+    ///
+    /// **The set, for a model published in parts.** One part's length is not
+    /// the model's: the first part carries the header for all of them, so its
+    /// declared tensor bytes describe every file and its own length describes
+    /// one. Reporting the part made every sharded model fail the check that a
+    /// header describes its file, and made a 70 GiB model look like a 50 GiB
+    /// one (B-422).
     pub bytes: u64,
+    /// How many files this model is published in. One, for most.
+    pub parts: u32,
     /// Where it came from, if the sidecar beside it can be read.
     ///
     /// The failure is kept rather than flattened to `None`: *there is no
@@ -197,7 +209,87 @@ pub fn held(root: &Path) -> Result<Vec<Held>> {
     let mut found = Vec::new();
     walk(root, &mut found)?;
     found.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(found)
+    Ok(gathered(found))
+}
+
+/// What a file's name says about the set it belongs to.
+///
+/// A model too large for one file is published as
+/// `<name>-00001-of-00004.gguf`, and the reference implementation finds the
+/// other parts from exactly this pattern — `llama_split_prefix` reads the
+/// name, not the metadata, when it goes looking. So matching the name here is
+/// matching what the engine will do, rather than guessing at a convention.
+///
+/// Returns the shared prefix and which part this is, counting from one.
+#[must_use]
+pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
+    let stem = path.file_stem()?.to_str()?;
+    let (before, after) = stem.rsplit_once("-of-")?;
+    if !after.chars().all(|c| c.is_ascii_digit()) || after.is_empty() {
+        return None;
+    }
+    let (prefix, number) = before.rsplit_once('-')?;
+    if !number.chars().all(|c| c.is_ascii_digit()) || number.is_empty() {
+        return None;
+    }
+    let at: u32 = number.parse().ok()?;
+    // Part zero is not a part: the numbering starts at one, and a name that
+    // says otherwise is not the pattern this recognises.
+    (at > 0).then(|| (prefix.to_owned(), at))
+}
+
+/// Gathers the parts of a model into the model.
+///
+/// **A part is not a model.** Left ungathered, a four-part model was four
+/// entries: the store offered each to be hosted, `mcf explain` could not size
+/// one, and the check that a header describes its file refused every first
+/// part — correctly, since that header describes four files and the part is one
+/// (B-422).
+///
+/// What is kept is the first part, because that is what an engine is pointed
+/// at, carrying the whole set's length. A set missing its first part is left as
+/// it is: MCF has no model to name, and inventing one from the parts that did
+/// arrive would be reporting an artifact nobody has (A7).
+fn gathered(found: Vec<Held>) -> Vec<Held> {
+    let mut out: Vec<Held> = Vec::with_capacity(found.len());
+    // The set each entry belongs to, so the total can be added up before any
+    // of it is emitted.
+    let mut totals: std::collections::BTreeMap<(PathBuf, String), (u64, u32)> =
+        std::collections::BTreeMap::new();
+    for held in &found {
+        if let Some((prefix, _)) = part_of_a_set(&held.path) {
+            let directory = held
+                .path
+                .parent()
+                .map_or_else(PathBuf::new, Path::to_path_buf);
+            let entry = totals.entry((directory, prefix)).or_insert((0, 0));
+            entry.0 = entry.0.saturating_add(held.bytes);
+            entry.1 = entry.1.saturating_add(1);
+        }
+    }
+    for held in found {
+        let Some((prefix, at)) = part_of_a_set(&held.path) else {
+            out.push(held);
+            continue;
+        };
+        if at != 1 {
+            continue;
+        }
+        let directory = held
+            .path
+            .parent()
+            .map_or_else(PathBuf::new, Path::to_path_buf);
+        let (bytes, parts) = totals
+            .get(&(directory, prefix))
+            .copied()
+            .unwrap_or((held.bytes, 1));
+        out.push(Held {
+            bytes,
+            parts,
+            ..held
+        });
+    }
+    out
 }
 
 fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
@@ -228,6 +320,7 @@ fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
         let bytes = std::fs::metadata(&path).map(|metadata| metadata.len());
         into.push(Held {
             bytes: bytes.unwrap_or(0),
+            parts: 1,
             provenance: match provenance_of(&path) {
                 Ok(provenance) => Ok(provenance),
                 Err(failure) if failure.category() == Category::ArtifactMissing => Err(None),
