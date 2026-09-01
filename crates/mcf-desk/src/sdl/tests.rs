@@ -63,3 +63,43 @@ fn a_missing_library_refuses_with_what_to_do() {
     let refused = Window::open("MCF", 100, 100).expect_err("there is no library");
     assert!(refused.contains("provision"), "{refused}");
 }
+
+/// The modifier bits are read from where SDL puts them, and Ctrl is Ctrl.
+///
+/// The keycode alone cannot tell `v` from Ctrl+V, so a paste is a keycode and
+/// a modifier read together. `mod` is a `Uint16` and sits after the keycode —
+/// read with `offsetof` against the provisioned header, like every constant
+/// here, because a modifier read four bytes wide or two bytes late would make
+/// every paste either silent or unconditional.
+#[test]
+fn the_modifiers_are_read_where_sdl_puts_them() {
+    let mut event = [0_u8; EVENT_BYTES];
+    event[..4].copy_from_slice(&EVENT_KEY_DOWN.to_ne_bytes());
+    event[KEY_OFFSET..KEY_OFFSET + 4].copy_from_slice(&u32::from(b'v').to_ne_bytes());
+
+    assert!(
+        !event_has_ctrl(&event),
+        "an unmodified v is a letter, not a paste"
+    );
+
+    // The left Ctrl key alone, then the right one alone: either is Ctrl.
+    for held in [0x0040_u16, 0x0080_u16] {
+        event[MOD_OFFSET..MOD_OFFSET + 2].copy_from_slice(&held.to_ne_bytes());
+        assert!(event_has_ctrl(&event), "{held:#06x} is a Ctrl key");
+    }
+
+    // Shift is not Ctrl, and must not be mistaken for it.
+    event[MOD_OFFSET..MOD_OFFSET + 2].copy_from_slice(&0x0001_u16.to_ne_bytes());
+    assert!(!event_has_ctrl(&event), "shift is not ctrl");
+
+    // The modifier sits past the keycode: writing one leaves the other alone.
+    assert_eq!(event_key(&event), u32::from(b'v'));
+}
+
+/// Reading modifiers past the end of the buffer gives nothing, not a panic.
+#[test]
+fn the_modifier_read_is_bounded() {
+    let empty = [0_u8; EVENT_BYTES];
+    assert_eq!(event_mod(&empty), 0);
+    assert!(!event_has_ctrl(&empty));
+}
