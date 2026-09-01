@@ -180,17 +180,41 @@ fn steering_lines(body: &Value) -> Vec<String> {
              sentence well above the floor may still have steered nothing."
         ));
         if at_floor > 0 {
+            let held = if at_floor == 1 { "sits" } else { "sit" };
             lines.push(format!(
-                "    {at_floor} sentence(s) sit at or under it. That is not a claim they are \
-                 wrong: a sentence restating another moves little and is not thereby mistaken."
+                "    {} {held} at or under it. That is not a claim they are wrong: a sentence \
+                 restating another moves little and is not thereby mistaken.",
+                count_of(i64::try_from(at_floor).unwrap_or(0), "sentence")
             ));
+            // **And which ones.** A reader told that one of six sentences did
+            // nothing has to work out which, from a column they were just told
+            // not to read as relevance. Naming them is a fact about the same
+            // measurement, not a further claim.
+            for quiet in body
+                .get("clauses")
+                .and_then(Value::as_list)
+                .unwrap_or(&[])
+                .iter()
+                .filter(|clause| {
+                    clause
+                        .get("moved_parts_per_million")
+                        .and_then(Value::as_integer)
+                        .unwrap_or(0)
+                        <= floor
+                })
+            {
+                if let Some(text) = quiet.get("text").and_then(Value::as_text) {
+                    lines.push(format!("      · {text}"));
+                }
+            }
         }
     }
     let over = count("clauses_over_the_cap");
     if over > 0 {
         lines.push(format!(
-            "    {over} further sentence(s) were not removed: a report is one generation each, \
-             and this one stopped at the cap"
+            "    {} not removed: a report is one generation each, and this one stopped at \
+             the cap",
+            count_of(over, "further sentence")
         ));
     }
 
@@ -198,6 +222,30 @@ fn steering_lines(body: &Value) -> Vec<String> {
 }
 
 /// The report, as a person reads it.
+/// A count and the thing counted, in English.
+///
+/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`.
+fn count_of(how_many: i64, noun: &str) -> String {
+    if how_many == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{how_many} {noun}s")
+    }
+}
+
+/// What to call the model at the top of the report.
+///
+/// The file's own name where a path was given: a report headed with an
+/// absolute path spends its first line on a directory the reader typed, and
+/// what identifies the model to them is the last part of it. Anything that is
+/// not a path is shown as they wrote it.
+fn header_name(named: &str) -> &str {
+    named
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(named)
+}
+
 fn rendered(body: &Value, named: &str) -> Vec<String> {
     let text = |key: &str| {
         body.get(key)
@@ -208,12 +256,12 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
 
     let mut lines = vec![
-        format!("what this prompt does to {named}"),
+        format!("what this prompt does to {}", header_name(named)),
         String::new(),
         format!(
-            "  {} generation(s): one for the prompt as written, one for each sentence left out, \
-             and one for each extra seed",
-            count("generations")
+            "  {}: one for the prompt as written, one for each sentence left out, and one for \
+             each extra seed",
+            count_of(count("generations"), "generation")
         ),
         String::new(),
         "  HOW MUCH EACH SENTENCE STEERED THE ANSWER".to_owned(),
@@ -228,14 +276,16 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     let asked = count("seeds_asked");
     lines.push(if distinct <= 1 {
         format!(
-            "    {asked} seed(s) gave 1 answer: this prompt settles the answer on this model, \
-             under these conditions"
+            "    {} gave 1 answer: this prompt settles the answer on this model, \
+             under these conditions",
+            count_of(asked, "seed")
         )
     } else {
         format!(
-            "    {asked} seed(s) gave {distinct} different answers: this prompt does not settle \
+            "    {} gave {distinct} different answers: this prompt does not settle \
              the answer on this model. That is not a fault in the prompt — an open question \
-             deserves several answers and a specification does not"
+             deserves several answers and a specification does not",
+            count_of(asked, "seed")
         )
     });
 
