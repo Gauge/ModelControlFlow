@@ -908,3 +908,71 @@ fn the_monitor_says_what_the_held_window_costs() {
          {bare} (§3.15)"
     );
 }
+
+/// A finished prompt report, as a person would be shown one.
+fn a_report() -> mcf_desk::Desk {
+    use mcf_record::json::Value;
+    let clause = |text: &str, moved: i64| {
+        Value::map([
+            ("text", Value::text(text.to_owned())),
+            ("changed", Value::Bool(moved > 0)),
+            ("moved_parts_per_million", Value::Integer(moved)),
+            ("without", Value::text("a different answer".to_owned())),
+        ])
+    };
+    let found = Value::map([
+        ("floor_parts_per_million", Value::Integer(0)),
+        ("distinct_answers", Value::Integer(1)),
+        ("seeds_asked", Value::Integer(3)),
+        ("clauses_over_the_cap", Value::Integer(2)),
+        (
+            "baseline",
+            Value::text(
+                "def slugify(title):\n    return title.lower().replace(\" \", \"-\")".to_owned(),
+            ),
+        ),
+        (
+            "clauses",
+            Value::List(vec![
+                clause("You are a careful assistant.", 0),
+                clause("Write a function called slugify that turns a title into a slug.", 961_000),
+                clause("Lowercase everything.", 125_000),
+                clause("Reply with only the function.", 909_000),
+            ]),
+        ),
+    ]);
+    let mut desk = four_models();
+    desk.page = Page::Prompt;
+    desk.chosen = Some(0);
+    "Write a function. Lowercase everything.".clone_into(&mut desk.typed);
+    desk.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
+        "prompt analysis".to_owned(),
+        vec![found],
+    ));
+    desk
+}
+
+/// Every figure the console prints is on the screen too.
+///
+/// The window drew bars and named no number, no floor and no answer, so a
+/// reader was shown a distinction with nothing to read it by — while the
+/// console had printed all three from the start (A22, §3.15).
+#[test]
+fn a_prompt_report_shows_its_numbers() {
+    let desk = a_report();
+    let with = drawn(&desk, DAY, "prompt-report");
+    let ground = DAY.ground;
+    let mut bare = a_report();
+    // The same report with nothing measured: fewer marks must reach the glass.
+    bare.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
+        "prompt analysis".to_owned(),
+        vec![mcf_record::json::Value::map(Vec::<(String, mcf_record::json::Value)>::new())],
+    ));
+    let empty = drawn(&bare, DAY, "prompt-empty");
+    assert!(
+        with.inked(ground) > empty.inked(ground),
+        "a finished report draws no more than an empty one: {} against {}",
+        with.inked(ground),
+        empty.inked(ground)
+    );
+}

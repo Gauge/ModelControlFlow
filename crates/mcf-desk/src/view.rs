@@ -1946,7 +1946,9 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         act = Some(Act::ReportPrompt);
     }
 
-    let mut at = y + 50.0;
+    what_it_will_cost(paint, desk, (area.x, y + 38.0));
+
+    let mut at = y + 62.0;
     if let Doing::Reporting(job) = &desk.doing
         && !job.finished
     {
@@ -1988,16 +1990,84 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     paint.say_at(
         area.x,
         at + 12.0,
-        &if distinct <= 1 {
-            format!("{seeds} seed(s) gave one answer: this prompt settles it on this model")
-        } else {
-            format!("{seeds} seed(s) gave {distinct} answers: this prompt does not settle it")
+        &{
+            let asked = count_of(usize::try_from(seeds).unwrap_or(0), "seed");
+            if distinct <= 1 {
+                format!("{asked} gave one answer: this prompt settles it on this model")
+            } else {
+                format!("{asked} gave {distinct} answers: this prompt does not settle it")
+            }
         },
         Weight::Regular,
         size::BODY,
         ink.quiet,
     );
+    the_answer(paint, Box::new(area.x, at + 38.0, area.w, area.bottom() - at - 38.0), found);
     act
+}
+
+/// What the model actually said, under the figures about it.
+///
+/// **The report was all measurement and no evidence.** Every number on this
+/// screen is *how much of the answer moved*, and the answer itself was on the
+/// console and not here — so a reader could see that a sentence moved 96% of
+/// something they were never shown. The figures are checkable only beside the
+/// thing they are about (A19, §3.15).
+fn the_answer(paint: &mut Painter, area: Box, found: &Value) {
+    let ink = paint.ink;
+    let Some(said) = found.get("baseline").and_then(Value::as_text) else {
+        return;
+    };
+    if said.trim().is_empty() || area.h < 40.0 {
+        return;
+    }
+    spaced(paint, area.x, area.y, "the answer as written", ink.faint);
+    let room = area.w.min(820.0);
+    // **Wrapped line by line, so the answer keeps its shape.** `wrap` breaks on
+    // width and treats a newline as a space, which turns a function into one
+    // run-on line — and an answer is code as often as it is prose. Each of the
+    // model's own lines is wrapped on its own and they are laid out in order.
+    let mut lines = Vec::new();
+    for written in said.trim().lines() {
+        if written.trim().is_empty() {
+            lines.push(String::new());
+        } else if paint.measure(written, Weight::Regular, size::SMALL) <= room {
+            // **Verbatim where it fits.** `wrap` breaks on words and rejoins
+            // with single spaces, which loses the leading spaces — and an
+            // answer is code as often as it is prose, where the indentation is
+            // part of what the reader is checking. A line that fits needs no
+            // wrapping and keeps exactly what the model wrote.
+            lines.push(written.to_owned());
+        } else {
+            lines.extend(paint.wrap(written, Weight::Regular, size::SMALL, room));
+        }
+    }
+    // As many as fit, and no more: this window does not scroll, and the Copy
+    // button beside it takes the whole report out for a reader who wants it.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "how many 15-point lines fit in the room left"
+    )]
+    let fits = (((area.h - 24.0) / 15.0).floor().max(0.0)) as usize;
+    let mut y = area.y + 22.0;
+    for line in lines.iter().take(fits) {
+        paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.quiet);
+        y += 15.0;
+    }
+    if lines.len() > fits {
+        paint.say_at(
+            area.x,
+            y,
+            &format!(
+                "{} more — Copy takes the whole report",
+                count_of(lines.len().saturating_sub(fits), "line")
+            ),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
 }
 
 /// The whole analysis as text, with a way to take it out of the window.
@@ -2035,6 +2105,72 @@ fn copy_out(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
 }
 
 /// How much each sentence steered the answer, drawn as bars.
+/// What pressing Analyse will cost, before it is pressed.
+///
+/// One generation per sentence plus a seed each, which on a large model on the
+/// processor is minutes. The only place this was said was a line that appeared
+/// once the wait had already started, which is a cost disclosed after it is
+/// incurred (§3.8, §3.15).
+fn what_it_will_cost(paint: &mut Painter, desk: &Desk, at: (f32, f32)) {
+    if desk.doing.busy() {
+        return;
+    }
+    let Some(sentences) = sentences_in(&desk.typed) else {
+        return;
+    };
+    paint.say_at(
+        at.0,
+        at.1,
+        &format!(
+            "{} — {}: one for the prompt, one for each sentence left out, one for each of 3 seeds",
+            count_of(sentences, "sentence"),
+            count_of(sentences + 3, "generation")
+        ),
+        Weight::Regular,
+        size::SMALL,
+        paint.ink.faint,
+    );
+}
+
+/// A count and the thing counted, in English.
+///
+/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`, which
+/// is the sort of thing a reader forgives once and stops trusting the fourth
+/// time.
+fn count_of(how_many: usize, noun: &str) -> String {
+    if how_many == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{how_many} {noun}s")
+    }
+}
+
+/// How many sentences a prompt has, for saying what a run will cost.
+///
+/// The same rule the measurement uses — a sentence ends at `.`, `?` or `!` —
+/// so the forecast and the report cannot disagree about how many there are.
+/// `None` for a prompt with nothing in it to take apart.
+fn sentences_in(prompt: &str) -> Option<usize> {
+    let held = prompt
+        .split_inclusive(['.', '?', '!'])
+        .filter(|part| !part.trim().is_empty())
+        .count();
+    (held > 0).then_some(held)
+}
+
+/// A share of the answer, as a person reads one.
+///
+/// The wire carries parts per million because that is a count and not a
+/// rounding; a reader wants one decimal place.
+fn as_percent(parts_per_million: i64) -> String {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a percentage shown to one decimal place"
+    )]
+    let held = parts_per_million as f64 / 10_000.0;
+    format!("{held:.1}%")
+}
+
 fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 {
     let ink = paint.ink;
     let floor = found
@@ -2065,9 +2201,22 @@ fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 
             if moved > floor { ink.accent } else { ink.line },
             255,
         );
-        let shown = paint.elide(said, Weight::Regular, size::BODY, wide - 200.0);
+        // **The figure beside the bar.** A bar shows an ordering and cannot be
+        // read off: two sentences a few per cent apart draw the same, and a
+        // reader comparing this run against the last one has nothing to
+        // compare. The console has always printed the number (§3.15).
         paint.say_at(
             bar.right() + 12.0,
+            y,
+            &as_percent(moved),
+            Weight::Bold,
+            size::SMALL,
+            if moved > floor { ink.ink } else { ink.quiet },
+        );
+        let text_at = bar.right() + 68.0;
+        let shown = paint.elide(said, Weight::Regular, size::BODY, wide - (text_at - area.x) - 10.0);
+        paint.say_at(
+            text_at,
             y,
             &shown,
             Weight::Regular,
@@ -2077,15 +2226,52 @@ fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 
         y += 24.0;
     }
     if !clauses.is_empty() {
+        // **What the quiet rows mean, and what the number is not.** The bars
+        // were coloured against the floor and the floor was never shown, so a
+        // reader had a distinction drawn for them with nothing to read it by.
         paint.say_at(
             area.x,
             y + 6.0,
-            "an ordering, not relevance: removing anything shifts what follows it",
+            &format!(
+                "the floor is {} — a sentence carrying no instruction, put in and taken out \
+                 again. Rows at or under it are quiet.",
+                as_percent(floor)
+            ),
             Weight::Regular,
             size::SMALL,
             ink.faint,
         );
-        y += 26.0;
+        paint.say_at(
+            area.x,
+            y + 22.0,
+            "An ordering, not relevance: removing anything shifts what follows it.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 42.0;
+        // Sentences past the cap are not measured, and a list that quietly
+        // shortened itself is the one thing a list must not do (A1, A4).
+        let over = found
+            .get("clauses_over_the_cap")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        if over > 0 {
+            paint.say_at(
+                area.x,
+                y,
+                &format!(
+                    "{} not measured: each one costs a generation, and the first {} are what \
+                     MCF ablates",
+                    count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
+                    clauses.len()
+                ),
+                Weight::Regular,
+                size::SMALL,
+                ink.warn,
+            );
+            y += 20.0;
+        }
     }
     y
 }

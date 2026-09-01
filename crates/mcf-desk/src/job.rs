@@ -51,6 +51,27 @@ enum Heard {
 }
 
 impl Job {
+    /// A job that is already over, carrying what was heard.
+    ///
+    /// For a report in hand rather than one being waited on. The screens draw
+    /// from `answers` and `finished`, and a caller that already has the answer
+    /// — a test drawing a finished report, or one read back from the record —
+    /// has nothing to wait on and should not have to invent a daemon to say so.
+    #[must_use]
+    pub fn already(what: String, answers: Vec<Value>) -> Self {
+        // A channel with no sender: `drain` sees it closed and reports the job
+        // over, which is what it is.
+        let (_sent, heard) = std::sync::mpsc::channel();
+        Self {
+            what,
+            heard,
+            answers,
+            refused: None,
+            finished: true,
+            started: Instant::now(),
+        }
+    }
+
     /// Starts a request that answers in many lines.
     ///
     /// Returns immediately; what comes back arrives through [`Job::drain`].
