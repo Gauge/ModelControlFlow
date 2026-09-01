@@ -23,7 +23,6 @@
 
 use std::path::Path;
 
-use mcf_core::digest::sha256;
 use mcf_core::time::{Duration, Monotonic};
 use mcf_hub::store;
 use mcf_standin::gguf::{self, Model, TensorKind, Value};
@@ -53,14 +52,21 @@ pub(crate) fn run(model: &str) -> Response {
         }
     };
 
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            return Response {
-                text: format!("mcf: {} could not be read\n  {error}", path.display()),
-                served: false,
-            };
-        }
+    // **Enough of the file to describe it, not the file.** This read the whole
+    // model into memory to look at its header — 75 GB on one held here, on a
+    // command whose entire purpose is to look, and directly beneath a note in
+    // this module saying an explanation that quietly loaded four gigabytes
+    // would be a surprise. `read_prefix` is the same bounded growth the rest
+    // of the console uses, and `language_cost` below was already calling it
+    // (F140, §3.11, B-372).
+    let Some(bytes) = crate::bench::read_prefix(&path) else {
+        return Response {
+            text: format!(
+                "mcf: {} could not be read as a model\n  MCF grew its read to the whole file                  and still could not find a GGUF directory in it",
+                path.display()
+            ),
+            served: false,
+        };
     };
 
     let file = match gguf::parse(&bytes) {
@@ -81,13 +87,13 @@ pub(crate) fn run(model: &str) -> Response {
     };
 
     Response {
-        text: explain(&path, &bytes, &file),
+        text: explain(&path, &file),
         served: true,
     }
 }
 
 /// The three columns, and then what MCF cannot say.
-fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
+fn explain(path: &Path, file: &Model) -> String {
     let mut lines = vec![format!("{}", path.display()), String::new()];
 
     lines.push("WHAT THE FILE DECLARES ABOUT ITSELF  (A21: declared, not verified)".to_owned());
@@ -97,11 +103,10 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
 
     lines.push(String::new());
     lines.push("WHAT MCF READ FROM THE BYTES  (verified here, now)".to_owned());
-    lines.push(format!(
-        "  {:<38}{} bytes",
-        "size on this disk",
-        bytes.len()
-    ));
+    // The file's own length, asked of the filesystem rather than counted out
+    // of a buffer holding it.
+    let held = std::fs::metadata(path).map_or(0, |about| about.len());
+    lines.push(format!("  {:<38}{held} bytes", "size on this disk"));
     // **And the set, where this file is one of several.** The line above is
     // the file MCF read and hashed, which is honest and, for a split model,
     // four orders of magnitude off what running it costs — while `mcf list`
@@ -110,7 +115,7 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
     // (B-072, B-422, F138).
     if mcf_hub::store::part_of_a_set(path).is_some()
         && let Ok(whole) = mcf_hub::store::bytes_of_the_whole(path)
-        && whole != bytes.len() as u64
+        && whole != held
     {
         lines.push(format!(
             "  {:<38}{whole} bytes — this file is one part of the model, and every part is \
@@ -118,7 +123,12 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
             "the whole set",
         ));
     }
-    lines.push(format!("  {:<38}{}", "sha256", sha256(bytes).hex()));
+    // Streamed from the file in fixed blocks. The claim above this section is
+    // *verified here, now*, and it stays true: what changed is that verifying
+    // a model no longer requires room to hold one (F140).
+    let digest = mcf_core::integrity::digest_of(path)
+        .map_or_else(|_| "unreadable".to_owned(), |held| held.hex());
+    lines.push(format!("  {:<38}{digest}", "sha256"));
     lines.push(format!(
         "  {:<38}{} tensors, {}",
         "weights",

@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 140 | [F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)](#140-f140-mcf-explain-read-the-whole-model-into-memory-to-look-at-its-header-1641-gb-to-describe-a-file-beneath-a-note-in-the-same-module-saying-it-must-not-3-11-a2-b-372) |
 | 139 | [F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)](#139-f139-eight-commands-mcf-answers-were-absent-from-its-own-help-and-six-of-them-denied-existing-when-typed-the-console-sent-operators-to-two-of-them-by-name-a22-3-15-a2-f135) |
 | 138 | [F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)](#138-f138-four-places-sized-a-model-and-one-of-them-counted-the-whole-of-it-a-111-gb-model-planned-against-as-109-mb-and-a-context-recommended-that-would-take-the-machine-down-b-422-b-072-a21-f136) |
 | 137 | [F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)](#137-f137-a-supervisor-that-killed-the-one-process-it-could-name-then-waited-on-the-ones-it-could-not-the-deadline-fired-at-200-ms-and-the-number-beside-it-said-thirty-seconds-a3-a27-a4-b37) |
@@ -9391,6 +9392,58 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 140 · F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)
+
+**The module's own doc says it.** *Nothing here runs the model. Reading a
+file's own description is cheap and safe; loading its weights is neither, and
+an explanation that quietly loaded four gigabytes would be a surprise where
+§3.11 asks for a decision.* Thirty lines below, the command began with
+`std::fs::read(&path)` — the whole file, into memory, to read a header that
+lives in its first few megabytes.
+
+**Measured, on a model held here.** `mcf explain` on a 17.5 GB model peaked at
+16.41 GB resident. On the 62 GB first part of a larger one it would take that
+much again. On this machine, with a model already hosted, describing a model
+could end the process describing it — or something else.
+
+**Three uses, none of which needed the file.** The header, which
+`gguf::parse` reads from a bounded prefix and which this module was *already*
+reading that way in `language_cost` twenty lines further down. The size, which
+the filesystem knows. And the sha256, which `mcf_core::integrity::digest_of`
+already streams in fixed blocks, because `mcf check` needs exactly that.
+Everything required was written, tested and in use elsewhere in the same
+binary.
+
+**16.41 GB to 0.13 GB, with no change in wall time.** The read is the same
+number of bytes off the disk; what changed is that they are no longer all held
+at once. The section still says *verified here, now*, and it is still true:
+what stopped being required is room to hold a model in order to describe one.
+
+### The test that came with it
+
+Fixing F138 made a latent flake reachable, and the two mistakes in fixing
+*that* are the more useful record.
+
+**Sizing a model by the whole set moved the large ones onto the boundary.**
+`the_placement_shown_is_the_placement_resolved` resolves a model twice — once
+through the page, once directly — and asserts the two agree. A model whose
+weights sit near what the machine can hold resolves differently depending on
+how much memory was free at each moment, so under a workspace run, with
+several test binaries competing, the two calls straddled the boundary. The
+test failed on a real machine doing real work rather than on a defect.
+
+**The first fix picked the wrong model.** *Smallest file* chose the 10.9 MB
+first part of the 111.92 GB four-part model: the largest thing held here,
+wearing the smallest file's size. F138 catching the test the same way it
+caught the console, one commit later.
+
+**The second was the real one.** The refusal names how much memory was free,
+so comparing the page's text to a second call's text compared two live
+measurements taken moments apart. The property is that *a reason travels with
+the refusal*, not that the same bytes appear twice. An assertion that embeds a
+measurement in its expected value is testing the machine's idleness.
+
 
 ## 139 · F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)
 

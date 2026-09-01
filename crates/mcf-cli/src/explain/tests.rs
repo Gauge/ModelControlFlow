@@ -201,43 +201,78 @@ fn the_placement_shown_is_the_placement_resolved() {
                 Some("Unknown"),
                 "a placement MCF could not resolve is being reported as one it could"
             );
-            // And the reason travels with it: `Unknown` alone cannot tell a
+            // And a reason travels with it: `Unknown` alone cannot tell a
             // reader whether to provision an engine or find a smaller model
             // (F138).
+            //
+            // That a reason is *there*, not that it is the same text. The page
+            // and this test resolve the model at two different moments, and a
+            // refusal names how much memory was free — a figure that moves
+            // between them on a machine doing anything at all. Comparing the
+            // strings tested the machine's idleness rather than MCF (F140).
             let said = rows
                 .iter()
                 .find(|(row, _, _)| *row == "placement")
                 .map(|(_, _, note)| note.clone())
                 .unwrap_or_default();
             assert!(
-                said.contains(&why),
-                "the placement could not be resolved and the reason was dropped: {why}"
+                said.len() > "MCF could not work out where this would run: ".len(),
+                "the placement could not be resolved and no reason travelled with it; this                  call was refused with: {why}"
             );
         }
     }
 }
 
-/// The first model file this machine is holding, if any.
+/// The smallest model file this machine is holding, if any.
+///
+/// **Smallest rather than first, because the assertion is about agreement and
+/// not about the boundary.** `the_placement_shown_is_the_placement_resolved`
+/// resolves a model twice — once through the page, once directly — and a model
+/// whose weights sit near what this machine can hold resolves differently
+/// depending on how much memory was free at each moment. Under a workspace run
+/// several test binaries compete for it, so the two calls straddled the
+/// boundary and the test failed on a real machine doing real work rather than
+/// on a defect. The smallest model held is nowhere near the boundary, which
+/// makes the comparison about what it is supposed to be about.
 fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
     let root = crate::models::default_root()?;
     let mut looking = vec![root];
+    let mut smallest: Option<(u64, std::path::PathBuf)> = None;
     while let Some(directory) = looking.pop() {
-        let entries = std::fs::read_dir(&directory).ok()?;
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 looking.push(path);
                 continue;
             }
-            if path
+            if !path
                 .extension()
                 .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
             {
-                return Some(path);
+                continue;
+            }
+            // A projector belongs to a model rather than being one, and has
+            // no context length for a placement to be worked out from.
+            if mcf_hub::store::is_a_companion(&path) {
+                continue;
+            }
+            // By the whole set, not the file. Picking the smallest *file*
+            // chose the 10.9 MB first part of a 111.92 GB four-part model —
+            // the largest thing held here, wearing the smallest file's size,
+            // which is F138 catching this test out the same way it caught the
+            // console.
+            let Ok(size) = mcf_hub::store::bytes_of_the_whole(&path) else {
+                continue;
+            };
+            if smallest.as_ref().is_none_or(|(held, _)| size < *held) {
+                smallest = Some((size, path));
             }
         }
     }
-    None
+    smallest.map(|(_, path)| path)
 }
 
 /// A model's header, from a bounded prefix.
