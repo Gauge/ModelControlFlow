@@ -355,10 +355,9 @@ fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     );
 
     // What it is held under. Conditions, beside the thing they condition.
-    let context = hosting.context.map_or_else(
-        || UNKNOWN.to_owned(),
-        |context| format!("{context} tokens"),
-    );
+    let context = hosting
+        .context
+        .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens"));
     paint.say_at(
         at.x + 14.0,
         at.y + 76.0,
@@ -816,7 +815,13 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
         // It is recomputed from the value shown rather than fetched, so it
         // moves when the setting moves (§3.15, B-423).
         if at == 0 {
-            y = what_the_window_costs(paint, desk, (area.x + wide, y), settings.context, recommended.context);
+            y = what_the_window_costs(
+                paint,
+                desk,
+                (area.x + wide, y),
+                settings.context,
+                recommended.context,
+            );
         }
         // What MCF advised, under anything moved off it — a run under a
         // changed setting is not a run under the recommended one, and both
@@ -894,7 +899,10 @@ fn how_many_answers(paint: &mut Painter, at: (f32, f32), found: &Value) {
 /// compared to anything (§3.8).
 fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
     let ink = paint.ink;
-    let ranked = found.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+    let ranked = found
+        .get("expected")
+        .and_then(Value::as_list)
+        .unwrap_or(&[]);
     if ranked.is_empty() {
         // Why it is missing, where it is missing: an empty column and one MCF
         // could not fill look the same (A7).
@@ -905,7 +913,14 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
                 .iter()
                 .take(3)
             {
-                paint.say_at(area.x, area.y + 20.0, line, Weight::Regular, size::SMALL, ink.faint);
+                paint.say_at(
+                    area.x,
+                    area.y + 20.0,
+                    line,
+                    Weight::Regular,
+                    size::SMALL,
+                    ink.faint,
+                );
             }
         }
         return;
@@ -940,9 +955,23 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
         } else {
             format!("#{rank}")
         };
-        paint.say_at(area.x, y, &where_it_sat, Weight::Bold, size::SMALL, ink.warn);
+        paint.say_at(
+            area.x,
+            y,
+            &where_it_sat,
+            Weight::Bold,
+            size::SMALL,
+            ink.warn,
+        );
         let shown = paint.elide(said.trim(), Weight::Regular, size::SMALL, area.w - 56.0);
-        paint.say_at(area.x + 52.0, y, &shown, Weight::Regular, size::SMALL, ink.ink);
+        paint.say_at(
+            area.x + 52.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.ink,
+        );
         y += 17.0;
     }
     for line in paint
@@ -959,7 +988,14 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
         .iter()
         .take(3)
     {
-        paint.say_at(area.x, y + 8.0, line, Weight::Regular, size::SMALL, ink.faint);
+        paint.say_at(
+            area.x,
+            y + 8.0,
+            line,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
         y += 15.0;
     }
 }
@@ -2078,6 +2114,51 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 /// the daemon's — one generation per sentence and one per seed — and what is
 /// here is a field, a button and the reading. A screen that computed its own
 /// answer would be a second answer to a question already served.
+/// The finished report, or what stands in its place: the run in progress, or
+/// the refusal.
+fn a_report_or_why_not<'a>(
+    paint: &mut Painter,
+    desk: &'a Desk,
+    area: Box,
+    mut at: f32,
+) -> Option<&'a Value> {
+    let ink = paint.ink;
+    if let Doing::Reporting(job) = &desk.doing
+        && !job.finished
+    {
+        paint.say_at(
+            area.x,
+            at,
+            &job.what,
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        paint.say_at(
+            area.x,
+            at + 20.0,
+            "one generation for the prompt, one for each sentence left out, one for each seed",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return None;
+    }
+    let job = desk.doing.job()?;
+    if let Some(why) = &job.refused {
+        for line in paint
+            .wrap(why, Weight::Regular, size::BODY, area.w.min(600.0))
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
+            at += 20.0;
+        }
+        return None;
+    }
+    job.conclusion().or_else(|| job.latest())
+}
+
 fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "prompt analysis", ink.faint);
@@ -2097,7 +2178,14 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     let mut act = None;
     let y = area.y + 52.0;
     let field = Box::new(area.x, y, (area.w - 150.0).min(680.0), 32.0);
-    let _clicked = ui::field(paint, mouse, field, &desk.typed, "a prompt to analyse", true);
+    let _clicked = ui::field(
+        paint,
+        mouse,
+        field,
+        &desk.typed,
+        "a prompt to analyse",
+        true,
+    );
     let (asked, _) = ui::fitted(
         paint,
         mouse,
@@ -2112,31 +2200,7 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     what_it_will_cost(paint, desk, (area.x, y + 38.0));
 
     let mut at = y + 62.0;
-    if let Doing::Reporting(job) = &desk.doing
-        && !job.finished
-    {
-        paint.say_at(area.x, at, &job.what, Weight::Regular, size::BODY, ink.quiet);
-        paint.say_at(
-            area.x,
-            at + 20.0,
-            "one generation for the prompt, one for each sentence left out, one for each seed",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        return act;
-    }
-    let Some(job) = desk.doing.job() else {
-        return act;
-    };
-    if let Some(why) = &job.refused {
-        for line in paint.wrap(why, Weight::Regular, size::BODY, area.w.min(600.0)).iter().take(3) {
-            paint.say_at(area.x, at, line, Weight::Regular, size::BODY, ink.bad);
-            at += 20.0;
-        }
-        return act;
-    }
-    let Some(found) = job.conclusion().or_else(|| job.latest()) else {
+    let Some(found) = a_report_or_why_not(paint, desk, area, at) else {
         return act;
     };
     at = a_run_that_separated_nothing(paint, (area.x, at), found);
@@ -2153,7 +2217,12 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     if area.w - column > 200.0 {
         not_expected(
             paint,
-            Box::new(area.x + column + 20.0, at, area.w - column - 30.0, area.bottom() - at),
+            Box::new(
+                area.x + column + 20.0,
+                at,
+                area.w - column - 30.0,
+                area.bottom() - at,
+            ),
             found,
         );
     }
@@ -2261,8 +2330,16 @@ fn copy_out(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Optio
         paint,
         mouse,
         (area.x, area.y),
-        if desk.copied { "Copied" } else { "Copy analysis" },
-        if desk.copied { Kind::Ordinary } else { Kind::Primary },
+        if desk.copied {
+            "Copied"
+        } else {
+            "Copy analysis"
+        },
+        if desk.copied {
+            Kind::Ordinary
+        } else {
+            Kind::Primary
+        },
     );
     if pressed {
         act = Some(Act::CopyAnalysis);
@@ -2367,61 +2444,61 @@ fn what_the_bars_mean(
     let area = Box::new(at.0, at.1, 820.0, 0.0);
     let clauses_len = shown;
     let mut y = at.1;
-        // **What the quiet rows mean, and what the number is not.** The bars
-        // were coloured against the floor and the floor was never shown, so a
-        // reader had a distinction drawn for them with nothing to read it by.
-        paint.say_at(
-            area.x,
-            y + 6.0,
-            &format!(
-                "the floor is {} — a sentence carrying no instruction, put in and taken out \
+    // **What the quiet rows mean, and what the number is not.** The bars
+    // were coloured against the floor and the floor was never shown, so a
+    // reader had a distinction drawn for them with nothing to read it by.
+    paint.say_at(
+        area.x,
+        y + 6.0,
+        &format!(
+            "the floor is {} — a sentence carrying no instruction, put in and taken out \
                  again. Rows at or under it are quiet.",
-                as_percent(floor)
-            ),
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        paint.say_at(
-            area.x,
-            y + 22.0,
-            "An ordering, not relevance: removing anything shifts what follows it.",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        y += 42.0;
-        // Sentences past the cap are not measured, and a list that quietly
-        // shortened itself is the one thing a list must not do (A1, A4).
-        let over = found
-            .get("clauses_over_the_cap")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        if over > 0 {
-            paint.say_at(
-                area.x,
-                y,
-                &format!(
-                    "{} not measured: each one costs a generation, and the first {} are what \
-                     MCF ablates",
-                    count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
-                    clauses_len
-                ),
-                Weight::Regular,
-                size::SMALL,
-                ink.warn,
-            );
-            y += 20.0;
-        }
+            as_percent(floor)
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    paint.say_at(
+        area.x,
+        y + 22.0,
+        "An ordering, not relevance: removing anything shifts what follows it.",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 42.0;
+    // Sentences past the cap are not measured, and a list that quietly
+    // shortened itself is the one thing a list must not do (A1, A4).
+    let over = found
+        .get("clauses_over_the_cap")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    if over > 0 {
         paint.say_at(
             area.x,
             y,
-            "Press a sentence to see what the model wrote without it.",
+            &format!(
+                "{} not measured: each one costs a generation, and the first {} are what \
+                     MCF ablates",
+                count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
+                clauses_len
+            ),
             Weight::Regular,
             size::SMALL,
-            ink.faint,
+            ink.warn,
         );
         y += 20.0;
+    }
+    paint.say_at(
+        area.x,
+        y,
+        "Press a sentence to see what the model wrote without it.",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 20.0;
     y
 }
 
@@ -2446,7 +2523,10 @@ fn steering(
             .get("moved_parts_per_million")
             .and_then(Value::as_integer)
             .unwrap_or(0);
-        let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
+        let said = clause
+            .get("text")
+            .and_then(Value::as_text)
+            .unwrap_or_default();
         // **The whole row is the control.** What a sentence did is answerable
         // from what the model wrote without it, and MCF has that answer for
         // every row; pressing one shows it, and pressing it again puts the
@@ -2487,7 +2567,12 @@ fn steering(
             if moved > floor { ink.ink } else { ink.quiet },
         );
         let text_at = bar.right() + 68.0;
-        let shown = paint.elide(said, Weight::Regular, size::BODY, wide - (text_at - area.x) - 10.0);
+        let shown = paint.elide(
+            said,
+            Weight::Regular,
+            size::BODY,
+            wide - (text_at - area.x) - 10.0,
+        );
         paint.say_at(
             text_at,
             y,
@@ -2571,7 +2656,14 @@ fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
             .iter()
             .take(2)
         {
-            paint.say_at(card.x + 14.0, at, line, Weight::Regular, size::SMALL, ink.quiet);
+            paint.say_at(
+                card.x + 14.0,
+                at,
+                line,
+                Weight::Regular,
+                size::SMALL,
+                ink.quiet,
+            );
             at += 16.0;
         }
 
@@ -2590,7 +2682,13 @@ fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
         } else {
             ("Not provisioned", ink.sunk, ink.quiet)
         };
-        let _wide = ui::tag(paint, (card.right() - 130.0, card.y + 13.0), word, ground, colour);
+        let _wide = ui::tag(
+            paint,
+            (card.right() - 130.0, card.y + 13.0),
+            word,
+            ground,
+            colour,
+        );
 
         paint.say_right(
             card.right() - 14.0,

@@ -149,7 +149,10 @@ impl Report {
     /// (§3.15, A7).
     #[must_use]
     pub fn barely_moved(&self, most: u64) -> Vec<&Clause> {
-        self.clauses.iter().filter(|held| held.moved <= most).collect()
+        self.clauses
+            .iter()
+            .filter(|held| held.moved <= most)
+            .collect()
     }
 
     /// The sentences that moved the answer no more than an inert one would.
@@ -403,7 +406,10 @@ mod splitting_tests {
         // Two sentences, read as three. Recorded because a check that passes
         // on what is fixed and says nothing about what is not is a check that
         // reads as a guarantee (A7).
-        assert_eq!(clauses_of("Use a library, e.g. System.Numerics. Keep it simple.").len(), 3);
+        assert_eq!(
+            clauses_of("Use a library, e.g. System.Numerics. Keep it simple.").len(),
+            3
+        );
     }
 
     /// The whole point: the prompt is the sentences a person wrote.

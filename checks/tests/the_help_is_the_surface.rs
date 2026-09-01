@@ -127,6 +127,17 @@ fn every_command_mcf_has_is_in_the_help() {
         .filter(|held| !listed.contains(*held))
         .filter(|held| !UNLISTED.iter().any(|allowed| allowed.command == **held))
         .collect();
+    // An omission whose reason no longer holds is a command that should be
+    // listed: the reason names where a reader is told about it instead.
+    for allowed in UNLISTED {
+        assert!(
+            allowed.because.contains("listed under") && parsed.contains(allowed.command),
+            "`{}` is declared unlisted for a reason that does not say where it is told about \
+             instead, or it is no longer a command: {}",
+            allowed.command,
+            allowed.because
+        );
+    }
     assert!(
         missing.is_empty(),
         "MCF answers these and `mcf --help` does not mention them, so the only way to reach \
@@ -143,7 +154,10 @@ fn every_command_the_help_lists_is_one_mcf_has() {
     let source = console();
     let parsed = commands_parsed(&source);
     let listed = commands_listed(&source);
-    let phantom: Vec<&String> = listed.iter().filter(|held| !parsed.contains(*held)).collect();
+    let phantom: Vec<&String> = listed
+        .iter()
+        .filter(|held| !parsed.contains(*held))
+        .collect();
     assert!(
         phantom.is_empty(),
         "the help names these and the console does not answer them (§3.15): {phantom:?}"

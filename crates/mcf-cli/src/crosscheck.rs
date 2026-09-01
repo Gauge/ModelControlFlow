@@ -49,7 +49,10 @@ pub(crate) fn run(model: &str) -> Response {
     // F136).
     if let Err(failure) = crate::run::examined(&path) {
         return Response {
-            text: format!("mcf: {} cannot be read with MCF's own engine\n  {failure}", path.display()),
+            text: format!(
+                "mcf: {} cannot be read with MCF's own engine\n  {failure}",
+                path.display()
+            ),
             served: false,
         };
     }

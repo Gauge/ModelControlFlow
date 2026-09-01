@@ -281,7 +281,10 @@ pub(crate) fn status() -> Response {
         Ok(answer) if answer.served => answer.body,
         Ok(answer) => {
             return Response {
-                text: format!("mcf: the daemon would not say\n  {}", answer.body.to_line()),
+                text: format!(
+                    "mcf: the daemon would not say\n  {}",
+                    crate::say::refused_because(&answer.body)
+                ),
                 served: false,
             };
         }
@@ -439,7 +442,7 @@ pub(crate) fn stop(reason: &str) -> Response {
         Ok(answer) => Response {
             text: format!(
                 "mcf: the daemon refused to stop\n  {}",
-                answer.body.to_line()
+                crate::say::refused_because(&answer.body)
             ),
             served: false,
         },

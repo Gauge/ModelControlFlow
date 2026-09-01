@@ -443,7 +443,9 @@ fn same_slot(one: &str, two: &str) -> bool {
 
 /// Where this card's PCI address is, as sysfs spells it.
 fn card_slot(card: &str) -> Option<String> {
-    let at = std::path::Path::new("/sys/class/drm").join(card).join("device");
+    let at = std::path::Path::new("/sys/class/drm")
+        .join(card)
+        .join("device");
     Some(
         std::fs::canonicalize(at)
             .ok()?

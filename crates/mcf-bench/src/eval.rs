@@ -182,8 +182,7 @@ impl Trials {
                      whether it compiles here and not whether it is right"
                         .to_owned()
                 } else {
-                    "this model wrote nothing that could be run, so nothing was checked"
-                        .to_owned()
+                    "this model wrote nothing that could be run, so nothing was checked".to_owned()
                 },
             };
         }

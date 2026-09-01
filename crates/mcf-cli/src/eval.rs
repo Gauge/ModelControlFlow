@@ -633,12 +633,12 @@ pub(crate) fn eval(named: &str) -> Response {
     let mut held: Vec<Trials> = Vec::new();
     for task in TASKS {
         let mut ask = |task: &Task| {
-            let spoken = mcf_serve::probes::spoken(&socket, Path::new(named), task.asks, None, 400, None);
+            let spoken =
+                mcf_serve::probes::spoken(&socket, Path::new(named), task.asks, None, 400, None);
             (!spoken.text.trim().is_empty()).then(|| code_in(&spoken.text))
         };
-        let mut run = |task: &Task, written: &str| {
-            run_in_container(&podman, &scratch, task, written)
-        };
+        let mut run =
+            |task: &Task, written: &str| run_in_container(&podman, &scratch, task, written);
         held.push(measure(task, ATTEMPTS, &mut ask, &mut run));
     }
     let _gone = std::fs::remove_dir_all(&scratch);

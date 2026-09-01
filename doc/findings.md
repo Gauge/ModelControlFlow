@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 148 | [F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)](#148-f148-six-readers-told-the-operator-mcf-did-not-say-why-over-a-body-that-said-exactly-why-a2-b-072) |
 | 147 | [F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)](#147-f147-one-real-prompt-found-five-defects-in-prompt-analysis-and-the-report-presented-a-run-that-separated-nothing-exactly-as-it-presents-one-that-works-3-15-a6-a7-3-4) |
 | 146 | [F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)](#146-f146-the-completion-tool-was-never-given-a-window-so-every-generation-opened-the-models-whole-trained-context-813-gb-resident-to-produce-a-few-hundred-tokens-f133-a6-a12-3-15) |
 | 145 | [F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)](#145-f145-mcf-probe-held-the-whole-model-in-the-console-beside-the-engine-already-holding-it-247-gb-for-a-145-gb-file-and-the-memory-nothing-could-account-for-b-372-a22-f140) |
@@ -9398,6 +9399,38 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 148 · F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)
+
+`mcf settings <model>` on a model named the short way printed *refused — MCF
+did not say why*. The daemon had said why, at length: `config.invalid`, *a
+client sent something MCF cannot read*, wanted *a model this machine is
+holding*, found `artifact.missing … this model could not be measured`. The
+console read a key named `what` from the body; the encoding writes no such
+key, and never has. The fallback text was a false statement about the daemon.
+
+**Six copies.** `settings`, `host`, `measure`, `acquire`, the window's job
+runner and its settings reader had each written the same three lines, and
+`prompt`, `status` and `stop` printed the raw JSON line instead — a body a
+person can decode but should not have to. None of them went through a reader,
+because there was none: [`encode::failure`] had a writer and no counterpart.
+B-072 is the rule that surfaces agree; here they agreed on being wrong.
+
+**What was done.** One decoder, [`decode::failure_said`], that reads the
+detail, the context and the cause chain back out as lines. Every client site
+goes through it, and a check refuses a client source that carries the old
+fallback or reads `what` from an answer body, so the seventh reader cannot
+make the same mistake.
+
+**What it does not fix.** The refusal is still worded from the daemon's side
+— *a client sent something MCF cannot read* is what the generic refusal
+constructor says about every request it turns down, and the useful sentence
+sits one line down under *wanted*. That is a wording question for
+`control::refused` and is left where it is; the defect here was that none of
+it reached the person.
+
+[`encode::failure`]: ../crates/mcf-record/src/encode.rs
+[`decode::failure_said`]: ../crates/mcf-record/src/decode.rs
 
 ## 147 · F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)
 

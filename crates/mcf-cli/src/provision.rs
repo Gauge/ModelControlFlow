@@ -30,11 +30,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
 use mcf_core::component::{COMPONENTS, Component, Packaging};
-use mcf_serve::control::{Answer, Request};
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::time::Timestamp;
 use mcf_record::journal::{Entry as Record, EntryKind, Journal};
 use mcf_record::json::Value;
+use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 
@@ -57,7 +57,6 @@ fn install_packages(packaging: Packaging, packages: &str) -> String {
             ),
         }
     }
-
 }
 
 /// Write down exactly what was installed. A version that is not recorded is

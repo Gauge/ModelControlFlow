@@ -39,6 +39,35 @@ use mcf_core::trial::Draw;
 
 use crate::json::Value;
 
+/// What an encoded failure said, as the lines a person reads.
+///
+/// The daemon refuses with [`encode::failure`]'s shape, and six readers had
+/// each looked for a key that shape never writes and told the operator *MCF
+/// did not say why* — while the body beside it carried the category, the
+/// detail, the wanted-and-found context and the cause (A2). One reader, so
+/// the seventh cannot make the same mistake.
+///
+/// `None` for a body that is not a failure at all; the caller says what it
+/// was doing when it received one.
+///
+/// [`encode::failure`]: crate::encode::failure
+#[must_use]
+pub fn failure_said(value: &Value) -> Option<String> {
+    let detail = value.get("detail")?.as_text()?;
+    let mut lines = vec![detail.to_owned()];
+    if let Some(Value::Map(context)) = value.get("context") {
+        for (key, held) in context {
+            if let Some(text) = held.as_text() {
+                lines.push(format!("  {key}: {text}"));
+            }
+        }
+    }
+    if let Some(cause) = value.get("caused_by").and_then(failure_said) {
+        lines.push(format!("caused by: {cause}"));
+    }
+    Some(lines.join("\n"))
+}
+
 /// Reads a condition floor back.
 ///
 /// Returns `None` when a question the floor asks is missing from the record

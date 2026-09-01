@@ -803,5 +803,8 @@ fn a_companion_file_is_never_offered_as_a_model() {
         })
         .unwrap_or_default();
     assert_eq!(listed.len(), 1, "the projector is not a model");
-    assert_eq!(listed.first().map(|held| held.name.as_str()), Some("a-model"));
+    assert_eq!(
+        listed.first().map(|held| held.name.as_str()),
+        Some("a-model")
+    );
 }

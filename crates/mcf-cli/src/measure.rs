@@ -11,6 +11,7 @@
 //! rather than swallowed: a person who is told a run will take four minutes
 //! can decide not to start it, and one who is told nothing cannot.
 
+use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -71,11 +72,7 @@ pub(crate) fn run(model: &str, deepest: u64, engine: Option<&str>) -> Response {
             served = false;
             lines.push(format!(
                 "mcf: nothing was measured\n  {}",
-                answer
-                    .body
-                    .get("what")
-                    .and_then(Value::as_text)
-                    .unwrap_or("MCF did not say why")
+                refused_because(&answer.body)
             ));
             break;
         }

@@ -55,5 +55,19 @@ pub(crate) fn beneath(failure: &Failure) -> String {
     lines.join("\n")
 }
 
+/// Why the daemon refused, read from the body it refused with.
+///
+/// Five readers each looked for a key the encoding never writes and printed
+/// a false statement of silence over a body that said exactly why (A2).
+#[must_use]
+pub(crate) fn refused_because(body: &mcf_record::json::Value) -> String {
+    mcf_record::decode::failure_said(body).unwrap_or_else(|| {
+        format!(
+            "MCF refused with something that is not a failure: {}",
+            body.to_line()
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests;

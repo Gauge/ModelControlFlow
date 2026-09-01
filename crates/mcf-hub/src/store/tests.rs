@@ -499,7 +499,10 @@ fn the_parts_of_a_model_are_gathered_into_the_model() {
     );
 
     // A whole model is not a part, however it is named.
-    assert_eq!(super::part_of_a_set(std::path::Path::new("/m/a-model.gguf")), None);
+    assert_eq!(
+        super::part_of_a_set(std::path::Path::new("/m/a-model.gguf")),
+        None
+    );
     assert_eq!(
         super::part_of_a_set(std::path::Path::new("/m/a-model-Q4_K_M.gguf")),
         None

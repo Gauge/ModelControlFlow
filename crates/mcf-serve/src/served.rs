@@ -603,7 +603,9 @@ fn ranked_in(answer: &str, wanted: usize) -> (Option<usize>, Option<String>) {
             .and_then(Value::as_integer)
             .and_then(|held| usize::try_from(held).ok());
         if held == Some(wanted) {
-            let said = candidate.get("logprob").map(mcf_record::json::Value::to_line);
+            let said = candidate
+                .get("logprob")
+                .map(mcf_record::json::Value::to_line);
             return (Some(at.saturating_add(1)), said);
         }
     }

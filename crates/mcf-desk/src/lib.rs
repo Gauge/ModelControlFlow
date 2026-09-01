@@ -33,6 +33,8 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 
 use mcf_record::json::Value;
+
+use crate::job::refused_because;
 use mcf_serve::control::{Answer, Request};
 
 /// One thing the operator can do, and the control-plane request it reaches.
@@ -1153,14 +1155,7 @@ impl Desk {
                 self.recommended = recommended;
             }
             Ok(answer) => {
-                self.no_settings = Some(
-                    answer
-                        .body
-                        .get("what")
-                        .and_then(Value::as_text)
-                        .unwrap_or("MCF did not say why")
-                        .to_owned(),
-                );
+                self.no_settings = Some(refused_because(&answer.body));
             }
             Err(why) => self.no_settings = Some(why),
         }
@@ -1171,9 +1166,9 @@ impl Desk {
         // Held rather than replaced: a poll that went unanswered says nothing
         // about what is hosted, and blanking the screen on it would report
         // MCF's own busyness as the model being gone.
-        let read = match ask_within(&self.socket, &Request::Hosted, POLL) {
-            Ok(answer) if answer.served => {
-                answer
+        let read =
+            match ask_within(&self.socket, &Request::Hosted, POLL) {
+                Ok(answer) if answer.served => answer
                     .body
                     .get("hosting")
                     .and_then(Value::as_text)
@@ -1197,16 +1192,15 @@ impl Desk {
                             .and_then(|settings| settings.get("context"))
                             .and_then(Value::as_integer)
                             .and_then(|context| u64::try_from(context).ok()),
-                    })
-            }
-            // Served, and nothing is held: that is an answer, and it clears.
-            Ok(answer) if answer.served => None,
-            // Unanswered. Keep what was there and say the daemon is busy.
-            _ => {
-                self.busy = true;
-                return;
-            }
-        };
+                    }),
+                // Served, and nothing is held: that is an answer, and it clears.
+                Ok(answer) if answer.served => None,
+                // Unanswered. Keep what was there and say the daemon is busy.
+                _ => {
+                    self.busy = true;
+                    return;
+                }
+            };
         self.busy = false;
         self.hosted = read;
     }
@@ -1221,13 +1215,11 @@ impl Desk {
         // would run under is the daemon's to say, and where it will not say,
         // that is the answer and it belongs on the screen.
         let Some(settings) = self.settings.clone() else {
-            self.no_settings = Some(
-                self.no_settings.clone().unwrap_or_else(|| {
-                    "MCF has not said what this model would run under, so there is nothing to \
+            self.no_settings = Some(self.no_settings.clone().unwrap_or_else(|| {
+                "MCF has not said what this model would run under, so there is nothing to \
                      hold it under"
-                        .to_owned()
-                }),
-            );
+                    .to_owned()
+            }));
             return;
         };
         self.doing = Doing::Hosting(job::Job::start(
@@ -1369,7 +1361,10 @@ impl Desk {
                 .get("moved_parts_per_million")
                 .and_then(Value::as_integer)
                 .unwrap_or(0);
-            let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
+            let said = clause
+                .get("text")
+                .and_then(Value::as_text)
+                .unwrap_or_default();
             let _wrote = writeln!(out, "  {:>7}  {said}", share(moved));
         }
         let _wrote = writeln!(
@@ -1411,7 +1406,10 @@ impl Desk {
     fn words_not_expected(&self, found: &Value) -> String {
         use std::fmt::Write as _;
         let _ = self;
-        let ranked = found.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+        let ranked = found
+            .get("expected")
+            .and_then(Value::as_list)
+            .unwrap_or(&[]);
         if ranked.is_empty() {
             return found
                 .get("expected_refused")
@@ -1595,14 +1593,7 @@ impl Desk {
                 self.models = read;
             }
             Ok(answer) => {
-                self.refusal = Some(
-                    answer
-                        .body
-                        .get("what")
-                        .and_then(Value::as_text)
-                        .unwrap_or("MCF did not say why")
-                        .to_owned(),
-                );
+                self.refusal = Some(refused_because(&answer.body));
             }
             // **Unanswered in time is not *not up*.** A daemon loading a
             // large model answers nothing for minutes; reporting that as a
@@ -1871,8 +1862,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         && sdl::event_has_ctrl(&event)
                         && desk.takes_typing() =>
                     {
-                        if let Some(text) = paint.window().and_then(sdl::Window::clipboard_text)
-                        {
+                        if let Some(text) = paint.window().and_then(sdl::Window::clipboard_text) {
                             desk.paste(&text);
                         }
                     }

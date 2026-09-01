@@ -97,9 +97,7 @@ fn spelled_as_a_byte(token: &str) -> bool {
 pub fn unpairable(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<String> {
     candidates(file, vocabulary)
         .into_iter()
-        .filter(|marker| {
-            closing_form(marker).is_none_or(|closing| !vocabulary.has_token(&closing))
-        })
+        .filter(|marker| closing_form(marker).is_none_or(|closing| !vocabulary.has_token(&closing)))
         .collect()
 }
 

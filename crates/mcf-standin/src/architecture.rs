@@ -160,8 +160,14 @@ pub fn pre_tokenizer(named: &str) -> Option<Split> {
 ///
 /// One name per expression rather than all of them: a refusal that printed
 /// thirty-eight names would be a refusal nobody reads to the end.
-pub const PRE_TOKENIZERS: &[&str] =
-    &["gpt-2", "smollm", "llama-bpe", "qwen2", "seed-coder", "gpt-4o"];
+pub const PRE_TOKENIZERS: &[&str] = &[
+    "gpt-2",
+    "smollm",
+    "llama-bpe",
+    "qwen2",
+    "seed-coder",
+    "gpt-4o",
+];
 
 /// A pre-tokenizer name of each shape, for callers that need one and should not
 /// be spelling a family into their own source.

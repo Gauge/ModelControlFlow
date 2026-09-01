@@ -161,9 +161,7 @@ fn prompt_report_value(
         ),
         (
             "ranked_depth",
-            Value::Integer(
-                i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX),
-            ),
+            Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),
         ),
     ])
 }
@@ -1483,7 +1481,9 @@ impl Daemon {
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
         let (ranked, no_ranking) = self.ranked_prompt(named, prompt, picked.clone());
-        let answer = Answer::served(prompt_report_value(&report, asked, tokens, ranked, no_ranking));
+        let answer = Answer::served(prompt_report_value(
+            &report, asked, tokens, ranked, no_ranking,
+        ));
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }
@@ -1642,10 +1642,7 @@ impl Daemon {
     /// `None` where MCF cannot work it out — a header it could not read, no
     /// provisioned engine — and the generation path then falls back to its own
     /// discovery, which is what it did before there was anything to resolve.
-    fn picked_engine(
-        &self,
-        named: &str,
-    ) -> Option<(crate::adapters::ProvisionedLlama, u32, u64)> {
+    fn picked_engine(&self, named: &str) -> Option<(crate::adapters::ProvisionedLlama, u32, u64)> {
         let (recommended, _) = self.recommend(named).ok()?;
         let (engine, _) = self
             .engines
@@ -2473,8 +2470,7 @@ impl Daemon {
                     mcf_core::component::COMPONENTS
                         .iter()
                         .map(|component| {
-                            let short: String =
-                                component.commit.chars().take(12).collect();
+                            let short: String = component.commit.chars().take(12).collect();
                             let prefix = under.join(format!("{}@{short}", component.name));
                             // Complete means the provenance beside it, which
                             // is what the builder writes last — not merely a
@@ -2499,9 +2495,7 @@ impl Daemon {
                                 (
                                     "usable_engine",
                                     Value::Bool(
-                                        engines
-                                            .iter()
-                                            .any(|engine| engine.name == component.name),
+                                        engines.iter().any(|engine| engine.name == component.name),
                                     ),
                                 ),
                             ])
@@ -2529,10 +2523,7 @@ impl Daemon {
                                 Value::map([
                                     ("path", Value::text(held.path.display().to_string())),
                                     ("companion", Value::Bool(held.companion)),
-                                    (
-                                        "parts",
-                                        Value::Integer(i64::from(held.parts)),
-                                    ),
+                                    ("parts", Value::Integer(i64::from(held.parts))),
                                     (
                                         "bytes",
                                         Value::Integer(

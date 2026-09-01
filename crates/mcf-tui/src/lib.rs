@@ -360,16 +360,15 @@ fn draw(console: &Console, into: &mut Screen) {
                         2,
                         row + 1,
                         said,
-                        if *provisioned { Ink::Quiet } else { Ink::Refusal },
+                        if *provisioned {
+                            Ink::Quiet
+                        } else {
+                            Ink::Refusal
+                        },
                     );
                     row += 3;
                 }
-                into.put(
-                    2,
-                    row,
-                    "`mcf provision <component>` builds one",
-                    Ink::Quiet,
-                );
+                into.put(2, row, "`mcf provision <component>` builds one", Ink::Quiet);
             }
         }
         Where::Prompt => prompt_screen(into, from),
@@ -402,24 +401,24 @@ fn draw(console: &Console, into: &mut Screen) {
 /// screen written inside it makes every other one harder to find.
 fn prompt_screen(into: &mut Screen, from: usize) {
     into.put(2, from + 1, "WHAT A PROMPT DOES", Ink::Heading);
-            into.put(
-                2,
-                from + 3,
-                "`mcf prompt <model> --prompt \"...\"` takes one apart, sentence by sentence",
-                Ink::Quiet,
-            );
-            into.put(
-                2,
-                from + 5,
-                "one generation for the prompt, one for each sentence left out, one per seed",
-                Ink::Quiet,
-            );
-            into.put(
-                2,
-                from + 7,
-                "the reading is an ordering, not relevance: removing anything shifts what follows",
-                Ink::Quiet,
-            );
+    into.put(
+        2,
+        from + 3,
+        "`mcf prompt <model> --prompt \"...\"` takes one apart, sentence by sentence",
+        Ink::Quiet,
+    );
+    into.put(
+        2,
+        from + 5,
+        "one generation for the prompt, one for each sentence left out, one per seed",
+        Ink::Quiet,
+    );
+    into.put(
+        2,
+        from + 7,
+        "the reading is an ordering, not relevance: removing anything shifts what follows",
+        Ink::Quiet,
+    );
 }
 
 /// Runs until the operator leaves.

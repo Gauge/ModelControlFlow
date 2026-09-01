@@ -448,7 +448,10 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
         },
         ["settings", model] => Request::Settings { model, at: None },
         ["settings", model, "--context", at] => match at.parse::<u64>() {
-            Ok(at) => Request::Settings { model, at: Some(at) },
+            Ok(at) => Request::Settings {
+                model,
+                at: Some(at),
+            },
             Err(_) => Request::UnexpectedArgument {
                 command: "settings",
                 argument: at,

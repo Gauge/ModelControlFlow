@@ -75,7 +75,10 @@ pub(crate) fn report(named: &str, prompt: &str, as_json: bool) -> Response {
     };
     if !answer.served {
         return Response {
-            text: format!("mcf: {}", answer.body.to_line()),
+            text: format!(
+                "mcf: refused\n  {}",
+                crate::say::refused_because(&answer.body)
+            ),
             served: false,
         };
     }
@@ -318,9 +321,7 @@ fn what_the_model_expected(body: &Value) -> Vec<String> {
     ];
     for (rank, said) in surprising.iter().take(10) {
         if *rank == i64::MAX {
-            lines.push(format!(
-                "    outside its top {depth}   {said:?}"
-            ));
+            lines.push(format!("    outside its top {depth}   {said:?}"));
         } else {
             lines.push(format!("    its number {rank} choice   {said:?}"));
         }
@@ -392,12 +393,6 @@ fn the_answer_and_its_conditions(body: &Value) -> Vec<String> {
 }
 
 fn rendered(body: &Value, named: &str) -> Vec<String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .to_owned()
-    };
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
 
     let floor_ppm = body

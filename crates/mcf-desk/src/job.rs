@@ -134,14 +134,7 @@ impl Job {
                 let posted = if answer.served {
                     send.send(Heard::Answer(answer.body))
                 } else {
-                    send.send(Heard::Refused(
-                        answer
-                            .body
-                            .get("what")
-                            .and_then(Value::as_text)
-                            .unwrap_or("MCF did not say why")
-                            .to_owned(),
-                    ))
+                    send.send(Heard::Refused(refused_because(&answer.body)))
                 };
                 // Nobody is listening any more: the window moved on, or
                 // closed. Stopping is right and saying so is not needed.
@@ -242,4 +235,14 @@ impl Job {
         )]
         Some((arrived as f32 / total as f32).clamp(0.0, 1.0))
     }
+}
+
+/// Why the daemon refused, read from the body it refused with (A2).
+pub(crate) fn refused_because(body: &Value) -> String {
+    mcf_record::decode::failure_said(body).unwrap_or_else(|| {
+        format!(
+            "MCF refused with something that is not a failure: {}",
+            body.to_line()
+        )
+    })
 }

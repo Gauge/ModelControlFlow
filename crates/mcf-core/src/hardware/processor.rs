@@ -155,7 +155,7 @@ pub(super) fn cgroup_headroom() -> Option<u64> {
     let path = own.lines().find_map(|line| line.strip_prefix("0::"))?;
     let mut at = std::path::PathBuf::from("/sys/fs/cgroup");
     let mut least: Option<u64> = None;
-    let mut consider = |at: &std::path::Path, least: &mut Option<u64>| {
+    let consider = |at: &std::path::Path, least: &mut Option<u64>| {
         let read = |name: &str| std::fs::read_to_string(at.join(name)).ok();
         let (Some(max), Some(now)) = (read("memory.max"), read("memory.current")) else {
             return;

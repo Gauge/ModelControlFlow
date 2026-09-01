@@ -151,9 +151,7 @@ fn scan(text: &str, split: Split) -> Vec<&str> {
             Split::ModernThreeDigits => modern_piece(rest, &Modern::THREE_DIGITS),
             Split::ModernOneDigit => modern_piece(rest, &Modern::ONE_DIGIT),
             Split::ModernOneDigitSymbolsAlone => modern_piece(rest, &Modern::SYMBOLS_ALONE),
-            Split::CasePartitionedThreeDigits => {
-                modern_piece(rest, &Modern::CASE_PARTITIONED)
-            }
+            Split::CasePartitionedThreeDigits => modern_piece(rest, &Modern::CASE_PARTITIONED),
         };
         let length = match taken {
             Some(length) if length > 0 => length,
@@ -256,8 +254,16 @@ fn letter_not_upper(c: char) -> bool {
 fn case_partitioned_run(rest: &str) -> Option<usize> {
     let lead = |c: char| !matches!(c, '\r' | '\n') && !c.is_alphabetic() && !c.is_numeric();
     for (first, second, first_may_be_empty) in [
-        (letter_not_lower as fn(char) -> bool, letter_not_upper as fn(char) -> bool, true),
-        (letter_not_lower as fn(char) -> bool, letter_not_upper as fn(char) -> bool, false),
+        (
+            letter_not_lower as fn(char) -> bool,
+            letter_not_upper as fn(char) -> bool,
+            true,
+        ),
+        (
+            letter_not_lower as fn(char) -> bool,
+            letter_not_upper as fn(char) -> bool,
+            false,
+        ),
     ] {
         let mut at = 0;
         if let Some(character) = rest.chars().next()

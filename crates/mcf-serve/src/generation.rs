@@ -192,9 +192,9 @@ pub(crate) fn serve_generation(
             ),
             None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
         },
-        Ok(Chosen::StandIn) => {
-            attempt(store, resident, named, prompt, tokens, limit, seed, free, writer)
-        }
+        Ok(Chosen::StandIn) => attempt(
+            store, resident, named, prompt, tokens, limit, seed, free, writer,
+        ),
         Err(failure) => Err(failure),
     };
     // The provenance travels into the account, so that a measurement taken

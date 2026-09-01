@@ -12,10 +12,7 @@ use crate::probes::tests::plain;
 fn a_marker_closes_the_way_its_bracket_says() {
     assert_eq!(closing_form("<think>").as_deref(), Some("</think>"));
     assert_eq!(closing_form("[THINK]").as_deref(), Some("[/THINK]"));
-    assert_eq!(
-        closing_form("<|channel|>").as_deref(),
-        Some("</|channel|>")
-    );
+    assert_eq!(closing_form("<|channel|>").as_deref(), Some("</|channel|>"));
 
     // Not pairs: a closing form is not itself an opener, an empty marker has
     // no inside, and a thing that is not bracketed is not a marker.
@@ -100,7 +97,12 @@ fn the_budget_is_set_by_the_longest_turn_not_the_mean() {
         "<think>a b c d e f</think>done".to_owned(),
     ]
     .into_iter();
-    let mut ask = move |_: usize| (Trial::Stopped { after: 10 }, said.next().unwrap_or_default());
+    let mut ask = move |_: usize| {
+        (
+            Trial::Stopped { after: 10 },
+            said.next().unwrap_or_default(),
+        )
+    };
     let probed = thinking(
         std::path::Path::new("/nowhere.gguf"),
         &thinking_model(),

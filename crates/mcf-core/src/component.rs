@@ -10,7 +10,6 @@
 //! Nothing in this module builds anything. It is names, pinned digests, and
 //! the sentences that say what having each component lets MCF claim.
 
-
 /// How a base image installs and reports its packages.
 ///
 /// The recipe used to say `dnf` and `rpm` outright, which was true of the one

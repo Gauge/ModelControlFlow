@@ -80,7 +80,10 @@ fn two_different_answers_are_what_vision_looks_like() {
     );
     match probed.outcome {
         Outcome::Observed(sees) => {
-            assert!(sees.answers_differ, "different answers means the image got in");
+            assert!(
+                sees.answers_differ,
+                "different answers means the image got in"
+            );
             assert_eq!(probed.trials, 2);
             assert_eq!(probed.tokens, 16, "what both turns spent, added");
         }
@@ -138,5 +141,3 @@ fn an_answer_differing_only_in_spacing_is_the_same_answer() {
         }
     }
 }
-
-

@@ -11,6 +11,7 @@
 //! ones somebody moved are listed separately, because a run under a changed
 //! setting is not a run under the recommended one (§3.15, A6).
 
+use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -121,14 +122,7 @@ fn ask(request: &Request) -> Result<Value, String> {
     if answer.served {
         Ok(answer.body)
     } else {
-        Err(format!(
-            "mcf: refused\n  {}",
-            answer
-                .body
-                .get("what")
-                .and_then(Value::as_text)
-                .unwrap_or("MCF did not say why")
-        ))
+        Err(format!("mcf: refused\n  {}", refused_because(&answer.body)))
     }
 }
 
@@ -191,9 +185,7 @@ fn explained(body: &Value, at: Option<u64>) -> String {
                 "  {:<20} at {} tokens it reserves {}",
                 "",
                 wanted,
-                in_gigabytes(
-                    i64::try_from(per.saturating_mul(wanted)).unwrap_or(i64::MAX)
-                )
+                in_gigabytes(i64::try_from(per.saturating_mul(wanted)).unwrap_or(i64::MAX))
             ));
         }
         lines.push(String::new());

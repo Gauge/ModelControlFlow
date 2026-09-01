@@ -589,8 +589,7 @@ fn resolved_here(
                 (engine, devices)
             })
             .collect();
-    mcf_serve::engines::resolve(&engines, bytes, cache, trained)
-        .map_err(|refused| refused.says())
+    mcf_serve::engines::resolve(&engines, bytes, cache, trained).map_err(|refused| refused.says())
 }
 
 /// The engine row: what MCF resolved, or what it would fall back to.

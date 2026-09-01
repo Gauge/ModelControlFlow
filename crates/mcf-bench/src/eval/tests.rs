@@ -78,9 +78,14 @@ fn writing_nothing_is_a_different_fact_from_writing_something_broken() {
 /// easy input outrank one that handles neither.
 #[test]
 fn a_function_that_satisfies_some_cases_is_not_partly_correct() {
-    let graded = trials(&[Ran::Checked { passed: 1, of: 2 }, Ran::Checked { passed: 2, of: 2 }])
-        .graded();
-    let score = graded.score().expect("something ran, so there is a reading");
+    let graded = trials(&[
+        Ran::Checked { passed: 1, of: 2 },
+        Ran::Checked { passed: 2, of: 2 },
+    ])
+    .graded();
+    let score = graded
+        .score()
+        .expect("something ran, so there is a reading");
     assert_eq!(
         score.parts_per_million(),
         500_000,
@@ -104,7 +109,11 @@ fn every_attempt_is_kept_including_the_ones_that_did_not_run() {
     assert_eq!(held.whole(), 1, "one of them satisfied every case");
     // And the reading is over the attempts made, not over the ones that ran:
     // a model whose answers often fail to run is a model that often fails.
-    let score = held.graded().score().expect("something ran").parts_per_million();
+    let score = held
+        .graded()
+        .score()
+        .expect("something ran")
+        .parts_per_million();
     assert_eq!(score, 333_333);
 }
 

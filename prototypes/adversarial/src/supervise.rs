@@ -193,9 +193,10 @@ pub(crate) fn supervise(
 fn taken(collected: &Arc<Mutex<String>>) -> String {
     // A poisoned lock still holds what was written before the panic, and A4
     // says a partial outcome is an outcome.
-    collected
-        .lock()
-        .map_or_else(|poisoned| poisoned.into_inner().clone(), |held| held.clone())
+    collected.lock().map_or_else(
+        |poisoned| poisoned.into_inner().clone(),
+        |held| held.clone(),
+    )
 }
 
 /// Takes what the drain collected and lets the thread go unjoined.

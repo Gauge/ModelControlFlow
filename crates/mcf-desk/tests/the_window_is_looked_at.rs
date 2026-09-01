@@ -816,7 +816,11 @@ fn the_analysis_can_be_taken_out_of_the_window() {
 fn a_window_costs_the_cache_it_reserves() {
     let held = &four_models().models[0];
     let (cache, total) = mcf_desk::view::reserve_of(held, 32_768).expect("this model is priced");
-    assert_eq!(cache, 114_688 * 32_768, "a window is cache per token by tokens");
+    assert_eq!(
+        cache,
+        114_688 * 32_768,
+        "a window is cache per token by tokens"
+    );
     assert_eq!(
         total,
         Some(5_020_000_000 + 114_688 * 32_768),
@@ -955,7 +959,10 @@ fn a_report() -> mcf_desk::Desk {
             "clauses",
             Value::List(vec![
                 clause("You are a careful assistant.", 0),
-                clause("Write a function called slugify that turns a title into a slug.", 961_000),
+                clause(
+                    "Write a function called slugify that turns a title into a slug.",
+                    961_000,
+                ),
                 clause("Lowercase everything.", 125_000),
                 clause("Reply with only the function.", 909_000),
             ]),
@@ -986,7 +993,10 @@ fn a_prompt_report_shows_its_numbers() {
     // The same report with nothing measured: fewer marks must reach the glass.
     bare.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
         "prompt analysis".to_owned(),
-        vec![mcf_record::json::Value::map(Vec::<(String, mcf_record::json::Value)>::new())],
+        vec![mcf_record::json::Value::map(Vec::<(
+            String,
+            mcf_record::json::Value,
+        )>::new())],
     ));
     let empty = drawn(&bare, DAY, "prompt-empty");
     assert!(
@@ -1077,10 +1087,15 @@ fn the_copied_analysis_carries_what_the_screen_shows() {
 fn the_copied_analysis_says_why_a_reading_is_missing() {
     let mut desk = a_report();
     let found = mcf_record::json::Value::map([
-        ("floor_parts_per_million", mcf_record::json::Value::Integer(0)),
+        (
+            "floor_parts_per_million",
+            mcf_record::json::Value::Integer(0),
+        ),
         (
             "expected_refused",
-            mcf_record::json::Value::text("no engine on this machine resolves this model".to_owned()),
+            mcf_record::json::Value::text(
+                "no engine on this machine resolves this model".to_owned(),
+            ),
         ),
     ]);
     desk.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(

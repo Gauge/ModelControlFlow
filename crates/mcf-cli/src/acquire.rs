@@ -12,6 +12,7 @@
 //! refusal: a second opinion about what happened is not something a client is
 //! for (A2).
 
+use crate::say::refused_because;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
@@ -85,14 +86,7 @@ fn ask(request: &Request, render: &dyn Fn(&Value) -> Vec<String>) -> Response {
         };
         if !answer.served {
             served = false;
-            lines.push(format!(
-                "mcf: refused\n  {}",
-                answer
-                    .body
-                    .get("what")
-                    .and_then(Value::as_text)
-                    .unwrap_or("MCF did not say why")
-            ));
+            lines.push(format!("mcf: refused\n  {}", refused_because(&answer.body)));
             break;
         }
         lines.extend(render(&answer.body));

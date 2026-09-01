@@ -224,43 +224,41 @@ fn generate_line(
     whose: mcf_record::content::Whose,
 ) -> Value {
     Value::map([
-                ("ask", Value::text("generate")),
-                ("model", Value::text(model.to_owned())),
-                ("prompt", Value::text(prompt.to_owned())),
-                (
-                    "limit",
-                    match limit {
-                        Some(limit) => Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
-                        None => Value::Null,
-                    },
+        ("ask", Value::text("generate")),
+        ("model", Value::text(model.to_owned())),
+        ("prompt", Value::text(prompt.to_owned())),
+        (
+            "limit",
+            match limit {
+                Some(limit) => Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
+                None => Value::Null,
+            },
+        ),
+        (
+            "seed",
+            Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+        ),
+        (
+            "tokens",
+            match tokens {
+                Some(tokens) => Value::List(
+                    tokens
+                        .iter()
+                        .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                        .collect(),
                 ),
-                (
-                    "seed",
-                    Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
-                ),
-                (
-                    "tokens",
-                    match tokens {
-                        Some(tokens) => Value::List(
-                            tokens
-                                .iter()
-                                .map(|token| {
-                                    Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX))
-                                })
-                                .collect(),
-                        ),
-                        None => Value::Null,
-                    },
-                ),
-                (
-                    "engine",
-                    match engine {
-                        Some(engine) => Value::text(engine.to_owned()),
-                        None => Value::Null,
-                    },
-                ),
-                ("whose", Value::text(whose.as_str())),
-            ])
+                None => Value::Null,
+            },
+        ),
+        (
+            "engine",
+            match engine {
+                Some(engine) => Value::text(engine.to_owned()),
+                None => Value::Null,
+            },
+        ),
+        ("whose", Value::text(whose.as_str())),
+    ])
 }
 
 /// A prompt report, as it goes onto the wire.
@@ -302,7 +300,15 @@ impl Request {
                 tokens,
                 engine,
                 whose,
-            } => generate_line(model, prompt, *limit, *seed, tokens.as_deref(), engine.as_deref(), *whose),
+            } => generate_line(
+                model,
+                prompt,
+                *limit,
+                *seed,
+                tokens.as_deref(),
+                engine.as_deref(),
+                *whose,
+            ),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
                 ("reference", Value::text(reference.clone())),

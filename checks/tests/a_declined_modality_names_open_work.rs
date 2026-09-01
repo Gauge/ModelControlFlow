@@ -106,7 +106,12 @@ fn no_declined_modality_outlives_the_work_that_would_answer_it() {
         let row = register
             .lines()
             .find(|line| line.starts_with(&format!("| {} |", held.until)))
-            .unwrap_or_else(|| panic!("{} waits on {}, which is not in the register", held.modality, held.until));
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} waits on {}, which is not in the register",
+                    held.modality, held.until
+                )
+            });
         let status = row
             .rsplit_once(" | ")
             .map(|(_, held)| held.to_lowercase())
@@ -126,7 +131,10 @@ fn no_declined_modality_outlives_the_work_that_would_answer_it() {
 #[test]
 fn every_declined_modality_says_what_it_looked_for_and_why() {
     for held in declined() {
-        for (what, text) in [("modality", held.modality.as_str()), ("until", held.until.as_str())] {
+        for (what, text) in [
+            ("modality", held.modality.as_str()),
+            ("until", held.until.as_str()),
+        ] {
             assert!(
                 !text.trim().is_empty(),
                 "{} declines with no {what}, which is an omission wearing a refusal's clothes (A7)",

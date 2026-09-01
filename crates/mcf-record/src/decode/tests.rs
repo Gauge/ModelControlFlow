@@ -1,7 +1,7 @@
 //! What survives the trip to the disk and back.
 
 use mcf_core::attested::Attested;
-use mcf_core::failure::Category;
+use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::provenance::{
     Checksum, Licence, Origin, Provenance, Repository, Revision, ToolIdentity, Transformation,
     TransformationKind,
@@ -11,7 +11,7 @@ use mcf_core::time::{Timestamp, UtcOffset};
 use crate::encode;
 use crate::json::{Value, parse};
 
-use super::provenance;
+use super::{failure_said, provenance};
 
 fn at(nanos: i128) -> Timestamp {
     Timestamp::from_utc_nanos(nanos, Attested::Unknown)
@@ -253,5 +253,45 @@ fn an_origin_this_build_does_not_know_is_refused() {
             .iter()
             .any(|entry| entry.value.contains("something_later")),
         "the refusal does not say what it saw"
+    );
+}
+
+/// A refusal carries its detail, its context and its cause to the person
+/// reading it; a reader that finds none of them has been handed something
+/// that is not a failure, and says so rather than *MCF did not say why* (A2).
+#[test]
+fn what_a_failure_said_is_read_back_whole() {
+    let inner = Failure::new(
+        Category::ArtifactMissing,
+        Attribution::Machine,
+        Disposition::Refused,
+        Subsystem::new("mcf-hub::store"),
+        "this model could not be measured",
+    );
+    let outer = Failure::new(
+        Category::ConfigInvalid,
+        Attribution::User,
+        Disposition::Refused,
+        Subsystem::new("mcf-serve::control"),
+        "a client sent something MCF cannot read",
+    )
+    .with_context("wanted", "a model this machine is holding".to_owned())
+    .caused_by(inner);
+    let said = failure_said(&encode::failure(&outer)).expect("a failure reads back");
+    assert!(
+        said.starts_with("a client sent something MCF cannot read"),
+        "{said}"
+    );
+    assert!(
+        said.contains("  wanted: a model this machine is holding"),
+        "{said}"
+    );
+    assert!(
+        said.contains("caused by: this model could not be measured"),
+        "{said}"
+    );
+    assert_eq!(
+        failure_said(&Value::map([("served", Value::Bool(false))])),
+        None
     );
 }

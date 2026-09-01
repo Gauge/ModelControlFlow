@@ -625,14 +625,9 @@ fn thinking_lines(
                 })
         });
         let spoken = match identifiers {
-            Some(held) => mcf_serve::probes::spoken(
-                socket,
-                path,
-                "",
-                Some(&held),
-                budget,
-                Some(asked),
-            ),
+            Some(held) => {
+                mcf_serve::probes::spoken(socket, path, "", Some(&held), budget, Some(asked))
+            }
             None => mcf_serve::probes::spoken(
                 socket,
                 path,
@@ -686,10 +681,7 @@ fn thinking_lines(
                     " {marker} opened in {} of {} turn(s), closed in {}",
                     spends.opened, spends.trials, spends.closed
                 )),
-                None => lines.push(format!(
-                    " none of them opened in {} turn(s)",
-                    spends.trials
-                )),
+                None => lines.push(format!(" none of them opened in {} turn(s)", spends.trials)),
             }
             // From the observation, before either verdict (A9, F106).
             lines.push(recorded(crate::log::record_probed(
@@ -751,14 +743,26 @@ fn thinking_fields(
                 .clone()
                 .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
         ),
-        ("opened", mcf_record::json::Value::Integer(as_count(spends.opened))),
-        ("closed", mcf_record::json::Value::Integer(as_count(spends.closed))),
-        ("trials", mcf_record::json::Value::Integer(as_count(spends.trials))),
+        (
+            "opened",
+            mcf_record::json::Value::Integer(as_count(spends.opened)),
+        ),
+        (
+            "closed",
+            mcf_record::json::Value::Integer(as_count(spends.closed)),
+        ),
+        (
+            "trials",
+            mcf_record::json::Value::Integer(as_count(spends.trials)),
+        ),
         (
             "longest_inside_words",
             mcf_record::json::Value::Integer(as_count(spends.longest_inside)),
         ),
-        ("budget", mcf_record::json::Value::Integer(as_count(spends.budget))),
+        (
+            "budget",
+            mcf_record::json::Value::Integer(as_count(spends.budget)),
+        ),
     ]
 }
 
@@ -831,7 +835,9 @@ fn projector_beside(model: &std::path::Path) -> Option<std::path::PathBuf> {
         })
         .collect();
     candidates.sort();
-    candidates.into_iter().find(|path| declares_a_vision_encoder(path))
+    candidates
+        .into_iter()
+        .find(|path| declares_a_vision_encoder(path))
 }
 
 /// Whether an image reaches this model at all (B-057, B-320).
@@ -893,13 +899,8 @@ fn vision_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
         Some((said, spent))
     };
 
-    let probed = mcf_serve::probes::vision::vision(
-        path,
-        bytes,
-        projector.as_deref(),
-        &engine,
-        &mut look,
-    );
+    let probed =
+        mcf_serve::probes::vision::vision(path, bytes, projector.as_deref(), &engine, &mut look);
     vision_result_lines(path, &probed)
 }
 
@@ -912,7 +913,10 @@ fn vision_fields(
     sees: &mcf_serve::probes::vision::Sees,
 ) -> Vec<(&'static str, mcf_record::json::Value)> {
     vec![
-        ("architecture", mcf_record::json::Value::text(sees.declared.architecture.clone())),
+        (
+            "architecture",
+            mcf_record::json::Value::text(sees.declared.architecture.clone()),
+        ),
         (
             "projector",
             sees.declared
@@ -920,9 +924,18 @@ fn vision_fields(
                 .clone()
                 .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
         ),
-        ("answers_differ", mcf_record::json::Value::Bool(sees.answers_differ)),
-        ("about_triangle", mcf_record::json::Value::text(sees.about_triangle.clone())),
-        ("about_circle", mcf_record::json::Value::text(sees.about_circle.clone())),
+        (
+            "answers_differ",
+            mcf_record::json::Value::Bool(sees.answers_differ),
+        ),
+        (
+            "about_triangle",
+            mcf_record::json::Value::text(sees.about_triangle.clone()),
+        ),
+        (
+            "about_circle",
+            mcf_record::json::Value::text(sees.about_circle.clone()),
+        ),
     ]
 }
 

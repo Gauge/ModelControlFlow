@@ -196,7 +196,10 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
     // And the reader's own threshold separates them.
     let barely = report.barely_moved(300_000);
     assert_eq!(barely.len(), 1);
-    assert_eq!(barely.first().map(|held| held.text.as_str()), Some("Second."));
+    assert_eq!(
+        barely.first().map(|held| held.text.as_str()),
+        Some("Second.")
+    );
 }
 
 /// The floor is measured, not assumed.
