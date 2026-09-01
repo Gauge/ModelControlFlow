@@ -817,6 +817,42 @@ impl Daemon {
         )
     }
 
+    /// The engines as they are now, for a question whose answer turns on free
+    /// memory.
+    ///
+    /// **Which devices exist is asked once; how much is free is not.** What a
+    /// build can compute on does not change while it sits on the disk, which
+    /// is why `engines` is sampled at start-up and §3.13 keeps idle free. Free
+    /// memory is the one property in there that does change: a resident model
+    /// takes it and stopping one gives it back. Planning from the start-up
+    /// figure is a declaration wearing an observation's clothes (A21) — on an
+    /// idle machine it says a second model fits beside the first, because the
+    /// first was not there when it was measured.
+    ///
+    /// Only the processor's figure is re-read, because that is a file read. A
+    /// card's would cost a process launch per device, which is the expense
+    /// §3.13 exists to avoid, and a card is not where a model MCF placed
+    /// wrongly takes the machine down with it.
+    fn engines_now(&self) -> Vec<(crate::engines::Engine, Vec<crate::engines::Device>)> {
+        let free = system_memory_free();
+        self.engines
+            .iter()
+            .map(|(engine, devices)| {
+                let devices = devices
+                    .iter()
+                    .map(|device| match device.kind {
+                        crate::engines::Kind::Cpu => crate::engines::Device {
+                            free,
+                            ..device.clone()
+                        },
+                        crate::engines::Kind::Gpu => device.clone(),
+                    })
+                    .collect();
+                (engine.clone(), devices)
+            })
+            .collect()
+    }
+
     /// What MCF worked out about running one model: its shape, and which
     /// engine and device would take it.
     ///
@@ -845,7 +881,7 @@ impl Daemon {
             })
         };
         let resolved = match trained {
-            Some(trained) => crate::engines::resolve(&self.engines, bytes, cache, trained)
+            Some(trained) => crate::engines::resolve(&self.engines_now(), bytes, cache, trained)
                 .map_or_else(
                     |refused| {
                         Value::map([
@@ -1840,7 +1876,7 @@ impl Daemon {
                 named,
             )
         })?;
-        let choice = crate::engines::resolve(&self.engines, bytes, cache, trained)
+        let choice = crate::engines::resolve(&self.engines_now(), bytes, cache, trained)
             .map_err(|refused| crate::control::refused(&refused.says(), named))?;
         let on_a_card = matches!(choice.device.kind, crate::engines::Kind::Gpu);
         // Whether the whole thing fits where it is going: the weights plus

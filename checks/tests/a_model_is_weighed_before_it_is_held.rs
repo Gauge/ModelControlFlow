@@ -179,3 +179,29 @@ fn the_serving_path_and_the_console_agree() {
         );
     }
 }
+
+#[test]
+fn a_placement_is_planned_against_memory_as_it_is_now() {
+    // **The other half of the same defect.** Which devices exist is asked once
+    // when the daemon starts, because a build's capabilities do not change
+    // while it sits on the disk and §3.13 keeps idle free. How much memory is
+    // free was sampled in the same breath and it does change constantly: a
+    // resident model takes it, stopping one gives it back. Planning a
+    // placement from the start-up figure says a second model fits beside the
+    // first, because the first was not there when the number was taken (A21).
+    //
+    // So the resolver is never handed the stored table directly. Anything that
+    // plans against free memory goes through the accessor that re-reads it.
+    let daemon = std::fs::read_to_string(root().join("crates/mcf-serve/src/daemon.rs"))
+        .expect("the daemon is readable");
+    assert!(
+        !daemon.contains("resolve(&self.engines,"),
+        "a placement is being planned from the engine table sampled at start-up, whose free \
+         memory figure describes a machine that stopped existing the moment anything was \
+         loaded — use `engines_now()`, which re-reads it (A21, F136)"
+    );
+    assert!(
+        daemon.contains("fn engines_now("),
+        "the accessor that re-reads free memory is gone, so nothing re-reads it (F136)"
+    );
+}
