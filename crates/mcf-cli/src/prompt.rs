@@ -257,6 +257,84 @@ fn header_name(named: &str) -> &str {
         .unwrap_or(named)
 }
 
+/// Where the model ranked each word of the prompt, given the ones before it.
+///
+/// **A reading of the prompt that does not compare two answers.** The column
+/// above measures what changed when a sentence was removed, and removing
+/// anything shifts everything after it — which is why it is an ordering and
+/// not a measure. This asks something narrower of the same prompt: at each
+/// position, was this the token the model would have written anyway? One it
+/// ranked first carried nothing from the writer; one it ranked low, or did not
+/// list at all, is where the prompt said something the model did not expect.
+///
+/// Only the ones it did not expect are printed. A prompt is mostly words the
+/// model would have chosen, and a list of every position would bury the few
+/// that carry the writing (§3.15).
+fn what_the_model_expected(body: &Value) -> Vec<String> {
+    let ranked = body.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+    if ranked.is_empty() {
+        // Absent and *why* absent are different states, and a report that
+        // showed nothing for both would be reporting ignorance as absence (A7).
+        return body
+            .get("expected_refused")
+            .and_then(Value::as_text)
+            .map(|why| {
+                vec![
+                    String::new(),
+                    "  WHICH WORDS THE MODEL DID NOT EXPECT".to_owned(),
+                    format!("    not taken: {why}"),
+                ]
+            })
+            .unwrap_or_default();
+    }
+    let depth = body
+        .get("ranked_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let text = |held: &Value, key: &str| {
+        held.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let mut surprising: Vec<(i64, String)> = Vec::new();
+    let mut expected = 0_usize;
+    for held in ranked {
+        let text = text(held, "text");
+        match held.get("rank").and_then(Value::as_integer) {
+            // Outside the list asked for: a bound, not an absence (A7), and
+            // sorted above everything that was in it.
+            None => surprising.push((i64::MAX, text)),
+            Some(1) => expected = expected.saturating_add(1),
+            Some(rank) => surprising.push((rank, text)),
+        }
+    }
+    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    let mut lines = vec![
+        String::new(),
+        "  WHICH WORDS THE MODEL DID NOT EXPECT".to_owned(),
+        "  each token against what it would have written there itself".to_owned(),
+        String::new(),
+    ];
+    for (rank, said) in surprising.iter().take(10) {
+        if *rank == i64::MAX {
+            lines.push(format!(
+                "    outside its top {depth}   {said:?}"
+            ));
+        } else {
+            lines.push(format!("    its number {rank} choice   {said:?}"));
+        }
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "    {} of {} were the model's own first choice — a word it would have written there \
+         anyway carries nothing from the writer",
+        expected,
+        ranked.len()
+    ));
+    lines
+}
+
 /// The answer, and the conditions every figure above was computed under.
 ///
 /// How long an answer was allowed to be, how the prompt reached the model, and
@@ -389,6 +467,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     });
 
     lines.push(String::new());
+    lines.extend(what_the_model_expected(body));
     lines.extend(the_answer_and_its_conditions(body));
     lines.push(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \

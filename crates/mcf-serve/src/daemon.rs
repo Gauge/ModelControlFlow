@@ -90,6 +90,8 @@ fn prompt_report_value(
     report: &crate::prompt::Report,
     generations: usize,
     tokens: Option<usize>,
+    ranked: Vec<Value>,
+    no_ranking: Option<String>,
 ) -> Value {
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
@@ -151,6 +153,17 @@ fn prompt_report_value(
             tokens.map_or(Value::Null, |held| {
                 Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
             }),
+        ),
+        ("expected", Value::List(ranked)),
+        (
+            "expected_refused",
+            no_ranking.map_or(Value::Null, Value::text),
+        ),
+        (
+            "ranked_depth",
+            Value::Integer(
+                i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX),
+            ),
         ),
     ])
 }
@@ -1316,6 +1329,93 @@ impl Daemon {
     /// stream drained rather than suppressed — timing MCF rather than
     /// something that resembles it is the same reason a measurement does it
     /// this way (A11, A12).
+    /// Each token of the prompt, and where the model ranked it.
+    ///
+    /// Empty where the model cannot be read or no server can be started: a
+    /// reading MCF could not take is absent from the report rather than shown
+    /// as a row of nothing (A7).
+    fn ranked_prompt(
+        &self,
+        named: &str,
+        prompt: &str,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    ) -> (Vec<Value>, Option<String>) {
+        // **Why it is missing, where it is missing.** An empty list and a list
+        // MCF could not take look the same on the page, and the first draft of
+        // this swallowed every failure into `Vec::new()` — the silent failure
+        // A2 forbids, written by the hand that had just spent a day finding
+        // them.
+        let refused = |why: &str| (Vec::new(), Some(why.to_owned()));
+        // **The engine this report already resolved, not a fresh answer.**
+        // Asking again here asked after the report's own generations had taken
+        // the memory, so `resolve` refused a model it had just run — and the
+        // ranking was reported as *no engine resolves this model* on a machine
+        // that had been running it for two minutes. Which engine serves a
+        // report is one question, settled once at the top of it (F144, §3.15).
+        let Some((llama, gpu_layers, context)) = picked else {
+            return refused("no engine on this machine resolves this model");
+        };
+        let path = crate::generation::resolved(&self.places.models, named);
+        let Some(file) = header_of(&path) else {
+            return refused("this model's header could not be read");
+        };
+        let Ok(vocabulary) = mcf_standin::tokenizer::Vocabulary::read(&file) else {
+            return refused("this model's vocabulary could not be read");
+        };
+        let Ok(tokens) = vocabulary.encode(prompt, true) else {
+            return refused("this prompt could not be turned into tokens");
+        };
+        let runtime = self
+            .places
+            .socket
+            .parent()
+            .unwrap_or_else(|| Path::new("/tmp"));
+        let where_it_lives = crate::generation::Where {
+            store: &self.places.models,
+            llama: &llama,
+            runtime,
+            named,
+            gpu_layers,
+            context,
+        };
+        let ranked = match crate::generation::ranks_over(&where_it_lives, &self.server, &tokens) {
+            Ok(ranked) => ranked,
+            Err(failure) => return (Vec::new(), Some(failure.to_string())),
+        };
+        // A token's own text is the difference between decoding the first k
+        // identifiers and the first k-1, which is by construction what it
+        // contributed — decoding one alone is wrong for a byte-level
+        // vocabulary (F19).
+        let upto = |k: usize| {
+            tokens
+                .get(..k)
+                .map(|held| vocabulary.decode(held))
+                .unwrap_or_default()
+        };
+        let rows = ranked
+            .into_iter()
+            .enumerate()
+            .map(|(at, (rank, said))| {
+                let position = at.saturating_add(1);
+                let text = upto(position.saturating_add(1))
+                    .strip_prefix(&upto(position))
+                    .unwrap_or_default()
+                    .to_owned();
+                Value::map([
+                    ("text", Value::text(text)),
+                    (
+                        "rank",
+                        rank.map_or(Value::Null, |held| {
+                            Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+                        }),
+                    ),
+                    ("engine_said", said.map_or(Value::Null, Value::text)),
+                ])
+            })
+            .collect();
+        (rows, None)
+    }
+
     /// How many tokens this model's vocabulary makes of some text.
     ///
     /// Read from the file's header, so it costs a bounded read and no
@@ -1379,7 +1479,11 @@ impl Daemon {
         // `mcf segment` shows every fragment; what belongs in a report about
         // one prompt is how many there were (§3.15, B-381).
         let tokens = self.tokens_in(named, prompt);
-        let answer = Answer::served(prompt_report_value(&report, asked, tokens));
+        // **Where the model ranked each word of the question.** A second
+        // reading that does not compare two answers, so the drift that makes
+        // the ablation an ordering does not touch it (§3.8).
+        let (ranked, no_ranking) = self.ranked_prompt(named, prompt, picked.clone());
+        let answer = Answer::served(prompt_report_value(&report, asked, tokens, ranked, no_ranking));
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }

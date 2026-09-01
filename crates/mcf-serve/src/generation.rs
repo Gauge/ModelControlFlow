@@ -343,6 +343,119 @@ fn addressed_as(
 /// because a floor chosen inside an expression is a decision nobody can find.
 const SMALLEST_WINDOW: u64 = 4096;
 
+/// Where the model put one token, and what it said the token was worth.
+///
+/// The engine's figure is the text it sent: the record has no floating-point
+/// variant on purpose, and a log probability is exactly the sort of number
+/// that grows a division somewhere else.
+pub(crate) type Ranked = (Option<usize>, Option<String>);
+
+/// Everything about *which* model, and where, that ranking a prompt needs.
+///
+/// Gathered into one because a function taking eight of them is a function
+/// nobody can call correctly by position.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Where<'a> {
+    /// The model store.
+    pub store: &'a Path,
+    /// The build to run.
+    pub llama: &'a crate::adapters::ProvisionedLlama,
+    /// Where a server may put its socket.
+    pub runtime: &'a Path,
+    /// The model, as it was named.
+    pub named: &'a str,
+    /// How many layers go on a card.
+    pub gpu_layers: u32,
+    /// The largest window MCF resolved for this model.
+    pub context: u64,
+}
+
+/// How many positions of a prompt are ranked before MCF stops.
+///
+/// Each one is a request, so a long prompt is a long wait; a hundred and
+/// twenty covers an ordinary instruction and the report says when it stopped.
+pub(crate) const MOST_RANKED: usize = 120;
+
+/// How deep the distribution is read at each position.
+///
+/// A token outside this is reported as outside it rather than given a rank it
+/// does not have (A7). Sixty is deep enough that an ordinary word is found and
+/// shallow enough that the answers stay small.
+pub(crate) const HOW_DEEP: usize = 60;
+
+/// Where the model ranked each token of a prompt, given the ones before it.
+///
+/// **A second reading of a prompt that does not depend on comparing answers.**
+/// The ablation measures what changes when a sentence is removed, and under
+/// greedy decoding removing anything shifts everything after it — which is why
+/// it reports an ordering and not a measure. This asks a different question of
+/// the same prompt: at each position, was the token one the model would have
+/// written anyway? A token it ranked first carried no information from the
+/// writer; one it ranked low, or did not list at all, is where the prompt said
+/// something the model did not expect.
+///
+/// Returns one entry per position after the first — the first token has
+/// nothing before it to be predicted from — each the rank counting from one
+/// and the engine's own figure as the text it sent.
+///
+/// # Errors
+///
+/// Whatever starting or asking the server reported.
+pub(crate) fn ranks_over(
+    where_it_lives: &Where<'_>,
+    server: &std::sync::Mutex<Option<Served>>,
+    tokens: &[usize],
+) -> Result<Vec<Ranked>, Failure> {
+    let Where {
+        store,
+        llama,
+        runtime,
+        named,
+        gpu_layers,
+        context,
+    } = *where_it_lives;
+    let path = resolved(store, named);
+    let mut slot = server.lock().map_err(|_poisoned| {
+        Failure::new(
+            mcf_core::failure::Category::EngineUnavailable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Aborted,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            "the served engine's slot was left poisoned by an earlier failure",
+        )
+    })?;
+    let reused = slot.as_ref().is_some_and(|held| held.model == path);
+    let asked_for = u64::try_from(tokens.len()).unwrap_or(SMALLEST_WINDOW);
+    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
+    let window = if context == 0 {
+        needed
+    } else {
+        needed.min(context)
+    };
+    if !reused {
+        *slot = None;
+        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
+    }
+    let engine = slot.as_ref().ok_or_else(|| {
+        Failure::new(
+            mcf_core::failure::Category::EngineUnavailable,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Aborted,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            "the served engine was started and then was not there",
+        )
+    })?;
+
+    let mut ranked = Vec::new();
+    for at in 1..tokens.len().min(MOST_RANKED) {
+        let (Some(prefix), Some(wanted)) = (tokens.get(..at), tokens.get(at).copied()) else {
+            break;
+        };
+        ranked.push(engine.ranked_next(prefix, wanted, HOW_DEEP)?);
+    }
+    Ok(ranked)
+}
+
 /// The server holds the model between requests, which is the residency F36
 /// left open. A request for a different model replaces the server, and
 /// replacing it stops the old one — `Served` kills its child when it is

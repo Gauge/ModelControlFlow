@@ -466,6 +466,60 @@ impl Served {
         interpret(&self.request("POST", "/completion", Some(&body))?)
     }
 
+    /// Where the model ranked the token that actually came next, and what it
+    /// said the token was worth.
+    ///
+    /// **The question a reader is asking when they ask which words matter.**
+    /// A token the model ranked first was one it would have written anyway, so
+    /// the writer supplied no information by writing it; one it ranked
+    /// hundredth, or did not have in its list at all, is where the prompt told
+    /// the model something. That is a property of this model and this prefix
+    /// and nothing else, and it does not depend on comparing two answers — so
+    /// it is not touched by the drift that makes an ablation an ordering
+    /// rather than a measure (§3.8, A19).
+    ///
+    /// Returns the rank counting from one, and the engine's own figure for the
+    /// token as the text it sent. `None` for the rank where the token is
+    /// outside the list asked for, which is a bound and not an absence: it was
+    /// worse than the last one that fitted (A7).
+    ///
+    /// # Errors
+    ///
+    /// Whatever the server answered with, where that was not a completion.
+    pub fn ranked_next(
+        &self,
+        prefix: &[usize],
+        wanted: usize,
+        how_many: usize,
+    ) -> Result<(Option<usize>, Option<String>), Failure> {
+        let identifiers = Value::List(
+            prefix
+                .iter()
+                .map(|held| Value::Integer(i64::try_from(*held).unwrap_or(0)))
+                .collect(),
+        );
+        let body = Value::map([
+            ("prompt", identifiers),
+            // One token, only so that the server produces a distribution at
+            // this position; what it picks is not read.
+            ("n_predict", Value::Integer(1)),
+            ("temperature", Value::Integer(0)),
+            (
+                "n_probs",
+                Value::Integer(i64::try_from(how_many).unwrap_or(0)),
+            ),
+            // **Cached here, where every other request turns it off.** The
+            // prefixes asked for are each one token longer than the last, so
+            // without it the work is quadratic in the prompt. Nothing is being
+            // timed and nothing is generated: what is read is a distribution
+            // at one position, which the cache does not change.
+            ("cache_prompt", Value::Bool(true)),
+        ])
+        .to_line();
+        let answered = self.request("POST", "/completion", Some(&body))?;
+        Ok(ranked_in(&answered, wanted))
+    }
+
     /// The smallest HTTP a request needs.
     ///
     /// `Connection: close` so the body ends at end of stream and there is no
@@ -520,6 +574,40 @@ impl Served {
             |(_head, body)| Ok(body.to_owned()),
         )
     }
+}
+
+/// Where `wanted` sits in the distribution the server sent back.
+///
+/// The engine's figure for the token is carried as the text it wrote. The
+/// record has no floating-point variant on purpose — a value nobody can do
+/// arithmetic on cannot become a measurement by accident — and a log
+/// probability is exactly the sort of number that would grow a division
+/// somewhere else. What is ordered here is the rank, which is a count.
+fn ranked_in(answer: &str, wanted: usize) -> (Option<usize>, Option<String>) {
+    let Ok(value) = json::parse(answer) else {
+        return (None, None);
+    };
+    let Some(first) = value
+        .get("completion_probabilities")
+        .and_then(Value::as_list)
+        .and_then(<[Value]>::first)
+    else {
+        return (None, None);
+    };
+    let Some(ranked) = first.get("top_logprobs").and_then(Value::as_list) else {
+        return (None, None);
+    };
+    for (at, candidate) in ranked.iter().enumerate() {
+        let held = candidate
+            .get("id")
+            .and_then(Value::as_integer)
+            .and_then(|held| usize::try_from(held).ok());
+        if held == Some(wanted) {
+            let said = candidate.get("logprob").map(mcf_record::json::Value::to_line);
+            return (Some(at.saturating_add(1)), said);
+        }
+    }
+    (None, None)
 }
 
 /// What the server said, read as a completion.
@@ -627,5 +715,53 @@ impl Drop for Served {
         let _killed = self.child.kill();
         let _waited = self.child.wait();
         let _gone = std::fs::remove_file(&self.socket);
+    }
+}
+
+#[cfg(test)]
+mod ranking_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use super::ranked_in;
+
+    /// The shape the provisioned server actually sends.
+    const ANSWERED: &str = r#"{"content":"x","completion_probabilities":[{"id":11,"token":",",
+        "top_logprobs":[{"id":12095,"token":" Paris","logprob":-1.15},
+                        {"id":7407,"token":" located","logprob":-2.55},
+                        {"id":1128,"token":" what","logprob":-3.25}]}]}"#;
+
+    /// Counting from one, because a reader saying *its second choice* means the
+    /// second and not the one after the first.
+    #[test]
+    fn a_token_in_the_list_is_ranked_from_one() {
+        assert_eq!(ranked_in(ANSWERED, 12095).0, Some(1));
+        assert_eq!(ranked_in(ANSWERED, 7407).0, Some(2));
+        assert_eq!(ranked_in(ANSWERED, 1128).0, Some(3));
+    }
+
+    /// The engine's own figure travels as the text it wrote.
+    ///
+    /// The record has no floating-point variant on purpose: a log probability
+    /// parsed into a float is one division away from a measurement nobody
+    /// checked.
+    #[test]
+    fn the_engines_figure_is_carried_and_not_computed() {
+        let (_, said) = ranked_in(ANSWERED, 12095);
+        assert_eq!(said.as_deref(), Some("-1.15"));
+    }
+
+    /// A token the engine did not list is *outside the list*, not rank zero
+    /// and not absent (A7).
+    #[test]
+    fn a_token_outside_the_list_has_no_rank() {
+        assert_eq!(ranked_in(ANSWERED, 999_999), (None, None));
+    }
+
+    /// An answer that is not a completion is not a ranking.
+    #[test]
+    fn nothing_is_read_out_of_something_that_is_not_one() {
+        assert_eq!(ranked_in("not json at all", 1), (None, None));
+        assert_eq!(ranked_in(r#"{"error":"context is full"}"#, 1), (None, None));
     }
 }
