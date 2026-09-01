@@ -570,3 +570,239 @@ fn a_name_in_another_script_does_not_vanish() {
         "a name MCF cannot draw put nothing at all on the screen"
     );
 }
+
+// ── Driving the interface, rather than only looking at it ──────────────────
+//
+// **Everything above renders a screen and reads the pixels. None of it presses
+// anything.** Three faults reached an operator that way: the Host button
+// returned early and did nothing at all because the settings it destructures
+// were never fetched; a reading that went unanswered emptied the model list and
+// the window said *no models exist* while sixteen sat on the disk; and a
+// control was renamed in one place and not another.
+//
+// Every one of those is invisible to a test that draws and looks, because the
+// drawing was correct. What was wrong was what happened when somebody pressed.
+
+/// Presses at a point and returns what the interface made of it.
+///
+/// A click is a press and a release inside the same thing, so both are set:
+/// a `click` with no `began` is not something a person can do, and asserting
+/// about it would be asserting about a state the window never sees.
+fn pressed_at(desk: &Desk, at: (f32, f32)) -> Option<mcf_desk::Act> {
+    let mut paint = match Painter::on_paper(1180, 760, 1.0, NIGHT) {
+        Ok(paint) => paint,
+        Err(why) => {
+            eprintln!("skipped: {why}");
+            return None;
+        }
+    };
+    let mouse = Mouse {
+        at,
+        down: false,
+        began: Some(at),
+        click: Some(at),
+        wheel: 0.0,
+    };
+    mcf_desk::view::draw(&mut paint, desk, &mouse)
+}
+
+/// Finds the act a labelled control produces, by pressing everywhere it could
+/// be.
+///
+/// The window lays itself out, so a test that hard-coded a button's coordinates
+/// would be a test of arithmetic somebody copied. Sweeping asks the question a
+/// person asks — *is there something here that does this* — and fails when the
+/// answer is no, whatever the reason.
+fn act_somewhere(desk: &Desk, wanted: &mcf_desk::Act) -> bool {
+    // From the top of the window, not below the menu: the column sits at y=8
+    // and a sweep starting under it cannot press a tab — which is a test that
+    // reports the menu unreachable when what is unreachable is the sweep.
+    act_within(desk, wanted, (0.0, 750.0))
+}
+
+/// The same, over a band of the window.
+///
+/// Bounded because a sweep of the whole window is thousands of renders, and a
+/// test that takes a minute is one somebody stops running.
+fn act_within(desk: &Desk, wanted: &mcf_desk::Act, band: (f32, f32)) -> bool {
+    let mut y = band.0 + 6.0;
+    while y < band.1 {
+        let mut x = 10.0;
+        while x < 1170.0 {
+            if pressed_at(desk, (x, y)).as_ref() == Some(wanted) {
+                return true;
+            }
+            x += 24.0;
+        }
+        y += 10.0;
+    }
+    false
+}
+
+/// The window offers a way to host the model that is chosen.
+///
+/// F: `host_it` begins by destructuring `self.settings`, which nothing ever
+/// fetched — so it was `None` for the life of the window and pressing Host
+/// returned early, silently, every time. The button drew correctly, so every
+/// test that looked at it passed.
+#[test]
+fn pressing_host_asks_to_host_and_does_not_silently_do_nothing() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.chosen = Some(0);
+
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::HostIt),
+        "no control on the Models screen asks to host the chosen model"
+    );
+
+    // And the act must do something. With no settings — which is what a
+    // daemon that has not answered leaves — it refuses in words rather than
+    // returning as though nothing had been pressed.
+    desk.settings = None;
+    desk.no_settings = None;
+    desk.act(mcf_desk::Act::HostIt);
+    assert!(
+        desk.no_settings.is_some(),
+        "hosting without settings must say why, not do nothing"
+    );
+}
+
+/// The prompt analysis is reachable, and named what it is called.
+///
+/// F: it was renamed in the button and not the heading once already. A control
+/// somebody was told to press, by a name that is not on it, is a control that
+/// is not there.
+#[test]
+fn the_prompt_analysis_is_reachable_from_diagnostics() {
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::Go(Page::Prompt)),
+        "nothing on Diagnostics leads to the prompt analysis"
+    );
+
+    // And once there, something runs it.
+    desk.page = Page::Prompt;
+    desk.typed = "a prompt with two sentences. And a second one.".to_owned();
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::ReportPrompt),
+        "nothing on the prompt screen runs the analysis"
+    );
+}
+
+/// Every screen the column offers can be reached from every other.
+///
+/// A19: a column entry is an advertisement, and one that cannot be pressed is
+/// a screen an operator is told about and cannot open.
+#[test]
+fn every_menu_entry_can_be_pressed_from_every_screen() {
+    let mut desk = four_models();
+    for (from, _) in Page::MENU {
+        desk.page = *from;
+        for (to, label) in Page::MENU {
+            assert!(
+                act_within(&desk, &mcf_desk::Act::Go(*to), (0.0, 46.0)),
+                "{label} cannot be reached from {from:?}"
+            );
+        }
+    }
+}
+
+/// A window holding models draws them, and one holding none looks different.
+///
+/// F: a reading that went unanswered emptied the list, and the window said *no
+/// models exist* while sixteen sat on the disk and `mcf list` found them. The
+/// screen drew correctly in both cases — which is the point: what was wrong was
+/// which of the two it drew.
+#[test]
+fn a_window_holding_models_does_not_look_like_one_holding_none() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    let with = drawn(&desk, NIGHT, "models-held");
+
+    desk.models.clear();
+    desk.chosen = None;
+    let without = drawn(&desk, NIGHT, "models-none");
+    if with.width < 2 || without.width < 2 {
+        return; // no font on this machine; `drawn` said so
+    }
+
+    let differing = with
+        .pixels
+        .chunks(3)
+        .zip(without.pixels.chunks(3))
+        .filter(|(one, two)| one != two)
+        .count();
+    assert!(
+        differing > 2_000,
+        "a list of four models drew almost the same as an empty one ({differing} pixels \
+         differ), so an operator could not tell which they were being shown"
+    );
+}
+
+/// While a model is being held, the window says so.
+///
+/// F: hosting a large model blocked every reading, the window stopped
+/// repainting, and what was on screen said "a moment". An operator who has been
+/// told *a moment* and waits five minutes concludes it has failed.
+#[test]
+fn a_window_holding_a_model_says_that_it_is() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.chosen = Some(0);
+    let idle = drawn(&desk, NIGHT, "hosting-idle");
+
+    desk.doing = mcf_desk::Doing::Hosting(mcf_desk::job::Job::start(
+        std::path::PathBuf::from("/nowhere/control.sock"),
+        mcf_serve::control::Request::Hosted,
+        "holding Assistant-8B-Instruct-Q4_K_M".to_owned(),
+    ));
+    let holding = drawn(&desk, NIGHT, "hosting-underway");
+    if idle.width < 2 || holding.width < 2 {
+        return;
+    }
+
+    let differing = idle
+        .pixels
+        .chunks(3)
+        .zip(holding.pixels.chunks(3))
+        .filter(|(one, two)| one != two)
+        .count();
+    assert!(
+        differing > 200,
+        "a window with a host under way drew the same as an idle one ({differing} pixels \
+         differ), so nothing on screen said it was working"
+    );
+
+    // And the state line says which it is, rather than reporting the daemon
+    // as gone while it does what was asked.
+    desk.busy = true;
+    let (word, said) = desk.state_line();
+    assert_eq!(word, "HOLDING");
+    assert!(said.contains("so far"), "{said}");
+}
+
+/// The analysis can be taken out of the window.
+///
+/// MCF draws its own text, so there is nothing a window manager can select: a
+/// report somebody wants to paste into a message leaves by this control or it
+/// does not leave at all.
+#[test]
+fn the_analysis_can_be_taken_out_of_the_window() {
+    let mut desk = four_models();
+    desk.page = Page::Prompt;
+    desk.chosen = Some(0);
+    desk.typed = "One sentence. And another.".to_owned();
+
+    // With no reading there is nothing to copy, and nothing offers to.
+    assert!(
+        desk.analysis_as_text().is_none(),
+        "there is no analysis to hand over before one has been taken"
+    );
+    assert!(
+        !act_somewhere(&desk, &mcf_desk::Act::CopyAnalysis),
+        "a control offering to copy nothing is a control that lies"
+    );
+}
