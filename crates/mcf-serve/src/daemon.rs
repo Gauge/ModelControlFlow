@@ -70,13 +70,27 @@ pub struct Places {
 
 /// How many tokens each generation in a prompt report may produce.
 ///
-/// Enough for an answer worth comparing and small enough that a report of nine
-/// generations finishes: what is being compared is whether two answers differ,
-/// which a short answer settles as well as a long one.
-const PROMPT_REPORT_LIMIT: usize = 160;
+/// **A hundred and sixty was too few, and the report did not say it was
+/// cutting.** The reasoning was that comparing whether two answers differ is
+/// settled as well by a short answer as a long one. It is not, when the answer
+/// is code: asked for a C# class, every generation stopped inside the import
+/// block, so what was compared was six lines of preamble that shift wholesale
+/// when anything before them changes. That is a measurement of the preamble,
+/// and it put the floor at 94.3% — a run that could separate nothing (F147).
+///
+/// Six hundred is enough for a small class or function and still finishes: a
+/// prompt of six sentences is ten generations, which is the cost this command
+/// has always had. The report now says what the limit is and whether an answer
+/// reached it, because an answer that was cut is a condition of every figure
+/// computed from it (§3.4, A6).
+const PROMPT_REPORT_LIMIT: usize = 600;
 
 /// A prompt report, as a client reads it.
-fn prompt_report_value(report: &crate::prompt::Report, generations: usize) -> Value {
+fn prompt_report_value(
+    report: &crate::prompt::Report,
+    generations: usize,
+    tokens: Option<usize>,
+) -> Value {
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
         (
@@ -118,6 +132,25 @@ fn prompt_report_value(report: &crate::prompt::Report, generations: usize) -> Va
         (
             "generations",
             Value::Integer(i64::try_from(generations).unwrap_or(i64::MAX)),
+        ),
+        // **What each answer was allowed to be, and whether any hit it.** A
+        // figure computed from an answer that was cut is a figure about a
+        // prefix, and a reader comparing two prefixes of long answers is
+        // measuring the preamble. The condition travels with the report
+        // (§3.4, A6, F147).
+        (
+            "token_limit",
+            Value::Integer(i64::try_from(PROMPT_REPORT_LIMIT).unwrap_or(i64::MAX)),
+        ),
+        (
+            "sampler",
+            Value::text("greedy, temperature 0 — the seed cannot change the answer"),
+        ),
+        (
+            "prompt_tokens",
+            tokens.map_or(Value::Null, |held| {
+                Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+            }),
         ),
     ])
 }
@@ -1283,6 +1316,18 @@ impl Daemon {
     /// stream drained rather than suppressed — timing MCF rather than
     /// something that resembles it is the same reason a measurement does it
     /// this way (A11, A12).
+    /// How many tokens this model's vocabulary makes of some text.
+    ///
+    /// Read from the file's header, so it costs a bounded read and no
+    /// generation. `None` where the vocabulary cannot be read, which is a
+    /// state and not a zero (A7).
+    fn tokens_in(&self, named: &str, text: &str) -> Option<usize> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let file = header_of(&path)?;
+        let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).ok()?;
+        vocabulary.encode(text, true).ok().map(|held| held.len())
+    }
+
     fn prompt_report(&self, named: &str, prompt: &str, seed: u64, writer: &mut &UnixStream) {
         let mcf_home = self
             .places
@@ -1327,7 +1372,14 @@ impl Daemon {
             produced.said.map(|held| held.text).unwrap_or_default()
         };
         let report = crate::prompt::measure(prompt, seed, &mut ask);
-        let answer = Answer::served(prompt_report_value(&report, asked));
+        // **How the model actually receives the prompt.** The figures above
+        // are about answers; this is about the question, it costs no
+        // generation, and a reader asking which parts of their prompt carry
+        // weight wants to know that `c#` reached the model as two pieces.
+        // `mcf segment` shows every fragment; what belongs in a report about
+        // one prompt is how many there were (§3.15, B-381).
+        let tokens = self.tokens_in(named, prompt);
+        let answer = Answer::served(prompt_report_value(&report, asked, tokens));
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }

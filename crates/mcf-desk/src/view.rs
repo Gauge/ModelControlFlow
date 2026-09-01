@@ -2148,9 +2148,14 @@ fn what_it_will_cost(paint: &mut Painter, desk: &Desk, at: (f32, f32)) {
         at.0,
         at.1,
         &format!(
-            "{} — {}: one for the prompt, one for each sentence left out, one for each of 3 seeds",
+            "{} — {}: one for the prompt, one for each sentence left out, one for the control \
+             sentence, and one for each of 2 further seeds",
             count_of(sentences, "sentence"),
-            count_of(sentences + 3, "generation")
+            // Baseline, one per sentence, the floor's control, and SEEDS - 1
+            // further seeds. This said `sentences + 3` and forgot the control,
+            // so a three-sentence prompt was forecast at six generations and
+            // cost seven (F147).
+            count_of(sentences + 4, "generation")
         ),
         Weight::Regular,
         size::SMALL,

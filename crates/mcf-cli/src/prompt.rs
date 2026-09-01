@@ -222,6 +222,17 @@ fn steering_lines(body: &Value) -> Vec<String> {
 }
 
 /// The report, as a person reads it.
+/// A share of an answer, written out.
+///
+/// Integer arithmetic, because the workspace ships no floating point: a NaN
+/// that reaches a record is a figure nobody can compare, and `as_percent`
+/// above has split parts per million into whole and tenth for the same reason
+/// since this file was written.
+fn percent(parts_per_million: i64) -> String {
+    let (whole, tenth) = as_percent(parts_per_million);
+    format!("{whole}.{tenth}%")
+}
+
 /// A count and the thing counted, in English.
 ///
 /// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`.
@@ -246,6 +257,62 @@ fn header_name(named: &str) -> &str {
         .unwrap_or(named)
 }
 
+/// The answer, and the conditions every figure above was computed under.
+///
+/// How long an answer was allowed to be, how the prompt reached the model, and
+/// what the sampler was: each of them changes what the figures mean, and none
+/// of them was on the page (§3.4, A6, F147).
+fn the_answer_and_its_conditions(body: &Value) -> Vec<String> {
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let mut lines = Vec::new();
+    lines.push("  THE ANSWER TO THE PROMPT AS WRITTEN".to_owned());
+    let baseline = text("baseline");
+    let written: Vec<&str> = baseline.lines().collect();
+    for said in written.iter().take(12) {
+        lines.push(format!("    {said}"));
+    }
+    if written.len() > 12 {
+        lines.push(format!(
+            "    … {} — `--json` carries the whole of it",
+            count_of(
+                i64::try_from(written.len().saturating_sub(12)).unwrap_or(0),
+                "further line"
+            )
+        ));
+    }
+    // **What every answer was allowed to be.** A figure computed from an
+    // answer that stopped at a limit is a figure about a prefix, and a reader
+    // comparing two prefixes is measuring whatever the model puts first
+    // (§3.4, A6, F147).
+    // How the model receives the question, beside what it did with it.
+    let tokens = count("prompt_tokens");
+    if tokens > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "    the prompt reached the model as {} — `mcf segment` shows every one of them, and \
+             which words this vocabulary had no single piece for",
+            count_of(tokens, "token")
+        ));
+    }
+    let limit = count("token_limit");
+    if limit > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "    each generation stopped at {}. An answer that reached it was cut, and a figure \
+             comparing two cut answers is about their first {limit} tokens",
+            count_of(limit, "token")
+        ));
+    }
+    lines.push(String::new());
+    lines
+}
+
 fn rendered(body: &Value, named: &str) -> Vec<String> {
     let text = |key: &str| {
         body.get(key)
@@ -255,6 +322,10 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     };
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
 
+    let floor_ppm = body
+        .get("floor_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
     let mut lines = vec![
         format!("what this prompt does to {}", header_name(named)),
         String::new(),
@@ -264,37 +335,61 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
             count_of(count("generations"), "generation")
         ),
         String::new(),
-        "  HOW MUCH EACH SENTENCE STEERED THE ANSWER".to_owned(),
-        "  each was removed in turn, with the seed held still".to_owned(),
-        String::new(),
     ];
+
+    // **Where the floor swamps the column, that is the finding.** A floor of
+    // 94.3% means removing a sentence carrying no instruction moved almost the
+    // whole answer, so nothing below separates one sentence from another —
+    // and the report used to draw the bars first and put the number that
+    // invalidates them underneath, in the same voice as everything else. A
+    // reader reads the bars (§3.15, A7, F147).
+    let readable = floor_ppm < 500_000;
+    if !readable {
+        lines.push("  THIS RUN CANNOT SEPARATE YOUR SENTENCES".to_owned());
+        lines.push(format!(
+            "    removing a sentence that carries no instruction moved {} of the answer, so a \
+             sentence scoring near that has told you nothing. The column below is printed \
+             because hiding a measurement is worse than showing a poor one — but read it as \
+             *this run did not work*, not as an ordering.",
+            percent(floor_ppm)
+        ));
+        lines.push(String::new());
+        lines.push(
+            "    a floor this high usually means the answer is long and open-ended: try a \
+             prompt whose answer is short, or ask for one part of the work at a time"
+                .to_owned(),
+        );
+        lines.push(String::new());
+    }
+
+    lines.push("  HOW MUCH EACH SENTENCE STEERED THE ANSWER".to_owned());
+    lines.push("  each was removed in turn, with the seed held still".to_owned());
+    lines.push(String::new());
 
     lines.extend(steering_lines(body));
     lines.push(String::new());
-    lines.push("  WHETHER THE PROMPT SETTLES THE ANSWER".to_owned());
+    lines.push("  WHETHER SEVERAL SEEDS GAVE SEVERAL ANSWERS".to_owned());
     let distinct = count("distinct_answers");
     let asked = count("seeds_asked");
     lines.push(if distinct <= 1 {
         format!(
-            "    {} gave 1 answer: this prompt settles the answer on this model, \
-             under these conditions",
+            "    {} gave 1 answer — and under this sampler they could not have given more. \
+             MCF asks every generation at temperature 0, which takes the likeliest token every \
+             time, so the seed changes nothing and this line says the same for every prompt. \
+             Whether *your* prompt settles the answer is not measured here (F147).",
             count_of(asked, "seed")
         )
     } else {
         format!(
-            "    {} gave {distinct} different answers: this prompt does not settle \
-             the answer on this model. That is not a fault in the prompt — an open question \
-             deserves several answers and a specification does not",
+            "    {} gave {distinct} different answers — which under temperature 0 should not \
+             happen at all, and is a fact about the engine rather than the prompt. Worth \
+             reporting rather than hiding (A2).",
             count_of(asked, "seed")
         )
     });
 
     lines.push(String::new());
-    lines.push("  THE ANSWER TO THE PROMPT AS WRITTEN".to_owned());
-    for said in text("baseline").lines().take(6) {
-        lines.push(format!("    {said}"));
-    }
-    lines.push(String::new());
+    lines.extend(the_answer_and_its_conditions(body));
     lines.push(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \
          Those are judgements and they need a rater. What is above is which sentences changed \

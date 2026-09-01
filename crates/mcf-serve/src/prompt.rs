@@ -177,9 +177,27 @@ impl Report {
 pub fn clauses_of(prompt: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut held = String::new();
-    for character in prompt.chars() {
+    let mut characters = prompt.chars().peekable();
+    while let Some(character) = characters.next() {
         held.push(character);
-        if matches!(character, '.' | '?' | '!' | '\n') {
+        // **A full stop ends a sentence only where a space follows it.**
+        // Splitting on every `.` cut `0.001` into two clauses, `arr.Length`
+        // into two, and `System.Numerics` into two — so a prompt about
+        // precision, or one naming any dotted identifier, was ablated on
+        // fragments that were never sentences. A newline is a break whatever
+        // follows it (F147).
+        //
+        // What this does not fix is `e.g.`, which ends in a full stop and a
+        // space and is not the end of a sentence. Telling that from a sentence
+        // ending in the letter g needs a list of abbreviations, which is a
+        // fact about a language rather than about this prompt, and getting it
+        // wrong in the other direction would silently join two real sentences.
+        // The failure that remains splits one clause into two; the one removed
+        // split a number in half.
+        let ends = character == '\n'
+            || (matches!(character, '.' | '?' | '!')
+                && characters.peek().is_none_or(|next| next.is_whitespace()));
+        if ends {
             let trimmed = held.trim().to_owned();
             if !trimmed.is_empty() && trimmed.chars().any(char::is_alphanumeric) {
                 found.push(trimmed);
@@ -336,3 +354,66 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>) -> Report {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod splitting_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use super::clauses_of;
+
+    /// A number is not two sentences (F147).
+    #[test]
+    fn a_decimal_does_not_end_a_sentence() {
+        let held = clauses_of("Results must be accurate to 0.001 tolerance. Use doubles.");
+        assert_eq!(
+            held,
+            vec![
+                "Results must be accurate to 0.001 tolerance.".to_owned(),
+                "Use doubles.".to_owned()
+            ],
+            "a prompt about precision was ablated on half a number"
+        );
+    }
+
+    /// Nor is a dotted identifier, which is most of what a coding prompt says.
+    #[test]
+    fn a_dotted_name_does_not_end_a_sentence() {
+        assert_eq!(
+            clauses_of("Call arr.Length to get the size. Return an int."),
+            vec![
+                "Call arr.Length to get the size.".to_owned(),
+                "Return an int.".to_owned()
+            ]
+        );
+        assert_eq!(clauses_of("Use System.Numerics.").len(), 1);
+    }
+
+    /// A newline is a break whatever follows it.
+    #[test]
+    fn a_line_ending_is_a_break() {
+        assert_eq!(clauses_of("One line.\nAnother line.").len(), 2);
+        assert_eq!(clauses_of("no punctuation\nand more").len(), 2);
+    }
+
+    /// And what is still wrong, held so that it is a known limit rather than a
+    /// surprise: an abbreviation ends in a full stop and a space.
+    #[test]
+    fn an_abbreviation_is_still_read_as_an_ending() {
+        // Two sentences, read as three. Recorded because a check that passes
+        // on what is fixed and says nothing about what is not is a check that
+        // reads as a guarantee (A7).
+        assert_eq!(clauses_of("Use a library, e.g. System.Numerics. Keep it simple.").len(), 3);
+    }
+
+    /// The whole point: the prompt is the sentences a person wrote.
+    #[test]
+    fn a_prompt_is_split_where_a_person_would_split_it() {
+        let held = clauses_of(
+            "write a class in c#. the class handles all the basic math functions. each \
+             function should output extremely accurate results.",
+        );
+        assert_eq!(held.len(), 3, "{held:?}");
+        assert!(held[0].ends_with("c#."), "{held:?}");
+    }
+}
