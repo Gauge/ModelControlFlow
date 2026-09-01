@@ -20,7 +20,7 @@ use mcf_serve::control::{Answer, Request};
 use crate::Response;
 
 /// What MCF would run a model under, and why.
-pub(crate) fn settings(model: &str) -> Response {
+pub(crate) fn settings(model: &str, at: Option<u64>) -> Response {
     ask(&Request::Settings {
         model: model.to_owned(),
     })
@@ -30,7 +30,7 @@ pub(crate) fn settings(model: &str) -> Response {
             served: false,
         },
         |body| Response {
-            text: explained(&body),
+            text: explained(&body, at),
             served: true,
         },
     )
@@ -144,7 +144,7 @@ fn in_gigabytes(bytes: i64) -> String {
     format!("{whole}.{tenth} GiB")
 }
 
-fn explained(body: &Value) -> String {
+fn explained(body: &Value, at: Option<u64>) -> String {
     let mut lines = vec![format!(
         "{}\n",
         body.get("model").and_then(Value::as_text).unwrap_or("?")
@@ -172,6 +172,28 @@ fn explained(body: &Value) -> String {
                 "  {:<20} at that size the cache reserves {}",
                 "",
                 in_gigabytes(bytes)
+            ));
+        }
+        // **And at a window somebody is considering rather than the one MCF
+        // chose.** Deciding how much of the machine to give a model means
+        // comparing windows, and the window MCF picked is only one of them.
+        // The rate comes from the daemon and the multiplication happens here,
+        // so asking about six sizes is one question rather than six (A22).
+        if name == "context window"
+            && let Some(wanted) = at
+            && let Some(per) = body
+                .get("cache_bytes_per_token")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+            && per > 0
+        {
+            lines.push(format!(
+                "  {:<20} at {} tokens it reserves {}",
+                "",
+                wanted,
+                in_gigabytes(
+                    i64::try_from(per.saturating_mul(wanted)).unwrap_or(i64::MAX)
+                )
             ));
         }
         lines.push(String::new());

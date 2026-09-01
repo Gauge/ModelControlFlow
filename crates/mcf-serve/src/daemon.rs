@@ -1819,6 +1819,18 @@ impl Daemon {
                             Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
                         }),
                 ),
+                // **And the rate, so a caller can price a window MCF did not
+                // recommend.** `cache_bytes` answers *what does the window MCF
+                // chose cost*; somebody deciding between windows is asking
+                // about the ones it did not, and a round trip per candidate to
+                // multiply by a constant is a poor way to answer it. The
+                // window does this arithmetic already (B-423, A22).
+                (
+                    "cache_bytes_per_token",
+                    self.cache_for(named, 1).map_or(Value::Null, |bytes| {
+                        Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+                    }),
+                ),
                 (
                     "explains",
                     Value::List(

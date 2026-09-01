@@ -243,6 +243,9 @@ enum Request<'a> {
     },
     /// What MCF would run a model under.
     Settings {
+        /// A context to price besides the one MCF recommends, where the
+        /// operator named one.
+        at: Option<u64>,
         /// The model.
         model: &'a str,
     },
@@ -443,7 +446,14 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "cross-check",
             needs: "<model>",
         },
-        ["settings", model] => Request::Settings { model },
+        ["settings", model] => Request::Settings { model, at: None },
+        ["settings", model, "--context", at] => match at.parse::<u64>() {
+            Ok(at) => Request::Settings { model, at: Some(at) },
+            Err(_) => Request::UnexpectedArgument {
+                command: "settings",
+                argument: at,
+            },
+        },
         // Each of these wanted its argument, matched nothing without it,
         // and answered *no such command* — a command MCF has, denying
         // itself. `mcf explain` sends the operator to `mcf settings`
@@ -1422,7 +1432,9 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20         [--engine <name>]           conversation is measured rather\n\
                  \x20                                     than assumed\n\
                  \x20 mcf settings <model>                every setting a model would run\n\
-                 \x20                                     under, and where each came from\n\
+                 \x20              [--context <n>]        under, and where each came from;\n\
+                 \x20                                     with a context, what that window\n\
+                 \x20                                     would reserve in memory\n\
                  \x20 mcf unhost                          stop holding it, and give the\n\
                  \x20                                     memory back\n\
                  \x20 mcf list                            what this machine is holding\n\
@@ -1523,7 +1535,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Bundle { id, into } => bundle::run(id, *into),
         Request::Show { id } => show::run(id),
         Request::CrossCheck { model } => crosscheck::run(model),
-        Request::Settings { model } => hosting::settings(model),
+        Request::Settings { model, at } => hosting::settings(model, *at),
         Request::Host { model, changes } => hosting::host(model, changes),
         Request::Hosted => hosting::held(),
         Request::Unhost => hosting::unhost(),
