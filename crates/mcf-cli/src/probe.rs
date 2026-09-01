@@ -695,7 +695,6 @@ fn thinking_lines(
             lines.push(format!(" INCONCLUSIVE — {because}"));
             lines.push(" which licenses nothing, and is not a negative result".to_owned());
         }
-        other => lines.push(format!(" {other:?}")),
     }
     lines.push(String::new());
     lines.push(format!(
@@ -980,7 +979,6 @@ fn vision_result_lines(
             // record. The screen gets what it means.
             lines.push(" which licenses nothing, and is not a negative result".to_owned());
         }
-        other => lines.push(format!(" {other:?}")),
     }
     lines.push(String::new());
     lines.push(format!(

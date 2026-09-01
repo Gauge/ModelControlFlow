@@ -602,9 +602,32 @@ fn measured_ends(held: &Value) -> Measured {
 
 /// Asks the daemon one question.
 fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
+    ask_within(socket, request, std::time::Duration::from_secs(30))
+}
+
+/// How long a poll waits before giving the frame back.
+///
+/// **The window asks the daemon four questions a second, and the daemon
+/// answers one thing at a time.** With a thirty-second deadline on each, a
+/// daemon busy loading a large model froze the window solid: no repaint, no
+/// events, nothing on screen to say anything was happening — while the thing
+/// the operator had just asked for was in fact under way. A poll is a status
+/// read that a free daemon answers instantly, so waiting longer than a frame
+/// or two buys nothing and costs the whole interface (§3.8, A7).
+///
+/// A deliberate act still waits the full thirty seconds: somebody who pressed
+/// a button meant it.
+const POLL: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Asks, waiting no longer than this for the answer.
+fn ask_within(
+    socket: &Path,
+    request: &Request,
+    deadline: std::time::Duration,
+) -> Result<Answer, String> {
     let mut connection = UnixStream::connect(socket)
         .map_err(|_| "MCF is not answering on this computer".to_owned())?;
-    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+    let _deadline = connection.set_read_timeout(Some(deadline));
     writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
         .map_err(|error| format!("the request could not be sent: {error}"))?;
@@ -758,6 +781,13 @@ pub struct Desk {
     pub reading: mcf_tui::machine::Reading,
     /// Why MCF could not be reached, when it could not.
     pub refusal: Option<String>,
+    /// Whether the last poll went unanswered in time.
+    ///
+    /// **Busy and absent are different facts.** A daemon loading a large model
+    /// answers nothing for minutes, and a window that read that as *not up*
+    /// would tell an operator their daemon had died at the exact moment it was
+    /// doing what they asked (A7).
+    pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
     /// Which model a measurement or a question is about.
@@ -809,6 +839,7 @@ impl Desk {
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
+            busy: false,
             typed: String::new(),
             chosen: None,
             doing: Doing::Nothing,
@@ -1097,7 +1128,10 @@ impl Desk {
 
     /// Asks MCF what it is holding.
     pub fn read_hosted(&mut self) {
-        self.hosted = match ask(&self.socket, &Request::Hosted) {
+        // Held rather than replaced: a poll that went unanswered says nothing
+        // about what is hosted, and blanking the screen on it would report
+        // MCF's own busyness as the model being gone.
+        let read = match ask_within(&self.socket, &Request::Hosted, POLL) {
             Ok(answer) if answer.served => {
                 answer
                     .body
@@ -1125,8 +1159,16 @@ impl Desk {
                             .and_then(|context| u64::try_from(context).ok()),
                     })
             }
-            _ => None,
+            // Served, and nothing is held: that is an answer, and it clears.
+            Ok(answer) if answer.served => None,
+            // Unanswered. Keep what was there and say the daemon is busy.
+            _ => {
+                self.busy = true;
+                return;
+            }
         };
+        self.busy = false;
+        self.hosted = read;
     }
 
     /// Holds the chosen model under the settings as they stand.
@@ -1303,7 +1345,7 @@ impl Desk {
     /// stopped answering has not un-built anything, and a screen that went
     /// blank would say it had.
     pub fn read_components(&mut self) {
-        if let Ok(answer) = ask(&self.socket, &Request::Components)
+        if let Ok(answer) = ask_within(&self.socket, &Request::Components, POLL)
             && answer.served
             && let Some(listed) = answer.body.get("components").and_then(Value::as_list)
         {
@@ -1313,7 +1355,7 @@ impl Desk {
 
     /// Asks MCF what it is holding.
     pub fn refresh(&mut self) {
-        match ask(&self.socket, &Request::Holding) {
+        match ask_within(&self.socket, &Request::Holding, POLL) {
             Ok(answer) if answer.served => {
                 self.refusal = None;
                 self.models = answer
@@ -1334,7 +1376,15 @@ impl Desk {
                         .to_owned(),
                 );
             }
-            Err(why) => self.refusal = Some(why),
+            // **Unanswered in time is not *not up*.** A daemon loading a
+            // large model answers nothing for minutes; reporting that as a
+            // dead daemon tells an operator the opposite of what is happening.
+            // Only a connection that could not be made at all is a refusal.
+            Err(why) if why.contains("not answering on this computer") => {
+                self.busy = false;
+                self.refusal = Some(why);
+            }
+            Err(_) => self.busy = true,
         }
     }
 
@@ -1361,6 +1411,21 @@ impl Desk {
     pub fn state_line(&self) -> (String, String) {
         if let Some(why) = &self.refusal {
             return ("NOT UP".to_owned(), why.clone());
+        }
+        if self.busy
+            && let Doing::Hosting(job) = &self.doing
+            && !job.finished
+        {
+            return (
+                "HOLDING".to_owned(),
+                format!("{} — {}s so far", job.what, job.ran()),
+            );
+        }
+        if self.busy {
+            return (
+                "BUSY".to_owned(),
+                "MCF is working on something and answers one thing at a time".to_owned(),
+            );
         }
         match &self.doing {
             Doing::Nothing => (

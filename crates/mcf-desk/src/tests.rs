@@ -672,3 +672,68 @@ fn what_is_hosted_carries_where_it_answers() {
     );
     assert_eq!(hosting.context, Some(8192));
 }
+
+/// A daemon that is busy is not a daemon that is gone.
+///
+/// F: the window polls four times a second with a thirty-second deadline on
+/// each, and the daemon answers one thing at a time. Hosting a large model made
+/// every poll block, so the window stopped repainting entirely — no state, no
+/// events, nothing on screen — while the thing the operator had just asked for
+/// was under way. What was on screen before the freeze said "a moment".
+///
+/// Two claims have to stay apart: MCF could not be reached, and MCF has not
+/// answered yet. Reading the second as the first tells an operator their daemon
+/// died at the moment it was doing what they asked (A7).
+#[test]
+fn a_busy_daemon_is_not_a_missing_one() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+
+    // Nothing listening at all: a refusal, and it says so.
+    desk.refresh();
+    assert!(
+        desk.refusal.is_some(),
+        "a socket with nothing behind it is a refusal"
+    );
+    assert!(!desk.busy, "and not merely busy");
+    let (word, _) = desk.state_line();
+    assert_eq!(word, "NOT UP");
+
+    // Busy, with a host under way: the state line says what is happening and
+    // for how long, rather than reporting the daemon as gone.
+    desk.refusal = None;
+    desk.busy = true;
+    desk.doing = crate::Doing::Hosting(crate::job::Job::start(
+        std::path::PathBuf::from("/nowhere/control.sock"),
+        mcf_serve::control::Request::Hosted,
+        "holding a-model".to_owned(),
+    ));
+    let (word, said) = desk.state_line();
+    assert_eq!(word, "HOLDING", "it is holding, not down");
+    assert!(said.contains("holding a-model"), "{said}");
+    assert!(
+        said.contains("so far"),
+        "how long it has waited, not a promise about how long it will take: {said}"
+    );
+}
+
+/// A poll that went unanswered does not blank what is hosted.
+///
+/// Replacing it would report MCF's own busyness as the model being gone — on
+/// the very screen an operator is watching to see whether it arrived.
+#[test]
+fn an_unanswered_poll_keeps_what_was_hosted() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.hosted = Some(crate::Hosted {
+        model: "/a/model.gguf".to_owned(),
+        address: "http://127.0.0.1:8080/v1".to_owned(),
+        since: "2026-09-01T00:00:00Z".to_owned(),
+        context: Some(4096),
+    });
+    // Nothing answers, so nothing is learned — and nothing is forgotten.
+    desk.read_hosted();
+    assert!(
+        desk.hosted.is_some(),
+        "an unanswered poll says nothing about what is held"
+    );
+    assert!(desk.busy, "and it is recorded as busy");
+}

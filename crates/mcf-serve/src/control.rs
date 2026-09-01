@@ -255,7 +255,7 @@ fn generate_line(
                 (
                     "engine",
                     match engine {
-                        Some(engine) => Value::text(engine.clone()),
+                        Some(engine) => Value::text(engine.to_owned()),
                         None => Value::Null,
                     },
                 ),

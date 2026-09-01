@@ -836,11 +836,20 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
             ink.accent,
         );
     } else if let Doing::Hosting(job) = &desk.doing {
+        // **How long it has been going, rather than a promise about how long
+        // it will take.** This said "a moment", and a seventy-gigabyte model
+        // takes minutes: an operator who has been told *a moment* and waits
+        // five is an operator who reasonably concludes it has failed. What MCF
+        // knows is how long it has waited, so that is what it says (A7).
         let said = job.refused.clone().unwrap_or_else(|| {
             if job.finished {
                 String::new()
             } else {
-                "starting — a large model takes a moment to load".to_owned()
+                format!(
+                    "HOLDING — {}s so far. A large model is read from disk before it answers; \
+                     this screen keeps up to date while it loads.",
+                    job.ran()
+                )
             }
         });
         let colour = if job.refused.is_some() {
