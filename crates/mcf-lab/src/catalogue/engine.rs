@@ -314,7 +314,9 @@ fn nothing_to_cross_check(_world: &World) -> Outcome {
     // much as the category — a comparison against nothing must not be reported
     // as a comparison that found nothing wrong (A7, D42), and it must not cost
     // a model load to say so (F44).
-    match mcf_serve::crosscheck::against(b"not a model either", &[1], &[]) {
+    // No memory figure: this feeds a few bytes that are not a model, and what
+    // is being observed is how the reading fails (A7).
+    match mcf_serve::crosscheck::against(b"not a model either", &[1], &[], None) {
         Err(failure) => Outcome::Produced(failure),
         Ok(_) => {
             Outcome::Unexpected("a comparison against no tokens was called an agreement".to_owned())

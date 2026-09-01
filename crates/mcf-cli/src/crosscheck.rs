@@ -42,6 +42,17 @@ pub(crate) fn run(model: &str) -> Response {
             served: false,
         };
     };
+    // Weighed from its directory before it is read, the same way `mcf run`
+    // weighs it: what follows reads the whole file and then dequantizes it,
+    // and a model this machine cannot hold has to be refused with both
+    // numbers rather than discovered by the kernel ending something (B-372,
+    // F136).
+    if let Err(failure) = crate::run::examined(&path) {
+        return Response {
+            text: format!("mcf: {} cannot be read with MCF's own engine\n  {failure}", path.display()),
+            served: false,
+        };
+    }
     let Ok(bytes) = std::fs::read(&path) else {
         return Response {
             text: format!("mcf: {} could not be read", path.display()),
@@ -65,7 +76,11 @@ pub(crate) fn run(model: &str) -> Response {
         }
     };
 
-    match crosscheck::against(&bytes, &prompt_tokens, &produced) {
+    let free = match mcf_core::hardware::Machine::read().memory.available {
+        mcf_core::attested::Attested::Known(bytes) => Some(bytes.0),
+        mcf_core::attested::Attested::Unknown => None,
+    };
+    match crosscheck::against(&bytes, &prompt_tokens, &produced, free) {
         Err(failure) => Response {
             text: format!(
                 "mcf: MCF's own engine could not read {}\n  {failure}",

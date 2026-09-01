@@ -148,6 +148,11 @@ pub(crate) fn serve_generation(
     // answer to a question already settled — and when it did, it chose the
     // processor build every time, because it matched a name (§3.15, F133).
     picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    // What the machine says is free, read by the daemon. Handed in rather
+    // than taken here for the same reason the engine is: B4 keeps hardware
+    // sampling out of the serving path, so this is a number the caller
+    // observed and not one this function goes and takes.
+    free: Option<u64>,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -187,7 +192,9 @@ pub(crate) fn serve_generation(
             ),
             None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
         },
-        Ok(Chosen::StandIn) => attempt(store, resident, named, prompt, tokens, limit, seed, writer),
+        Ok(Chosen::StandIn) => {
+            attempt(store, resident, named, prompt, tokens, limit, seed, free, writer)
+        }
         Err(failure) => Err(failure),
     };
     // The provenance travels into the account, so that a measurement taken
@@ -614,6 +621,7 @@ fn attempt(
     tokens: Option<&[usize]>,
     limit: usize,
     seed: u64,
+    free: Option<u64>,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     // A path as given, or a name under the daemon's store — the two ways a
@@ -639,6 +647,40 @@ fn attempt(
     let loaded = if same {
         "resident"
     } else {
+        // **The refusal the console already made, made here too.** `mcf run`
+        // with no daemon weighs a model against free memory before
+        // dequantizing it; through the daemon it did not, so the surface that
+        // is meant to be able to do everything was the one that could not
+        // refuse (A22, B-072). What this branch does next is read the whole
+        // file and allocate several times its size, and a machine that cannot
+        // afford that does not get told: the kernel ends some other process
+        // instead, which is a failure MCF caused and did not report (A2,
+        // F136).
+        //
+        // Weighed from the header, which is a few megabytes, because a check
+        // that had to read the file first would already have spent what it is
+        // trying to refuse. The same arithmetic the console uses, so that the
+        // two surfaces agree about which models this machine can run.
+        // Everything that can be decided from the header is decided from the
+        // header, and decided *before* the resident model is let go: an
+        // architecture MCF was never taught and a model this machine cannot
+        // hold are both knowable from a few megabytes, and refusing on either
+        // after evicting what was loaded would charge the operator a reload
+        // for a question that was answerable without one.
+        if let Some(header) = crate::daemon::header_of(&path) {
+            llama::covers(&header)?;
+            if let Some(available) = free {
+                header.fits_dequantized(available)?;
+            }
+        }
+        // **Released before the next is read, not after.** The line below has
+        // always said the previous resident is released here, and it was not:
+        // the new model was assigned at the end of the load, so the outgoing
+        // one stayed resident for the whole of it and the peak was two models
+        // and a file, on a path whose entire purpose is to hold one model at a
+        // time. Dropping first costs a reload when what follows refuses, which
+        // is much the cheaper of the two mistakes (F136).
+        *held = None;
         // Load, and hold: the previous resident, if any, is released here —
         // one model at a time, and which one is what was asked for last.
         let bytes = std::fs::read(&path).map_err(|error| missing(named, &path, &error))?;

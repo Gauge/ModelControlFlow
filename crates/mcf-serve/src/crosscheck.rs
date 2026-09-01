@@ -91,11 +91,21 @@ impl Agreement {
 
 /// Reads the other engine's tokens with MCF's engine, position by position.
 ///
+/// `free` is what the platform says is available, observed by the caller —
+/// B4 keeps hardware sampling out of here, and a caller that does not know
+/// passes `None`, which is not a refusal (A7).
+///
 /// # Errors
 ///
-/// Whatever loading the model reports. A model MCF cannot read is not a
+/// Whatever loading the model reports, and `resource.memory.exhausted` where
+/// this model cannot be held dequantized. A model MCF cannot read is not a
 /// disagreement — it is MCF declining to answer, and saying so.
-pub fn against(bytes: &[u8], prompt: &[usize], produced: &[usize]) -> Result<Agreement, Failure> {
+pub fn against(
+    bytes: &[u8],
+    prompt: &[usize],
+    produced: &[usize],
+    free: Option<u64>,
+) -> Result<Agreement, Failure> {
     // Before the model is loaded, not after. Nothing to compare against is a
     // fact about the *other* engine's answer and needs no model at all —
     // loading one to discover it is the shape F44 is about, paying for an
@@ -119,6 +129,12 @@ pub fn against(bytes: &[u8], prompt: &[usize], produced: &[usize]) -> Result<Agr
     }
 
     let file = mcf_standin::gguf::parse(bytes)?;
+    // Weighed before it is dequantized, the same arithmetic every other path
+    // uses. A cross-check exists to compare two engines and it cannot do that
+    // from inside a process the kernel has ended (B-372, F136).
+    if let Some(available) = free {
+        file.fits_dequantized(available)?;
+    }
     let vocabulary = Vocabulary::read(&file)?;
     // Threads change what this costs and not what it produces (B-366), which is
     // exactly what a cross-check needs: the logits compared here are the same

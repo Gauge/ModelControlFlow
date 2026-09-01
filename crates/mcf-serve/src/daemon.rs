@@ -130,7 +130,7 @@ fn prompt_report_value(report: &crate::prompt::Report, generations: usize) -> Va
 /// of them made the daemon appear to hang. The directory sits at the front, so
 /// a few mebibytes answers every question this needs — and where a header is
 /// unusually large the read grows once rather than giving up.
-fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
+pub(crate) fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     use std::io::Read as _;
     let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
     for cap in [4_u64 << 20, 64 << 20] {
@@ -1189,6 +1189,7 @@ impl Daemon {
             tokens,
             engine,
             picked,
+            system_memory_free(),
             writer,
         );
         // The account goes to the record and what the model said goes to the
@@ -1279,6 +1280,7 @@ impl Daemon {
                     None,
                     None,
                     picked.clone(),
+                    system_memory_free(),
                     &mut into,
                 )
             };
@@ -1611,6 +1613,7 @@ impl Daemon {
                 Some(&tokens),
                 engine,
                 picked,
+                system_memory_free(),
                 &mut writer,
             )
         };

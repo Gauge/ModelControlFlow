@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 136 | [F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)](#136-f136-the-console-weighed-a-model-before-loading-it-and-the-daemon-did-not-so-a-machine-with-no-room-for-one-was-told-by-the-kernel-and-not-necessarily-in-this-process-b-372-a2-a22-b-072) |
 | 135 | [F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)](#135-f135-one-change-made-three-register-entries-false-and-none-of-them-said-so-a-status-is-prose-and-prose-does-not-fail-a-build-b-036-b-038-b-040-a1) |
 | — | [Changelog](#changelog) |
 
@@ -9387,6 +9388,59 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 136 · F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)
+
+**MCF's own engine dequantizes to `f32`.** A quantized file comfortable on
+disk becomes several times its size in memory, which is why B-372 wrote
+`fits_dequantized`: arithmetic on a file's tensor directory against what the
+platform says is free, refusing with both numbers named. It works, it is
+tested, and the console calls it before it loads anything.
+
+**The daemon did not call it.** `mcf run` reaches the same stand-in engine by
+two roads — in-process when nothing is listening, over the socket when
+something is — and only one of them weighed the model. The same file was
+refused by the console and loaded by the daemon, which is precisely the
+disagreement A22 and B-072 exist to prevent, and the road without the guard
+is the one that is taken whenever a daemon happens to be up.
+
+**What the unguarded road did.** It read the whole file into memory, then
+allocated several times that again. Asked for a 62 GB model on a machine with
+96 GB free, it would reach for 335 GB. Nothing reported anything, because
+there was nothing left to report with: the kernel picked a process and ended
+it. Sometimes that was the daemon. Sometimes it was whatever else the operator
+had open — an editor, a session, work that had no connection to MCF beyond
+sharing a machine with it.
+
+**That last part is why this is worse than an ordinary A2 violation.** A
+silent failure normally costs the caller their answer. This one spends a
+resource that is not MCF's to spend, and the bill is presented to whoever the
+kernel chooses. The operator sees an unrelated program disappear and has no
+reason at all to suspect the thing they asked to load a model.
+
+**A second defect sat inside the first.** The load branch carried a comment
+saying *the previous resident, if any, is released here* — and it was not.
+The new model was assigned at the end of the load, so the outgoing one stayed
+resident throughout it, and the peak was two models and a file on a path whose
+whole purpose is to hold one model at a time. The comment described the
+intended design; nothing held the code to it.
+
+**The remedy is order, and it is the same order the console already uses.**
+Everything decidable from the header is decided from the header, before
+anything large is read and before anything held is let go: an architecture MCF
+was never taught, then whether this machine can hold the model dequantized.
+Both are answerable from a few megabytes. Only then is the resident released,
+and only then is the file read. A refusal now costs nothing and keeps what was
+already loaded.
+
+**What holds it.** `a_model_is_weighed_before_it_is_held` sweeps the shipped
+tree for anything that hands bytes to the loader and does not weigh them
+first. It is a coarse instrument — presence, not dominance — and it caught a
+second unguarded site in the same change, in the cross-check, which is exactly
+the class of thing a coarse instrument is for. Sites that are deliberately
+unweighed are declared with their reason, so the next one is a decision
+somebody writes down rather than an omission nobody notices.
+
 
 ## 135 · F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)
 
