@@ -444,18 +444,43 @@ mistake this type exists to prevent.
 
 #### `mcf prompt <model> --prompt <text> [--json]`
 
-What a prompt does to a model. Each sentence is removed in turn with the seed
+What a prompt does to a model, in two readings that fail differently.
+
+**What each sentence steered.** Each sentence is removed in turn with the seed
 held still, and how much of the answer moved is reported against a floor
 measured on the same run — a control sentence carrying no instruction, put in
-and taken out again.
+and taken out again. Read the column as an **ordering**, not as relevance:
+removing anything shifts what follows it, so a sentence well above the floor
+may still have steered nothing.
 
-Read the column as an **ordering**, not as relevance: removing anything shifts
-what follows it, so a sentence well above the floor may still have steered
-nothing. It also reports whether several seeds give one answer, which is whether
-the prompt settles the answer on this model. `--json` for a program.
+**Where the floor swamps the column, the report says so first.** A long
+open-ended answer moves almost entirely whichever sentence is removed, and a
+run like that separates nothing — so it opens with *this run cannot separate
+your sentences* rather than drawing bars that imply it did. The bars are still
+printed: hiding a measurement is worse than showing a poor one.
 
-It is expensive by construction — one generation per sentence and one per seed —
-which is why it is asked for rather than done on the way past.
+**Which words the model did not expect.** At each position MCF asks the engine
+where the token you wrote sat in what it would have written there itself. Its
+first choice means you supplied nothing; outside its list means the prompt said
+something it did not expect. Nothing is compared to anything, so the drift that
+makes the column above an ordering does not reach this one — it is the reading
+a high floor leaves standing.
+
+**What it does not measure.** Every generation is asked at temperature 0, so
+the seed cannot change the answer: the several-seeds line reports the sampler
+and not the prompt, and says so. Nothing here says whether a prompt is good —
+that is a judgement and it needs a rater.
+
+`mcf segment <model> --prompt <text>` is the same question about the question:
+every fragment the vocabulary makes of your text, which words it had no single
+piece for, and which arrived as raw bytes. It runs no model and costs nothing.
+
+`--json` carries the whole report, including each answer with a sentence
+removed and the engine's own figure for every token.
+
+It is expensive by construction — one generation per sentence, one for the
+control, one per extra seed, and one small request per token — which is why it
+is asked for rather than done on the way past.
 
 #### `mcf cross-check <model>`
 
