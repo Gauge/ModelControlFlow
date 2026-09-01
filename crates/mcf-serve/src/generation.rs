@@ -321,8 +321,11 @@ fn addressed_as(
     addressing: &crate::configured::Addressing,
 ) -> Option<Vec<usize>> {
     let path = resolved(store, named);
-    let bytes = std::fs::read(&path).ok()?;
-    let file = mcf_standin::gguf::parse(&bytes).ok()?;
+    // **The header, not the model.** This read the whole file to reach the
+    // vocabulary, and it sits in the serving path: every generation of a model
+    // somebody has given an addressing paid it. A vocabulary is metadata and
+    // arrives in the same bounded prefix everything else reads (F145, B-372).
+    let file = crate::daemon::header_of(&path)?;
     let vocabulary = Vocabulary::read(&file).ok()?;
     let mut pieces = addressing.before.clone();
     pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));

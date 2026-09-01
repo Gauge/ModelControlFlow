@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 145 | [F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)](#145-f145-mcf-probe-held-the-whole-model-in-the-console-beside-the-engine-already-holding-it-247-gb-for-a-145-gb-file-and-the-memory-nothing-could-account-for-b-372-a22-f140) |
 | 144 | [F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)](#144-f144-mcf-planned-against-the-machine-while-running-inside-a-limit-and-its-fixed-overhead-constant-is-thirteen-times-too-small-a21-a19-b-372) |
 | 143 | [F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)](#143-f143-two-surfaces-counted-one-store-and-got-ten-and-eleven-the-daemon-sent-the-distinction-and-the-console-dropped-it-b-422-b-072) |
 | 142 | [F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)](#142-f142-the-engines-own-end-of-text-was-recorded-as-the-models-words-and-mcf-reported-it-did-not-know-why-generation-stopped-while-holding-the-thing-that-said-a19-a21-a2-a7) |
@@ -9395,6 +9396,53 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 145 · F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)
+
+**F144 ended with something unexplained**, and this is it. Runs were dying at
+their memory limit in about thirteen seconds while the engine, measured on its
+own, needed about 31 GB of a 40 GB allowance. Something took the rest and that
+finding declined to guess what.
+
+**It was the console.** Sampling every process in the group, largest first,
+found `mcf probe` itself at **24.7 GB resident** — not the daemon, not
+`llama-server`. `probe` opened with `std::fs::read(&path)`: the whole model
+file, into the client's own memory, while the engine it was about to ask held
+the same weights a few processes away. Two copies of one model, and only one
+of them doing any work.
+
+**Nothing needed it.** Every probe below that read — chat template, embedding,
+language cost, structured output, thinking, tools, vision — uses those bytes
+for `gguf::parse` and nothing else: the header, the vocabulary, what the file
+declares. Not one reads a tensor. The bounded prefix `mcf run`, `mcf bench`
+and `mcf explain` already use answers all of them.
+
+Measured after: the same seven verdicts, and the whole group — daemon, probe
+and engine together — peaks at **13.7 GB** where the probe alone had been
+24.7 and the group had been dying at 40.
+
+**This is F140 again, one command over**, and the two were written six days
+apart. There the module doc said an explanation that quietly loaded four
+gigabytes would be a surprise, above a line that loaded seventy-five. Here the
+console loaded a model to ask a daemon about it. The shape is the same:
+`std::fs::read` is the obvious way to get a file's bytes, it is correct, and
+it is wrong at this size — and the repository already had the bounded reader
+in three other places each time.
+
+**Two more of the same, found by looking rather than by crashing.** `mcf embed`
+reads the whole file and needs it — the stand-in runs on those bytes — but
+`addressed_as`, in the daemon's own serving path, read the entire model to
+parse a header and build a vocabulary. Every generation of a model somebody
+had given an addressing paid for a full read of it. That one is fixed here
+too; the embedding path genuinely wants the tensors and is left alone.
+
+**What would have caught it.** `a_model_is_weighed_before_it_is_held` sweeps
+for anything handing bytes to the *loader* without weighing them first, which
+is the allocation F136 was about. Reading a file is not loading a model, so
+neither `explain` nor `probe` was in its scope, and both read whole models
+anyway. The class is *reading a model-sized file into memory*, and it is
+wider than the class the check holds.
+
 
 ## 144 · F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)
 

@@ -152,14 +152,24 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
         }
     };
 
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            return Response {
-                text: format!("mcf: {} could not be read\n  {error}", path.display()),
-                served: false,
-            };
-        }
+    // **Enough of the file to answer, not the file.** This read the whole model
+    // into the console's own process — 24.7 GB resident on a 14.5 GB model,
+    // beside a daemon and an engine already holding the same weights, which is
+    // what took a run over its memory limit while the server alone was well
+    // inside it. Every probe below uses these bytes for `gguf::parse` and
+    // nothing else: the header, the vocabulary, what the file declares. None
+    // reads a tensor. `read_prefix` grows until the directory parses, which is
+    // the same bounded read `mcf run`, `mcf bench` and `mcf explain` use
+    // (F145, F140, B-372).
+    let Some(bytes) = crate::bench::read_prefix(&path) else {
+        return Response {
+            text: format!(
+                "mcf: {} could not be read as a model\n  MCF grew its read to the whole file \
+                 and still could not find a GGUF directory in it",
+                path.display()
+            ),
+            served: false,
+        };
     };
 
     // A probe needs an engine, and which engine is a condition (D42) — so the
