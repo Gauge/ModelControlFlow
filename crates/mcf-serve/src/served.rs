@@ -185,8 +185,9 @@ impl Served {
         model: &Path,
         runtime: &Path,
         gpu_layers: u32,
+        context: u64,
     ) -> Result<Self, Failure> {
-        Self::start_within(llama, model, runtime, ATTEMPTS, gpu_layers)
+        Self::start_within(llama, model, runtime, ATTEMPTS, gpu_layers, context)
     }
 
     /// Starts a server under settings somebody chose, listening on a port.
@@ -296,6 +297,7 @@ impl Served {
         runtime: &Path,
         attempts: usize,
         gpu_layers: u32,
+        context: u64,
     ) -> Result<Self, Failure> {
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
@@ -325,8 +327,20 @@ impl Served {
             .arg(model)
             .arg("--host")
             .arg(&socket)
+            // **How large a window the engine holds open.** This was the
+            // literal `0`, which llama.cpp reads as *the model's whole trained
+            // context* — 262,144 tokens on a model MCF was planning against at
+            // 4,096. The engine then allocated a cache for a window nobody
+            // asked for: 42 GiB resident for a 17.6 GiB model, one request
+            // still running after seventy-five minutes, and a single-threaded
+            // daemon blocked behind it so every other client was refused.
+            //
+            // The same defect as the `-ngl` literal below, in the argument
+            // beside it: a hidden value that was not the stated condition
+            // (A6, A12, F133). The window MCF resolved for this model on this
+            // machine is the one it opens.
             .arg("--ctx-size")
-            .arg("0")
+            .arg(context.to_string())
             // **How much of the model goes on the card.** This was the
             // literal `0` — no layers, ever — so MCF resolved a model to a
             // graphics card, said so, and ran it on the processor. It cost

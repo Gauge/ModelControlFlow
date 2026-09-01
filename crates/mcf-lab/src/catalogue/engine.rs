@@ -251,6 +251,10 @@ fn server_never_listens(world: &World) -> Outcome {
             // never begins listening, and putting a model nowhere is the
             // quickest way to reach that.
             0,
+            // A small window: this scenario never gets as far as holding one,
+            // and a scenario that asked for the whole trained context would be
+            // waiting on an allocation rather than on the thing it observes.
+            4096,
         );
         match waited {
             Ok(_) => {
