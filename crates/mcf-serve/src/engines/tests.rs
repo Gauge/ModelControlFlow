@@ -353,9 +353,27 @@ fn a_model_on_this_machine() -> Option<std::path::PathBuf> {
                 looking.push(path);
                 continue;
             }
-            if path
-                .extension()
-                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
+            // **A shard is not a model.** A multi-part GGUF names itself
+            // `...-00001-of-00004.gguf`, and the first part carries the
+            // header for the whole set — so its declared tensor bytes describe
+            // four files and its own length describes one. Picking one here
+            // made this test assert that a header must accept a file it does
+            // not describe, which is the opposite of the claim.
+            //
+            // Skipped rather than accommodated: MCF has no concept of a
+            // sharded model yet (B-422), and a test that quietly worked around
+            // that would hide it.
+            let is_a_shard = path
+                .file_stem()
+                .and_then(|held| held.to_str())
+                .is_some_and(|held| {
+                    held.rsplit_once("-of-")
+                        .is_some_and(|(_, tail)| tail.chars().all(|c| c.is_ascii_digit()))
+                });
+            if !is_a_shard
+                && path
+                    .extension()
+                    .is_some_and(|held| held.eq_ignore_ascii_case("gguf"))
             {
                 return Some(path);
             }

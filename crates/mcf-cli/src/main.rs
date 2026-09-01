@@ -18,6 +18,7 @@ mod crosscheck;
 mod desk;
 mod doctor;
 mod embed;
+mod eval;
 mod explain;
 mod history;
 mod hosting;
@@ -26,6 +27,7 @@ mod log;
 mod measure;
 mod models;
 mod probe;
+mod prompt;
 mod provision;
 mod pull;
 mod run;
@@ -265,6 +267,20 @@ enum Request<'a> {
         /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
     },
+    /// What a prompt does to a model: which sentences reach the answer.
+    PromptReport {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+        /// The prompt to take apart.
+        prompt: &'a str,
+        /// Whether to answer as data rather than as prose.
+        as_json: bool,
+    },
+    /// Ask a model to do the work, and check what it did (B-110).
+    Eval {
+        /// The model: a path, or something `mcf list` names.
+        model: &'a str,
+    },
     Probe {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
@@ -466,6 +482,17 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             deepest: 8192,
             engine: Some(engine),
         },
+        ["prompt", model, "--prompt", prompt] => Request::PromptReport {
+            model,
+            prompt,
+            as_json: false,
+        },
+        ["prompt", model, "--prompt", prompt, "--json"] => Request::PromptReport {
+            model,
+            prompt,
+            as_json: true,
+        },
+        ["eval", model] => Request::Eval { model },
         ["probe", model] => Request::Probe {
             model,
             engine: None,
@@ -1435,6 +1462,12 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             deepest,
             engine,
         } => measure::run(model, *deepest, *engine),
+        Request::PromptReport {
+            model,
+            prompt,
+            as_json,
+        } => prompt::report(model, prompt, *as_json),
+        Request::Eval { model } => eval::eval(model),
         Request::Probe {
             model,
             engine,
