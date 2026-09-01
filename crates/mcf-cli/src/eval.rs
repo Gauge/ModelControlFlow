@@ -224,6 +224,91 @@ pub(crate) const TASKS: &[Task] = &[
         ],
     },
     Task {
+        name: "glob-match",
+        function: "matches",
+        asks: "Write a Python function `matches(pattern, text)` returning True if the whole of \
+               text matches the pattern. In the pattern, `?` matches exactly one character and \
+               `*` matches any run of characters including none. Every other character matches \
+               itself. Do not use the re or fnmatch modules. Reply with only the function.",
+        cases: &[
+            Case {
+                call: "matches('*a*b','xaxbx')",
+                expects: "False",
+            },
+            Case {
+                call: "matches('a?c','abc')",
+                expects: "True",
+            },
+            Case {
+                call: "matches('*','')",
+                expects: "True",
+            },
+        ],
+    },
+    Task {
+        name: "topological-order",
+        function: "order",
+        asks: "Write a Python function `order(n, edges)` where the vertices are 1 to n and edges \
+               is a list of (u, v) tuples meaning u must come before v. Return the \
+               lexicographically smallest ordering that satisfies every edge, or an empty list \
+               if none exists. Reply with only the function.",
+        cases: &[
+            Case {
+                call: "order(4,[(1,2),(1,3),(3,4)])",
+                expects: "[1, 2, 3, 4]",
+            },
+            Case {
+                call: "order(2,[(1,2),(2,1)])",
+                expects: "[]",
+            },
+            Case {
+                call: "order(3,[])",
+                expects: "[1, 2, 3]",
+            },
+        ],
+    },
+    Task {
+        name: "days-between",
+        function: "between",
+        asks: "Write a Python function `between(a, b)` taking two dates as 'YYYY-MM-DD' strings \
+               and returning the number of whole days between them as a non-negative integer. \
+               Do not use the datetime or calendar modules. Reply with only the function.",
+        cases: &[
+            Case {
+                call: "between('2024-02-28','2024-03-01')",
+                expects: "2",
+            },
+            Case {
+                call: "between('1900-02-28','1900-03-01')",
+                expects: "1",
+            },
+            Case {
+                call: "between('2020-01-01','2020-01-01')",
+                expects: "0",
+            },
+        ],
+    },
+    Task {
+        name: "n-queens",
+        function: "count",
+        asks: "Write a Python function `count(n)` returning how many ways n queens can be placed \
+               on an n by n board so that no two attack each other. Reply with only the function.",
+        cases: &[
+            Case {
+                call: "count(6)",
+                expects: "4",
+            },
+            Case {
+                call: "count(8)",
+                expects: "92",
+            },
+            Case {
+                call: "count(1)",
+                expects: "1",
+            },
+        ],
+    },
+    Task {
         name: "lru-cache",
         function: "run_cache",
         asks: "Write a Python function `run_cache(capacity, ops)` simulating a least-recently-used \
