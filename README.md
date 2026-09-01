@@ -319,9 +319,17 @@ no account of why it stopped.
 $ mcf status
 mcf is up on /run/user/1000/mcf/control.sock
   build: 0.1.0-m0 (x86_64-unknown-linux-gnu)
-  recovered 3039 record entries and 11 model files
-  it cannot: serve a model: no inference engine is vendored yet
+  up for 51 seconds
+  recovered 966 record entries and 11 model files
+  resident: nothing — the first generation loads its model and holds it
+  hosting: nothing — `mcf host <model>` holds one where a program can reach it
+  holding 11 model file(s)
+    ...
 ```
+
+The `it cannot:` lines appear when something is missing rather than always: on a
+machine with no engine provisioned it reads *run a model: no engine is installed
+yet — MCF can build one for you*, and `mcf provision llama.cpp` is the answer.
 
 #### `mcf run <model> --prompt <text> [--limit <n>] [--seed <n>]`
 
@@ -334,6 +342,43 @@ The answer arrives with its mark, its sampler, its seed, and a sentence saying
 what it cannot be. **A timing taken from MCF's own engine would measure the
 engine, so it reports none** — that is what `mcf bench` and a provisioned engine
 are for.
+
+#### `mcf host <model> [--context <n>] [--port <n>] [--engine <name>] [--gpu-layers <n>] [--threads <n>] [--batch <n>] [--api-key <key>] [--flash-attention]` · `mcf hosted` · `mcf unhost`
+
+Hold a model on a port where another program can reach it. The address it
+prints is an OpenAI-compatible endpoint — give it to a tool as its base URL:
+
+```
+$ mcf host ~/.local/share/mcf/models/unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-UD-Q4_K_XL.gguf
+hosting GLM-4.7-Flash-UD-Q4_K_XL.gguf
+
+  reachable at   http://127.0.0.1:17817
+```
+
+`mcf hosted` says what is being held and where; `mcf unhost` stops it and gives
+the memory back. Every setting is shown before it is applied and any of them can
+be moved off MCF's recommendation, which is what the flags are.
+
+**The context window is the setting that costs memory**, and it is the one worth
+deciding rather than accepting. MCF recommends the largest window that fits,
+which on a large machine is often the model's whole trained context — a 17.5 GB
+model held at that window took 38.6 GB, and the 21 GB difference was the window.
+`mcf settings <model> --context <n>` prices any window before you host it:
+
+```
+$ mcf settings <model> --context 32768
+  context window       131072 tokens
+                       at that size the cache reserves 12.4 GiB
+                       at 32768 tokens it reserves 3.1 GiB
+```
+
+The window shows the same figure beside the setting as you change it, and the
+Monitor shows what the window now being held is costing.
+
+#### `mcf settings <model> [--context <n>]`
+
+Every setting MCF would run a model under, with where each came from and what
+it costs. With `--context`, what a window you are considering would reserve.
 
 #### `mcf embed <model> --text <text>`
 

@@ -1,12 +1,17 @@
 //! `mcf serve` and `mcf stop`: the daemon, from the command line (B-030,
 //! B-210, D1).
 //!
-//! **What `serve` is at M2's start, and what it is not.** It starts the process
-//! D1 settled MCF is, and that process cannot serve a model — there is no
-//! engine. The command is still worth having and worth this name: it is what
-//! `mcf pull` will hand a model to, what `mcf run` will ask, and what §3.13's
-//! idle rule is *about*. A daemon that appeared only when it could do
-//! everything would be a daemon nobody could measure the idle cost of.
+//! **What `serve` is.** It starts the process D1 settled MCF is: what `mcf
+//! pull` hands a model to, what `mcf run` asks, what `mcf host` holds a model
+//! in, and what §3.13's idle rule is *about*.
+//!
+//! This paragraph said *that process cannot serve a model — there is no
+//! engine*, and went on saying it after `mcf provision` built one and `mcf
+//! host` began serving models on a port. What a daemon cannot do is a state,
+//! not a property: `cannot()` computes it from what is actually installed, and
+//! says nothing where an engine is. A sentence in prose cannot do that, which
+//! is why the one here now describes what `serve` is for rather than what this
+//! milestone had not reached yet (F135).
 //!
 //! **`stop` is the other half of A26.** A process that can only be killed is a
 //! process that leaves no account of why it stopped; `stop` asks, gets an
