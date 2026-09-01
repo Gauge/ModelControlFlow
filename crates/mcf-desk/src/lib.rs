@@ -692,6 +692,14 @@ pub enum Act {
     /// dropdown and does something else teaches the operator that the
     /// furniture is decoration.
     Open(Picker),
+    /// Show the answer the model gave without one sentence, or the answer to
+    /// the prompt as written when that sentence is already the one shown.
+    ///
+    /// **The figures were the whole report and the evidence for them was on
+    /// the wire, unread.** A row saying a sentence moved 96% of the answer is
+    /// checkable only beside the answer it moved, and MCF has held both since
+    /// the measurement was written (A19).
+    ShowWithout(usize),
     /// Close whatever dropdown is open, choosing nothing.
     Shut,
     /// Set the context window to one of the offered powers of two.
@@ -780,6 +788,9 @@ pub struct Desk {
     pub page: Page,
     /// Every model this computer holds.
     pub models: Vec<Model>,
+    /// Which sentence's absence is being shown on the prompt screen, where one
+    /// is. `None` is the answer to the prompt as written.
+    pub without: Option<usize>,
     /// How far down a long list has been scrolled, in points.
     pub scroll: f32,
     /// The last reading of the machine.
@@ -844,6 +855,7 @@ impl Desk {
             socket,
             page: Page::Models,
             models: Vec::new(),
+            without: None,
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
@@ -1086,6 +1098,16 @@ impl Desk {
             // Both are the loop's: closing is the window's own, and copying
             // needs the clipboard, which `act` cannot reach from here.
             Act::Close | Act::CopyAnalysis => {}
+            Act::ShowWithout(at) => {
+                // Pressing the row already shown puts the answer as written
+                // back, so the two are one control rather than a mode nothing
+                // leaves.
+                self.without = if self.without == Some(at) {
+                    None
+                } else {
+                    Some(at)
+                };
+            }
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);

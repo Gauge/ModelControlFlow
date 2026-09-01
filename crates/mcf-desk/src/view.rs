@@ -1976,7 +1976,15 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     let Some(found) = job.conclusion().or_else(|| job.latest()) else {
         return act;
     };
-    at = steering(paint, desk, Box::new(area.x, at, area.w, area.bottom() - at), found);
+    let (after, pressed) = steering(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, at, area.w, area.bottom() - at),
+        found,
+    );
+    at = after;
+    act = pressed.or(act);
     act = copy_out(paint, desk, mouse, Box::new(area.x, at + 6.0, area.w, 30.0)).or(act);
     at += 40.0;
     let distinct = found
@@ -2002,7 +2010,12 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         size::BODY,
         ink.quiet,
     );
-    the_answer(paint, Box::new(area.x, at + 38.0, area.w, area.bottom() - at - 38.0), found);
+    the_answer(
+        paint,
+        desk,
+        Box::new(area.x, at + 38.0, area.w, area.bottom() - at - 38.0),
+        found,
+    );
     act
 }
 
@@ -2013,15 +2026,28 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
 /// console and not here — so a reader could see that a sentence moved 96% of
 /// something they were never shown. The figures are checkable only beside the
 /// thing they are about (A19, §3.15).
-fn the_answer(paint: &mut Painter, area: Box, found: &Value) {
+fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     let ink = paint.ink;
-    let Some(said) = found.get("baseline").and_then(Value::as_text) else {
-        return;
+    // The answer without whichever sentence is being asked about, or the
+    // answer as written when none is.
+    let chosen = desk.without.and_then(|at| {
+        let clause = found.get("clauses").and_then(Value::as_list)?.get(at)?;
+        let without = clause.get("without").and_then(Value::as_text)?;
+        let text = clause.get("text").and_then(Value::as_text)?;
+        Some((without.to_owned(), text.to_owned()))
+    });
+    let (said, title) = match &chosen {
+        Some((without, text)) => (without.as_str(), format!("the answer without “{text}”")),
+        None => (
+            found.get("baseline").and_then(Value::as_text).unwrap_or(""),
+            "the answer as written".to_owned(),
+        ),
     };
     if said.trim().is_empty() || area.h < 40.0 {
         return;
     }
-    spaced(paint, area.x, area.y, "the answer as written", ink.faint);
+    let title = paint.elide(&title, Weight::Regular, size::SMALL, area.w.min(820.0));
+    spaced(paint, area.x, area.y, &title, ink.faint);
     let room = area.w.min(820.0);
     // **Wrapped line by line, so the answer keeps its shape.** `wrap` breaks on
     // width and treats a newline as a space, which turns a function into one
@@ -2171,7 +2197,84 @@ fn as_percent(parts_per_million: i64) -> String {
     format!("{held:.1}%")
 }
 
-fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 {
+/// The sentence under the bars: what the quiet ones mean, what the number is
+/// not, and what was left unmeasured.
+fn what_the_bars_mean(
+    paint: &mut Painter,
+    at: (f32, f32),
+    floor: i64,
+    shown: usize,
+    found: &Value,
+) -> f32 {
+    let ink = paint.ink;
+    let area = Box::new(at.0, at.1, 820.0, 0.0);
+    let clauses_len = shown;
+    let mut y = at.1;
+        // **What the quiet rows mean, and what the number is not.** The bars
+        // were coloured against the floor and the floor was never shown, so a
+        // reader had a distinction drawn for them with nothing to read it by.
+        paint.say_at(
+            area.x,
+            y + 6.0,
+            &format!(
+                "the floor is {} — a sentence carrying no instruction, put in and taken out \
+                 again. Rows at or under it are quiet.",
+                as_percent(floor)
+            ),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        paint.say_at(
+            area.x,
+            y + 22.0,
+            "An ordering, not relevance: removing anything shifts what follows it.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 42.0;
+        // Sentences past the cap are not measured, and a list that quietly
+        // shortened itself is the one thing a list must not do (A1, A4).
+        let over = found
+            .get("clauses_over_the_cap")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        if over > 0 {
+            paint.say_at(
+                area.x,
+                y,
+                &format!(
+                    "{} not measured: each one costs a generation, and the first {} are what \
+                     MCF ablates",
+                    count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
+                    clauses_len
+                ),
+                Weight::Regular,
+                size::SMALL,
+                ink.warn,
+            );
+            y += 20.0;
+        }
+        paint.say_at(
+            area.x,
+            y,
+            "Press a sentence to see what the model wrote without it.",
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        y += 20.0;
+    y
+}
+
+fn steering(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
     let ink = paint.ink;
     let floor = found
         .get("floor_parts_per_million")
@@ -2180,12 +2283,25 @@ fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 
     let clauses = found.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
     let wide = area.w.min(820.0);
     let mut y = area.y;
-    for clause in clauses.iter().take(8) {
+    let mut act = None;
+    for (at, clause) in clauses.iter().take(8).enumerate() {
         let moved = clause
             .get("moved_parts_per_million")
             .and_then(Value::as_integer)
             .unwrap_or(0);
         let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
+        // **The whole row is the control.** What a sentence did is answerable
+        // from what the model wrote without it, and MCF has that answer for
+        // every row; pressing one shows it, and pressing it again puts the
+        // answer as written back (A19).
+        let hit = Box::new(area.x - 6.0, y - 3.0, wide + 12.0, 22.0);
+        let chosen = desk.without == Some(at);
+        if chosen || mouse.over(hit) {
+            paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
+        }
+        if mouse.clicked(hit) {
+            act = Some(Act::ShowWithout(at));
+        }
         let bar = Box::new(area.x, y + 4.0, 180.0, 10.0);
         paint.panel(bar, 5.0, ink.sunk, 255);
         #[allow(
@@ -2226,54 +2342,9 @@ fn steering(paint: &mut Painter, _desk: &Desk, area: Box, found: &Value) -> f32 
         y += 24.0;
     }
     if !clauses.is_empty() {
-        // **What the quiet rows mean, and what the number is not.** The bars
-        // were coloured against the floor and the floor was never shown, so a
-        // reader had a distinction drawn for them with nothing to read it by.
-        paint.say_at(
-            area.x,
-            y + 6.0,
-            &format!(
-                "the floor is {} — a sentence carrying no instruction, put in and taken out \
-                 again. Rows at or under it are quiet.",
-                as_percent(floor)
-            ),
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        paint.say_at(
-            area.x,
-            y + 22.0,
-            "An ordering, not relevance: removing anything shifts what follows it.",
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        y += 42.0;
-        // Sentences past the cap are not measured, and a list that quietly
-        // shortened itself is the one thing a list must not do (A1, A4).
-        let over = found
-            .get("clauses_over_the_cap")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        if over > 0 {
-            paint.say_at(
-                area.x,
-                y,
-                &format!(
-                    "{} not measured: each one costs a generation, and the first {} are what \
-                     MCF ablates",
-                    count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
-                    clauses.len()
-                ),
-                Weight::Regular,
-                size::SMALL,
-                ink.warn,
-            );
-            y += 20.0;
-        }
+        y = what_the_bars_mean(paint, (area.x, y), floor, clauses.len(), found);
     }
-    y
+    (y, act)
 }
 
 /// What MCF can build, and which of it is here.

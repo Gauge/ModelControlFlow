@@ -976,3 +976,40 @@ fn a_prompt_report_shows_its_numbers() {
         empty.inked(ground)
     );
 }
+
+/// Pressing a sentence shows what the model wrote without it.
+///
+/// The figures are checkable only beside the answer they are about, and MCF
+/// has held both since the measurement was written (A19).
+#[test]
+fn pressing_a_sentence_shows_the_answer_without_it() {
+    let desk = a_report();
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::ShowWithout(1)),
+        "no sentence in the report could be pressed"
+    );
+
+    // And what is drawn changes: the answer without a sentence is not the
+    // answer to the prompt as written.
+    let mut chosen = a_report();
+    chosen.without = Some(1);
+    let ground = DAY.ground;
+    let as_written = drawn(&desk, DAY, "answer-as-written").inked(ground);
+    let without = drawn(&chosen, DAY, "answer-without").inked(ground);
+    assert_ne!(
+        as_written, without,
+        "the answer panel drew the same thing with a sentence selected as without one"
+    );
+}
+
+/// Pressing the sentence already shown puts the answer as written back.
+#[test]
+fn pressing_it_again_goes_back_to_the_answer_as_written() {
+    let mut desk = a_report();
+    desk.without = Some(1);
+    desk.act(mcf_desk::Act::ShowWithout(1));
+    assert_eq!(
+        desk.without, None,
+        "the selection is a mode with no way out of it"
+    );
+}
