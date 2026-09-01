@@ -9509,11 +9509,22 @@ answer *what will this cost*. A19 asks that a measurement be taken against an
 independent value, and this one never has been: the estimate has never been
 compared to what the engine actually took.
 
-**Not fixed here, and deliberately.** Raising the constant to 6.8 GB would fit
-this model and repeat the original error one size up: the honest shape is a
-relationship measured across several models and windows, which is B-384's, and
-until it exists the number to quote is the one the engine reports rather than
-one MCF assembled. Recorded now because these figures are already on the
+**Fixed after all, once there was enough to measure against.** Leaving it
+alone was the wrong call: with the constant short, MCF sizes every window to
+fill the memory it believes it has, so the engine was killed at a 40 GB
+allowance and again at 64 — raising the allowance only bought a larger window
+and the same death. There is no cap at which an underestimate stops mattering.
+
+A fourth reading settled the shape. Overhead is 6.75, 6.56, 6.31 and 5.80 GB
+at 4,096 / 32,768 / 65,536 / 131,072 tokens on the 14.5 GB model, and 7.79 GB
+on the 17.5 GB one: it barely moves with the window and it tracks the weights.
+`overhead_for` is now half the weights, floored at the old constant —
+conservative on all three models including the 0.6B reading the original was
+taken from, and predicting 42.75 GB where the engine at 131,072 tokens
+measures 41.3.
+
+Three models fitted to a straight line is not a law, and B-384 is still where
+the relationship gets measured properly rather than from what was to hand. Recorded now because these figures are already on the
 screen — beside the context setting, in the refusals that name two numbers —
 and a figure a reader trusts is worse than no figure when nothing has checked
 it.

@@ -42,6 +42,40 @@ const WHERE: Subsystem = Subsystem::new("mcf-serve::engines");
 /// it had to be.
 const OVERHEAD: u64 = 512 << 20;
 
+/// What the engine holds beyond the weights and the cache, for a model of this
+/// size.
+///
+/// **The flat constant above was measured on a model twenty times smaller than
+/// the ones MCF is now asked about, and carried forward.** Half a gigabyte is
+/// right for a 0.6B model and is not right for a 24B one: measured on
+/// `llama-server`, a 14.5 GB model holds about 6.8 GB that is neither weights
+/// nor cache, and a 17.5 GB model about 7.8 GB. Across four windows on those
+/// two the figure barely moves with the window, so it is the model's size it
+/// follows, not the context's (F144).
+///
+/// | weights | measured | this rule |
+/// |---|---|---|
+/// | 0.4 GB (the original reading) | 0.36 GB | 0.54 GB |
+/// | 14.5 GB | 6.75 GB | 7.25 GB |
+/// | 17.5 GB | 7.79 GB | 8.75 GB |
+///
+/// Half the weights, never below the old constant. Conservative on all three
+/// readings, which is the direction the original comment asks for: a window
+/// MCF proposes and the engine then refuses is worse than one slightly smaller
+/// than it had to be. Left underestimating, MCF sized every window to fill the
+/// memory it thought it had and the engine was killed at 40 GB and again at
+/// 64 — raising the allowance only bought a larger window and the same death.
+///
+/// Three readings from two engines is not a law, and B-384 is where the
+/// relationship gets measured properly rather than fitted to what was to hand.
+#[expect(
+    clippy::integer_division,
+    reason = "half of a byte count, floored, which is what a memory allowance is"
+)]
+fn overhead_for(weights: u64) -> u64 {
+    OVERHEAD.max(weights / 2)
+}
+
 /// The fraction of free memory a plan may take.
 ///
 /// Not all of it: something else on the machine will want some, and a plan that
@@ -330,7 +364,7 @@ pub fn largest_context(weights: u64, cache_per_token: u64, free: u64, trained: u
         .saturating_mul(HEADROOM_NUMERATOR)
         .checked_div(HEADROOM_DENOMINATOR)
         .unwrap_or(0);
-    let Some(budget) = ceiling.checked_sub(OVERHEAD.saturating_add(weights)) else {
+    let Some(budget) = ceiling.checked_sub(overhead_for(weights).saturating_add(weights)) else {
         return 0;
     };
     if cache_per_token == 0 {
@@ -486,7 +520,7 @@ pub fn resolve(
     best.ok_or(Refused::DoesNotFit {
         largest_device,
         needs: weights
-            .saturating_add(OVERHEAD)
+            .saturating_add(overhead_for(weights))
             .saturating_add(SMALLEST_CONTEXT.saturating_mul(cache_per_token)),
     })
 }
