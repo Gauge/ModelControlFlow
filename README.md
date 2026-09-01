@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Repository README — what this is, how to run it, and the format every document holds to |
-| **Version** | 19 |
+| **Version** | 20 |
 | **Status** | Living |
 | **Authority** | Governs the form of every document in `doc/`, never their content |
 
@@ -47,7 +47,6 @@ map of everything else.
 $ git clone <this repository> && cd ModelControlFlow
 $ cargo build --locked --release
 $ ./target/release/mcf doctor
-$ ./target/release/mcf --version
 ```
 
 `cargo build` needs no network: every dependency is vendored into `vendor/` and
@@ -60,7 +59,33 @@ promise here, and reproduces every failure it claims to handle — then writes t
 lot to the record. It is the fastest way to know whether your machine is set up
 and what MCF can honestly do on it.
 
-Then, to actually use a model:
+### The window
+
+**`mcf desk` is how most people should use MCF.** Everything below can be done
+from it: choosing a model, acquiring one, holding it where a program can reach
+it, running the diagnostics, and reading what they found.
+
+```
+$ ./target/release/mcf provision SDL3      # once: builds the window library
+$ cargo build --locked --release           # again: the window links what was built
+$ ./target/release/mcf desk
+```
+
+Two builds, and the second is not a mistake. MCF draws every panel, table and
+button itself and vendors exactly one thing for the window — SDL3 — which it
+builds in a container rather than taking from the machine. Whether that library
+is there is decided when MCF is *compiled*, so a build that ran before it
+existed produces a binary that refuses to open a window and says which command
+fixes it. Building again after provisioning is what links it.
+
+`mcf provision` needs `podman`. Without a display, or without the library, the
+window refuses in words rather than failing to build — and `mcf tui` is the same
+screens with no display attached.
+
+### The command line
+
+Every screen is a client of the same daemon, so nothing is only in the window
+and nothing is only in the terminal. To acquire and use a model without one:
 
 ```
 $ export MCF_MODELS=/big/disk/models                     # where models go
@@ -72,6 +97,11 @@ $ ./target/release/mcf run <that file> --prompt "Once upon a time"
 The first `pull` names no file: it says which of the published variants would
 run on this machine and downloads nothing, which is usually the question being
 asked.
+
+To time a model, grade one, or take a prompt apart, MCF needs an engine it can
+drive — `mcf provision llama.cpp` builds one, in a container, from a pinned
+commit. Until then `mcf run` answers through MCF's own stand-in and marks every
+answer as one.
 
 ## 2 · Requirements
 
@@ -159,6 +189,31 @@ go under `$XDG_DATA_HOME/mcf/provisioned`. If neither `XDG_DATA_HOME` nor
 
 Run `mcf` with no arguments for the built-in usage summary. Every command below
 is real and current.
+
+### The surfaces
+
+#### `mcf desk`
+
+MCF in a window, and the way most people should use it. Every screen is a client
+of the running daemon — the window computes nothing of its own — so what it can
+do is what the command line can do, and neither is the only way to anything.
+
+Six screens. **Monitor**: what is being served, the endpoint a caller reaches it
+at, and the machine every figure would be taken on. **Models**: what this
+machine holds, and what a hub publishes. **Diagnostics**: choosing a model,
+running the tests, and reading what they found — and the door to taking a prompt
+apart. **Components**: what MCF can build and what it has. **Settings**.
+**Exit**.
+
+It needs SDL3 provisioned *before* MCF is compiled; see [Quick
+start](#1--quick-start). Where the library is missing, or where there is no
+display, it refuses in words and names the command that fixes it.
+
+#### `mcf tui`
+
+The same screens with no display attached, for a machine reached over a
+terminal. It refuses where MCF's output is not a terminal, which is a fact about
+where MCF was pointed rather than a fault.
 
 ### Getting oriented
 
@@ -327,6 +382,35 @@ band is recorded in full and marked *not fit to contribute*.
 Ask a model to do the thing and report what it did, **configuring nothing**.
 `--apply` is the separate, recorded act of changing how MCF addresses that model
 afterwards.
+
+#### `mcf eval <model>`
+
+Asks a model to do the work and checks what it did. Each task states a function
+and the cases it must satisfy; the model writes it; MCF runs it and counts the
+cases that held. Every answer executes inside a container with no network,
+nothing mounted but its own scratch, a memory ceiling and a deadline — this is
+the one place MCF runs code it did not compile, and the container is the whole
+of why it may.
+
+Four outcomes and no total. A model whose answers all failed to run reads
+*unknown* rather than zero: it has not scored badly, it has not been measured,
+and a laboratory that scored MCF's own failure as the model's would be the
+mistake this type exists to prevent.
+
+#### `mcf prompt <model> --prompt <text> [--json]`
+
+What a prompt does to a model. Each sentence is removed in turn with the seed
+held still, and how much of the answer moved is reported against a floor
+measured on the same run — a control sentence carrying no instruction, put in
+and taken out again.
+
+Read the column as an **ordering**, not as relevance: removing anything shifts
+what follows it, so a sentence well above the floor may still have steered
+nothing. It also reports whether several seeds give one answer, which is whether
+the prompt settles the answer on this model. `--json` for a program.
+
+It is expensive by construction — one generation per sentence and one per seed —
+which is why it is asked for rather than done on the way past.
 
 #### `mcf cross-check <model>`
 
@@ -573,6 +657,25 @@ written `<like-this>`; a surface that must show something it does not know shows
 states what conveying the binary obliges you to.
 
 ## Changelog
+
+### Version 20 — the window is the front door
+
+Version 19 reached a working binary in four commands and never mentioned that
+MCF has a window. `mcf desk` and `mcf tui` were absent from this document and
+from the usage summary both, so the primary way to use the program was
+discoverable only by reading the source — and the one step that makes the window
+work is not guessable: SDL3 has to be provisioned *before* MCF is compiled,
+because whether the library exists is decided at compile time. A reader
+following version 19 got a binary that refused to open a window.
+
+Quick start now leads with the window and states both builds and the reason for
+the second. The command reference gains a *surfaces* section at its head,
+covering `mcf desk` and `mcf tui` and what each screen holds.
+
+Added `mcf eval`, which asks a model to do the work and checks what it did, and
+`mcf prompt`, which takes a prompt apart sentence by sentence. Both say what
+they may not claim: the first that an unmeasured task is not a low score, the
+second that its column is an ordering and not relevance.
 
 ### Version 19 — a front door somebody can follow
 

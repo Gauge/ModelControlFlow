@@ -1306,6 +1306,12 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 "{identity}\n\
                  \n\
                  usage:\n\
+                 \x20 mcf desk                            MCF in a window: every screen a\n\
+                 \x20                                     client of the same daemon. Needs\n\
+                 \x20                                     SDL3 provisioned before MCF is\n\
+                 \x20                                     built, and says so if it is not\n\
+                 \x20 mcf tui                             the same screens with no display\n\
+                 \x20                                     attached\n\
                  \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
                  \x20                                     costs here, and what it promises\n\
                  \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
@@ -1325,6 +1331,14 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
                  \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
                  \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
+                 \x20 mcf eval <model>                    ask a model to do the work and\n\
+                 \x20                                     check what it did: each answer run\n\
+                 \x20                                     in a container, four outcomes and\n\
+                 \x20                                     no total (B-110)\n\
+                 \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
+                 \x20                        [--json]     removed in turn, and how much of\n\
+                 \x20                                     the answer moved. An ordering,\n\
+                 \x20                                     never relevance\n\
                  \x20 mcf cross-check <model>              read one engine's tokens with the\n\
                  \x20                                       other, and say whether they agree\n\
                  \x20 mcf probe <model> [--engine <name>] [--apply]\n\
