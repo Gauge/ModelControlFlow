@@ -1033,3 +1033,63 @@ fn pressing_it_again_goes_back_to_the_answer_as_written() {
         "the selection is a mode with no way out of it"
     );
 }
+
+/// What leaves the window is the report the window is showing.
+///
+/// The Copy button says it puts *the whole analysis* on the clipboard, and it
+/// had stopped doing that: the screen grew a floor warning and a column of
+/// words the model did not expect, and the text did not. A promise a reader
+/// checks once and finds hollow is worse than a smaller promise (§3.15).
+#[test]
+fn the_copied_analysis_carries_what_the_screen_shows() {
+    let desk = a_report();
+    let text = desk
+        .analysis_as_text()
+        .expect("a finished report can be taken out of the window");
+
+    for wanted in [
+        // The bars.
+        "Write a function called slugify",
+        "96.1%",
+        // The floor, and that this run could not separate anything.
+        "floor 87.9%",
+        "CANNOT SEPARATE",
+        // The reading that a high floor does not invalidate.
+        "did not expect",
+        "past 60",
+        "#29",
+        "handles",
+        "first choice",
+        // What the figures were taken under.
+        "temperature 0",
+        // And the answer itself.
+        "def slugify(title):",
+    ] {
+        assert!(
+            text.contains(wanted),
+            "the copied analysis is missing {wanted:?}, which the screen shows:\n{text}"
+        );
+    }
+}
+
+/// A report MCF could not rank says so on the clipboard too.
+#[test]
+fn the_copied_analysis_says_why_a_reading_is_missing() {
+    let mut desk = a_report();
+    let found = mcf_record::json::Value::map([
+        ("floor_parts_per_million", mcf_record::json::Value::Integer(0)),
+        (
+            "expected_refused",
+            mcf_record::json::Value::text("no engine on this machine resolves this model".to_owned()),
+        ),
+    ]);
+    desk.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
+        "prompt analysis".to_owned(),
+        vec![found],
+    ));
+    let text = desk.analysis_as_text().expect("a report is in hand");
+    assert!(
+        text.contains("not taken: no engine"),
+        "a reading MCF could not take is absent from the clipboard rather than explained:\n{text}"
+    );
+}

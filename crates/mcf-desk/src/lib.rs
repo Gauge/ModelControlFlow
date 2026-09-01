@@ -1338,8 +1338,31 @@ impl Desk {
             .and_then(|at| self.models.get(at))
             .map_or("a model", |held| held.name.as_str());
         let count = |key: &str| found.get(key).and_then(Value::as_integer).unwrap_or(0);
+        let share = |parts: i64| {
+            format!(
+                "{}.{}%",
+                parts.saturating_div(10_000),
+                parts.saturating_div(1_000).rem_euclid(10)
+            )
+        };
         let mut out = format!("prompt analysis on {named}\n\n");
         let _wrote = write!(out, "prompt:\n{}\n\n", self.typed.trim());
+
+        // **What the screen leads with, led with here too.** This text is what
+        // somebody pastes into a message to a colleague, and a report that
+        // said *96.1%* without saying the run could not separate anything
+        // would travel further than the screen that qualified it (§3.15).
+        let floor = count("floor_parts_per_million");
+        if floor >= 500_000 {
+            let _wrote = writeln!(
+                out,
+                "THIS RUN CANNOT SEPARATE THESE SENTENCES: removing a sentence carrying no \
+                 instruction moved {} of the answer, so a figure near that has told you \
+                 nothing.\n",
+                share(floor)
+            );
+        }
+
         out.push_str("how much each sentence steered the answer:\n");
         for clause in found.get("clauses").and_then(Value::as_list).unwrap_or(&[]) {
             let moved = clause
@@ -1347,31 +1370,93 @@ impl Desk {
                 .and_then(Value::as_integer)
                 .unwrap_or(0);
             let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
-            let _wrote = writeln!(
-                out,
-                "  {:>3}.{}%  {said}",
-                moved.saturating_div(10_000),
-                moved.saturating_div(1_000).rem_euclid(10)
-            );
+            let _wrote = writeln!(out, "  {:>7}  {said}", share(moved));
         }
-        let floor = count("floor_parts_per_million");
         let _wrote = writeln!(
             out,
-            "\nfloor {}.{}% — how much the answer moved for a sentence carrying no \
-             instruction. An ordering, not relevance.",
-            floor.saturating_div(10_000),
-            floor.saturating_div(1_000).rem_euclid(10)
+            "\nfloor {} — how much the answer moved for a sentence carrying no instruction. \
+             An ordering, not relevance.",
+            share(floor)
         );
+
+        out.push_str(&self.words_not_expected(found));
+
         let _wrote = writeln!(
             out,
-            "\n{} seed(s) gave {} distinct answer(s)",
+            "\n{} gave {} distinct answer(s) — asked at temperature 0, where the seed cannot \
+             change the answer, so this measures the sampler rather than the prompt",
             count("seeds_asked"),
             count("distinct_answers")
         );
+        if count("prompt_tokens") > 0 {
+            let _wrote = writeln!(
+                out,
+                "\nthe prompt reached the model as {} token(s); each generation stopped at {}",
+                count("prompt_tokens"),
+                count("token_limit")
+            );
+        }
         if let Some(said) = found.get("baseline").and_then(Value::as_text) {
             let _wrote = writeln!(out, "\nthe answer to the prompt as written:\n{said}");
         }
         Some(out)
+    }
+
+    /// The tokens the model did not expect, for the text that leaves the
+    /// window.
+    ///
+    /// Its own function because `analysis_as_text` is already the length the
+    /// workspace allows, and because what goes on a clipboard and what goes on
+    /// a screen have to be the same report.
+    fn words_not_expected(&self, found: &Value) -> String {
+        use std::fmt::Write as _;
+        let _ = self;
+        let ranked = found.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+        if ranked.is_empty() {
+            return found
+                .get("expected_refused")
+                .and_then(Value::as_text)
+                .map_or_else(String::new, |why| {
+                    format!("\nwhich words the model did not expect — not taken: {why}\n")
+                });
+        }
+        let depth = found
+            .get("ranked_depth")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        let mut surprising: Vec<(i64, String)> = Vec::new();
+        let mut first = 0_usize;
+        for held in ranked {
+            let said = held
+                .get("text")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned();
+            match held.get("rank").and_then(Value::as_integer) {
+                None => surprising.push((i64::MAX, said)),
+                Some(1) => first = first.saturating_add(1),
+                Some(rank) => surprising.push((rank, said)),
+            }
+        }
+        surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+        let mut out = String::from(
+            "\nwhich words the model did not expect (where each sat in what it would have \
+             written itself):\n",
+        );
+        for (rank, said) in surprising.iter().take(10) {
+            let where_it_sat = if *rank == i64::MAX {
+                format!("past {depth}")
+            } else {
+                format!("#{rank}")
+            };
+            let _wrote = writeln!(out, "  {where_it_sat:>8}  {said:?}");
+        }
+        let _wrote = writeln!(
+            out,
+            "  {first} of {} were its own first choice",
+            ranked.len()
+        );
+        out
     }
 
     /// Asks what the typed prompt does to the chosen model.
