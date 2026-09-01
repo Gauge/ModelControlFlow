@@ -472,7 +472,9 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.push(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \
          Those are judgements and they need a rater. What is above is which sentences changed \
-         the answer and how many answers there were."
+         the answer when they were removed, and where each word sat in what the model would \
+         have written itself — two readings of the same prompt, which fail in different ways \
+         and are worth reading against each other."
             .to_owned(),
     );
     lines
