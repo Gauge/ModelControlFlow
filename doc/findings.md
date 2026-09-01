@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 137 | [F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)](#137-f137-a-supervisor-that-killed-the-one-process-it-could-name-then-waited-on-the-ones-it-could-not-the-deadline-fired-at-200-ms-and-the-number-beside-it-said-thirty-seconds-a3-a27-a4-b37) |
 | 136 | [F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)](#136-f136-the-console-weighed-a-model-before-loading-it-and-the-daemon-did-not-so-a-machine-with-no-room-for-one-was-told-by-the-kernel-and-not-necessarily-in-this-process-b-372-a2-a22-b-072) |
 | 135 | [F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)](#135-f135-one-change-made-three-register-entries-false-and-none-of-them-said-so-a-status-is-prose-and-prose-does-not-fail-a-build-b-036-b-038-b-040-a1) |
 | — | [Changelog](#changelog) |
@@ -9388,6 +9389,56 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 137 · F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)
+
+**The §7.19 prototype exists to confirm that D4's substrate makes A3 cheap:
+*no failure of a managed thing may take down MCF itself*. Its own test for the
+hang case had been failing, taking the full thirty seconds of the child it was
+supposed to give up on after two hundred milliseconds.**
+
+**The deadline was never the problem.** `wait_until` polls, notices the
+deadline, kills the child and returns `PastDeadline` — correctly, on time. What
+followed undid it. The child was `/bin/sh -c 'sleep 30'`, and a shell running
+one command forks it rather than becoming it, so `Child` named the shell and
+the sleep was a grandchild. Killing what the supervisor could name left the
+grandchild running and holding the write end of the stdout pipe. The drain
+thread's `read_to_string` cannot end until every writer closes, so the join
+blocked for the child's full lifetime — and `waited` was read *after* the join.
+
+**Three defects, and each one alone would have been enough.**
+
+- **The manager waited on the managed.** A supervisor whose deadline is
+  enforceable in one function and unenforceable in the next has no deadline.
+  This is the exact failure A3 names, appearing inside the prototype whose job
+  is to demonstrate A3 holds.
+- **The report was false.** The deadline fired at 200 ms; `waited` said
+  30 s, because it was measured after joining the drain rather than after the
+  supervision it describes. B37 is careful that the interval be monotonic and
+  says nothing about measuring the right interval, which is how a correct clock
+  produced a wrong number.
+- **A process was left behind.** The comment at the kill reads *A27's habit at
+  the smallest scale: MCF does not leave behind a process it started* — sitting
+  directly above a call that leaves one behind whenever the child forked. It
+  described the intent and nothing held the code to it. The proof was
+  incidental: a run of the new test with the fix reverted leaked a `sleep`
+  that was still running minutes later, and the next run detected it.
+
+**What holds each now.** The child is spawned into its own process group, so
+the negative of its identifier reaches everything it started — the only handle
+there is on a process's descendants, and the reason this site opts into
+`unsafe` for `kill(2)`. `waited` is taken before anything is joined. Past the
+deadline the drain is not joined at all: what it has collected is taken and the
+thread is left to end when the pipe does, because A4's partial outcome has to
+be readable *while* it is still partial. `nothing_the_child_started_is_left_running`
+checks `/proc` for a survivor, and fails without the process group.
+
+**The general shape.** Every one of these is a comment that was true about the
+intent and false about the code, in a file whose prose is unusually careful.
+Two of the three would have been caught by asking *what does this line wait
+on?* rather than *what does this line do?* — and the third by reading the
+comment beside the kill as a claim rather than a label.
+
 
 ## 136 · F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)
 

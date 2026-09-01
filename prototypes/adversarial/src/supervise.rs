@@ -20,7 +20,9 @@
 //! difference of wall-clock readings.
 
 use std::io::Read as _;
+use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::time::{Clock as _, Duration, Instant, Monotonic, SystemClock};
@@ -64,6 +66,14 @@ pub(crate) fn supervise(
 
     let spawned = Command::new(program)
         .args(arguments)
+        // **Its own process group, so that what it starts can be reached.**
+        // A child that forks — a shell running one command is the ordinary
+        // case — leaves descendants `Child` has no handle on at all. Killing
+        // the child then kills the one process the supervisor can name while
+        // its children carry on holding the pipe. The group is the only handle
+        // there is on a process's descendants, and a supervisor that cannot
+        // reach them cannot honour A27 (F137).
+        .process_group(0)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
@@ -95,19 +105,51 @@ pub(crate) fn supervise(
     // never exits would block the read for ever, which is precisely the
     // `engine.hang.no_output` case this is here to catch.
     let stdout = child.stdout.take();
+    // **Shared, and appended to as it arrives.** Read to the end into a local
+    // and handed back at the join, what the child produced is only reachable
+    // once the pipe closes — so a supervisor that wanted the partial output
+    // had to wait for the very thing it had given up on. A4's partial outcome
+    // has to be readable *while* it is still partial.
+    let collected = Arc::new(Mutex::new(String::new()));
+    let into = Arc::clone(&collected);
     let reader = std::thread::spawn(move || {
-        let mut collected = String::new();
         if let Some(mut stdout) = stdout {
-            // A read that fails leaves what was already collected, which is
-            // A4's partial outcome rather than an error that discards it.
-            let _outcome: Result<usize, std::io::Error> = stdout.read_to_string(&mut collected);
+            let mut buffer = [0_u8; 4096];
+            // A read that fails ends the drain and leaves what was already
+            // collected, which is A4's partial outcome rather than an error
+            // that discards it.
+            while let Ok(read) = stdout.read(&mut buffer) {
+                let Some(fresh) = buffer.get(..read) else {
+                    break;
+                };
+                if fresh.is_empty() {
+                    break;
+                }
+                if let Ok(mut held) = into.lock() {
+                    held.push_str(&String::from_utf8_lossy(fresh));
+                }
+            }
         }
-        collected
     });
 
     let outcome = wait_until(&mut child, clock, started, deadline);
-    let output = reader.join().unwrap_or_default();
+    // **Taken before anything is joined.** `waited` says how long the
+    // supervisor waited, and it was read after joining the drain — so a child
+    // whose descendants held the pipe open made the supervisor report their
+    // lifetime as its own. The deadline was enforced at 200 ms and the number
+    // beside it said thirty seconds (F137).
     let waited = clock.now().saturating_duration_since(started);
+    // **Past the deadline, the drain is not joined.** The child and its group
+    // were killed, but nothing guarantees a descendant somewhere else has not
+    // inherited the write end. Waiting on it would be the managed thing taking
+    // down the manager, which is the one rule this prototype exists to test
+    // (A3). What has arrived is taken; the drain ends when the pipe does.
+    let output = if matches!(outcome, Outcome::PastDeadline) {
+        drop_and_take(reader, &collected)
+    } else {
+        let _joined: std::thread::Result<()> = reader.join();
+        taken(&collected)
+    };
 
     let failure = match outcome {
         Outcome::Exited { code: Some(0) } => None,
@@ -145,6 +187,52 @@ pub(crate) fn supervise(
         waited,
         failure,
     }
+}
+
+/// What the drain has collected so far.
+fn taken(collected: &Arc<Mutex<String>>) -> String {
+    // A poisoned lock still holds what was written before the panic, and A4
+    // says a partial outcome is an outcome.
+    collected
+        .lock()
+        .map_or_else(|poisoned| poisoned.into_inner().clone(), |held| held.clone())
+}
+
+/// Takes what the drain collected and lets the thread go unjoined.
+fn drop_and_take(reader: std::thread::JoinHandle<()>, collected: &Arc<Mutex<String>>) -> String {
+    drop(reader);
+    taken(collected)
+}
+
+/// Kills the process group this child leads.
+///
+/// A child spawned into its own group leads it, so the negative of its
+/// identifier names every process it started and every one those started.
+/// `Child` reaches only the one process it holds; there is no other handle on
+/// the rest.
+#[allow(
+    unsafe_code,
+    reason = "the workspace denies unsafe rather than forbidding it so that the C-ABI work D4 \
+              anticipates can opt in per site with the reason written down, and `nvml.rs` in \
+              this same prototype opts in the same way. `kill(2)` is the only way to signal a \
+              process group; there is no safe wrapper for it in the standard library and this \
+              workspace takes no dependencies to get one"
+)]
+fn kill_the_group(of: &Child) {
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    const SIGKILL: i32 = 9;
+    let Ok(leader) = i32::try_from(of.id()) else {
+        return;
+    };
+    if leader <= 0 {
+        return;
+    }
+    // Negative: the group led by that identifier, rather than that process.
+    // The result is not read — the group may already be gone, which is the
+    // outcome being asked for.
+    let _sent: i32 = unsafe { kill(-leader, SIGKILL) };
 }
 
 fn exit_failure(code: Option<i32>, output: &str) -> Failure {
@@ -206,7 +294,9 @@ fn wait_until(
         }
         if clock.now().saturating_duration_since(started) >= deadline {
             // A27's habit at the smallest scale: MCF does not leave behind a
-            // process it started.
+            // process it started — including the ones it started indirectly,
+            // which is why this reaches the group and not just the child.
+            kill_the_group(child);
             let _killed: Result<(), std::io::Error> = child.kill();
             let _reaped: Result<std::process::ExitStatus, std::io::Error> = child.wait();
             return Outcome::PastDeadline;
@@ -309,6 +399,56 @@ mod tests {
         assert_eq!(failure.category(), Category::EngineExitMidstream);
         assert_eq!(failure.disposition(), Disposition::Partial);
         assert_eq!(outcome.output, "partial");
+    }
+
+    /// Whether any process on this machine is running exactly this command.
+    fn anything_running(marker: &str) -> bool {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let line = entry.path().join("cmdline");
+            let Ok(raw) = std::fs::read(&line) else {
+                continue;
+            };
+            // `/proc/<pid>/cmdline` separates arguments with NUL.
+            let joined = String::from_utf8_lossy(&raw).replace('\0', " ");
+            if joined.trim() == marker {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// A27 at the smallest scale, and the half a `Child` cannot reach.
+    ///
+    /// A shell running one command forks it, so the supervisor's handle names
+    /// the shell and not the thing actually sleeping. Killing what it can name
+    /// leaves the rest running and holding the pipe — which is both a process
+    /// left behind and, because the drain never ends, a manager waiting on the
+    /// managed (F137).
+    #[test]
+    fn nothing_the_child_started_is_left_running() {
+        // Distinctive enough that nothing else on the machine matches it.
+        let marker = "sleep 2147";
+        assert!(
+            !anything_running(marker),
+            "something was already running `{marker}`, so this proves nothing"
+        );
+        let outcome = supervise("/bin/sh", &["-c", marker], SHORT);
+        assert_eq!(
+            failure(&outcome).category(),
+            Category::EngineHangNoOutput,
+            "the deadline did not fire, so nothing was killed and this proves nothing"
+        );
+        // The kill is delivered to the group; the descendants are reaped by
+        // the kernel a moment later.
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        assert!(
+            !anything_running(marker),
+            "the supervisor gave up on the child and left what the child had started still \
+             running (A27, F137)"
+        );
     }
 
     /// The one outcome B7 calls neither success nor diagnosis is a hang, so it
