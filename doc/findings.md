@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 138 | [F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)](#138-f138-four-places-sized-a-model-and-one-of-them-counted-the-whole-of-it-a-111-gb-model-planned-against-as-109-mb-and-a-context-recommended-that-would-take-the-machine-down-b-422-b-072-a21-f136) |
 | 137 | [F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)](#137-f137-a-supervisor-that-killed-the-one-process-it-could-name-then-waited-on-the-ones-it-could-not-the-deadline-fired-at-200-ms-and-the-number-beside-it-said-thirty-seconds-a3-a27-a4-b37) |
 | 136 | [F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)](#136-f136-the-console-weighed-a-model-before-loading-it-and-the-daemon-did-not-so-a-machine-with-no-room-for-one-was-told-by-the-kernel-and-not-necessarily-in-this-process-b-372-a2-a22-b-072) |
 | 135 | [F135 — One change made three register entries false, and none of them said so: a status is prose, and prose does not fail a build (B-036, B-038, B-040, A1)](#135-f135-one-change-made-three-register-entries-false-and-none-of-them-said-so-a-status-is-prose-and-prose-does-not-fail-a-build-b-036-b-038-b-040-a1) |
@@ -9389,6 +9390,63 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 138 · F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)
+
+**A split GGUF is published in parts and an engine pointed at the first one
+loads all of them.** B-422 taught the store this — *the parts of a model are
+the model* — so `mcf list` shows a four-part model as one entry carrying the
+set's length. Its own note records why: ungathered, *`mcf explain` could not
+size one*.
+
+**Three other places went on sizing a model with `std::fs::metadata` on the
+single file they were handed.** The daemon's `recommend`, which is what
+hosting plans from. `explain`'s `resolved_here`, which is what the placement
+row shows. And `explain`'s speed projection, where size stands in for how much
+work a generation is. Each got the first part.
+
+**On one model held here the first part is 10.9 MB of a 111 GB set.** Four
+orders of magnitude. The placement row, asked about that model, answered *the
+processor: 262144 tokens of context fit there* — computed from weights of
+10.9 MB against 129 GB of free memory, and confidently wrong in the direction
+that hurts. A reader acting on it asks for a context whose cache alone is
+larger than the machine. This is the same failure mode as F136 from the other
+end: there the arithmetic was skipped, here it was fed a number from a
+different model than the one being asked about.
+
+**It is B-072's disagreement in its plainest form.** Two surfaces, one model,
+two sizes — 111,334,654,784 bytes from `list` and 10,946,624 from `explain` —
+with nothing on either page to tell a reader which they were looking at, or
+that there was another.
+
+**`bytes_of_the_whole` is now the one answer**, beside `held` in the store
+where the gathering already lives, and the three callers use it. `explain`
+prints the set's total beneath the file's own when they differ, because the
+file's length is still the honest answer to *what did MCF read and hash* and
+the reader needs both.
+
+**Two things surfaced while confirming it, both about saying why.**
+
+- Corrected, the model was refused — and reported as `placement: Unknown`,
+  because `resolved_here` ended in `.ok()` and threw the reason away. *No
+  engine is provisioned*, *this header does not say how it is shaped* and
+  *this model is larger than this machine* all arrived as one word. The last
+  is a thing MCF knows precisely and can put two numbers to. A7 is about
+  saying what is not known; it is not a licence to decline to say what is.
+- The reason, once carried, read *needs about 111.92 GB of memory and the
+  largest device here has 129.15 GB free* — and then refused. A reader does
+  that subtraction, gets a positive number, and concludes MCF is broken. What
+  actually decides it is that MCF plans to at most 85% of what a device has
+  free, and that was the one term the sentence omitted. A refusal whose stated
+  numbers do not entail it is worse than a bare refusal (§3.15).
+
+**The habit worth taking from it.** Every one of these four call sites is two
+lines of obviously-correct code. `metadata(path).len()` is not wrong; it is an
+answer to *how big is this file*, in a place that was asking *how big is this
+model*. The defect was invisible at each site and only visible across them —
+which is what B-072 is for, and why the answer belongs in one function that
+every surface calls rather than in four that agree by coincidence.
+
 
 ## 137 · F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)
 

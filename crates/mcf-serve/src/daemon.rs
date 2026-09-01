@@ -1855,11 +1855,15 @@ impl Daemon {
 
     fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf)> {
         let path = crate::generation::resolved(&self.places.models, named);
-        let bytes = std::fs::metadata(&path)
-            .map(|about| about.len())
-            .map_err(|error| {
-                crate::control::refused("a model this machine is not holding", &error.to_string())
-            })?;
+        // **The whole set, not the part it is named by.** `metadata` here read
+        // the length of the one file, and a split model's first part is a
+        // fraction of it — 10.9 MB of 111 GB on one held here. Everything below
+        // is memory arithmetic, so a model sized at a ten-thousandth of itself
+        // was recommended a context the machine could not survive, and the
+        // surface that lists models had the right figure all along (F138).
+        let bytes = mcf_hub::store::bytes_of_the_whole(&path).map_err(|failure| {
+            crate::control::refused("a model this machine is not holding", &failure.to_string())
+        })?;
         let file = header_of(&path).ok_or_else(|| {
             crate::control::refused("a file whose header MCF could not read", named)
         })?;

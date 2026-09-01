@@ -391,8 +391,23 @@ impl Refused {
                 largest_device,
                 needs,
             } => format!(
-                "this model needs about {} of memory and the largest device here has {} free",
+                // **The ceiling is named, not just the two numbers.** Without
+                // it this said *needs 111.92 GB, has 129.15 GB free* and then
+                // refused, which reads as MCF contradicting itself: the reader
+                // does the subtraction, gets a positive number, and concludes
+                // the refusal is a bug. What decides it is that MCF plans to a
+                // fraction of free memory rather than all of it, so that is
+                // the sentence's subject (F138, §3.15).
+                "this model needs about {}, and MCF plans to at most {}% of what a device has \
+                 free — {} of the {} here — so it does not fit",
                 gigabytes(*needs),
+                HEADROOM_NUMERATOR,
+                gigabytes(
+                    largest_device
+                        .saturating_mul(HEADROOM_NUMERATOR)
+                        .checked_div(HEADROOM_DENOMINATOR)
+                        .unwrap_or(0)
+                ),
                 gigabytes(*largest_device)
             ),
             Self::HeaderIncomplete => {

@@ -178,7 +178,7 @@ fn the_placement_shown_is_the_placement_resolved() {
     };
 
     match super::resolved_here(&path, &file) {
-        Some(choice) => {
+        Ok(choice) => {
             assert_eq!(
                 value("placement").as_deref(),
                 Some(choice.device.name.as_str()),
@@ -194,12 +194,24 @@ fn the_placement_shown_is_the_placement_resolved() {
             let placement = value("placement").unwrap_or_default();
             assert_ne!(placement, "the processor", "the stale placement is back");
         }
-        None => {
+        Err(why) => {
             // A7: MCF could not work it out is not *the processor*.
             assert_eq!(
                 value("placement").as_deref(),
                 Some("Unknown"),
                 "a placement MCF could not resolve is being reported as one it could"
+            );
+            // And the reason travels with it: `Unknown` alone cannot tell a
+            // reader whether to provision an engine or find a smaller model
+            // (F138).
+            let said = rows
+                .iter()
+                .find(|(row, _, _)| *row == "placement")
+                .map(|(_, _, note)| note.clone())
+                .unwrap_or_default();
+            assert!(
+                said.contains(&why),
+                "the placement could not be resolved and the reason was dropped: {why}"
             );
         }
     }

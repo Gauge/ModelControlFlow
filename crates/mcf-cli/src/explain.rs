@@ -102,6 +102,22 @@ fn explain(path: &Path, bytes: &[u8], file: &Model) -> String {
         "size on this disk",
         bytes.len()
     ));
+    // **And the set, where this file is one of several.** The line above is
+    // the file MCF read and hashed, which is honest and, for a split model,
+    // four orders of magnitude off what running it costs — while `mcf list`
+    // showed the set's total for the same model. Two surfaces, one model, two
+    // sizes, and no way for a reader to tell which they were looking at
+    // (B-072, B-422, F138).
+    if mcf_hub::store::part_of_a_set(path).is_some()
+        && let Ok(whole) = mcf_hub::store::bytes_of_the_whole(path)
+        && whole != bytes.len() as u64
+    {
+        lines.push(format!(
+            "  {:<38}{whole} bytes — this file is one part of the model, and every part is \
+             loaded together",
+            "the whole set",
+        ));
+    }
     lines.push(format!("  {:<38}{}", "sha256", sha256(bytes).hex()));
     lines.push(format!(
         "  {:<38}{} tensors, {}",
@@ -282,7 +298,9 @@ fn declared(file: &Model) -> Vec<(&'static str, String)> {
 /// nothing under it would be worse than no band.
 fn how_fast(path: &Path) -> String {
     let held = crate::history::read();
-    let bytes = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    // Size stands in for how much work a generation is, so it has to be the
+    // model's size and not one part's (F138).
+    let bytes = mcf_hub::store::bytes_of_the_whole(path).unwrap_or(0);
     // The budget `mcf run` would use, which is what this page describes. A
     // projection at a budget nothing on this page mentions would be an answer
     // to a question the reader did not ask.
@@ -514,15 +532,39 @@ pub(crate) fn quantizations(file: &Model) -> String {
 /// The same `mcf_serve::engines::resolve` the daemon calls, so the two cannot
 /// disagree. No daemon is started to ask: resolution is arithmetic over this
 /// machine, and `mcf explain` reads rather than runs.
-fn resolved_here(path: &Path, file: &Model) -> Option<mcf_serve::engines::Choice> {
-    let home = crate::models::default_root()
-        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))?;
-    let bytes = std::fs::metadata(path).ok()?.len();
-    let architecture = file.architecture()?;
-    let trained = file
+///
+/// **The reason comes back with the refusal.** Returning `None` collapsed *no
+/// engine is provisioned*, *this header does not say how it is shaped* and
+/// *this model is larger than this machine* into one word, `Unknown` — and the
+/// last of those is a thing MCF knows precisely and can put two numbers to.
+/// A7 is about saying what is not known, not about declining to say what is
+/// (F138).
+fn resolved_here(
+    path: &Path,
+    file: &Model,
+) -> core::result::Result<mcf_serve::engines::Choice, String> {
+    let Some(home) = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+    else {
+        return Err("MCF could not find where its own components live".to_owned());
+    };
+    // The whole set, not the part the model is named by: this figure is the
+    // weights term in the memory arithmetic below, and a split model's first
+    // part is a fraction of the model (F138).
+    let bytes = mcf_hub::store::bytes_of_the_whole(path)
+        .map_err(|_| "this model could not be measured on this disk".to_owned())?;
+    let Some(architecture) = file.architecture() else {
+        return Err("this file's header does not say what architecture it is".to_owned());
+    };
+    let Some(trained) = file
         .get(&format!("{architecture}.context_length"))
         .and_then(mcf_standin::gguf::Value::as_integer)
-        .and_then(|held| u64::try_from(held).ok())?;
+        .and_then(|held| u64::try_from(held).ok())
+    else {
+        return Err(
+            "this file's header does not say how long a conversation it was trained for".to_owned(),
+        );
+    };
     let cache = mcf_serve::engines::cache_bytes_per_token(file);
     let free = mcf_core::hardware::Machine::read().memory.available;
     let free = match free {
@@ -537,7 +579,8 @@ fn resolved_here(path: &Path, file: &Model) -> Option<mcf_serve::engines::Choice
                 (engine, devices)
             })
             .collect();
-    mcf_serve::engines::resolve(&engines, bytes, cache, trained).ok()
+    mcf_serve::engines::resolve(&engines, bytes, cache, trained)
+        .map_err(|refused| refused.says())
 }
 
 /// The engine row: what MCF resolved, or what it would fall back to.
@@ -622,7 +665,7 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
     // daemon will act on; what follows is for a machine with nothing
     // provisioned, where there is nothing to resolve.
     let resolution = resolved_here(path, file);
-    let engine = engine_row(path, resolution.as_ref());
+    let engine = engine_row(path, resolution.as_ref().ok());
     // How MCF will address this model. It is the first row because it is the
     // one that changed under M3, and because a page whose job is to have no
     // hidden choices (§3.15) must not omit the choice somebody made
@@ -693,7 +736,7 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
             "what `mcf pull` plans against, stated in crates/mcf-cli/src/pull.rs".to_owned(),
         ),
         match &resolution {
-            Some(choice) => (
+            Ok(choice) => (
                 "placement",
                 choice.device.name.clone(),
                 format!(
@@ -704,13 +747,14 @@ fn chosen(path: &Path, file: &Model) -> Vec<(&'static str, String, String)> {
                 ),
             ),
             // A7: MCF could not work it out is not *the processor*. Which it
-            // is decides where every figure about this model comes from.
-            None => (
+            // is decides where every figure about this model comes from — and
+            // which of the several reasons it is decides what the reader can
+            // do about it, so the reason is carried here rather than flattened
+            // into the word (F138).
+            Err(why) => (
                 "placement",
                 "Unknown".to_owned(),
-                "MCF could not work out where this would run: either no engine is \
-                 provisioned, or this file's header does not say how it is shaped"
-                    .to_owned(),
+                format!("MCF could not work out where this would run: {why}"),
             ),
         },
     ]

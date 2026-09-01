@@ -265,6 +265,65 @@ pub fn part_of_a_set(path: &Path) -> Option<(String, u32)> {
     (at > 0).then(|| (prefix.to_owned(), at))
 }
 
+/// What the model at this path weighs, counting every part of its set.
+///
+/// **A part is not a model, and its length is not the model's length.** An
+/// engine pointed at the first part of a split GGUF loads all of them, so
+/// sizing the model by the file named is sizing it by a fraction. On one
+/// four-part model held here the first part is 10.9 MB of a 111 GB set — four
+/// orders of magnitude — and anything planning memory from that figure plans
+/// against a model that does not exist (B-422, B-072, F138).
+///
+/// [`held`] already gathers a set when it walks the whole store. This answers
+/// the same question for one path, so that a caller with a model in hand does
+/// not have to walk the store to find out what it costs, and does not reach
+/// for `metadata` and get a part.
+///
+/// A file that is not part of a set is its own length. A set whose directory
+/// cannot be read falls back to the file itself: a figure that is too small is
+/// bad, and refusing to say anything at all about a model that is sitting
+/// right there is worse (A7).
+///
+/// # Errors
+///
+/// `artifact.missing` where the path itself cannot be measured.
+pub fn bytes_of_the_whole(path: &Path) -> Result<u64> {
+    let own = std::fs::metadata(path)
+        .map_err(|error| {
+            Failure::new(
+                Category::ArtifactMissing,
+                Attribution::Machine,
+                Disposition::Refused,
+                WHERE,
+                "this model could not be measured",
+            )
+            .with_context("path", path.display().to_string())
+            .with_context("os_error", error.to_string())
+        })?
+        .len();
+    let Some((prefix, _)) = part_of_a_set(path) else {
+        return Ok(own);
+    };
+    let Some(directory) = path.parent() else {
+        return Ok(own);
+    };
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Ok(own);
+    };
+    let mut total = 0_u64;
+    for entry in entries.flatten() {
+        let beside = entry.path();
+        if part_of_a_set(&beside).is_some_and(|(held, _)| held == prefix)
+            && let Ok(about) = entry.metadata()
+        {
+            total = total.saturating_add(about.len());
+        }
+    }
+    // Nothing matched, which cannot happen while this path is one of them, but
+    // a zero would be a worse answer than the part in hand.
+    Ok(if total == 0 { own } else { total })
+}
+
 /// Gathers the parts of a model into the model.
 ///
 /// **A part is not a model.** Left ungathered, a four-part model was four
