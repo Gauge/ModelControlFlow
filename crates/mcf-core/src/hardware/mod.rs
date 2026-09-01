@@ -78,6 +78,16 @@ pub struct Machine {
     pub load: Attested<LoadAverage>,
 }
 
+/// What this process may take right now: the machine's free memory, or the
+/// limit of the control group it runs in where that is smaller.
+///
+/// Public because the serving path needs the number and must not read the
+/// machine to get it (B4, §3.8, F144).
+#[must_use]
+pub fn memory_available_now() -> Option<u64> {
+    processor::available_now()
+}
+
 impl Machine {
     /// Reads the machine now.
     ///

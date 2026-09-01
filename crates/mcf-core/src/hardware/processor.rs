@@ -136,7 +136,47 @@ pub(super) fn read_processor() -> Processor {
     }
 }
 
-/// Reads host memory.
+/// What the control group this process runs in will still allow it, in bytes.
+///
+/// **`/proc/meminfo` describes the machine, which is not always the thing MCF
+/// is running in.** Under a container or a systemd scope with a memory limit,
+/// `MemAvailable` reports the host's free memory — a number about somewhere
+/// else. MCF planned a context window against 119 GiB while running under a
+/// 40 GiB limit, and the kernel ended the engine sixteen seconds in. That is
+/// A21 with the machine itself as the declaration: a figure read honestly,
+/// describing something other than what it is used to decide (F144).
+///
+/// cgroup v2's unified hierarchy names this process's group, and a limit may
+/// sit on it or on any ancestor, so the smallest headroom found is the one
+/// that binds. `None` where there is no limit anywhere, or where the files
+/// cannot be read — an unknown limit is not a limit of zero (A7).
+pub(super) fn cgroup_headroom() -> Option<u64> {
+    let own = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+    let path = own.lines().find_map(|line| line.strip_prefix("0::"))?;
+    let mut at = std::path::PathBuf::from("/sys/fs/cgroup");
+    let mut least: Option<u64> = None;
+    let mut consider = |at: &std::path::Path, least: &mut Option<u64>| {
+        let read = |name: &str| std::fs::read_to_string(at.join(name)).ok();
+        let (Some(max), Some(now)) = (read("memory.max"), read("memory.current")) else {
+            return;
+        };
+        // `max` is the word rather than a number where nothing is limited.
+        let (Ok(max), Ok(now)) = (max.trim().parse::<u64>(), now.trim().parse::<u64>()) else {
+            return;
+        };
+        let headroom = max.saturating_sub(now);
+        *least = Some(least.map_or(headroom, |held: u64| held.min(headroom)));
+    };
+    consider(&at, &mut least);
+    for part in path.split('/').filter(|part| !part.is_empty()) {
+        at.push(part);
+        consider(&at, &mut least);
+    }
+    least
+}
+
+/// Reads memory available to this process: the machine's, or its group's
+/// where that is smaller.
 pub(super) fn read_memory() -> Memory {
     let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") else {
         return Memory {
@@ -146,7 +186,33 @@ pub(super) fn read_memory() -> Memory {
     };
     Memory {
         total: attest(kibibytes(&meminfo, "MemTotal:")),
-        available: attest(kibibytes(&meminfo, "MemAvailable:")),
+        available: attest(available_now().map(crate::measurement::Bytes)),
+    }
+}
+
+/// What this process may take right now, in bytes.
+///
+/// **The narrow reading, so that the serving path can have it.** B4 keeps
+/// hardware sampling out of the daemon — a process that reads the machine
+/// becomes one of the competitors it reports (§3.8) — and `Machine::read`
+/// samples processors, cards and a thermal counter to answer a question about
+/// memory. This is two file reads and the arithmetic between them, which is
+/// what the daemon needs and all of what it needs.
+///
+/// The machine's free memory, or its group's headroom where that is smaller.
+#[must_use]
+pub(super) fn available_now() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok();
+    let host = meminfo
+        .as_deref()
+        .and_then(|held| kibibytes(held, "MemAvailable:"))
+        .map(|bytes| bytes.0);
+    match (host, cgroup_headroom()) {
+        // The smaller of the two, because both are true and only one of them
+        // is a limit MCF can be stopped by.
+        (Some(host), Some(group)) => Some(host.min(group)),
+        (host, None) => host,
+        (None, group) => group,
     }
 }
 
@@ -185,5 +251,58 @@ fn attest<T>(value: Option<T>) -> Attested<T> {
     match value {
         Some(value) => Attested::Known(value),
         None => Attested::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod cgroup_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use super::{cgroup_headroom, read_memory};
+    use crate::attested::Attested;
+
+    /// Whatever this machine says, the two readings are consistent.
+    ///
+    /// The property is not a number — the workspace's tests run on machines
+    /// with limits and without — but that a limit, where there is one, binds
+    /// the figure MCF plans against (F144).
+    #[test]
+    fn a_limit_binds_what_is_reported_available() {
+        let memory = read_memory();
+        let Attested::Known(available) = memory.available else {
+            // A machine that will not say is a state, not a failure (A7).
+            return;
+        };
+        if let Some(headroom) = cgroup_headroom() {
+            assert!(
+                available.0 <= headroom,
+                "this process runs under a limit with {headroom} bytes of headroom and MCF \
+                 reports {} available, which is memory it cannot have (F144)",
+                available.0
+            );
+        }
+        if let Attested::Known(total) = memory.total {
+            assert!(
+                available.0 <= total.0,
+                "more is available than the machine has"
+            );
+        }
+    }
+
+    /// The unlimited case is not a limit of zero.
+    ///
+    /// `memory.max` holds the word `max` where nothing is limited, and a
+    /// parse that treated it as a number would make every unlimited group
+    /// look full (A7).
+    #[test]
+    fn no_limit_is_not_a_limit_of_nothing() {
+        if let Some(headroom) = cgroup_headroom() {
+            assert!(
+                headroom > 0,
+                "an unlimited or unreadable group reported no headroom at all, which would \
+                 refuse every model on a machine with nothing wrong with it"
+            );
+        }
     }
 }

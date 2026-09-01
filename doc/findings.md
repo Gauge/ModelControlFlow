@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 144 | [F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)](#144-f144-mcf-planned-against-the-machine-while-running-inside-a-limit-and-its-fixed-overhead-constant-is-thirteen-times-too-small-a21-a19-b-372) |
 | 143 | [F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)](#143-f143-two-surfaces-counted-one-store-and-got-ten-and-eleven-the-daemon-sent-the-distinction-and-the-console-dropped-it-b-422-b-072) |
 | 142 | [F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)](#142-f142-the-engines-own-end-of-text-was-recorded-as-the-models-words-and-mcf-reported-it-did-not-know-why-generation-stopped-while-holding-the-thing-that-said-a19-a21-a2-a7) |
 | 140 | [F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)](#140-f140-mcf-explain-read-the-whole-model-into-memory-to-look-at-its-header-1641-gb-to-describe-a-file-beneath-a-note-in-the-same-module-saying-it-must-not-3-11-a2-b-372) |
@@ -9394,6 +9395,88 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 144 · F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)
+
+Two defects, found together, one fixed.
+
+### The machine MCF was reading was not the one it was running in
+
+`/proc/meminfo`'s `MemAvailable` describes the host. Under a container, or a
+systemd scope with a memory limit, it goes on describing the host — and MCF
+planned a context window against 119 GiB while running under a 40 GiB limit.
+The engine was ended by the kernel sixteen seconds in.
+
+This is A21 with the machine as the declaration. The figure was read honestly
+and correctly; what was wrong is that it describes something other than the
+thing the decision is about. It is the same shape as F136's start-up sample
+and F138's single-part size: a true number, from the wrong subject.
+
+**cgroup v2 says what the limit is**, and a limit may sit on the process's own
+group or on any ancestor, so the smallest headroom found is the one that
+binds. `mcf_core::hardware` now reads both and reports the smaller, and the
+daemon asks it rather than reading `/proc/meminfo` a second time, so the
+console and the daemon cannot come to different numbers about one machine
+(B-072). Verified: inside a 40 GiB scope MCF reports 39.9 GiB available and
+125.0 GiB total, and inside an 8 GiB scope it refuses a 17.5 GB model with
+both figures — while uncapped it is unchanged.
+
+### And the fixed overhead in the estimate is thirteen times too small
+
+Fixing that did not stop the kill, so the estimate itself was measured against
+the engine — which A19 asks for and which had never been done. `llama-server`
+was started on a 14.5 GB model at three window sizes and its resident size
+sampled:
+
+| window | MCF's estimate | measured |
+|---|---|---|
+| 4,096 | ~15.6 GB | **21.9 GB** |
+| 32,768 | ~20.2 GB | **26.3 GB** |
+| 65,536 | ~25.0 GB | **31.3 GB** |
+
+**The per-token part is right.** The measured slope is 153 KB a token against
+the 160 KB `cache_bytes_per_token` computes from the header — close enough
+that the header arithmetic is sound and should be left alone.
+
+**The constant is what is wrong.** Extrapolated to an empty window the engine
+holds about 21.3 GB for a 14.5 GB model, so what is neither weights nor cache
+is close to **6.8 GB**. `OVERHEAD` is `512 << 20` — half a gigabyte, thirteen
+times smaller — and its comment says it was *measured rather than guessed: a
+0.6B model at a 512-token window held 187 MB resident against 359 MB at 8,192*.
+That measurement was honest and was taken on a model twenty times smaller
+than the ones MCF is now asked about. A constant derived from a 0.6B model was
+carried forward to a 24B one.
+
+An earlier draft of this finding put the gap at fifteen gigabytes, inferred
+from a scope that died at 40 GB rather than from the engine. The engine says
+6.3 GB at 65,536 tokens, consistently, and the inference was wrong — which is
+the reason A19 asks for the independent value rather than the plausible one.
+
+**What this means for every verdict that rests on it.** `fits`, the largest
+window `resolve` will propose, the refusal that names two numbers, the figure
+now shown beside the context setting in the window — all of them are computed
+from this estimate. They are not wrong about their own arithmetic; they are
+answering *what does MCF think this costs* when the reader believes they
+answer *what will this cost*. A19 asks that a measurement be taken against an
+independent value, and this one never has been: the estimate has never been
+compared to what the engine actually took.
+
+**Not fixed here, and deliberately.** Raising the constant to 6.8 GB would fit
+this model and repeat the original error one size up: the honest shape is a
+relationship measured across several models and windows, which is B-384's, and
+until it exists the number to quote is the one the engine reports rather than
+one MCF assembled. Recorded now because these figures are already on the
+screen — beside the context setting, in the refusals that name two numbers —
+and a figure a reader trusts is worse than no figure when nothing has checked
+it.
+
+**What is still not explained.** The scopes died at exactly their limits, in
+about thirteen seconds, at 40 GB and again at 64 GB — while the measurements
+above say the server needs about 31 GB at the window MCF chose. Something in
+the run allocates more than the server does, and this finding does not say
+what. It is written down unexplained rather than attributed to the nearest
+plausible cause, which is what produced the fifteen-gigabyte figure above.
+
 
 ## 143 · F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)
 

@@ -153,15 +153,17 @@ pub(crate) fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Mod
 ///
 /// Available rather than total: what matters is what a model could take now,
 /// not what the machine has in principle.
+///
+/// **And what this process may take, which is not always what the machine
+/// has.** Under a container or a scope with a memory limit, `/proc/meminfo`
+/// reports the host's free memory — true, and about somewhere else. Read
+/// directly here, MCF sized a context against 119 GiB while running under a
+/// 40 GiB limit and the kernel ended the engine sixteen seconds in (F144).
+/// `mcf_core::hardware` reads both and returns the smaller, and it is asked
+/// here rather than repeated so that the console and the daemon cannot come
+/// to different numbers about one machine (B-072).
 fn system_memory_free() -> Option<u64> {
-    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("MemAvailable:") {
-            let kibibytes: u64 = rest.split_whitespace().next()?.parse().ok()?;
-            return Some(kibibytes * 1024);
-        }
-    }
-    None
+    mcf_core::hardware::memory_available_now()
 }
 
 /// The last line of an acquisition: where the model went, and what was
