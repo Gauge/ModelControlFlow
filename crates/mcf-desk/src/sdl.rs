@@ -183,6 +183,7 @@ unsafe extern "C" {
     fn SDL_SetWindowMinimumSize(window: *mut c_void, w: i32, h: i32) -> bool;
     fn SDL_StartTextInput(window: *mut c_void) -> bool;
     fn SDL_GetClipboardText() -> *mut u8;
+    fn SDL_SetClipboardText(text: *const u8) -> bool;
     fn SDL_HasClipboardText() -> bool;
     fn SDL_free(mem: *mut c_void);
 }
@@ -312,6 +313,23 @@ impl Window {
             SDL_free(held.cast());
             text
         }
+    }
+
+    /// Puts text on the system clipboard, and says whether it went.
+    ///
+    /// **What is on a screen is not something a person can take.** MCF draws
+    /// its own text, so there is nothing for a window manager's selection to
+    /// grab: a report somebody wants to paste into a message has to be handed
+    /// over deliberately or it cannot leave the window at all.
+    #[cfg(have_sdl)]
+    #[must_use]
+    pub fn put_on_clipboard(&self, text: &str) -> bool {
+        let Ok(held) = std::ffi::CString::new(text) else {
+            return false;
+        };
+        // SAFETY: the C string outlives the call, and SDL copies what it is
+        // given rather than keeping the pointer.
+        unsafe { SDL_SetClipboardText(held.as_ptr().cast()) }
     }
 
     /// Clears the window to one colour.
@@ -496,6 +514,11 @@ impl Window {
     #[must_use]
     pub fn clipboard_text(&self) -> Option<String> {
         None
+    }
+    /// Unreachable: `open` refused.
+    #[must_use]
+    pub fn put_on_clipboard(&self, _text: &str) -> bool {
+        false
     }
     /// Unreachable: `open` refused.
     pub fn clear(&self, _colour: (u8, u8, u8)) {}

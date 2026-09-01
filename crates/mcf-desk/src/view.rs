@@ -1102,7 +1102,7 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
     // A prompt is a diagnostic about a prompt rather than about the model, so
     // it is reached from here and not from the column (B-072).
     let taking = Box::new(selected.right() + 18.0, area.y, 170.0, 34.0);
-    if ui::button(paint, mouse, taking, "Take a prompt apart", Kind::Ordinary) && !running {
+    if ui::button(paint, mouse, taking, "Prompt analysis", Kind::Ordinary) && !running {
         act = Some(Act::Go(Page::Prompt));
     }
     let (low, high) = desk.estimate(true);
@@ -1800,7 +1800,7 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 /// answer would be a second answer to a question already served.
 fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
-    spaced(paint, area.x, area.y, "prompt", ink.faint);
+    spaced(paint, area.x, area.y, "prompt analysis", ink.faint);
     let named = desk
         .chosen
         .and_then(|at| desk.models.get(at))
@@ -1817,12 +1817,12 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     let mut act = None;
     let y = area.y + 52.0;
     let field = Box::new(area.x, y, (area.w - 150.0).min(680.0), 32.0);
-    let _clicked = ui::field(paint, mouse, field, &desk.typed, "a prompt to take apart", true);
+    let _clicked = ui::field(paint, mouse, field, &desk.typed, "a prompt to analyse", true);
     let (asked, _) = ui::fitted(
         paint,
         mouse,
         (field.right() + 10.0, y),
-        "Take it apart",
+        "Analyse",
         Kind::Primary,
     );
     if asked && !desk.doing.busy() && desk.chosen.is_some() {
@@ -1858,6 +1858,8 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         return act;
     };
     at = steering(paint, desk, Box::new(area.x, at, area.w, area.bottom() - at), found);
+    act = copy_out(paint, desk, mouse, Box::new(area.x, at + 6.0, area.w, 30.0)).or(act);
+    at += 40.0;
     let distinct = found
         .get("distinct_answers")
         .and_then(Value::as_integer)
@@ -1877,6 +1879,40 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         Weight::Regular,
         size::BODY,
         ink.quiet,
+    );
+    act
+}
+
+/// The whole analysis as text, with a way to take it out of the window.
+///
+/// **MCF draws its own text, so nothing here is a thing a window manager can
+/// select.** A report somebody wants to paste into a message has to be handed
+/// over deliberately or it cannot leave at all. The panel shows what would be
+/// copied so that pressing the button is not a guess (§3.15).
+fn copy_out(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        (area.x, area.y),
+        if desk.copied { "Copied" } else { "Copy analysis" },
+        if desk.copied { Kind::Ordinary } else { Kind::Primary },
+    );
+    if pressed {
+        act = Some(Act::CopyAnalysis);
+    }
+    paint.say_at(
+        button.right() + 12.0,
+        area.y + 8.0,
+        if desk.copied {
+            "the whole analysis is on the clipboard, ready to paste"
+        } else {
+            "puts the whole analysis on the clipboard: the figures, the floor and the answer"
+        },
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
     );
     act
 }

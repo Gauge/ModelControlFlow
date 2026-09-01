@@ -159,6 +159,20 @@ fn steering_lines(body: &Value) -> Vec<String> {
             })
             .count();
         lines.push(String::new());
+        // **Every removal giving the same answer is a finding, and it reads
+        // like a broken tool.** A column of noughts is what a well-addressed
+        // model does with a prompt it would have answered the same way
+        // regardless — the sentences are not steering it. Saying so is the
+        // difference between a reading and an apparent failure (A7).
+        if floor == 0 && at_floor == clauses.len() {
+            lines.push(
+                "    every sentence removed gave the SAME answer, to the character — including \
+                 the control. This prompt did not steer this model: it would have answered the \
+                 same way with less. That is a reading, not a failure of the measurement."
+                    .to_owned(),
+            );
+            lines.push(String::new());
+        }
         lines.push(format!(
             "    the floor is {whole}.{tenth}% — how much the answer moved for a control \
              sentence carrying no instruction, put in and taken out again. Read the column as \

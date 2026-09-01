@@ -710,8 +710,10 @@ pub enum Act {
     StopHosting,
     /// Close the window.
     Close,
-    /// Take the typed prompt apart on the chosen model.
+    /// Analyse the typed prompt on the chosen model.
     ReportPrompt,
+    /// Put the analysis on the system clipboard.
+    CopyAnalysis,
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -793,6 +795,9 @@ pub struct Desk {
     pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
+    /// Whether the analysis was just put on the clipboard, so the screen can
+    /// say so — a button that gives no sign is one somebody presses twice.
+    pub copied: bool,
     /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
     /// What is running.
@@ -844,6 +849,7 @@ impl Desk {
             refusal: None,
             busy: false,
             typed: String::new(),
+            copied: false,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
@@ -1077,7 +1083,9 @@ impl Desk {
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::HostIt => self.host_it(),
             Act::StopHosting => self.stop_hosting(),
-            Act::Close => {}
+            // Both are the loop's: closing is the window's own, and copying
+            // needs the clipboard, which `act` cannot reach from here.
+            Act::Close | Act::CopyAnalysis => {}
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);
@@ -1274,6 +1282,60 @@ impl Desk {
             },
             format!("looking up {asked}"),
         ));
+    }
+
+    /// The prompt analysis as plain text, for taking out of the window.
+    ///
+    /// **Assembled from the reading rather than scraped off the screen.** What
+    /// is drawn is glyphs; what somebody wants to paste into a message is the
+    /// figures and the sentences they belong to, in an order that survives
+    /// leaving here (A25's shape).
+    #[must_use]
+    pub fn analysis_as_text(&self) -> Option<String> {
+        use std::fmt::Write as _;
+        let Doing::Reporting(job) = &self.doing else {
+            return None;
+        };
+        let found = job.conclusion().or_else(|| job.latest())?;
+        let named = self
+            .chosen
+            .and_then(|at| self.models.get(at))
+            .map_or("a model", |held| held.name.as_str());
+        let count = |key: &str| found.get(key).and_then(Value::as_integer).unwrap_or(0);
+        let mut out = format!("prompt analysis on {named}\n\n");
+        let _wrote = write!(out, "prompt:\n{}\n\n", self.typed.trim());
+        out.push_str("how much each sentence steered the answer:\n");
+        for clause in found.get("clauses").and_then(Value::as_list).unwrap_or(&[]) {
+            let moved = clause
+                .get("moved_parts_per_million")
+                .and_then(Value::as_integer)
+                .unwrap_or(0);
+            let said = clause.get("text").and_then(Value::as_text).unwrap_or_default();
+            let _wrote = writeln!(
+                out,
+                "  {:>3}.{}%  {said}",
+                moved.saturating_div(10_000),
+                moved.saturating_div(1_000).rem_euclid(10)
+            );
+        }
+        let floor = count("floor_parts_per_million");
+        let _wrote = writeln!(
+            out,
+            "\nfloor {}.{}% — how much the answer moved for a sentence carrying no \
+             instruction. An ordering, not relevance.",
+            floor.saturating_div(10_000),
+            floor.saturating_div(1_000).rem_euclid(10)
+        );
+        let _wrote = writeln!(
+            out,
+            "\n{} seed(s) gave {} distinct answer(s)",
+            count("seeds_asked"),
+            count("distinct_answers")
+        );
+        if let Some(said) = found.get("baseline").and_then(Value::as_text) {
+            let _wrote = writeln!(out, "\nthe answer to the prompt as written:\n{said}");
+        }
+        Some(out)
     }
 
     /// Asks what the typed prompt does to the chosen model.
@@ -1722,6 +1784,15 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         }
 
         if let Some(act) = view::draw(&mut paint, &desk, &mouse) {
+            if act == Act::CopyAnalysis {
+                // The window owns the clipboard, so the copy happens here
+                // rather than inside `act`.
+                desk.copied = desk.analysis_as_text().is_some_and(|text| {
+                    paint
+                        .window()
+                        .is_some_and(|window| window.put_on_clipboard(&text))
+                });
+            }
             desk.act(act);
             acted = true;
         }
