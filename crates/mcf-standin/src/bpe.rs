@@ -65,6 +65,25 @@ pub enum Split {
     /// the marks Unicode calls alphabetic, so the two agree on most text and
     /// may differ on some scripts. Stated rather than silently assumed (A21).
     ModernOneDigit,
+    /// Digits one at a time, and a symbol run that stops where it ends.
+    ///
+    /// The one difference from [`Self::ModernOneDigit`], and it is a real cut:
+    /// that expression ends its symbol alternative ` ?[^\s\p{L}\p{N}]+[\r\n]*`
+    /// and this one ` ?[^\s\p{L}\p{N}\r\n]+`. So `!!!\n` is one piece under
+    /// the first and two under this — and two pieces are two sets of merges
+    /// that cannot span them. Read out of the reference implementation rather
+    /// than assumed from the resemblance (F23).
+    ModernOneDigitSymbolsAlone,
+    /// Letters cut where their case changes, digits in groups of at most
+    /// three, and a symbol run that swallows slashes as well as newlines.
+    ///
+    /// **The letters are the difference that matters.** Where the other modern
+    /// expressions take `\p{L}+` whole, this one takes a run of letters that
+    /// are not lowercase followed by a run that are not uppercase — so
+    /// `HTTPServer` is one piece and `helloWorld` is two. Transcribed from the
+    /// reference implementation's own alternation, whose two arms differ only
+    /// in which of those runs may be empty.
+    CasePartitionedThreeDigits,
 }
 
 /// Splits text into the pieces the merges are applied within.
@@ -129,8 +148,12 @@ fn scan(text: &str, split: Split) -> Vec<&str> {
         let Some(rest) = text.get(at..) else { break };
         let taken = match split {
             Split::Gpt2 | Split::Gpt2DigitsApart => gpt2_piece(rest),
-            Split::ModernThreeDigits => modern_piece(rest, 3),
-            Split::ModernOneDigit => modern_piece(rest, 1),
+            Split::ModernThreeDigits => modern_piece(rest, &Modern::THREE_DIGITS),
+            Split::ModernOneDigit => modern_piece(rest, &Modern::ONE_DIGIT),
+            Split::ModernOneDigitSymbolsAlone => modern_piece(rest, &Modern::SYMBOLS_ALONE),
+            Split::CasePartitionedThreeDigits => {
+                modern_piece(rest, &Modern::CASE_PARTITIONED)
+            }
         };
         let length = match taken {
             Some(length) if length > 0 => length,
@@ -166,9 +189,120 @@ fn gpt2_piece(rest: &str) -> Option<usize> {
     whitespace_run(rest)
 }
 
-/// The later shape, alternative by alternative. `digits` is how many may be
-/// taken at once, which is the whole of the difference between its two forms.
-fn modern_piece(rest: &str, digits: usize) -> Option<usize> {
+/// What distinguishes one modern expression from another.
+///
+/// They share an alternation and differ in three places. Holding the
+/// differences as values rather than as four near-identical scanners is what
+/// keeps a change to the shared part from having to be made four times — and
+/// what makes each expression's deviation readable in one line.
+struct Modern {
+    /// How many digits may be taken at once.
+    digits: usize,
+    /// What a symbol run swallows after it, if anything.
+    trailing: &'static [char],
+    /// Whether a run of letters is cut where its case changes.
+    case_partitioned: bool,
+}
+
+impl Modern {
+    /// `llama-bpe` and its relatives.
+    const THREE_DIGITS: Self = Self {
+        digits: 3,
+        trailing: &['\r', '\n'],
+        case_partitioned: false,
+    };
+    /// `qwen2` and its relatives.
+    const ONE_DIGIT: Self = Self {
+        digits: 1,
+        trailing: &['\r', '\n'],
+        case_partitioned: false,
+    };
+    /// `seed-coder`: a symbol run takes nothing after it.
+    const SYMBOLS_ALONE: Self = Self {
+        digits: 1,
+        trailing: &[],
+        case_partitioned: false,
+    };
+    /// `gpt-4o` and its relatives: letters cut by case, and a symbol run that
+    /// swallows a trailing slash as well as newlines.
+    const CASE_PARTITIONED: Self = Self {
+        digits: 3,
+        trailing: &['\r', '\n', '/'],
+        case_partitioned: true,
+    };
+}
+
+/// A letter that is not lowercase, as `((?=[\p{L}])([^a-z]))` reads.
+///
+/// The lookahead is what makes it a letter at all; the class is ASCII, so a
+/// letter in a script with no case answers to both this and its opposite —
+/// which is what the expression says, and why `HTTPServer` and a Japanese word
+/// are cut differently.
+fn letter_not_lower(c: char) -> bool {
+    c.is_alphabetic() && !c.is_ascii_lowercase()
+}
+
+/// A letter that is not uppercase, as `((?=[\p{L}])([^A-Z]))` reads.
+fn letter_not_upper(c: char) -> bool {
+    c.is_alphabetic() && !c.is_ascii_uppercase()
+}
+
+/// `[^\r\n\p{L}\p{N}]?(not-lower)*(not-upper)+` and its mirror, whichever
+/// takes more.
+///
+/// Two arms in the reference implementation, differing only in which run may be
+/// empty. Tried in the order it lists them, first match winning, which is what
+/// an ordered alternation means.
+fn case_partitioned_run(rest: &str) -> Option<usize> {
+    let lead = |c: char| !matches!(c, '\r' | '\n') && !c.is_alphabetic() && !c.is_numeric();
+    for (first, second, first_may_be_empty) in [
+        (letter_not_lower as fn(char) -> bool, letter_not_upper as fn(char) -> bool, true),
+        (letter_not_lower as fn(char) -> bool, letter_not_upper as fn(char) -> bool, false),
+    ] {
+        let mut at = 0;
+        if let Some(character) = rest.chars().next()
+            && lead(character)
+        {
+            at = character.len_utf8();
+        }
+        let start = at;
+        while let Some(character) = rest.get(at..).and_then(|tail| tail.chars().next()) {
+            if first(character) {
+                at = at.saturating_add(character.len_utf8());
+            } else {
+                break;
+            }
+        }
+        if !first_may_be_empty && at == start {
+            continue;
+        }
+        let after_first = at;
+        while let Some(character) = rest.get(at..).and_then(|tail| tail.chars().next()) {
+            if second(character) {
+                at = at.saturating_add(character.len_utf8());
+            } else {
+                break;
+            }
+        }
+        // The second run must take at least one on the first arm; on the
+        // second it may be empty, but the first must not have been.
+        if first_may_be_empty && at == after_first {
+            continue;
+        }
+        if at > 0 {
+            // `(?:'s|'t|…)?` — an optional contraction, either case.
+            if let Some(extra) = rest.get(at..).and_then(|tail| contraction(tail, true)) {
+                at = at.saturating_add(extra);
+            }
+            return Some(at);
+        }
+    }
+    None
+}
+
+/// The later shape, alternative by alternative. What differs between its forms
+/// is held in [`Modern`].
+fn modern_piece(rest: &str, shape: &Modern) -> Option<usize> {
     // `(?:'[sS]|'[tT]|…)` — the same contractions, either case.
     if let Some(length) = contraction(rest, true) {
         return Some(length);
@@ -177,7 +311,13 @@ fn modern_piece(rest: &str, digits: usize) -> Option<usize> {
     // newline, a letter or a digit, then letters. Note that the lead is *any*
     // such character and not only a space, which is the difference that makes
     // `(hello` one piece here and two under GPT-2's.
-    if let Some(length) = led_run(
+    //
+    // Where the expression cuts letters by case, that arm replaces this one.
+    if shape.case_partitioned {
+        if let Some(length) = case_partitioned_run(rest) {
+            return Some(length);
+        }
+    } else if let Some(length) = led_run(
         rest,
         |c| !matches!(c, '\r' | '\n') && !c.is_alphabetic() && !c.is_numeric(),
         char::is_alphabetic,
@@ -187,14 +327,16 @@ fn modern_piece(rest: &str, digits: usize) -> Option<usize> {
     }
     // `\p{N}{1,3}` or `\p{N}` depending on the expression — a long number is several
     // pieces either way, and the merges cannot span them.
-    if let Some(length) = led_run(rest, |_| false, char::is_numeric, digits) {
+    if let Some(length) = led_run(rest, |_| false, char::is_numeric, shape.digits) {
         return Some(length);
     }
-    // ` ?[^\s\p{L}\p{N}]+[\r\n]*`
+    // ` ?[^\s\p{L}\p{N}]+` and whatever this expression lets it swallow after
+    // it — newlines for most, newlines and a slash for one, nothing at all for
+    // another. What it takes here decides whether `!!!\n` is one piece or two.
     if let Some(length) = spaced_run(rest, is_symbol) {
         let mut end = length;
         while let Some(character) = rest.get(end..).and_then(|tail| tail.chars().next()) {
-            if matches!(character, '\r' | '\n') {
+            if shape.trailing.contains(&character) {
                 end = end.saturating_add(character.len_utf8());
             } else {
                 break;

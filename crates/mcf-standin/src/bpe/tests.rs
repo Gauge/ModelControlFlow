@@ -174,3 +174,140 @@ fn the_digits_apart_form_is_gpt2_away_from_digits() {
         );
     }
 }
+
+/// A symbol run that takes nothing after it is a different cut (F23).
+///
+/// One ends its symbol alternative ` ?[^\s\p{L}\p{N}]+[\r\n]*` and the other
+/// ends it ` ?[^\s\p{L}\p{N}\r\n]+`. So a newline after
+/// punctuation joins the punctuation under one and stands alone under the
+/// other — two pieces where there was one, and the merges cannot span them.
+/// This is the whole reason it is its own expression rather than being run
+/// through the one it resembles.
+#[test]
+fn a_symbol_run_takes_the_newline_or_leaves_it() {
+    assert_eq!(
+        pieces("a!!!\nb", Split::ModernOneDigit),
+        vec!["a", "!!!\n", "b"],
+        "the one-digit expression's symbol run swallows the newline after it"
+    );
+    assert_eq!(
+        pieces("a!!!\nb", Split::ModernOneDigitSymbolsAlone),
+        vec!["a", "!!!", "\n", "b"],
+        "the symbols-alone expression stops at the punctuation"
+    );
+    // Where there is no newline the two agree, which is why the difference is
+    // easy to miss by eye.
+    assert_eq!(
+        pieces("a!!!b", Split::ModernOneDigit),
+        pieces("a!!!b", Split::ModernOneDigitSymbolsAlone)
+    );
+}
+
+/// Digits are still one at a time in the expression that takes symbols alone.
+#[test]
+fn symbols_alone_still_cuts_every_digit() {
+    assert_eq!(
+        pieces("123", Split::ModernOneDigitSymbolsAlone),
+        vec!["1", "2", "3"]
+    );
+}
+
+/// Letters are cut where their case changes, and a run of capitals holds.
+///
+/// `((?=[\p{L}])([^a-z]))*((?=[\p{L}])([^A-Z]))+` — a run of letters that are
+/// not lowercase, then a run that are not uppercase. `HTTPServer` is one piece
+/// because the capitals are the first run and `erver` the second; `helloWorld`
+/// is two because the second word starts a new first run.
+#[test]
+fn letters_are_cut_where_their_case_changes() {
+    assert_eq!(
+        pieces("HTTPServer", Split::CasePartitionedThreeDigits),
+        vec!["HTTPServer"],
+        "capitals then lowercase is one piece"
+    );
+    assert_eq!(
+        pieces("helloWorld", Split::CasePartitionedThreeDigits),
+        vec!["hello", "World"],
+        "a capital starts a new piece"
+    );
+    // Where nothing changes case, it agrees with the plainer expressions.
+    assert_eq!(
+        pieces("hello", Split::CasePartitionedThreeDigits),
+        vec!["hello"]
+    );
+    // And that is a real difference from the expression it most resembles.
+    assert_ne!(
+        pieces("helloWorld", Split::CasePartitionedThreeDigits),
+        pieces("helloWorld", Split::ModernThreeDigits)
+    );
+}
+
+/// Its symbol run swallows a slash *after* the newlines, where others stop.
+///
+/// ` ?[^\s\p{L}\p{N}]+[\r\n/]*` against ` ?[^\s\p{L}\p{N}]+[\r\n]*`. The
+/// slash is in the trailing class, and where that shows is narrower than it
+/// looks: a slash is itself a symbol, so an ordinary run takes it already. It
+/// is only once the run has ended and a newline has been taken that the two
+/// expressions part — which is exactly the kind of difference that is invisible
+/// by eye and changes the tokenization.
+#[test]
+fn a_slash_after_a_newline_joins_the_run_only_here() {
+    // A slash among punctuation is the run itself, under both.
+    assert_eq!(
+        pieces("a!//b", Split::CasePartitionedThreeDigits),
+        pieces("a!//b", Split::ModernThreeDigits),
+        "a slash is a symbol, so both take it in the run"
+    );
+    // After a newline the trailing class decides, and only one has the slash.
+    assert_eq!(
+        pieces("a!\n/b", Split::CasePartitionedThreeDigits),
+        vec!["a", "!\n/", "b"],
+        "the trailing class takes the newline and then the slash"
+    );
+    assert_eq!(
+        pieces("a!\n/b", Split::ModernThreeDigits),
+        vec!["a", "!\n", "/b"],
+        "without the slash the run ends at the newline"
+    );
+}
+
+/// Digits come in threes here, as the expression says.
+#[test]
+fn the_case_partitioned_expression_takes_three_digits() {
+    assert_eq!(
+        pieces("1234", Split::CasePartitionedThreeDigits),
+        vec!["123", "4"]
+    );
+}
+
+/// Every expression covers its input completely and without overlap.
+///
+/// A scanner that dropped a character would lose information silently (A1),
+/// and a new expression is the most likely place for that to happen.
+#[test]
+fn every_expression_covers_what_it_is_given() {
+    let texts = [
+        "Hello, World!\n\ttabs and  spaces",
+        "HTTPServer/v2 handles 1234 requests\r\n",
+        "don't stop — ünïcode, 日本語, and !!!\n\n",
+        "",
+        "   ",
+    ];
+    for split in [
+        Split::Gpt2,
+        Split::Gpt2DigitsApart,
+        Split::ModernThreeDigits,
+        Split::ModernOneDigit,
+        Split::ModernOneDigitSymbolsAlone,
+        Split::CasePartitionedThreeDigits,
+    ] {
+        for text in texts {
+            let out = pieces(text, split);
+            assert_eq!(
+                out.concat(),
+                text,
+                "{split:?} did not cover {text:?} exactly: {out:?}"
+            );
+        }
+    }
+}
