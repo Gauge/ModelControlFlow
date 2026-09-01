@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 142 | [F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)](#142-f142-the-engines-own-end-of-text-was-recorded-as-the-models-words-and-mcf-reported-it-did-not-know-why-generation-stopped-while-holding-the-thing-that-said-a19-a21-a2-a7) |
 | 140 | [F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)](#140-f140-mcf-explain-read-the-whole-model-into-memory-to-look-at-its-header-1641-gb-to-describe-a-file-beneath-a-note-in-the-same-module-saying-it-must-not-3-11-a2-b-372) |
 | 139 | [F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)](#139-f139-eight-commands-mcf-answers-were-absent-from-its-own-help-and-six-of-them-denied-existing-when-typed-the-console-sent-operators-to-two-of-them-by-name-a22-3-15-a2-f135) |
 | 138 | [F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)](#138-f138-four-places-sized-a-model-and-one-of-them-counted-the-whole-of-it-a-111-gb-model-planned-against-as-109-mb-and-a-context-recommended-that-would-take-the-machine-down-b-422-b-072-a21-f136) |
@@ -9392,6 +9393,53 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 142 · F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)
+
+**llama.cpp's completion tool writes `[end of text]` on its own standard
+output when the model emits its end-of-turn token** — in the same stream as
+the answer, with nothing to separate them. MCF read that stream and passed all
+of it on as what the model said.
+
+**So a model that wrote `return result` had `return result [end of text]`
+recorded against it.** In `mcf run` the operator sees words the model did not
+write. In `mcf eval` the consequence is worse and quieter: the answer is
+Python, and ` [end of text]` makes it a syntax error, so every unfenced answer
+failed to run. A21 in its plainest form — a statement by the tool, presented
+as an observation of the model.
+
+**Found by disagreement between two models, not by reading the code.** A
+2B general model scored on ten of twelve tasks; an 8B *coding* model came back
+`unknown` on nine, including `merge-sorted`, which the 2B passed. A coding
+model that cannot write merge sort is not the likely reading, and the raw
+answer was correct Python with the marker welded to its last line. B-110's
+laboratory measured MCF's output handling and reported it as the model's
+ability.
+
+**A7 kept it visible.** `unknown` is not zero: MCF refused to score answers
+that would not run, and said so in the sentence that named the possibility.
+Had the laboratory scored those nine as failures, the number would have looked
+plausible — a smaller model doing worse — and nothing would have pointed at
+the cause. The rule that stops MCF reporting ignorance as absence is what made
+the defect legible.
+
+**The same marker was the answer to the question beside it.** The account read
+`stopped: unknown_the_engine_did_not_say`, under a comment explaining that
+this engine prints text and exits and why it ended is not on the wire. It is
+on the wire; it is the marker. A7 asks MCF not to claim what it does not know
+and does not ask it to discard what it does — the same confusion as F138's
+`placement: Unknown`, in a different subsystem, in the same week. The account
+now reads `stop_token`, which is the word the served path already used.
+
+**And the first fix was wrong in a way worth keeping.** Streaming means the
+marker can arrive split across reads, so the obvious guard is to hold back any
+suffix of the buffer that is a prefix of the marker. That is sufficient only
+if the marker is last. The tool writes `[end of text]` and *then* two blank
+lines, so by the end of the read the marker sat in the middle of the buffer,
+the suffix under test was `\n\n`, and the whole thing went straight out — the
+guard passing its own test while the symptom was unchanged. A fixed tail is
+held back instead, which needs no reasoning about what follows what.
+
 
 ## 140 · F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)
 

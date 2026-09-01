@@ -485,6 +485,64 @@ fn through_served(
 /// One generation through the provisioned engine, as a supervised subprocess
 /// (B-032, B-033). Text arrives in chunks rather than tokens — the completion
 /// tool prints text — and each chunk is one line of the stream.
+/// What the completion tool prints after the text when the model emitted its
+/// own end-of-turn token.
+///
+/// **It is the tool talking, not the model.** llama.cpp's completion binary
+/// writes this on its own standard output, in the same stream as the answer
+/// and with nothing to separate them, and MCF passed the whole stream on as
+/// what the model said. A model that ended `return result` had
+/// `return result [end of text]` recorded against it — code that no longer
+/// parses, in a laboratory whose whole business is running what a model wrote
+/// (F142).
+const ENDED_ITS_TURN: &str = "[end of text]";
+
+/// How much of the end is held back before anything is sent.
+///
+/// Comfortably more than the marker and the blank lines the tool prints after
+/// it. The first attempt kept back only a suffix that was a prefix of the
+/// marker, which looks sufficient and is not: the tool writes `[end of text]`
+/// and *then* two newlines, so by the end of the read the marker is no longer
+/// at the end of the buffer and the test that was meant to catch it saw a
+/// suffix of `\n\n` instead. Holding a fixed tail needs no reasoning about
+/// what follows what.
+const HELD_BACK: usize = 32;
+
+/// The part of `held` that is certainly the model's, removed from it.
+///
+/// The marker arrives split across reads like any other output and with more
+/// output after it, so the last stretch is never sent until the generation
+/// ends. What that costs is the tail arriving in one piece at the end; what it
+/// buys is that nothing the tool wrote about the model is shown as the model's
+/// (F142).
+fn ready_to_send(held: &mut String) -> String {
+    let Some(mut at) = held.len().checked_sub(HELD_BACK) else {
+        return String::new();
+    };
+    while at > 0 && !held.is_char_boundary(at) {
+        at -= 1;
+    }
+    held.drain(..at).collect()
+}
+
+/// What the model actually said, and why it stopped.
+///
+/// A7 asks MCF not to claim what it does not know. It does not ask MCF to
+/// throw away what it does: the marker is the engine saying *the model ended
+/// its own turn*, and this path reported `unknown_the_engine_did_not_say`
+/// while holding it (F142).
+fn without_the_marker(said: &str) -> (String, &'static str) {
+    let trimmed = said.trim_end();
+    match trimmed.strip_suffix(ENDED_ITS_TURN) {
+        Some(before) => (before.trim_end().to_owned(), "stop_token"),
+        // No marker: the tool prints none when the budget ran out first, and
+        // it is the budget MCF set — but this build does not say so on the
+        // wire, and inferring it from a token count MCF also set would be a
+        // guess wearing a measurement's clothes.
+        None => (said.to_owned(), "unknown_the_engine_did_not_say"),
+    }
+}
+
 fn through_provisioned(
     store: &Path,
     llama: &crate::adapters::ProvisionedLlama,
@@ -506,14 +564,38 @@ fn through_provisioned(
     let mut command = llama.generate(&path, prompt, limit, seed);
     let mut at = 0_usize;
     let mut text = String::new();
+    // Held back until it is known not to be the start of the marker, so that
+    // what a caller watching the stream sees is what the model wrote.
+    let mut waiting = String::new();
+    let mut sent = 0_usize;
     let ended = crate::adapters::supervise(&mut command, &mut |chunk| {
         let piece = String::from_utf8_lossy(chunk).into_owned();
         text.push_str(&piece);
-        let line = Streamed::Token { at, text: piece }.to_line();
+        waiting.push_str(&piece);
+        let ready = ready_to_send(&mut waiting);
+        if ready.is_empty() {
+            return;
+        }
+        sent = sent.saturating_add(ready.len());
+        let line = Streamed::Token { at, text: ready }.to_line();
         let _written = writeln!(writer, "{line}");
         let _flushed = writer.flush();
         at = at.saturating_add(1);
     });
+    // Whatever was held back and turned out not to be the marker.
+    let (text, why) = without_the_marker(&text);
+    if let Some(rest) = text.get(sent..)
+        && !rest.is_empty()
+    {
+        let line = Streamed::Token {
+            at,
+            text: rest.to_owned(),
+        }
+        .to_line();
+        let _written = writeln!(writer, "{line}");
+        let _flushed = writer.flush();
+        at = at.saturating_add(1);
+    }
 
     let engine_name = format!(
         "provisioned {} @{} from {}",
@@ -539,11 +621,11 @@ fn through_provisioned(
                     "tokens",
                     Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
                 ),
-                // Not "the model stopped": this engine prints text and exits,
-                // and why it ended — its own end-of-turn token, or the budget —
-                // is not on the wire. A7: what MCF does not know it does not
-                // say.
-                ("stopped", Value::text("unknown_the_engine_did_not_say")),
+                // Its own end-of-turn token where the tool said so, and
+                // *unknown* where it did not — which is A7 keeping what MCF
+                // knows and what it does not apart, rather than discarding
+                // both (F142).
+                ("stopped", Value::text(why)),
                 ("text_bytes", bytes),
                 ("conditions", conditions),
             ]),
@@ -829,5 +911,87 @@ impl WithResidency for Value {
             Value::Integer(i64::try_from(dequantized).unwrap_or(i64::MAX)),
         );
         Value::Map(fields)
+    }
+}
+
+#[cfg(test)]
+mod marker_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use super::{ENDED_ITS_TURN, HELD_BACK, ready_to_send, without_the_marker};
+
+    /// The defect exactly: code the tool made unparseable.
+    #[test]
+    fn the_tools_marker_is_not_the_models_words() {
+        let said = "def merge(a, b):\n    return sorted(a + b) [end of text]\n\n\n";
+        let (text, why) = without_the_marker(said);
+        assert_eq!(text, "def merge(a, b):\n    return sorted(a + b)");
+        assert_eq!(why, "stop_token", "the tool said why and MCF has it");
+        assert!(
+            !text.contains(ENDED_ITS_TURN),
+            "the marker is still being attributed to the model"
+        );
+    }
+
+    /// Without the marker, MCF does not know why it stopped and says so.
+    ///
+    /// A7 in both directions: the reason is kept where the tool gave one and
+    /// not invented where it did not.
+    #[test]
+    fn no_marker_is_not_a_stop_token() {
+        let (text, why) = without_the_marker("a partial answer that ran out of budget");
+        assert_eq!(text, "a partial answer that ran out of budget");
+        assert_eq!(why, "unknown_the_engine_did_not_say");
+    }
+
+    /// A model that writes the marker's text itself, mid-answer, keeps it.
+    #[test]
+    fn only_the_end_is_the_end() {
+        let said = "print('[end of text]')\nreturn 1";
+        let (text, why) = without_the_marker(said);
+        assert_eq!(text, said, "a marker in the middle is the model's own text");
+        assert_eq!(why, "unknown_the_engine_did_not_say");
+    }
+
+    /// Nothing is sent while it could still be part of the marker.
+    ///
+    /// The first attempt held back only a suffix that was a prefix of the
+    /// marker, and the tool writes newlines *after* the marker — so by the end
+    /// of the read the marker sat in the middle of the buffer and went
+    /// straight out. This is that case.
+    #[test]
+    fn the_marker_is_never_streamed_even_with_output_after_it() {
+        let mut held = String::new();
+        let mut sent = String::new();
+        // One read carrying the end of an answer, the marker, and the blank
+        // lines that follow it — which is what the tool actually writes.
+        held.push_str("    return result [end of text]\n\n\n");
+        sent.push_str(&ready_to_send(&mut held));
+        assert!(
+            !sent.contains(ENDED_ITS_TURN),
+            "the marker reached the caller: {sent:?}"
+        );
+    }
+
+    /// A long answer still streams rather than arriving all at once.
+    #[test]
+    fn what_is_certainly_the_models_goes_out_as_it_arrives() {
+        let mut held = "x".repeat(HELD_BACK * 4);
+        let ready = ready_to_send(&mut held);
+        assert_eq!(ready.len(), HELD_BACK * 3);
+        assert_eq!(held.len(), HELD_BACK, "the tail is what is kept back");
+    }
+
+    /// The holdback never splits a character.
+    #[test]
+    fn a_character_is_not_cut_in_half() {
+        let mut held = "é".repeat(HELD_BACK);
+        let ready = ready_to_send(&mut held);
+        // Valid UTF-8 on both sides is the property; where the cut lands is
+        // arithmetic.
+        assert!(ready.chars().all(|held| held == 'é'));
+        assert!(held.chars().all(|c| c == 'é'));
+        assert_eq!(ready.len() + held.len(), HELD_BACK * 2);
     }
 }
