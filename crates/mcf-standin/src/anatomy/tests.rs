@@ -1,0 +1,509 @@
+//! A directory is counted, and the header is set against it.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use std::collections::BTreeMap;
+
+use super::{Active, Role, billions, label_agrees, of, role_of};
+use crate::gguf::{Model, Tensor, TensorKind, Value};
+
+fn tensor(name: &str, dimensions: &[u64], kind: TensorKind) -> Tensor {
+    Tensor {
+        name: name.to_owned(),
+        dimensions: dimensions.to_vec(),
+        kind,
+        offset: 0,
+    }
+}
+
+fn model(architecture: &str, declared: &[(&str, Value)], tensors: Vec<Tensor>) -> Model {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "general.architecture".to_owned(),
+        Value::Text(architecture.to_owned()),
+    );
+    for (key, value) in declared {
+        metadata.insert((*key).to_owned(), value.clone());
+    }
+    Model {
+        version: 3,
+        metadata,
+        tensors,
+        data_offset: 0,
+        alignment: 32,
+    }
+}
+
+/// A two-block dense model with the shapes the format writes: width 64,
+/// 4 heads of 16, 2 key/value heads, feed-forward 128, vocabulary 256.
+fn dense() -> Model {
+    let mut tensors = vec![
+        tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
+        tensor("output.weight", &[64, 256], TensorKind::Q6_K),
+        tensor("output_norm.weight", &[64], TensorKind::F32),
+    ];
+    for block in 0..2 {
+        let named = |leaf: &str| format!("blk.{block}.{leaf}");
+        tensors.extend([
+            tensor(&named("attn_q.weight"), &[64, 64], TensorKind::Q4_K),
+            tensor(&named("attn_k.weight"), &[64, 32], TensorKind::Q4_K),
+            tensor(&named("attn_v.weight"), &[64, 32], TensorKind::Q6_K),
+            tensor(&named("attn_output.weight"), &[64, 64], TensorKind::Q4_K),
+            tensor(&named("attn_norm.weight"), &[64], TensorKind::F32),
+            tensor(&named("ffn_up.weight"), &[64, 128], TensorKind::Q4_K),
+            tensor(&named("ffn_gate.weight"), &[64, 128], TensorKind::Q4_K),
+            tensor(&named("ffn_down.weight"), &[128, 64], TensorKind::Q6_K),
+            tensor(&named("ffn_norm.weight"), &[64], TensorKind::F32),
+        ]);
+    }
+    model(
+        "llama",
+        &[
+            ("llama.block_count", Value::Integer(2)),
+            ("llama.embedding_length", Value::Integer(64)),
+            ("llama.attention.head_count", Value::Integer(4)),
+            ("llama.attention.head_count_kv", Value::Integer(2)),
+            ("llama.feed_forward_length", Value::Integer(128)),
+            ("llama.vocab_size", Value::Integer(256)),
+            ("general.parameter_count", Value::Integer(106_816)),
+            (
+                "tokenizer.ggml.tokens",
+                Value::List(vec![Value::Text("a".to_owned()); 256]),
+            ),
+        ],
+        tensors,
+    )
+}
+
+#[test]
+fn every_tensor_is_placed_by_its_name() {
+    assert_eq!(role_of("token_embd.weight"), Role::Embedding);
+    assert_eq!(role_of("output.weight"), Role::Output);
+    assert_eq!(role_of("output_norm.weight"), Role::NormsAndBiases);
+    assert_eq!(role_of("blk.3.attn_q.weight"), Role::Attention);
+    assert_eq!(role_of("blk.3.attn_q.bias"), Role::NormsAndBiases);
+    assert_eq!(role_of("blk.3.attn_k_norm.weight"), Role::NormsAndBiases);
+    assert_eq!(
+        role_of("blk.3.post_attention_norm.weight"),
+        Role::NormsAndBiases
+    );
+    assert_eq!(role_of("blk.3.ffn_up.weight"), Role::FeedForward);
+    assert_eq!(role_of("blk.3.ffn_up_shexp.weight"), Role::FeedForward);
+    assert_eq!(role_of("blk.3.ffn_up_exps.weight"), Role::Experts);
+    assert_eq!(role_of("blk.3.ffn_up_exps.bias"), Role::Experts);
+    assert_eq!(role_of("blk.3.ffn_gate_inp.weight"), Role::Routing);
+    assert_eq!(role_of("blk.3.attn_kv_a_mqa.weight"), Role::Attention);
+    assert_eq!(role_of("rope_freqs.weight"), Role::Other);
+}
+
+#[test]
+fn a_dense_model_is_counted_from_its_shapes() {
+    let counted = of(&dense());
+    // Two embedding-sized tables, plus per block: 64·64·2 + 64·32·2 + 3·64·128
+    // + two norms of 64, plus the output norm.
+    let per_block = 64 * 64 * 2 + 64 * 32 * 2 + 3 * 64 * 128 + 2 * 64;
+    assert_eq!(counted.elements, 2 * 64 * 256 + 2 * per_block + 64);
+    assert_eq!(counted.blocks, 2);
+    assert!(!counted.output_tied);
+    assert!(counted.active.is_none());
+    assert_eq!(counted.unsized_tensors, 0);
+    let attention = counted
+        .roles
+        .iter()
+        .find(|(role, _)| *role == Role::Attention)
+        .map(|(_, share)| share)
+        .unwrap();
+    assert_eq!(attention.tensors, 8);
+    assert_eq!(attention.elements, 2 * (64 * 64 * 2 + 64 * 32 * 2));
+    // A share is sized like the whole is: from zero, tensor by tensor. Q4_K
+    // and Q6_K are both sized, so this one has bits.
+    let attention_bytes: u64 = dense()
+        .tensors
+        .iter()
+        .filter(|held| held.name.contains("attn_") && !held.name.contains("norm"))
+        .map(|held| held.bytes().unwrap())
+        .sum();
+    assert_eq!(attention.bytes, Some(attention_bytes));
+    assert!(attention.hundredths_of_a_bit().is_some());
+    // Bytes are the sum of every tensor's encoding, and the whole is known
+    // because every kind here is one the reader sizes.
+    let bytes: u64 = dense()
+        .tensors
+        .iter()
+        .map(|held| held.bytes().unwrap())
+        .sum();
+    assert_eq!(counted.bytes, Some(bytes));
+    // The kinds are listed largest first.
+    assert_eq!(
+        counted.kinds.first().map(|(kind, _)| *kind),
+        Some(TensorKind::Q4_K)
+    );
+}
+
+#[test]
+fn the_header_is_set_against_the_directory_and_agrees() {
+    let counted = of(&dense());
+    let row = |what: &str| {
+        counted
+            .agreements
+            .iter()
+            .find(|held| held.what == what)
+            .unwrap_or_else(|| panic!("a row for {what}"))
+            .clone()
+    };
+    assert_eq!(row("blocks").agrees, Some(true));
+    assert_eq!(row("embedding width").agrees, Some(true));
+    assert_eq!(row("vocabulary, embedding rows").agrees, Some(true));
+    assert_eq!(row("vocabulary, tokens listed").agrees, Some(true));
+    assert_eq!(row("attention heads").agrees, Some(true));
+    assert_eq!(row("key/value heads").agrees, Some(true));
+    assert_eq!(row("feed-forward width").agrees, Some(true));
+    // Nothing declared experts and nothing holds any: no row.
+    assert!(counted.agreements.iter().all(|held| held.what != "experts"));
+    assert_eq!(row("parameters").declared.as_deref(), Some("106816"));
+    assert_eq!(row("parameters").agrees, Some(true));
+}
+
+#[test]
+fn a_header_that_disagrees_with_its_own_directory_is_said_to() {
+    let mut lying = dense();
+    lying.metadata.insert(
+        "llama.attention.head_count_kv".to_owned(),
+        Value::Integer(4),
+    );
+    lying
+        .metadata
+        .insert("llama.block_count".to_owned(), Value::Integer(3));
+    let counted = of(&lying);
+    let disagreeing: Vec<&str> = counted
+        .agreements
+        .iter()
+        .filter(|held| held.agrees == Some(false))
+        .map(|held| held.what)
+        .collect();
+    assert_eq!(disagreeing, vec!["blocks", "key/value heads"]);
+    let heads = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "key/value heads")
+        .unwrap();
+    assert_eq!(heads.declared.as_deref(), Some("4"));
+    assert_eq!(heads.observed.as_deref(), Some("2"));
+}
+
+#[test]
+fn a_figure_the_header_does_not_state_is_not_a_disagreement() {
+    let mut quiet = dense();
+    quiet.metadata.remove("llama.vocab_size");
+    let counted = of(&quiet);
+    let rows = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "vocabulary, embedding rows")
+        .unwrap();
+    assert_eq!(rows.declared, None);
+    assert_eq!(rows.observed.as_deref(), Some("256"));
+    assert_eq!(rows.agrees, None);
+}
+
+#[test]
+fn a_mixture_counts_what_a_token_activates() {
+    // One block, 8 experts of which 2 are used, each expert 64→32→64 with a
+    // gate; a router of 64×8; attention as the dense one; tied output.
+    let tensors = vec![
+        tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
+        tensor("output_norm.weight", &[64], TensorKind::F32),
+        tensor("blk.0.attn_q.weight", &[64, 64], TensorKind::Q4_K),
+        tensor("blk.0.attn_k.weight", &[64, 32], TensorKind::Q4_K),
+        tensor("blk.0.attn_v.weight", &[64, 32], TensorKind::Q4_K),
+        tensor("blk.0.attn_output.weight", &[64, 64], TensorKind::Q4_K),
+        tensor("blk.0.ffn_gate_inp.weight", &[64, 8], TensorKind::F32),
+        tensor("blk.0.ffn_up_exps.weight", &[64, 32, 8], TensorKind::Q4_K),
+        tensor("blk.0.ffn_gate_exps.weight", &[64, 32, 8], TensorKind::Q4_K),
+        tensor("blk.0.ffn_down_exps.weight", &[32, 64, 8], TensorKind::Q4_K),
+    ];
+    let mixture = model(
+        "qwen3moe",
+        &[
+            ("qwen3moe.expert_count", Value::Integer(8)),
+            ("qwen3moe.expert_used_count", Value::Integer(2)),
+            ("qwen3moe.expert_feed_forward_length", Value::Integer(32)),
+            ("general.size_label", Value::Text("0.0B-A0.0B".to_owned())),
+        ],
+        tensors,
+    );
+    let counted = of(&mixture);
+    assert!(counted.output_tied);
+    let experts = 3 * 64 * 32 * 8;
+    let outside = counted.elements - experts;
+    assert_eq!(
+        counted.active,
+        Some(Active {
+            experts: 8,
+            used: 2,
+            elements: outside + 3 * 64 * 32 * 2,
+        })
+    );
+    let row = |what: &str| {
+        counted
+            .agreements
+            .iter()
+            .find(|held| held.what == what)
+            .unwrap_or_else(|| panic!("a row for {what}"))
+            .clone()
+    };
+    assert_eq!(row("experts").agrees, Some(true));
+    assert_eq!(row("expert feed-forward width").agrees, Some(true));
+    assert_eq!(
+        row("parameters").declared.as_deref(),
+        Some("0.0B-A0.0B (a label)")
+    );
+    assert_eq!(row("parameters").agrees, Some(true));
+    assert_eq!(
+        row("parameters a token activates").declared.as_deref(),
+        Some("A0.0B (a label)")
+    );
+    assert_eq!(row("parameters a token activates").agrees, Some(true));
+}
+
+#[test]
+fn an_encoding_the_reader_cannot_size_leaves_the_bytes_unknown() {
+    let mut odd = dense();
+    odd.tensors.push(tensor(
+        "blk.1.ffn_up_exps.weight",
+        &[64, 32, 8],
+        TensorKind::Unknown(40),
+    ));
+    let counted = of(&odd);
+    assert_eq!(
+        counted.bytes, None,
+        "a total with a hole in it is not a total (A7)"
+    );
+    assert_eq!(counted.unsized_tensors, 1);
+    // The elements are still counted: the shape is known even where the
+    // encoding is not.
+    assert_eq!(counted.elements, of(&dense()).elements + 64 * 32 * 8);
+}
+
+#[test]
+fn a_label_agrees_to_its_own_resolution() {
+    // Rounded or truncated: 8B covers 7.5 up to 9 billion; 2.6B covers 2.55
+    // up to 2.7.
+    assert_eq!(label_agrees("8B", 8_250_000_000), Some(true));
+    assert_eq!(label_agrees("8B", 7_500_000_000), Some(true));
+    assert_eq!(label_agrees("8B", 8_999_000_000), Some(true));
+    assert_eq!(label_agrees("8B", 9_000_000_000), Some(false));
+    assert_eq!(label_agrees("8B", 7_400_000_000), Some(false));
+    // Qwen3-Coder-30B-A3B holds 30.53 billion: a truncated label.
+    assert_eq!(label_agrees("30B", 30_532_122_624), Some(true));
+    assert_eq!(label_agrees("2.6B", 2_640_000_000), Some(true));
+    assert_eq!(label_agrees("2.6B", 2_699_000_000), Some(true));
+    assert_eq!(label_agrees("2.6B", 2_700_000_000), Some(false));
+    // Not a count: experts times a size.
+    assert_eq!(label_agrees("64x2.6B", 2_600_000_000), None);
+    assert_eq!(label_agrees("large", 1), None);
+}
+
+#[test]
+fn billions_are_written_to_one_decimal() {
+    assert_eq!(billions(8_250_000_000), "8.3");
+    assert_eq!(billions(8_249_999_999), "8.2");
+    assert_eq!(billions(30_530_000_000), "30.5");
+    assert_eq!(billions(1_000), "0.0");
+}
+
+#[test]
+fn one_token_is_costed_from_the_widths_the_header_names() {
+    let mut file = dense();
+    file.metadata
+        .insert("llama.context_length".to_owned(), Value::Integer(1024));
+    file.metadata
+        .insert("llama.attention.key_length".to_owned(), Value::Integer(16));
+    let counted = of(&file);
+    let work = super::work::of(&file, &counted);
+    // Every element but the embedding table, which is looked up, and the
+    // output head is its own table here.
+    assert_eq!(work.multiply_adds, counted.elements - 64 * 256);
+    assert_eq!(work.head_width, Some(16));
+    assert_eq!(work.queries_per_key, Some(2));
+    // 4 heads × (16 + 16) × 1024 positions × 2 blocks.
+    assert_eq!(work.attention_at_context, Some(4 * 32 * 1024 * 2));
+    // 2 key/value heads × (16 + 16) × 2 blocks × 2 bytes.
+    assert_eq!(
+        work.cache,
+        super::work::Cache::Sized {
+            per_token: 2 * 32 * 2 * 2,
+            at_context: Some((1024, 1024 * 2 * 32 * 2 * 2)),
+            sliding_window: None,
+        }
+    );
+}
+
+#[test]
+fn a_head_width_the_header_omits_is_the_embedding_over_the_heads() {
+    let file = dense();
+    let counted = of(&file);
+    let work = super::work::of(&file, &counted);
+    assert_eq!(work.head_width, Some(16));
+    // No context length declared: the cache is sized per token and not for a
+    // window, and attention over a window is not computed.
+    assert_eq!(work.attention_at_context, None);
+    assert!(matches!(
+        work.cache,
+        super::work::Cache::Sized {
+            per_token: 256,
+            at_context: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_latent_cache_is_not_sized_from_the_wrong_widths() {
+    let mut file = dense();
+    file.metadata.insert(
+        "llama.attention.kv_lora_rank".to_owned(),
+        Value::Integer(512),
+    );
+    let counted = of(&file);
+    let work = super::work::of(&file, &counted);
+    assert!(matches!(work.cache, super::work::Cache::Unsized(_)));
+    assert_eq!(work.attention_at_context, None);
+}
+
+#[test]
+fn a_tied_output_head_multiplies_the_embedding_table_once() {
+    let file = model(
+        "llama",
+        &[],
+        vec![
+            tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
+            tensor("blk.0.attn_q.weight", &[64, 64], TensorKind::Q4_K),
+        ],
+    );
+    let counted = of(&file);
+    let work = super::work::of(&file, &counted);
+    assert!(counted.output_tied);
+    assert_eq!(work.multiply_adds, 64 * 256 + 64 * 64);
+}
+
+/// A byte-level vocabulary of eight tokens with types, named tokens and a
+/// template.
+fn spoken() -> Model {
+    let tokens = [
+        "<|end|>",
+        "Ġthe",
+        "the",
+        "Ġ123",
+        "12",
+        "<0x41>",
+        "Ġ",
+        "<|start|>",
+    ];
+    let types = [3, 1, 1, 1, 1, 6, 1, 3];
+    model(
+        "llama",
+        &[
+            ("tokenizer.ggml.model", Value::Text("gpt2".to_owned())),
+            ("tokenizer.ggml.pre", Value::Text("qwen2".to_owned())),
+            (
+                "tokenizer.ggml.tokens",
+                Value::List(
+                    tokens
+                        .iter()
+                        .map(|held| Value::Text((*held).to_owned()))
+                        .collect(),
+                ),
+            ),
+            (
+                "tokenizer.ggml.token_type",
+                Value::List(types.iter().map(|held| Value::Integer(*held)).collect()),
+            ),
+            (
+                "tokenizer.ggml.merges",
+                Value::List(vec![Value::Text("t h".to_owned()); 3]),
+            ),
+            ("tokenizer.ggml.eos_token_id", Value::Integer(0)),
+            ("tokenizer.ggml.bos_token_id", Value::Integer(7)),
+            ("tokenizer.ggml.padding_token_id", Value::Integer(99)),
+            ("tokenizer.ggml.add_bos_token", Value::Bool(false)),
+            (
+                "tokenizer.chat_template",
+                Value::Text(
+                    "{% for m in messages %}<|start|>{{ m.role }}\n{{ m.content }}<|end|>{% \
+                     endfor %}{% if tools %}{% endif %}"
+                        .to_owned(),
+                ),
+            ),
+        ],
+        vec![],
+    )
+}
+
+#[test]
+fn a_vocabulary_is_counted_from_its_list() {
+    let counted = super::vocabulary::of(&spoken());
+    assert_eq!(counted.tokens, 8);
+    assert_eq!(counted.model.as_deref(), Some("gpt2"));
+    assert_eq!(counted.pre.as_deref(), Some("qwen2"));
+    assert_eq!(counted.merges, Some(3));
+    assert_eq!(
+        counted.kinds,
+        Some(vec![
+            (super::vocabulary::Kind::Normal, 5),
+            (super::vocabulary::Kind::Control, 2),
+            (super::vocabulary::Kind::Byte, 1),
+        ])
+    );
+    assert_eq!(counted.adds_beginning, Some(false));
+    // "<|start|>" and "<|end|>" tie at 9 bytes with "<0x41>" shorter; the
+    // first of the longest is kept.
+    assert_eq!(counted.longest, Some(("<|start|>".to_owned(), 9)));
+    // "Ġthe", "Ġ123", "Ġ" carry the mark.
+    assert_eq!(counted.word_starts, 3);
+    // "Ġ123" and "12" are digit runs; the longest is three digits.
+    assert_eq!(counted.digit_tokens, (2, 3));
+}
+
+#[test]
+fn a_named_token_is_spelled_from_the_list_or_shown_to_be_beyond_it() {
+    let counted = super::vocabulary::of(&spoken());
+    let named = |what: &str| {
+        counted
+            .named
+            .iter()
+            .find(|held| held.what == what)
+            .unwrap_or_else(|| panic!("a row for {what}"))
+            .clone()
+    };
+    assert_eq!(named("end of text").spelled.as_deref(), Some("<|end|>"));
+    assert_eq!(
+        named("beginning of text").spelled.as_deref(),
+        Some("<|start|>")
+    );
+    let padding = named("padding");
+    assert_eq!(padding.identifier, 99);
+    assert_eq!(padding.spelled, None);
+    assert!(!counted.named.iter().any(|held| held.what == "end of turn"));
+}
+
+#[test]
+fn a_template_is_read_for_the_markers_and_variables_it_uses() {
+    let counted = super::vocabulary::of(&spoken());
+    let template = counted.template.unwrap();
+    assert_eq!(
+        template.markers,
+        Some(vec!["<|end|>".to_owned(), "<|start|>".to_owned()])
+    );
+    assert_eq!(template.mentions, vec!["tools"]);
+    assert!(template.bytes > 0);
+}
+
+#[test]
+fn a_vocabulary_without_types_says_so_rather_than_guessing() {
+    let mut file = spoken();
+    file.metadata.remove("tokenizer.ggml.token_type");
+    let counted = super::vocabulary::of(&file);
+    assert_eq!(counted.kinds, None);
+    assert_eq!(counted.template.unwrap().markers, None);
+}

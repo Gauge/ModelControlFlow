@@ -521,6 +521,51 @@ fn a_non_linear_super_block_assembles_its_scale_from_two_planes() {
     }
 }
 
+/// `MXFP4`'s scale is a bare exponent and its codes are three-bit floats, and
+/// the test states both by hand: an exponent of 129 is a scale of four, and
+/// the sixteen codes run through every magnitude twice, once each sign.
+///
+/// A decoder that read the exponent as a half-precision number, or the codes
+/// as offsets from eight, would produce values of the right count and the
+/// wrong size — which is the failure this guards against.
+#[test]
+fn a_microscaling_block_scales_a_three_bit_float_by_a_bare_exponent() {
+    let mut raw = vec![129_u8]; // 2^(129 − 127) = 4
+    // Low nibble is code n, high nibble is code n + 8 (the same magnitude, negated).
+    raw.extend((0..16_u8).map(|code| (code & 0x07) | ((code & 0x07) | 0x08) << 4));
+    let decoded = tensor(TensorKind::MXFP4, &raw, 32).expect("an MXFP4 block decodes");
+    assert_eq!(decoded.len(), 32);
+    let magnitudes = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
+    for (position, held) in decoded.iter().enumerate() {
+        let magnitude = magnitudes[position % 8] * 4.0;
+        let want = if position < 16 { magnitude } else { -magnitude };
+        assert!(
+            (held - want).abs() < 1e-6,
+            "position {position}: wanted {want}, got {held}"
+        );
+    }
+    // The ends of the exponent: zero is the smallest scale, not a zero scale,
+    // and the reserved 255 is not a number.
+    let small = tensor(
+        TensorKind::MXFP4,
+        &[0, 0x22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        32,
+    )
+    .expect("decodes");
+    assert!(
+        small[0] > 0.0 && small[0] < f32::MIN_POSITIVE,
+        "{}",
+        small[0]
+    );
+    let reserved = tensor(
+        TensorKind::MXFP4,
+        &[255, 0x22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        32,
+    )
+    .expect("decodes");
+    assert!(reserved[0].is_nan(), "{}", reserved[0]);
+}
+
 /// `IQ3_S` reads a grid rather than a scale, and its signs live apart from its
 /// magnitudes.
 ///

@@ -33,6 +33,7 @@
 //! | Module | Holds |
 //! |---|---|
 //! | [`gguf`] | The reader for the format §XII's reference model is published in |
+//! | [`anatomy`] | What a file is, counted from its directory and set against what it declares (A21) |
 //! | [`dequantize`] | Turning a tensor's stored bytes into numbers to compute with |
 //! | [`ops`] | The ordinary operations of a transformer, each one the definition |
 //! | [`llama`] | One family of model, assembled from those operations and run a token at a time |
@@ -47,6 +48,7 @@
 //! vocabulary). B-360 names them and they arrive in that order, because a
 //! format nobody can read is a model nobody can run.
 
+pub mod anatomy;
 pub mod architecture;
 pub mod bert;
 pub mod bpe;

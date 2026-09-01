@@ -25,7 +25,7 @@ use std::path::Path;
 
 use mcf_core::time::{Duration, Monotonic};
 use mcf_hub::store;
-use mcf_standin::gguf::{self, Model, TensorKind, Value};
+use mcf_standin::gguf::{self, Model, TensorKind};
 use mcf_standin::recommended::Recommendation;
 
 use crate::Response;
@@ -97,7 +97,7 @@ fn explain(path: &Path, file: &Model) -> String {
     let mut lines = vec![format!("{}", path.display()), String::new()];
 
     lines.push("WHAT THE FILE DECLARES ABOUT ITSELF  (A21: declared, not verified)".to_owned());
-    for (key, shown) in declared(file) {
+    for (key, shown) in header::declared(file) {
         lines.push(format!("  {key:<38}{shown}"));
     }
 
@@ -135,6 +135,10 @@ fn explain(path: &Path, file: &Model) -> String {
         file.tensors.len(),
         quantizations(file)
     ));
+    // **Counted, not read off the name.** *8B* is a label; the directory is
+    // 291 tensors with shapes, and their product is what the engine will
+    // multiply (A21).
+    lines.extend(anatomy::counted(file));
     if let Ok(provenance) = store::provenance_of(path) {
         lines.push(format!("  {:<38}{}", "came from", provenance.origin()));
         // The terms, where somebody is deciding whether to run it (§III,
@@ -161,6 +165,13 @@ fn explain(path: &Path, file: &Model) -> String {
             "terms", "unknown — nothing beside it states any (A7)"
         ));
     }
+
+    lines.push(String::new());
+    lines.extend(anatomy::agreed(file));
+    lines.push(String::new());
+    lines.extend(anatomy::costed(file));
+    lines.push(String::new());
+    lines.extend(anatomy::spoken(file));
 
     lines.push(String::new());
     lines.push("WHAT MCF WOULD CHOOSE IF ASKED TO RUN IT  (§3.15: no hidden choices)".to_owned());
@@ -220,7 +231,7 @@ fn explain(path: &Path, file: &Model) -> String {
 /// Counted in characters rather than bytes: these sentences contain § and — ,
 /// and a wrap that counted bytes would break lines short for no reason a reader
 /// could see.
-fn wrapped(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrapped(text: &str, width: usize) -> Vec<String> {
     // A paragraph that already has its own lines keeps them. A table wrapped
     // as prose is a table destroyed, and one of these answers is a table
     // (B-379) — a reader cannot compare thirteen figures that have been run
@@ -244,53 +255,6 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
         lines.push(line);
     }
     lines
-}
-
-/// What the file says about itself, in the order a reader wants it.
-///
-/// Every one of these is the file's claim. MCF has read the bytes that state
-/// them and has verified nothing about whether they describe the weights —
-/// which is `hub.metadata.deceptive`'s whole subject, and why `mcf pull`
-/// compares the two (B-022).
-fn declared(file: &Model) -> Vec<(&'static str, String)> {
-    let architecture = file.architecture().unwrap_or("unstated").to_owned();
-    let mut shown = vec![
-        ("format version", file.version.to_string()),
-        ("architecture", architecture.clone()),
-    ];
-    for (key, label) in [
-        ("block_count", "blocks"),
-        ("embedding_length", "embedding width"),
-        ("attention.head_count", "attention heads"),
-        ("attention.head_count_kv", "key/value heads"),
-        ("context_length", "context length"),
-        ("feed_forward_length", "feed-forward width"),
-    ] {
-        let full = format!("{architecture}.{key}");
-        shown.push((
-            label,
-            match file.get(&full) {
-                Some(Value::Integer(number)) => number.to_string(),
-                Some(other) => format!("{other:?}"),
-                None => "the file does not say".to_owned(),
-            },
-        ));
-    }
-    shown.push((
-        "vocabulary",
-        match file.get("tokenizer.ggml.tokens") {
-            Some(Value::List(tokens)) => format!("{} tokens", tokens.len()),
-            _ => "the file does not say".to_owned(),
-        },
-    ));
-    shown.push((
-        "publisher's name for it",
-        file.get("general.name")
-            .and_then(Value::as_text)
-            .unwrap_or("unstated")
-            .to_owned(),
-    ));
-    shown
 }
 
 /// How the weights are encoded, counted by kind.
@@ -813,6 +777,9 @@ fn unanswered(path: &Path) -> Vec<(&'static str, String)> {
         ),
     ]
 }
+
+mod anatomy;
+mod header;
 
 #[cfg(test)]
 mod tests;

@@ -125,6 +125,7 @@ fn decode_block(kind: TensorKind, raw: &[u8], out: &mut Vec<f32>) -> Result<()> 
         TensorKind::IQ4_NL => iq4_nl(raw, out),
         TensorKind::IQ4_XS => iq4_xs(raw, out),
         TensorKind::IQ3_S => iq3_s(raw, out),
+        TensorKind::MXFP4 => mxfp4(raw, out),
         TensorKind::Unknown(_) => return Err(unavailable(kind)),
     }
     Ok(())
@@ -481,6 +482,56 @@ fn iq4_xs(raw: &[u8], out: &mut Vec<f32>) {
         for code in chunk {
             out.push(step * f32::from(value_of(code >> 4)));
         }
+    }
+}
+
+/// The microscaling 4-bit scheme: 32 values against one power-of-two scale.
+///
+/// Each code is a sign bit and a three-bit float — one exponent bit short of
+/// two, one mantissa bit — whose eight magnitudes are 0, ½, 1, 1½, 2, 3, 4
+/// and 6. The block's scale is not a half-precision number but a bare
+/// exponent: the byte *e* means 2^(e − 127), and there is no mantissa to
+/// round. So a block is one byte and sixteen, and the low nibbles come before
+/// the high ones as in every other 32-wide scheme here.
+fn mxfp4(raw: &[u8], out: &mut Vec<f32>) {
+    let scale = power_of_two(byte(raw, 0));
+    let codes = raw.get(1..17).unwrap_or_default();
+    for code in codes {
+        out.push(scale * e2m1(code & 0x0F));
+    }
+    for code in codes {
+        out.push(scale * e2m1(code >> 4));
+    }
+}
+
+/// 2^(e − 127), which is what an eight-bit microscaling exponent means.
+///
+/// Zero and the smallest exponents fall below what a normal `f32` holds; the
+/// bit pattern of a normal float with that exponent and no mantissa is the
+/// value for `e` from 1 to 254, and the two ends are spelled out rather than
+/// built from a pattern that would mean something else.
+fn power_of_two(exponent: u8) -> f32 {
+    match exponent {
+        // 2^-127 is a subnormal `f32`: half of the smallest normal.
+        0 => f32::MIN_POSITIVE / 2.0,
+        // 255 is the scheme's *not a number*, and a block scaled by it is
+        // not weights; the NaN is kept so that it shows rather than hides.
+        255 => f32::NAN,
+        held => f32::from_bits(u32::from(held) << 23),
+    }
+}
+
+/// One four-bit microscaling code: a sign bit over a three-bit float.
+fn e2m1(code: u8) -> f32 {
+    const MAGNITUDES: [f32; 8] = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
+    let magnitude = MAGNITUDES
+        .get(usize::from(code & 0x07))
+        .copied()
+        .unwrap_or(0.0);
+    if code & 0x08 == 0 {
+        magnitude
+    } else {
+        -magnitude
     }
 }
 

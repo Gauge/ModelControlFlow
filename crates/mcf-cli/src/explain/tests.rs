@@ -294,3 +294,38 @@ fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Model> {
     }
     None
 }
+
+/// The model is counted from its directory and costed from its header, and
+/// each of those sections says what kind of thing it is: counted, compared,
+/// computed (A21, A20).
+#[test]
+fn an_explanation_counts_compares_and_costs_the_model() {
+    let scratch = std::env::temp_dir().join(format!("mcf-explain-anatomy-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let model = scratch.join("model.gguf");
+    std::fs::write(&model, mcf_lab::fixture::a_model_that_runs()).expect("a model file");
+
+    let said = run(model.to_str().unwrap_or_default()).text;
+
+    assert!(said.contains("parameters, counted"), "{said}");
+    assert!(said.contains("by part"), "{said}");
+    assert!(said.contains("by encoding"), "{said}");
+    assert!(
+        said.contains("WHAT THE HEADER DECLARES, AGAINST WHAT THE DIRECTORY HOLDS"),
+        "{said}"
+    );
+    assert!(
+        said.contains("WHAT ONE TOKEN COSTS, IN ARITHMETIC"),
+        "{said}"
+    );
+    assert!(said.contains("multiply-adds through the weights"), "{said}");
+    assert!(said.contains("key/value cache"), "{said}");
+    assert!(said.contains("WHAT THE VOCABULARY IS"), "{said}");
+    assert!(said.contains("named tokens"), "{said}");
+    // The fixture's header agrees with its own directory, and the report says
+    // so in one line rather than leaving a reader to check the verdicts.
+    assert!(said.contains("every figure"), "{said}");
+    assert!(!said.contains("DISAGREE"), "{said}");
+
+    let _cleared = std::fs::remove_dir_all(&scratch);
+}

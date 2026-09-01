@@ -272,6 +272,11 @@ pub enum TensorKind {
     /// The 3-bit scheme that indexes a five-hundred-and-twelve entry grid of
     /// four values each, with a plane of sign bits and four-bit scales.
     IQ3_S,
+    /// The microscaling 4-bit scheme: 32 values, each a sign and one of eight
+    /// magnitudes (0, ½, 1, 1½, 2, 3, 4, 6), against one shared power-of-two
+    /// scale held as an 8-bit exponent. What an `gpt-oss` file is mostly
+    /// made of.
+    MXFP4,
     /// A type this reader does not know, carrying the number the file used.
     Unknown(u32),
 }
@@ -296,6 +301,7 @@ impl TensorKind {
             20 => Self::IQ4_NL,
             21 => Self::IQ3_S,
             23 => Self::IQ4_XS,
+            39 => Self::MXFP4,
             other => Self::Unknown(other),
         }
     }
@@ -312,7 +318,13 @@ impl TensorKind {
             // `IQ4_NL` is here rather than beside the other non-linear scheme:
             // it shares the four-bit table with `IQ4_XS` and the block of 32
             // with `Q4_0`, and the block size is what this function is about.
-            Self::Q4_0 | Self::Q4_1 | Self::Q5_0 | Self::Q5_1 | Self::Q8_0 | Self::IQ4_NL => 32,
+            Self::Q4_0
+            | Self::Q4_1
+            | Self::Q5_0
+            | Self::Q5_1
+            | Self::Q8_0
+            | Self::IQ4_NL
+            | Self::MXFP4 => 32,
             // The K-schemes share a super-block of 256, which is what makes
             // their per-sub-block scales worth their bytes.
             Self::Q2_K
@@ -371,6 +383,8 @@ impl TensorKind {
             // A multiplier, 64 bytes of grid indices, 8 of high bits, 32 of
             // signs and 4 of scales.
             Self::IQ3_S => 2 + 64 + 8 + 32 + 4,
+            // One byte of exponent, then 32 four-bit values.
+            Self::MXFP4 => 1 + 16,
             Self::Unknown(_) => 0,
         }
     }
@@ -395,6 +409,7 @@ impl core::fmt::Display for TensorKind {
             Self::IQ4_NL => f.write_str("IQ4_NL"),
             Self::IQ4_XS => f.write_str("IQ4_XS"),
             Self::IQ3_S => f.write_str("IQ3_S"),
+            Self::MXFP4 => f.write_str("MXFP4"),
             Self::Q4_0 => f.write_str("q4_0"),
             Self::Q4_1 => f.write_str("q4_1"),
             Self::Q5_0 => f.write_str("q5_0"),
