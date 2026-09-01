@@ -308,6 +308,110 @@ pub(crate) const TASKS: &[Task] = &[
             },
         ],
     },
+    // **Four tasks a remembered answer gets wrong.** Measured across three
+    // models, six of the twelve tasks before these were passed by all of them
+    // — including a 2B general model — and exactly one separated an 8B coding
+    // model from a 30B one. A corpus of canonical exercises cannot order
+    // strong coding models, because the answers are recalled rather than
+    // worked out; what separates them has to be a sentence that has to be
+    // read. Each of these is a familiar problem with one rule changed, so the
+    // remembered solution is available and wrong (B-110, §XIII).
+    Task {
+        name: "intervals-touching",
+        function: "merge",
+        asks: "Write a Python function `merge(xs)` taking a list of [start, end] intervals and \
+               returning the list of merged intervals, sorted. Intervals are half-open: [1,2] \
+               and [2,3] do not overlap and are not merged. Return a list of lists. Reply with \
+               only the function.",
+        cases: &[
+            // The whole task: the remembered merge uses `start <= last_end`
+            // and answers [[1, 3]].
+            Case {
+                call: "merge([[1,2],[2,3]])",
+                expects: "[[1, 2], [2, 3]]",
+            },
+            Case {
+                call: "merge([[1,5],[2,3],[6,8]])",
+                expects: "[[1, 5], [6, 8]]",
+            },
+            Case {
+                call: "merge([])",
+                expects: "[]",
+            },
+        ],
+    },
+    Task {
+        name: "brackets-in-quotes",
+        function: "balanced",
+        asks: "Write a Python function `balanced(text)` returning True if the brackets in text \
+               are balanced. (), [] and {} are brackets. A single quote starts a quoted stretch \
+               and the next single quote ends it; brackets inside a quoted stretch are ordinary \
+               characters and do not count. Text ending inside a quoted stretch is not balanced. \
+               Reply with only the function.",
+        cases: &[
+            Case {
+                call: "balanced(\"(a['b'])\")",
+                expects: "True",
+            },
+            // A stack that does not know about quotes sees ( ( ) and says
+            // False.
+            Case {
+                call: "balanced(\"('(')\")",
+                expects: "True",
+            },
+            Case {
+                call: "balanced(\"(']')\")",
+                expects: "True",
+            },
+        ],
+    },
+    Task {
+        name: "duration-seconds",
+        function: "seconds",
+        asks: "Write a Python function `seconds(text)` turning a duration into a whole number of \
+               seconds. The text is a run of number-unit pairs where the unit is h, m or s — for \
+               example '1h30m'. The pairs may come in any order and a unit may appear more than \
+               once, in which case they are all added up. Empty text is 0. Reply with only the \
+               function.",
+        cases: &[
+            Case {
+                call: "seconds('1h30m')",
+                expects: "5400",
+            },
+            // Order and repetition, which are the two rules the sentence adds.
+            Case {
+                call: "seconds('30m1h')",
+                expects: "5400",
+            },
+            Case {
+                call: "seconds('1h1h')",
+                expects: "7200",
+            },
+        ],
+    },
+    Task {
+        name: "rle-decode-counts",
+        function: "decode",
+        asks: "Write a Python function `decode(text)` expanding a run-length encoding. The text \
+               is a run of items; each item is one character followed by an optional decimal \
+               count, which may have more than one digit. A missing count means one. A count of \
+               zero means the character does not appear. Reply with only the function.",
+        cases: &[
+            // Twelve, not one then a literal 2.
+            Case {
+                call: "decode('a12b')",
+                expects: "'aaaaaaaaaaaab'",
+            },
+            Case {
+                call: "decode('ab')",
+                expects: "'ab'",
+            },
+            Case {
+                call: "decode('a0b2')",
+                expects: "'bb'",
+            },
+        ],
+    },
     Task {
         name: "lru-cache",
         function: "run_cache",

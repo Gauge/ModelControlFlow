@@ -8,8 +8,8 @@
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **314 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 259 build items (168 done, 2 dropped, 12 in progress,
-36 blocked on a decision, 41 open).** Every item cites
+decided, 23 resolved) and 259 build items (168 done, 2 dropped, 13 in progress,
+36 blocked on a decision, 40 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -360,7 +360,7 @@ first and importance second.
 | B-163 | Every lab result carries the instrumentation profile it ran under | B30, §3.4, §6.25 | A result without its profile cannot be constructed | done `mcf_core::instrumentation::Timed` cannot be constructed without a `Profile`: the profile is a field, not a possibility. The condition floor's free-text entry was enough to note a profile and not enough to refuse on one. F89. |
 | B-164 | Timing-class results cannot originate in a deep-instrumentation run; residual overhead is characterized | B31, §6.25, §6.2 | The type system refuses the construction; the overhead is reported as a condition | done `Timed::new` is fallible and refuses `Profile::Deep`. `Light` is admitted because it carries a measured residual — characterized against the same run unwatched — which makes the perturbation a condition; `Deep` has no single residual to carry, since tracing overhead is a distribution that depends on what the model did. No threshold anywhere: B31 asks that the overhead be characterized, not that it be small. F89. |
 | B-165 | Lab admission: each lab answers what claim it enables, and refusals are recorded rather than forgotten | B32, §6.26 | Every registered lab documents its admitting answer; the refusal list is maintained | open |
-| B-110 | `mcf eval`: the M6 product — whether a model can do the work, measured here, as a distribution | §IX | Two models are evaluated on the suite unattended, and the output distinguishes them or honestly declines to | open |
+| B-110 | `mcf eval`: the M6 product — whether a model can do the work, measured here, as a distribution | §IX | Two models are evaluated on the suite unattended, and the output distinguishes them or honestly declines to | **in progress** — the laboratory works: three models evaluated unattended, each answer run in a container with no network, four outcomes and no total. What it cannot yet do is order strong models. Measured across Qwen3-VL-2B, Seed-Coder-8B and Qwen3-Coder-30B on twelve tasks: six were passed by all three including the 2B, and exactly one (`shortest-path`) separated the 8B from the 30B. A corpus of canonical exercises cannot discriminate coding models because the answers are recalled rather than worked out. Four tasks have been added that take a familiar problem and change one rule — half-open intervals that do not merge when touching, brackets inside quotes, durations whose units repeat and may come in any order, run-length counts of more than one digit — so that the remembered solution is available and wrong. The measurement that says whether *those* discriminate is the next thing this item needs. Two findings came out of running it: F142, where the engine's `[end of text]` was recorded as the model's words and made every unfenced answer unparseable — nine of one model's twelve tasks read *unknown* until it was fixed — and the confirmation that A7's refusal to score what would not run is what made that visible rather than plausible |
 
 ### M7 — Recommend
 
