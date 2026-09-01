@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 147 | [F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)](#147-f147-one-real-prompt-found-five-defects-in-prompt-analysis-and-the-report-presented-a-run-that-separated-nothing-exactly-as-it-presents-one-that-works-3-15-a6-a7-3-4) |
 | 146 | [F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)](#146-f146-the-completion-tool-was-never-given-a-window-so-every-generation-opened-the-models-whole-trained-context-813-gb-resident-to-produce-a-few-hundred-tokens-f133-a6-a12-3-15) |
 | 145 | [F145 — `mcf probe` held the whole model in the console beside the engine already holding it: 24.7 GB for a 14.5 GB file, and the memory nothing could account for (B-372, A22, F140)](#145-f145-mcf-probe-held-the-whole-model-in-the-console-beside-the-engine-already-holding-it-247-gb-for-a-145-gb-file-and-the-memory-nothing-could-account-for-b-372-a22-f140) |
 | 144 | [F144 — MCF planned against the machine while running inside a limit, and its fixed overhead constant is thirteen times too small (A21, A19, B-372)](#144-f144-mcf-planned-against-the-machine-while-running-inside-a-limit-and-its-fixed-overhead-constant-is-thirteen-times-too-small-a21-a19-b-372) |
@@ -9397,6 +9398,63 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 147 · F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)
+
+The prompt was *write a class in c#. the class handles all the basic math
+functions. each function should output extremely accurate results.* — three
+sentences, an ordinary request. Everything below came out of running it once.
+
+**The floor came out at 94.3%.** Removing a sentence carrying no instruction
+moved almost the whole answer, so the column separated nothing: two of the
+three sentences scored *below* the floor and the third was two points above
+it. The report drew three confident bars and put the number that invalidates
+them underneath, in the same typeface and the same voice as everything else. A
+reader reads the bars. A measurement that failed and a measurement that worked
+looked identical, which is the failure — the same screen had shown a floor of
+0.0% on a well-specified prompt an hour earlier.
+
+**Answers were cut at 160 tokens and nothing said they were.** Every
+generation stopped inside the import block, so what the ablation compared was
+six lines of preamble that shift wholesale when anything before them changes.
+That is a measurement of the preamble, and it is most of why the floor was so
+high. The limit is now 600 and travels in the report: a figure computed from a
+cut answer is a figure about a prefix, and that is a condition of it (§3.4,
+A6).
+
+**Settledness could not have measured anything.** Both engine paths set
+temperature 0, so decoding is greedy and the seed cannot change the answer.
+Asked at seeds 0, 1, 2 and 99, one prompt gave one answer four times. The
+section could only ever print *this prompt settles the answer* — for every
+prompt, on every model, forever. It was measuring the sampler. It now says so.
+Measuring the real thing needs sampling, which changes every other figure in
+the report, so it is named as unmeasured rather than quietly switched on.
+
+**The splitter cut sentences out of numbers and identifiers.** `.` ended a
+clause wherever it appeared, so `accurate to 0.001 tolerance` became *accurate
+to 0.* and *001 tolerance.*, `arr.Length` became two, `System.Numerics` two. A
+prompt about precision — which is what this one was about — was ablated on
+fragments that were never sentences. A full stop now ends a sentence only
+where whitespace follows it.
+
+`e.g.` still splits, and that is held in a test rather than left to be found
+again: telling an abbreviation from a sentence ending in the letter g needs a
+list that is a fact about a language rather than about this prompt, and
+guessing wrong the other way would silently join two real sentences. The
+failure that remains splits one clause in two; the one removed split a number
+in half.
+
+**And the cost forecast added to the window a commit earlier was short by
+one**, having forgotten the control generation: three sentences were forecast
+at six and cost seven. Written a day before, by the same hand, while reading
+the same file.
+
+**What the sequence says about the feature.** Every one of these was visible
+from a single run of an ordinary prompt, and none of them was visible from the
+tests, which use fixtures whose answers are short and whose sentences are
+clean. The report was built and checked on prompts that suit it. A tool that
+tells you about your prompt has to be pointed at somebody else's.
+
 
 ## 146 · F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)
 
