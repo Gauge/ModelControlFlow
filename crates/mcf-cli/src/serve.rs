@@ -354,12 +354,7 @@ pub(crate) fn status() -> Response {
                 .and_then(Value::as_list)
                 .map(<[Value]>::to_vec)
                 .unwrap_or_default();
-            lines.push(format!("  holding {} model file(s)", models.len()));
-            for model in models {
-                if let Some(path) = model.get("path").and_then(Value::as_text) {
-                    lines.push(format!("    {path}"));
-                }
-            }
+            lines.extend(what_is_held(&models));
         }
         Ok(_) | Err(_) => lines.push("  what it is holding could not be read".to_owned()),
     }
@@ -368,6 +363,35 @@ pub(crate) fn status() -> Response {
         text: lines.join("\n"),
         served: true,
     }
+}
+
+/// What the daemon is holding, counted the way `mcf list` counts it.
+///
+/// **Models and companions apart.** B-422 settled that a projector belongs to
+/// a model rather than being one, and `mcf list` says so — while this said
+/// *holding 11 model file(s)*, so two surfaces gave two counts of one store
+/// and neither mentioned the other. The daemon has always sent the
+/// distinction on every entry; this was the half that dropped it (B-072,
+/// F143).
+fn what_is_held(models: &[Value]) -> Vec<String> {
+    let companions = models
+        .iter()
+        .filter(|held| matches!(held.get("companion"), Some(Value::Bool(true))))
+        .count();
+    let held = models.len().saturating_sub(companions);
+    let mut lines = vec![match companions {
+        0 => format!("  holding {held} model(s)"),
+        _ => format!(
+            "  holding {held} model(s), and {companions} companion file(s) that belong to one \
+             rather than being one"
+        ),
+    }];
+    for model in models {
+        if let Some(path) = model.get("path").and_then(Value::as_text) {
+            lines.push(format!("    {path}"));
+        }
+    }
+    lines
 }
 
 /// A value on one line, for a surface that is showing rather than recording.

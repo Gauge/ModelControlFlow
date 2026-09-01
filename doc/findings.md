@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 143 | [F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)](#143-f143-two-surfaces-counted-one-store-and-got-ten-and-eleven-the-daemon-sent-the-distinction-and-the-console-dropped-it-b-422-b-072) |
 | 142 | [F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)](#142-f142-the-engines-own-end-of-text-was-recorded-as-the-models-words-and-mcf-reported-it-did-not-know-why-generation-stopped-while-holding-the-thing-that-said-a19-a21-a2-a7) |
 | 140 | [F140 — `mcf explain` read the whole model into memory to look at its header: 16.41 GB to describe a file, beneath a note in the same module saying it must not (§3.11, A2, B-372)](#140-f140-mcf-explain-read-the-whole-model-into-memory-to-look-at-its-header-1641-gb-to-describe-a-file-beneath-a-note-in-the-same-module-saying-it-must-not-3-11-a2-b-372) |
 | 139 | [F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)](#139-f139-eight-commands-mcf-answers-were-absent-from-its-own-help-and-six-of-them-denied-existing-when-typed-the-console-sent-operators-to-two-of-them-by-name-a22-3-15-a2-f135) |
@@ -9393,6 +9394,29 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 143 · F143 — Two surfaces counted one store and got ten and eleven: the daemon sent the distinction and the console dropped it (B-422, B-072)
+
+B-422 settled that a projector belongs to a model rather than being one, and
+`mcf list` says so: *10 model(s) … and 1 companion file(s) that belong to one
+rather than being one*. `mcf status`, reading the same store through the
+daemon, said *holding 11 model file(s)*.
+
+**The daemon had always sent the distinction.** Every entry in the holding
+answer carries a `companion` flag; the console asked for the list, counted its
+length and ignored the field. So the two counts came from one source that
+already knew the difference.
+
+Neither line is false on its own — eleven files are held — and that is what
+makes it the shape B-072 is about. A reader who saw both would have to work
+out which of two numbers described what they had, with nothing on either
+screen acknowledging the other. The fix is four lines and the value was
+already on the wire.
+
+**Found while measuring something else**, which is the usual way: the two
+sentences appeared in one terminal a few lines apart while timing how long the
+daemon takes to answer.
+
 
 ## 142 · F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)
 
