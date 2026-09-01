@@ -605,19 +605,22 @@ fn ask(socket: &Path, request: &Request) -> Result<Answer, String> {
     ask_within(socket, request, std::time::Duration::from_secs(30))
 }
 
-/// How long a poll waits before giving the frame back.
+/// How long a reading waits before giving up on a busy daemon.
 ///
-/// **The window asks the daemon four questions a second, and the daemon
-/// answers one thing at a time.** With a thirty-second deadline on each, a
-/// daemon busy loading a large model froze the window solid: no repaint, no
-/// events, nothing on screen to say anything was happening — while the thing
-/// the operator had just asked for was in fact under way. A poll is a status
-/// read that a free daemon answers instantly, so waiting longer than a frame
-/// or two buys nothing and costs the whole interface (§3.8, A7).
+/// **Long enough to answer, short enough not to freeze the window.** The
+/// daemon answers one thing at a time, so while it loads a large model every
+/// reading waits — and with the thirty-second deadline a deliberate act
+/// deserves, the window stopped repainting and stopped taking events entirely.
 ///
-/// A deliberate act still waits the full thirty seconds: somebody who pressed
-/// a button meant it.
-const POLL: std::time::Duration = std::time::Duration::from_millis(400);
+/// Four hundred milliseconds was the first attempt at that and was wrong:
+/// *what this machine is holding* reads sixteen model headers off disk and
+/// takes about a second and a half, so the list came back empty every time and
+/// the window showed no models at all. A deadline shorter than the work is not
+/// a deadline, it is a guarantee of failure (A7).
+///
+/// Five seconds: several times what the slowest reading takes, and a pause
+/// rather than a freeze when the daemon is busy elsewhere.
+const POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Asks, waiting no longer than this for the answer.
 fn ask_within(
@@ -1079,6 +1082,13 @@ impl Desk {
             Act::Choose(at) => {
                 self.chosen = Some(at);
                 self.open = None;
+                // **What this model would be held under.** `host_it` needs it
+                // and nothing fetched it: `read_settings` existed, was never
+                // called, and so `settings` was `None` for the life of the
+                // window — which made the Host button return early and do
+                // nothing at all, silently. A control that does nothing is
+                // worse than one that refuses (§3.15, A7).
+                self.read_settings();
             }
             Act::ReportPrompt => self.report_prompt(),
             Act::Clear => self.typed.clear(),
@@ -1173,10 +1183,21 @@ impl Desk {
 
     /// Holds the chosen model under the settings as they stand.
     pub fn host_it(&mut self) {
-        let (Some(held), Some(settings)) = (
-            self.chosen.and_then(|at| self.models.get(at)),
-            self.settings.clone(),
-        ) else {
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            self.no_settings = Some("choose a model first".to_owned());
+            return;
+        };
+        // Refused in words rather than by doing nothing. What settings a model
+        // would run under is the daemon's to say, and where it will not say,
+        // that is the answer and it belongs on the screen.
+        let Some(settings) = self.settings.clone() else {
+            self.no_settings = Some(
+                self.no_settings.clone().unwrap_or_else(|| {
+                    "MCF has not said what this model would run under, so there is nothing to \
+                     hold it under"
+                        .to_owned()
+                }),
+            );
             return;
         };
         self.doing = Doing::Hosting(job::Job::start(
