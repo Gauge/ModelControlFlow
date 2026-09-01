@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 139 | [F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)](#139-f139-eight-commands-mcf-answers-were-absent-from-its-own-help-and-six-of-them-denied-existing-when-typed-the-console-sent-operators-to-two-of-them-by-name-a22-3-15-a2-f135) |
 | 138 | [F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)](#138-f138-four-places-sized-a-model-and-one-of-them-counted-the-whole-of-it-a-111-gb-model-planned-against-as-109-mb-and-a-context-recommended-that-would-take-the-machine-down-b-422-b-072-a21-f136) |
 | 137 | [F137 — A supervisor that killed the one process it could name, then waited on the ones it could not: the deadline fired at 200 ms and the number beside it said thirty seconds (A3, A27, A4, B37)](#137-f137-a-supervisor-that-killed-the-one-process-it-could-name-then-waited-on-the-ones-it-could-not-the-deadline-fired-at-200-ms-and-the-number-beside-it-said-thirty-seconds-a3-a27-a4-b37) |
 | 136 | [F136 — The console weighed a model before loading it and the daemon did not, so a machine with no room for one was told by the kernel, and not necessarily in this process (B-372, A2, A22, B-072)](#136-f136-the-console-weighed-a-model-before-loading-it-and-the-daemon-did-not-so-a-machine-with-no-room-for-one-was-told-by-the-kernel-and-not-necessarily-in-this-process-b-372-a2-a22-b-072) |
@@ -9390,6 +9391,58 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 139 · F139 — Eight commands MCF answers were absent from its own help, and six of them denied existing when typed: the console sent operators to two of them by name (A22, §3.15, A2, F135)
+
+**A22 says the headless path can do everything the window can. It could — and
+there was no way to find out.** `mcf host`, `mcf hosted`, `mcf unhost`,
+`mcf settings`, `mcf measure`, `mcf share`, `mcf offered` and `mcf acquire`
+were all parsed, dispatched and working. None appeared in `mcf --help`. The
+only route to them was reading the source.
+
+**Two of them MCF told operators to run.** `mcf status` prints *hosting:
+nothing — `mcf host <model>` holds one where a program can reach it*.
+`mcf explain` prints *`mcf settings <model>` shows every setting it would run
+under*. Both commands worked. Neither was listed.
+
+**And typed as instructed, six of the eight denied existing.** Each wanted an
+argument, so the bare form matched no pattern and fell through to the
+catch-all: `mcf host` answered *no such command: host*. An operator following
+MCF's own instruction was told by MCF that MCF has no such command. That is
+not a discoverability failure, it is a false statement (A2), and the operator
+has no reason to doubt it.
+
+**A stale claim in the same page.** The help's closing prose read *What MCF
+cannot do yet is serve a model or time one.* `mcf host` serves a model on a
+port; `mcf bench` and `mcf measure` time one. F135 is the finding about
+exactly this — a status is prose, and prose does not fail a build — and it had
+recurred in the most-read paragraph MCF has.
+
+**A test was holding the defect in place.** `an_unknown_command_is_named_and_carries_its_input`
+demonstrated A2 using `measure` as its example of an unknown command, which it
+was when the test was written. `mcf measure` was implemented afterwards. The
+test went on passing, now asserting that a command MCF *has* is reported as
+unknown — the defect wearing the costume of the property. Its example is now a
+word nobody will implement, and it checks that assumption before relying on
+it.
+
+**What holds it.** `the_help_is_the_surface` reads the console's argument
+patterns for the commands they match and the usage text for the commands it
+names, and requires the two lists to agree in both directions — a command
+absent from the help is a capability only the source reveals, and a command in
+the help that nothing answers is a fabricated one. A third test requires every
+command taking an argument to have a bare form, so that none of them can deny
+itself again.
+
+**Both of its own false negatives are worth keeping in mind**, because they
+are what source-scanning checks do wrong. It read `mcf lab` and `mcf recommend`
+out of a *test* asserting those are not offered, and reported the help as
+inventing them — so it now reads the usage block rather than the file. And it
+read `["measure"]` out of the stale test above and concluded `measure` had a
+bare form when it had none — so it now reads only the patterns, not the tests.
+A check that scans text is reading a place where things that look alike are
+not alike, and it has to be told where to look.
+
 
 ## 138 · F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)
 

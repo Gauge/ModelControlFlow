@@ -444,8 +444,24 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             needs: "<model>",
         },
         ["settings", model] => Request::Settings { model },
+        // Each of these wanted its argument, matched nothing without it,
+        // and answered *no such command* — a command MCF has, denying
+        // itself. `mcf explain` sends the operator to `mcf settings`
+        // directly (F139).
+        ["settings"] => Request::MissingArgument {
+            command: "settings",
+            needs: "<model>",
+        },
         ["hosted"] => Request::Hosted,
         ["unhost"] => Request::Unhost,
+        // Without this the pattern below wants a model, nothing matched,
+        // and `mcf host` answered *no such command: host* — denying a
+        // command MCF has, in the same breath as `mcf status` telling the
+        // operator to run it (F139).
+        ["host"] => Request::MissingArgument {
+            command: "host",
+            needs: "<model>",
+        },
         ["host", model, rest @ ..] => match host_options(rest) {
             Ok(changes) => Request::Host { model, changes },
             Err(argument) => Request::UnexpectedArgument {
@@ -454,7 +470,19 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             },
         },
         ["offered", reference] => Request::Offered { reference },
+        ["offered"] => Request::MissingArgument {
+            command: "offered",
+            needs: "<owner/name>",
+        },
         ["acquire", reference, file] => Request::Acquire { reference, file },
+        ["acquire"] | ["acquire", _] => Request::MissingArgument {
+            command: "acquire",
+            needs: "<owner/name> <file>",
+        },
+        ["measure"] => Request::MissingArgument {
+            command: "measure",
+            needs: "<model>",
+        },
         ["measure", model] => Request::Measure {
             model,
             deepest: 8192,
@@ -482,6 +510,10 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             deepest: 8192,
             engine: Some(engine),
         },
+        ["prompt"] | ["prompt", _] => Request::MissingArgument {
+            command: "prompt",
+            needs: "<model> --prompt <text>",
+        },
         ["prompt", model, "--prompt", prompt] => Request::PromptReport {
             model,
             prompt,
@@ -493,6 +525,10 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             as_json: true,
         },
         ["eval", model] => Request::Eval { model },
+        ["eval"] => Request::MissingArgument {
+            command: "eval",
+            needs: "<model>",
+        },
         ["probe", model] => Request::Probe {
             model,
             engine: None,
@@ -1375,6 +1411,20 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf status                          ask a running daemon what it is\n\
                  \x20                                     and what it is holding\n\
                  \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
+                 \x20 mcf host <model> [--context <n>]    hold a model on a port where\n\
+                 \x20      [--port <n>] [--engine <name>] another program can reach it;\n\
+                 \x20      [--gpu-layers <n>] [--threads <n>] it prints the settings it\n\
+                 \x20      [--batch <n>] [--api-key <key>] chose and what they cost\n\
+                 \x20      [--flash-attention]\n\
+                 \x20 mcf hosted                          what is being held, and where\n\
+                 \x20 mcf measure <model>                 time it at doubling context\n\
+                 \x20         [--deepest <n>]             depths, so the cost of a longer\n\
+                 \x20         [--engine <name>]           conversation is measured rather\n\
+                 \x20                                     than assumed\n\
+                 \x20 mcf settings <model>                every setting a model would run\n\
+                 \x20                                     under, and where each came from\n\
+                 \x20 mcf unhost                          stop holding it, and give the\n\
+                 \x20                                     memory back\n\
                  \x20 mcf list                            what this machine is holding\n\
                  \x20 mcf check [<model>] [--here]        is what you hold still what it\n\
                  \x20           [--from <hub>]            should be? the bytes against the\n\
@@ -1383,6 +1433,13 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
                  \x20            [--purge]                this previews and removes nothing\n\
                  \x20 mcf export --to <path>              the record, as one portable file\n\
+                 \x20 mcf share [--into <path>]           what would leave this machine,\n\
+                 \x20                                     row by row, before it does\n\
+                 \x20                                     (B-160, A24)\n\
+                 \x20 mcf offered <owner/name>            what a repository publishes, and\n\
+                 \x20                                     which of it will run here\n\
+                 \x20 mcf acquire <owner/name> <file>     fetch one published file through\n\
+                 \x20                                     the daemon\n\
                  \x20 mcf licence [--full]                the terms, and what conveying this\n\
                  \x20                                     binary obliges you to (GPL-3.0-only)\n\
                  \x20 mcf --version                       what this binary is\n\
@@ -1391,10 +1448,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  TLS stack, or a plain one where you name it — a mirror, or the\n\
                  laboratory's own (B-322).\n\
                  \n\
-                 What MCF cannot do yet is serve a model or time one. `mcf serve` runs\n\
-                 the daemon and says so when asked; `mcf run` answers with MCF's own\n\
-                 stand-in and marks every answer as one, because a timing taken from it\n\
-                 would measure the stand-in rather than the model (D31, B65).\n\
+                 `mcf run` answers with MCF's own stand-in and marks every answer as\n\
+                 one, because a timing taken from it would measure the stand-in rather\n\
+                 than the model (D31, B65). A model served where another program can\n\
+                 reach it is `mcf host`, which runs a provisioned engine and can be\n\
+                 timed; `mcf bench` and `mcf measure` are what time one.\n\
                  \n\
                  `mcf-helper` is beside this binary and does three things that need\n\
                  rights this one does not have: the processor governor, a device's\n\
@@ -1552,15 +1610,26 @@ mod tests {
 
     /// A2: an unrecognized command is a named outcome carrying what it saw,
     /// not a silent fall-through to help text.
+    ///
+    /// **The example has to be a command MCF does not have.** This was written
+    /// with `measure`, which MCF did not answer at the time and does now — so
+    /// the test went on passing while asserting that a command MCF has is
+    /// unknown, which is the defect rather than the property (F139). The name
+    /// below is not a word anybody would implement, and
+    /// `every_command_the_help_lists_is_one_mcf_has` holds the general case.
     #[test]
     fn an_unknown_command_is_named_and_carries_its_input() {
-        assert_eq!(parse(&["measure"]), Request::Unrecognized("measure"));
-        let Response { text, served } = respond(&parse(&["measure"]), BuildIdentity::current());
-        assert!(!served, "an absent command must not report success");
+        let absent = "quinquagesima";
         assert!(
-            text.contains("measure"),
-            "{text:?} does not say what it saw"
+            !respond(&Request::Usage, BuildIdentity::current())
+                .text
+                .contains(absent),
+            "the example command is one MCF offers, so this proves nothing"
         );
+        assert_eq!(parse(&[absent]), Request::Unrecognized(absent));
+        let Response { text, served } = respond(&parse(&[absent]), BuildIdentity::current());
+        assert!(!served, "an absent command must not report success");
+        assert!(text.contains(absent), "{text:?} does not say what it saw");
     }
 
     /// Usage advertises exactly what exists. A22 makes the headless surface
