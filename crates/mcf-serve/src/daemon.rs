@@ -1765,6 +1765,21 @@ impl Daemon {
                 ("model", Value::text(named.to_owned())),
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
+                // **What the chosen window will actually reserve.** The
+                // recommendation is the largest window that fits, and on a
+                // large machine that is the model's whole trained context:
+                // 262,144 tokens reserved 54.6 GiB of cache for a 17.6 GB
+                // model, three times the model itself, and nothing on any
+                // screen said so before it was spent. §3.15 asks that MCF
+                // doing other than the plain thing be visible; a figure is
+                // what makes it visible.
+                (
+                    "cache_bytes",
+                    self.cache_for(named, recommended.context)
+                        .map_or(Value::Null, |bytes| {
+                            Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+                        }),
+                ),
                 (
                     "explains",
                     Value::List(
@@ -1788,6 +1803,17 @@ impl Daemon {
     }
 
     /// What MCF recommends for a model, and the path it resolved to.
+    /// What a context window of this size costs this model in memory.
+    ///
+    /// `None` where the header does not say enough to work it out — which is a
+    /// state, and better than a figure MCF assembled from a guess (A7).
+    fn cache_for(&self, named: &str, context: u64) -> Option<u64> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let file = header_of(&path)?;
+        let per_token = crate::engines::cache_bytes_per_token(&file)?;
+        Some(per_token.saturating_mul(context))
+    }
+
     fn recommend(&self, named: &str) -> Result<(crate::hosting::Hosting, PathBuf)> {
         let path = crate::generation::resolved(&self.places.models, named);
         let bytes = std::fs::metadata(&path)
@@ -2289,6 +2315,11 @@ impl Daemon {
                             .map(|held| {
                                 Value::map([
                                     ("path", Value::text(held.path.display().to_string())),
+                                    ("companion", Value::Bool(held.companion)),
+                                    (
+                                        "parts",
+                                        Value::Integer(i64::from(held.parts)),
+                                    ),
                                     (
                                         "bytes",
                                         Value::Integer(

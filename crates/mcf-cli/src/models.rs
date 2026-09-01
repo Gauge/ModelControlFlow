@@ -213,11 +213,20 @@ pub(crate) fn list() -> Response {
 /// different line from a repository name, and an operator reading a list should
 /// be able to see which of their models MCF can account for.
 fn render(root: &Path, holding: &[Held]) -> String {
-    let mut lines = vec![format!(
-        "{} model file(s) in {}",
-        holding.len(),
-        root.display()
-    )];
+    // Counted apart, because a projector is not a model: counting it among
+    // them said sixteen where there were fifteen and a companion, and every
+    // sweep of *every model on this machine* had one entry that could only
+    // ever fail (A7).
+    let companions = holding.iter().filter(|held| held.companion).count();
+    let mut lines = vec![match companions {
+        0 => format!("{} model(s) in {}", holding.len(), root.display()),
+        _ => format!(
+            "{} model(s) in {}, and {companions} companion file(s) that belong to one rather \
+             than being one",
+            holding.len().saturating_sub(companions),
+            root.display()
+        ),
+    }];
     for held in holding {
         lines.push(format!("  {}", held.describe()));
         // §III asks that terms be legible *before use*, and this is where an

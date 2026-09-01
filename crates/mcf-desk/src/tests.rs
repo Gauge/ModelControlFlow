@@ -769,3 +769,39 @@ fn an_unanswered_reading_keeps_the_models_it_had() {
         "a reading that did not arrive says nothing about what is held"
     );
 }
+
+/// A companion file is not offered as a model.
+///
+/// F: a vision projector was listed among the models, so the window offered it
+/// to be hosted and to be measured. It carries no transformer and answers no
+/// prompt — pointed at one, an engine loads it and produces nothing, which is
+/// what a sweep of *every model on this machine* found (B-422's neighbour).
+#[test]
+fn a_companion_file_is_never_offered_as_a_model() {
+    let entry = |path: &str, companion: bool| {
+        Value::map([
+            ("path", Value::text(path)),
+            ("bytes", Value::Integer(1_000)),
+            ("companion", Value::Bool(companion)),
+        ])
+    };
+    let answered = Value::map([(
+        "models",
+        Value::List(vec![
+            entry("/m/a-model.gguf", false),
+            entry("/m/mmproj-F16.gguf", true),
+        ]),
+    )]);
+    let listed: Vec<Model> = answered
+        .get("models")
+        .and_then(Value::as_list)
+        .map(|held| {
+            held.iter()
+                .filter(|entry| !matches!(entry.get("companion"), Some(Value::Bool(true))))
+                .map(model_from)
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(listed.len(), 1, "the projector is not a model");
+    assert_eq!(listed.first().map(|held| held.name.as_str()), Some("a-model"));
+}

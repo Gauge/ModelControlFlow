@@ -1452,11 +1452,23 @@ impl Desk {
             Ok(answer) if answer.served => {
                 self.refusal = None;
                 self.busy = false;
+                // **A companion is not a model and is not offered.** A vision
+                // projector carries no transformer and answers no prompt:
+                // pointed at one, an engine loads it and produces nothing. It
+                // was in this list, so the window offered it to be hosted and
+                // to be measured, and both could only ever fail.
                 let mut read: Vec<Model> = answer
                     .body
                     .get("models")
                     .and_then(Value::as_list)
-                    .map(|held| held.iter().map(model_from).collect())
+                    .map(|held| {
+                        held.iter()
+                            .filter(|entry| {
+                                !matches!(entry.get("companion"), Some(Value::Bool(true)))
+                            })
+                            .map(model_from)
+                            .collect()
+                    })
                     .unwrap_or_default();
                 read.sort_by(|one, two| one.name.cmp(&two.name));
                 self.models = read;

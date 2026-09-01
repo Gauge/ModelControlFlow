@@ -133,6 +133,17 @@ fn ask(request: &Request) -> Result<Value, String> {
 }
 
 /// Every setting, with what it does and what MCF advised.
+/// Bytes as a figure somebody weighs a machine against.
+#[allow(
+    clippy::integer_division,
+    reason = "gibibytes to one decimal is the resolution shown; the rest is not"
+)]
+fn in_gigabytes(bytes: i64) -> String {
+    let whole = bytes / (1 << 30);
+    let tenth = (bytes % (1 << 30)) * 10 / (1 << 30);
+    format!("{whole}.{tenth} GiB")
+}
+
 fn explained(body: &Value) -> String {
     let mut lines = vec![format!(
         "{}\n",
@@ -150,6 +161,19 @@ fn explained(body: &Value) -> String {
         };
         lines.push(format!("  {name:<20} {said}"));
         lines.push(format!("  {:<20} {}", "", text("because")));
+        // The window's cost, beside the window. A recommendation of *the
+        // largest that fits* reserved 54.6 GiB for a 17.6 GB model here, and
+        // nothing said so until the memory was gone (§3.15, §3.4).
+        if name == "context window"
+            && let Some(bytes) = body.get("cache_bytes").and_then(Value::as_integer)
+            && bytes > 0
+        {
+            lines.push(format!(
+                "  {:<20} at that size the cache reserves {}",
+                "",
+                in_gigabytes(bytes)
+            ));
+        }
         lines.push(String::new());
     }
     lines.push("`mcf host <model>` starts it under these".to_owned());

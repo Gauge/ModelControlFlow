@@ -69,6 +69,18 @@ pub struct Held {
     pub bytes: u64,
     /// How many files this model is published in. One, for most.
     pub parts: u32,
+    /// Whether this file belongs to a model rather than being one.
+    ///
+    /// **A projector is half of a multimodal artifact and is not a model.** It
+    /// carries no transformer and answers no prompt: pointed at one, an engine
+    /// loads it and produces nothing. MCF listed it among the models, counted
+    /// it among them, and offered it to be hosted — so `mcf list` said sixteen
+    /// where there were fifteen and a companion, and a sweep of every model on
+    /// the machine had one entry that could only ever fail.
+    ///
+    /// Kept and marked rather than hidden: the vision probe needs to find it,
+    /// and a file MCF holds and does not mention is the silence A7 forbids.
+    pub companion: bool,
     /// Where it came from, if the sidecar beside it can be read.
     ///
     /// The failure is kept rather than flattened to `None`: *there is no
@@ -212,6 +224,21 @@ pub fn held(root: &Path) -> Result<Vec<Held>> {
     Ok(gathered(found))
 }
 
+/// Whether this file belongs to a model rather than being one.
+///
+/// `mmproj` is what every publisher of a vision projector calls it, and
+/// `--mmproj` is how the reference implementation is handed one — so the name
+/// is what the engine goes by, as it is for the parts of a split model. What
+/// the file declares (`clip.has_vision_encoder`) is what *confirms* it, and
+/// that reading belongs where there is a parser: this crate holds the store and
+/// deliberately depends on no engine.
+#[must_use]
+pub fn is_a_companion(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|held| held.to_str())
+        .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"))
+}
+
 /// What a file's name says about the set it belongs to.
 ///
 /// A model too large for one file is published as
@@ -321,6 +348,7 @@ fn walk(directory: &Path, into: &mut Vec<Held>) -> Result<()> {
         into.push(Held {
             bytes: bytes.unwrap_or(0),
             parts: 1,
+            companion: is_a_companion(&path),
             provenance: match provenance_of(&path) {
                 Ok(provenance) => Ok(provenance),
                 Err(failure) if failure.category() == Category::ArtifactMissing => Err(None),

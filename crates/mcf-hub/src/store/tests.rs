@@ -527,6 +527,7 @@ fn a_set_is_one_entry_of_the_whole_length() {
         path: std::path::PathBuf::from(format!("/m/{name}")),
         bytes,
         parts: 1,
+        companion: false,
         provenance: Err(None),
     };
     let gathered = super::gathered(vec![
@@ -561,10 +562,29 @@ fn a_set_missing_its_first_part_is_not_offered() {
         path: std::path::PathBuf::from("/m/a-model-00002-of-00002.gguf"),
         bytes: 30,
         parts: 1,
+        companion: false,
         provenance: Err(None),
     }]);
     assert!(
         gathered.is_empty(),
         "there is no first part to point an engine at, so there is no model to offer"
     );
+}
+
+/// A projector belongs to a model rather than being one.
+#[test]
+fn a_projector_is_a_companion_and_a_model_is_not() {
+    assert!(super::is_a_companion(std::path::Path::new(
+        "/m/mmproj-F16.gguf"
+    )));
+    assert!(super::is_a_companion(std::path::Path::new(
+        "/m/MMPROJ-BF16.gguf"
+    )));
+    assert!(!super::is_a_companion(std::path::Path::new(
+        "/m/a-model-Q4_K_M.gguf"
+    )));
+    // A model that merely mentions it is still a model.
+    assert!(!super::is_a_companion(std::path::Path::new(
+        "/m/a-model-with-mmproj-inside.gguf"
+    )));
 }
