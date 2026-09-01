@@ -1375,17 +1375,29 @@ impl Desk {
     }
 
     /// Asks MCF what it is holding.
+    ///
+    /// **An unanswered reading leaves the list alone.** The daemon answers one
+    /// client at a time by decision (DEC-012), so while it loads a model —
+    /// minutes, for a large one — it answers nothing at all. Emptying the list
+    /// on that told an operator *no models exist* at the moment MCF was busy
+    /// with one of them, which is the most misleading thing this screen can
+    /// say: the models are on the disk, `mcf list` finds them, and the only
+    /// thing that changed is that MCF was mid-answer.
+    ///
+    /// So a reading replaces the list and a silence does not (A7).
     pub fn refresh(&mut self) {
         match ask_within(&self.socket, &Request::Holding, POLL) {
             Ok(answer) if answer.served => {
                 self.refusal = None;
-                self.models = answer
+                self.busy = false;
+                let mut read: Vec<Model> = answer
                     .body
                     .get("models")
                     .and_then(Value::as_list)
                     .map(|held| held.iter().map(model_from).collect())
                     .unwrap_or_default();
-                self.models.sort_by(|one, two| one.name.cmp(&two.name));
+                read.sort_by(|one, two| one.name.cmp(&two.name));
+                self.models = read;
             }
             Ok(answer) => {
                 self.refusal = Some(

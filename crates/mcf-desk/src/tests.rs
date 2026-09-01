@@ -737,3 +737,35 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
     );
     assert!(desk.busy, "and it is recorded as busy");
 }
+
+/// A silence never empties the model list.
+///
+/// F: the daemon answers one client at a time by decision (DEC-012), so while
+/// it loads a large model it answers nothing for minutes. The window emptied
+/// its list on that and showed *no models* — at the moment MCF was busy with
+/// one of them. The models were on the disk the whole time and `mcf list` found
+/// them; the only thing that had changed was that MCF was mid-answer.
+///
+/// The most misleading thing a screen can do is report its own ignorance as the
+/// absence of the thing (A7).
+#[test]
+fn an_unanswered_reading_keeps_the_models_it_had() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.models = vec![
+        Model {
+            name: "a-model".to_owned(),
+            ..Model::default()
+        },
+        Model {
+            name: "another".to_owned(),
+            ..Model::default()
+        },
+    ];
+    // Nothing answers, so nothing is learned — and nothing is forgotten.
+    desk.refresh();
+    assert_eq!(
+        desk.models.len(),
+        2,
+        "a reading that did not arrive says nothing about what is held"
+    );
+}
