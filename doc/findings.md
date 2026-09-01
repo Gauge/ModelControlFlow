@@ -9417,6 +9417,22 @@ already on the wire.
 sentences appeared in one terminal a few lines apart while timing how long the
 daemon takes to answer.
 
+**The structural fact underneath is not fixed, and should be recorded rather
+than quietly left.** `mcf list` never asks the daemon. It walks the store
+itself, whether or not one is running — which is why it answers in 3 ms while
+`mcf status`, which does ask, waits behind whatever the daemon is doing. The
+daemon's own `runs` carries the note that *a console that opened the model
+store itself would be a surface reaching past the wire, and two surfaces
+reading the same file could disagree about it*. They did, and this finding is
+that disagreement.
+
+It is not a simple defect, because `mcf list` has to work with no daemon up,
+and the obvious repair — ask the daemon where there is one — makes the most
+used listing command wait behind generations that have nothing to do with it.
+That trade is DEC-012's, not this finding's: which surface is authoritative
+cannot be settled while only one request can be served at a time. What is
+settled here is that when they both answer, they answer the same way.
+
 
 ## 142 · F142 — The engine's own `[end of text]` was recorded as the model's words, and MCF reported it did not know why generation stopped while holding the thing that said (A19, A21, A2, A7)
 
