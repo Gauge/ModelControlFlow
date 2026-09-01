@@ -147,7 +147,7 @@ pub(crate) fn serve_generation(
     // answered. A generation that chose again for itself would be a second
     // answer to a question already settled — and when it did, it chose the
     // processor build every time, because it matched a name (§3.15, F133).
-    picked: Option<(crate::adapters::ProvisionedLlama, u32)>,
+    picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -170,19 +170,20 @@ pub(crate) fn serve_generation(
     };
     let tokens = wrapped.as_deref().or(tokens);
 
-    let (chosen, gpu_layers) = match (picked, engine) {
+    let (chosen, gpu_layers, context) = match (picked, engine) {
         // A caller that asked for MCF's own engine gets it, whatever was
         // resolved: naming the engine is the point of the argument (§3.15).
-        (_, Some("stand-in")) => (Ok(Chosen::StandIn), 0),
-        (Some((llama, layers)), _) => (Ok(Chosen::Provisioned(llama)), layers),
-        (None, asked) => (choose_engine(mcf_home, asked), 0),
+        (_, Some("stand-in")) => (Ok(Chosen::StandIn), 0, 0),
+        (Some((llama, layers, window)), _) => (Ok(Chosen::Provisioned(llama)), layers, window),
+        (None, asked) => (choose_engine(mcf_home, asked), 0, 0),
     };
     let produced = match chosen {
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
         Ok(Chosen::Provisioned(llama)) => match tokens {
             Some(tokens) => through_served(
-                store, &llama, server, runtime, named, tokens, limit, seed, gpu_layers, writer,
+                store, &llama, server, runtime, named, tokens, limit, seed, gpu_layers, context,
+                writer,
             ),
             None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
         },
@@ -326,6 +327,12 @@ fn addressed_as(
 /// (B-376), which is the shape that can be probed: the turn goes as
 /// identifiers and the engine says why it stopped.
 ///
+/// The smallest window a served request opens.
+///
+/// A window has to hold the turn and leave the engine room to work. Named here
+/// because a floor chosen inside an expression is a decision nobody can find.
+const SMALLEST_WINDOW: u64 = 4096;
+
 /// The server holds the model between requests, which is the residency F36
 /// left open. A request for a different model replaces the server, and
 /// replacing it stops the old one — `Served` kills its child when it is
@@ -345,6 +352,7 @@ fn through_served(
     limit: usize,
     seed: u64,
     gpu_layers: u32,
+    context: u64,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     let given = Path::new(named);
@@ -370,9 +378,29 @@ fn through_served(
     // taken (D41, DEC-018), and taking it here silently would be the hidden
     // choice §3.15 forbids.
     let reused = slot.as_ref().is_some_and(|held| held.model == path);
+    // **The window the REQUEST needs, not the largest one that fits.**
+    //
+    // `context` arrives as what MCF resolved for this model on this machine,
+    // which is the largest window it could hold — the right answer for a model
+    // somebody is hosting and will send long prompts to, and the wrong one
+    // here. A request of a few hundred tokens opened a 262,144-token window
+    // because that is what fits: 57 GiB resident for a 17.6 GiB model, and the
+    // allocation dominating the very timing being taken.
+    //
+    // So the window is sized to this turn — what was sent plus what was asked
+    // for, doubled for room to work — with a floor, and never more than the
+    // machine was said to hold. A measurement then carries the window it
+    // actually ran in (§3.4).
+    let asked_for = u64::try_from(tokens.len().saturating_add(limit)).unwrap_or(SMALLEST_WINDOW);
+    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
+    let window = if context == 0 {
+        needed
+    } else {
+        needed.min(context)
+    };
     if !reused {
         *slot = None;
-        *slot = Some(Served::start(llama, &path, runtime, gpu_layers)?);
+        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
     }
     let engine = slot.as_ref().ok_or_else(|| {
         Failure::new(

@@ -238,7 +238,7 @@ fn footer(into: &mut Screen, doing: &Doing) {
             into.put(
                 10,
                 row,
-                "nothing is being served — Host holds a model here",
+                "nothing is being served — Models holds a model here",
                 Ink::Quiet,
             );
         }

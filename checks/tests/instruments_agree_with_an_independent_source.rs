@@ -257,3 +257,64 @@ fn accelerator_occupancy_agrees_with_the_vendor() {
         );
     }
 }
+
+/// The laboratory's reading agrees with counting the attempts by hand.
+///
+/// **The independent source is arithmetic a reader can do.** Everything else in
+/// this file cross-checks against the kernel or a vendor tool, because what it
+/// measures is the machine. A laboratory measures a model, and there is no
+/// second instrument to ask — so what is checked is that the reading is the one
+/// the definition gives, over cases whose answer is stated here rather than
+/// computed by the code under test (A19).
+///
+/// What would go wrong without it is B40's failure with the sign flipped: a
+/// reading that quietly counted *cases* rather than *whole answers* would give
+/// a model partial credit nobody defined, and it would sort above one that got
+/// fewer things entirely right.
+#[test]
+fn a_laboratory_reading_is_the_share_of_attempts_that_were_whole() {
+    use mcf_bench::eval::{Ran, Trials};
+
+    // Three attempts, one of them entirely right. Counted by hand: one in
+    // three, which is 333,333 parts per million after the division truncates.
+    let held = Trials {
+        task: "a-task",
+        attempts: vec![
+            Ran::Checked { passed: 3, of: 3 },
+            Ran::Checked { passed: 2, of: 3 },
+            Ran::Refused {
+                because: "timed out".to_owned(),
+                wrote_something: true,
+            },
+        ],
+    };
+    assert_eq!(held.ran(), 2, "two attempts ran");
+    assert_eq!(held.whole(), 1, "one of them satisfied every case");
+    let graded = held.graded();
+    let score = graded
+        .score()
+        .expect("something ran, so there is a reading");
+    assert_eq!(
+        score.parts_per_million(),
+        333_333,
+        "the reading is whole answers over attempts made — not cases over cases, which \
+         would be 5 of 9 and would give partial credit nobody defined (B40)"
+    );
+
+    // And the denominator is attempts made rather than attempts that ran: a
+    // model whose answers often fail to run is a model that often fails, and
+    // dividing by the ones that ran would hide exactly that.
+    let ran_only = Trials {
+        task: "a-task",
+        attempts: vec![Ran::Checked { passed: 3, of: 3 }],
+    };
+    assert_eq!(
+        ran_only
+            .graded()
+            .score()
+            .expect("it ran")
+            .parts_per_million(),
+        1_000_000,
+        "one attempt, whole, is the whole of the scale"
+    );
+}

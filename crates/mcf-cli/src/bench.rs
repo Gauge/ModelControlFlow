@@ -708,7 +708,20 @@ fn interleave(
         // A run whose trials have stopped being alike cannot produce a delta
         // however long it goes on (§6.13), so it stops as soon as that is
         // true rather than spending the ceiling to arrive at the same refusal.
+        //
+        // **And it says so.** This was the one exit that broke without
+        // writing down why: a comparison that ended here reported "no reason
+        // was recorded", which is the sentence A7 exists to prevent, and left
+        // an operator to guess at a run that had in fact stopped for a
+        // perfectly good reason.
         if !running.comparison().reuse().is_uniform() {
+            let mixed = running.comparison().reuse().condition();
+            running.stopped_short(format!(
+                "the trials stopped being alike: reuse was {mixed}, and a delta \
+                 across trials that did not all load the model would be measuring \
+                 the load rather than the model (§6.13, B-081). `--cold` makes \
+                 every trial load it for itself."
+            ));
             break;
         }
         if running

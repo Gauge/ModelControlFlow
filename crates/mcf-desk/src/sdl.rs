@@ -82,6 +82,13 @@ pub const EVENT_BYTES: usize = 128;
 /// window, keyboard, scancode — then the key.
 pub const KEY_OFFSET: usize = 28;
 
+/// Where the modifier bits sit in `SDL_KeyboardEvent`: after the keycode,
+/// which ends at 32. `SDL_Keymod` is a `Uint16`, so this reads two bytes and
+/// not four — read from the provisioned header, like every constant here.
+pub const MOD_OFFSET: usize = 32;
+/// Either Ctrl key, as `SDL_KMOD_CTRL` spells it: `LCTRL | RCTRL`.
+pub const KMOD_CTRL: u16 = 0x00C0;
+
 /// Keycodes. Printable keys are their own character; the rest carry a mask.
 pub const KEY_MASK: u32 = 0x4000_0000;
 /// Cursor right, from its scancode.
@@ -175,6 +182,9 @@ unsafe extern "C" {
     fn SDL_GetWindowDisplayScale(window: *mut c_void) -> f32;
     fn SDL_SetWindowMinimumSize(window: *mut c_void, w: i32, h: i32) -> bool;
     fn SDL_StartTextInput(window: *mut c_void) -> bool;
+    fn SDL_GetClipboardText() -> *mut u8;
+    fn SDL_HasClipboardText() -> bool;
+    fn SDL_free(mem: *mut c_void);
 }
 
 /// A texture the window owns.
@@ -273,6 +283,35 @@ impl Window {
         // this buffer is sized for and why it is not smaller.
         let had = unsafe { SDL_PollEvent(event.as_mut_ptr()) };
         had.then_some(event)
+    }
+
+    /// What the system clipboard holds as text, if it holds any.
+    ///
+    /// **SDL hands back memory MCF owns**, so this copies out of it and frees
+    /// it before returning: a paste is a moment, and a leak per paste is still
+    /// a leak. Invalid UTF-8 is nothing rather than a panic — a clipboard
+    /// carries whatever the last application put there, which is not MCF's to
+    /// trust.
+    #[cfg(have_sdl)]
+    #[must_use]
+    pub fn clipboard_text(&self) -> Option<String> {
+        // SAFETY: neither call takes an argument, and the pointer returned by
+        // `SDL_GetClipboardText` is owned by the caller until `SDL_free`.
+        unsafe {
+            if !SDL_HasClipboardText() {
+                return None;
+            }
+            let held = SDL_GetClipboardText();
+            if held.is_null() {
+                return None;
+            }
+            let text = std::ffi::CStr::from_ptr(held.cast())
+                .to_str()
+                .ok()
+                .map(str::to_owned);
+            SDL_free(held.cast());
+            text
+        }
     }
 
     /// Clears the window to one colour.
@@ -454,6 +493,11 @@ impl Window {
         None
     }
     /// Unreachable: `open` refused.
+    #[must_use]
+    pub fn clipboard_text(&self) -> Option<String> {
+        None
+    }
+    /// Unreachable: `open` refused.
     pub fn clear(&self, _colour: (u8, u8, u8)) {}
     /// Unreachable: `open` refused.
     pub fn fill(&self, _rect: Rect, _colour: (u8, u8, u8)) {}
@@ -534,10 +578,32 @@ fn four_at(event: &[u8; EVENT_BYTES], at: usize) -> u32 {
     u32::from_ne_bytes(four)
 }
 
+/// Two bytes at an offset, as SDL wrote them.
+fn two_at(event: &[u8; EVENT_BYTES], at: usize) -> u16 {
+    let Some(held) = event.get(at..at + 2) else {
+        return 0;
+    };
+    let mut two = [0_u8; 2];
+    two.copy_from_slice(held);
+    u16::from_ne_bytes(two)
+}
+
 /// The keycode of a key event.
 #[must_use]
 pub fn event_key(event: &[u8; EVENT_BYTES]) -> u32 {
     four_at(event, KEY_OFFSET)
+}
+
+/// Which modifiers were held when the key went down.
+#[must_use]
+pub fn event_mod(event: &[u8; EVENT_BYTES]) -> u16 {
+    two_at(event, MOD_OFFSET)
+}
+
+/// Whether either Ctrl key was held for this event.
+#[must_use]
+pub fn event_has_ctrl(event: &[u8; EVENT_BYTES]) -> bool {
+    event_mod(event) & KMOD_CTRL != 0
 }
 
 /// A float at an offset, as SDL wrote it.

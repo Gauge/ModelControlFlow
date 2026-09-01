@@ -34,7 +34,7 @@
 //! literal. So the allowance was holding a door nobody was using, and the
 //! staleness test that would have caught that later caught it immediately.
 //!
-//! **The names are read from `provision.rs`, not listed here.** A list of
+//! **The names are read from the catalogue, not listed here.** A list of
 //! names in a check is the same mistake one level up: it goes stale the week a
 //! component is added, and the component it then misses is the new one.
 
@@ -50,8 +50,13 @@ fn read(path: &Path) -> String {
 }
 
 /// The component names MCF provisions, from the table that defines them.
+///
+/// The table moved to `mcf-core` when the daemon had to read it too: what MCF
+/// can build is asked for by a surface as well as built by a command, and a
+/// second copy of a pinned digest is a second thing to forget to change. The
+/// names are still read rather than listed, for the reason in the note above.
 fn component_names(root: &Path) -> Vec<String> {
-    let source = read(&root.join("crates/mcf-cli/src/provision.rs"));
+    let source = read(&root.join("crates/mcf-core/src/component.rs"));
     let mut found = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();

@@ -55,6 +55,37 @@ const DECLARED: &[Spawns] = &[
                `gcc`, `clang` and `ar`, or whatever `CC` and `AR` name, which is the same \
                toolchain that built the rest of this program (B-409, D39)",
     },
+    // **The one place MCF runs something it did not build.** Everywhere else
+    // the rule holds outright: what starts is a binary MCF compiled from a
+    // pinned commit. A laboratory cannot hold to that and still answer its
+    // question — *can this model do the work* is answerable only by doing the
+    // work — so the rule becomes a boundary instead of a prohibition. What a
+    // model wrote runs inside a container with no network, no capabilities, a
+    // read-only root, a memory ceiling, a process limit and a deadline, over a
+    // scratch directory mounted read-only and thrown away afterwards. What
+    // leaves is `ok` or `no` per case, and nothing else is read.
+    //
+    // The model's file is still never executed: what runs is text the model
+    // emitted, which is a different thing from the artifact MCF acquired
+    // (B-025, §6.4, B-110).
+    Spawns {
+        file: "crates/mcf-cli/src/eval.rs",
+        sites: 1,
+        what: "podman, running the function a model just wrote against the cases a task \
+               states, inside a container with no network and nothing mounted but its own \
+               scratch. This is the only place MCF runs code it did not compile, and the \
+               container is the whole of why it may",
+    },
+    Spawns {
+        file: "crates/mcf-cli/src/probe.rs",
+        sites: 1,
+        what: "the provisioned engine's own tool that takes an image, so that the vision probe \
+               can put a picture to a model at all. What is started is a binary MCF built \
+               itself, from a pinned commit, in a container it controlled — the same prefix \
+               every other provisioned tool is reached through. The model is an argument to it \
+               and is never executed: what MCF acquired is read as weights by a program MCF \
+               built, which is the whole of the distinction B-025 draws (B-320, D39)",
+    },
     Spawns {
         file: "crates/mcf-lab/src/catalogue/engine.rs",
         sites: 5,

@@ -4,7 +4,7 @@
 //! answer and the sentence a person reads — which is where this surface can
 //! actually be wrong about a measurement, and the one place it must not be.
 
-use super::{ACTIONS, Desk, Model, Page, model_from};
+use super::{ACTIONS, Desk, Model, Page, component_from, model_from};
 use mcf_record::json::Value;
 
 /// Every action reaches a control-plane request or asks MCF nothing (A22).
@@ -16,7 +16,7 @@ fn every_action_reaches_a_request_or_asks_nothing() {
         assert!(!action.does.is_empty());
         if let Some(reaches) = action.reaches {
             assert!(
-                matches!(reaches, "Status" | "Holding" | "Stop"),
+                matches!(reaches, "Status" | "Holding" | "Stop" | "Components"),
                 "{} reaches {reaches}, which this surface cannot build",
                 action.key
             );
@@ -41,10 +41,18 @@ fn nothing_in_the_menu_leads_nowhere() {
             "{label} is not a section, so it cannot be lit when you are on it"
         );
     }
-    // A model's own page is reached from the list and belongs to it.
-    // The two screens Host's actions lead to belong to Host.
-    assert_eq!(Page::Adding.section(), Page::Host);
-    assert_eq!(Page::Hosting.section(), Page::Host);
+    // A model's own page is reached from the list and belongs to it. Host is
+    // no longer a column entry — it drew the list Models draws — so the two
+    // screens its actions lead to are lit under Models, which is where a
+    // person clicked to reach them.
+    assert_eq!(Page::Adding.section(), Page::Models);
+    assert_eq!(Page::Hosting.section(), Page::Models);
+    assert_eq!(Page::Host.section(), Page::Models);
+    // And nothing in the column is Host any more.
+    assert!(
+        !Page::MENU.iter().any(|(page, _)| *page == Page::Host),
+        "Host is the list Models shows, not a second entry for it"
+    );
 }
 
 /// A model MCF cannot run says so, and does not also claim to be ready.
@@ -230,10 +238,12 @@ fn a_daemon_that_is_not_there_is_said_in_words() {
 
 /// A menu entry now exists for each of the things the window can do.
 ///
-/// Five, and each one leads to a screen that works. The three added — adding a
-/// model, asking one something, timing one — are the three the operator asked
-/// for, and each reaches the daemon rather than doing the work in the window
-/// (A22, B-412).
+/// Each one leads to a screen that works, and the column is the console's
+/// column: B-072 makes *where things are* a fact about MCF rather than about
+/// which surface you happened to open, so an entry added here is added there
+/// in the same change. Components is the seventh — what MCF can build was
+/// reachable only from the command line, which made provisioning a thing you
+/// had to already know about (A19, A22).
 #[test]
 fn every_menu_entry_reaches_something_built() {
     // The console's six, in the console's order — not a menu invented here.
@@ -242,9 +252,9 @@ fn every_menu_entry_reaches_something_built() {
         named,
         [
             "Monitor",
-            "Host",
-            "Diagnostics",
             "Models",
+            "Diagnostics",
+            "Components",
             "Settings",
             "Exit"
         ],
@@ -523,4 +533,142 @@ fn a_ladder_that_never_separated_yields_no_speed() {
     assert!(!held.measured());
     assert_eq!(held.fastest, None);
     assert_eq!(held.slowest, None);
+}
+
+/// A pasted reference arrives in the field, and arrives usable.
+///
+/// F: the window read `SDL_EVENT_TEXT_INPUT` and nothing else, so a field
+/// could be typed into and not pasted into — and an `owner/repository` name
+/// copied out of a browser is pasted, not typed. What the clipboard holds was
+/// put there by something else, so these are the shapes it actually arrives
+/// in. The references here are shaped like references and name nothing: B28
+/// keeps a model's name out of the code that would then be built around it.
+#[test]
+fn a_pasted_reference_is_taken_as_a_value() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+
+    desk.paste("an-owner/a-repository-GGUF");
+    assert_eq!(
+        desk.typed, "an-owner/a-repository-GGUF",
+        "a plain reference is kept as it is"
+    );
+
+    // A browser hands over a trailing newline; it is not part of the name.
+    desk.typed.clear();
+    desk.paste("an-owner/a-repository-GGUF\n");
+    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+
+    // A terminal can hand over more than one line. The first is the value.
+    desk.typed.clear();
+    desk.paste("an-owner/a-repository-GGUF\nand a second line\n");
+    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+
+    // Control characters are not part of any reference.
+    desk.typed.clear();
+    desk.paste("\tan-owner/a-repository-GGUF\r");
+    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+
+    // A paste that is nothing but whitespace leaves the field alone.
+    desk.typed.clear();
+    desk.typed.push_str("an-owner/");
+    desk.paste("   \n  ");
+    assert_eq!(desk.typed, "an-owner/", "an empty paste changes nothing");
+
+    // Pasting appends, because a person may paste an owner and type a name.
+    desk.typed.clear();
+    desk.typed.push_str("an-owner/");
+    desk.paste("a-repository-GGUF");
+    assert_eq!(desk.typed, "an-owner/a-repository-GGUF");
+}
+
+/// A clipboard can hold a whole document. A field cannot.
+#[test]
+fn a_paste_is_bounded() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.paste(&"a".repeat(4096));
+    assert_eq!(
+        desk.typed.chars().count(),
+        512,
+        "a paste is capped rather than accepted whole"
+    );
+    // And a second paste cannot push it past the cap either.
+    desk.paste("bbbb");
+    assert_eq!(desk.typed.chars().count(), 512);
+}
+
+/// A component is in one of three states, and a half-build is not a build.
+///
+/// The builder writes the provenance last, so a prefix with none beside it is
+/// a run that stopped partway. Reading that as *provisioned* is how a person
+/// comes to trust a component that is not there (F31, A7).
+///
+/// Whether MCF reaches it as an ENGINE is a separate fact: a window library is
+/// not an engine, and the first cut of this screen showed a fully provisioned
+/// one as merely "built" because the two were treated as one question.
+#[test]
+fn a_half_built_component_is_not_a_provisioned_one() {
+    let read = |present: bool, provisioned: bool, engine: bool| {
+        component_from(&Value::map([
+            ("name", Value::text("a-component")),
+            ("commit", Value::text("0123456789abcdef")),
+            ("role", Value::text("what having it lets MCF claim")),
+            ("image", Value::text("an-image")),
+            ("present", Value::Bool(present)),
+            ("provisioned", Value::Bool(provisioned)),
+            ("usable_engine", Value::Bool(engine)),
+            ("prefix", Value::text("/somewhere/a-component@0123456789ab")),
+        ]))
+    };
+
+    let absent = read(false, false, false);
+    assert!(!absent.present && !absent.provisioned);
+
+    // A directory with no provenance beside it: present, and not finished.
+    let partway = read(true, false, false);
+    assert!(
+        partway.present && !partway.provisioned,
+        "a prefix without its provenance is a run that stopped partway"
+    );
+
+    // Finished, and not an engine — which is the ordinary case for a library.
+    let library = read(true, true, false);
+    assert!(
+        library.provisioned,
+        "a component that is not an engine is still provisioned"
+    );
+    assert!(!library.usable_engine);
+
+    // Finished, and an engine MCF can reach.
+    let engine = read(true, true, true);
+    assert!(engine.provisioned && engine.usable_engine);
+
+    // The commit is shortened for reading, and never invented.
+    assert_eq!(engine.commit, "0123456789ab");
+}
+
+/// The window asks the daemon where a hosted model answers.
+///
+/// The address is the one fact an API is for, and a monitor that had the model
+/// but not the address would be one a person could not act on.
+#[test]
+fn what_is_hosted_carries_where_it_answers() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    assert!(
+        desk.hosted.is_none(),
+        "nothing is hosted until the daemon says so"
+    );
+    desk.hosted = Some(crate::Hosted {
+        model: "/a/store/an-owner/a-repository/a-file.gguf".to_owned(),
+        address: "http://127.0.0.1:8080/v1".to_owned(),
+        since: "2026-08-31T00:00:00Z".to_owned(),
+        context: Some(8192),
+    });
+    let hosting = desk.hosted.as_ref().expect("just set");
+    // The screen shows the name, not the path: a path is where a file is.
+    assert_eq!(
+        hosting.model.rsplit('/').next(),
+        Some("a-file.gguf"),
+        "the monitor names what is answering, not where it sits"
+    );
+    assert_eq!(hosting.context, Some(8192));
 }

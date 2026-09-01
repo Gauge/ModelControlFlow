@@ -1303,3 +1303,73 @@ mod fitness {
         );
     }
 }
+
+/// The order within a pair does not depend on how round the seed is.
+///
+/// F: the seed went into the xorshift as its state, and a xorshift started
+/// from a small word takes many rounds to mix. `--seed 41` drew right-first
+/// nine times running, so a six-pair comparison ran every pair in the same
+/// order — and interleaving, whose entire job is to cancel order effects,
+/// cancelled nothing. Whatever advantage there is in going first then sits
+/// inside the difference being reported.
+///
+/// What is checked is not that a run of one order never happens: six coins
+/// land the same way about three times in a hundred, and a generator forbidden
+/// from doing so would not be one. What is checked is that it happens about
+/// that often rather than for the particular small numbers a person types.
+#[test]
+fn the_order_within_a_pair_does_not_depend_on_how_round_the_seed_is() {
+    let draws = |seed: u64, many: usize| -> Vec<bool> {
+        let mut state = {
+            let scrambled = super::scramble(seed);
+            if scrambled == 0 {
+                0x2545_F491_4F6C_DD1D
+            } else {
+                scrambled
+            }
+        };
+        (0..many)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state >> 63 == 0
+            })
+            .collect()
+    };
+    let one_sided = |seed: u64| {
+        let six = draws(seed, 6);
+        six.iter().all(|held| *held) || six.iter().all(|held| !*held)
+    };
+
+    // The two seeds actually observed running every pair one way.
+    for seed in [1_u64, 41] {
+        assert!(
+            !one_sided(seed),
+            "seed {seed} still runs a whole short comparison in one order"
+        );
+    }
+
+    // And across the small numbers generally it is a coin, not a habit.
+    // Chance is about 3 in 100; the bound is loose enough not to be a flake
+    // and tight enough to catch a generator that has stopped mixing.
+    let stuck = (0_u64..256).filter(|seed| one_sided(*seed)).count();
+    assert!(
+        stuck <= 26,
+        "{stuck} of 256 seeds run six pairs in one order, which is not chance"
+    );
+
+    // Over a longer run neither arm is systematically favoured.
+    for seed in [1_u64, 41, 2026] {
+        let lefts = draws(seed, 400).iter().filter(|held| **held).count();
+        assert!(
+            (150..=250).contains(&lefts),
+            "seed {seed} drew left first {lefts} times in 400, which is not a balance"
+        );
+    }
+
+    // Still a pure function of the seed, so a comparison replays (§3.12) —
+    // and two seeds are still two runs.
+    assert_eq!(draws(41, 32), draws(41, 32));
+    assert_ne!(draws(41, 32), draws(42, 32));
+}

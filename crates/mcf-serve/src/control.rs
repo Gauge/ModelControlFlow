@@ -56,6 +56,30 @@ pub enum Request {
     Status,
     /// What models this machine is holding.
     Holding,
+    /// What a prompt does to a model: which of its sentences reach the answer,
+    /// and whether the answer settles.
+    ///
+    /// Served here rather than computed by a caller so that every surface — the
+    /// command line, the window, the console — asks one thing and gets one
+    /// answer (A22, B-072). It is expensive by construction: one generation per
+    /// sentence and one per seed, which is why it is asked for and never done
+    /// on the way past.
+    PromptReport {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// The prompt to take apart.
+        prompt: String,
+        /// The seed, held still across every ablation so that what differs
+        /// between a baseline and a clause left out is the prompt (D19).
+        seed: u64,
+    },
+    /// What components MCF can build, and which of them are here.
+    ///
+    /// Read-only: it says what the catalogue holds and what is on the disk
+    /// beside it. Building one is `mcf provision`, which is a command rather
+    /// than a request — a build takes minutes and writes a record of its own,
+    /// so it is not something a surface waits on a socket for.
+    Components,
     /// Stop: refuse new work, finish what is in hand, and exit.
     Stop {
         /// Why, which is recorded. A26 makes stopping an act with an account
@@ -181,39 +205,38 @@ fn maybe(held: Option<&str>) -> Value {
     held.map_or(Value::Null, Value::text)
 }
 
-impl Request {
-    /// The line a client sends.
-    #[must_use]
-    pub fn to_line(&self) -> String {
-        let body = match self {
-            Self::Status => Value::map([("ask", Value::text("status"))]),
-            Self::Holding => Value::map([("ask", Value::text("holding"))]),
-            Self::Stop { reason } => Value::map([
-                ("ask", Value::text("stop")),
-                ("reason", Value::text(reason.clone())),
-            ]),
-            Self::Generate {
-                model,
-                prompt,
-                limit,
-                seed,
-                tokens,
-                engine,
-                whose,
-            } => Value::map([
+/// A generation, as it goes onto the wire.
+///
+/// Its own function for the same reason the prompt report's is: `to_line` is
+/// one arm per request under a line cap, and the longest arm crowds every
+/// other one.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's fields, each of which the wire names"
+)]
+fn generate_line(
+    model: &str,
+    prompt: &str,
+    limit: Option<usize>,
+    seed: u64,
+    tokens: Option<&[usize]>,
+    engine: Option<&str>,
+    whose: mcf_record::content::Whose,
+) -> Value {
+    Value::map([
                 ("ask", Value::text("generate")),
-                ("model", Value::text(model.clone())),
-                ("prompt", Value::text(prompt.clone())),
+                ("model", Value::text(model.to_owned())),
+                ("prompt", Value::text(prompt.to_owned())),
                 (
                     "limit",
                     match limit {
-                        Some(limit) => Value::Integer(i64::try_from(*limit).unwrap_or(i64::MAX)),
+                        Some(limit) => Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
                         None => Value::Null,
                     },
                 ),
                 (
                     "seed",
-                    Value::Integer(i64::try_from(*seed).unwrap_or(i64::MAX)),
+                    Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
                 ),
                 (
                     "tokens",
@@ -237,7 +260,49 @@ impl Request {
                     },
                 ),
                 ("whose", Value::text(whose.as_str())),
+            ])
+}
+
+/// A prompt report, as it goes onto the wire.
+///
+/// Its own function because `to_line` is one match arm per request and the
+/// whole of it has a line cap: a request added inside it is a request that
+/// makes every other one harder to read.
+fn prompt_report_line(model: &str, prompt: &str, seed: u64) -> Value {
+    Value::map([
+        ("ask", Value::text("prompt-report")),
+        ("model", Value::text(model.to_owned())),
+        ("prompt", Value::text(prompt.to_owned())),
+        ("seed", Value::Integer(i64::try_from(seed).unwrap_or(0))),
+    ])
+}
+
+impl Request {
+    /// The line a client sends.
+    #[must_use]
+    pub fn to_line(&self) -> String {
+        let body = match self {
+            Self::Status => Value::map([("ask", Value::text("status"))]),
+            Self::Holding => Value::map([("ask", Value::text("holding"))]),
+            Self::Components => Value::map([("ask", Value::text("components"))]),
+            Self::PromptReport {
+                model,
+                prompt,
+                seed,
+            } => prompt_report_line(model, prompt, *seed),
+            Self::Stop { reason } => Value::map([
+                ("ask", Value::text("stop")),
+                ("reason", Value::text(reason.clone())),
             ]),
+            Self::Generate {
+                model,
+                prompt,
+                limit,
+                seed,
+                tokens,
+                engine,
+                whose,
+            } => generate_line(model, prompt, *limit, *seed, tokens.as_deref(), engine.as_deref(), *whose),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
                 ("reference", Value::text(reference.clone())),
@@ -384,6 +449,24 @@ impl Request {
                     .ok_or_else(|| refused("a measurement naming no depth", line))?,
             }),
             Some("holding") => Ok(Self::Holding),
+            Some("components") => Ok(Self::Components),
+            Some("prompt-report") => Ok(Self::PromptReport {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a prompt report naming no model", line))?
+                    .to_owned(),
+                prompt: value
+                    .get("prompt")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a prompt report with no prompt", line))?
+                    .to_owned(),
+                seed: value
+                    .get("seed")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| u64::try_from(held).ok())
+                    .unwrap_or(0),
+            }),
             Some("stop") => Ok(Self::Stop {
                 reason: value
                     .get("reason")

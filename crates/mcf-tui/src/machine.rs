@@ -333,11 +333,52 @@ fn disk_totals() -> Vec<(String, u64, u64)> {
     found
 }
 
-/// Every card, from the vendor tool where there is one.
-fn cards() -> Vec<Card> {
+/// Millidegrees as whole degrees.
+///
+/// The rounding is toward zero and it is stated here rather than left inside
+/// an expression: a screen shows whole degrees, and a tenth of a degree is not
+/// a thing this row has room to say.
+#[allow(
+    clippy::integer_division,
+    reason = "whole degrees is the unit shown; the truncation is the point"
+)]
+const fn whole_degrees(millidegrees: i64) -> i64 {
+    millidegrees / 1000
+}
+
+/// Microwatts as whole watts, for the same reason.
+#[allow(
+    clippy::integer_division,
+    reason = "whole watts is the unit shown; the truncation is the point"
+)]
+const fn whole_watts(microwatts: u64) -> u64 {
+    microwatts / 1_000_000
+}
+
+/// One card as NVIDIA's own tool reports it, with the bus it sits on.
+///
+/// The bus id travels because it is the only thing that ties a row of this
+/// tool's output to a `card0` in sysfs: the tool prints a marketing name and
+/// sysfs prints an index, and neither is the other. Matching on order instead
+/// gave every NVIDIA card in a machine the first one's numbers.
+#[derive(Debug, Clone)]
+struct Vendor {
+    /// `domain:bus:device.function`, as the tool spells it.
+    bus: String,
+    /// What the tool measured.
+    card: Card,
+}
+
+/// Every row NVIDIA's tool prints.
+///
+/// Only NVIDIA publishes occupancy and memory through a tool rather than
+/// sysfs, so this is an enrichment and never the discovery: a machine without
+/// the tool still lists every card it has.
+fn nvidia_details() -> Vec<Vendor> {
     let Ok(spoke) = std::process::Command::new("nvidia-smi")
         .args([
-            "--query-gpu=name,utilization.gpu,temperature.gpu,power.draw,memory.used,memory.total",
+            "--query-gpu=pci.bus_id,name,utilization.gpu,temperature.gpu,power.draw,\
+             memory.used,memory.total",
             "--format=csv,noheader,nounits",
         ])
         .output()
@@ -348,7 +389,8 @@ fn cards() -> Vec<Card> {
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split(',').map(str::trim).collect();
-            let name = (*fields.first()?).to_owned();
+            let bus = (*fields.first()?).to_owned();
+            let name = (*fields.get(1)?).to_owned();
             // The tool prints whole numbers with an occasional decimal on the
             // power. Rounded rather than cast, and a value that will not fit is
             // dropped rather than wrapped into a plausible wrong one.
@@ -363,15 +405,179 @@ fn cards() -> Vec<Card> {
                 format!("{held:.0}").parse::<u64>().ok()
             };
             let mebibytes = |at: usize| whole(at).map(|held| held << 20);
-            Some(Card {
-                name,
-                load: whole(1)
-                    .and_then(|held| u32::try_from(held.saturating_mul(10)).ok().map(Tenths)),
-                temperature: whole(2).and_then(|held| i32::try_from(held).ok()),
-                power: whole(3).and_then(|held| u32::try_from(held).ok()),
-                used: mebibytes(4),
-                total: mebibytes(5),
+            Some(Vendor {
+                bus,
+                card: Card {
+                    name,
+                    load: whole(2)
+                        .and_then(|held| u32::try_from(held.saturating_mul(10)).ok().map(Tenths)),
+                    temperature: whole(3).and_then(|held| i32::try_from(held).ok()),
+                    power: whole(4).and_then(|held| u32::try_from(held).ok()),
+                    used: mebibytes(5),
+                    total: mebibytes(6),
+                },
             })
+        })
+        .collect()
+}
+
+/// Whether two spellings name the same slot on the bus.
+///
+/// `nvidia-smi` writes `00000000:C2:00.0` and sysfs writes `0000:c2:00.0`:
+/// the same address, a different number of leading zeros and a different case.
+/// Compared field by field, with the domain read as a number, so neither
+/// spelling has to be the canonical one.
+fn same_slot(one: &str, two: &str) -> bool {
+    let parts = |held: &str| -> Option<(u64, String)> {
+        let (domain, rest) = held.split_once(':')?;
+        Some((
+            u64::from_str_radix(domain.trim(), 16).ok()?,
+            rest.to_ascii_lowercase(),
+        ))
+    };
+    match (parts(one), parts(two)) {
+        (Some(one), Some(two)) => one == two,
+        _ => false,
+    }
+}
+
+/// Where this card's PCI address is, as sysfs spells it.
+fn card_slot(card: &str) -> Option<String> {
+    let at = std::path::Path::new("/sys/class/drm").join(card).join("device");
+    Some(
+        std::fs::canonicalize(at)
+            .ok()?
+            .file_name()?
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+/// This card's own hwmon directory.
+///
+/// Scanned rather than assumed: the number in `hwmon3` is whatever the kernel
+/// handed out at boot, so a hard-coded `hwmon0` reads a different device's
+/// sensors or nothing at all. Under the card's own directory, so two cards
+/// never share a reading — which is what matching sensors by driver name did.
+fn card_hwmon(card: &str) -> Option<std::path::PathBuf> {
+    let at = std::path::Path::new("/sys/class/drm")
+        .join(card)
+        .join("device")
+        .join("hwmon");
+    let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(at)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("hwmon"))
+        })
+        .collect();
+    found.sort();
+    found.into_iter().next()
+}
+
+/// A whole number a sysfs file holds.
+fn number_at(at: &std::path::Path) -> Option<u64> {
+    std::fs::read_to_string(at).ok()?.trim().parse::<u64>().ok()
+}
+
+/// A number under this card's device directory.
+fn card_number(card: &str, leaf: &str) -> Option<u64> {
+    number_at(
+        &std::path::Path::new("/sys/class/drm")
+            .join(card)
+            .join("device")
+            .join(leaf),
+    )
+}
+
+/// What a card is using of its own memory, and how much it has.
+///
+/// Three shapes, because three vendors publish it three ways. An integrated
+/// card has no separate memory at all and answers `None` for both — which is
+/// the truth about it, and not a zero.
+fn card_memory(card: &str, driver: &str) -> (Option<u64>, Option<u64>) {
+    match driver {
+        // AMD publishes bytes outright.
+        "amdgpu" | "radeon" => (
+            card_number(card, "mem_info_vram_used"),
+            card_number(card, "mem_info_vram_total"),
+        ),
+        // Intel's discrete cards publish local memory; the integrated ones
+        // publish neither file, which is how an integrated card says it has
+        // no memory of its own.
+        "i915" | "xe" => {
+            let total = card_number(card, "lmem_total_bytes");
+            let available = card_number(card, "lmem_avail_bytes");
+            let used = total
+                .zip(available)
+                .map(|(total, available)| total.saturating_sub(available));
+            (used, total)
+        }
+        _ => (None, None),
+    }
+}
+
+/// Every accelerator this machine has, whoever made it and however many.
+///
+/// **Discovery is sysfs, for every vendor at once.** This used to shell out to
+/// `nvidia-smi` and take its silence for an absence, so a machine with an AMD
+/// or Intel card reported having none — the card was there, the driver was
+/// loaded, and the monitor said nothing at all, while MCF's own `doctor` had
+/// been reading it from sysfs the whole time. Two readers, disagreeing (the
+/// shape of F127).
+///
+/// `mcf_core::hardware::utilisation::accelerators` walks `/sys/class/drm`, so
+/// one card, four cards, or a mixed set of vendors all arrive the same way,
+/// and both surfaces now read the one enumeration `doctor` reads.
+///
+/// **What is read per card, and never across cards.** Temperature and power
+/// come from the card's own hwmon directory; memory from its own device
+/// directory. Reading them by driver name instead gave two cards of the same
+/// make one card's numbers twice. NVIDIA publishes occupancy through NVML
+/// rather than sysfs, so its rows are merged in from the vendor tool, matched
+/// on the bus address; where that tool is absent the card is still listed with
+/// what sysfs gave and the rest unknown (A7).
+fn cards() -> Vec<Card> {
+    let details = nvidia_details();
+    mcf_core::hardware::utilisation::accelerators()
+        .into_iter()
+        .map(|busy| {
+            let slot = card_slot(&busy.card);
+            let vendor = slot.as_ref().and_then(|slot| {
+                details
+                    .iter()
+                    .find(|held| same_slot(&held.bus, slot))
+                    .map(|held| held.card.clone())
+            });
+            let hwmon = card_hwmon(&busy.card);
+            let sensed = |leaf: &str| hwmon.as_ref().and_then(|at| number_at(&at.join(leaf)));
+            let (used, total) = card_memory(&busy.card, &busy.driver);
+            Card {
+                // The vendor's own name where there is one, because "GeForce
+                // RTX 5090" tells a person more than "card1" does. The sysfs
+                // name otherwise, which always exists.
+                name: vendor.as_ref().map_or_else(
+                    || format!("{} ({})", busy.card, busy.driver),
+                    |held| held.name.clone(),
+                ),
+                load: busy
+                    .percent
+                    .known()
+                    .and_then(|percent| u32::try_from(percent.saturating_mul(10)).ok().map(Tenths))
+                    .or_else(|| vendor.as_ref().and_then(|held| held.load)),
+                temperature: sensed("temp1_input")
+                    .and_then(|milli| i64::try_from(milli).ok())
+                    .and_then(|milli| i32::try_from(whole_degrees(milli)).ok())
+                    .or_else(|| vendor.as_ref().and_then(|held| held.temperature)),
+                power: sensed("power1_average")
+                    .and_then(|micro| u32::try_from(whole_watts(micro)).ok())
+                    .or_else(|| vendor.as_ref().and_then(|held| held.power)),
+                used: used.or_else(|| vendor.as_ref().and_then(|held| held.used)),
+                total: total.or_else(|| vendor.and_then(|held| held.total)),
+            }
         })
         .collect()
 }

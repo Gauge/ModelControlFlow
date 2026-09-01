@@ -40,34 +40,7 @@ pub struct Declined {
 }
 
 /// Every modality MCF declines to probe today.
-pub const DECLINED: [Declined; 3] = [
-    Declined {
-        modality: "vision",
-        looked_for: "a vision projector in the artifact — the `clip.*` metadata and the tensors \
-                     a multimodal file carries, or the separate projector file its repository \
-                     publishes beside the weights",
-        because: "MCF's own engine implements text transformers and nothing else, and no \
-                  provisioned engine here is driven with an image. A probe that reported *no \
-                  vision* would be reporting MCF's own reach as a property of the model, which \
-                  is the confusion A21 exists to prevent",
-        needs: "an engine that takes an image, and a way to acquire the projector as part of \
-                the artifact rather than beside it",
-        until: "B-320",
-    },
-    Declined {
-        modality: "reasoning modes",
-        looked_for: "the thinking markers a file's own vocabulary carries, which several \
-                     families declare and which MCF can already find (F79)",
-        because: "whether a model is *reasoning* is a judgement about what it produced; what is \
-                  observable is that it emitted its declared markers and how many tokens it \
-                  spent inside them. That second question is worth asking and is not this item \
-                  — it changes the token budget a turn needs, which makes it a configuring \
-                  probe with its own row rather than a modality",
-        needs: "its own item: what was measured today is that a model spent a whole \
-                two-hundred-token budget before producing an object, ten trials out of ten \
-                (F106)",
-        until: "B-054",
-    },
+pub const DECLINED: [Declined; 1] = [
     Declined {
         modality: "multilingual fluency",
         looked_for: "nothing — the question is asked of a model's answers rather than of its \

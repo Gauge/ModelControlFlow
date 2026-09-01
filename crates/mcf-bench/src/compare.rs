@@ -1394,13 +1394,27 @@ impl<K: ClockKind> Interleaving<K> {
                 headroom: None,
             },
             next_position: 0,
-            // Zero is the one seed a xorshift cannot leave, so it is moved
-            // rather than accepted: a caller passing a default must not get a
-            // generator that returns nothing but zero.
-            state: if seed == 0 {
-                0x2545_F491_4F6C_DD1D
-            } else {
-                seed
+            // **Scrambled, not taken as given.** A xorshift started from a
+            // small or sparse state takes many rounds to mix, and the seeds
+            // people actually type are small: `--seed 41` drew right-first
+            // nine times running, so six paired trials ran in one order and
+            // the interleaving that exists to cancel order effects cancelled
+            // nothing. The bias then sits inside the difference being
+            // reported, which is the failure this whole method is built to
+            // avoid (F: observed on a real comparison).
+            //
+            // `SplitMix64`'s finaliser is a bijection, so this stays a pure
+            // function of `seed` and a comparison still replays exactly
+            // (§3.12) — it only stops the first few draws from depending on
+            // how round a number the operator chose. Zero is moved as before:
+            // it is the one state a xorshift cannot leave.
+            state: {
+                let scrambled = scramble(seed);
+                if scrambled == 0 {
+                    0x2545_F491_4F6C_DD1D
+                } else {
+                    scrambled
+                }
             },
         }
     }
@@ -1435,7 +1449,7 @@ impl<K: ClockKind> Interleaving<K> {
             // trajectory and that is the failure B61 names.
             return false;
         };
-        let first = if self.next().is_multiple_of(2) {
+        let first = if self.draws_left_first() {
             Side::Left
         } else {
             Side::Right
@@ -1527,6 +1541,27 @@ impl<K: ClockKind> Interleaving<K> {
         self.state ^= self.state << 17;
         self.state
     }
+
+    /// Which arm goes first this pair.
+    ///
+    /// Read from the TOP bit rather than the bottom one: a xorshift's low bits
+    /// are its weakest, and `is_multiple_of(2)` was reading exactly the bit
+    /// least worth trusting.
+    fn draws_left_first(&mut self) -> bool {
+        self.next() >> 63 == 0
+    }
+}
+
+/// `SplitMix64`'s finaliser: a bijection that mixes a sparse word thoroughly.
+///
+/// Used to turn a seed a person chose into a state a xorshift can start from.
+/// Being a bijection is what keeps two different seeds two different runs, and
+/// being a pure function is what keeps one seed replayable (§3.12).
+const fn scramble(seed: u64) -> u64 {
+    let mut held = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    held = (held ^ (held >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    held = (held ^ (held >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    held ^ (held >> 31)
 }
 
 /// A ratio, as a reader wants it.

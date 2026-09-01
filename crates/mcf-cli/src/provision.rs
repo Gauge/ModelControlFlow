@@ -26,6 +26,11 @@
 
 use std::path::{Path, PathBuf};
 
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
+
+use mcf_core::component::{COMPONENTS, Component, Packaging};
+use mcf_serve::control::{Answer, Request};
 use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
 use mcf_core::time::Timestamp;
 use mcf_record::journal::{Entry as Record, EntryKind, Journal};
@@ -34,29 +39,18 @@ use mcf_record::json::Value;
 use crate::Response;
 
 const WHERE: Subsystem = Subsystem::new("mcf-cli::provision");
-
-/// How a base image installs and reports its packages.
+/// Install the named packages, quietly, without prompting.
 ///
-/// The recipe used to say `dnf` and `rpm` outright, which was true of the one
-/// image there was. The CUDA toolkit ships on Ubuntu, and a second component
-/// made the assumption visible by failing on it — `dnf: command not found`,
-/// exit 127, before a single file was compiled (F128).
-#[derive(Clone, Copy)]
-pub(crate) enum Packaging {
-    /// Fedora and its relatives.
-    Dnf,
-    /// Debian and its relatives, which is what the CUDA images are built on.
-    Apt,
-}
-
-impl Packaging {
-    /// Install the named packages, quietly, without prompting.
-    fn install(self, packages: &str) -> String {
-        match self {
-            Self::Dnf => format!("dnf -q install -y {packages}"),
+/// A free function rather than a method: [`Packaging`] is the catalogue's type
+/// now, and writing shell is this crate's business rather than the
+/// catalogue's.
+fn install_packages(packaging: Packaging, packages: &str) -> String {
+    {
+        match packaging {
+            Packaging::Dnf => format!("dnf -q install -y {packages}"),
             // `update` first, because a Debian image ships no package lists and
             // an install without one fails on every name.
-            Self::Apt => format!(
+            Packaging::Apt => format!(
                 "export DEBIAN_FRONTEND=noninteractive\n\
                  apt-get -qq update > /dev/null\n\
                  apt-get -qq install -y --no-install-recommends {packages} > /dev/null"
@@ -64,205 +58,21 @@ impl Packaging {
         }
     }
 
-    /// Write down exactly what was installed. A version that is not recorded is
-    /// a condition of the artifact nobody can restate (§3.4).
-    fn record(self, packages: &str) -> String {
-        match self {
-            Self::Dnf => format!("rpm -q {packages} glibc > /work/toolchain.txt"),
-            Self::Apt => format!(
+}
+
+/// Write down exactly what was installed. A version that is not recorded is
+/// a condition of the artifact nobody can restate (§3.4).
+fn record_packages(packaging: Packaging, packages: &str) -> String {
+    {
+        match packaging {
+            Packaging::Dnf => format!("rpm -q {packages} glibc > /work/toolchain.txt"),
+            Packaging::Apt => format!(
                 "dpkg-query -W -f='${{Package}} ${{Version}}\\n' {packages} libc6 \
                  > /work/toolchain.txt"
             ),
         }
     }
 }
-
-/// One component MCF knows how to provision.
-pub(crate) struct Component {
-    /// The name the operator types.
-    pub name: &'static str,
-    /// What having it lets MCF claim.
-    pub role: &'static str,
-    /// The base image, pinned by digest — the tag beside it is for a reader.
-    pub image: &'static str,
-    pub image_digest: &'static str,
-    /// Where the source comes from, and exactly which of it.
-    pub source: &'static str,
-    pub commit: &'static str,
-    /// The packages the build needs, installed inside the container and
-    /// recorded with their exact versions.
-    pub packages: &'static [&'static str],
-    /// How this image installs them.
-    pub packaging: Packaging,
-    /// How it is configured and what is built.
-    pub configure: &'static [&'static str],
-    pub targets: &'static [&'static str],
-}
-
-/// Everything MCF can provision.
-pub(crate) const COMPONENTS: &[Component] = &[
-    Component {
-        name: "llama.cpp",
-        role: "the reference implementation MCF's own engine is checked against (B-368): \
-           tokenizers compared exactly, generations at a measured margin, embeddings \
-           at a measured floor",
-        image: "registry.fedoraproject.org/fedora:44",
-        image_digest: "sha256:5a4a491c33973b8173e6134d6f00e77f27cebef581c9b34420b2b6183a6398df",
-        source: "https://github.com/ggml-org/llama.cpp.git",
-        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
-        packages: &["gcc-c++", "cmake", "git", "make"],
-        packaging: Packaging::Dnf,
-        configure: &[
-            "-DCMAKE_BUILD_TYPE=Release",
-            // Portable rather than tuned: a provisioned binary is a condition of
-            // measurements, and `-march=native` would make it a condition nobody
-            // can restate on another machine (§3.4).
-            "-DGGML_NATIVE=OFF",
-            // Self-contained, because the artifact outlives the container that
-            // built it. A shared build bakes the *container's* library path into
-            // every binary — `/work/build/bin`, a directory that exists nowhere on
-            // the host — so the first provisioned oracle loaded nothing without an
-            // incantation (F31). What is provisioned must run where it lands.
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DLLAMA_CURL=OFF",
-            "-DLLAMA_BUILD_TESTS=OFF",
-            "-DLLAMA_BUILD_EXAMPLES=ON",
-        ],
-        // The server is the one reference tool that exposes the model's
-        // distribution — `n_probs` on its completion endpoint — which is what a
-        // comparison of logits rather than texts needs (B-373). Nothing else in
-        // the reference prints a logit.
-        targets: &[
-            "llama-tokenize",
-            "llama-completion",
-            "llama-embedding",
-            "llama-server",
-        ],
-    },
-    Component {
-        name: "llama.cpp-cuda",
-        role: "the same reference, built with a CUDA backend, so a measurement can \
-           be taken on the GPU as well as the CPU. Without it MCF's engine \
-           reports no devices and every timing on this machine is a CPU timing \
-           whether or not a card is installed (F127, F128)",
-        // A CUDA toolkit image, because nvcc is what the backend needs and the
-        // Fedora image beside this one carries none. Compiling needs the toolkit;
-        // it does not need a GPU, so this build is as reproducible as the other.
-        image: "docker.io/nvidia/cuda:12.9.1-devel-ubuntu24.04",
-        image_digest: "sha256:020bc241a628776338f4d4053fed4c38f6f7f3d7eb5919fecb8de313bb8ba47c",
-        source: "https://github.com/ggml-org/llama.cpp.git",
-        // The SAME commit as the CPU build. Two backends of one source are
-        // comparable; two backends of two sources are not, and putting one against
-        // the other is the whole point of having both.
-        commit: "925e1179947ea0c0ebfb0032df18af3a729822be",
-        packages: &["build-essential", "cmake", "git"],
-        packaging: Packaging::Apt,
-        configure: &[
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DGGML_NATIVE=OFF",
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DLLAMA_CURL=OFF",
-            "-DLLAMA_BUILD_TESTS=OFF",
-            "-DLLAMA_BUILD_EXAMPLES=ON",
-            "-DGGML_CUDA=ON",
-            // The architectures compiled for are a condition of the artifact, the
-            // way `-march` would be, so they are stated rather than left to the
-            // toolkit's default. 89 is Ada, 120 is Blackwell — the card here is the
-            // latter, and a binary that ran only here would be one nobody could
-            // restate a measurement with (§3.4).
-            "-DCMAKE_CUDA_ARCHITECTURES=89;120",
-            // Static, for the same reason `BUILD_SHARED_LIBS=OFF` is: what is
-            // provisioned must run where it lands (F31). The first CUDA build
-            // linked the container's libcudart.so.12 and would not start on this
-            // host, which carries CUDA 13. cudart alone was not enough — cuBLAS and
-            // NCCL were still dynamic, and NCCL is for spreading one model across
-            // several cards, which this is not doing. The driver library is the one
-            // thing that must come from the machine, and it does.
-            "-DCMAKE_CUDA_RUNTIME_LIBRARY=Static",
-            "-DGGML_STATIC=ON",
-            "-DGGML_CUDA_NCCL=OFF",
-        ],
-        targets: &[
-            "llama-tokenize",
-            "llama-completion",
-            "llama-embedding",
-            "llama-server",
-        ],
-    },
-    Component {
-        name: "SDL3",
-        role: "a window, keyboard and mouse events, and a 2D renderer for the desktop \
-               application (B-405). It is the ONLY thing vendored for it: MCF draws every \
-               panel, table and button itself, with the layout the terminal console already \
-               uses, so no widget toolkit is admitted and no font library is needed — SDL \
-               carries an 8x8 font of its own",
-        image: "registry.fedoraproject.org/fedora:44",
-        image_digest: "sha256:5a4a491c33973b8173e6134d6f00e77f27cebef581c9b34420b2b6183a6398df",
-        source: "https://github.com/libsdl-org/SDL.git",
-        // release-3.4.14.
-        commit: "147a8ee32dbf9ac02f3794964490687b6bbda1bc",
-        packages: &[
-            "gcc",
-            "cmake",
-            "git",
-            "make",
-            // The windowing systems SDL talks to. Loaded at runtime rather than
-            // linked, so the built library runs on a machine with either.
-            "libX11-devel",
-            "libXext-devel",
-            "libXrandr-devel",
-            "libXcursor-devel",
-            "libXfixes-devel",
-            "libXi-devel",
-            "libXScrnSaver-devel",
-            "libXtst-devel",
-            "libxkbcommon-devel",
-            "wayland-devel",
-            "wayland-protocols-devel",
-            "mesa-libGL-devel",
-            "mesa-libEGL-devel",
-        ],
-        packaging: Packaging::Dnf,
-        configure: &[
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DSDL_SHARED=OFF",
-            // Static, for the same reason every other provisioned artifact is:
-            // what is provisioned must run where it lands (F31).
-            "-DSDL_STATIC=ON",
-            // Position-independent, because what links it is a Rust binary and
-            // Rust links a position-independent executable. Without this the
-            // archive builds, and then the link fails on a relocation nobody
-            // reading the recipe would have predicted.
-            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-            // Everything below is off because MCF does not use it — and because
-            // each one is a part of the tree that is NOT zlib. Switching them
-            // off is not tidiness: it is what makes the shipped tree almost
-            // entirely one licence, and the finding in vendored.md rests on
-            // this exact list.
-            //
-            //   HIDAPI   tri-licensed, one option being GPL-3.0
-            //   VULKAN   pulls a Khronos header under Apache-2.0
-            //   OPENVR   Valve's, BSD-3-Clause
-            //   TESTS    public domain, and not shipped anyway
-            "-DSDL_HIDAPI=OFF",
-            "-DSDL_HIDAPI_JOYSTICK=OFF",
-            "-DSDL_VULKAN=OFF",
-            "-DSDL_RENDER_VULKAN=OFF",
-            "-DSDL_OPENVR=OFF",
-            "-DSDL_TESTS=OFF",
-            "-DSDL_EXAMPLES=OFF",
-            // Subsystems a measuring instrument has no use for. Less code is
-            // less to verify and less to go wrong.
-            "-DSDL_AUDIO=OFF",
-            "-DSDL_CAMERA=OFF",
-            "-DSDL_HAPTIC=OFF",
-            "-DSDL_JOYSTICK=OFF",
-            "-DSDL_SENSOR=OFF",
-            "-DSDL_POWER=OFF",
-        ],
-        targets: &["SDL3-static"],
-    },
-];
 
 /// Where a component lands when the operator does not say.
 ///
@@ -286,6 +96,55 @@ fn prefix_for(component: &Component, root: &Path) -> PathBuf {
 }
 
 /// Lists what can be provisioned and what is.
+/// What a daemon that is *already running* says it can reach.
+///
+/// **Asked, not started.** Listing what MCF can build is a question about the
+/// disk, and a question about the disk that started a daemon would be MCF
+/// doing work nobody asked for (§3.8). So this connects where something is
+/// already listening and gives up quietly everywhere else.
+///
+/// What it adds is the one thing the disk cannot answer: whether a prefix that
+/// exists is a build MCF can actually reach as an engine. A directory is not a
+/// binary, and treating the two as one is F31.
+fn reachable_engines() -> std::collections::BTreeMap<String, bool> {
+    let mut found = std::collections::BTreeMap::new();
+    let Some(socket) = crate::serve::socket_path() else {
+        return found;
+    };
+    let Ok(connection) = UnixStream::connect(&socket) else {
+        return found;
+    };
+    let mut connection = connection;
+    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    if writeln!(connection, "{}", Request::Components.to_line())
+        .and_then(|()| connection.flush())
+        .is_err()
+    {
+        return found;
+    }
+    let mut line = String::new();
+    if BufReader::new(&connection).read_line(&mut line).is_err() {
+        return found;
+    }
+    let Ok(answer) = Answer::read(&line) else {
+        return found;
+    };
+    if !answer.served {
+        return found;
+    }
+    if let Some(listed) = answer.body.get("components").and_then(Value::as_list) {
+        for held in listed {
+            if let Some(name) = held.get("name").and_then(Value::as_text) {
+                found.insert(
+                    name.to_owned(),
+                    matches!(held.get("usable_engine"), Some(Value::Bool(true))),
+                );
+            }
+        }
+    }
+    found
+}
+
 pub(crate) fn list(into: Option<&str>) -> Response {
     let root = match root_from(into) {
         Ok(root) => root,
@@ -296,6 +155,7 @@ pub(crate) fn list(into: Option<&str>) -> Response {
             };
         }
     };
+    let reachable = reachable_engines();
     let mut lines = vec![format!(
         "MCF can provision {} component(s); prefixes under {}",
         COMPONENTS.len(),
@@ -318,6 +178,15 @@ pub(crate) fn list(into: Option<&str>) -> Response {
             component.image,
             component.image_digest,
         ));
+        // Only where a daemon is up to be asked: silence here is "nobody was
+        // asked", which is not the same as "it cannot be reached".
+        if let Some(usable) = reachable.get(component.name) {
+            lines.push(if *usable {
+                "    the daemon reaches this as an engine".to_owned()
+            } else {
+                "    the daemon does NOT reach this as an engine".to_owned()
+            });
+        }
     }
     Response {
         text: lines.join("\n"),
@@ -643,8 +512,8 @@ fn script_for(component: &Component) -> String {
          cmake -S /work/source -B /work/build {configure} > /work/configure.log 2>&1\n\
          cmake --build /work/build -j --target {targets} > /work/build.log 2>&1\n",
         name = component.name,
-        install = component.packaging.install(&component.packages.join(" ")),
-        record = component.packaging.record(&component.packages.join(" ")),
+        install = install_packages(component.packaging, &component.packages.join(" ")),
+        record = record_packages(component.packaging, &component.packages.join(" ")),
         source = component.source,
         commit = component.commit,
         configure = component

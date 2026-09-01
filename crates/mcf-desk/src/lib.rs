@@ -74,11 +74,81 @@ pub const ACTIONS: &[Action] = &[
         reaches: Some("Status"),
     },
     Action {
+        key: "click Components",
+        does: "show what MCF can build and what is already here",
+        reaches: Some("Components"),
+    },
+    Action {
+        key: "Ctrl+V",
+        does: "paste a reference into the field being typed into",
+        reaches: None,
+    },
+    Action {
         key: "q or Escape",
         does: "close the window",
         reaches: None,
     },
 ];
+
+/// What is being held, as the monitor needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hosted {
+    /// Which model, by the path the daemon holds it under.
+    pub model: String,
+    /// Where a caller reaches it. The one fact an API is for.
+    pub address: String,
+    /// Since when, as the daemon stamped it.
+    pub since: String,
+    /// The context window it is held at, where the daemon said.
+    pub context: Option<u64>,
+}
+
+/// One component MCF can build, as this window needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Component {
+    /// What it is called.
+    pub name: String,
+    /// Which source, exactly — the first twelve of the commit, as the command
+    /// line prints it.
+    pub commit: String,
+    /// What having it lets MCF claim.
+    pub role: String,
+    /// The base image it is built in.
+    pub image: String,
+    /// Whether it is here and finished — the provenance beside it, which the
+    /// builder writes last.
+    pub provisioned: bool,
+    /// Whether anything is there at all. A prefix with no provenance is a run
+    /// that stopped partway, which is a third state and not an absence.
+    pub present: bool,
+    /// Whether MCF can actually reach it as an engine. A directory that exists
+    /// is not the same as a build that finished.
+    pub usable_engine: bool,
+    /// Where it went, or where it would go.
+    pub prefix: String,
+}
+
+/// Reads one component out of what the daemon said.
+#[must_use]
+pub fn component_from(held: &Value) -> Component {
+    let text = |key: &str| {
+        held.get(key)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let flag = |key: &str| matches!(held.get(key), Some(Value::Bool(true)));
+    Component {
+        name: text("name"),
+        commit: text("commit").chars().take(12).collect(),
+        role: text("role"),
+        image: text("image"),
+        provisioned: flag("provisioned"),
+        present: flag("present"),
+        usable_engine: flag("usable_engine"),
+        prefix: text("prefix"),
+    }
+}
 
 /// Which screen is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +162,8 @@ pub enum Page {
     /// Everything held — the same screen as [`Self::Host`], as the console
     /// has it, because *what is held* and *what to host* are one list.
     Models,
+    /// What MCF can build, and what it has.
+    Components,
     /// How MCF is set up.
     Settings,
     /// Leave.
@@ -101,6 +173,13 @@ pub enum Page {
     Adding,
     /// A model, held and answering.
     Hosting,
+    /// What a prompt does to a model.
+    ///
+    /// Reached from Diagnostics rather than from the column: it is a
+    /// diagnostic about a prompt, it needs the model Diagnostics already has
+    /// chosen, and the console's menu row has four columns of slack where a
+    /// seventh entry needs nine (B-072).
+    Prompt,
 }
 
 impl Page {
@@ -114,9 +193,9 @@ impl Page {
     /// (B-072).
     pub const MENU: &'static [(Self, &'static str)] = &[
         (Self::Monitor, "Monitor"),
-        (Self::Host, "Host"),
-        (Self::Diagnostics, "Diagnostics"),
         (Self::Models, "Models"),
+        (Self::Diagnostics, "Diagnostics"),
+        (Self::Components, "Components"),
         (Self::Settings, "Settings"),
         (Self::Exit, "Exit"),
     ];
@@ -126,11 +205,13 @@ impl Page {
     pub fn section(self) -> Self {
         match self {
             Self::Monitor => Self::Monitor,
-            // The two screens Host's actions lead to belong to Host, so the
-            // menu still shows where you came from.
-            Self::Host | Self::Adding | Self::Hosting => Self::Host,
-            Self::Diagnostics => Self::Diagnostics,
-            Self::Models => Self::Models,
+            // Host was a second entry for the list Models already shows —
+            // `view::host` draws both — so the column carried one screen
+            // twice. The screens its actions lead to belong to Models now,
+            // and the menu still shows where you came from.
+            Self::Host | Self::Adding | Self::Hosting | Self::Models => Self::Models,
+            Self::Diagnostics | Self::Prompt => Self::Diagnostics,
+            Self::Components => Self::Components,
             Self::Settings => Self::Settings,
             Self::Exit => Self::Exit,
         }
@@ -603,6 +684,8 @@ pub enum Act {
     StopHosting,
     /// Close the window.
     Close,
+    /// Take the typed prompt apart on the chosen model.
+    ReportPrompt,
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -635,6 +718,8 @@ pub enum Doing {
     Measuring(job::Job),
     /// Waiting for a model to answer.
     Answering(job::Job),
+    /// Taking a prompt apart.
+    Reporting(job::Job),
 }
 
 impl Doing {
@@ -643,7 +728,8 @@ impl Doing {
     pub fn job(&self) -> Option<&job::Job> {
         match self {
             Self::Nothing => None,
-            Self::Listing(job)
+            Self::Reporting(job)
+            | Self::Listing(job)
             | Self::Downloading(job)
             | Self::Measuring(job)
             | Self::Answering(job)
@@ -682,6 +768,8 @@ pub struct Desk {
     pub said: String,
     /// The tests offered on the diagnostics screen.
     pub tests: Vec<Test>,
+    /// What MCF can build, and which of it is here.
+    pub components: Vec<Component>,
     /// What the chosen model would be hosted under, and what MCF advised.
     ///
     /// Both, because a run under a changed setting is not a run under the
@@ -692,7 +780,7 @@ pub struct Desk {
     /// Why there are no settings, where there are none.
     pub no_settings: Option<String>,
     /// What is being hosted: where it is reachable, and since when.
-    pub hosted: Option<(String, String)>,
+    pub hosted: Option<Hosted>,
     /// The context window a measurement is set up for.
     ///
     /// Choosing it implies every power of two below it, which is why the
@@ -726,6 +814,7 @@ impl Desk {
             doing: Doing::Nothing,
             said: String::new(),
             tests: tests(),
+            components: Vec::new(),
             settings: None,
             recommended: None,
             no_settings: None,
@@ -740,13 +829,48 @@ impl Desk {
     /// Whether the screen showing has a field somebody could be typing into.
     #[must_use]
     pub fn takes_typing(&self) -> bool {
-        matches!(self.page, Page::Adding | Page::Hosting)
+        matches!(self.page, Page::Adding | Page::Hosting | Page::Prompt)
+    }
+
+    /// The longest a pasted value may be.
+    ///
+    /// An owner/repository reference and a hub URL are both far shorter than
+    /// this. The cap is here because a clipboard can hold a whole document and
+    /// a field that accepted one would be a field that stopped drawing.
+    const PASTE_LIMIT: usize = 512;
+
+    /// Adds pasted text to the field, as much of it as is a value.
+    ///
+    /// **What is on the clipboard was put there by something else.** A
+    /// reference copied out of a browser arrives with a trailing newline; one
+    /// copied out of a terminal can arrive with a tab or a stray control
+    /// character. None of those are part of a name, and a field that kept them
+    /// would send them to a hub and report a refusal the person could not see
+    /// the cause of. So this takes the text's first line and drops what is not
+    /// printable, rather than refusing a paste that is almost right.
+    pub fn paste(&mut self, text: &str) {
+        let first = text.lines().next().unwrap_or_default();
+        let kept: String = first
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(Self::PASTE_LIMIT)
+            .collect();
+        let kept = kept.trim();
+        if kept.is_empty() {
+            return;
+        }
+        let room = Self::PASTE_LIMIT.saturating_sub(self.typed.chars().count());
+        if room == 0 {
+            return;
+        }
+        self.typed.extend(kept.chars().take(room));
     }
 
     /// What pressing Return means on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
             Page::Adding => self.look_up(),
+            Page::Prompt => self.report_prompt(),
             Page::Hosting => {
                 if let Some(at) = self.chosen {
                     self.ask(at);
@@ -764,6 +888,7 @@ impl Desk {
             | Doing::Downloading(job)
             | Doing::Measuring(job)
             | Doing::Answering(job)
+            | Doing::Reporting(job)
             | Doing::Hosting(job) => job.drain(),
         };
         if !heard {
@@ -924,6 +1049,7 @@ impl Desk {
                 self.chosen = Some(at);
                 self.open = None;
             }
+            Act::ReportPrompt => self.report_prompt(),
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
         }
@@ -973,18 +1099,31 @@ impl Desk {
     pub fn read_hosted(&mut self) {
         self.hosted = match ask(&self.socket, &Request::Hosted) {
             Ok(answer) if answer.served => {
-                match answer.body.get("hosting").and_then(Value::as_text) {
-                    Some(model) => Some((
-                        model.to_owned(),
-                        answer
+                answer
+                    .body
+                    .get("hosting")
+                    .and_then(Value::as_text)
+                    .map(|model| Hosted {
+                        model: model.to_owned(),
+                        address: answer
                             .body
                             .get("address")
                             .and_then(Value::as_text)
-                            .unwrap_or("")
+                            .unwrap_or_default()
                             .to_owned(),
-                    )),
-                    None => None,
-                }
+                        since: answer
+                            .body
+                            .get("since")
+                            .and_then(Value::as_text)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        context: answer
+                            .body
+                            .get("settings")
+                            .and_then(|settings| settings.get("context"))
+                            .and_then(Value::as_integer)
+                            .and_then(|context| u64::try_from(context).ok()),
+                    })
             }
             _ => None,
         };
@@ -1074,6 +1213,30 @@ impl Desk {
         ));
     }
 
+    /// Asks what the typed prompt does to the chosen model.
+    ///
+    /// Many generations behind one request, so it is a job like a measurement
+    /// rather than something the window waits on: a screen that froze for
+    /// minutes is one a person cannot tell from a broken one (B-227).
+    pub fn report_prompt(&mut self) {
+        let asked = self.typed.trim().to_owned();
+        if asked.is_empty() {
+            return;
+        }
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            return;
+        };
+        self.doing = Doing::Reporting(job::Job::start(
+            self.socket.clone(),
+            Request::PromptReport {
+                model: held.path.clone(),
+                prompt: asked,
+                seed: 41,
+            },
+            format!("taking the prompt apart on {}", held.name),
+        ));
+    }
+
     /// Fetches one published file.
     pub fn download(&mut self, reference: &str, file: &str) {
         self.doing = Doing::Downloading(job::Job::start(
@@ -1134,6 +1297,21 @@ impl Desk {
     }
 
     /// Asks MCF what it is holding.
+    /// Asks what MCF can build and what is already here.
+    ///
+    /// A refusal leaves the list alone rather than emptying it: a daemon that
+    /// stopped answering has not un-built anything, and a screen that went
+    /// blank would say it had.
+    pub fn read_components(&mut self) {
+        if let Ok(answer) = ask(&self.socket, &Request::Components)
+            && answer.served
+            && let Some(listed) = answer.body.get("components").and_then(Value::as_list)
+        {
+            self.components = listed.iter().map(component_from).collect();
+        }
+    }
+
+    /// Asks MCF what it is holding.
     pub fn refresh(&mut self) {
         match ask(&self.socket, &Request::Holding) {
             Ok(answer) if answer.served => {
@@ -1187,12 +1365,13 @@ impl Desk {
         match &self.doing {
             Doing::Nothing => (
                 "IDLE".to_owned(),
-                "nothing is being served — Host holds a model here".to_owned(),
+                "nothing is being served — Models holds a model here".to_owned(),
             ),
             Doing::Listing(job)
             | Doing::Downloading(job)
             | Doing::Measuring(job)
             | Doing::Answering(job)
+            | Doing::Reporting(job)
             | Doing::Hosting(job) => (
                 if job.finished {
                     "IDLE".to_owned()
@@ -1350,6 +1529,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     desk.refresh();
     desk.sample();
     desk.read_hosted();
+    desk.read_components();
 
     let mut mouse = ui::Mouse::default();
     let mut last = std::time::Instant::now();
@@ -1388,6 +1568,21 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                 }
                 sdl::EVENT_KEY_DOWN => match sdl::event_key(&event) {
                     sdl::KEY_ESCAPE => return Ok(()),
+                    // Paste. Typing arrives already composed as text input,
+                    // but a paste never does: Ctrl+V is a key event and the
+                    // characters are on the clipboard, so a field that only
+                    // read text input could be typed into and not pasted
+                    // into — which is what a person hits first with an
+                    // owner/repository name they copied from a browser.
+                    key if key == u32::from(b'v')
+                        && sdl::event_has_ctrl(&event)
+                        && desk.takes_typing() =>
+                    {
+                        if let Some(text) = paint.window().and_then(sdl::Window::clipboard_text)
+                        {
+                            desk.paste(&text);
+                        }
+                    }
                     sdl::KEY_BACKSPACE if desk.takes_typing() => {
                         let _removed = desk.typed.pop();
                     }
@@ -1401,6 +1596,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                         desk.refresh();
                         desk.sample();
                         desk.read_hosted();
+                        desk.read_components();
                     }
                     _ => {}
                 },

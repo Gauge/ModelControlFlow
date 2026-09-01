@@ -104,6 +104,8 @@ struct Console {
     status: Option<Result<Value, String>>,
     models: Vec<Held>,
     tests: Vec<screens::diagnostics::Test>,
+    /// What MCF can build, and which of it is here.
+    components: Vec<(String, String, bool, bool, bool)>,
     said: Option<(String, Ink)>,
     sampler: machine::Sampler,
     reading: machine::Reading,
@@ -155,6 +157,7 @@ impl Console {
             status: None,
             models: Vec::new(),
             tests: screens::diagnostics::tests(),
+            components: Vec::new(),
             said: None,
             sampler: machine::Sampler::new(),
             reading: machine::Reading::default(),
@@ -169,6 +172,30 @@ impl Console {
             Ok(answer) => Err(why(&answer.body)),
             Err(error) => Err(error),
         });
+        if let Ok(answer) = ask(&self.socket, &Request::Components)
+            && answer.served
+            && let Some(listed) = answer.body.get("components").and_then(Value::as_list)
+        {
+            self.components = listed
+                .iter()
+                .map(|held| {
+                    let text = |key: &str| {
+                        held.get(key)
+                            .and_then(Value::as_text)
+                            .unwrap_or_default()
+                            .to_owned()
+                    };
+                    let flag = |key: &str| matches!(held.get(key), Some(Value::Bool(true)));
+                    (
+                        text("name"),
+                        text("commit").chars().take(12).collect(),
+                        flag("provisioned"),
+                        flag("present"),
+                        flag("usable_engine"),
+                    )
+                })
+                .collect();
+        }
         self.models = match ask(&self.socket, &Request::Holding) {
             Ok(answer) if answer.served => answer
                 .body
@@ -255,7 +282,7 @@ impl Console {
     /// How many rows the open screen has to move through.
     fn rows(&self) -> usize {
         match self.at {
-            Where::Host | Where::Models => self.models.len(),
+            Where::Models => self.models.len(),
             Where::Diagnostics => self.tests.len(),
             _ => 0,
         }
@@ -289,7 +316,7 @@ fn draw(console: &Console, into: &mut Screen) {
         Where::Monitor => {
             screens::monitor::draw(into, from, &console.reading, &screens::monitor::Doing::Idle);
         }
-        Where::Host | Where::Models => screens::host::draw(
+        Where::Models => screens::host::draw(
             into,
             from + 1,
             &console.models,
@@ -309,6 +336,43 @@ fn draw(console: &Console, into: &mut Screen) {
                 .map(|resolved| resolved.context);
             screens::diagnostics::draw(into, from, model, window, &console.tests, console.row);
         }
+        Where::Components => {
+            into.put(2, from + 1, "COMPONENTS", Ink::Heading);
+            if console.components.is_empty() {
+                into.put(2, from + 3, "Unknown", Ink::Quiet);
+            } else {
+                let mut row = from + 3;
+                for (name, commit, provisioned, present, usable) in &console.components {
+                    // Three states, not two. The middle one is a run that
+                    // stopped partway. Whether MCF reaches it as an engine is
+                    // a separate fact: not every component is one.
+                    let said = if *provisioned && *usable {
+                        "provisioned; MCF reaches this as an engine"
+                    } else if *provisioned {
+                        "provisioned"
+                    } else if *present {
+                        "incomplete — a run stopped partway"
+                    } else {
+                        "not provisioned"
+                    };
+                    into.put(2, row, &format!("{name}@{commit}"), Ink::Heading);
+                    into.put(
+                        2,
+                        row + 1,
+                        said,
+                        if *provisioned { Ink::Quiet } else { Ink::Refusal },
+                    );
+                    row += 3;
+                }
+                into.put(
+                    2,
+                    row,
+                    "`mcf provision <component>` builds one",
+                    Ink::Quiet,
+                );
+            }
+        }
+        Where::Prompt => prompt_screen(into, from),
         Where::Settings => {
             into.put(2, from + 1, "SETTINGS", Ink::Heading);
             into.put(2, from + 3, "nothing to set yet", Ink::Quiet);
@@ -330,6 +394,32 @@ fn draw(console: &Console, into: &mut Screen) {
         into.put(2, last, said, *ink);
     }
     screens::close(into, from);
+}
+
+/// What a prompt does, as the console shows it.
+///
+/// Its own function because `draw` is one arm per screen under a line cap: a
+/// screen written inside it makes every other one harder to find.
+fn prompt_screen(into: &mut Screen, from: usize) {
+    into.put(2, from + 1, "WHAT A PROMPT DOES", Ink::Heading);
+            into.put(
+                2,
+                from + 3,
+                "`mcf prompt <model> --prompt \"...\"` takes one apart, sentence by sentence",
+                Ink::Quiet,
+            );
+            into.put(
+                2,
+                from + 5,
+                "one generation for the prompt, one for each sentence left out, one per seed",
+                Ink::Quiet,
+            );
+            into.put(
+                2,
+                from + 7,
+                "the reading is an ordering, not relevance: removing anything shifts what follows",
+                Ink::Quiet,
+            );
 }
 
 /// Runs until the operator leaves.
@@ -444,7 +534,7 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 console.at = chosen;
                 console.said = None;
                 console.on_buttons = false;
-                if matches!(chosen, Where::Host | Where::Models | Where::Diagnostics) {
+                if matches!(chosen, Where::Models | Where::Diagnostics) {
                     console.refresh();
                 }
             }

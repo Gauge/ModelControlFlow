@@ -106,6 +106,30 @@ const REACHES: &[Reaches] = &[
         module: "crates/mcf-cli/src/crosscheck.rs",
         subcommand: Some("cross-check"),
     },
+    // The laboratory asks a model to do the work, which is a generation and
+    // therefore the daemon's. It starts one where none is running, exactly as
+    // every other asking command does — a tier that drives `eval` is a tier
+    // that is measuring a model, which is what a daemon is for (B-110).
+    Reaches {
+        module: "crates/mcf-cli/src/eval.rs",
+        subcommand: Some("eval"),
+    },
+    // A prompt report is many generations, and generations are the daemon's.
+    // It starts one where none is running, as every asking command does.
+    Reaches {
+        module: "crates/mcf-cli/src/prompt.rs",
+        subcommand: Some("prompt"),
+    },
+    // Listing what MCF can build reads the disk, and asks a daemon only where
+    // one is ALREADY listening — it never starts one, because a question about
+    // the disk that started a daemon would be MCF doing work nobody asked for
+    // (§3.8). What it asks for is the one thing the disk cannot answer:
+    // whether a prefix that exists is a build the daemon can reach as an
+    // engine (F31). A tier that drives `provision --list` inherits nothing.
+    Reaches {
+        module: "crates/mcf-cli/src/provision.rs",
+        subcommand: Some("provision"),
+    },
     // The terminal application is a client of the same socket. It runs until
     // the operator quits and no tier drives it, but being written down is what
     // keeps that true (F104).

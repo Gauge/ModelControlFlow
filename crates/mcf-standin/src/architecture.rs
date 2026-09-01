@@ -139,6 +139,13 @@ pub fn pre_tokenizer(named: &str) -> Option<Split> {
         | "lfm2" | "jina-v5-nano" | "smaug-bpe" => Some(Split::ModernThreeDigits),
         "qwen2" | "qwen35" | "deepseek-r1-qwen" | "kormo" | "f2llmv2" | "megrez" | "stablelm2"
         | "hunyuan" | "solar-open" => Some(Split::ModernOneDigit),
+        // Its symbol run takes nothing after it, where `qwen2`'s takes the
+        // newlines: a different cut, so a different expression (F23).
+        "seed-coder" => Some(Split::ModernOneDigitSymbolsAlone),
+        // Letters cut where their case changes. Grouped with these three in
+        // the reference implementation, which is where the grouping comes
+        // from rather than from a resemblance.
+        "gpt-4o" | "llama4" | "kanana2" | "talkie" => Some(Split::CasePartitionedThreeDigits),
         // `default` is deliberately absent. It is not GPT-2's expression — it
         // is four expressions including one that splits on punctuation — and a
         // file that names it, or names none at all, is refused rather than run
@@ -153,7 +160,8 @@ pub fn pre_tokenizer(named: &str) -> Option<Split> {
 ///
 /// One name per expression rather than all of them: a refusal that printed
 /// thirty-eight names would be a refusal nobody reads to the end.
-pub const PRE_TOKENIZERS: &[&str] = &["gpt-2", "smollm", "llama-bpe", "qwen2"];
+pub const PRE_TOKENIZERS: &[&str] =
+    &["gpt-2", "smollm", "llama-bpe", "qwen2", "seed-coder", "gpt-4o"];
 
 /// A pre-tokenizer name of each shape, for callers that need one and should not
 /// be spelling a family into their own source.
@@ -164,6 +172,8 @@ pub fn a_pre_tokenizer(split: Split) -> &'static str {
         Split::Gpt2DigitsApart => "smollm",
         Split::ModernThreeDigits => "llama-bpe",
         Split::ModernOneDigit => "qwen2",
+        Split::ModernOneDigitSymbolsAlone => "seed-coder",
+        Split::CasePartitionedThreeDigits => "gpt-4o",
     }
 }
 
