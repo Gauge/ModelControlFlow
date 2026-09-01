@@ -111,7 +111,9 @@ pub mod declined;
 pub mod embedding;
 pub mod language;
 pub mod structured;
+pub mod thinking;
 pub mod tools;
+pub mod vision;
 
 /// The bracketed markers in a piece of text, in order of first appearance.
 ///

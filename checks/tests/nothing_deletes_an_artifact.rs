@@ -37,6 +37,23 @@ struct Deletes {
 /// Every deletion in MCF's non-test code.
 const DECLARED: &[Deletes] = &[
     Deletes {
+        file: "crates/mcf-cli/src/eval.rs",
+        calls: 1,
+        what: "the scratch directory the laboratory wrote a model's answer into, once every \
+               task has been checked. What is removed is text a model emitted seconds earlier \
+               and the program MCF wrapped around it — never an artifact MCF acquired, and \
+               never the record, which keeps what the answers did (B-027)",
+    },
+    Deletes {
+        file: "crates/mcf-cli/src/probe.rs",
+        calls: 1,
+        what: "the picture the vision probe just drew, once the turn that was shown it is \
+               over. MCF computes those bytes itself — the shapes are drawn by \
+               `probes::vision`, not read from anywhere — so what is removed is a temporary \
+               MCF made, never a file it acquired, and the record keeps what the model said \
+               about it rather than the file (B-027)",
+    },
+    Deletes {
         file: "crates/mcf-cli/src/provision.rs",
         calls: 1,
         what: "a provisioned component's prefix, in `remove`, which carries a reason and is \

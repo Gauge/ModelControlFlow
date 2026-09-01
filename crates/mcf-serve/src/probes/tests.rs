@@ -75,6 +75,16 @@ fn a_vocabulary(tokens: &[String], with_template: bool) -> Vec<u8> {
     out
 }
 
+/// A vocabulary holding the given markers as real tokens.
+///
+/// A spelling that is not a token is text and cannot open anything (D46, F26),
+/// so a probe about markers needs a file that actually holds them.
+pub(super) fn with_markers(markers: &[&str]) -> Vec<u8> {
+    let mut tokens = vec!["<s>", "\u{2581}a", "a"];
+    tokens.extend_from_slice(markers);
+    a_vocabulary(&with_bytes(&tokens), false)
+}
+
 /// A vocabulary with no chat tokens at all.
 pub(super) fn plain() -> Vec<u8> {
     a_vocabulary(&with_bytes(&["<s>", "\u{2581}a", "a"]), false)

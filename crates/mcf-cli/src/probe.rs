@@ -56,6 +56,13 @@ const CEILING: usize = 1024;
 /// have happened yet.
 const TOOL_BUDGET: usize = 160;
 
+/// What a thinking trial is given.
+///
+/// Deliberately generous: the probe asks how much of a turn happens before the
+/// answer does, and a budget that cut the turn short would measure the budget —
+/// which is the defect it exists to find (F106).
+const THINKING_BUDGET: usize = 400;
+
 /// The token budget one structured-output trial gets.
 ///
 /// **Eight hundred, and the number was measured rather than chosen** (F106).
@@ -259,8 +266,20 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
             .observed()
             .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
     ));
+    lines.extend(thinking_lines(
+        &socket,
+        &path,
+        &bytes,
+        &engine,
+        asked,
+        probed
+            .outcome
+            .observed()
+            .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
+    ));
     lines.extend(language_lines(&path, &bytes));
     lines.extend(embedding_lines(&path, &bytes));
+    lines.extend(vision_lines(&path, &bytes));
     lines.extend(declined_lines());
     lines.push(
         "  Nothing was configured. A probe writes what it observed; changing how MCF addresses \
@@ -572,6 +591,405 @@ fn language_fields(
             ),
         ),
     ]
+}
+
+/// How much of a turn happens before the answer does (B-421).
+fn thinking_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    bytes: &[u8],
+    engine: &str,
+    asked: &str,
+    addressing: Option<&mcf_serve::probes::Addressing>,
+) -> Vec<String> {
+    // Through the addressing this run just measured: a turn put to a model the
+    // way it was NOT trained is a turn that says nothing about where its
+    // tokens go.
+    let mut ask = |budget: usize| {
+        let identifiers = addressing.and_then(|held| {
+            mcf_standin::gguf::parse(bytes)
+                .ok()
+                .and_then(|file| mcf_standin::tokenizer::Vocabulary::read(&file).ok())
+                .and_then(|vocabulary| {
+                    held.wrap(&vocabulary, mcf_serve::probes::thinking::QUESTION)
+                })
+        });
+        let spoken = match identifiers {
+            Some(held) => mcf_serve::probes::spoken(
+                socket,
+                path,
+                "",
+                Some(&held),
+                budget,
+                Some(asked),
+            ),
+            None => mcf_serve::probes::spoken(
+                socket,
+                path,
+                mcf_serve::probes::thinking::QUESTION,
+                None,
+                budget,
+                Some(asked),
+            ),
+        };
+        (spoken.trial, spoken.text)
+    };
+    let probed = mcf_serve::probes::thinking::thinking(
+        path,
+        bytes,
+        TRIALS,
+        THINKING_BUDGET,
+        engine,
+        &mut ask,
+    );
+
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(spends) => {
+            lines.push(format!(
+                " markers  this file holds {} it could be inside{}",
+                spends.available.len(),
+                match spends.available.first() {
+                    Some(first) => format!(", the first of them {first}"),
+                    None => String::new(),
+                }
+            ));
+            // What could not be paired is said, so that *nothing was found* is
+            // never read as *nothing was there* (A7).
+            if !spends.unpairable.is_empty() {
+                lines.push(format!(
+                    "          and {} it could not pair, whose insides are not measured here{}",
+                    spends.unpairable.len(),
+                    match spends.unpairable.first() {
+                        Some(first) => format!(" — {first} among them"),
+                        None => String::new(),
+                    }
+                ));
+            }
+            match &spends.used {
+                Some(marker) => lines.push(format!(
+                    " {marker} opened in {} of {} turn(s), closed in {}",
+                    spends.opened, spends.trials, spends.closed
+                )),
+                None => lines.push(format!(
+                    " none of them opened in {} turn(s)",
+                    spends.trials
+                )),
+            }
+            // From the observation, before either verdict (A9, F106).
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                engine,
+                thinking_fields(spends),
+            )));
+            lines.push(String::new());
+            lines.push(thinking_verdict(spends));
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            lines.push(" which licenses nothing, and is not a negative result".to_owned());
+        }
+        other => lines.push(format!(" {other:?}")),
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} token(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
+}
+
+/// What the observation means, said after it is recorded (A9).
+fn thinking_verdict(spends: &mcf_serve::probes::thinking::Spends) -> String {
+    let still_going = spends.opened.saturating_sub(spends.closed);
+    if still_going > 0 {
+        return format!(
+            " DIVERGENCE {still_going} turn(s) were still inside their marker when the budget \
+             of {} ran out. What was measured there is the budget and not the model, and MCF \
+             allows 32 tokens unless told otherwise",
+            spends.budget
+        );
+    }
+    if spends.closed > 0 {
+        return format!(
+            " VERIFIED   a turn spends up to {} word(s) inside its marker before the answer \
+             begins, so a budget that does not allow for them measures the budget",
+            spends.longest_inside
+        );
+    }
+    " VERIFIED   no turn opened a marker, so an answer here begins at the first token and \
+     needs no allowance beyond itself"
+        .to_owned()
+}
+
+/// What the record keeps of a thinking observation.
+fn thinking_fields(
+    spends: &mcf_serve::probes::thinking::Spends,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        (
+            "marker",
+            spends
+                .used
+                .clone()
+                .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
+        ),
+        ("opened", mcf_record::json::Value::Integer(as_count(spends.opened))),
+        ("closed", mcf_record::json::Value::Integer(as_count(spends.closed))),
+        ("trials", mcf_record::json::Value::Integer(as_count(spends.trials))),
+        (
+            "longest_inside_words",
+            mcf_record::json::Value::Integer(as_count(spends.longest_inside)),
+        ),
+        ("budget", mcf_record::json::Value::Integer(as_count(spends.budget))),
+    ]
+}
+
+/// A count as the record holds numbers.
+fn as_count(held: usize) -> i64 {
+    i64::try_from(held).unwrap_or(-1)
+}
+
+/// Whether this file says it is a vision projector.
+///
+/// **Read, not assumed from the name.** A projector declares `clip.*` — a
+/// vision encoder, a projector type, the geometry of the patches it makes —
+/// and that declaration is what makes it one. `mmproj` is a convention every
+/// publisher happens to follow, and a convention is a thing that holds until
+/// it does not; a file MCF believed because of its name would be a file MCF
+/// had not read (A21).
+///
+/// From a bounded read of the front, because the directory sits there and a
+/// projector is a gigabyte nobody needs in memory to answer this.
+fn declares_a_vision_encoder(path: &std::path::Path) -> bool {
+    use std::io::Read as _;
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [4_u64 << 20, 64 << 20] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        if std::fs::File::open(path)
+            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
+            .is_err()
+        {
+            return false;
+        }
+        if let Ok(file) = mcf_standin::gguf::parse(&prefix) {
+            return file.get("clip.has_vision_encoder").is_some()
+                || file.get("clip.projector_type").is_some();
+        }
+        if take >= held {
+            return false;
+        }
+    }
+    false
+}
+
+/// The projector that belongs to this model, where its repository published one.
+///
+/// **Beside it, which is where hubs put it and not where MCF wants it.** A
+/// projector is half of a multimodal artifact and travels as a separate file,
+/// so a model acquired without it is a model that cannot be shown a picture —
+/// through no fault of its own. MCF looks in the directory the weights landed
+/// in, which is where `mcf pull` of the same repository would have put it.
+///
+/// The name narrows and the declaration decides: every publisher calls it
+/// `mmproj`, so that is a cheap way to avoid reading the front of every model
+/// in the directory — but what admits a file is `clip.*`, read out of it.
+fn projector_beside(model: &std::path::Path) -> Option<std::path::PathBuf> {
+    let directory = model.parent()?;
+    let mut candidates: Vec<std::path::PathBuf> = std::fs::read_dir(directory)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let is_gguf = path
+                .extension()
+                .and_then(|held| held.to_str())
+                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"));
+            let is_named_like_one = path
+                .file_stem()
+                .and_then(|held| held.to_str())
+                .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"));
+            is_gguf && is_named_like_one && path != model
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().find(|path| declares_a_vision_encoder(path))
+}
+
+/// Whether an image reaches this model at all (B-057, B-320).
+///
+/// **Through the provisioned tool that takes one.** MCF's own engine implements
+/// text transformers and nothing else, so this question could not be put at all
+/// until a provisioned engine carried `llama-mtmd-cli`. Where it does not, the
+/// probe says the tool is missing rather than that the model cannot see: the
+/// difference between those two is the confusion A21 exists to prevent.
+fn vision_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
+    let home = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf));
+    let tool = home.as_ref().and_then(|home| {
+        mcf_serve::engines::discover(home)
+            .into_iter()
+            .find_map(|engine| engine.tool("llama-mtmd-cli").map(|at| (engine.commit, at)))
+    });
+    let projector = projector_beside(path);
+
+    let Some((commit, binary)) = tool else {
+        return vision_result_lines(path, &mcf_serve::probes::vision::without_a_tool(path));
+    };
+
+    let engine = format!("provisioned llama.cpp @{commit}, driven with an image");
+    let mut look = |image: &[u8], question: &str| {
+        let projector = projector.as_ref()?;
+        // The picture goes to a file because the tool takes a path: it is
+        // written under the model's own directory so that a run leaves nothing
+        // anywhere else, and removed when the turn is over.
+        let at = std::env::temp_dir().join(format!("mcf-probe-{}.png", std::process::id()));
+        std::fs::write(&at, image).ok()?;
+        let spoke = std::process::Command::new(&binary)
+            .arg("-m")
+            .arg(path)
+            .arg("--mmproj")
+            .arg(projector)
+            .arg("--image")
+            .arg(&at)
+            .arg("-p")
+            .arg(question)
+            .arg("-n")
+            .arg("40")
+            .arg("--no-warmup")
+            // The seed is held still so that what differs between the two
+            // turns is the picture and nothing else (D19).
+            .arg("--seed")
+            .arg("41")
+            .output();
+        let _gone = std::fs::remove_file(&at);
+        let spoke = spoke.ok()?;
+        let said = String::from_utf8_lossy(&spoke.stdout).trim().to_owned();
+        if said.is_empty() {
+            return None;
+        }
+        // What it spent, in words rather than identifiers: the tool does not
+        // report a token count, and a figure MCF made up would be one nobody
+        // measured (A7).
+        let spent = said.split_whitespace().count();
+        Some((said, spent))
+    };
+
+    let probed = mcf_serve::probes::vision::vision(
+        path,
+        bytes,
+        projector.as_deref(),
+        &engine,
+        &mut look,
+    );
+    vision_result_lines(path, &probed)
+}
+
+/// What the record keeps of a vision observation.
+///
+/// The two answers themselves, because the verdict is a comparison of them and
+/// a reader who cannot see both cannot check it. What is *not* kept is any
+/// judgement about whether either was right (§XIII).
+fn vision_fields(
+    sees: &mcf_serve::probes::vision::Sees,
+) -> Vec<(&'static str, mcf_record::json::Value)> {
+    vec![
+        ("architecture", mcf_record::json::Value::text(sees.declared.architecture.clone())),
+        (
+            "projector",
+            sees.declared
+                .projector
+                .clone()
+                .map_or(mcf_record::json::Value::Null, mcf_record::json::Value::text),
+        ),
+        ("answers_differ", mcf_record::json::Value::Bool(sees.answers_differ)),
+        ("about_triangle", mcf_record::json::Value::text(sees.about_triangle.clone())),
+        ("about_circle", mcf_record::json::Value::text(sees.about_circle.clone())),
+    ]
+}
+
+/// The vision probe, as a reader meets it.
+fn vision_result_lines(
+    path: &std::path::Path,
+    probed: &mcf_core::probe::Probed<mcf_serve::probes::vision::Sees>,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("  {}", probed.method.name),
+        format!(" asks {}", probed.method.asks),
+        format!(" decides  {}", probed.method.decides),
+        String::new(),
+    ];
+    match &probed.outcome {
+        Outcome::Observed(sees) => {
+            lines.push(format!(
+                " declared  the file says it is {}{}",
+                sees.declared.architecture,
+                match &sees.declared.projector {
+                    Some(at) => format!(", and a projector was found at {at}"),
+                    None => ", and no projector was found beside it".to_owned(),
+                }
+            ));
+            lines.push(format!(
+                "       shown {}, it said: {}",
+                mcf_serve::probes::vision::Shape::Triangle.said(),
+                sees.about_triangle
+            ));
+            lines.push(format!(
+                "       shown {}, it said: {}",
+                mcf_serve::probes::vision::Shape::Circle.said(),
+                sees.about_circle
+            ));
+            // From the observation, before either verdict: *the image did
+            // not get in* is as much a measurement as *it did* (A9, F106).
+            lines.push(recorded(crate::log::record_probed(
+                path,
+                probed.method.name,
+                &probed.conditions.to_string(),
+                vision_fields(sees),
+            )));
+            lines.push(String::new());
+            if sees.answers_differ {
+                lines.push(
+                    " VERIFIED   two different pictures produced two different answers, so the \
+                     image reached the model. Whether it is RIGHT about either is a graded \
+                     task and not this (§XIII)"
+                        .to_owned(),
+                );
+            } else {
+                lines.push(
+                    " REFUSED    two different pictures produced the same answer, so the image \
+                     did not reach the model here. Every answer this artifact gives about a \
+                     picture is a text-only answer, and a measurement taken through it is of a \
+                     different thing than it is named for (§3.8)"
+                        .to_owned(),
+                );
+            }
+        }
+        Outcome::Inconclusive { because } => {
+            lines.push(format!(" INCONCLUSIVE — {because}"));
+            // D42's third state, §3.18: the citation belongs here and in the
+            // record. The screen gets what it means.
+            lines.push(" which licenses nothing, and is not a negative result".to_owned());
+        }
+        other => lines.push(format!(" {other:?}")),
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "  {} trial(s), {} word(s) spent",
+        probed.trials, probed.tokens
+    ));
+    lines.push(format!("  under: {}", probed.conditions));
+    lines.push(String::new());
+    lines
 }
 
 /// Whether this artifact produces an embedding, of what width (B-057).
