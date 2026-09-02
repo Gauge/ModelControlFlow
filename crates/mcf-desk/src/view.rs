@@ -1464,14 +1464,17 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     y
 }
 
-/// **Setting up a measurement.** Two buttons with what they cost, what will be
-/// measured, and the tests — the console's arrangement.
-fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+/// The three buttons at the top of the page and the estimate under each of
+/// the two that run something.
+fn run_buttons(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    running: bool,
+) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
-    let running = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
-    let wide = area.w.min(680.0);
-
     let quick = Box::new(area.x, area.y, 150.0, 34.0);
     let selected = Box::new(quick.right() + 18.0, area.y, 170.0, 34.0);
     if ui::button(paint, mouse, quick, "Quick Run", Kind::Primary) && !running {
@@ -1479,7 +1482,10 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
             deepest: desk.quick_depth(),
         });
     }
-    if ui::button(paint, mouse, selected, "Run Selected", Kind::Ordinary) && !running {
+    if ui::button(paint, mouse, selected, "Run Selected", Kind::Ordinary)
+        && !running
+        && desk.runs_something()
+    {
         act = Some(Act::Measure {
             deepest: desk.window,
         });
@@ -1498,14 +1504,34 @@ fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Op
         size::SMALL,
         ink.faint,
     );
+    // Under Run Selected: the run's estimate, or that nothing chosen runs
+    // from here — a button that would do nothing says so first (§3.15).
     let (low, high) = desk.estimate(false);
     paint.say_centred(
         Box::new(selected.x, selected.bottom(), selected.w, 20.0),
-        &span(low, high),
+        &if desk.runs_something() {
+            span(low, high)
+        } else {
+            "nothing chosen runs here".to_owned()
+        },
         Weight::Regular,
         size::SMALL,
         ink.faint,
     );
+    act
+}
+
+/// **Setting up a measurement.** Two buttons with what they cost, what will be
+/// measured, and the tests — the console's arrangement.
+fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    let mut act = None;
+    let running = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
+    let wide = area.w.min(680.0);
+
+    if let Some(said) = run_buttons(paint, desk, mouse, area, running) {
+        act = Some(said);
+    }
     let mut y = area.y + 78.0;
 
     spaced(paint, area.x, y, "what to measure", ink.faint);
@@ -1683,8 +1709,12 @@ fn test_row(
     if mouse.over(hit) {
         paint.panel(hit, 6.0, ink.line, 90);
     }
+    // A row the window cannot run has no checkbox: a box that could be
+    // ticked and would run nothing is the control §3.15 forbids.
     let mark = Box::new(x, y + 2.0, 13.0, 13.0);
-    if test.chosen {
+    if test.run != crate::Run::Ladder {
+        // no box
+    } else if test.chosen {
         paint.panel(mark, 3.0, ink.accent, 255);
         ui::tick(paint, mark, ink.accent_ink);
     } else {
@@ -1692,6 +1722,24 @@ fn test_row(
     }
     let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 420.0);
     paint.say_at(x + 26.0, y, &name, Weight::Regular, size::BODY, ink.ink);
+    if let crate::Run::Console(command) = test.run {
+        // Neither devices, an estimate, a run time, a result nor a button,
+        // because the window does not run it: where it lives instead, and
+        // what it costs there, across the columns (B-424).
+        let costs = test
+            .seconds
+            .map(|seconds| format!(", about {}", clock(seconds)))
+            .unwrap_or_default();
+        paint.say_right(
+            x + wide,
+            y,
+            &format!("{}; on the console: {command}{costs}", test.devices),
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+        return None;
+    }
     paint.say_right(
         x + wide - 250.0,
         y,
@@ -1700,12 +1748,18 @@ fn test_row(
         size::SMALL,
         ink.faint,
     );
+    // The estimate is the run's, on the row that names it; a row the same
+    // run answers says where its time is rather than inventing one (A7).
+    let (estimate, estimate_size) = test.seconds.map_or_else(
+        || ("in the ladder".to_owned(), size::SMALL),
+        |seconds| (clock(seconds), size::BODY),
+    );
     paint.say_right(
         x + wide - 160.0,
         y,
-        &clock(test.seconds),
+        &estimate,
         Weight::Regular,
-        size::BODY,
+        estimate_size,
         ink.quiet,
     );
     // **A test that has never run has no run time, and says so** (A7). A zero

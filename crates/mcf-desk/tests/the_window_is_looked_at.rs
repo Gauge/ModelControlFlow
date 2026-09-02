@@ -407,12 +407,49 @@ fn a_result_opens_under_the_tests_rather_than_over_them() {
     );
 }
 
-/// The two rows the ladder now answers open like the ladder's own, in the
+/// The memory figure a real ladder read on this machine: Qwen3-VL-2B to
+/// 8,192, on the processor.
+fn a_memory_figure() -> mcf_record::json::Value {
+    use mcf_record::json::Value;
+    Value::map([
+        ("measured", Value::Bool(true)),
+        ("per_token_bytes", Value::Integer(117_346)),
+        (
+            "between_windows",
+            Value::List(vec![Value::Integer(4096), Value::Integer(16418)]),
+        ),
+        (
+            "at_deepest",
+            Value::map([
+                ("depth", Value::Integer(8192)),
+                ("window", Value::Integer(16418)),
+                ("bytes", Value::Integer(3_645_382_656)),
+            ]),
+        ),
+        ("planned_per_token_bytes", Value::Integer(114_688)),
+        (
+            "largest_context",
+            Value::map([
+                ("measured", Value::Integer(262_144)),
+                ("planned", Value::Integer(262_144)),
+            ]),
+        ),
+        (
+            "what",
+            Value::text(
+                "the engine process's peak resident memory, read from the kernel's high-water \
+                 mark, over the window each rung ran in; a device's memory is not in it",
+            ),
+        ),
+    ])
+}
+
+/// The three rows the ladder now answers open like the ladder's own, in the
 /// daemon's sentences.
 ///
 /// The sentences are composed in `mcf_serve::ladder` — the same ones the
 /// console prints — so this draws what a run leaves behind, and asserts
-/// that opening the start-up row shows something under the table (B-424).
+/// that opening the memory row shows something under the table (B-424).
 #[test]
 fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
     use mcf_record::json::Value;
@@ -439,8 +476,13 @@ fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
             Value::text("only one rung measured a first token, and a cost is read between two"),
         ),
     ]);
+    let memory = a_memory_figure();
     for test in &mut desk.tests {
         match test.name {
+            "Memory ceiling — largest context" => {
+                test.ran = Some(41);
+                test.result = Some(mcf_serve::ladder::memory_said(Some(&memory)));
+            }
             "Generation speed against depth" => {
                 test.ran = Some(41);
                 test.result = Some(vec![
@@ -468,8 +510,8 @@ fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
     desk.showing = desk
         .tests
         .iter()
-        .position(|test| test.name == "Start-up to first token");
-    assert!(desk.showing.is_some(), "no start-up row to open");
+        .position(|test| test.name == "Memory ceiling — largest context");
+    assert!(desk.showing.is_some(), "no memory row to open");
     let open = drawn(&desk, DAY, "rungs-open");
     let mut changed = 0_usize;
     for y in 0..open.height {
@@ -481,7 +523,7 @@ fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
     }
     assert!(
         changed > 500,
-        "opening the start-up row changed {changed} pixels: nothing opened"
+        "opening the memory row changed {changed} pixels: nothing opened"
     );
 }
 

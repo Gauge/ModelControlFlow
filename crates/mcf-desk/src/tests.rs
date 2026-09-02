@@ -425,8 +425,47 @@ fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
     for test in crate::tests() {
         assert_eq!(test.ran, None, "{} claims a run time", test.name);
         assert_eq!(test.result, None, "{} claims a result", test.name);
-        assert!(test.seconds > 0, "{} has no estimate", test.name);
+        assert!(
+            test.seconds.is_none_or(|seconds| seconds > 0),
+            "{} has an estimate of nothing",
+            test.name
+        );
     }
+}
+
+/// The rows one ladder answers are chosen together, the console-only row
+/// cannot be chosen, and Run Selected runs nothing when nothing chosen runs
+/// here (§3.15, B-072).
+#[test]
+fn the_rows_one_run_answers_are_chosen_together() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let ladder: Vec<usize> = desk
+        .tests
+        .iter()
+        .enumerate()
+        .filter(|(_, test)| test.run == crate::Run::Ladder)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(ladder.len(), 4);
+    let console = desk
+        .tests
+        .iter()
+        .position(|test| test.run != crate::Run::Ladder)
+        .unwrap_or_else(|| panic!("no console-only row"));
+    assert!(desk.runs_something());
+    assert_eq!(desk.estimate(false), (104, 255), "one run's time, not four");
+
+    desk.act(crate::Act::Toggle(ladder[1]));
+    assert!(ladder.iter().all(|&at| !desk.tests[at].chosen));
+    assert!(!desk.runs_something());
+    desk.act(crate::Act::Toggle(console));
+    assert!(
+        !desk.tests[console].chosen,
+        "the console-only row was chosen"
+    );
+    assert!(!desk.runs_something());
+    desk.act(crate::Act::Toggle(ladder[3]));
+    assert!(ladder.iter().all(|&at| desk.tests[at].chosen));
 }
 
 /// The results button opens what a run found, and the same button closes it.
@@ -651,7 +690,10 @@ fn a_finished_run_fills_the_rows_the_ladder_answers() {
         row(&desk, "Memory ceiling — largest context").as_deref(),
         Some(&["not measured: every rung ran in one window of 4,096 tokens".to_owned()][..])
     );
-    assert_eq!(row(&desk, "CPU and GPU agree on the output"), None);
+    assert_eq!(
+        row(&desk, "MCF's engine and the provisioned one agree"),
+        None
+    );
 }
 
 /// What the daemon could not read is said as not read, not left blank (A9).

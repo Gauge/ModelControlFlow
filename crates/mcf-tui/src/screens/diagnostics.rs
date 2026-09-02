@@ -9,9 +9,30 @@
 //! **The estimate is a range**, because MCF's own estimate has been measured
 //! against what runs actually take and lands between 0.58× and 1.42× of it. A
 //! single number would be a promise it cannot keep.
+//!
+//! **Four of the rows are one run.** The ladder that measures generation
+//! speed against depth is two timed generations a rung, and the time to a
+//! first token, the cost of a token of prompt and the memory a token of window
+//! costs are all read off those same generations (`mcf_serve::ladder`). There
+//! is no run that answers one of the four and not the others, so they are
+//! chosen together, and the estimate is the run's — on the row that names the
+//! run, and on no other, because an estimate for a test that is never run on
+//! its own is a figure for nothing (A7, A20). The fifth row is a console
+//! command the window does not run yet, and says so rather than carrying a
+//! checkbox that would run nothing (§3.15, B-424).
 
 use crate::screen::{Ink, Screen};
 use crate::screens::columns;
+
+/// What runs a test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Run {
+    /// One climb of the depth ladder, which answers every row marked with it
+    /// at once.
+    Ladder,
+    /// A console command; the window does not run it yet.
+    Console(&'static str),
+}
 
 /// One measurement that can be asked for.
 #[derive(Debug, Clone)]
@@ -20,47 +41,66 @@ pub struct Test {
     pub name: &'static str,
     /// Which devices it needs.
     pub devices: &'static str,
-    /// Roughly how long, in seconds, at this machine's speed.
-    pub seconds: u64,
+    /// Roughly how long the run takes, in seconds, at this machine's speed —
+    /// on the row that names the run. `None` on a row another row's run
+    /// answers, which has no time of its own and is not given one (A7).
+    pub seconds: Option<u64>,
+    /// What runs it.
+    pub run: Run,
     /// Whether it is selected.
     pub chosen: bool,
 }
 
-/// The tests MCF knows how to run.
+/// The tests MCF knows how to run, in the order the window and the console
+/// both list them.
 #[must_use]
 pub fn tests() -> Vec<Test> {
+    let ladder = |name: &'static str, seconds: Option<u64>| Test {
+        name,
+        devices: "both",
+        seconds,
+        run: Run::Ladder,
+        chosen: true,
+    };
     vec![
+        ladder("Generation speed against depth", Some(180)),
+        ladder("Start-up to first token", None),
+        ladder("Memory ceiling — largest context", None),
         Test {
-            name: "Generation speed against depth",
-            devices: "both",
-            seconds: 180,
-            chosen: true,
-        },
-        Test {
-            name: "Start-up to first token",
-            devices: "both",
-            seconds: 25,
-            chosen: true,
-        },
-        Test {
-            name: "Memory ceiling — largest context",
-            devices: "both",
-            seconds: 120,
+            name: "MCF's engine and the provisioned one agree",
+            devices: "both engines",
+            seconds: Some(90),
+            run: Run::Console("mcf cross-check"),
             chosen: false,
         },
-        Test {
-            name: "CPU and GPU agree on the output",
-            devices: "needs both",
-            seconds: 90,
-            chosen: false,
-        },
-        Test {
-            name: "Prompt reading speed",
-            devices: "both",
-            seconds: 45,
-            chosen: false,
-        },
+        ladder("Prompt reading speed", None),
     ]
+}
+
+/// Flips the choice at `at`, by the rule both surfaces share (B-072): the
+/// rows one run answers are chosen and unchosen together, and a row the
+/// window cannot run is not chosen at all.
+pub fn toggle<'a>(rows: impl IntoIterator<Item = (Run, &'a mut bool)>, at: usize) {
+    let rows: Vec<(Run, &'a mut bool)> = rows.into_iter().collect();
+    let Some((Run::Ladder, chosen)) = rows.get(at) else {
+        return;
+    };
+    let now = !**chosen;
+    for (run, chosen) in rows {
+        if run == Run::Ladder {
+            *chosen = now;
+        }
+    }
+}
+
+/// The estimate for what is chosen, in seconds: each chosen run once.
+#[must_use]
+pub fn chosen_seconds(tests: &[Test]) -> u64 {
+    tests
+        .iter()
+        .filter(|test| test.chosen)
+        .filter_map(|test| test.seconds)
+        .sum()
 }
 
 /// The measured spread of MCF's own estimate against what runs take.
@@ -101,7 +141,7 @@ pub fn draw(
     into.put_right(into.width().saturating_sub(3), row, " Back ", Ink::Plain);
     row += 1;
     into.put(3, row, &span(40), Ink::Quiet);
-    let chosen: u64 = tests.iter().filter(|t| t.chosen).map(|t| t.seconds).sum();
+    let chosen = chosen_seconds(tests);
     into.put(20, row, &span(chosen), Ink::Quiet);
     row += 2;
 
@@ -145,6 +185,16 @@ pub fn draw(
     tests_table(into, row + 2, tests, at, chosen);
 }
 
+/// The estimate column: the run's time on the row that names the run, and
+/// on a row that same run answers, where the time is.
+fn estimate_of(test: &Test) -> String {
+    match (test.seconds, test.run) {
+        (Some(seconds), _) => plain(seconds),
+        (None, Run::Ladder) => "in the ladder".to_owned(),
+        (None, Run::Console(command)) => command.to_owned(),
+    }
+}
+
 /// The tests, and what has been chosen of them.
 fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen: u64) {
     let mut row = from;
@@ -162,9 +212,13 @@ fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen
     for (index, test) in tests.iter().enumerate() {
         let here = index == at;
         let mark = if test.chosen { "x" } else { " " };
-        into.put(3, row, "[", Ink::Plain);
-        into.put(4, row, mark, Ink::Held);
-        into.put(5, row, "]", Ink::Plain);
+        if let Run::Console(_) = test.run {
+            into.put(3, row, "   ", Ink::Plain);
+        } else {
+            into.put(3, row, "[", Ink::Plain);
+            into.put(4, row, mark, Ink::Held);
+            into.put(5, row, "]", Ink::Plain);
+        }
         let ink = if here {
             Ink::Selected
         } else if test.chosen {
@@ -179,7 +233,7 @@ fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen
             &[
                 (test.name, 38, false, ink),
                 (test.devices, 14, true, Ink::Quiet),
-                (&plain(test.seconds), 14, true, Ink::Quiet),
+                (&estimate_of(test), 14, true, Ink::Quiet),
             ],
         );
         row += 1;

@@ -298,11 +298,16 @@ pub struct Test {
     pub name: &'static str,
     /// Which devices it needs.
     pub devices: &'static str,
-    /// Roughly how long, in seconds, at this machine's speed. An estimate, and
-    /// named one on the screen: MCF's own estimate lands between 0.58x and
-    /// 1.42x of what a run takes, so a column headed `time` beside a column of
-    /// measured times would have read as the same kind of number.
-    pub seconds: u64,
+    /// Roughly how long the run takes, in seconds, at this machine's speed —
+    /// on the row that names the run, and `None` on a row that run answers
+    /// along the way. An estimate, and named one on the screen: MCF's own
+    /// estimate lands between 0.58x and 1.42x of what a run takes, so a
+    /// column headed `time` beside a column of measured times would have read
+    /// as the same kind of number.
+    pub seconds: Option<u64>,
+    /// What runs it: the ladder, or a console command this window does not
+    /// run yet.
+    pub run: Run,
     /// Whether it is selected.
     pub chosen: bool,
     /// How long the last run of this test actually took, in seconds.
@@ -319,55 +324,29 @@ pub struct Test {
     pub result: Option<Vec<String>>,
 }
 
+/// What runs a test — the console's word for it.
+pub use mcf_tui::screens::diagnostics::Run;
+
 /// The tests MCF knows how to run.
 ///
-/// The console's list, because it is the same set of measurements and a second
-/// surface offering a different five would make *what MCF can measure* a fact
-/// about which surface you opened.
+/// The console's list, read from the console rather than copied from it: the
+/// same set of measurements in the same order, because a second surface
+/// offering a different five would make *what MCF can measure* a fact about
+/// which surface you opened (B-072).
 #[must_use]
 pub fn tests() -> Vec<Test> {
-    vec![
-        Test {
-            name: "Generation speed against depth",
-            devices: "both",
-            seconds: 180,
-            chosen: true,
+    mcf_tui::screens::diagnostics::tests()
+        .into_iter()
+        .map(|listed| Test {
+            name: listed.name,
+            devices: listed.devices,
+            seconds: listed.seconds,
+            run: listed.run,
+            chosen: listed.chosen,
             ran: None,
             result: None,
-        },
-        Test {
-            name: "Start-up to first token",
-            devices: "both",
-            seconds: 25,
-            chosen: true,
-            ran: None,
-            result: None,
-        },
-        Test {
-            name: "Memory ceiling — largest context",
-            devices: "both",
-            seconds: 120,
-            chosen: false,
-            ran: None,
-            result: None,
-        },
-        Test {
-            name: "CPU and GPU agree on the output",
-            devices: "needs both",
-            seconds: 90,
-            chosen: false,
-            ran: None,
-            result: None,
-        },
-        Test {
-            name: "Prompt reading speed",
-            devices: "both",
-            seconds: 45,
-            chosen: false,
-            ran: None,
-            result: None,
-        },
-    ]
+        })
+        .collect()
 }
 
 impl Model {
@@ -1227,11 +1206,14 @@ impl Desk {
                     Some(at)
                 };
             }
-            Act::Toggle(at) => {
-                if let Some(test) = self.tests.get_mut(at) {
-                    test.chosen = !test.chosen;
-                }
-            }
+            // The console's rule: the rows one run answers flip together,
+            // and a row the window cannot run is not chosen (B-072, §3.15).
+            Act::Toggle(at) => mcf_tui::screens::diagnostics::toggle(
+                self.tests
+                    .iter_mut()
+                    .map(|test| (test.run, &mut test.chosen)),
+                at,
+            ),
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::HostIt => self.host_it(),
@@ -1911,26 +1893,44 @@ impl Desk {
         1024
     }
 
+    /// Whether what is chosen is something this window runs: a ladder row.
+    ///
+    /// The console-only row cannot be chosen, so this is false only when
+    /// every ladder row is unchosen — and then Run Selected has nothing to
+    /// run and says so, rather than climbing the ladder anyway (§3.15).
+    #[must_use]
+    pub fn runs_something(&self) -> bool {
+        self.tests
+            .iter()
+            .any(|test| test.chosen && test.run == Run::Ladder)
+    }
+
     /// Roughly how long a run takes, as a range.
     ///
     /// A range because MCF's own estimates land between 0.58× and 1.42× of
     /// what runs actually take, and a single number would be a promise it
-    /// cannot keep.
+    /// cannot keep. Each chosen run is counted once, on the row that names
+    /// it — four rows one ladder answers are one run's time, not four.
     #[must_use]
     pub fn estimate(&self, quick: bool) -> (u64, u64) {
         let seconds: u64 = if quick {
-            // A quick run is the first test only, and only to 1 024.
+            // A quick run is the ladder only, and only to 1 024.
             #[expect(
                 clippy::integer_division,
                 reason = "a sixth of a test, in whole seconds"
             )]
-            let sixth = self.tests.first().map_or(30, |test| test.seconds / 6);
+            let sixth = self
+                .tests
+                .iter()
+                .find(|test| test.run == Run::Ladder)
+                .and_then(|test| test.seconds)
+                .map_or(30, |seconds| seconds / 6);
             sixth
         } else {
             self.tests
                 .iter()
                 .filter(|test| test.chosen)
-                .map(|test| test.seconds)
+                .filter_map(|test| test.seconds)
                 .sum()
         };
         #[expect(

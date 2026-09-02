@@ -558,9 +558,13 @@ fn act(console: &mut Console, key: Key) -> Leaving {
             }
             Key::Character('S') => console.confirming = true,
             Key::Character(' ') if console.at == Where::Diagnostics => {
-                if let Some(test) = console.tests.get_mut(console.row) {
-                    test.chosen = !test.chosen;
-                }
+                screens::diagnostics::toggle(
+                    console
+                        .tests
+                        .iter_mut()
+                        .map(|test| (test.run, &mut test.chosen)),
+                    console.row,
+                );
             }
             _ => {}
         }
