@@ -10187,6 +10187,19 @@ bare form when it had none — so it now reads only the patterns, not the tests.
 A check that scans text is reading a place where things that look alike are
 not alike, and it has to be told where to look.
 
+**It came back a third way (B-426).** The bare form was guarded; the form
+with *more* than the parser's arms took was not. `mcf settings foo --bogus`
+and `mcf cross-check foo --json` matched no arm and fell to the catch-all,
+which answered *no such command: settings* — the denial this finding closed,
+one argument further along. And the first word after a command was read as
+its name whatever it was: `mcf measure --help` measured a model called
+`--help`, and started a daemon to do it. The parser now reads the usage
+table itself — which commands there are, and which of them want a name before
+any flag — so a command the help lists is never denied, a flag where a name
+goes is refused with the name the table wanted, and `--help` asked of any
+command is that command's line of the table. The table is the one place, and
+the tests walk it rather than a list of their own.
+
 
 ## 138 · F138 — Four places sized a model and one of them counted the whole of it: a 111 GB model planned against as 10.9 MB, and a context recommended that would take the machine down (B-422, B-072, A21, F136)
 

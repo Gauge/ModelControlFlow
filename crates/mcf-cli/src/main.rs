@@ -67,6 +67,25 @@ enum Request<'a> {
     },
     /// Report the surface that exists.
     Usage,
+    /// Report one command's line of it, because `--help` was asked of the
+    /// command rather than of `mcf` (B-426).
+    CommandUsage {
+        /// The command.
+        command: &'a str,
+    },
+    /// A command that wants a name first was given a flag there.
+    ///
+    /// Distinct from [`Request::UnexpectedArgument`]: `mcf measure --deepest`
+    /// used to measure a model named `--deepest`, and *measure does not take
+    /// --deepest* would be false — it does, after the model (B-426).
+    NameExpected {
+        /// The command.
+        command: &'a str,
+        /// What was found where the name goes.
+        argument: &'a str,
+        /// The name the usage table says goes there.
+        needs: &'static str,
+    },
     /// Write the record to one portable file.
     Export {
         /// Where to write it.
@@ -377,6 +396,26 @@ fn main() -> ExitCode {
               place than split across functions by an arbitrary line count"
 )]
 fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
+    // Before the table: `--help` asked of a command, and a flag where the
+    // command wants a name. Each used to be read as the name — `mcf measure
+    // --help` measured a model called `--help`, and started a daemon to do
+    // it (B-426).
+    if let [command, argument, ..] = arguments
+        && (!command.starts_with('-') || usage_of(command).is_some())
+    {
+        if matches!(*argument, "--help" | "-h") {
+            return Request::CommandUsage { command };
+        }
+        if argument.starts_with('-')
+            && let Some(needs) = name_wanted_first(command)
+        {
+            return Request::NameExpected {
+                command,
+                argument,
+                needs,
+            };
+        }
+    }
     match arguments {
         ["--version" | "-V"] => Request::Version,
         // Both spellings, because the SPDX identifier and half the world spell
@@ -501,32 +540,12 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "measure",
             needs: "<model>",
         },
-        ["measure", model] => Request::Measure {
-            model,
-            deepest: 8192,
-            engine: None,
-        },
-        ["measure", model, "--deepest", deepest] => match deepest.parse::<u64>() {
-            // Powers of two only, because a context window is asked for in
-            // powers of two and a ladder that ended somewhere else would have
-            // a top rung nobody could ask a model to run at.
-            Ok(deepest) if deepest.is_power_of_two() && deepest >= 512 => Request::Measure {
-                model,
-                deepest,
-                engine: None,
+        ["measure", model, rest @ ..] => match measure_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "measure",
+                argument,
             },
-            // A power of two, because that is how a context window is asked
-            // for, and 512 at least, because below it the per-token cost is
-            // the same to within the noise.
-            _ => Request::UnexpectedArgument {
-                command: "measure --deepest (wants a power of two, 512 or larger)",
-                argument: deepest,
-            },
-        },
-        ["measure", model, "--engine", engine] => Request::Measure {
-            model,
-            deepest: 8192,
-            engine: Some(engine),
         },
         ["prompt"] | ["prompt", _] => Request::MissingArgument {
             command: "prompt",
@@ -758,8 +777,107 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             argument,
             ..,
         ] => Request::UnexpectedArgument { command, argument },
+        // A command the table has, with arguments no arm above took. Before
+        // this arm it fell through to *no such command: settings* — MCF
+        // denying a command it has, in the same breath as `mcf --help`
+        // listing it (F139, B-426).
+        [command, _, argument, ..] if usage_of(command).is_some() => {
+            Request::UnexpectedArgument { command, argument }
+        }
         [first, ..] => Request::Unrecognized(first),
     }
+}
+
+/// The flags `mcf measure <model>` takes, in any order.
+///
+/// `--deepest` wants a power of two, 512 or larger: a context window is
+/// asked for in powers of two, and a ladder that ended anywhere else would
+/// have a top rung nobody could ask a model to run at; below 512 the cost a
+/// token is the same to within the noise.
+fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut deepest = 8192;
+    let mut engine = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--deepest" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "measure --deepest",
+                        needs: "a power of two, 512 or larger",
+                    });
+                };
+                deepest = match value.parse::<u64>() {
+                    Ok(deepest) if deepest.is_power_of_two() && deepest >= 512 => deepest,
+                    _ => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "measure --deepest (wants a power of two, 512 or larger)",
+                            argument: value,
+                        });
+                    }
+                };
+            }
+            "--engine" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "measure --engine",
+                        needs: "an engine's name",
+                    });
+                };
+                engine = Some(*value);
+            }
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Measure {
+        model,
+        deepest,
+        engine,
+    })
+}
+
+/// The line of the usage table that introduces a command, with the lines
+/// that continue it. `None` for a command the table does not have.
+fn usage_of(command: &str) -> Option<&'static str> {
+    let mut at = 0;
+    let mut start = None;
+    for line in COMMANDS.lines() {
+        if let Some(introduced) = introduces(line) {
+            match start {
+                // The block ends where the next command's line begins.
+                Some(from) => return COMMANDS.get(from..at),
+                None if introduced == command => start = Some(at),
+                None => {}
+            }
+        }
+        at += line.len() + 1;
+    }
+    COMMANDS.get(start?..)
+}
+
+/// The command a line of the usage table introduces, if it introduces one:
+/// the word after `mcf` on a line that begins with it.
+fn introduces(line: &str) -> Option<&str> {
+    line.strip_prefix("  mcf ")?.split_whitespace().next()
+}
+
+/// The name a command wants before any flag, as the usage table writes it —
+/// `<model>`, `<owner/name>` — or `None` for one that takes a flag or nothing
+/// first. An optional name, `[<model>]`, is not wanted: a flag may stand
+/// there.
+fn name_wanted_first(command: &str) -> Option<&'static str> {
+    let line = COMMANDS
+        .lines()
+        .find(|line| introduces(line) == Some(command))?;
+    let after = line
+        .strip_prefix("  mcf ")?
+        .strip_prefix(command)?
+        .trim_start();
+    if !after.starts_with('<') {
+        return None;
+    }
+    let close = after.find('>')?;
+    after.get(..=close)
 }
 
 /// Writes the record to one portable file (B-302, D20).
@@ -1346,6 +1464,137 @@ fn doctor_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     Ok(Request::Doctor { record, as_json })
 }
 
+/// The commands there are, one line each, as `mcf --help` prints them.
+///
+/// The parser reads this table too: which commands exist, and which of them
+/// want a name before any flag, are read off it rather than listed a second
+/// time (B-072, B-426). A line begins `  mcf <command>`; what follows is the
+/// command's arguments, then its description, and a continuation line begins
+/// with more spaces.
+const COMMANDS: &str = "\
+    \x20 mcf desk                            MCF in a window: every screen a\n\
+    \x20                                     client of the same daemon. Needs\n\
+    \x20                                     SDL3 provisioned before MCF is\n\
+    \x20                                     built, and says so if it is not\n\
+    \x20 mcf tui                             the same screens with no display\n\
+    \x20                                     attached\n\
+    \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
+    \x20                                     costs here, and what it promises\n\
+    \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
+    \x20          [--into <directory>]       provenance; without a file it\n\
+    \x20          [--from <hub>]             says which variants would run\n\
+    \x20          [--token-from <file>]      here. MCF reads a credential\n\
+    \x20          [--token-from-env <VAR>]   only where you name one, and\n\
+    \x20                                     puts models where MCF_MODELS\n\
+    \x20                                     says unless --into names one\n\
+    \x20 mcf serve                           start the daemon: it stays up,\n\
+    \x20                                     recovers what is on the disk and\n\
+    \x20                                     costs nothing while idle\n\
+    \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
+    \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
+    \x20                                     never a speed (D31, B65)\n\
+    \x20 mcf bench <model> --against <model> compare two models on an engine\n\
+    \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
+    \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
+    \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
+    \x20 mcf eval <model>                    ask a model to do the work and\n\
+    \x20                                     check what it did: each answer run\n\
+    \x20                                     in a container, four outcomes and\n\
+    \x20                                     no total (B-110)\n\
+    \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
+    \x20                        [--json]     removed in turn, and how much of\n\
+    \x20                                     the answer moved. An ordering,\n\
+    \x20                                     never relevance\n\
+    \x20 mcf cross-check <model>              read one engine's tokens with the\n\
+    \x20                                       other, and say whether they agree\n\
+    \x20 mcf probe <model> [--engine <name>] [--apply]\n\
+    \x20                                       ask a model to do the thing, and\n\
+    \x20                                     report what it did — configuring\n\
+    \x20                                     nothing (§X, D42)\n\
+    \x20 mcf provision [<component>]         build a pinned component in a\n\
+    \x20     [--list] [--remove <c>          container, everything recorded,\n\
+    \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
+    \x20                                     the engine a model here needs (B-367)\n\
+    \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
+    \x20                                     vector: JSON first, conditions\n\
+    \x20                                     after (DEC-055)\n\
+    \x20 mcf verify <bundle>                 does this machine agree, and if\n\
+    \x20                                     not, which conditions differ — MCF\n\
+    \x20                                     will not say which caused it (A8)\n\
+    \x20 mcf bundle <entry-id>               one file that reproduces one\n\
+    \x20        [--into <path>]              claim: the method, the conditions,\n\
+    \x20                                     every trial and the provenance (PR2)\n\
+    \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
+    \x20                                     the measurements and conditions it\n\
+    \x20                                     rests on (B55)\n\
+    \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
+    \x20         [--last <n>] [--full]       read back out of the record\n\
+    \x20 mcf explain <model> [--json]        what it declares, what MCF read,\n\
+    \x20                                     what MCF would choose, and what\n\
+    \x20                                     it cannot tell you; --json is\n\
+    \x20                                     what the file holds, counted by\n\
+    \x20                                     the daemon as the window reads it\n\
+    \x20 mcf support [--into <path>]         what a maintainer would need to\n\
+    \x20                                     read this machine's sensors, as a\n\
+    \x20                                     file you read before you send it\n\
+    \x20 mcf segment <model>                 the prompt as the model actually\n\
+    \x20             --prompt <text>         receives it, fragment by fragment:\n\
+    \x20                                     where text breaks, and where this\n\
+    \x20                                     vocabulary has no word for it\n\
+    \x20 mcf status                          ask a running daemon what it is\n\
+    \x20                                     and what it is holding\n\
+    \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
+    \x20 mcf host <model> [--context <n>]    hold a model on a port where\n\
+    \x20      [--port <n>] [--engine <name>] another program can reach it;\n\
+    \x20      [--gpu-layers <n>] [--threads <n>] it prints the settings it\n\
+    \x20      [--batch <n>] [--api-key <key>] chose and what they cost\n\
+    \x20      [--flash-attention]\n\
+    \x20 mcf hosted                          what is being held, and where\n\
+    \x20 mcf measure <model>                 time it at doubling context\n\
+    \x20         [--deepest <n>]             depths, so the cost of a longer\n\
+    \x20         [--engine <name>]           conversation is measured rather\n\
+    \x20                                     than assumed\n\
+    \x20 mcf settings <model>                every setting a model would run\n\
+    \x20              [--context <n>]        under, and where each came from;\n\
+    \x20                                     with a context, what that window\n\
+    \x20                                     would reserve in memory\n\
+    \x20 mcf unhost                          stop holding it, and give the\n\
+    \x20                                     memory back\n\
+    \x20 mcf list                            what this machine is holding\n\
+    \x20 mcf check [<model>] [--here]        is what you hold still what it\n\
+    \x20           [--from <hub>]            should be? the bytes against the\n\
+    \x20                                     digest recorded for them, and the\n\
+    \x20                                     hub against what it published\n\
+    \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
+    \x20            [--purge]                this previews and removes nothing\n\
+    \x20 mcf export --to <path>              the record, as one portable file\n\
+    \x20 mcf share [--into <path>]           what would leave this machine,\n\
+    \x20                                     row by row, before it does\n\
+    \x20                                     (B-160, A24)\n\
+    \x20 mcf offered <owner/name>            what a repository publishes, and\n\
+    \x20                                     which of it will run here\n\
+    \x20 mcf acquire <owner/name> <file>     fetch one published file through\n\
+    \x20                                     the daemon\n\
+    \x20 mcf licence [--full]                the terms, and what conveying this\n\
+    \x20                                     binary obliges you to (GPL-3.0-only)\n\
+    \x20 mcf --version                       what this binary is\n";
+
+/// What follows the table.
+const NOTES: &str = "\
+    Acquisition reaches an encrypted hub over MCF's own HTTP and a vendored\n\
+    TLS stack, or a plain one where you name it — a mirror, or the\n\
+    laboratory's own (B-322).\n\
+    \n\
+    `mcf run` answers with MCF's own stand-in and marks every answer as\n\
+    one, because a timing taken from it would measure the stand-in rather\n\
+    than the model (D31, B65). A model served where another program can\n\
+    reach it is `mcf host`, which runs a provisioned engine and can be\n\
+    timed; `mcf bench` and `mcf measure` are what time one.\n\
+    \n\
+    `mcf-helper` is beside this binary and does three things that need\n\
+    rights this one does not have: the processor governor, a device's\n\
+    exclusive mode, and the processor's energy counter (D35)";
+
 /// Answers a request. Pure, so the laboratory can exercise every branch
 /// without a process (B19).
 #[allow(
@@ -1363,132 +1612,23 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             served: true,
         },
         Request::Usage => Response {
-            text: format!(
-                "{identity}\n\
-                 \n\
-                 usage:\n\
-                 \x20 mcf desk                            MCF in a window: every screen a\n\
-                 \x20                                     client of the same daemon. Needs\n\
-                 \x20                                     SDL3 provisioned before MCF is\n\
-                 \x20                                     built, and says so if it is not\n\
-                 \x20 mcf tui                             the same screens with no display\n\
-                 \x20                                     attached\n\
-                 \x20 mcf doctor [--no-record] [--json]   what this machine is, what MCF\n\
-                 \x20                                     costs here, and what it promises\n\
-                 \x20 mcf pull <owner/name[:file]>        bring a model here, with its\n\
-                 \x20          [--into <directory>]       provenance; without a file it\n\
-                 \x20          [--from <hub>]             says which variants would run\n\
-                 \x20          [--token-from <file>]      here. MCF reads a credential\n\
-                 \x20          [--token-from-env <VAR>]   only where you name one, and\n\
-                 \x20                                     puts models where MCF_MODELS\n\
-                 \x20                                     says unless --into names one\n\
-                 \x20 mcf serve                           start the daemon: it stays up,\n\
-                 \x20                                     recovers what is on the disk and\n\
-                 \x20                                     costs nothing while idle\n\
-                 \x20 mcf run <model> --prompt <text>     ask a model something, with MCF's\n\
-                 \x20         [--limit <n>] [--seed <n>]  own engine — a behaviour answer,\n\
-                 \x20                                     never a speed (D31, B65)\n\
-                 \x20 mcf bench <model> --against <model> compare two models on an engine\n\
-                 \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
-                 \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
-                 \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
-                 \x20 mcf eval <model>                    ask a model to do the work and\n\
-                 \x20                                     check what it did: each answer run\n\
-                 \x20                                     in a container, four outcomes and\n\
-                 \x20                                     no total (B-110)\n\
-                 \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
-                 \x20                        [--json]     removed in turn, and how much of\n\
-                 \x20                                     the answer moved. An ordering,\n\
-                 \x20                                     never relevance\n\
-                 \x20 mcf cross-check <model>              read one engine's tokens with the\n\
-                 \x20                                       other, and say whether they agree\n\
-                 \x20 mcf probe <model> [--engine <name>] [--apply]\n\
-                 \x20                                       ask a model to do the thing, and\n\
-                 \x20                                     report what it did — configuring\n\
-                 \x20                                     nothing (§X, D42)\n\
-                 \x20 mcf provision [<component>]         build a pinned component in a\n\
-                 \x20     [--list] [--remove <c>          container, everything recorded,\n\
-                 \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
-                 \x20                                     the engine a model here needs (B-367)\n\
-                 \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
-                 \x20                                     vector: JSON first, conditions\n\
-                 \x20                                     after (DEC-055)\n\
-                 \x20 mcf verify <bundle>                 does this machine agree, and if\n\
-                 \x20                                     not, which conditions differ — MCF\n\
-                 \x20                                     will not say which caused it (A8)\n\
-                 \x20 mcf bundle <entry-id>               one file that reproduces one\n\
-                 \x20        [--into <path>]              claim: the method, the conditions,\n\
-                 \x20                                     every trial and the provenance (PR2)\n\
-                 \x20 mcf show <entry-id>                 one recorded entry, expanded into\n\
-                 \x20                                     the measurements and conditions it\n\
-                 \x20                                     rests on (B55)\n\
-                 \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
-                 \x20         [--last <n>] [--full]       read back out of the record\n\
-                 \x20 mcf explain <model> [--json]        what it declares, what MCF read,\n\
-                 \x20                                     what MCF would choose, and what\n\
-                 \x20                                     it cannot tell you; --json is\n\
-                 \x20                                     what the file holds, counted by\n\
-                 \x20                                     the daemon as the window reads it\n\
-                 \x20 mcf support [--into <path>]         what a maintainer would need to\n\
-                 \x20                                     read this machine's sensors, as a\n\
-                 \x20                                     file you read before you send it\n\
-                 \x20 mcf segment <model>                 the prompt as the model actually\n\
-                 \x20             --prompt <text>         receives it, fragment by fragment:\n\
-                 \x20                                     where text breaks, and where this\n\
-                 \x20                                     vocabulary has no word for it\n\
-                 \x20 mcf status                          ask a running daemon what it is\n\
-                 \x20                                     and what it is holding\n\
-                 \x20 mcf stop [--because <why>]          ask it to stop, and say why\n\
-                 \x20 mcf host <model> [--context <n>]    hold a model on a port where\n\
-                 \x20      [--port <n>] [--engine <name>] another program can reach it;\n\
-                 \x20      [--gpu-layers <n>] [--threads <n>] it prints the settings it\n\
-                 \x20      [--batch <n>] [--api-key <key>] chose and what they cost\n\
-                 \x20      [--flash-attention]\n\
-                 \x20 mcf hosted                          what is being held, and where\n\
-                 \x20 mcf measure <model>                 time it at doubling context\n\
-                 \x20         [--deepest <n>]             depths, so the cost of a longer\n\
-                 \x20         [--engine <name>]           conversation is measured rather\n\
-                 \x20                                     than assumed\n\
-                 \x20 mcf settings <model>                every setting a model would run\n\
-                 \x20              [--context <n>]        under, and where each came from;\n\
-                 \x20                                     with a context, what that window\n\
-                 \x20                                     would reserve in memory\n\
-                 \x20 mcf unhost                          stop holding it, and give the\n\
-                 \x20                                     memory back\n\
-                 \x20 mcf list                            what this machine is holding\n\
-                 \x20 mcf check [<model>] [--here]        is what you hold still what it\n\
-                 \x20           [--from <hub>]            should be? the bytes against the\n\
-                 \x20                                     digest recorded for them, and the\n\
-                 \x20                                     hub against what it published\n\
-                 \x20 mcf rm <model> [--because <why>]    stop holding it: without a reason\n\
-                 \x20            [--purge]                this previews and removes nothing\n\
-                 \x20 mcf export --to <path>              the record, as one portable file\n\
-                 \x20 mcf share [--into <path>]           what would leave this machine,\n\
-                 \x20                                     row by row, before it does\n\
-                 \x20                                     (B-160, A24)\n\
-                 \x20 mcf offered <owner/name>            what a repository publishes, and\n\
-                 \x20                                     which of it will run here\n\
-                 \x20 mcf acquire <owner/name> <file>     fetch one published file through\n\
-                 \x20                                     the daemon\n\
-                 \x20 mcf licence [--full]                the terms, and what conveying this\n\
-                 \x20                                     binary obliges you to (GPL-3.0-only)\n\
-                 \x20 mcf --version                       what this binary is\n\
-                 \n\
-                 Acquisition reaches an encrypted hub over MCF's own HTTP and a vendored\n\
-                 TLS stack, or a plain one where you name it — a mirror, or the\n\
-                 laboratory's own (B-322).\n\
-                 \n\
-                 `mcf run` answers with MCF's own stand-in and marks every answer as\n\
-                 one, because a timing taken from it would measure the stand-in rather\n\
-                 than the model (D31, B65). A model served where another program can\n\
-                 reach it is `mcf host`, which runs a provisioned engine and can be\n\
-                 timed; `mcf bench` and `mcf measure` are what time one.\n\
-                 \n\
-                 `mcf-helper` is beside this binary and does three things that need\n\
-                 rights this one does not have: the processor governor, a device's\n\
-                 exclusive mode, and the processor's energy counter (D35)."
-            ),
+            text: format!("{identity}\n\nusage:\n{COMMANDS}\n{NOTES}"),
             served: true,
+        },
+        Request::CommandUsage { command } => match usage_of(command) {
+            Some(block) => Response {
+                text: format!("usage:\n{block}"),
+                served: true,
+            },
+            None => respond(&Request::Unrecognized(command), identity),
+        },
+        Request::NameExpected {
+            command,
+            argument,
+            needs,
+        } => Response {
+            text: format!("mcf: {command} needs {needs} where it got {argument}"),
+            served: false,
         },
         Request::Doctor { record, as_json } => {
             let report = doctor::run(*record);
@@ -1598,7 +1738,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::Unrecognized(argument) => Response {
             text: format!(
                 "mcf: no such command: {argument}\n\
-                 The surface at this milestone is `mcf --version`; see `mcf --help`."
+                 `mcf --help` lists the commands there are."
             ),
             served: false,
         },
@@ -1844,5 +1984,170 @@ mod tests {
             !text.contains("no such command"),
             "{text:?} denies a command that exists"
         );
+    }
+
+    /// `--help` asked of a command is that command's usage, and runs nothing
+    /// (B-426). `mcf measure --help` used to measure a model named `--help`,
+    /// and started a daemon to do it.
+    #[test]
+    fn help_asked_of_a_command_is_its_usage_and_not_a_run() {
+        for command in commands() {
+            for help in ["--help", "-h"] {
+                let request = parse(&[command, help]);
+                assert_eq!(
+                    request,
+                    Request::CommandUsage { command },
+                    "mcf {command} {help}"
+                );
+                let Response { text, served } = respond(&request, BuildIdentity::current());
+                assert!(served, "mcf {command} {help}: {text}");
+                assert!(
+                    text.starts_with("usage:\n  mcf ") && text.contains(command),
+                    "mcf {command} {help}: {text}"
+                );
+                // That command's line, and not another's.
+                assert_eq!(
+                    text.lines()
+                        .filter(|line| line.starts_with("  mcf "))
+                        .count(),
+                    1,
+                    "mcf {command} {help}: {text}"
+                );
+            }
+        }
+        assert_eq!(
+            parse(&["quinquagesima", "--help"]),
+            Request::CommandUsage {
+                command: "quinquagesima"
+            }
+        );
+        let Response { text, served } = respond(
+            &parse(&["quinquagesima", "--help"]),
+            BuildIdentity::current(),
+        );
+        assert!(!served && text.contains("no such command"), "{text}");
+    }
+
+    /// A command that wants a name first, given a flag there, says so with
+    /// the flag it saw and the name it wanted — it does not take the flag as
+    /// the name (B-426), and it does not say the flag is one it never takes,
+    /// which for `measure --deepest` would be false.
+    #[test]
+    fn a_flag_where_a_name_goes_is_refused_by_name() {
+        let mut wanting = 0;
+        for command in commands() {
+            let Some(needs) = super::name_wanted_first(command) else {
+                continue;
+            };
+            wanting += 1;
+            for flag in ["--deepest", "--json", "--x", "-"] {
+                let request = parse(&[command, flag]);
+                assert_eq!(
+                    request,
+                    Request::NameExpected {
+                        command,
+                        argument: flag,
+                        needs,
+                    },
+                    "mcf {command} {flag}"
+                );
+                let Response { text, served } = respond(&request, BuildIdentity::current());
+                assert!(!served);
+                assert!(
+                    text.contains(command) && text.contains(flag) && text.contains(needs),
+                    "mcf {command} {flag}: {text}"
+                );
+            }
+        }
+        assert!(
+            wanting >= 10,
+            "the table names {wanting} commands wanting a name first"
+        );
+        assert_eq!(super::name_wanted_first("measure"), Some("<model>"));
+        assert_eq!(
+            super::name_wanted_first("pull"),
+            Some("<owner/name[:file]>")
+        );
+        assert_eq!(super::name_wanted_first("doctor"), None);
+        assert_eq!(
+            super::name_wanted_first("check"),
+            None,
+            "an optional name is not wanted"
+        );
+        assert_eq!(super::name_wanted_first("--version"), None);
+    }
+
+    /// A command the table has, given an argument no arm takes after its
+    /// name, is refused with that argument — not *no such command*, which
+    /// `mcf settings foo --bogus` and `mcf cross-check foo --json` used to
+    /// answer (F139, B-426).
+    #[test]
+    fn a_command_the_table_has_is_never_denied() {
+        for command in commands() {
+            let Response { text, .. } = respond(
+                &parse(&[command, "foo", "--bogus"]),
+                BuildIdentity::current(),
+            );
+            assert!(
+                !text.contains("no such command"),
+                "mcf {command} foo --bogus: {text:?} denies a command that exists"
+            );
+        }
+        assert_eq!(
+            parse(&["settings", "foo", "--bogus"]),
+            Request::UnexpectedArgument {
+                command: "settings",
+                argument: "--bogus",
+            }
+        );
+    }
+
+    /// `mcf measure` reads its flags in any order, and a flag without its
+    /// value is a missing argument rather than a run (B-426).
+    #[test]
+    fn measure_reads_its_flags_in_any_order() {
+        let both = Request::Measure {
+            model: "m",
+            deepest: 1024,
+            engine: Some("e"),
+        };
+        assert_eq!(
+            parse(&["measure", "m", "--engine", "e", "--deepest", "1024"]),
+            both
+        );
+        assert_eq!(
+            parse(&["measure", "m", "--deepest", "1024", "--engine", "e"]),
+            both
+        );
+        assert!(matches!(
+            parse(&["measure", "m", "--deepest"]),
+            Request::MissingArgument { .. }
+        ));
+        assert!(matches!(
+            parse(&["measure", "m", "--engine"]),
+            Request::MissingArgument { .. }
+        ));
+        assert!(matches!(
+            parse(&["measure", "m", "--deepest", "100"]),
+            Request::UnexpectedArgument {
+                argument: "100",
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&["measure", "m", "--deepest", "1024", "--bogus"]),
+            Request::UnexpectedArgument {
+                command: "measure",
+                argument: "--bogus"
+            }
+        ));
+    }
+
+    /// Every command the usage table introduces.
+    fn commands() -> Vec<&'static str> {
+        super::COMMANDS
+            .lines()
+            .filter_map(super::introduces)
+            .collect()
     }
 }
