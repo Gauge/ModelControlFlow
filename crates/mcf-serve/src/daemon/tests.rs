@@ -540,6 +540,10 @@ fn a_served_report() -> Value {
             "prefixes",
             Value::List(vec![a_reading(640_000, "Here is a start")]),
         ),
+        (
+            "swaps",
+            Value::List(vec![a_reading(90_000, "Here is a careful function")]),
+        ),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
         (
@@ -682,9 +686,9 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         at(&["floors"]).and_then(|held| held.as_list().map(<[Value]>::len)),
         Some(1)
     );
-    // Each part alone, the control alone and the prompt grown from the
-    // front travel as their figures; the answers stay behind (B-435,
-    // B-436, A25).
+    // Each part alone, the control alone, the prompt grown from the front
+    // and the neighbours swapped travel as their figures; the answers stay
+    // behind (B-435, B-436, B-437, A25).
     let first_moved = |key: &str| {
         at(&[key])
             .and_then(|held| held.as_list().and_then(<[Value]>::first).cloned())
@@ -692,6 +696,7 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     };
     assert_eq!(first_moved("alone"), Some(Value::Integer(310_000)));
     assert_eq!(first_moved("prefixes"), Some(Value::Integer(640_000)));
+    assert_eq!(first_moved("swaps"), Some(Value::Integer(90_000)));
     assert_eq!(
         at(&["alone_floor", "moved_parts_per_million"]),
         Some(Value::Integer(980_000))
@@ -729,6 +734,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         alone: None,
         alone_floor: None,
         prefixes: None,
+        swaps: None,
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -816,6 +822,7 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         alone: Some(vec![read(1_000_000, "Yes."), read(0, "4")]),
         alone_floor: Some(read(1_000_000, "Hello!")),
         prefixes: Some(vec![read(750_000, "Sure.")]),
+        swaps: Some(vec![read(125_000, "4.")]),
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -856,5 +863,11 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
     assert_eq!(
         prefixes.first().and_then(|held| held.get("answer")),
         Some(&Value::text("Sure."))
+    );
+    // And the neighbours swapped (B-437).
+    let swaps = served.get("swaps").and_then(Value::as_list).unwrap_or(&[]);
+    assert_eq!(
+        swaps.first().and_then(|held| held.get("answer")),
+        Some(&Value::text("4."))
     );
 }

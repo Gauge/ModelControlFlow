@@ -447,6 +447,9 @@ fn what_the_generations_were(body: &Value) -> String {
     if let Some(prefixes) = list("prefixes") {
         spent.push(format!("prefixes {prefixes}"));
     }
+    if let Some(swaps) = list("swaps") {
+        spent.push(format!("swaps {swaps}"));
+    }
     if let Some(settled) = body
         .get("settled")
         .filter(|held| matches!(held, Value::Map(_)))
@@ -781,6 +784,63 @@ fn prefixes(body: &Value) -> Vec<String> {
     lines
 }
 
+/// Neighbouring parts swapped (B-437): a row a pair, and how many of them
+/// moved the answer past the floor — the pairs whose order the model reads.
+fn swaps(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = integer(body, "forced_depth");
+    let floor = integer(body, "floor_parts_per_million");
+    let Some(swaps) = body.get("swaps").and_then(Value::as_list) else {
+        return vec![
+            not_asked("SWAPS", mcf_serve::prompt::Extra::Swaps, body),
+            String::new(),
+        ];
+    };
+    let mut lines = vec![head(
+        "SWAPS",
+        &[
+            format!("each {unit} and the next in each other's places"),
+            "vs the answer as written".to_owned(),
+            "high = the order carries it".to_owned(),
+        ],
+    )];
+    let rows: Vec<Vec<String>> = swaps
+        .iter()
+        .enumerate()
+        .flat_map(|(at, read)| {
+            let mut rows = vec![vec![
+                mcf_desk::pair_mark(at),
+                percent(moved_of(read)),
+                bar(moved_of(read)),
+                rank_cell(read.get("held"), depth),
+                open_cell(read.get("held")),
+                part_text(body, at),
+            ]];
+            rows.extend(answer_row(read, "answer"));
+            rows
+        })
+        .collect();
+    lines.extend(table(
+        &[
+            figure("pair"),
+            figure("moved"),
+            text(""),
+            figure("1st"),
+            figure("open"),
+            text("first of the pair"),
+        ],
+        &rows,
+    ));
+    lines.push(format!(
+        "  past floor {}  {} of {} · order read, not words",
+        percent(floor),
+        swaps.iter().filter(|read| moved_of(read) > floor).count(),
+        swaps.len()
+    ));
+    lines.push(String::new());
+    lines
+}
+
 /// A reading that was not asked for, said as not asked with the flag that
 /// asks it and what it would cost (A7).
 fn not_asked(label: &str, extra: mcf_serve::prompt::Extra, body: &Value) -> String {
@@ -1046,6 +1106,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.extend(removed(body));
     lines.extend(alone(body));
     lines.extend(prefixes(body));
+    lines.extend(swaps(body));
     lines.extend(seeds(body));
     lines.extend(tokens(body));
     lines.extend(parts(body));
@@ -1469,6 +1530,47 @@ mod tests {
         let text = rendered(&asked, "m").join("\n");
         assert!(
             text.contains("within floor 0.0%  none short of the whole"),
+            "{text}"
+        );
+    }
+
+    /// Neighbours swapped is a row a pair with how many moved the answer
+    /// past the floor; where it was not asked the report says so with the
+    /// flag and the cost (A7, B-437).
+    #[test]
+    fn neighbours_swapped_says_how_many_pairs_the_order_carries_or_that_it_was_not_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("SWAPS    not asked · --swaps · 3 generations"),
+            "{text}"
+        );
+        let reading = |moved: i64, answer: &str| {
+            Value::map([
+                ("moved_parts_per_million", Value::Integer(moved)),
+                ("held", Value::Null),
+                ("answer", Value::text(answer.to_owned())),
+            ])
+        };
+        let mut asked = body();
+        if let Value::Map(fields) = &mut asked {
+            fields.insert(
+                "swaps".to_owned(),
+                Value::List(vec![reading(0, "Blue."), reading(200_000, "It's blue.")]),
+            );
+        }
+        let text = rendered(&asked, "m").join("\n");
+        assert!(text.contains("control 1 · swaps 2"), "{text}");
+        assert!(
+            text.contains("1&2   0.0%  ··········    —     —  Answer in one word."),
+            "{text}"
+        );
+        assert!(
+            text.contains("2&3  20.0%  ##········    —     —  What colour is the room?"),
+            "{text}"
+        );
+        assert!(text.contains("→ \"It's blue.\""), "{text}");
+        assert!(
+            text.contains("past floor 0.0%  1 of 2 · order read, not words"),
             "{text}"
         );
     }

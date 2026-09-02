@@ -2254,6 +2254,14 @@ fn prompt_report(
         found,
     );
     act = pressed.or(act);
+    let (after, pressed) = swaps_table(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, after, wide, 0.0),
+        found,
+    );
+    act = pressed.or(act);
     y = seeds_line(paint, (area.x, after), wide, found);
     // The page scrolls, so the answer has a page of its own below the rest.
     the_answer(
@@ -2418,6 +2426,9 @@ fn what_the_generations_were(found: &Value) -> String {
     }
     if let Some(prefixes) = list("prefixes") {
         spent.push(format!("prefixes {prefixes}"));
+    }
+    if let Some(swaps) = list("swaps") {
+        spent.push(format!("swaps {swaps}"));
     }
     if let Some(settled) = found
         .get("settled")
@@ -3133,6 +3144,101 @@ fn prefixes_table(
     (y + 8.0, act)
 }
 
+/// Neighbouring parts swapped (B-437): a row a pair, and how many of them
+/// moved the answer past the floor. Each row shows its answer.
+fn swaps_table(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let unit = unit_of(found);
+    let depth = integer(found, "forced_depth");
+    let floor = integer(found, "floor_parts_per_million");
+    let Some(swaps) = found.get("swaps").and_then(Value::as_list) else {
+        return (
+            not_asked(
+                paint,
+                (area.x, area.y),
+                area.w,
+                "swaps",
+                mcf_serve::prompt::Extra::Swaps,
+                found,
+            ),
+            None,
+        );
+    };
+    let y = section(
+        paint,
+        (area.x, area.y),
+        area.w,
+        "swaps",
+        &[
+            format!("each {unit} and the next in each other's places"),
+            "vs as written".to_owned(),
+            "high = the order carries it".to_owned(),
+            "row → answer".to_owned(),
+        ],
+    );
+    let rows: Vec<ReadingRow> = swaps
+        .iter()
+        .enumerate()
+        .map(|(at, read)| ReadingRow {
+            first: crate::pair_mark(at),
+            moved: moved_of(read),
+            loud: moved_of(read) > floor,
+            cells: held_cells(read, depth),
+            text: part_text(found, at),
+            act: Some(Act::ShowSwap(at)),
+            chosen: desk.shown == Some(crate::Shown::Swap(at)),
+        })
+        .collect();
+    let columns = [
+        Column {
+            head: "moved",
+            at: MOVED_AT,
+            right: true,
+        },
+        Column {
+            head: "",
+            at: MOVED_AT + 12.0 + BAR_WIDTH,
+            right: true,
+        },
+        Column {
+            head: "1st",
+            at: 300.0,
+            right: true,
+        },
+        Column {
+            head: "open",
+            at: 354.0,
+            right: true,
+        },
+    ];
+    let (after, act) = reading_table(
+        paint,
+        mouse,
+        Box::new(area.x, y, area.w, 0.0),
+        "pair",
+        &columns,
+        &rows,
+    );
+    let y = foot(
+        paint,
+        (area.x, after + 4.0),
+        &format!("past floor {}", as_percent(floor)),
+        &format!(
+            "{} of {} · order read, not words",
+            swaps.iter().filter(|read| moved_of(read) > floor).count(),
+            swaps.len()
+        ),
+        ink.ink,
+    );
+    (y + 8.0, act)
+}
+
 /// Whether several seeds gave several answers, under the temperature it
 /// was asked at — or not asked, which is never *settled* (A7, B-431, B60).
 fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
@@ -3317,6 +3423,14 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             Some((
                 answer.to_owned(),
                 format!("answer · 1–{}", at.saturating_add(1)),
+            ))
+        }
+        crate::Shown::Swap(at) => {
+            let read = found.get("swaps").and_then(Value::as_list)?.get(at)?;
+            let answer = read.get("answer").and_then(Value::as_text)?;
+            Some((
+                answer.to_owned(),
+                format!("answer · {}", crate::pair_mark(at)),
             ))
         }
     });
@@ -3673,6 +3787,11 @@ impl Readings {
                 Extra::Prefixes => (
                     "prefixes",
                     "grown a part at a time from the front · short of the whole".to_owned(),
+                    extra.generations(parts, removed),
+                ),
+                Extra::Swaps => (
+                    "swaps",
+                    "each part and the next in each other's places · words kept".to_owned(),
                     extra.generations(parts, removed),
                 ),
             };

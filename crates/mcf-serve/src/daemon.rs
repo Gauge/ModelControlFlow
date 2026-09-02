@@ -356,6 +356,7 @@ fn prompt_report_entry(
         ("alone", reading_figures(served.get("alone"))),
         ("alone_floor", reading_figures(served.get("alone_floor"))),
         ("prefixes", reading_figures(served.get("prefixes"))),
+        ("swaps", reading_figures(served.get("swaps"))),
         ("clauses", Value::List(clauses)),
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
@@ -490,6 +491,8 @@ fn prompt_report_value(
         ("alone_floor", reading_value(report.alone_floor.as_ref())),
         // **The prompt grown from the front, where asked** (B-436).
         ("prefixes", readings_value(report.prefixes.as_deref())),
+        // **Neighbouring parts swapped, where asked** (B-437).
+        ("swaps", readings_value(report.swaps.as_deref())),
         (
             "forced_depth",
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),

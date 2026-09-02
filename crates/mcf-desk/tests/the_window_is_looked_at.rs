@@ -1202,6 +1202,34 @@ fn a_reading(moved: i64, answer: &str) -> mcf_record::json::Value {
     ])
 }
 
+/// The prompt of `a_report` grown from the front, and its neighbours
+/// swapped.
+fn grown_and_swapped() -> (mcf_record::json::Value, mcf_record::json::Value) {
+    use mcf_record::json::Value;
+    let prefixes = Value::List(vec![
+        a_reading(970_000, "Hello! What would you like me to do?"),
+        a_reading(
+            420_000,
+            "def slugify(title):\n    return title.replace(\" \", \"-\")",
+        ),
+        a_reading(
+            120_000,
+            "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+        ),
+    ]);
+    let swaps = Value::List(vec![
+        a_reading(
+            60_000,
+            "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+        ),
+        a_reading(
+            510_000,
+            "def slugify(title):\n    return title.replace(\" \", \"-\").lower()",
+        ),
+    ]);
+    (prefixes, swaps)
+}
+
 /// The four sentences of `a_report` asked alone, and the control alone.
 fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
     use mcf_record::json::Value;
@@ -1273,20 +1301,8 @@ fn a_report() -> mcf_desk::Desk {
         ("floor_spread", a_spread().1),
         ("alone", each_alone().0),
         ("alone_floor", each_alone().1),
-        (
-            "prefixes",
-            Value::List(vec![
-                a_reading(970_000, "Hello! What would you like me to do?"),
-                a_reading(
-                    420_000,
-                    "def slugify(title):\n    return title.replace(\" \", \"-\")",
-                ),
-                a_reading(
-                    120_000,
-                    "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
-                ),
-            ]),
-        ),
+        ("prefixes", grown_and_swapped().0),
+        ("swaps", grown_and_swapped().1),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("generations", Value::Integer(17)),
         ("prompt_tokens", Value::Integer(31)),
@@ -1446,12 +1462,12 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         "no sentence alone in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 900.0;
+    desk.scroll = 1030.0;
     let mut alone = a_report();
-    alone.scroll = 900.0;
+    alone.scroll = 1030.0;
     alone.shown = Some(mcf_desk::Shown::Alone(1));
     let mut without = a_report();
-    without.scroll = 900.0;
+    without.scroll = 1030.0;
     without.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let to_alone = drawn(&alone, DAY, "answer-alone").inked(ground);
@@ -1504,9 +1520,9 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         "no prefix in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 900.0;
+    desk.scroll = 1030.0;
     let mut prefix = a_report();
-    prefix.scroll = 900.0;
+    prefix.scroll = 1030.0;
     prefix.shown = Some(mcf_desk::Shown::Prefix(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1530,6 +1546,50 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-prefixes").inked(ground),
         "the report reads the same with the prompt grown from the front and without it"
+    );
+}
+
+/// Neighbours swapped is a row a pair, and pressing one shows the answer
+/// with the two in each other's places (B-437).
+#[test]
+fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
+    use mcf_record::json::Value;
+    // The rows sit under the prefixes, past the window's foot: the page is
+    // scrolled to them, which is how a reader reaches them too.
+    let mut desk = a_report();
+    desk.scroll = 925.0;
+    let rows = (520.0, 640.0);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::ShowSwap(1), rows),
+        "no swap in the report could be pressed"
+    );
+    // The answer has a page of its own under the tables.
+    desk.scroll = 1030.0;
+    let mut swap = a_report();
+    swap.scroll = 1030.0;
+    swap.shown = Some(mcf_desk::Shown::Swap(1));
+    let ground = DAY.ground;
+    assert_ne!(
+        drawn(&desk, DAY, "answer-as-written-swapped").inked(ground),
+        drawn(&swap, DAY, "answer-swap").inked(ground),
+        "the answer to a swap drew as the answer as written"
+    );
+    let mut unasked = a_report();
+    unasked.scroll = 925.0;
+    if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("swaps");
+    }
+    assert!(
+        !act_within(&unasked, &mcf_desk::Act::ShowSwap(1), rows),
+        "a swap is offered where none was read"
+    );
+    desk.scroll = 925.0;
+    assert_ne!(
+        drawn(&desk, DAY, "prompt-report-swaps").inked(ground),
+        drawn(&unasked, DAY, "prompt-report-no-swaps").inked(ground),
+        "the report reads the same with the neighbours swapped and without them"
     );
 }
 

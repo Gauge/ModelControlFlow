@@ -580,6 +580,17 @@ pub fn open_mark(held: Option<&Value>) -> String {
     format!("{}/{}", count("kept"), count("of"))
 }
 
+/// The pair a swap changed the places of, as `1&2` for the first swap:
+/// the parts counted from one, the way the removed rows count them
+/// (B-437). An ampersand rather than an arrow because the window's face is
+/// whichever the machine has, and the arrows are the glyphs it goes without.
+///
+/// One implementation for the glass and the console (B-072).
+#[must_use]
+pub fn pair_mark(at: usize) -> String {
+    format!("{}&{}", at.saturating_add(1), at.saturating_add(2))
+}
+
 /// How much of one part the model would have written itself, as `1/4`: one
 /// of its four tokens was the model's first choice (B-433). `None` where the
 /// reading was not taken or has no such part, which the row then shows as
@@ -730,6 +741,9 @@ pub enum Shown {
     /// The answer to the first `n + 1` parts, the prompt grown from the
     /// front (B-436).
     Prefix(usize),
+    /// The answer with this part and the one after it in each other's
+    /// places (B-437).
+    Swap(usize),
 }
 
 /// One thing a screen asks the window to do.
@@ -781,6 +795,9 @@ pub enum Act {
     /// Show the answer to the prompt grown through this many parts, or put
     /// the answer as written back.
     ShowPrefix(usize),
+    /// Show the answer with this part and the next swapped, where the
+    /// swaps were asked (B-437).
+    ShowSwap(usize),
     /// Close whatever dropdown is open, choosing nothing.
     Shut,
     /// Set the context window to one of the offered powers of two.
@@ -1381,6 +1398,7 @@ impl Desk {
             Act::ShowWithout(at) => self.show(Shown::Without(at)),
             Act::ShowAlone(at) => self.show(Shown::Alone(at)),
             Act::ShowPrefix(at) => self.show(Shown::Prefix(at)),
+            Act::ShowSwap(at) => self.show(Shown::Swap(at)),
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);

@@ -836,3 +836,64 @@ fn the_prompt_grown_from_the_front_is_read_short_of_the_whole_and_costs_a_genera
     let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.prefixes, None);
 }
+
+/// Each part is swapped with the one after it, every word kept and the
+/// separators left in place, one generation a pair and never the last
+/// part with nothing; not asked for, the reading is absent (B-437, A7).
+#[test]
+fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: Draw| {
+        asked.borrow_mut().push(prompt.to_owned());
+        match prompt {
+            "Two.\n\nOne.\nThree." => said("two one three"),
+            "One.\n\nThree.\nTwo." => said("one three two"),
+            _ => said("one two three"),
+        }
+    };
+    let taken = Taken {
+        text: "One.\n\nTwo.\nThree.",
+        by: Some(Unit::Sentence),
+        most: None,
+        extras: Extras::NONE.with(Extra::Swaps, true),
+    };
+    assert_eq!(
+        Extra::Swaps.generations(3, 3),
+        2,
+        "a pair a part but the last"
+    );
+    assert_eq!(
+        Extra::Swaps.generations(3, 1),
+        1,
+        "capped like the removals"
+    );
+    assert_eq!(Extra::Swaps.generations(1, 1), 0);
+    assert_eq!(swapped(&taken.parts(), 0), "Two.\n\nOne.\nThree.");
+    assert_eq!(swapped(&taken.parts(), 1), "One.\n\nThree.\nTwo.");
+    assert_eq!(
+        swapped(&taken.parts(), 2),
+        "One.\n\nTwo.\nThree.",
+        "the last part has no neighbour after it"
+    );
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let swaps = report.swaps.clone().expect("asked for, so present");
+    let moved: Vec<u64> = swaps.iter().map(|read| read.moved).collect();
+    assert_eq!(moved.len(), 2);
+    assert!(
+        moved.iter().all(|&moved| moved > 0),
+        "every swap moved the answer: {moved:?}"
+    );
+    assert_eq!(
+        swaps.first().map(|read| read.answer.as_str()),
+        Some("two one three")
+    );
+    // One for the baseline, three removals, one control, two swaps.
+    assert_eq!(asked.borrow().len(), 7);
+
+    let not_asked = Taken {
+        extras: Extras::NONE,
+        ..taken
+    };
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.swaps, None);
+}

@@ -215,11 +215,15 @@ pub enum Extra {
     /// the first two, and on to one short of the whole — to say where the
     /// answer becomes the answer (B-436). A generation a prefix.
     Prefixes,
+    /// Each pair of neighbouring parts swapped in turn, to say whether
+    /// the answer is carried by what the parts say or by where they sit
+    /// (B-437). A generation a swap.
+    Swaps,
 }
 
 impl Extra {
     /// Every reading there is, in the order they are asked and reported.
-    pub const ALL: [Self; 3] = [Self::Floors, Self::Alone, Self::Prefixes];
+    pub const ALL: [Self; 4] = [Self::Floors, Self::Alone, Self::Prefixes, Self::Swaps];
 
     /// The name a flag and the wire use.
     #[must_use]
@@ -228,6 +232,7 @@ impl Extra {
             Self::Floors => "floors",
             Self::Alone => "alone",
             Self::Prefixes => "prefixes",
+            Self::Swaps => "swaps",
         }
     }
 
@@ -248,8 +253,10 @@ impl Extra {
             // One a part removed, and the control alone.
             Self::Alone => removed.saturating_add(1),
             // One a prefix short of the whole, as many as parts removed:
-            // the whole is the baseline, already drawn.
-            Self::Prefixes => strict_prefixes(parts, removed),
+            // the whole is the baseline, already drawn. One a neighbouring
+            // pair, likewise: the part removed and the one after it change
+            // places, and the last part has nothing after it.
+            Self::Prefixes | Self::Swaps => strict_prefixes(parts, removed),
         }
     }
 
@@ -270,6 +277,10 @@ impl Extra {
                 "the prompt grown a part at a time from the front, to say where the answer \
                  becomes the answer"
             }
+            Self::Swaps => {
+                "each part swapped with the one after it, to say whether the answer follows \
+                 what the parts say or where they sit"
+            }
         }
     }
 
@@ -280,6 +291,7 @@ impl Extra {
             Self::Floors => "floor at every position",
             Self::Alone => "each part alone",
             Self::Prefixes => "prompt grown from the front",
+            Self::Swaps => "neighbours swapped",
         }
     }
 
@@ -291,6 +303,7 @@ impl Extra {
             Self::Floors => "for the control at every other position",
             Self::Alone => "for each part alone and the control alone",
             Self::Prefixes => "for the prompt grown a part at a time, short of the whole",
+            Self::Swaps => "for each part swapped with the one after it",
         }
     }
 
@@ -299,12 +312,15 @@ impl Extra {
             Self::Floors => 1,
             Self::Alone => 2,
             Self::Prefixes => 4,
+            Self::Swaps => 8,
         }
     }
 }
 
 /// How many prefixes short of the whole are read: one a part removed, and
-/// never the whole itself, whose answer is the baseline.
+/// never the whole itself, whose answer is the baseline. The count of
+/// neighbouring pairs is the same figure: a part and the one after it, for
+/// every part but the last.
 const fn strict_prefixes(parts: usize, removed: usize) -> usize {
     let short = parts.saturating_sub(1);
     if removed < short { removed } else { short }
@@ -564,6 +580,13 @@ pub struct Report {
     /// answer as written, so the run of them says where the answer became
     /// the answer. Capped at `most` prefixes. `None` where not asked (A7).
     pub prefixes: Option<Vec<Reading>>,
+    /// Each part swapped with the one after it, where asked (B-437): the
+    /// first entry is the first two parts in the other order, the next the
+    /// second and third, and so on — how far each sat from the answer as
+    /// written. A swap that moves the answer says the parts' order carries
+    /// it, not their words alone. Capped at `most` swaps. `None` where not
+    /// asked (A7).
+    pub swaps: Option<Vec<Reading>>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -1072,6 +1095,8 @@ pub fn measure(
     };
     let prefixes = (taken.extras.has(Extra::Prefixes) && all.len() > 1)
         .then(|| prefixes_of(&mut bench, &all, ablated));
+    let swaps = (taken.extras.has(Extra::Swaps) && all.len() > 1)
+        .then(|| swaps_of(&mut bench, &all, ablated));
 
     let settled =
         settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, bench.ask));
@@ -1083,6 +1108,7 @@ pub fn measure(
         alone,
         alone_floor,
         prefixes,
+        swaps,
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),
@@ -1149,6 +1175,38 @@ fn prefixes_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Read
     (1..=strict_prefixes(all.len(), most))
         .map(|kept| bench.read(&joined(all.get(..kept).unwrap_or_default())))
         .collect()
+}
+
+/// Neighbouring parts swapped (B-437).
+///
+/// Removing a part and growing the prompt both keep the parts in the
+/// order written. Swapping two neighbours keeps every word and changes
+/// only where two of them sit, so what moves is position alone: a swap
+/// within the floor says the answer is carried by what the parts say; a
+/// swap that moves it says the model reads their order, which is the
+/// recency or lost-in-the-middle effect with no judgement in the reading.
+/// Each part's separator stays with its place, so a paragraph break is
+/// still a paragraph break after the swap.
+fn swaps_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Reading> {
+    (0..strict_prefixes(all.len(), most))
+        .map(|at| bench.read(&swapped(all, at)))
+        .collect()
+}
+
+/// The document with the part at `at` and the one after it in each
+/// other's places, the separators left where they were.
+#[must_use]
+pub fn swapped(parts: &[Part], at: usize) -> String {
+    let mut all = parts.to_vec();
+    let after = at.saturating_add(1);
+    if after < all.len() {
+        let separators: Vec<String> = all.iter().map(|part| part.after.clone()).collect();
+        all.swap(at, after);
+        for (part, separator) in all.iter_mut().zip(separators) {
+            part.after = separator;
+        }
+    }
+    joined(&all)
 }
 
 /// The settledness question: the same prompt, `SEEDS` seeds, one temperature.

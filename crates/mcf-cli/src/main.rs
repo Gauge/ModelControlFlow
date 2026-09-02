@@ -919,7 +919,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
             },
             "--json" => as_json = true,
             // Every further reading is a flag of its own name: --floors,
-            // --alone, --prefixes (B-072).
+            // --alone, --prefixes, --swaps (B-072).
             other => match other
                 .strip_prefix("--")
                 .and_then(mcf_serve::prompt::Extra::named)
@@ -1624,12 +1624,14 @@ const COMMANDS: &str = "\
     \x20       [--most <n>] [--json]          ordering, never relevance. A\n\
     \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
     \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
-    \x20                                     at t to see whether it settles;\n\
+    \x20       [--swaps]                     at t to see whether it settles;\n\
     \x20                                     --floors puts the control at\n\
     \x20                                     every position, one each;\n\
     \x20                                     --alone asks each part as the\n\
     \x20                                     whole prompt in turn; --prefixes\n\
-    \x20                                     grows the prompt a part at a time\n\
+    \x20                                     grows the prompt a part at a time;\n\
+    \x20                                     --swaps changes each pair of\n\
+    \x20                                     neighbours' places\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -2299,7 +2301,8 @@ mod tests {
             extras: mcf_serve::prompt::Extras::NONE
                 .with(mcf_serve::prompt::Extra::Floors, true)
                 .with(mcf_serve::prompt::Extra::Alone, true)
-                .with(mcf_serve::prompt::Extra::Prefixes, true),
+                .with(mcf_serve::prompt::Extra::Prefixes, true)
+                .with(mcf_serve::prompt::Extra::Swaps, true),
             as_json: true,
         };
         assert_eq!(
@@ -2317,6 +2320,7 @@ mod tests {
                 "--floors",
                 "--alone",
                 "--prefixes",
+                "--swaps",
                 "--json"
             ]),
             whole
@@ -2326,6 +2330,7 @@ mod tests {
                 "prompt",
                 "m",
                 "--json",
+                "--swaps",
                 "--prefixes",
                 "--alone",
                 "--floors",
