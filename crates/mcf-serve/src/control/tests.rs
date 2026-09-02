@@ -185,6 +185,7 @@ fn the_new_requests_survive_the_wire() {
             then: None,
             by: None,
             most: None,
+            temperature: None,
             seed: 41,
         },
         Request::PromptReport {
@@ -193,6 +194,7 @@ fn the_new_requests_survive_the_wire() {
             then: Some("What is 2 + 2?".to_owned()),
             by: Some(crate::prompt::Unit::Sentence),
             most: Some(40),
+            temperature: Some(mcf_core::configuration::Thousandths(700)),
             seed: 41,
         },
     ];
@@ -256,7 +258,8 @@ fn a_generation_that_does_not_say_is_not_pinned() {
 /// nothing at most, is refused rather than defaulted (B-430).
 #[test]
 fn a_prompt_report_by_an_unknown_unit_is_refused() {
-    let by_word = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","by":"word"}"#;
+    let by_word =
+        r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","by":"word"}"#;
     let refused = Request::read(by_word).expect_err("by word is not a unit");
     assert!(
         format!("{refused:?}").contains("neither sentence nor paragraph"),
@@ -264,8 +267,12 @@ fn a_prompt_report_by_an_unknown_unit_is_refused() {
     );
     let none = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","most":0}"#;
     let refused = Request::read(none).expect_err("removing nothing is not a report");
+    assert!(format!("{refused:?}").contains("no parts"), "{refused:?}");
+    let cold = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","temperature_thousandths":0}"#;
+    let refused =
+        Request::read(cold).expect_err("nought is greedy, not a temperature to settle at");
     assert!(
-        format!("{refused:?}").contains("no parts"),
+        format!("{refused:?}").contains("not above nought"),
         "{refused:?}"
     );
 }

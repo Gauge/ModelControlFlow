@@ -26,6 +26,14 @@ use mcf_record::json::Value;
 /// somebody else's JSON.
 const THE_READER: &str = "crates/mcf-record/src/json.rs";
 
+/// The one file allowed to write a decimal at all, and it writes one to an
+/// engine and not to a record: `llama.cpp`'s API takes a temperature as a
+/// JSON number, and a caller who stated `0.7` is owed exactly that on the
+/// wire (B-431, A1). Rendered from thousandths, so nothing is rounded; kept
+/// to this file, so nothing else discovers the constructor and puts one in a
+/// record.
+const THE_ENGINE_REQUEST: &str = "crates/mcf-serve/src/served.rs";
+
 /// Nothing but the reader makes a number this format does not carry.
 ///
 /// A source check rather than a type-level one, because the variant has to be
@@ -54,6 +62,11 @@ fn nothing_but_the_reader_constructs_a_number_the_record_cannot_carry() {
             // handles the variant is a reader doing its job, and every decoder
             // in the tree has to have one.
             if code.contains("ForeignNumber(") && !code.contains("Value::ForeignNumber(_)") {
+                found.push(format!("{relative}:{}", number.saturating_add(1)));
+            }
+            // The constructor the reader offers for an engine's request is
+            // called from that request and nowhere else.
+            if code.contains("exact_thousandths(") && relative != THE_ENGINE_REQUEST {
                 found.push(format!("{relative}:{}", number.saturating_add(1)));
             }
         }

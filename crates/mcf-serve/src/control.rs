@@ -77,6 +77,9 @@ pub enum Request {
         by: Option<crate::prompt::Unit>,
         /// How many parts to remove at most; `None` is the default cap.
         most: Option<usize>,
+        /// The temperature the settledness seeds are drawn at, in
+        /// thousandths; `None` spends no generation on the question (B-431).
+        temperature: Option<mcf_core::configuration::Thousandths>,
         /// The seed, held still across every ablation so that what differs
         /// between a baseline and a clause left out is the prompt (D19).
         seed: u64,
@@ -328,6 +331,7 @@ fn prompt_report_line(request: &Request) -> Value {
         then,
         by,
         most,
+        temperature,
         seed,
     } = request
     else {
@@ -347,6 +351,12 @@ fn prompt_report_line(request: &Request) -> Value {
     }
     if let Some(most) = most {
         fields.push(("most", Value::Integer(i64::try_from(*most).unwrap_or(0))));
+    }
+    if let Some(temperature) = temperature {
+        fields.push((
+            "temperature_thousandths",
+            Value::Integer(i64::from(temperature.0)),
+        ));
     }
     Value::map(fields)
 }
@@ -592,6 +602,26 @@ impl Request {
                             .filter(|most| *most > 0)
                             .ok_or_else(|| {
                                 refused("a prompt report removing no parts at most", line)
+                            })?,
+                    ),
+                },
+                // In thousandths, so that no fraction crosses the wire (A19).
+                // Nought is not a temperature to settle at: it is what every
+                // other generation draws at, and asking for it would spend
+                // three generations on a question the sampler cannot answer.
+                temperature: match value.get("temperature_thousandths") {
+                    None => None,
+                    Some(held) => Some(
+                        held.as_integer()
+                            .and_then(|held| u32::try_from(held).ok())
+                            .filter(|held| *held > 0)
+                            .map(mcf_core::configuration::Thousandths)
+                            .ok_or_else(|| {
+                                refused(
+                                    "a prompt report settling at a temperature that is not \
+                                     above nought",
+                                    line,
+                                )
                             })?,
                     ),
                 },

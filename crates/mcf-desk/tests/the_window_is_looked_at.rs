@@ -1141,7 +1141,10 @@ fn a_report() -> mcf_desk::Desk {
                 ("of", Value::Integer(1)),
             ]),
         ),
-        ("ranked_under", Value::text("chatml — set by a probe".to_owned())),
+        (
+            "ranked_under",
+            Value::text("chatml — set by a probe".to_owned()),
+        ),
         (
             "expected",
             Value::List(vec![
@@ -1154,8 +1157,17 @@ fn a_report() -> mcf_desk::Desk {
                 ranked(" function", Some(1)),
             ]),
         ),
-        ("distinct_answers", Value::Integer(1)),
-        ("seeds_asked", Value::Integer(3)),
+        (
+            "settled",
+            Value::map([
+                ("temperature_thousandths", Value::Integer(700)),
+                ("temperature", Value::text("0.700")),
+                ("seeds_asked", Value::Integer(3)),
+                ("distinct_answers", Value::Integer(2)),
+                ("spread_parts_per_million", Value::Integer(180_000)),
+                ("from_greedy_parts_per_million", Value::Integer(90_000)),
+            ]),
+        ),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("unit", Value::text("sentence".to_owned())),
         (
@@ -1433,14 +1445,21 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
     // window is thousands of renders of a thirteen-paragraph document.
     let controls = (280.0, 420.0);
     assert!(
-        act_within(&desk, &mcf_desk::Act::FocusThen(true), controls),
+        act_within(
+            &desk,
+            &mcf_desk::Act::Focus(mcf_desk::Caret::Question),
+            controls
+        ),
         "the question field is on the page"
     );
-    desk.act(mcf_desk::Act::FocusThen(true));
+    desk.act(mcf_desk::Act::Focus(mcf_desk::Caret::Question));
     desk.paste("Roll for initiative.\nsecond line");
     desk.typing().push('!');
     assert_eq!(desk.then, "Roll for initiative.!", "a question is one line");
-    assert!(desk.typed.ends_with("Last rule."), "the document was not typed into");
+    assert!(
+        desk.typed.ends_with("Last rule."),
+        "the document was not typed into"
+    );
     desk.returned(false);
     assert!(
         matches!(desk.doing, mcf_desk::Doing::Reporting(_)),
@@ -1455,7 +1474,11 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
     assert_eq!(taken.parts().len(), 13);
     assert_eq!(taken.cap(), 8);
     assert!(
-        act_within(&desk, &mcf_desk::Act::TakeApartBy(Some(Unit::Sentence)), controls),
+        act_within(
+            &desk,
+            &mcf_desk::Act::TakeApartBy(Some(Unit::Sentence)),
+            controls
+        ),
         "by sentence is offered"
     );
     assert!(
@@ -1476,6 +1499,37 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
     assert_eq!(taken.unit(), (Unit::Sentence, true));
     assert_eq!(taken.cap(), 13);
     assert_eq!(taken.then, Some("Roll for initiative.!"));
+
+    // The temperature the seeds are drawn at is a field under the choices:
+    // empty asks nothing, a decimal is the condition, and what is not a
+    // temperature holds Analyse rather than being dropped (B-431, §3.15).
+    assert_eq!(desk.settle(), Ok(None));
+    let lower = (controls.0 + 40.0, controls.1 + 60.0);
+    assert!(
+        act_within(
+            &desk,
+            &mcf_desk::Act::Focus(mcf_desk::Caret::Temperature),
+            lower
+        ),
+        "the temperature field is on the page"
+    );
+    desk.act(mcf_desk::Act::Focus(mcf_desk::Caret::Temperature));
+    desk.typing().push_str("warm");
+    assert_eq!(desk.settle(), Err("warm"));
+    desk.report_prompt();
+    assert!(
+        matches!(desk.doing, mcf_desk::Doing::Nothing),
+        "not a temperature is not run as no temperature"
+    );
+    desk.temperature = "0.7".to_owned();
+    assert_eq!(
+        desk.settle(),
+        Ok(Some(mcf_core::configuration::Thousandths(700)))
+    );
+    assert_eq!(
+        desk.then, "Roll for initiative.!",
+        "the question was not typed into"
+    );
     let _looked = drawn(&desk, DAY, "prompt-choices");
 }
 
@@ -1490,7 +1544,9 @@ fn a_long_prompt_is_drawn_as_lines_and_the_tail_is_what_shows() {
     long.page = Page::Prompt;
     long.chosen = Some(0);
     long.typed = (0..40)
-        .map(|at| format!("Paragraph {at} of the persona, which says something the model is to do."))
+        .map(|at| {
+            format!("Paragraph {at} of the persona, which says something the model is to do.")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let ground = DAY.ground;

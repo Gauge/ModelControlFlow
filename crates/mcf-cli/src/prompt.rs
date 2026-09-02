@@ -37,6 +37,9 @@ pub(crate) struct Asked<'a> {
     pub by: Option<mcf_serve::prompt::Unit>,
     /// The most parts to remove, where the caller said.
     pub most: Option<usize>,
+    /// The temperature to draw the settledness seeds at, where the caller
+    /// stated one (B-431).
+    pub temperature: Option<mcf_core::configuration::Thousandths>,
 }
 
 /// The document, from wherever the caller put it.
@@ -53,8 +56,9 @@ fn document(asked: &Asked<'_>) -> Result<String, String> {
                 .map(|_read| text)
                 .map_err(|why| format!("the standard input could not be read: {why}"))
         }
-        (None, Some(path)) => std::fs::read_to_string(path)
-            .map_err(|why| format!("{path} could not be read: {why}")),
+        (None, Some(path)) => {
+            std::fs::read_to_string(path).map_err(|why| format!("{path} could not be read: {why}"))
+        }
         (None, None) => Err("no document was given".to_owned()),
     }
 }
@@ -102,6 +106,7 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
         then: asked.then.map(str::to_owned),
         by: asked.by,
         most: asked.most,
+        temperature: asked.temperature,
         seed: SEED,
     };
     if writeln!(connection, "{}", request.to_line())
@@ -349,9 +354,9 @@ fn held_said(held: Option<&Value>, depth: i64) -> Option<String> {
             format!("the answer would still have begun the same way: {opening}")
         }
         Some(1) => format!("the answer's first token stayed its first choice; {opening}"),
-        Some(rank) => format!(
-            "the answer's first token fell to its number {rank} choice; {opening}"
-        ),
+        Some(rank) => {
+            format!("the answer's first token fell to its number {rank} choice; {opening}")
+        }
         None => format!("the answer's first token fell outside its top {depth}; {opening}"),
     })
 }
@@ -365,6 +370,62 @@ fn held_said(held: Option<&Value>, depth: i64) -> Option<String> {
 fn percent(parts_per_million: i64) -> String {
     let (whole, tenth) = as_percent(parts_per_million);
     format!("{whole}.{tenth}%")
+}
+
+/// Whether the prompt settles the answer — under the temperature it was asked
+/// at, or not asked at all.
+///
+/// **Not asked is said as not asked.** Every other generation in the report
+/// is greedy, and under a greedy sampler the seed changes nothing; a report
+/// that drew two more seeds at temperature 0 measured nothing and said so on
+/// every prompt (F147). So the seeds are drawn only at a temperature the
+/// caller states, and a report with none says the question is open rather
+/// than that the answer settled (A7, B-431).
+fn settled_lines(settled: Option<&Value>) -> Vec<String> {
+    let Some(settled) = settled.filter(|held| !matches!(held, Value::Null)) else {
+        return vec![
+            "    not asked: no temperature was stated, and at temperature 0 — which every \
+             other generation here is — the seed changes nothing, so no generation was spent \
+             on the question. `--temperature 0.7` draws three seeds at 0.7 and says how many \
+             answers they gave and how far apart they sat. The temperature is yours to state: \
+             MCF has no house value (B60), and this model's own recommendation, if it \
+             publishes one, is what `mcf explain` shows."
+                .to_owned(),
+        ];
+    };
+    let count = |key: &str| settled.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let temperature = settled
+        .get("temperature")
+        .and_then(Value::as_text)
+        .unwrap_or("?");
+    let distinct = count("distinct_answers");
+    let asked = count("seeds_asked");
+    let spread = count("spread_parts_per_million");
+    let from_greedy = count("from_greedy_parts_per_million");
+    let mut lines = vec![if distinct <= 1 {
+        format!(
+            "    {} at temperature {temperature} gave 1 answer, to the character. Under this \
+             temperature this model settles this prompt — a fact about the pair, not a merit \
+             of the prompt: a question with one answer should settle, and an open one need not.",
+            count_of(asked, "seed")
+        )
+    } else {
+        format!(
+            "    {} at temperature {temperature} gave {distinct} different answers. The two \
+             farthest apart differ in {} of their words. Several answers is what an open \
+             question deserves and what a specification does not; which this is, the report \
+             cannot say.",
+            count_of(asked, "seed"),
+            percent(spread)
+        )
+    }];
+    lines.push(format!(
+        "    the farthest of them sits {} of its words from the greedy answer above — how far \
+         sampling at {temperature} takes this model from the answer the rest of this report is \
+         about.",
+        percent(from_greedy)
+    ));
+    lines
 }
 
 /// A count and the thing counted, in English.
@@ -610,24 +671,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.extend(steering_lines(body));
     lines.push(String::new());
     lines.push("  WHETHER SEVERAL SEEDS GAVE SEVERAL ANSWERS".to_owned());
-    let distinct = count("distinct_answers");
-    let asked = count("seeds_asked");
-    lines.push(if distinct <= 1 {
-        format!(
-            "    {} gave 1 answer — and under this sampler they could not have given more. \
-             MCF asks every generation at temperature 0, which takes the likeliest token every \
-             time, so the seed changes nothing and this line says the same for every prompt. \
-             Whether *your* prompt settles the answer is not measured here (F147).",
-            count_of(asked, "seed")
-        )
-    } else {
-        format!(
-            "    {} gave {distinct} different answers — which under temperature 0 should not \
-             happen at all, and is a fact about the engine rather than the prompt. Worth \
-             reporting rather than hiding (A2).",
-            count_of(asked, "seed")
-        )
-    });
+    lines.extend(settled_lines(body.get("settled")));
 
     lines.push(String::new());
     lines.extend(what_the_model_expected(body));
@@ -663,7 +707,7 @@ mod tests {
                    "without":"Yes.","held":{"first_rank":null,"kept":0,"of":2}},
                   {"text":"You are careful.","changed":false,"moved_parts_per_million":0,
                    "without":"Blue.","held":{"first_rank":1,"kept":2,"of":2}}],
-                "clauses_over_the_cap":3,"seeds_asked":3,"distinct_answers":1,"generations":6,
+                "clauses_over_the_cap":3,"settled":null,"generations":6,
                 "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
                 "most":3,"then":"What colour is the room?",
                 "addressed_as":"the document and the question in one user turn",
@@ -708,7 +752,10 @@ mod tests {
             fields.insert("floor_held".to_owned(), Value::Null);
         }
         let text = steering_lines(&held).join("\n");
-        assert!(text.contains("was not read: it needs the served engine"), "{text}");
+        assert!(
+            text.contains("was not read: it needs the served engine"),
+            "{text}"
+        );
         assert_eq!(held_said(Some(&Value::Null), 60), None);
         assert_eq!(held_said(None, 60), None);
     }
@@ -717,7 +764,10 @@ mod tests {
     #[test]
     fn the_rank_reading_says_what_it_was_read_under() {
         let text = what_the_model_expected(&body()).join("\n");
-        assert!(text.contains("read under chatml — set by a probe"), "{text}");
+        assert!(
+            text.contains("read under chatml — set by a probe"),
+            "{text}"
+        );
     }
 
     /// The unit, who decided it, the held question and how it reached the
@@ -734,7 +784,10 @@ mod tests {
             text.contains("every variant was followed by: \"What colour is the room?\""),
             "{text}"
         );
-        assert!(text.contains("addressed as the document and the question in one user turn"), "{text}");
+        assert!(
+            text.contains("addressed as the document and the question in one user turn"),
+            "{text}"
+        );
         assert!(text.contains("HOW MUCH EACH SENTENCE STEERED"), "{text}");
         assert!(
             text.contains("3 further sentences not removed") && text.contains("`--most 6`"),
@@ -746,8 +799,64 @@ mod tests {
             fields.insert("unit".to_owned(), Value::text("paragraph".to_owned()));
         }
         let text = rendered(&alone, "m").join("\n");
-        assert!(text.contains("asked on its own: nothing followed it"), "{text}");
+        assert!(
+            text.contains("asked on its own: nothing followed it"),
+            "{text}"
+        );
         assert!(text.contains("HOW MUCH EACH PARAGRAPH STEERED"), "{text}");
+    }
+
+    /// Settledness is said under the temperature it was asked at, and where
+    /// none was stated it is said as not asked — never as settled (A7, B-431).
+    #[test]
+    fn settledness_is_said_under_its_temperature_or_as_not_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("not asked: no temperature was stated")
+                && text.contains("`--temperature 0.7`"),
+            "{text}"
+        );
+        assert!(!text.contains("settles this prompt"), "{text}");
+
+        let mut warm = body();
+        if let Value::Map(fields) = &mut warm {
+            fields.insert(
+                "settled".to_owned(),
+                Value::map([
+                    ("temperature_thousandths", Value::Integer(700)),
+                    ("temperature", Value::text("0.700")),
+                    ("seeds_asked", Value::Integer(3)),
+                    ("distinct_answers", Value::Integer(3)),
+                    ("spread_parts_per_million", Value::Integer(412_000)),
+                    ("from_greedy_parts_per_million", Value::Integer(250_000)),
+                ]),
+            );
+        }
+        let text = rendered(&warm, "m").join("\n");
+        assert!(
+            text.contains("3 seeds at temperature 0.700 gave 3 different answers"),
+            "{text}"
+        );
+        assert!(
+            text.contains("farthest apart differ in 41.2% of their words"),
+            "{text}"
+        );
+        assert!(
+            text.contains("sits 25.0% of its words from the greedy answer"),
+            "{text}"
+        );
+
+        if let Value::Map(fields) = &mut warm
+            && let Some(Value::Map(settled)) = fields.get_mut("settled")
+        {
+            settled.insert("distinct_answers".to_owned(), Value::Integer(1));
+            settled.insert("spread_parts_per_million".to_owned(), Value::Integer(0));
+        }
+        let text = rendered(&warm, "m").join("\n");
+        assert!(
+            text.contains("3 seeds at temperature 0.700 gave 1 answer, to the character"),
+            "{text}"
+        );
     }
 
     /// A document in a file that is not there is said with the path, not
@@ -759,7 +868,10 @@ mod tests {
             ..Asked::default()
         };
         let why = document(&asked).expect_err("a file that is not there");
-        assert!(why.contains("/nowhere/persona.md could not be read"), "{why}");
+        assert!(
+            why.contains("/nowhere/persona.md could not be read"),
+            "{why}"
+        );
         let inline = Asked {
             prompt: Some("A. B."),
             ..Asked::default()

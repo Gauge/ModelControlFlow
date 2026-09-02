@@ -147,6 +147,21 @@ fn thousandths_render_as_the_decimal_they_are() {
     assert_eq!(Thousandths(2_000).to_string(), "2.000");
 }
 
+/// What a person writes is what is held: three places exactly, and a fourth
+/// that is not a nought is refused rather than rounded (A7).
+#[test]
+fn a_decimal_is_read_as_thousandths_without_a_float() {
+    assert_eq!("0.7".parse(), Ok(Thousandths(700)));
+    assert_eq!("1".parse(), Ok(Thousandths(1_000)));
+    assert_eq!(".5".parse(), Ok(Thousandths(500)));
+    assert_eq!("0.9500".parse(), Ok(Thousandths(950)));
+    assert_eq!(" 1.050 ".parse(), Ok(Thousandths(1_050)));
+    assert_eq!("0.0001".parse::<Thousandths>(), Err(()));
+    assert_eq!("warm".parse::<Thousandths>(), Err(()));
+    assert_eq!("".parse::<Thousandths>(), Err(()));
+    assert_eq!("-0.5".parse::<Thousandths>(), Err(()));
+}
+
 /// Exactness is the reason for thousandths: identity is an equality question,
 /// and two configurations that should be the same must not depend on how each
 /// was parsed. Distinct values stay distinct at a resolution no float

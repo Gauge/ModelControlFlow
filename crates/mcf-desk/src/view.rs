@@ -32,7 +32,7 @@ use crate::font::Weight;
 use crate::paint::{Box, Painter, Rgb};
 use crate::ui::{self, Kind, Mouse};
 use crate::words;
-use crate::{Act, Desk, Doing, Model, Page, Picker, windows};
+use crate::{Act, Caret, Desk, Doing, Model, Page, Picker, windows};
 use mcf_record::json::Value;
 use mcf_serve::anatomy::SaidVocabulary;
 
@@ -880,38 +880,48 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
     act
 }
 
-/// How many answers several seeds gave, and what that can mean here.
+/// How many answers several seeds gave at the temperature they were drawn
+/// at, and how far apart — or that the question was not asked.
+///
+/// **Not asked is said as not asked.** Every other generation is greedy, and
+/// two more seeds at temperature 0 could not differ; this line once said so
+/// for every prompt on every model, reporting the sampler (F147). The seeds
+/// are drawn only at a temperature the person states, and a report with
+/// none says the question is open rather than that the answer settled
+/// (A7, B-431).
 fn how_many_answers(paint: &mut Painter, at: (f32, f32), found: &Value) {
     let ink = paint.ink;
-    let area = Box::new(at.0, at.1, 0.0, 0.0);
-    let distinct = found
-        .get("distinct_answers")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let seeds = found
-        .get("seeds_asked")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    paint.say_at(
-        area.x,
-        area.y,
-        &{
-            let asked = count_of(usize::try_from(seeds).unwrap_or(0), "seed");
+    let said = match found.get("settled") {
+        Some(settled @ Value::Map(_)) => {
+            let count = |key: &str| settled.get(key).and_then(Value::as_integer).unwrap_or(0);
+            let temperature = settled
+                .get("temperature")
+                .and_then(Value::as_text)
+                .unwrap_or("?");
+            let asked = count_of(usize::try_from(count("seeds_asked")).unwrap_or(0), "seed");
+            let distinct = count("distinct_answers");
+            let from_greedy = as_percent(count("from_greedy_parts_per_million"));
             if distinct <= 1 {
-                // **Not "this prompt settles it".** Every generation is asked
-                // at temperature 0, which takes the likeliest token every
-                // time, so the seed changes nothing and this line said the
-                // same for every prompt on every model. It was reporting the
-                // sampler (F147).
-                format!("{asked} gave one answer — under temperature 0 they could not differ")
+                format!(
+                    "{asked} at temperature {temperature} gave one answer, to the character — \
+                     this model settles this prompt at {temperature}; the farthest sample sat \
+                     {from_greedy} from the greedy answer"
+                )
             } else {
-                format!("{asked} gave {distinct} answers, which temperature 0 should not do")
+                format!(
+                    "{asked} at temperature {temperature} gave {distinct} answers, the two \
+                     farthest apart differing in {} of their words; the farthest sat \
+                     {from_greedy} from the greedy answer below",
+                    as_percent(count("spread_parts_per_million"))
+                )
             }
-        },
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
-    );
+        }
+        _ => "whether several seeds give several answers was not asked: no temperature was \
+              stated, and at temperature 0 the seed changes nothing. The field above takes \
+              one — the temperature is yours, MCF has no house value (B60)"
+            .to_owned(),
+    };
+    paint.say_at(at.0, at.1, &said, Weight::Regular, size::BODY, ink.quiet);
 }
 
 /// Which words the model did not expect, in the space beside the bars.
@@ -2530,7 +2540,12 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
 /// removed, one for the control, and one for each further seed — over the
 /// parts the daemon's own splitting finds, so the forecast and the bill
 /// cannot disagree (B-072, F147).
-fn what_it_will_cost(unit: mcf_serve::prompt::Unit, parts: usize, removed: usize) -> String {
+fn what_it_will_cost(
+    unit: mcf_serve::prompt::Unit,
+    parts: usize,
+    removed: usize,
+    settling: bool,
+) -> String {
     use mcf_serve::prompt::SEEDS;
     if parts <= 1 {
         return format!(
@@ -2538,12 +2553,10 @@ fn what_it_will_cost(unit: mcf_serve::prompt::Unit, parts: usize, removed: usize
             unit.name()
         );
     }
-    let generations = removed
-        .saturating_add(2)
-        .saturating_add(SEEDS.saturating_sub(1));
+    let seeds = if settling { SEEDS } else { 0 };
+    let generations = removed.saturating_add(2).saturating_add(seeds);
     format!(
-        "{} — {}: one for the document, {} removed in turn, one for the control sentence, one \
-         for each of {} further seeds",
+        "{} — {}: one for the document, {} removed in turn, one for the control sentence{}",
         count_of(parts, unit.name()),
         count_of(generations, "generation"),
         if removed == parts {
@@ -2551,7 +2564,11 @@ fn what_it_will_cost(unit: mcf_serve::prompt::Unit, parts: usize, removed: usize
         } else {
             format!("the first {removed}")
         },
-        SEEDS.saturating_sub(1)
+        if settling {
+            format!(", and {SEEDS} seeds at the temperature")
+        } else {
+            String::new()
+        }
     )
 }
 
@@ -2587,9 +2604,9 @@ fn the_document_and_its_question(
         &desk.typed,
         "paste or type the document to analyse — a persona, an instruction sheet, a question. \
          Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
-        !desk.then_focused,
+        desk.caret == Caret::Document,
     ) {
-        act = Some(Act::FocusThen(false));
+        act = Some(Act::Focus(Caret::Document));
     }
     // **The question the document is asked** (B-430). A persona alone is
     // asked nothing, and every variant of it below is followed by this, in
@@ -2602,9 +2619,9 @@ fn the_document_and_its_question(
         &desk.then,
         "then ask it — the question every variant of the document is followed by; empty asks \
          the document on its own",
-        desk.then_focused,
+        desk.caret == Caret::Question,
     ) {
-        act = Some(Act::FocusThen(true));
+        act = Some(Act::Focus(Caret::Question));
     }
     (act, then.bottom() + 8.0)
 }
@@ -2625,7 +2642,7 @@ fn the_choices(
     at: (f32, f32),
     left: f32,
 ) -> (Option<Act>, f32) {
-    use mcf_serve::prompt::{Unit, MOST_CLAUSES};
+    use mcf_serve::prompt::{MOST_CLAUSES, Unit};
     let taken = desk.taken();
     if desk.doing.busy() || taken.text.is_empty() {
         return (None, at.1 + ui::BUTTON);
@@ -2635,7 +2652,8 @@ fn the_choices(
     let cap = taken.cap();
     let removed = parts.min(cap);
     let faint = paint.ink.faint;
-    let of = what_it_will_cost(unit, parts, removed);
+    let settle = desk.settle();
+    let of = what_it_will_cost(unit, parts, removed, matches!(settle, Ok(Some(_))));
     paint.say_at(at.0, at.1 + 8.0, &of, Weight::Regular, size::SMALL, faint);
 
     // The choices, on the line under the buttons.
@@ -2679,7 +2697,14 @@ fn the_choices(
     } else {
         "decided by the text: it has no blank line".to_owned()
     };
-    paint.say_at(x + 8.0, row + 8.0, &decided, Weight::Regular, size::SMALL, faint);
+    paint.say_at(
+        x + 8.0,
+        row + 8.0,
+        &decided,
+        Weight::Regular,
+        size::SMALL,
+        faint,
+    );
     x += paint.measure(&decided, Weight::Regular, size::SMALL) + 36.0;
 
     if parts > 1 {
@@ -2707,7 +2732,88 @@ fn the_choices(
         };
         paint.say_at(x, row + 8.0, &said, Weight::Regular, size::SMALL, faint);
     }
-    (act, row + ui::BUTTON)
+    let settled = the_temperature(paint, desk, mouse, (left, row + ui::BUTTON + 8.0), settle);
+    (settled.0.or(act), settled.1)
+}
+
+/// The temperature the settledness seeds are drawn at, as a field: empty
+/// asks the question nothing, and the page says so rather than settling on
+/// a value of its own (B60, B-431).
+///
+/// Returns what was pressed and the row's bottom.
+fn the_temperature(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: (f32, f32),
+    settle: Result<Option<mcf_core::configuration::Thousandths>, &str>,
+) -> (Option<Act>, f32) {
+    use mcf_serve::prompt::SEEDS;
+    let ink = paint.ink;
+    let label = "settle at temperature";
+    paint.say_at(
+        at.0,
+        at.1 + 8.0,
+        label,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    let x = at.0 + paint.measure(label, Weight::Regular, size::SMALL) + 10.0;
+    let field = Box::new(x, at.1, 96.0, ui::BUTTON);
+    let mut act = None;
+    if ui::field(
+        paint,
+        mouse,
+        field,
+        &desk.temperature,
+        "e.g. 0.7",
+        desk.caret == Caret::Temperature,
+    ) {
+        act = Some(Act::Focus(Caret::Temperature));
+    }
+    let (said, colour) = match settle {
+        Ok(None) => (
+            format!(
+                "empty: whether several seeds give several answers is not asked, since at \
+                 temperature 0 they cannot. A temperature draws {SEEDS} seeds at it — yours to \
+                 state, MCF has no house value (B60)"
+            ),
+            ink.faint,
+        ),
+        Ok(Some(held)) => (
+            format!(
+                "{SEEDS} seeds drawn at {held}, to say how many answers they give and how far \
+                 apart; every other generation stays greedy"
+            ),
+            ink.faint,
+        ),
+        Err(typed) => (
+            format!(
+                "\"{typed}\" is not a temperature: a decimal above 0, to three places — or \
+                 empty. Analyse waits until it is"
+            ),
+            ink.bad,
+        ),
+    };
+    let width = (at.0 + 820.0 - field.right() - 10.0).max(200.0);
+    let mut y = at.1 + 8.0;
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, width)
+        .iter()
+        .take(2)
+    {
+        paint.say_at(
+            field.right() + 10.0,
+            y,
+            line,
+            Weight::Regular,
+            size::SMALL,
+            colour,
+        );
+        y += 15.0;
+    }
+    (act, at.1 + ui::BUTTON)
 }
 
 /// What the report took the document apart into, as it names one part.

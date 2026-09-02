@@ -52,11 +52,18 @@
 //! forty paragraphs is forty generations and whether that is worth it is a
 //! choice about their time, not a constant (§3.15, B-430).
 //!
-//! **Settledness is the other half.** The same prompt under several seeds
-//! either produces the same answer or does not. Several different answers means
-//! the prompt underdetermines the answer *for this model* — again a fact, and
-//! again not a verdict: an open question deserves several answers, and a
-//! specification does not.
+//! **Settledness is the other half, and it is asked only at a temperature the
+//! caller states.** The same prompt under several seeds either produces the
+//! same answer or does not. Several different answers means the prompt
+//! underdetermines the answer *for this model* — again a fact, and again not a
+//! verdict: an open question deserves several answers, and a specification
+//! does not. But every other generation here is greedy, and under a greedy
+//! sampler the seed changes nothing: two more generations at temperature 0
+//! measured nothing and cost two generations, and the line that said so was
+//! honest and wasteful (F147, B-431). So the seeds are drawn at a temperature
+//! only when the caller has stated one — B60 forbids MCF a house temperature —
+//! and when none is stated no generation is spent on the question, and the
+//! report says it was not asked rather than that the answer settled (A7).
 //!
 //! **Cross-checked by:** the two measurements are counting, and what needs
 //! checking is what is counted. `prompt/tests` pins that an unchanged answer is
@@ -72,7 +79,11 @@
 //! generations, which is why this is a thing somebody asks for rather than
 //! something that happens on the way past (§3.8).
 
-/// How many seeds the settledness question is asked under.
+use mcf_core::configuration::Thousandths;
+
+pub use crate::generation::Draw;
+
+/// How many seeds the settledness question is asked under, when it is asked.
 ///
 /// Three, because two cannot tell *the same twice* from *a coincidence* and
 /// the cost is a generation each.
@@ -271,9 +282,12 @@ pub struct Clause {
     pub held: Option<Held>,
 }
 
-/// What several seeds made of the same prompt.
+/// What several seeds made of the same prompt, at a stated temperature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settled {
+    /// The temperature every seed was drawn at: the caller's, never MCF's
+    /// (B60), and the condition every figure below is under (§3.4).
+    pub temperature: Thousandths,
     /// How many seeds were asked.
     pub asked: usize,
     /// How many distinct answers came back.
@@ -281,6 +295,18 @@ pub struct Settled {
     /// One means the prompt settles the answer for this model under these
     /// conditions. More than one does not mean the prompt is bad.
     pub distinct: usize,
+    /// How far apart the two farthest of the sampled answers are, in parts
+    /// per million of their words — [`moved_by`], over every pair.
+    ///
+    /// The count says *how many*; this says *how different*. Three answers
+    /// that differ in a word each are three distinct answers and a settled
+    /// prompt; three that share nothing are three distinct answers and are not.
+    pub spread: u64,
+    /// How far the farthest sample sits from the greedy answer, the same way.
+    ///
+    /// The greedy answer is what every ablation was compared against, so this
+    /// is what sampling does to the thing the rest of the report is about.
+    pub from_greedy: u64,
 }
 
 /// What a prompt did.
@@ -311,8 +337,9 @@ pub struct Report {
     pub most: usize,
     /// The question every variant was followed by, if one was.
     pub then: Option<String>,
-    /// What several seeds made of it.
-    pub settled: Settled,
+    /// What several seeds made of it at a stated temperature, or `None`
+    /// where no temperature was stated and the question was not asked.
+    pub settled: Option<Settled>,
 }
 
 impl Report {
@@ -430,7 +457,11 @@ pub fn parts_of(text: &str, by: Unit) -> Vec<Part> {
         if by == Unit::Paragraph {
             after.push(character);
         }
-        while let Some(next) = characters.peek().copied().filter(|next| next.is_whitespace()) {
+        while let Some(next) = characters
+            .peek()
+            .copied()
+            .filter(|next| next.is_whitespace())
+        {
             after.push(next);
             characters.next();
         }
@@ -588,10 +619,10 @@ pub struct Answered {
 
 /// How a caller asks the model one question.
 ///
-/// The prompt and the seed in, what it said out. This module starts nothing and
-/// reaches no socket: what generates is the daemon's, and holding that at the
-/// boundary is what lets the whole measurement be tested without a model.
-pub type Ask<'a> = &'a mut dyn FnMut(&str, u64) -> Answered;
+/// The prompt and the draw in, what it said out. This module starts nothing
+/// and reaches no socket: what generates is the daemon's, and holding that at
+/// the boundary is what lets the whole measurement be tested without a model.
+pub type Ask<'a> = &'a mut dyn FnMut(&str, Draw) -> Answered;
 
 /// How a caller asks where the model ranks an opening after a prompt.
 ///
@@ -601,11 +632,19 @@ pub type Force<'a> = &'a mut dyn FnMut(&str, &[usize]) -> Option<Held>;
 
 /// Measures what a prompt does.
 ///
-/// **The seed is held still across every ablation.** What must differ between
-/// the baseline and a clause left out is the prompt and nothing else; a seed
-/// that moved would make every comparison a comparison of two draws (D19).
+/// **The seed is held still across every ablation, and every ablation is
+/// greedy.** What must differ between the baseline and a clause left out is
+/// the prompt and nothing else; a seed that moved would make every comparison
+/// a comparison of two draws (D19). `settle` is the temperature the
+/// settledness seeds are drawn at, and `None` asks them nothing.
 #[must_use]
-pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Report {
+pub fn measure(
+    taken: &Taken<'_>,
+    seed: u64,
+    settle: Option<Thousandths>,
+    ask: Ask<'_>,
+    force: Force<'_>,
+) -> Report {
     let (unit, unit_chosen) = taken.unit();
     let all = parts_of(taken.text, unit);
     // The baseline is the parts put back together, not the text as pasted:
@@ -615,7 +654,7 @@ pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> 
     let Answered {
         text: baseline,
         tokens: opening,
-    } = ask(&prompt, seed);
+    } = ask(&prompt, Draw::greedy(seed));
     let opening: Vec<usize> = opening.into_iter().take(MOST_FORCED).collect();
 
     let most = taken.cap();
@@ -626,7 +665,7 @@ pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> 
     if all.len() > 1 {
         for at in 0..ablated {
             let shortened = taken.asked(&without(&all, at));
-            let without_it = ask(&shortened, seed).text;
+            let without_it = ask(&shortened, Draw::greedy(seed)).text;
             // The opening is an empty list where the baseline said nothing,
             // and a rank over nothing is not taken rather than read as kept.
             let held = if opening.is_empty() {
@@ -637,7 +676,10 @@ pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> 
             clauses.push(Clause {
                 changed: without_it.trim() != baseline.trim(),
                 moved: moved_by(baseline.trim(), without_it.trim()),
-                text: all.get(at).map(|part| part.text.clone()).unwrap_or_default(),
+                text: all
+                    .get(at)
+                    .map(|part| part.text.clone())
+                    .unwrap_or_default(),
                 without: without_it,
                 held,
             });
@@ -658,23 +700,17 @@ pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> 
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
     let padded = taken.asked(&with_inert(&all));
-    let floor = moved_by(ask(&padded, seed).text.trim(), baseline.trim());
+    let floor = moved_by(
+        ask(&padded, Draw::greedy(seed)).text.trim(),
+        baseline.trim(),
+    );
     let floor_held = if opening.is_empty() || all.len() <= 1 {
         None
     } else {
         force(&padded, &opening)
     };
 
-    // Settledness: the same prompt, other seeds. The baseline's own seed counts
-    // as one of them, so a report of three asks twice more.
-    let mut answers = vec![baseline.trim().to_owned()];
-    for extra in 1..SEEDS {
-        let said = ask(&prompt, seed.wrapping_add(extra as u64));
-        answers.push(said.text.trim().to_owned());
-    }
-    let mut distinct = answers.clone();
-    distinct.sort();
-    distinct.dedup();
+    let settled = settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, ask));
 
     Report {
         floor,
@@ -690,10 +726,51 @@ pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> 
             .map(str::trim)
             .filter(|then| !then.is_empty())
             .map(str::to_owned),
-        settled: Settled {
-            asked: SEEDS,
-            distinct: distinct.len(),
-        },
+        settled,
+    }
+}
+
+/// The settledness question: the same prompt, `SEEDS` seeds, one temperature.
+///
+/// The greedy baseline is not one of the samples — it was drawn under another
+/// condition, and counting it among them would make the count a count of two
+/// things (§3.4). It is what `from_greedy` is measured from.
+fn settled(
+    prompt: &str,
+    seed: u64,
+    temperature: Thousandths,
+    baseline: &str,
+    ask: Ask<'_>,
+) -> Settled {
+    let answers: Vec<String> = (0..SEEDS)
+        .map(|extra| {
+            let draw = Draw {
+                seed: seed.wrapping_add(u64::try_from(extra).unwrap_or(u64::MAX)),
+                temperature,
+            };
+            ask(prompt, draw).text.trim().to_owned()
+        })
+        .collect();
+    let mut distinct = answers.clone();
+    distinct.sort();
+    distinct.dedup();
+    let mut spread = 0_u64;
+    for (at, one) in answers.iter().enumerate() {
+        for other in answers.iter().skip(at.saturating_add(1)) {
+            spread = spread.max(moved_by(one, other));
+        }
+    }
+    let from_greedy = answers
+        .iter()
+        .map(|answer| moved_by(baseline.trim(), answer))
+        .max()
+        .unwrap_or(0);
+    Settled {
+        temperature,
+        asked: SEEDS,
+        distinct: distinct.len(),
+        spread,
+        from_greedy,
     }
 }
 

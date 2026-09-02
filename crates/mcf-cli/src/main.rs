@@ -308,6 +308,9 @@ enum Request<'a> {
         by: Option<mcf_serve::prompt::Unit>,
         /// The most parts to remove, where the caller says.
         most: Option<usize>,
+        /// The temperature to draw the settledness seeds at, where the
+        /// caller states one; none spends nothing on the question (B-431).
+        temperature: Option<mcf_core::configuration::Thousandths>,
         /// Whether to answer as data rather than as prose.
         as_json: bool,
     },
@@ -855,6 +858,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     let mut then = None;
     let mut by = None;
     let mut most = None;
+    let mut temperature = None;
     let mut as_json = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
@@ -901,6 +905,22 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 },
                 Err(missing) => return Ok(missing),
             },
+            "--temperature" => match value(
+                "--temperature <decimal>, to draw the seeds at, above 0",
+                &mut rest,
+            ) {
+                Ok(written) => match written.parse::<mcf_core::configuration::Thousandths>() {
+                    Ok(held) if held.0 > 0 => temperature = Some(held),
+                    _ => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "prompt --temperature (wants a decimal above 0, to three \
+                                      places)",
+                            argument: written,
+                        });
+                    }
+                },
+                Err(missing) => return Ok(missing),
+            },
             "--json" => as_json = true,
             other => return Err(other),
         }
@@ -924,6 +944,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
         then,
         by,
         most,
+        temperature,
         as_json,
     })
 }
@@ -1598,7 +1619,9 @@ const COMMANDS: &str = "\
     \x20       [--then <question>]            how much of the answer moved. An\n\
     \x20       [--by sentence|paragraph]      ordering, never relevance. A\n\
     \x20       [--most <n>] [--json]          persona goes in --file, and the\n\
-    \x20                                     question it is asked in --then\n\
+    \x20       [--temperature <t>]            question it is asked in --then;\n\
+    \x20                                     --temperature draws three seeds\n\
+    \x20                                     at t to see whether it settles\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -1806,6 +1829,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             then,
             by,
             most,
+            temperature,
             as_json,
         } => prompt::report(
             model,
@@ -1815,6 +1839,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 then: *then,
                 by: *by,
                 most: *most,
+                temperature: *temperature,
             },
             *as_json,
         ),
@@ -2263,6 +2288,7 @@ mod tests {
             then: Some("What is 2 + 2?"),
             by: Some(mcf_serve::prompt::Unit::Paragraph),
             most: Some(40),
+            temperature: Some(mcf_core::configuration::Thousandths(700)),
             as_json: true,
         };
         assert_eq!(
@@ -2277,6 +2303,8 @@ mod tests {
                 "paragraph",
                 "--most",
                 "40",
+                "--temperature",
+                "0.7",
                 "--json"
             ]),
             whole
@@ -2286,6 +2314,8 @@ mod tests {
                 "prompt",
                 "m",
                 "--json",
+                "--temperature",
+                "0.700",
                 "--most",
                 "40",
                 "--by",
@@ -2306,6 +2336,7 @@ mod tests {
                 then: None,
                 by: None,
                 most: None,
+                temperature: None,
                 as_json: false,
             }
         );
@@ -2327,6 +2358,17 @@ mod tests {
         assert!(matches!(
             parse(&["prompt", "m", "--file", "a", "--most", "0"]),
             Request::UnexpectedArgument { argument: "0", .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--file", "a", "--temperature", "0"]),
+            Request::UnexpectedArgument { argument: "0", .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--file", "a", "--temperature", "0.7001"]),
+            Request::UnexpectedArgument {
+                argument: "0.7001",
+                ..
+            }
         ));
         assert!(matches!(
             parse(&["prompt", "m", "--file", "a", "--prompt", "b"]),

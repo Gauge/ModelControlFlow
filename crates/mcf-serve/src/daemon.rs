@@ -105,8 +105,14 @@ fn held_value(held: Option<crate::prompt::Held>) -> Value {
                     Value::Integer(i64::try_from(rank).unwrap_or(i64::MAX))
                 }),
             ),
-            ("kept", Value::Integer(i64::try_from(held.kept).unwrap_or(i64::MAX))),
-            ("of", Value::Integer(i64::try_from(held.of).unwrap_or(i64::MAX))),
+            (
+                "kept",
+                Value::Integer(i64::try_from(held.kept).unwrap_or(i64::MAX)),
+            ),
+            (
+                "of",
+                Value::Integer(i64::try_from(held.of).unwrap_or(i64::MAX)),
+            ),
         ])
     })
 }
@@ -123,6 +129,27 @@ fn unit_chosen_by(report: &crate::prompt::Report) -> &'static str {
     } else {
         "the text: it has no blank line, so it is sentences"
     }
+}
+
+/// What several seeds made of the prompt at a stated temperature, as the
+/// wire carries it: the condition first, then the figures under it (§3.4).
+fn settled_value(settled: Option<&crate::prompt::Settled>) -> Value {
+    let Some(settled) = settled else {
+        return Value::Null;
+    };
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    let ppm = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    Value::map([
+        (
+            "temperature_thousandths",
+            Value::Integer(i64::from(settled.temperature.0)),
+        ),
+        ("temperature", Value::text(settled.temperature.to_string())),
+        ("seeds_asked", count(settled.asked)),
+        ("distinct_answers", count(settled.distinct)),
+        ("spread_parts_per_million", ppm(settled.spread)),
+        ("from_greedy_parts_per_million", ppm(settled.from_greedy)),
+    ])
 }
 
 /// One ablated part, as a client reads it.
@@ -209,15 +236,15 @@ fn prompt_report_value(
             Value::Integer(i64::try_from(report.clauses_over_the_cap).unwrap_or(i64::MAX)),
         ),
         ("unit", Value::text(report.unit.name().to_owned())),
-        ("unit_chosen_by", Value::text(unit_chosen_by(report).to_owned())),
+        (
+            "unit_chosen_by",
+            Value::text(unit_chosen_by(report).to_owned()),
+        ),
         (
             "most",
             Value::Integer(i64::try_from(report.most).unwrap_or(i64::MAX)),
         ),
-        (
-            "then",
-            report.then.clone().map_or(Value::Null, Value::text),
-        ),
+        ("then", report.then.clone().map_or(Value::Null, Value::text)),
         (
             "addressed_as",
             Value::text(
@@ -226,14 +253,11 @@ fn prompt_report_value(
                     .to_owned(),
             ),
         ),
-        (
-            "seeds_asked",
-            Value::Integer(i64::try_from(report.settled.asked).unwrap_or(i64::MAX)),
-        ),
-        (
-            "distinct_answers",
-            Value::Integer(i64::try_from(report.settled.distinct).unwrap_or(i64::MAX)),
-        ),
+        // **Settledness, under its condition or not at all.** The seeds are
+        // drawn at a temperature the caller stated, and where none was the
+        // question was not asked: `settled` is then null, which a reader
+        // must not read as *settled* (A7, B-431).
+        ("settled", settled_value(report.settled.as_ref())),
         (
             "generations",
             Value::Integer(i64::try_from(generations).unwrap_or(i64::MAX)),
@@ -249,7 +273,10 @@ fn prompt_report_value(
         ),
         (
             "sampler",
-            Value::text("greedy, temperature 0 — the seed cannot change the answer"),
+            Value::text(
+                "greedy, temperature 0, for the baseline, every ablation and the control — \
+                 the seed cannot change those",
+            ),
         ),
         (
             "prompt_tokens",
@@ -1526,6 +1553,7 @@ impl Daemon {
                     then,
                     by,
                     most,
+                    temperature,
                     seed,
                 }) => {
                     // Many generations and one report: a request that takes
@@ -1541,6 +1569,7 @@ impl Daemon {
                             most,
                         },
                         seed,
+                        temperature,
                         &mut writer,
                     );
                     return None;
@@ -1625,7 +1654,7 @@ impl Daemon {
             named,
             prompt,
             limit,
-            seed,
+            crate::generation::Draw::greedy(seed),
             tokens,
             engine,
             picked,
@@ -1882,6 +1911,7 @@ impl Daemon {
         named: &str,
         taken: &crate::prompt::Taken<'_>,
         seed: u64,
+        settle: Option<mcf_core::configuration::Thousandths>,
         writer: &mut &UnixStream,
     ) {
         let mcf_home = self
@@ -1891,7 +1921,7 @@ impl Daemon {
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
         let picked = self.picked_engine(named);
         let mut asked = 0_usize;
-        let mut ask = |prompt: &str, seed: u64| {
+        let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
             let Ok((mine, theirs)) = UnixStream::pair() else {
                 return crate::prompt::Answered::default();
@@ -1914,7 +1944,7 @@ impl Daemon {
                     named,
                     prompt,
                     Some(PROMPT_REPORT_LIMIT),
-                    seed,
+                    draw,
                     None,
                     None,
                     picked.clone(),
@@ -1937,7 +1967,7 @@ impl Daemon {
         };
         let mut force =
             |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
-        let report = crate::prompt::measure(taken, seed, &mut ask, &mut force);
+        let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
         // What the model was asked, as the baseline was: the document with
         // its question after it, which is what the counts below are of.
         let prompt = taken.asked(&crate::prompt::joined(&taken.parts()));
@@ -2551,7 +2581,7 @@ impl Daemon {
                 named,
                 "",
                 Some(produce),
-                0,
+                crate::generation::Draw::greedy(0),
                 Some(tokens),
                 engine,
                 picked,

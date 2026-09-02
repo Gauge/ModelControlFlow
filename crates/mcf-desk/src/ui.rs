@@ -306,11 +306,7 @@ pub fn area(
         );
     }
     if focused {
-        paint.wash(
-            Box::new(ended + 1.0, y - step, 1.5, 17.0),
-            ink.accent,
-            255,
-        );
+        paint.wash(Box::new(ended + 1.0, y - step, 1.5, 17.0), ink.accent, 255);
     }
     mouse.clicked(area)
 }

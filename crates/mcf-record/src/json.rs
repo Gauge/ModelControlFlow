@@ -83,6 +83,21 @@ impl Value {
         Self::Text(value.into())
     }
 
+    /// A decimal in thousandths, written exactly, for a request to an engine
+    /// whose API takes one.
+    ///
+    /// **The one number MCF writes that is not an integer, and it goes to an
+    /// engine, not to a record.** `llama.cpp` takes a temperature as a JSON
+    /// number, and a caller who stated `0.7` is owed `0.700` on the wire and
+    /// not a float that was near it: the value is rendered from the integer,
+    /// so nothing is rounded on the way (A1). `checks` keeps this out of
+    /// every encoder but the request that needs it, which is what keeps the
+    /// record integral (A6, §3.3).
+    #[must_use]
+    pub fn exact_thousandths(held: mcf_core::configuration::Thousandths) -> Self {
+        Self::ForeignNumber(held.to_string())
+    }
+
     /// An object, from pairs.
     #[must_use]
     pub fn map<K: Into<String>>(pairs: impl IntoIterator<Item = (K, Self)>) -> Self {

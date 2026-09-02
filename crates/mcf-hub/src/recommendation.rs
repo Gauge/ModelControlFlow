@@ -167,42 +167,9 @@ fn thousandths(value: &Value) -> Option<Thousandths> {
             .ok()?
             .checked_mul(1_000)
             .map(Thousandths),
-        Value::Text(held) => decimal(held),
+        Value::Text(held) => held.parse().ok(),
         _ => None,
     }
-}
-
-/// A decimal written as text, in thousandths, without a float.
-///
-/// `0.7` is 700, `1` is 1000, `0.9500` is 950. More than three decimal places
-/// is refused rather than rounded: the unit is thousandths, and silently
-/// dropping a digit is deciding a value the publisher stated (A7).
-fn decimal(written: &str) -> Option<Thousandths> {
-    let written = written.trim();
-    let (whole, rest) = match written.split_once('.') {
-        Some((whole, rest)) => (whole, rest),
-        None => (written, ""),
-    };
-    let whole: u32 = whole.parse().ok()?;
-    if rest.len() > 3
-        && rest
-            .get(3..)
-            .is_some_and(|tail| !tail.chars().all(|d| d == '0'))
-    {
-        return None;
-    }
-    let mut thousandths = 0_u32;
-    for at in 0..3 {
-        let digit = rest
-            .chars()
-            .nth(at)
-            .map_or(Some(0), |held| held.to_digit(10))?;
-        thousandths = thousandths.checked_mul(10)?.checked_add(digit)?;
-    }
-    whole
-        .checked_mul(1_000)?
-        .checked_add(thousandths)
-        .map(Thousandths)
 }
 
 /// So that a hub failure that is a plain absence is not one.

@@ -19,6 +19,57 @@ use crate::attested::Attested;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Thousandths(pub u32);
 
+impl core::str::FromStr for Thousandths {
+    type Err = ();
+
+    /// A decimal as a person or a publisher writes one: `0.7` is 700, `1` is
+    /// 1000, `0.9500` is 950.
+    ///
+    /// More than three decimal places is refused rather than rounded: the
+    /// unit is thousandths, and silently dropping a digit is deciding a value
+    /// somebody else stated (A7). Read here rather than through a float, so
+    /// that what was written is what is held (A1).
+    fn from_str(written: &str) -> Result<Self, ()> {
+        let written = written.trim();
+        let (whole, rest) = match written.split_once('.') {
+            Some((whole, rest)) => (whole, rest),
+            None => (written, ""),
+        };
+        if whole.is_empty() && rest.is_empty() {
+            return Err(());
+        }
+        let whole: u32 = if whole.is_empty() {
+            0
+        } else {
+            whole.parse().map_err(|_| ())?
+        };
+        if rest.len() > 3
+            && rest
+                .get(3..)
+                .is_some_and(|tail| !tail.chars().all(|d| d == '0'))
+        {
+            return Err(());
+        }
+        let mut thousandths = 0_u32;
+        for at in 0..3 {
+            let digit = rest
+                .chars()
+                .nth(at)
+                .map_or(Some(0), |held| held.to_digit(10))
+                .ok_or(())?;
+            thousandths = thousandths
+                .checked_mul(10)
+                .and_then(|held| held.checked_add(digit))
+                .ok_or(())?;
+        }
+        whole
+            .checked_mul(1_000)
+            .and_then(|held| held.checked_add(thousandths))
+            .map(Self)
+            .ok_or(())
+    }
+}
+
 impl fmt::Display for Thousandths {
     /// Rendered as the decimal a publisher wrote, so a reader recognizes it.
     // Integer division is the conversion, and both operands are bounded by the

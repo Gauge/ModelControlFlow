@@ -443,7 +443,7 @@ impl Served {
         crate::adapters::peak_resident_of(self.child.id())
     }
 
-    /// One greedy generation from a turn of token identifiers.
+    /// One generation from a turn of token identifiers, drawn as `draw` says.
     ///
     /// `pinned` tells the engine to run past the model's end of text to the
     /// limit, so that `limit` is the length rather than a ceiling on it; the
@@ -458,7 +458,7 @@ impl Served {
         &self,
         tokens: &[usize],
         limit: usize,
-        seed: u64,
+        draw: crate::generation::Draw,
         pinned: bool,
     ) -> Result<Completed, Failure> {
         let identifiers = Value::List(
@@ -475,9 +475,21 @@ impl Served {
             ),
             (
                 "seed",
-                Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+                Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
             ),
-            ("temperature", Value::Integer(0)),
+            // The engine's API takes a decimal, and this is the one place MCF
+            // writes a number that is not an integer: it is the temperature a
+            // caller stated, written as they stated it, to a request that is
+            // not a record (A1). Nought is the integer, so a greedy request
+            // is byte-for-byte what it was before there was a temperature.
+            (
+                "temperature",
+                if draw.is_greedy() {
+                    Value::Integer(0)
+                } else {
+                    Value::exact_thousandths(draw.temperature)
+                },
+            ),
             // The identifiers as well as the text. They cost nothing to ask
             // for and are the only form in which two engines can be compared
             // past the point where their generations part (B-362).

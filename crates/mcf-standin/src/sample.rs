@@ -35,6 +35,27 @@ pub enum Settings {
     },
 }
 
+impl Settings {
+    /// The whole distribution at a temperature stated in thousandths, so a
+    /// caller that keeps its temperature exact never holds a float; nought
+    /// is greedy.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "thousandths fit in a float exactly enough for a sampler"
+    )]
+    pub fn at_thousandths(temperature: u32) -> Self {
+        if temperature == 0 {
+            Self::Greedy
+        } else {
+            Self::Nucleus {
+                temperature: temperature as f32 / 1000.0,
+                top_p: 1.0,
+            }
+        }
+    }
+}
+
 /// A deterministic generator, from a stated seed.
 ///
 /// `splitmix64`, the same algorithm the suite's property tier uses, for the

@@ -15,6 +15,7 @@ use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
+use mcf_core::configuration::Thousandths;
 use mcf_core::failure::Failure;
 use mcf_record::json::Value;
 use mcf_standin::gguf;
@@ -25,6 +26,57 @@ use mcf_standin::tokenizer::Vocabulary;
 
 use crate::control::Streamed;
 use crate::served::Served;
+
+/// How one generation's sampler was told to draw: a seed and a temperature.
+///
+/// **Greedy is MCF's own choice, and it is named as such.** Every measurement
+/// draws at temperature 0 unless the caller states otherwise, because a
+/// greedy generation is the one two machines can compare to the token
+/// (§3.12). A temperature above nought is never a house default — B60 forbids
+/// one — so it reaches here only as something a caller stated, and it travels
+/// with the seed because the two together are what makes a sample
+/// reproducible (D19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Draw {
+    /// The seed, which is a condition of the result (D19).
+    pub seed: u64,
+    /// The temperature, in thousandths. Nought is greedy — the limit of the
+    /// distribution rather than a special case.
+    pub temperature: Thousandths,
+}
+
+impl Draw {
+    /// The likeliest token every time, under this seed.
+    #[must_use]
+    pub const fn greedy(seed: u64) -> Self {
+        Self {
+            seed,
+            temperature: Thousandths(0),
+        }
+    }
+
+    /// Whether the seed can change anything.
+    #[must_use]
+    pub const fn is_greedy(self) -> bool {
+        self.temperature.0 == 0
+    }
+
+    /// The sampler, as the account names it.
+    #[must_use]
+    pub fn sampler(self) -> String {
+        if self.is_greedy() {
+            "greedy".to_owned()
+        } else {
+            format!("temperature {}", self.temperature)
+        }
+    }
+
+    /// What the stand-in's sampler is told; the thousandths become a float
+    /// only inside the stand-in, where floats are allowed to live.
+    fn settings(self) -> Settings {
+        Settings::at_thousandths(self.temperature.0)
+    }
+}
 
 /// The model held between requests (D41, §7.18).
 ///
@@ -137,7 +189,7 @@ pub(crate) fn serve_generation(
     named: &str,
     prompt: &str,
     limit: Option<usize>,
-    seed: u64,
+    draw: Draw,
     tokens: Option<&[usize]>,
     engine: Option<&str>,
     // The engine the daemon resolved for this model, and how many of the
@@ -190,13 +242,13 @@ pub(crate) fn serve_generation(
         // a prompt goes to the completion tool, which cannot (B-376).
         Ok(Chosen::Provisioned(llama)) => match tokens {
             Some(tokens) => through_served(
-                store, &llama, server, runtime, named, tokens, limit, seed, gpu_layers, context,
+                store, &llama, server, runtime, named, tokens, limit, draw, gpu_layers, context,
                 pinned, writer,
             ),
-            None => through_provisioned(store, &llama, named, prompt, limit, seed, pinned, writer),
+            None => through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer),
         },
         Ok(Chosen::StandIn) => attempt(
-            store, resident, named, prompt, tokens, limit, seed, free, pinned, writer,
+            store, resident, named, prompt, tokens, limit, draw, free, pinned, writer,
         ),
         Err(failure) => Err(failure),
     };
@@ -245,7 +297,7 @@ pub(crate) fn serve_generation(
                 ("tokens", Value::Integer(0)),
                 ("stopped", Value::text("refused")),
                 ("failure", mcf_record::encode::failure(&failure)),
-                ("conditions", conditions(named, None, seed, limit)),
+                ("conditions", conditions(named, None, draw, limit)),
             ]),
             said: None,
         },
@@ -551,7 +603,7 @@ fn through_served(
     named: &str,
     tokens: &[usize],
     limit: usize,
-    seed: u64,
+    draw: Draw,
     gpu_layers: u32,
     context: u64,
     pinned: bool,
@@ -592,7 +644,7 @@ fn through_served(
         .as_ref()
         .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
 
-    let completed = engine.complete(tokens, limit, seed, pinned)?;
+    let completed = engine.complete(tokens, limit, draw, pinned)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
@@ -614,7 +666,7 @@ fn through_served(
         llama.commit.get(..12).unwrap_or(&llama.commit),
         llama.prefix.display()
     );
-    let mut conditions = conditions(named, Some((&path, held)), seed, limit);
+    let mut conditions = conditions(named, Some((&path, held)), draw, limit);
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(engine_name));
         fields.insert(
@@ -745,7 +797,7 @@ fn through_provisioned(
     named: &str,
     prompt: &str,
     limit: usize,
-    seed: u64,
+    draw: Draw,
     pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
@@ -758,7 +810,7 @@ fn through_provisioned(
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
     let held = metadata.len();
 
-    let mut command = llama.generate(&path, prompt, limit, seed, pinned);
+    let mut command = llama.generate(&path, prompt, limit, draw, pinned);
     let mut at = 0_usize;
     let mut text = String::new();
     // Held back until it is known not to be the start of the marker, so that
@@ -800,7 +852,7 @@ fn through_provisioned(
         llama.commit.get(..12).unwrap_or(&llama.commit),
         llama.prefix.display()
     );
-    let mut conditions = conditions(named, Some((&path, held)), seed, limit);
+    let mut conditions = conditions(named, Some((&path, held)), draw, limit);
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(engine_name));
         fields.insert("loaded".to_owned(), Value::text("per_request_subprocess"));
@@ -860,7 +912,7 @@ fn through_provisioned(
 }
 
 /// The conditions every account carries, whether it succeeded or not.
-fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize) -> Value {
+fn conditions(named: &str, model: Option<(&Path, u64)>, draw: Draw, limit: usize) -> Value {
     Value::map([
         ("model", Value::text(named)),
         (
@@ -882,10 +934,14 @@ fn conditions(named: &str, model: Option<(&Path, u64)>, seed: u64, limit: usize)
             Value::text(mcf_core::build_identity::stand_in_engine()),
         ),
         ("loaded", Value::text("not_loaded")),
-        ("sampler", Value::text("greedy")),
+        ("sampler", Value::text(draw.sampler())),
+        (
+            "temperature_thousandths",
+            Value::Integer(i64::from(draw.temperature.0)),
+        ),
         (
             "seed",
-            Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+            Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
         ),
         (
             "limit",
@@ -912,7 +968,7 @@ fn attempt(
     prompt: &str,
     tokens: Option<&[usize]>,
     limit: usize,
-    seed: u64,
+    draw: Draw,
     free: Option<u64>,
     pinned: bool,
     writer: &mut &UnixStream,
@@ -1026,8 +1082,8 @@ fn attempt(
         &Request {
             prompt: prompt_tokens.clone(),
             limit,
-            settings: Settings::Greedy,
-            seed,
+            settings: draw.settings(),
+            seed: draw.seed,
             // The model's own end of text, which the file states and MCF was
             // reading and never using: without it a generation always runs to
             // the budget, and *the model finished* is unobservable — which is
@@ -1082,7 +1138,7 @@ fn attempt(
             ),
             (
                 "conditions",
-                conditions(named, Some((&path, held_bytes)), seed, limit)
+                conditions(named, Some((&path, held_bytes)), draw, limit)
                     .with_residency(loaded, &since, dequantized)
                     .with_length(pinned),
             ),

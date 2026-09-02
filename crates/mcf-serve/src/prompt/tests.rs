@@ -64,14 +64,14 @@ fn a_prompt_without_one_clause_keeps_the_rest() {
 #[test]
 fn an_unchanged_answer_says_the_clause_was_not_used() {
     // The model ignores the second sentence entirely.
-    let mut ask = |prompt: &str, _: u64| {
+    let mut ask = |prompt: &str, _: Draw| {
         if prompt.contains("One") {
             said("the same answer")
         } else {
             said("a different answer")
         }
     };
-    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
+    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
     let unused = report.unused();
     assert_eq!(unused.len(), 1, "one clause changed nothing");
     assert_eq!(
@@ -95,16 +95,33 @@ fn an_unchanged_answer_says_the_clause_was_not_used() {
 /// every clause would read as used (D19).
 #[test]
 fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
-    let mut seeds = Vec::new();
-    let mut ask = |_: &str, seed: u64| {
-        seeds.push(seed);
+    let mut draws = Vec::new();
+    let mut ask = |_: &str, draw: Draw| {
+        draws.push(draw);
         said("always the same")
     };
-    let _report = measure(&only("One. Two. Three."), 41, &mut ask, &mut unforced);
-    // The baseline and the three ablations all at 41; the extra seeds are the
-    // settledness question and are meant to differ.
-    let ablation_seeds: Vec<u64> = seeds.iter().copied().take(4).collect();
-    assert_eq!(ablation_seeds, vec![41, 41, 41, 41]);
+    let _report = measure(
+        &only("One. Two. Three."),
+        41,
+        Some(Thousandths(700)),
+        &mut ask,
+        &mut unforced,
+    );
+    // The baseline, the three ablations and the control, all greedy at 41;
+    // the seeds after them are the settledness question and are meant to
+    // differ, at the temperature stated.
+    let ablations: Vec<Draw> = draws.iter().copied().take(5).collect();
+    assert_eq!(ablations, vec![Draw::greedy(41); 5]);
+    let settling: Vec<Draw> = draws.iter().copied().skip(5).collect();
+    assert_eq!(
+        settling,
+        (0..3)
+            .map(|extra| Draw {
+                seed: 41 + extra,
+                temperature: Thousandths(700)
+            })
+            .collect::<Vec<_>>()
+    );
 }
 
 /// One sentence is nothing to ablate, and says so by holding no clauses.
@@ -114,33 +131,85 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
 /// nobody made (A7).
 #[test]
 fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
-    let mut ask = |_: &str, _: u64| said("an answer");
-    let report = measure(&only("Just the one sentence."), 41, &mut ask, &mut unforced);
+    let mut ask = |_: &str, _: Draw| said("an answer");
+    let report = measure(
+        &only("Just the one sentence."),
+        41,
+        Some(Thousandths(700)),
+        &mut ask,
+        &mut unforced,
+    );
     assert!(
         report.clauses.is_empty(),
         "there is no clause whose absence could be observed"
     );
     // The settledness question is still asked: it needs no second sentence.
-    assert_eq!(report.settled.asked, SEEDS);
+    assert_eq!(report.settled.map(|held| held.asked), Some(SEEDS));
 }
 
-/// The same answer under every seed is one distinct answer.
+/// No temperature stated, no seed drawn: under a greedy sampler the seed
+/// changes nothing, and two generations that could not differ would measure
+/// nothing and cost two generations (F147, B-431).
+#[test]
+fn without_a_temperature_the_seeds_are_not_asked() {
+    let mut asked = 0_usize;
+    let mut ask = |_: &str, _: Draw| {
+        asked += 1;
+        said("an answer")
+    };
+    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
+    assert_eq!(
+        report.settled, None,
+        "not settled, not unsettled: not asked"
+    );
+    // The baseline, two ablations and the control, and nothing more.
+    assert_eq!(asked, 4);
+}
+
+/// The same answer under every seed is one distinct answer, no spread.
 #[test]
 fn a_prompt_that_settles_the_answer_reports_one_answer() {
-    let mut ask = |_: &str, _: u64| said("the one answer");
-    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
-    assert_eq!(report.settled.distinct, 1);
+    let mut ask = |_: &str, _: Draw| said("the one answer");
+    let report = measure(
+        &only("One. Two."),
+        41,
+        Some(Thousandths(700)),
+        &mut ask,
+        &mut unforced,
+    );
+    let settled = report.settled.expect("a temperature was stated");
+    assert_eq!(settled.distinct, 1);
+    assert_eq!(settled.spread, 0);
+    assert_eq!(settled.from_greedy, 0);
+    assert_eq!(settled.temperature, Thousandths(700));
 }
 
-/// Different answers under different seeds are counted, not judged.
+/// Different answers under different seeds are counted, not judged — and how
+/// far apart they are is said beside how many there were.
 #[test]
-fn a_prompt_that_does_not_settle_reports_how_many_answers() {
-    let mut ask = |_: &str, seed: u64| said(&format!("answer for {seed}"));
-    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
-    assert_eq!(
-        report.settled.distinct, SEEDS,
-        "every seed gave its own answer"
+fn a_prompt_that_does_not_settle_reports_how_many_answers_and_how_far_apart() {
+    let mut ask = |_: &str, draw: Draw| {
+        // Greedy, or the first seed, gives the one answer; the seeds after it
+        // each give their own.
+        if draw.is_greedy() || draw.seed == 41 {
+            said("the greedy answer here")
+        } else {
+            said(&format!("answer for seed {}", draw.seed))
+        }
+    };
+    let report = measure(
+        &only("One. Two."),
+        41,
+        Some(Thousandths(700)),
+        &mut ask,
+        &mut unforced,
     );
+    let settled = report.settled.expect("a temperature was stated");
+    assert_eq!(settled.distinct, SEEDS, "every seed gave its own answer");
+    // "the greedy answer here" against "answer for seed 42": four words,
+    // every one different.
+    assert_eq!(settled.spread, 1_000_000);
+    assert_eq!(settled.from_greedy, 1_000_000);
 }
 
 /// A long prompt is capped, and says how much was not ablated.
@@ -151,8 +220,8 @@ fn a_prompt_longer_than_the_cap_says_what_was_left_out() {
         use std::fmt::Write as _;
         let _wrote = write!(long, "Sentence {at}. ");
     }
-    let mut ask = |_: &str, _: u64| said("an answer");
-    let report = measure(&only(&long), 41, &mut ask, &mut unforced);
+    let mut ask = |_: &str, _: Draw| said("an answer");
+    let report = measure(&only(&long), 41, None, &mut ask, &mut unforced);
     assert_eq!(report.clauses.len(), MOST_CLAUSES);
     assert_eq!(report.clauses_over_the_cap, 3, "and it says how many");
 }
@@ -186,7 +255,7 @@ fn how_much_moved_is_counted_in_words() {
 fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
     // Removing the first rewrites the answer; removing the second changes one
     // word of four.
-    let mut ask = |prompt: &str, _: u64| {
+    let mut ask = |prompt: &str, _: Draw| {
         if !prompt.contains("First") {
             said("something else entirely here")
         } else if prompt.contains("Second") {
@@ -195,7 +264,7 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
             said("the answer is five words")
         }
     };
-    let report = measure(&only("First. Second."), 41, &mut ask, &mut unforced);
+    let report = measure(&only("First. Second."), 41, None, &mut ask, &mut unforced);
     let steered = report
         .clauses
         .iter()
@@ -234,7 +303,7 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
 fn the_floor_is_what_an_inert_sentence_does() {
     // The model rewrites the answer whenever the prompt changes at all, by a
     // fixed amount — which is exactly the perturbation the floor is for.
-    let mut ask = |prompt: &str, _: u64| {
+    let mut ask = |prompt: &str, _: Draw| {
         if prompt.contains(NO_INSTRUCTION) {
             said("one two three different")
         } else if prompt.contains("Steer") {
@@ -243,7 +312,13 @@ fn the_floor_is_what_an_inert_sentence_does() {
             said("utterly different words entirely")
         }
     };
-    let report = measure(&only("Steer this. Inert here."), 41, &mut ask, &mut unforced);
+    let report = measure(
+        &only("Steer this. Inert here."),
+        41,
+        None,
+        &mut ask,
+        &mut unforced,
+    );
     assert!(
         report.floor > 0,
         "an inert sentence moved the answer, and that is the floor"
@@ -302,11 +377,18 @@ fn a_part_removed_leaves_the_document_as_written() {
     let text = "Be brief.\n- Do one thing.\n- Say when done.\n\nNever guess.";
     let sentences = parts_of(text, Unit::Sentence);
     assert_eq!(
-        sentences.iter().map(|part| part.after.as_str()).collect::<Vec<_>>(),
+        sentences
+            .iter()
+            .map(|part| part.after.as_str())
+            .collect::<Vec<_>>(),
         vec!["\n", "\n", "\n\n", ""],
         "each part carries what followed it: {sentences:?}"
     );
-    assert_eq!(joined(&sentences), text, "put back together, it is the text");
+    assert_eq!(
+        joined(&sentences),
+        text,
+        "put back together, it is the text"
+    );
     assert_eq!(
         without(&sentences, 1),
         "Be brief.\n- Say when done.\n\nNever guess."
@@ -327,7 +409,10 @@ fn a_document_with_blank_lines_is_taken_apart_by_paragraph() {
     assert_eq!(Unit::for_text("One. Two.\nThree."), Unit::Sentence);
     let paragraphs = parts_of(text, Unit::Paragraph);
     assert_eq!(
-        paragraphs.iter().map(|part| part.text.as_str()).collect::<Vec<_>>(),
+        paragraphs
+            .iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>(),
         vec![
             "You are a dungeon master.\nKeep the party moving.",
             "Never roll for the players.",
@@ -346,7 +431,7 @@ fn a_document_with_blank_lines_is_taken_apart_by_paragraph() {
 #[test]
 fn the_question_follows_every_variant_and_the_cap_is_chosen() {
     let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
-    let mut ask = |prompt: &str, _: u64| {
+    let mut ask = |prompt: &str, _: Draw| {
         asked.borrow_mut().push(prompt.to_owned());
         said("an answer")
     };
@@ -356,7 +441,7 @@ fn the_question_follows_every_variant_and_the_cap_is_chosen() {
         by: None,
         most: Some(2),
     };
-    let report = measure(&taken, 41, &mut ask, &mut unforced);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.unit, Unit::Paragraph);
     assert!(!report.unit_chosen, "the text decided");
     assert_eq!(report.most, 2);
@@ -365,7 +450,9 @@ fn the_question_follows_every_variant_and_the_cap_is_chosen() {
     assert_eq!(report.then.as_deref(), Some("What is 2 + 2?"));
     let asked = asked.borrow();
     assert!(
-        asked.iter().all(|prompt| prompt.ends_with("\n\nWhat is 2 + 2?")),
+        asked
+            .iter()
+            .all(|prompt| prompt.ends_with("\n\nWhat is 2 + 2?")),
         "every variant was followed by the question: {asked:?}"
     );
     assert_eq!(
@@ -383,7 +470,7 @@ fn the_question_follows_every_variant_and_the_cap_is_chosen() {
         most: None,
         ..taken
     };
-    let report = measure(&by_sentence, 41, &mut ask, &mut unforced);
+    let report = measure(&by_sentence, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.unit, Unit::Sentence);
     assert!(report.unit_chosen);
     assert_eq!(report.most, MOST_CLAUSES);
@@ -399,7 +486,7 @@ fn the_question_follows_every_variant_and_the_cap_is_chosen() {
 /// seventeenth choice did more than one that dropped it to its fourth.
 #[test]
 fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
-    let mut ask = |prompt: &str, _: u64| {
+    let mut ask = |prompt: &str, _: Draw| {
         if prompt.starts_with("One.") && prompt.ends_with("Three.") {
             said("Blue.")
         } else {
@@ -410,12 +497,16 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
     let mut force = |prompt: &str, opening: &[usize]| {
         forced.push((prompt.to_owned(), opening.to_vec()));
         Some(Held {
-            first: if prompt.contains("Two.") { Some(1) } else { Some(17) },
+            first: if prompt.contains("Two.") {
+                Some(1)
+            } else {
+                Some(17)
+            },
             kept: usize::from(prompt.contains("Two.")),
             of: opening.len(),
         })
     };
-    let report = measure(&only("One. Two. Three."), 41, &mut ask, &mut force);
+    let report = measure(&only("One. Two. Three."), 41, None, &mut ask, &mut force);
     // Three clauses and the inert sentence: four readings, each with the
     // baseline's identifiers — `said` makes them the word lengths.
     assert_eq!(forced.len(), 4, "{forced:?}");
@@ -465,9 +556,9 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
 /// is not taken rather than reported as fully kept (A7).
 #[test]
 fn an_empty_answer_has_no_opening_to_force() {
-    let mut ask = |_: &str, _: u64| said("");
+    let mut ask = |_: &str, _: Draw| said("");
     let mut force = |_: &str, _: &[usize]| Some(Held::default());
-    let report = measure(&only("One. Two."), 41, &mut ask, &mut force);
+    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut force);
     assert!(report.clauses.iter().all(|held| held.held.is_none()));
     assert_eq!(report.floor_held, None);
 }

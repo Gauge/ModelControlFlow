@@ -257,7 +257,7 @@ impl ProvisionedLlama {
         model: &Path,
         prompt: &str,
         limit: usize,
-        seed: u64,
+        draw: crate::generation::Draw,
         pinned: bool,
     ) -> Command {
         let mut command = Command::new(self.completion());
@@ -286,9 +286,13 @@ impl ProvisionedLlama {
             .arg("--ctx-size")
             .arg(window_for(prompt, limit).to_string())
             .arg("--temp")
-            .arg("0")
+            .arg(if draw.is_greedy() {
+                "0".to_owned()
+            } else {
+                draw.temperature.to_string()
+            })
             .arg("--seed")
-            .arg(seed.to_string())
+            .arg(draw.seed.to_string())
             .arg("--no-warmup")
             .arg("-ngl")
             .arg("0")

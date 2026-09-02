@@ -162,6 +162,18 @@ pub fn component_from(held: &Value) -> Component {
     }
 }
 
+/// Which field on the prompt screen typing goes into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Caret {
+    /// The document being taken apart.
+    #[default]
+    Document,
+    /// The question every variant of it is followed by.
+    Question,
+    /// The temperature the settledness seeds are drawn at (B-431).
+    Temperature,
+}
+
 /// Which screen is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -753,8 +765,8 @@ pub enum Act {
     Close,
     /// Analyse the typed prompt on the chosen model.
     ReportPrompt,
-    /// Put the caret in the question field (`true`) or the document (`false`).
-    FocusThen(bool),
+    /// Put the caret in one of the prompt screen's fields.
+    Focus(Caret),
     /// Remove at most this many parts of the document (B-430).
     MostParts(usize),
     /// Take the document apart by this unit, or let the text decide.
@@ -856,9 +868,11 @@ pub struct Desk {
     /// The question every variant of the document is followed by, on the
     /// prompt screen; empty asks the document alone (B-430).
     pub then: String,
-    /// Whether typing on the prompt screen goes into the question rather
-    /// than the document.
-    pub then_focused: bool,
+    /// The temperature to draw the settledness seeds at, as typed; empty
+    /// asks the question nothing, and the page says so (B-431).
+    pub temperature: String,
+    /// Which field on the prompt screen typing goes into.
+    pub caret: Caret,
     /// How many parts to remove at most, where the person chose; `None` is
     /// the report's default and the page says what that is.
     pub most: Option<usize>,
@@ -946,7 +960,8 @@ impl Desk {
             busy: false,
             typed: String::new(),
             then: String::new(),
-            then_focused: false,
+            temperature: String::new(),
+            caret: Caret::Document,
             most: None,
             by: None,
             chosen: None,
@@ -1011,7 +1026,7 @@ impl Desk {
     /// takes apart, so they are kept, and only what is neither text nor a
     /// break is dropped.
     pub fn paste(&mut self, text: &str) {
-        if self.page == Page::Prompt && !self.then_focused {
+        if self.page == Page::Prompt && self.caret == Caret::Document {
             let kept: String = text
                 .replace("\r\n", "\n")
                 .chars()
@@ -1039,23 +1054,44 @@ impl Desk {
         into.extend(kept.chars().take(room));
     }
 
-    /// The field typing goes into: the question on the prompt screen when it
+    /// The field typing goes into: whichever of the prompt screen's fields
     /// has the caret, the one field every other screen has otherwise.
     pub fn typing(&mut self) -> &mut String {
-        if self.page == Page::Prompt && self.then_focused {
-            &mut self.then
-        } else {
-            &mut self.typed
+        match (self.page, self.caret) {
+            (Page::Prompt, Caret::Question) => &mut self.then,
+            (Page::Prompt, Caret::Temperature) => &mut self.temperature,
+            _ => &mut self.typed,
         }
     }
 
     /// The same field, to read.
     #[must_use]
     pub fn being_typed(&self) -> &str {
-        if self.page == Page::Prompt && self.then_focused {
-            &self.then
-        } else {
-            &self.typed
+        match (self.page, self.caret) {
+            (Page::Prompt, Caret::Question) => &self.then,
+            (Page::Prompt, Caret::Temperature) => &self.temperature,
+            _ => &self.typed,
+        }
+    }
+
+    /// The temperature the settledness seeds would be drawn at: `None` where
+    /// the field is empty and the question is not asked, `Err` with what was
+    /// typed where it is not a temperature — which Analyse refuses rather
+    /// than runs without, because a choice dropped on the way is a hidden
+    /// one (§3.15, A2).
+    ///
+    /// # Errors
+    ///
+    /// The text as typed, where it is not a decimal above nought to three
+    /// places.
+    pub fn settle(&self) -> Result<Option<mcf_core::configuration::Thousandths>, &str> {
+        let typed = self.temperature.trim();
+        if typed.is_empty() {
+            return Ok(None);
+        }
+        match typed.parse::<mcf_core::configuration::Thousandths>() {
+            Ok(held) if held.0 > 0 => Ok(Some(held)),
+            _ => Err(typed),
         }
     }
 
@@ -1080,7 +1116,7 @@ impl Desk {
     /// button, or from Return with Control held. A field that takes one name
     /// runs on Return as it always has.
     pub fn returned(&mut self, with_control: bool) {
-        if self.page == Page::Prompt && !with_control && !self.then_focused {
+        if self.page == Page::Prompt && !with_control && self.caret == Caret::Document {
             if self.typed.chars().count() < Self::PROMPT_LIMIT {
                 self.typed.push('\n');
             }
@@ -1312,7 +1348,7 @@ impl Desk {
                 self.read_settings();
             }
             Act::ReportPrompt => self.report_prompt(),
-            Act::FocusThen(then) => self.then_focused = then,
+            Act::Focus(caret) => self.caret = caret,
             Act::MostParts(most) => self.most = Some(most.max(1)),
             Act::TakeApartBy(by) => self.by = by,
             Act::Clear => self.typed.clear(),
@@ -1589,6 +1625,11 @@ impl Desk {
         if taken.text.is_empty() {
             return;
         }
+        // Not a temperature is not *no temperature*: the page says what was
+        // typed is not one, and nothing runs until it is or is gone.
+        let Ok(temperature) = self.settle() else {
+            return;
+        };
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
@@ -1600,6 +1641,7 @@ impl Desk {
                 then: taken.then.map(str::to_owned),
                 by: taken.by,
                 most: taken.most,
+                temperature,
                 seed: 41,
             },
             format!("taking the prompt apart on {}", held.name),
