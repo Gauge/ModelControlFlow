@@ -501,6 +501,15 @@ fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
 /// with the prompt as a length and a digest and the answer as a length —
 /// never a word of either (A25, B-432).
 /// A served prompt report with text in every place a report carries it.
+/// A reading as served: its figure and the answer it was read from.
+fn a_reading(moved: i64, answer: &str) -> Value {
+    Value::map([
+        ("moved_parts_per_million", Value::Integer(moved)),
+        ("held", Value::Null),
+        ("answer", Value::text(answer)),
+    ])
+}
+
 fn a_served_report() -> Value {
     Value::map([
         ("baseline", Value::text("def slugify(title): pass")),
@@ -524,19 +533,12 @@ fn a_served_report() -> Value {
         ),
         (
             "alone",
-            Value::List(vec![Value::map([
-                ("moved_parts_per_million", Value::Integer(310_000)),
-                ("held", Value::Null),
-                ("answer", Value::text("Here is a careful function")),
-            ])]),
+            Value::List(vec![a_reading(310_000, "Here is a careful function")]),
         ),
+        ("alone_floor", a_reading(980_000, "Here is nothing")),
         (
-            "alone_floor",
-            Value::map([
-                ("moved_parts_per_million", Value::Integer(980_000)),
-                ("held", Value::Null),
-                ("answer", Value::text("Here is nothing")),
-            ]),
+            "prefixes",
+            Value::List(vec![a_reading(640_000, "Here is a start")]),
         ),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
@@ -680,14 +682,16 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         at(&["floors"]).and_then(|held| held.as_list().map(<[Value]>::len)),
         Some(1)
     );
-    // Each part alone travels as its figures, and the control alone as its
-    // figure; the answers stay behind (B-435, A25).
-    assert_eq!(
-        at(&["alone"])
+    // Each part alone, the control alone and the prompt grown from the
+    // front travel as their figures; the answers stay behind (B-435,
+    // B-436, A25).
+    let first_moved = |key: &str| {
+        at(&[key])
             .and_then(|held| held.as_list().and_then(<[Value]>::first).cloned())
-            .and_then(|held| held.get("moved_parts_per_million").cloned()),
-        Some(Value::Integer(310_000))
-    );
+            .and_then(|held| held.get("moved_parts_per_million").cloned())
+    };
+    assert_eq!(first_moved("alone"), Some(Value::Integer(310_000)));
+    assert_eq!(first_moved("prefixes"), Some(Value::Integer(640_000)));
     assert_eq!(
         at(&["alone_floor", "moved_parts_per_million"]),
         Some(Value::Integer(980_000))
@@ -724,6 +728,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         floors: None,
         alone: None,
         alone_floor: None,
+        prefixes: None,
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -784,6 +789,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
     // Not asked is null, not an empty list (A7).
     assert_eq!(served.get("alone"), Some(&Value::Null));
     assert_eq!(served.get("alone_floor"), Some(&Value::Null));
+    assert_eq!(served.get("prefixes"), Some(&Value::Null));
 }
 
 /// A report that asked each part alone serves each answer beside its figure,
@@ -809,6 +815,7 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         floors: None,
         alone: Some(vec![read(1_000_000, "Yes."), read(0, "4")]),
         alone_floor: Some(read(1_000_000, "Hello!")),
+        prefixes: Some(vec![read(750_000, "Sure.")]),
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -840,5 +847,14 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
             .get("alone_floor")
             .and_then(|held| held.get("answer")),
         Some(&Value::text("Hello!"))
+    );
+    // The prompt grown from the front travels the same way (B-436).
+    let prefixes = served
+        .get("prefixes")
+        .and_then(Value::as_list)
+        .unwrap_or(&[]);
+    assert_eq!(
+        prefixes.first().and_then(|held| held.get("answer")),
+        Some(&Value::text("Sure."))
     );
 }

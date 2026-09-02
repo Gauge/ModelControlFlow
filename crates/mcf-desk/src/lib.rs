@@ -715,6 +715,9 @@ pub enum Shown {
     Without(usize),
     /// The answer to this part alone.
     Alone(usize),
+    /// The answer to the first `n + 1` parts, the prompt grown from the
+    /// front (B-436).
+    Prefix(usize),
 }
 
 /// One thing a screen asks the window to do.
@@ -763,6 +766,9 @@ pub enum Act {
     ShowWithout(usize),
     /// Show the answer to one part alone, where each was asked (B-435).
     ShowAlone(usize),
+    /// Show the answer to the prompt grown through this many parts, or put
+    /// the answer as written back.
+    ShowPrefix(usize),
     /// Close whatever dropdown is open, choosing nothing.
     Shut,
     /// Set the context window to one of the offered powers of two.
@@ -1362,6 +1368,7 @@ impl Desk {
             Act::Close => {}
             Act::ShowWithout(at) => self.show(Shown::Without(at)),
             Act::ShowAlone(at) => self.show(Shown::Alone(at)),
+            Act::ShowPrefix(at) => self.show(Shown::Prefix(at)),
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);

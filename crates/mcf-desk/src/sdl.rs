@@ -132,6 +132,20 @@ pub struct Rect {
     pub h: f32,
 }
 
+/// A rectangle in whole pixels, the shape a clip is set in.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClipRect {
+    /// Left edge.
+    pub x: i32,
+    /// Top edge.
+    pub y: i32,
+    /// Width.
+    pub w: i32,
+    /// Height.
+    pub h: i32,
+}
+
 #[cfg(have_sdl)]
 unsafe extern "C" {
     fn SDL_Init(flags: u32) -> bool;
@@ -150,6 +164,7 @@ unsafe extern "C" {
     fn SDL_SetRenderDrawColor(renderer: *mut c_void, r: u8, g: u8, b: u8, a: u8) -> bool;
     fn SDL_RenderClear(renderer: *mut c_void) -> bool;
     fn SDL_RenderFillRect(renderer: *mut c_void, rect: *const Rect) -> bool;
+    fn SDL_SetRenderClipRect(renderer: *mut c_void, rect: *const ClipRect) -> bool;
     fn SDL_RenderDebugText(renderer: *mut c_void, x: f32, y: f32, text: *const u8) -> bool;
     fn SDL_RenderPresent(renderer: *mut c_void) -> bool;
     fn SDL_GetRenderOutputSize(renderer: *mut c_void, w: *mut i32, h: *mut i32) -> bool;
@@ -376,6 +391,20 @@ impl Window {
         }
     }
 
+    /// Confines every drawing that follows to one rectangle, or lifts the
+    /// confinement.
+    #[cfg(have_sdl)]
+    pub fn clip(&self, rect: Option<ClipRect>) {
+        // SAFETY: `rect` is a local, passed by pointer for the call only; a
+        // null pointer is what SDL documents for no clip.
+        unsafe {
+            let _set = match rect {
+                Some(rect) => SDL_SetRenderClipRect(self.renderer, &raw const rect),
+                None => SDL_SetRenderClipRect(self.renderer, std::ptr::null()),
+            };
+        }
+    }
+
     /// Fills a rectangle, with an alpha.
     #[cfg(have_sdl)]
     pub fn fill_with(&self, rect: Rect, colour: (u8, u8, u8), alpha: u8) {
@@ -528,6 +557,8 @@ impl Window {
     pub fn text(&self, _x: f32, _y: f32, _text: &str, _colour: (u8, u8, u8)) {}
     /// Unreachable: `open` refused.
     pub fn present(&self) {}
+    /// Unreachable: `open` refused.
+    pub fn clip(&self, _rect: Option<ClipRect>) {}
     /// Unreachable: `open` refused.
     pub fn fill_with(&self, _rect: Rect, _colour: (u8, u8, u8), _alpha: u8) {}
     /// Unreachable: `open` refused.

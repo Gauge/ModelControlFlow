@@ -1216,9 +1216,9 @@ fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
     )
 }
 
-fn a_report() -> mcf_desk::Desk {
+/// The rank reading of `a_report`: seven tokens, two past the depth.
+fn some_expected() -> mcf_record::json::Value {
     use mcf_record::json::Value;
-    let clause = a_clause;
     let ranked = |text: &str, rank: Option<i64>| {
         Value::map([
             ("text", Value::text(text.to_owned())),
@@ -1226,6 +1226,20 @@ fn a_report() -> mcf_desk::Desk {
             ("engine_said", Value::Null),
         ])
     };
+    Value::List(vec![
+        ranked(" class", None),
+        ranked(" each", None),
+        ranked(" handles", Some(29)),
+        ranked(" output", Some(19)),
+        ranked("#.", Some(16)),
+        ranked(" the", Some(1)),
+        ranked(" function", Some(1)),
+    ])
+}
+
+fn a_report() -> mcf_desk::Desk {
+    use mcf_record::json::Value;
+    let clause = a_clause;
     let found = Value::map([
         ("floor_parts_per_million", Value::Integer(879_000)),
         ("ranked_depth", Value::Integer(60)),
@@ -1242,18 +1256,7 @@ fn a_report() -> mcf_desk::Desk {
             "ranked_under",
             Value::text("chatml — set by a probe".to_owned()),
         ),
-        (
-            "expected",
-            Value::List(vec![
-                ranked(" class", None),
-                ranked(" each", None),
-                ranked(" handles", Some(29)),
-                ranked(" output", Some(19)),
-                ranked("#.", Some(16)),
-                ranked(" the", Some(1)),
-                ranked(" function", Some(1)),
-            ]),
-        ),
+        ("expected", some_expected()),
         (
             "settled",
             Value::map([
@@ -1270,6 +1273,20 @@ fn a_report() -> mcf_desk::Desk {
         ("floor_spread", a_spread().1),
         ("alone", each_alone().0),
         ("alone_floor", each_alone().1),
+        (
+            "prefixes",
+            Value::List(vec![
+                a_reading(970_000, "Hello! What would you like me to do?"),
+                a_reading(
+                    420_000,
+                    "def slugify(title):\n    return title.replace(\" \", \"-\")",
+                ),
+                a_reading(
+                    120_000,
+                    "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+                ),
+            ]),
+        ),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("unit", Value::text("sentence".to_owned())),
         (
@@ -1408,7 +1425,7 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     let desk = a_report();
     // The rows sit under the run's verdict; a sweep of the whole window is
     // thousands of renders.
-    let rows = (500.0, 580.0);
+    let rows = (560.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowAlone(1), rows),
         "no sentence alone in the report could be pressed"
@@ -1447,6 +1464,84 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-alone").inked(ground),
         "the report reads the same with each sentence alone and without it"
+    );
+}
+
+/// The prompt grown from the front is a row a prefix, and pressing one
+/// shows the answer to that much of the prompt (B-436).
+#[test]
+fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
+    use mcf_record::json::Value;
+    // The rows sit under the steering rows and their legend, past the
+    // window's foot: the page is scrolled to them, which is how a reader
+    // reaches them too.
+    let mut desk = a_report();
+    desk.scroll = 420.0;
+    let rows = (400.0, 560.0);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::ShowPrefix(1), rows),
+        "no prefix in the report could be pressed"
+    );
+    let mut prefix = a_report();
+    prefix.scroll = 420.0;
+    prefix.shown = Some(mcf_desk::Shown::Prefix(1));
+    let ground = DAY.ground;
+    assert_ne!(
+        drawn(&desk, DAY, "answer-as-written").inked(ground),
+        drawn(&prefix, DAY, "answer-prefix").inked(ground),
+        "the answer to a prefix drew as the answer as written"
+    );
+    let mut unasked = a_report();
+    unasked.scroll = 420.0;
+    if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("prefixes");
+    }
+    assert!(
+        !act_within(&unasked, &mcf_desk::Act::ShowPrefix(1), rows),
+        "a prefix is offered where none was read"
+    );
+    assert_ne!(
+        drawn(&desk, DAY, "prompt-report").inked(ground),
+        drawn(&unasked, DAY, "prompt-report-no-prefixes").inked(ground),
+        "the report reads the same with the prompt grown from the front and without it"
+    );
+}
+
+/// The report scrolls under the controls and never over them: scrolled,
+/// the controls' band is pixel for pixel what it was, and the body is not.
+#[test]
+fn the_report_scrolls_under_the_controls_and_not_over_them() {
+    let still = a_report();
+    let mut scrolled = a_report();
+    scrolled.scroll = 200.0;
+    let before = drawn(&still, DAY, "prompt-report");
+    let after = drawn(&scrolled, DAY, "prompt-report-scrolled");
+    if before.width < 2 {
+        return;
+    }
+    let row = |paper: &mcf_desk::paper::Paper, y: usize| {
+        let wide = paper.width as usize * 4;
+        paper
+            .pixels
+            .get(y * wide..(y + 1) * wide)
+            .map(<[u8]>::to_vec)
+    };
+    // The controls end above the run's verdict; everything up to there is
+    // untouched by the scroll.
+    for y in 0..430 {
+        assert_eq!(
+            row(&before, y),
+            row(&after, y),
+            "row {y} of the controls changed when the report scrolled"
+        );
+    }
+    let ground = DAY.ground;
+    assert_ne!(
+        before.inked(ground),
+        after.inked(ground),
+        "the report did not move for the wheel"
     );
 }
 
@@ -1731,7 +1826,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
         .join("\n\n");
     // Under the temperature row; a sweep of the whole window is thousands
     // of renders.
-    let controls = (400.0, 540.0);
+    let controls = (320.0, 560.0);
     for extra in Extra::ALL {
         assert!(!desk.taken().extras.has(extra), "{extra:?} unless asked");
         assert!(
@@ -1756,7 +1851,10 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     assert_ne!(on, off, "the cost line does not say which was chosen");
 
     // A report that drew the spread reads it back; one that did not says so.
-    let with = a_report();
+    // The legend sits under the rows, past the window's foot until the
+    // report is scrolled up to it.
+    let mut with = a_report();
+    with.scroll = 300.0;
     let found = match &with.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -1771,6 +1869,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     );
     let spread = drawn(&with, DAY, "prompt-report").inked(ground);
     let mut one = a_report();
+    one.scroll = 300.0;
     if let mcf_desk::Doing::Reporting(job) = &mut one.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {

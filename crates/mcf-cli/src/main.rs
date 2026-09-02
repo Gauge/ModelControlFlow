@@ -917,10 +917,16 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 },
                 Err(missing) => return Ok(missing),
             },
-            "--floors" => extras = extras.with(mcf_serve::prompt::Extra::Floors, true),
-            "--alone" => extras = extras.with(mcf_serve::prompt::Extra::Alone, true),
             "--json" => as_json = true,
-            other => return Err(other),
+            // Every further reading is a flag of its own name: --floors,
+            // --alone, --prefixes (B-072).
+            other => match other
+                .strip_prefix("--")
+                .and_then(mcf_serve::prompt::Extra::named)
+            {
+                Some(extra) => extras = extras.with(extra, true),
+                None => return Err(other),
+            },
         }
     }
     if prompt.is_none() && file.is_none() {
@@ -1617,12 +1623,13 @@ const COMMANDS: &str = "\
     \x20       [--by sentence|paragraph]      how much the answer moved. An\n\
     \x20       [--most <n>] [--json]          ordering, never relevance. A\n\
     \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
-    \x20       [--alone]                     --temperature draws three seeds\n\
+    \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
     \x20                                     at t to see whether it settles;\n\
     \x20                                     --floors puts the control at\n\
     \x20                                     every position, one each;\n\
     \x20                                     --alone asks each part as the\n\
-    \x20                                     whole prompt in turn\n\
+    \x20                                     whole prompt in turn; --prefixes\n\
+    \x20                                     grows the prompt a part at a time\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -2291,7 +2298,8 @@ mod tests {
             temperature: Some(mcf_core::configuration::Thousandths(700)),
             extras: mcf_serve::prompt::Extras::NONE
                 .with(mcf_serve::prompt::Extra::Floors, true)
-                .with(mcf_serve::prompt::Extra::Alone, true),
+                .with(mcf_serve::prompt::Extra::Alone, true)
+                .with(mcf_serve::prompt::Extra::Prefixes, true),
             as_json: true,
         };
         assert_eq!(
@@ -2308,6 +2316,7 @@ mod tests {
                 "0.7",
                 "--floors",
                 "--alone",
+                "--prefixes",
                 "--json"
             ]),
             whole
@@ -2317,6 +2326,7 @@ mod tests {
                 "prompt",
                 "m",
                 "--json",
+                "--prefixes",
                 "--alone",
                 "--floors",
                 "--temperature",

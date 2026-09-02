@@ -61,6 +61,25 @@ impl Surface {
         }
     }
 
+    /// Confines what follows to a rectangle, or lifts the confinement.
+    fn clip(&mut self, rect: Option<Rect>) {
+        match self {
+            Self::Live(window) => window.clip(rect.map(|rect| {
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    reason = "pixel edges of a window, rounded; far inside i32"
+                )]
+                crate::sdl::ClipRect {
+                    x: rect.x.round() as i32,
+                    y: rect.y.round() as i32,
+                    w: rect.w.round() as i32,
+                    h: rect.h.round() as i32,
+                }
+            })),
+            Self::Paper(paper) => paper.clip(rect),
+        }
+    }
+
     /// Draws a line.
     fn line(&mut self, from: (f32, f32), to: (f32, f32), colour: Rgb, alpha: u8) {
         match self {
@@ -371,6 +390,18 @@ impl Painter {
             w: area.w * self.scale,
             h: area.h * self.scale,
         }
+    }
+
+    /// Confines every drawing until [`Self::unclip`] to `area`: what a
+    /// scrolled page draws above or below its window is not drawn.
+    pub fn clip(&mut self, area: Box) {
+        let where_ = self.physical(area);
+        self.surface.clip(Some(where_));
+    }
+
+    /// Lifts the confinement [`Self::clip`] set.
+    pub fn unclip(&mut self) {
+        self.surface.clip(None);
     }
 
     /// A plain rectangle.

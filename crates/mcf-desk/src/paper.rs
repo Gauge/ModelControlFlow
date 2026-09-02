@@ -51,6 +51,9 @@ pub struct Paper {
     /// What this pretends the display's density is.
     pub scale: f32,
     images: Vec<Image>,
+    /// Where drawing lands while a clip is set: a pixel outside it is not
+    /// touched. In pixels.
+    clip: Option<Rect>,
 }
 
 impl Paper {
@@ -64,6 +67,7 @@ impl Paper {
             pixels,
             scale: 1.0,
             images: Vec::new(),
+            clip: None,
         }
     }
 
@@ -79,6 +83,7 @@ impl Paper {
             pixels: vec![0; area],
             scale,
             images: Vec::new(),
+            clip: None,
         }
     }
 
@@ -109,10 +114,26 @@ impl Paper {
         }
     }
 
+    /// Confines every drawing that follows to one rectangle, or lifts the
+    /// confinement.
+    pub fn clip(&mut self, rect: Option<Rect>) {
+        self.clip = rect;
+    }
+
     /// Lays one colour over what is there, by its alpha.
     fn blend(&mut self, x: i64, y: i64, colour: (u8, u8, u8), alpha: u8) {
         if x < 0 || y < 0 || alpha == 0 {
             return;
+        }
+        if let Some(clip) = self.clip {
+            let (px, py) = (x as f32, y as f32);
+            if px < clip.x.round()
+                || py < clip.y.round()
+                || px >= (clip.x + clip.w).round()
+                || py >= (clip.y + clip.h).round()
+            {
+                return;
+            }
         }
         let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) else {
             return;

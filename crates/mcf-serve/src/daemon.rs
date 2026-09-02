@@ -355,6 +355,7 @@ fn prompt_report_entry(
         ("floor_spread", kept("floor_spread")),
         ("alone", reading_figures(served.get("alone"))),
         ("alone_floor", reading_figures(served.get("alone_floor"))),
+        ("prefixes", reading_figures(served.get("prefixes"))),
         ("clauses", Value::List(clauses)),
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
@@ -487,6 +488,8 @@ fn prompt_report_value(
         // not *no part carries the answer on its own* (A7).
         ("alone", readings_value(report.alone.as_deref())),
         ("alone_floor", reading_value(report.alone_floor.as_ref())),
+        // **The prompt grown from the front, where asked** (B-436).
+        ("prefixes", readings_value(report.prefixes.as_deref())),
         (
             "forced_depth",
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),

@@ -2415,7 +2415,30 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         act = chosen;
     }
 
-    let mut at = bottom + 12.0;
+    // **The report scrolls under the controls.** It grew past one window
+    // as the readings did, and a report that does not fit is read by the
+    // wheel: the body is drawn from `scroll` points up and confined to the
+    // region under the controls, and the mouse sees only that region.
+    let top = bottom + 12.0;
+    let body = Box::new(0.0, top, area.right() + PAD, (area.bottom() - top).max(0.0));
+    let mouse = &mouse.within(body);
+    paint.clip(body);
+    let scrolled = prompt_report(paint, desk, mouse, area, top - desk.scroll);
+    paint.unclip();
+    scrolled.or(act)
+}
+
+/// The report under the prompt's controls, from `at` — which is above the
+/// window's top by however far the page has scrolled.
+fn prompt_report(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    at: f32,
+) -> Option<Act> {
+    let mut act = None;
+    let mut at = at;
     let Some(found) = a_report_or_why_not(paint, desk, area, at) else {
         return act;
     };
@@ -2445,12 +2468,16 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     }
     at = after;
     act = pressed.or(act);
+    let (after, pressed) = where_the_answer_arrives(paint, desk, mouse, (area.x, at), found);
+    at = after;
+    act = pressed.or(act);
     how_many_answers(paint, (area.x, at + 12.0), found);
     where_it_is_kept(paint, (area.x, at + 34.0), found);
+    // The page scrolls, so the answer has a page of its own below the rest.
     the_answer(
         paint,
         desk,
-        Box::new(area.x, at + 54.0, area.w, area.bottom() - at - 54.0),
+        Box::new(area.x, at + 54.0, area.w, 640.0),
         found,
     );
     act
@@ -2515,6 +2542,17 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
                 format!("the answer to “{}” alone", text_of(at)?),
             ))
         }
+        crate::Shown::Prefix(at) => {
+            let read = found.get("prefixes").and_then(Value::as_list)?.get(at)?;
+            let answer = read.get("answer").and_then(Value::as_text)?;
+            Some((
+                answer.to_owned(),
+                format!(
+                    "the answer to the first {}",
+                    count_of(at.saturating_add(1), unit_of(found))
+                ),
+            ))
+        }
     });
     let (said, title) = match &chosen {
         Some((answer, title)) => (answer.as_str(), title.clone()),
@@ -2548,9 +2586,8 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             lines.extend(paint.wrap(written, Weight::Regular, size::SMALL, room));
         }
     }
-    // As many as fit, and no more: this window does not scroll, and the
-    // console's `mcf prompt --json` carries the whole answer for a reader
-    // who wants it.
+    // As many as fit in the room given, and no more: the console's `mcf
+    // prompt --json` carries the whole answer for a reader who wants it.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -2591,7 +2628,7 @@ fn what_it_will_cost(
     settling: bool,
     extras: mcf_serve::prompt::Extras,
 ) -> String {
-    use mcf_serve::prompt::{Extra, SEEDS};
+    use mcf_serve::prompt::SEEDS;
     if parts <= 1 {
         return format!(
             "1 {} — nothing to remove: a document of one part cannot be taken apart",
@@ -2609,10 +2646,7 @@ fn what_it_will_cost(
             format!(
                 ", {} {}",
                 count_of(extra.generations(parts, removed), "more"),
-                match extra {
-                    Extra::Floors => "for the control at every other position",
-                    Extra::Alone => "for each part alone and the control alone",
-                }
+                extra.spent_on()
             )
         })
         .collect();
@@ -2808,15 +2842,11 @@ fn the_extras(
     let mut y = at.1;
     for extra in Extra::ALL {
         let asked = desk.extras.has(extra);
-        let label = match extra {
-            Extra::Floors => "floor at every position",
-            Extra::Alone => "each part alone",
-        };
         let (pressed, button) = ui::fitted(
             paint,
             mouse,
             (at.0, y),
-            label,
+            extra.label(),
             if asked { Kind::Primary } else { Kind::Quiet },
         );
         if pressed {
@@ -3327,6 +3357,124 @@ fn steering(
         y = what_the_bars_mean(paint, (area.x, y), floor, clauses.len(), found);
     }
     (y, act)
+}
+
+/// The prompt grown a part at a time from the front, where asked (B-436):
+/// a row a prefix, how far its answer sat from the answer as written, and
+/// the first prefix within the floor of it. Each row is the control that
+/// shows its answer. Nothing where the reading was not taken (A7).
+fn where_the_answer_arrives(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: (f32, f32),
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let Some(prefixes) = found.get("prefixes").and_then(Value::as_list) else {
+        return (at.1, None);
+    };
+    let floor = found
+        .get("floor_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let depth = found
+        .get("forced_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let unit = unit_of(found);
+    let mut y = at.1 + 12.0;
+    paint.say_at(
+        at.0,
+        y,
+        &format!(
+            "where the answer arrives as the prompt grows — the first {unit}, then the first \
+             two, and on; LOW is a prompt that already had the answer"
+        ),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    y += 22.0;
+    let mut act = None;
+    let mut arrived = None;
+    for (row, read) in prefixes.iter().enumerate() {
+        let kept = row.saturating_add(1);
+        let moved = read
+            .get("moved_parts_per_million")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        if arrived.is_none() && moved <= floor {
+            arrived = Some(kept);
+        }
+        let hit = Box::new(at.0 - 6.0, y - 3.0, 420.0, 20.0);
+        let chosen = desk.shown == Some(crate::Shown::Prefix(row));
+        if chosen || mouse.over(hit) {
+            paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
+        }
+        if mouse.clicked(hit) {
+            act = Some(Act::ShowPrefix(row));
+        }
+        let bar = Box::new(at.0, y + 4.0, 180.0, 10.0);
+        paint.panel(bar, 5.0, ink.sunk, 255);
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a bar's width in points; a part of a point is not drawn"
+        )]
+        let filled = (moved as f32 / 1_000_000.0).clamp(0.0, 1.0) * bar.w;
+        paint.panel(
+            Box::new(bar.x, bar.y, filled.max(1.0), bar.h),
+            5.0,
+            if moved > floor { ink.accent } else { ink.line },
+            255,
+        );
+        paint.say_at(
+            bar.right() + 12.0,
+            y,
+            &format!(
+                "{}  {}  {}",
+                as_percent(moved),
+                crate::held_mark(read.get("held"), depth),
+                the_first(kept, unit)
+            ),
+            Weight::Regular,
+            size::SMALL,
+            if moved > floor { ink.ink } else { ink.quiet },
+        );
+        y += 20.0;
+    }
+    let said = match arrived {
+        Some(kept) => format!(
+            "by {} the answer was within the floor ({}) of the answer as written: what \
+             follows moved it no more than an inert sentence would — not a claim the rest \
+             is idle; the rows above say what each is needed for",
+            the_first(kept, unit),
+            as_percent(floor)
+        ),
+        None => format!(
+            "no prefix short of the whole came within the floor ({}) of the answer as \
+             written: the last {unit} read still moved the answer",
+            as_percent(floor)
+        ),
+    };
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, 820.0)
+        .iter()
+        .take(3)
+    {
+        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    (y + 2.0, act)
+}
+
+/// "the first sentence", "the first 2 sentences".
+fn the_first(kept: usize, unit: &str) -> String {
+    if kept == 1 {
+        format!("the first {unit}")
+    } else {
+        format!("the first {}", count_of(kept, unit))
+    }
 }
 
 /// Under a row, what the part did alone, where that was asked (B-435): the

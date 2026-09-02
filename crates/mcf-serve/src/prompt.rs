@@ -211,11 +211,15 @@ pub enum Extra {
     /// carries the answer on its own (B-435). A generation a part and one
     /// for the control.
     Alone,
+    /// The prompt grown a part at a time from the front — the first part,
+    /// the first two, and on to one short of the whole — to say where the
+    /// answer becomes the answer (B-436). A generation a prefix.
+    Prefixes,
 }
 
 impl Extra {
     /// Every reading there is, in the order they are asked and reported.
-    pub const ALL: [Self; 2] = [Self::Floors, Self::Alone];
+    pub const ALL: [Self; 3] = [Self::Floors, Self::Alone, Self::Prefixes];
 
     /// The name a flag and the wire use.
     #[must_use]
@@ -223,6 +227,7 @@ impl Extra {
         match self {
             Self::Floors => "floors",
             Self::Alone => "alone",
+            Self::Prefixes => "prefixes",
         }
     }
 
@@ -242,6 +247,9 @@ impl Extra {
             Self::Floors => parts,
             // One a part removed, and the control alone.
             Self::Alone => removed.saturating_add(1),
+            // One a prefix short of the whole, as many as parts removed:
+            // the whole is the baseline, already drawn.
+            Self::Prefixes => strict_prefixes(parts, removed),
         }
     }
 
@@ -258,6 +266,31 @@ impl Extra {
                 "each part as the whole prompt in turn, to say which carries the answer on its \
                  own"
             }
+            Self::Prefixes => {
+                "the prompt grown a part at a time from the front, to say where the answer \
+                 becomes the answer"
+            }
+        }
+    }
+
+    /// The reading's name on a button: a few words a reader picks it by.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Floors => "floor at every position",
+            Self::Alone => "each part alone",
+            Self::Prefixes => "prompt grown from the front",
+        }
+    }
+
+    /// What its generations are spent on, for a cost line that reads "N
+    /// more" and then this.
+    #[must_use]
+    pub const fn spent_on(self) -> &'static str {
+        match self {
+            Self::Floors => "for the control at every other position",
+            Self::Alone => "for each part alone and the control alone",
+            Self::Prefixes => "for the prompt grown a part at a time, short of the whole",
         }
     }
 
@@ -265,8 +298,16 @@ impl Extra {
         match self {
             Self::Floors => 1,
             Self::Alone => 2,
+            Self::Prefixes => 4,
         }
     }
+}
+
+/// How many prefixes short of the whole are read: one a part removed, and
+/// never the whole itself, whose answer is the baseline.
+const fn strict_prefixes(parts: usize, removed: usize) -> usize {
+    let short = parts.saturating_sub(1);
+    if removed < short { removed } else { short }
 }
 
 /// Which further readings were asked for: a set of [`Extra`], small enough
@@ -517,6 +558,12 @@ pub struct Report {
     /// written. A part whose answer alone sits as far off as this carries
     /// nothing of the whole on its own.
     pub alone_floor: Option<Reading>,
+    /// The prompt grown a part at a time from the front, where asked
+    /// (B-436): the first entry is the first part alone, the next the first
+    /// two, and so on to one short of the whole — how far each sat from the
+    /// answer as written, so the run of them says where the answer became
+    /// the answer. Capped at `most` prefixes. `None` where not asked (A7).
+    pub prefixes: Option<Vec<Reading>>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -1023,6 +1070,8 @@ pub fn measure(
     } else {
         (None, None)
     };
+    let prefixes = (taken.extras.has(Extra::Prefixes) && all.len() > 1)
+        .then(|| prefixes_of(&mut bench, &all, ablated));
 
     let settled =
         settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, bench.ask));
@@ -1033,6 +1082,7 @@ pub fn measure(
         floors,
         alone,
         alone_floor,
+        prefixes,
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),
@@ -1085,6 +1135,20 @@ fn alone_of(bench: &mut Bench<'_, '_>, all: &[Part], first: usize) -> (Vec<Readi
         .map(|part| bench.read(part.text.trim()))
         .collect();
     (alone, bench.read(NO_INSTRUCTION))
+}
+
+/// The prompt grown from the front (B-436).
+///
+/// Removing one part at a time says what each is needed for; growing the
+/// prompt says when the answer arrived. A persona whose answer is in place
+/// after two of five paragraphs has three the model reads as elaboration —
+/// which is not the same as three it ignores, and the removal column says
+/// which. The whole prompt is not read again: its answer is the baseline,
+/// at no distance from itself.
+fn prefixes_of(bench: &mut Bench<'_, '_>, all: &[Part], most: usize) -> Vec<Reading> {
+    (1..=strict_prefixes(all.len(), most))
+        .map(|kept| bench.read(&joined(all.get(..kept).unwrap_or_default())))
+        .collect()
 }
 
 /// The settledness question: the same prompt, `SEEDS` seeds, one temperature.

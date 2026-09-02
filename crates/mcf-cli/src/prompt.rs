@@ -704,6 +704,103 @@ fn what_each_part_does_alone(body: &Value) -> Vec<String> {
     lines
 }
 
+/// The prompt grown a part at a time from the front (B-436): how far the
+/// answer to each prefix sat from the answer as written, and the first
+/// prefix that came within the floor of it — after which the rest moved
+/// the answer no more than an inert sentence would.
+fn where_the_answer_arrives(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = body
+        .get("forced_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let mut lines = vec!["  WHERE THE ANSWER ARRIVES AS THE PROMPT GROWS".to_owned()];
+    let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) else {
+        lines.push(format!(
+            "    not asked: `--prefixes` asks the first {unit}, then the first two, and on to \
+             one short of the whole, one generation each, to say where the answer became the \
+             answer"
+        ));
+        lines.push(String::new());
+        return lines;
+    };
+    lines.push(format!(
+        "  the prompt grown a {unit} at a time from the front — how far each answer sat from \
+         the answer as written, so LOW is a prompt that already had it"
+    ));
+    lines.push(String::new());
+    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let floor = body
+        .get("floor_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let mut arrived = None;
+    for (at, read) in prefixes.iter().enumerate() {
+        let kept = at.saturating_add(1);
+        let moved = read
+            .get("moved_parts_per_million")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        if arrived.is_none() && moved <= floor {
+            arrived = Some(kept);
+        }
+        let last: String = clauses
+            .get(at)
+            .and_then(|clause| clause.get("text"))
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .chars()
+            .take(48)
+            .collect();
+        let filled = usize::try_from(tenths_of_the_answer(moved))
+            .unwrap_or(0)
+            .min(10);
+        let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
+        let (whole, tenth) = as_percent(moved);
+        lines.push(format!(
+            "    {bar}  {whole:>3}.{tenth}%  {}, through “{last}…”",
+            the_first(kept, unit)
+        ));
+        if let Some(answer) = read.get("answer").and_then(Value::as_text) {
+            lines.push(format!(
+                "                        answer: {}",
+                first_line_of(answer)
+            ));
+        }
+        if let Some(read) = held_said(read.get("held"), depth) {
+            lines.push(format!("                        {read}"));
+        }
+    }
+    lines.push(String::new());
+    let (whole, tenth) = as_percent(floor);
+    lines.push(match arrived {
+        Some(kept) => format!(
+            "    by {} the answer was within the floor ({whole}.{tenth}%) of the answer as \
+             written: what follows moved it no more than an inert sentence would. That is \
+             not a claim the rest is idle — the column above says what each is needed for",
+            the_first(kept, unit)
+        ),
+        None => format!(
+            "    no prefix short of the whole came within the floor ({whole}.{tenth}%) of the \
+             answer as written: the last {unit} read still moved the answer"
+        ),
+    });
+    lines.push(String::new());
+    lines
+}
+
+/// "the first sentence", "the first 2 sentences".
+fn the_first(kept: usize, unit: &str) -> String {
+    if kept == 1 {
+        format!("the first {unit}")
+    } else {
+        format!(
+            "the first {}",
+            count_of(i64::try_from(kept).unwrap_or(0), unit)
+        )
+    }
+}
+
 fn which_part_was_least_expected(body: &Value) -> Vec<String> {
     let Some(grouped) = body
         .get("expected_by_part")
@@ -873,6 +970,12 @@ fn what_the_generations_were(body: &Value, unit: &str) -> String {
             "one for each {unit} alone and one for the control alone"
         ));
     }
+    if let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) {
+        spent.push(format!(
+            "{} for the prompt grown from the front",
+            count_of(i64::try_from(prefixes.len()).unwrap_or(0), "generation")
+        ));
+    }
     if matches!(body.get("settled"), Some(Value::Map(_))) {
         spent.push("one for each further seed".to_owned());
     }
@@ -950,6 +1053,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.extend(steering_lines(body));
     lines.push(String::new());
     lines.extend(what_each_part_does_alone(body));
+    lines.extend(where_the_answer_arrives(body));
     lines.push("  WHETHER SEVERAL SEEDS GAVE SEVERAL ANSWERS".to_owned());
     lines.extend(settled_lines(body.get("settled")));
 
@@ -1321,6 +1425,70 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("alone: \"Hello! How can I help?\""), "{text}");
+    }
+
+    /// The prompt grown from the front is said a prefix at a time with the
+    /// first that came within the floor; where it was not asked the report
+    /// says so and names the flag (A7, B-436).
+    #[test]
+    fn the_prompt_grown_from_the_front_says_where_the_answer_arrived_or_that_it_was_not_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("WHERE THE ANSWER ARRIVES AS THE PROMPT GROWS")
+                && text.contains("not asked: `--prefixes` asks the first sentence"),
+            "{text}"
+        );
+        let reading = |moved: i64, answer: &str| {
+            Value::map([
+                ("moved_parts_per_million", Value::Integer(moved)),
+                ("held", Value::Null),
+                ("answer", Value::text(answer.to_owned())),
+            ])
+        };
+        let mut asked = body();
+        if let Value::Map(fields) = &mut asked {
+            fields.insert(
+                "prefixes".to_owned(),
+                Value::List(vec![
+                    reading(1_000_000, "One word? Which?"),
+                    reading(0, "Blue."),
+                ]),
+            );
+        }
+        let text = rendered(&asked, "m").join("\n");
+        assert!(
+            text.contains(
+                "control sentence, and 2 generations for the prompt grown from the front"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("##########  100.0%  the first sentence, through “Answer in one word.…”"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "··········    0.0%  the first 2 sentences, through “What colour is the room?…”"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("answer: \"One word? Which?\""), "{text}");
+        assert!(
+            text.contains("by the first 2 sentences the answer was within the floor (0.0%)"),
+            "{text}"
+        );
+
+        if let Value::Map(fields) = &mut asked {
+            fields.insert(
+                "prefixes".to_owned(),
+                Value::List(vec![reading(1_000_000, "One word? Which?")]),
+            );
+        }
+        let text = rendered(&asked, "m").join("\n");
+        assert!(
+            text.contains("no prefix short of the whole came within the floor (0.0%)"),
+            "{text}"
+        );
     }
 
     /// A document in a file that is not there is said with the path, not

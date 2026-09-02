@@ -47,6 +47,24 @@ impl Mouse {
         self.wheel = 0.0;
     }
 
+    /// This mouse as a region under a clip sees it: the pointer and any
+    /// click outside `area` are not there, so what is drawn under the clip
+    /// cannot be pressed through what covers it.
+    #[must_use]
+    pub fn within(&self, area: Box) -> Self {
+        let inside = |point: (f32, f32)| area.holds(point);
+        Self {
+            at: if inside(self.at) {
+                self.at
+            } else {
+                (f32::MIN, f32::MIN)
+            },
+            began: self.began.filter(|point| inside(*point)),
+            click: self.click.filter(|point| inside(*point)),
+            ..*self
+        }
+    }
+
     /// Whether the pointer is over a box.
     #[must_use]
     pub fn over(&self, area: Box) -> bool {

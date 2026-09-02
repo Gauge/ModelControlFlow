@@ -195,7 +195,8 @@ fn the_new_requests_survive_the_wire() {
             most: Some(40),
             extras: crate::prompt::Extras::NONE
                 .with(crate::prompt::Extra::Floors, true)
-                .with(crate::prompt::Extra::Alone, true),
+                .with(crate::prompt::Extra::Alone, true)
+                .with(crate::prompt::Extra::Prefixes, true),
             temperature: Some(mcf_core::configuration::Thousandths(700)),
             seed: 41,
         },

@@ -764,3 +764,75 @@ fn each_part_alone_is_read_against_the_answer_as_written_and_costs_a_generation_
     assert_eq!(report.alone_floor, None);
     assert_eq!(asked.borrow().len(), 4);
 }
+
+/// The prompt grown from the front is read one prefix at a time, never the
+/// whole — whose answer is the baseline — and costs a generation a prefix
+/// (B-436).
+#[test]
+fn the_prompt_grown_from_the_front_is_read_short_of_the_whole_and_costs_a_generation_each() {
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: Draw| {
+        asked.borrow_mut().push(prompt.to_owned());
+        match prompt {
+            "One." => said("a b c d"),
+            "One.\n\nTwo." => said("one two c d"),
+            "One.\n\nTwo.\n\nThree." => said("one two three d"),
+            _ => said("one two three four"),
+        }
+    };
+    let taken = Taken {
+        text: "One.\n\nTwo.\n\nThree.\n\nFour.",
+        by: None,
+        most: Some(3),
+        extras: Extras::NONE.with(Extra::Prefixes, true),
+    };
+    assert_eq!(Extra::Prefixes.generations(4, 3), 3);
+    assert_eq!(
+        Extra::Prefixes.generations(4, 4),
+        3,
+        "the whole is never a prefix read"
+    );
+    assert_eq!(Extra::Prefixes.generations(1, 1), 0);
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let prefixes = report.prefixes.clone().expect("asked for, so present");
+    let moved: Vec<u64> = prefixes.iter().map(|read| read.moved).collect();
+    assert_eq!(
+        moved,
+        vec![1_000_000, 500_000, 250_000],
+        "the answer arrives a part at a time"
+    );
+    assert_eq!(
+        prefixes.first().map(|read| read.answer.as_str()),
+        Some("a b c d")
+    );
+    // One for the baseline, three removals, one control, three prefixes.
+    assert_eq!(asked.borrow().len(), 8);
+    assert_eq!(
+        asked
+            .borrow()
+            .iter()
+            .filter(|prompt| prompt.as_str() == "One.\n\nTwo.\n\nThree.\n\nFour.")
+            .count(),
+        1,
+        "the whole prompt is asked once, as the baseline"
+    );
+
+    asked.borrow_mut().clear();
+    let capped = Taken {
+        most: Some(2),
+        ..taken
+    };
+    let report = measure(&capped, 41, None, &mut ask, &mut unforced);
+    assert_eq!(
+        report.prefixes.map(|prefixes| prefixes.len()),
+        Some(2),
+        "as many prefixes as parts removed"
+    );
+
+    let not_asked = Taken {
+        extras: Extras::NONE,
+        ..taken
+    };
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.prefixes, None);
+}
