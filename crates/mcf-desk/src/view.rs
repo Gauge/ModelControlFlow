@@ -1421,7 +1421,7 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
     for (what, value) in [
         ("at 512 tokens", held.speed_at_512()),
         ("at the largest window", held.speed_at_window()),
-        ("cold start", held.cold_start()),
+        ("start-up to first token", held.start_up()),
     ] {
         row(paint, table, y, what, &[(&speed, value)]);
         y += 22.0;
@@ -1761,9 +1761,14 @@ fn found(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
     paint.say_at(area.x, y, test.name, Weight::Bold, size::BODY, ink.ink);
     y += 22.0;
     for line in lines {
-        let shown = paint.elide(line, Weight::Regular, size::BODY, area.w);
-        paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.quiet);
-        y += 20.0;
+        // A sentence the daemon wrote — what a start-up figure includes, why
+        // a cost could not be read — is longer than the panel is wide, and
+        // an ellipsis in it would cut the caveat off the figure (A7).
+        for shown in paint.wrap(line, Weight::Regular, size::BODY, area.w) {
+            let shown = paint.elide(&shown, Weight::Regular, size::BODY, area.w);
+            paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.quiet);
+            y += 20.0;
+        }
     }
     y
 }

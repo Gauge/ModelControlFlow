@@ -270,9 +270,15 @@ fn measured(
     ran_on: Option<&str>,
     readings: Vec<Value>,
 ) -> Answer {
+    // Two measurements the run took and used to throw away: what reading a
+    // token of prompt costs, and the time to a first token (A7).
+    let prompt_reading = crate::ladder::prompt_reading(&readings, as_milliseconds);
+    let first_token = crate::ladder::first_token(&readings, as_milliseconds);
     Answer::served(Value::map([
         ("measuring", Value::text(named.to_owned())),
         ("readings", Value::List(readings)),
+        ("prompt_reading", prompt_reading),
+        ("first_token", first_token),
         ("done", Value::Bool(true)),
         (
             "conditions",
@@ -1765,6 +1771,13 @@ impl Daemon {
                         "first_token_ms",
                         middle(&mut first_token)
                             .map_or(Value::Null, |ns| Value::text(as_milliseconds(ns))),
+                    ),
+                    // As a whole number too, for what is read between rungs.
+                    (
+                        "first_token_ns",
+                        middle(&mut first_token).map_or(Value::Null, |ns| {
+                            Value::Integer(i64::try_from(ns).unwrap_or(i64::MAX))
+                        }),
                     ),
                     ("spread_ms", Value::text(as_milliseconds(spread))),
                     (

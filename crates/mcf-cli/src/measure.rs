@@ -174,6 +174,7 @@ fn said(body: &Value) -> Vec<String> {
                     .unwrap_or("?")
             ),
         ];
+        out.extend(read_off_the_rungs(body));
         // B65 and D31: a timing taken from MCF's own reference implementation
         // measures the reference implementation, which is written to be read
         // rather than to be fast. Saying so is not a footnote.
@@ -189,4 +190,26 @@ fn said(body: &Value) -> Vec<String> {
         return out;
     }
     Vec::new()
+}
+
+/// Two figures the run reads off its rungs and derives on the daemon's side,
+/// printed in the daemon's words (B-072); where it could not read one, its
+/// reason is the line (A7, A9).
+fn read_off_the_rungs(body: &Value) -> Vec<String> {
+    let mut out = vec![String::new(), "read off the rungs:".to_owned()];
+    for (what, lines) in [
+        (
+            "prompt reading",
+            mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
+        ),
+        (
+            "start-up",
+            mcf_serve::ladder::first_token_said(body.get("first_token")),
+        ),
+    ] {
+        let mut lines = lines.into_iter();
+        out.push(format!("  {what:<15} {}", lines.next().unwrap_or_default()));
+        out.extend(lines.map(|line| format!("  {:<15} {line}", "")));
+    }
+    out
 }

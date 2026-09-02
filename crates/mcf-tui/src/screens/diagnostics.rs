@@ -37,7 +37,7 @@ pub fn tests() -> Vec<Test> {
             chosen: true,
         },
         Test {
-            name: "Cold start cost",
+            name: "Start-up to first token",
             devices: "both",
             seconds: 25,
             chosen: true,

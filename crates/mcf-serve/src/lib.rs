@@ -23,6 +23,7 @@ pub mod daemon;
 pub mod engines;
 mod generation;
 pub mod hosting;
+pub mod ladder;
 pub mod probes;
 pub mod prompt;
 pub mod provisioning;

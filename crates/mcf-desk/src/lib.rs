@@ -275,8 +275,10 @@ pub struct Model {
     pub refused: Option<String>,
     /// Tokens a second, where it has been measured.
     pub speed: Option<f64>,
-    /// Seconds to become ready.
-    pub wakes: Option<f64>,
+    /// Milliseconds to the first token at the shallowest depth the ladder
+    /// measured, as the daemon said it — a warm figure, taken with the file
+    /// already in the page cache (see `mcf_serve::ladder`).
+    pub start_up: Option<String>,
     /// Milliseconds a token at the shortest depth measured.
     pub fastest: Option<f64>,
     /// Milliseconds a token at the longest.
@@ -334,7 +336,7 @@ pub fn tests() -> Vec<Test> {
             result: None,
         },
         Test {
-            name: "Cold start cost",
+            name: "Start-up to first token",
             devices: "both",
             seconds: 25,
             chosen: true,
@@ -437,19 +439,18 @@ impl Model {
         )
     }
 
-    /// How long it takes to become ready.
+    /// How long the first token takes, warm.
     #[must_use]
-    pub fn cold_start(&self) -> String {
-        self.wakes.map_or_else(
-            || crate::view::UNKNOWN.to_owned(),
-            |seconds| format!("{seconds:.1} s"),
-        )
+    pub fn start_up(&self) -> String {
+        self.start_up
+            .as_ref()
+            .map_or_else(|| crate::view::UNKNOWN.to_owned(), |ms| format!("{ms} ms"))
     }
 
     /// Whether anything has been measured about it.
     #[must_use]
     pub fn measured(&self) -> bool {
-        self.fastest.is_some() || self.slowest.is_some() || self.wakes.is_some()
+        self.fastest.is_some() || self.slowest.is_some() || self.start_up.is_some()
     }
 
     /// Everything the screen decided not to lead with.
@@ -566,7 +567,7 @@ fn model_from(held: &Value) -> Model {
             .as_ref()
             .and_then(|held| held.fastest)
             .map(per_second),
-        wakes: None,
+        start_up: measured.as_ref().and_then(|held| held.start_up.clone()),
         fastest: measured.as_ref().and_then(|held| held.fastest),
         slowest: measured.as_ref().and_then(|held| held.slowest),
         ladder: measured.map(|held| held.ladder).unwrap_or_default(),
@@ -587,6 +588,9 @@ struct Measured {
     slowest: Option<f64>,
     /// Every depth that separated, in order.
     ladder: Vec<crate::chart::Reading>,
+    /// Milliseconds to the first token at the shallowest rung, where the
+    /// daemon read one.
+    start_up: Option<String>,
 }
 
 /// Reads the ends out of what the record kept.
@@ -595,7 +599,18 @@ struct Measured {
 /// is not a slow one, and letting it stand in for the deepest reading would
 /// put a number where there is none (A7, A9).
 fn measured_ends(held: &Value) -> Measured {
-    let mut ends = Measured::default();
+    // The start-up figure is the daemon's, derived on its side of the wire
+    // so that no surface derives it differently (B-072); a run that could not
+    // read one says so there, and reads as nothing here.
+    let mut ends = Measured {
+        start_up: held
+            .get("first_token")
+            .filter(|figure| matches!(figure.get("measured"), Some(Value::Bool(true))))
+            .and_then(|figure| figure.get("ms"))
+            .and_then(Value::as_text)
+            .map(str::to_owned),
+        ..Measured::default()
+    };
     let Some(readings) = held.get("readings").and_then(Value::as_list) else {
         return ends;
     };
@@ -1132,13 +1147,38 @@ impl Desk {
                 lines.push(format!("measured on {engine}"));
             }
         }
-        if let Some(test) = self
-            .tests
-            .iter_mut()
-            .find(|test| test.name == "Generation speed against depth")
-        {
-            test.ran = Some(ran);
-            test.result = Some(lines);
+        // Two more rows the same run measured: the daemon reads a prompt's
+        // cost and the time to a first token off the rungs it climbed, and
+        // says so in its last line — so those rows are filled from that line
+        // and never worked out here (B-072). A run that was refused before
+        // it climbed anything leaves them as they were, because it measured
+        // neither.
+        let derived = job.conclusion().map(|body| {
+            (
+                mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
+                mcf_serve::ladder::first_token_said(body.get("first_token")),
+            )
+        });
+        for test in &mut self.tests {
+            match test.name {
+                "Generation speed against depth" => {
+                    test.ran = Some(ran);
+                    test.result = Some(lines.clone());
+                }
+                "Prompt reading speed" => {
+                    if let Some((reading, _)) = &derived {
+                        test.ran = Some(ran);
+                        test.result = Some(reading.clone());
+                    }
+                }
+                "Start-up to first token" => {
+                    if let Some((_, start)) = &derived {
+                        test.ran = Some(ran);
+                        test.result = Some(start.clone());
+                    }
+                }
+                _ => {}
+            }
         }
     }
 

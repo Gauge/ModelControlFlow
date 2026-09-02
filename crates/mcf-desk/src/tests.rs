@@ -177,7 +177,7 @@ fn a_daemon_answer_becomes_a_model() {
     assert!(held.will_run());
     // Nothing measured it, so nothing claims to have.
     assert_eq!(held.speed, None);
-    assert_eq!(held.wakes, None);
+    assert_eq!(held.start_up, None);
 }
 
 /// A model the daemon could not resolve carries the daemon's own reason.
@@ -492,8 +492,176 @@ fn a_measurement_in_the_record_reaches_the_model() {
     assert_eq!(held.slowest, Some(1.412));
     assert_eq!(held.speed_at_512(), "1.53 ms/token");
     assert_eq!(held.speed_at_window(), "1.41 ms/token");
-    // Nothing measured the cold start, so nothing claims to have.
-    assert_eq!(held.cold_start(), crate::view::UNKNOWN);
+    // The run said nothing of a first token, so nothing claims one.
+    assert_eq!(held.start_up(), crate::view::UNKNOWN);
+}
+
+/// The time to a first token is the daemon's figure or nothing — never one
+/// this side of the wire works out from the readings (B-072, A7).
+#[test]
+fn a_start_up_in_the_record_is_the_daemons_figure_or_nothing() {
+    let recorded = |first_token: Value| {
+        Value::map([
+            ("path", Value::text("/models/a-model.gguf")),
+            (
+                "runs",
+                Value::map([(
+                    "measured",
+                    Value::map([
+                        ("readings", Value::List(Vec::new())),
+                        ("first_token", first_token),
+                    ]),
+                )]),
+            ),
+        ])
+    };
+    let read = model_from(&recorded(Value::map([
+        ("measured", Value::Bool(true)),
+        ("depth", Value::Integer(512)),
+        ("ms", Value::text("412.7")),
+    ])));
+    assert_eq!(read.start_up.as_deref(), Some("412.7"));
+    assert_eq!(read.start_up(), "412.7 ms");
+    assert!(read.measured());
+    let not_read = model_from(&recorded(Value::map([
+        ("measured", Value::Bool(false)),
+        ("why", Value::text("no rung of the ladder separated")),
+    ])));
+    assert_eq!(not_read.start_up, None);
+    assert_eq!(not_read.start_up(), crate::view::UNKNOWN);
+    assert!(!not_read.measured());
+}
+
+/// One rung of a run, as the daemon says it as the run climbs.
+fn a_rung() -> Value {
+    Value::map([
+        ("depth", Value::Integer(512)),
+        ("ms_per_token", Value::text("1.529")),
+        ("measured", Value::Bool(true)),
+    ])
+}
+
+/// A run's last line: the ladder again, and what was derived from it.
+fn a_last_line(prompt_reading: Value, first_token: Value) -> Value {
+    Value::map([
+        ("measuring", Value::text("a-model")),
+        ("readings", Value::List(vec![a_rung()])),
+        ("prompt_reading", prompt_reading),
+        ("first_token", first_token),
+        ("done", Value::Bool(true)),
+        (
+            "conditions",
+            Value::map([("engine_ran", Value::text("llama.cpp-cuda"))]),
+        ),
+    ])
+}
+
+/// A desk holding a finished run, its rows filled from it.
+fn a_desk_that_ran(prompt_reading: Value, first_token: Value) -> Desk {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.doing = crate::Doing::Measuring(crate::job::Job::already(
+        "measuring a-model".to_owned(),
+        vec![
+            Value::map([("reading", a_rung())]),
+            a_last_line(prompt_reading, first_token),
+        ],
+    ));
+    desk.keep_the_run();
+    desk
+}
+
+/// What one row of the tests table shows.
+fn row(desk: &Desk, name: &str) -> Option<Vec<String>> {
+    desk.tests
+        .iter()
+        .find(|test| test.name == name)
+        .unwrap_or_else(|| panic!("no row named {name}"))
+        .result
+        .clone()
+}
+
+/// A finished run fills the three rows the ladder answers, and leaves the
+/// two it does not alone.
+///
+/// **Five tests were listed and one ran.** The rows for prompt reading and
+/// start-up said nothing after a run that had measured both and thrown them
+/// away; the daemon now says them on its last line, and the rows read what
+/// it said (A7, A9, B-072).
+#[test]
+fn a_finished_run_fills_the_rows_the_ladder_answers() {
+    let desk = a_desk_that_ran(
+        Value::map([
+            ("measured", Value::Bool(true)),
+            ("ms_per_token", Value::text("1.953")),
+            (
+                "between",
+                Value::List(vec![Value::Integer(512), Value::Integer(2048)]),
+            ),
+            ("method", Value::text("the slope between the outer rungs")),
+        ]),
+        Value::map([
+            ("measured", Value::Bool(true)),
+            ("depth", Value::Integer(512)),
+            ("ms", Value::text("412.7")),
+            (
+                "includes",
+                Value::text("warm, with the file in the page cache"),
+            ),
+        ]),
+    );
+    assert_eq!(
+        row(&desk, "Generation speed against depth").as_deref(),
+        Some(
+            &[
+                "at 512 tokens   1.529 ms a token".to_owned(),
+                "measured on llama.cpp-cuda".to_owned()
+            ][..]
+        )
+    );
+    assert_eq!(
+        row(&desk, "Prompt reading speed").as_deref(),
+        Some(
+            &[
+                "1.953 ms a token of prompt".to_owned(),
+                "between 512 and 2,048 tokens deep".to_owned(),
+                "the slope between the outer rungs".to_owned()
+            ][..]
+        )
+    );
+    assert_eq!(
+        row(&desk, "Start-up to first token").as_deref(),
+        Some(
+            &[
+                "412.7 ms to the first token, 512 tokens deep".to_owned(),
+                "warm, with the file in the page cache".to_owned()
+            ][..]
+        )
+    );
+    assert_eq!(row(&desk, "Memory ceiling — largest context"), None);
+    assert_eq!(row(&desk, "CPU and GPU agree on the output"), None);
+}
+
+/// What the daemon could not read is said as not read, not left blank (A9).
+#[test]
+fn a_figure_the_run_could_not_read_is_said_not_read() {
+    let desk = a_desk_that_ran(
+        Value::map([
+            ("measured", Value::Bool(false)),
+            ("why", Value::text("only one rung separated")),
+        ]),
+        Value::map([
+            ("measured", Value::Bool(false)),
+            ("why", Value::text("no rung of the ladder separated")),
+        ]),
+    );
+    assert_eq!(
+        row(&desk, "Prompt reading speed").as_deref(),
+        Some(&["not measured: only one rung separated".to_owned()][..])
+    );
+    assert_eq!(
+        row(&desk, "Start-up to first token").as_deref(),
+        Some(&["not measured: no rung of the ladder separated".to_owned()][..])
+    );
 }
 
 /// A model with no measurement in the record says so, and does not say zero.

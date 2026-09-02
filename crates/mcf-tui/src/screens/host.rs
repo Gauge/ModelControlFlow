@@ -245,7 +245,11 @@ fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usiz
             ],
         );
         row += 1;
-        for label in ["at 512 tokens", "at the largest window", "cold start"] {
+        for label in [
+            "at 512 tokens",
+            "at the largest window",
+            "start-up to first token",
+        ] {
             columns(
                 into,
                 right,

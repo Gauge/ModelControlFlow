@@ -39,7 +39,7 @@ fn four_models() -> Desk {
             device: Some("NVIDIA GeForce RTX 5080".to_owned()),
             on_a_card: true,
             speed: Some(155.0),
-            wakes: Some(1.9),
+            start_up: Some("412.7".to_owned()),
             fastest: Some(6.43),
             slowest: Some(7.66),
             cache_per_token: Some(114_688),
@@ -404,6 +404,84 @@ fn a_result_opens_under_the_tests_rather_than_over_them() {
     assert!(
         changed_high > 500,
         "the result drew {changed_high} pixels: nothing opened"
+    );
+}
+
+/// The two rows the ladder now answers open like the ladder's own, in the
+/// daemon's sentences.
+///
+/// The sentences are composed in `mcf_serve::ladder` — the same ones the
+/// console prints — so this draws what a run leaves behind, and asserts
+/// that opening the start-up row shows something under the table (B-424).
+#[test]
+fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
+    use mcf_record::json::Value;
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+    let first_token = Value::map([
+        ("measured", Value::Bool(true)),
+        ("depth", Value::Integer(512)),
+        ("ms", Value::text("1257.235")),
+        (
+            "includes",
+            Value::text(
+                "loading the model, reading 512 tokens and producing one — with the file \
+                 already in the page cache, which is a second request's cost and not the \
+                 first's after a reboot",
+            ),
+        ),
+    ]);
+    let prompt_reading = Value::map([
+        ("measured", Value::Bool(false)),
+        (
+            "why",
+            Value::text("only one rung measured a first token, and a cost is read between two"),
+        ),
+    ]);
+    for test in &mut desk.tests {
+        match test.name {
+            "Generation speed against depth" => {
+                test.ran = Some(41);
+                test.result = Some(vec![
+                    "at 512 tokens   15.321 ms a token".to_owned(),
+                    "measured on provisioned llama.cpp server @925e1179947e".to_owned(),
+                ]);
+            }
+            "Prompt reading speed" => {
+                test.ran = Some(41);
+                test.result = Some(mcf_serve::ladder::prompt_reading_said(Some(
+                    &prompt_reading,
+                )));
+            }
+            "Start-up to first token" => {
+                test.ran = Some(41);
+                test.result = Some(mcf_serve::ladder::first_token_said(Some(&first_token)));
+            }
+            _ => {}
+        }
+    }
+    let shut = drawn(&desk, DAY, "rungs-shut");
+    if shut.width == 1 {
+        return; // no font here
+    }
+    desk.showing = desk
+        .tests
+        .iter()
+        .position(|test| test.name == "Start-up to first token");
+    assert!(desk.showing.is_some(), "no start-up row to open");
+    let open = drawn(&desk, DAY, "rungs-open");
+    let mut changed = 0_usize;
+    for y in 0..open.height {
+        for x in 0..open.width {
+            if shut.at(x, y) != open.at(x, y) {
+                changed += 1;
+            }
+        }
+    }
+    assert!(
+        changed > 500,
+        "opening the start-up row changed {changed} pixels: nothing opened"
     );
 }
 
