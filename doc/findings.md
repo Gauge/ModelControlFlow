@@ -162,6 +162,8 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 154 | [F154 — The prototype's bandwidth was the harness's: this machine reads the cache's working set at 95–850 GB/s, F121's constant divided by the wrong denominator, and the engine reaches 40–63% of the machine (B-427, B-400, F121, A20, A21)](#154-f154-the-prototypes-bandwidth-was-the-harnesss-this-machine-reads-the-caches-working-set-at-95850-gbs-f121s-constant-divided-by-the-wrong-denominator-and-the-engine-reaches-4063-of-the-machine-b-427-b-400-f121-a20-a21) |
+| 155 | [F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)](#155-f155-the-ladders-pair-does-not-resolve-a-slope-at-depth-sixteen-tokens-of-generation-against-a-34-second-prefill-one-pair-of-three-came-out-negative-and-a-fall-off-seven-times-the-one-below-it-was-the-jitter-b-427-b-428-b-400-a9-a7-f117) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9415,6 +9417,104 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 155 · F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)
+
+The first run of the predicted fall-off (F154) took the ladder to 8,192 deep,
+and the rung there cost **164 ms a token, seven times the 23 ms at 4,096** —
+a fall-off of 19 ms a thousand between 512 and 8,192, against 1.6 between
+512 and 4,096. Nothing in a model re-reads seven times more at twice the
+depth. The rung's own line said what it was: *spread 68.8 ms, over 2
+samples*. Three pairs were run and one was dropped, because its seventeen-
+token run came out faster than its one-token run, and a difference under
+zero is not a cost.
+
+**The method's signal is fixed and its noise grows with depth.** A rung is
+two generations after the same prefill — one token and seventeen — and the
+per-token cost is their difference over sixteen. The prefill is in both and
+cancels, on paper. At 512 deep the prefill is two seconds and the sixteen
+tokens are 0.3 s; at 8,192 the prefill is 34 s (4.2 ms a token of prompt,
+read off the same run) and the sixteen tokens are still 0.4 s. A prefill
+that jitters by 2% is 0.7 s at that depth, which is twice what is being
+measured, and over sixteen tokens it is 43 ms a token. The rung was
+measuring the prefill's jitter, and the spread said so; the fall-off line,
+reading only the median at each end, did not.
+
+**So the slope now sits in a bracket the spread draws**, and where the
+bracket reaches zero no slope is claimed: each rung's median is taken to sit
+within half its spread either way, and the slope between the two extremes
+each way is where the measured slope could be. Between 512 and 4,096 on the
+same run — 17.6 ± 1.4 ms against 23.2 ± 12.3 — the deep rung's spread
+reaches the shallow one and the line says *not resolved*, with the reason
+(A9, A7). A predicted slope is then said to sit inside or outside the
+bracket, which is the only comparison the run supports. What the method
+needs is a pair whose difference grows with the prefill, or a pair taken on
+one resident engine so the prefill is paid once and not twice with a jitter
+between; that is B-428, and until it is done the deep rungs are honest about
+what they did not measure.
+
+**And the noise is probably not symmetric.** A second run to 8,192 gave 79
+ms at that rung with a spread of 84 — bracketed *between 1.6 and 13.3 ms a
+thousand*, the prediction of 1.03 just outside — and an earlier one 139. Three
+medians all far above the rung below is not what a jitter centred on the
+truth produces; it is what a seventeen-token run that is systematically
+slower than the one-token run before it produces, and the likeliest reason
+is that the second 34-second prefill of a pair runs on a processor the first
+one heated. The bracket does not assume either; it says how far the samples
+spread, and B-428 is where the pair is made to settle which it is.
+
+**Two earlier figures were this too.** B-400's first fall-off, 2.499 ms a
+thousand, was read between 512 and 4,096 on a run whose 4,096 rung spread
+24 ms; a previous ladder to 8,192 gave 66 ms at 4,096 and 139 at 8,192 with
+spreads of 548 and 287. Each was printed as a figure with the spread beside
+it on another line, and the reader had to do the arithmetic the daemon now
+does (B-072: one implementation of it, in the daemon).
+
+## 154 · F154 — The prototype's bandwidth was the harness's: this machine reads the cache's working set at 95–850 GB/s, F121's constant divided by the wrong denominator, and the engine reaches 40–63% of the machine (B-427, B-400, F121, A20, A21)
+
+**The prediction B-400 could not make is made**, and the first thing it
+found was that the number it was built to reproduce was never the machine's.
+F121 divided the header's cache bytes a token of depth by *this machine's
+measured bandwidth* — 55.8 GB/s from the prototype's `bandwidth.py` — and
+found the bandwidth-bound models at a constant 0.83 of that. B-400 read the
+shipped engine's re-read rate at 45.89 GB/s and called it 0.82 of 55.8,
+F121's constant arrived at from the shipped path. Both were ratios to the
+harness. `mcf_serve::bandwidth` reads a working set with every core, each
+thread its own slice filled outside the timing and summed end to end; on
+this machine that is **850 GB/s at 56 MB, 377 at 112 MB, 202 at 224 MB,
+116 at 470 MB and 95 at 940 MB** — the two L3 steps the prototype saw, at
+roughly twice the height. The prototype's 55.8 GB/s was what a numpy sum
+reaches on one process, and so was the 36% and 53% step. The engine's
+re-read of the cache at 4,096 deep — 470 MB of it, at 46 and 73 GB/s on
+two runs — is **40% and 63% of what the machine reads that working set
+at**, not 82% of anything.
+
+**Measured at the working set the cache takes, not once.** A bandwidth is
+not one number on a machine with 64 MiB of L3 in two halves: a cache that
+fits reads eight times faster than one that streams. So the daemon takes a
+reading at each rung's working set (depth × the header's bytes a token) and
+the prediction divides by the rate at the deepest rung's, the rung whose
+cache is furthest from fitting a faster level. Each reading is written down
+beside the rungs as a condition of the run (`read_bandwidth`), taken before
+the engine is up so the two are not sharing the bus — B4 refuses ambient
+sampling, and this is instrumentation inside an experiment the operator
+started (A6) — and not kept as a machine constant from some other day: a
+neighbour on the bus tomorrow is a different machine (A21).
+
+**What the sentence now says.** *Predicted 1.203 ms from those bytes over
+the 95.27 GB/s this machine read a working set of 0.93 GB at, with 32
+threads — the engine reached 6% of it*; and *each attending block reads
+4,096 bytes a position, over the 2,048 where a read streams (F121)*, which
+is the regime F121 found the header predicts to within 7%. The 6% is the
+8,192 rung, and is F155's subject: the figure is wrong because the rung is
+noise, and the bracket beside it now says so. Between 512 and 4,096 the
+same run reached 63%.
+
+**A prediction is never in the figure's place** (A20). The measured slope,
+the re-read rate, the machine's rate and the predicted slope are four
+fields, the prediction's method is a fifth, and a header the arithmetic
+does not describe — a fixed recurrent state — still says *unpredicted*
+rather than dividing by a rate.
 
 ## 153 · F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)
 

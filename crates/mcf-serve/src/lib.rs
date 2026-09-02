@@ -15,6 +15,7 @@
 
 pub mod adapters;
 pub mod anatomy;
+pub mod bandwidth;
 pub mod configured;
 pub mod control;
 pub mod cost;

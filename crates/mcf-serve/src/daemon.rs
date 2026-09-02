@@ -286,7 +286,7 @@ fn measured(
     asked: Option<&str>,
     ran_on: Option<&str>,
     readings: Vec<Value>,
-    planned: crate::ladder::Planned,
+    planned: &crate::ladder::Planned,
 ) -> Answer {
     // Two measurements the run took and used to throw away: what reading a
     // token of prompt costs, and the time to a first token (A7).
@@ -341,6 +341,19 @@ fn measured(
                     ),
                 ),
                 ("loaded", Value::text("per_request")),
+                // What this machine read at, measured at the working set the
+                // cache takes at each depth before the engine was up, so the
+                // fall-off's prediction can be checked against it (B-427).
+                (
+                    "read_bandwidth",
+                    Value::List(
+                        planned
+                            .bandwidth
+                            .iter()
+                            .map(crate::bandwidth::Reading::as_value)
+                            .collect(),
+                    ),
+                ),
             ]),
         ),
     ]))
@@ -354,7 +367,7 @@ fn measured(
 /// not free memory the plan may count twice. The weights are the whole set,
 /// not the part the model is named by (F138); where the store cannot say,
 /// the one file's length stands, which is what the conditions say too.
-fn planned_memory(path: &Path, held: Option<u64>) -> crate::ladder::Planned {
+fn planned_memory(path: &Path, held: Option<u64>, ladder: &[u64]) -> crate::ladder::Planned {
     let file = header_of(path);
     let declared = |key: &str| {
         let file = file.as_ref()?;
@@ -363,14 +376,22 @@ fn planned_memory(path: &Path, held: Option<u64>) -> crate::ladder::Planned {
             .and_then(mcf_standin::gguf::Value::as_integer)
             .and_then(|value| u64::try_from(value).ok())
     };
+    let per_token = file
+        .as_ref()
+        .and_then(crate::engines::cache_bytes_per_token);
     crate::ladder::Planned {
-        per_token: file
-            .as_ref()
-            .and_then(crate::engines::cache_bytes_per_token),
+        per_token,
         weights: mcf_hub::store::bytes_of_the_whole(path).ok().or(held),
         free: system_memory_free(),
         trained: declared("context_length"),
         sliding_window: declared("attention.sliding_window"),
+        attending_blocks: file
+            .as_ref()
+            .and_then(crate::engines::shape_of)
+            .map(|shape| shape.blocks),
+        // Measured now, with no engine up to share the memory bus: the rate
+        // the engine's re-read of the cache is set against (B-427).
+        bandwidth: crate::bandwidth::along_a_ladder(ladder, per_token),
     }
 }
 
@@ -1850,7 +1871,7 @@ impl Daemon {
         // engine is started, so a measurement is taken on the device it says
         // it was taken on (A6, A12, F133).
         let picked = self.picked_engine(named);
-        let planned = planned_memory(&path, held);
+        let planned = planned_memory(&path, held, &ladder);
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
         for depth in &ladder {
@@ -1882,7 +1903,7 @@ impl Daemon {
             engine,
             ran_on.as_deref(),
             readings,
-            planned,
+            &planned,
         );
         // Written down as it is sent, the way a generation's account is. A
         // measurement nobody can find later is the same as one not taken
@@ -2181,6 +2202,12 @@ impl Daemon {
                         }),
                     ),
                     ("spread_ms", Value::text(as_milliseconds(spread))),
+                    // As a whole number too, for the bracket the slope read
+                    // between rungs sits in (B-427).
+                    (
+                        "spread_ns",
+                        Value::Integer(i64::try_from(spread).unwrap_or(i64::MAX)),
+                    ),
                     (
                         "samples",
                         Value::Integer(i64::try_from(samples.len()).unwrap_or(i64::MAX)),
