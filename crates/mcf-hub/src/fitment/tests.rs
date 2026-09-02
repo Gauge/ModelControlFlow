@@ -23,12 +23,12 @@ fn usable(available: u64) -> u64 {
 }
 
 /// A shape like an 8-billion-parameter llama: 32 blocks, 8 key/value heads of
-/// 128, cached at half precision.
+/// 128 keeping a key and a value each, cached at half precision.
 fn shape() -> Shape {
     Shape {
         blocks: 32,
         key_value_heads: 8,
-        head_dimension: 128,
+        per_head: 256,
         bytes_per_element: 2,
     }
 }
@@ -180,7 +180,7 @@ fn a_plan_does_not_fill_the_machine() {
         shape: Shape {
             blocks: 1,
             key_value_heads: 1,
-            head_dimension: 1,
+            per_head: 1,
             bytes_per_element: 2,
         },
     };
@@ -209,7 +209,7 @@ fn arithmetic_that_overflows_refuses_to_plan() {
         shape: Shape {
             blocks: u64::MAX,
             key_value_heads: u64::MAX,
-            head_dimension: u64::MAX,
+            per_head: u64::MAX,
             bytes_per_element: 2,
         },
     };
@@ -263,7 +263,7 @@ fn a_shape_is_read_from_a_configuration() {
         Some(Shape {
             blocks: 28,
             key_value_heads: 8,
-            head_dimension: 128,
+            per_head: 256,
             bytes_per_element: 2,
         })
     );
@@ -276,8 +276,8 @@ fn a_shape_is_read_from_a_configuration() {
     )
     .expect("JSON");
     assert_eq!(
-        Shape::from_configuration(&derived, 2).map(|shape| shape.head_dimension),
-        Some(128)
+        Shape::from_configuration(&derived, 2).map(|shape| shape.per_head),
+        Some(256)
     );
 }
 
@@ -299,7 +299,7 @@ fn a_nested_configuration_is_read_where_the_model_puts_it() {
         Some(Shape {
             blocks: 64,
             key_value_heads: 4,
-            head_dimension: 256,
+            per_head: 512,
             bytes_per_element: 2,
         }),
         "the transformer's own fields were not read"

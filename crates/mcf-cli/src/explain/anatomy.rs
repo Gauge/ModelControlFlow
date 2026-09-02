@@ -309,6 +309,9 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
     match cache {
         Cache::Sized {
             per_token,
+            key_heads,
+            per_head,
+            latent,
             at_context,
             sliding_window,
             attending,
@@ -318,8 +321,16 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
             let mut lines = row(
                 "key/value cache",
                 &format!(
-                    "{} bytes per token at 16 bits an element{}",
+                    "{} bytes per token at 16 bits an element: {key_heads} head(s) keeping {}{}",
                     with_thousands(*per_token),
+                    if *latent {
+                        format!(
+                            "one latent of {per_head} per position, which is read back as both \
+                             key and value — no value cache"
+                        )
+                    } else {
+                        format!("{per_head} for a key and a value")
+                    },
                     if keeping == blocks {
                         String::new()
                     } else {

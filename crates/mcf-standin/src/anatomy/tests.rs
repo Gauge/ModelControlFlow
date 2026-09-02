@@ -333,6 +333,9 @@ fn one_token_is_costed_from_the_widths_the_header_names() {
         work.cache,
         super::work::Cache::Sized {
             per_token: 2 * 32 * 2 * 2,
+            key_heads: 2,
+            per_head: 32,
+            latent: false,
             at_context: Some((1024, 1024 * 2 * 32 * 2 * 2)),
             sliding_window: None,
             attending: (2, 2),
@@ -360,17 +363,43 @@ fn a_head_width_the_header_omits_is_the_embedding_over_the_heads() {
     ));
 }
 
+/// A latent cache is the key width alone: the engine allocates a key cache of
+/// the latent's width and no value cache, and reads values back out of the
+/// latent (F151). A formula that added a value for every key stated it nearly
+/// twice its size — and before that, MCF withheld it as unsized.
 #[test]
-fn a_latent_cache_is_not_sized_from_the_wrong_widths() {
+fn a_latent_cache_is_a_key_with_no_value() {
     let mut file = dense();
-    file.metadata.insert(
-        "llama.attention.kv_lora_rank".to_owned(),
-        Value::Integer(512),
-    );
+    for (key, value) in [
+        ("llama.attention.kv_lora_rank", 12),
+        // The converter writes the latent and its rope as the key length,
+        // the latent alone as the value length, and one key/value head.
+        ("llama.attention.key_length", 16),
+        ("llama.attention.value_length", 12),
+        ("llama.attention.head_count_kv", 1),
+        ("llama.context_length", 1024),
+    ] {
+        file.metadata.insert(key.to_owned(), Value::Integer(value));
+    }
     let counted = of(&file);
     let work = super::work::of(&file, &counted);
-    assert!(matches!(work.cache, super::work::Cache::Unsized(_)));
-    assert_eq!(work.attention_at_context, None);
+    // 1 head × 16 (the latent and its rope, nothing for values) × 2 blocks × 2 bytes.
+    assert_eq!(
+        work.cache,
+        super::work::Cache::Sized {
+            per_token: 16 * 2 * 2,
+            key_heads: 1,
+            per_head: 16,
+            latent: true,
+            at_context: Some((1024, 1024 * 16 * 2 * 2)),
+            sliding_window: None,
+            attending: (2, 2),
+            recurrent: 0,
+        }
+    );
+    // Every head still reads the latent as key and value per position:
+    // 4 heads × (16 + 12) × 1024 × 2 blocks.
+    assert_eq!(work.attention_at_context, Some(4 * 28 * 1024 * 2));
 }
 
 #[test]
@@ -606,6 +635,9 @@ fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
             per_token: 2 * 32 * 2,
             at_context: Some((1024, 1024 * 2 * 32 * 2)),
             sliding_window: None,
+            key_heads: 2,
+            per_head: 32,
+            latent: false,
             attending: (1, 4),
             recurrent: 3,
         }
@@ -676,12 +708,14 @@ fn heads_are_read_off_the_output_projection() {
         tensor(&named("attn_kv_a_mqa.weight"), &[64, 72], TensorKind::Q4_K),
         tensor(&named("attn_output.weight"), &[80, 64], TensorKind::Q4_K),
     ]);
+    let key_value_heads = Value::Integer(1);
     let file = model(
         "latent",
         &[
             ("latent.block_count", Value::Integer(1)),
             ("latent.embedding_length", Value::Integer(64)),
             ("latent.attention.head_count", Value::Integer(5)),
+            ("latent.attention.head_count_kv", key_value_heads),
             ("latent.attention.key_length", Value::Integer(72)),
             ("latent.attention.value_length", Value::Integer(64)),
             ("latent.attention.key_length_mla", Value::Integer(32)),
@@ -702,5 +736,15 @@ fn heads_are_read_off_the_output_projection() {
             heads.agrees
         ),
         (Some("5"), Some("5"), Some(true))
+    );
+    // And its one key/value head is the latent projection.
+    let key_heads = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "key/value heads")
+        .expect("the header declares key/value heads");
+    assert_eq!(
+        (key_heads.observed.as_deref(), key_heads.agrees),
+        (Some("1"), Some(true))
     );
 }

@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
 | 150 | [F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)](#150-f150-the-cache-of-a-hybrid-was-sized-by-the-headers-block-count-and-came-out-four-times-too-large-the-same-files-heads-read-as-thirty-two-against-sixteen-declared-and-its-bf16-tensors-as-a-type-mcf-does-not-read-b-038-a7-a21-f16) |
 | 149 | [F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)](#149-f149-the-daemon-found-its-engines-once-and-never-looked-again-so-an-engine-built-while-it-ran-was-a-prefix-on-disk-and-no-engine-on-the-socket-f31-a7-b-367-b-072) |
 | 148 | [F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)](#148-f148-six-readers-told-the-operator-mcf-did-not-say-why-over-a-body-that-said-exactly-why-a2-b-072) |
@@ -9401,6 +9402,57 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 151 · F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)
+
+The second file read for F150 — the latent-attention model with a dense
+first block among its expert blocks — showed two surfaces of MCF disagreeing
+about its key/value cache. `mcf explain` said *not sized: this model caches
+a compressed latent rather than its keys and values, and its width is not
+the key width the header names*. Six lines further down, placement said
+*131072 tokens of context fit there*, a figure resolved from a cache
+`mcf-serve` had sized without hesitation as key/value heads × (key length +
+value length) × block count × 2 bytes. Two readings of one header, in two
+crates, one refusing and one confident — and the confident one wrong
+(B-072).
+
+**What the header names is exactly the latent.** The converter for a
+latent-attention model writes the latent's width plus its rotary part as
+`attention.key_length` (576 here: a rank of 512 and 64 of rope), the
+latent alone as `attention.value_length` (512), and one key/value head. The
+engine's cache allocator, read at the pinned commit rather than remembered
+(`llama-kv-cache.cpp`: `has_v = !is_mla`), makes a key cache of that width
+per block and **no value cache at all** — the values are read back out of
+the same latent. So the cache is 1 × 576 × 47 × 2 = 54,144 bytes per
+token; the serving path had 1 × (576 + 512) × 47 × 2 = 102,272, 1.9× the
+truth, and the report had nothing. The report's refusal was written when
+the widths under those keys were assumed to be a head's, and its stated
+reason — *not the key width the header names* — was the reverse of the
+case.
+
+**One reading.** `mcf_serve::engines::shape_of` now builds the hub's
+`Shape` from the same `anatomy::work` the report shows — the blocks that
+attend (F150), the key/value heads, and *what one head keeps per position*:
+a key and a value, or one latent that serves as both. The hub's `Shape`
+carried a `head_dimension` and doubled it in its own arithmetic, which is
+the assumption *a value for every key* written as a formula; it carries
+`per_head` now, and a configuration's `head_dim` is doubled where it is
+read, where the assumption is true of what is being read. The report says
+what it multiplied: *1 head(s) keeping one latent of 576 per position,
+which is read back as both key and value — no value cache*. And the
+key/value heads row, which had said *not read from the directory* for want
+of a key projection, reads the one head off the latent projection
+`attn_kv_a_mqa`, whose width is the key length.
+
+**What it cost here, and what it would have.** On this machine the
+placement line reads *131072 tokens fit* before and after, because the
+window MCF samples at is the largest power of two under the declared
+context, and 10 GiB of cache and 19 GiB of cache both leave room for that
+one. On a machine with less free — or for the declared 202,752 tokens,
+which the corrected cache holds in 10.2 GiB — the overstated figure would
+have refused a context the model fits, by a number the report beside it
+said could not be computed. Each of those was a hidden choice (§3.15), and
+none is now.
 
 ## 150 · F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)
 

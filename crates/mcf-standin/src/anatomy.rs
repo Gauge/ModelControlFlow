@@ -445,7 +445,10 @@ fn agreements_of(
         Agreement::of(
             "key/value heads",
             declared(model, "attention.head_count_kv"),
-            heads_from("attn_k.weight"),
+            // A latent-attention model has no key projection: its one
+            // key/value head is the latent projection, whose width is the
+            // key length the header names.
+            heads_from("attn_k.weight").or_else(|| heads_from("attn_kv_a_mqa.weight")),
         ),
         Agreement::of(
             "feed-forward width",

@@ -14,10 +14,19 @@
 //! **None of it is a measurement** (A20). It is the arithmetic an engine's
 //! own planner does, shown so that an operator can see the shape of the cost
 //! before choosing whether to pay it. A speed is measured by `mcf bench`, not
-//! computed here. And where the arithmetic does not apply — a compressed
-//! latent cache, whose width is not the key width the header names — the
-//! figure is withheld with the reason, rather than computed from the wrong
-//! formula and shown with confidence (A7).
+//! computed here. And where the arithmetic does not apply — a recurrent state
+//! whose width is not among the header's attention widths — the figure is
+//! withheld with the reason, rather than computed from the wrong formula and
+//! shown with confidence (A7).
+//!
+//! **A latent cache is a key with no value.** A latent-attention model
+//! (`kv_lora_rank`) keeps one compressed vector per position and reads both
+//! its keys and its values back out of it. Its converter writes the latent's
+//! width as the header's key length, and the engine allocates a key cache of
+//! that width and no value cache at all — so the cache is the key width
+//! alone, and a formula that added a value for every key stated it nearly
+//! twice its size (F151). This used to be withheld as *not the key width the
+//! header names*; the header names exactly that width, under exactly that key.
 //!
 //! **Per block that attends, not per block.** The cache and the attention
 //! arithmetic were multiplied by the block count, and a model that keeps a
@@ -38,8 +47,16 @@ const CACHE_ELEMENT_BYTES: u64 = 2;
 pub enum Cache {
     /// Sized from the header's widths.
     Sized {
-        /// Bytes per token, at sixteen bits an element.
+        /// Bytes per token, at sixteen bits an element: the key/value heads
+        /// times what each keeps, across the blocks that attend.
         per_token: u64,
+        /// How many key/value heads keep a cache.
+        key_heads: u64,
+        /// How many elements one head keeps per position: a key and a value,
+        /// or one latent that serves as both.
+        per_head: u64,
+        /// Whether that is a compressed latent rather than keys and values.
+        latent: bool,
         /// The declared context length and the bytes a full window holds.
         at_context: Option<(u64, u64)>,
         /// A sliding window the header declares, which bounds how much of the
@@ -113,29 +130,23 @@ pub fn of(model: &Model, body: &Anatomy) -> Work {
     let widths = head_width
         .zip(value_width)
         .and_then(|(key, value)| key.checked_add(value));
-    // A latent-attention model (`kv_lora_rank`) attends through a compressed
-    // vector, and neither the cache nor the attention arithmetic is the
-    // product of the widths the header names under the usual keys.
+    // A latent-attention model (`kv_lora_rank`) attends through one compressed
+    // vector per position: every head reads the latent as its key and its
+    // value, so the arithmetic over the context is the same product of the
+    // widths the header names, and the cache is the key width alone.
     let latent = declared(model, "attention.kv_lora_rank").is_some();
     let attention_at_context = (|| {
-        if latent {
-            return None;
-        }
         let per_block = heads?.checked_mul(widths?)?.checked_mul(context?)?;
         per_block.checked_mul(body.census.attending)
     })();
-    let cache = if latent {
-        Cache::Unsized(
-            "this model caches a compressed latent rather than its keys and values, and its \
-             width is not the key width the header names",
-        )
-    } else if body.census.attending == 0 && body.census.recurrent > 0 {
+    let per_head = if latent { head_width } else { widths };
+    let cache = if body.census.attending == 0 && body.census.recurrent > 0 {
         Cache::Unsized(
             "every block keeps a fixed recurrent state rather than keys and values per \
              position, and its width is not among the header's attention widths",
         )
     } else {
-        cache_of(key_heads, widths, context, body, model)
+        cache_of(key_heads, per_head, latent, context, body, model)
     };
     Work {
         multiply_adds,
@@ -149,20 +160,24 @@ pub fn of(model: &Model, body: &Anatomy) -> Work {
 /// The cache, where the header names the widths that size it.
 fn cache_of(
     key_heads: Option<u64>,
-    widths: Option<u64>,
+    per_head: Option<u64>,
+    latent: bool,
     context: Option<u64>,
     body: &Anatomy,
     model: &Model,
 ) -> Cache {
     let per_token = (|| {
         key_heads?
-            .checked_mul(widths?)?
+            .checked_mul(per_head?)?
             .checked_mul(body.census.attending)?
             .checked_mul(CACHE_ELEMENT_BYTES)
     })();
-    match per_token {
-        Some(per_token) => Cache::Sized {
+    match per_token.zip(key_heads).zip(per_head) {
+        Some(((per_token, key_heads), per_head)) => Cache::Sized {
             per_token,
+            key_heads,
+            per_head,
+            latent,
             at_context: context.and_then(|tokens| Some((tokens, tokens.checked_mul(per_token)?))),
             sliding_window: declared(model, "attention.sliding_window"),
             attending: (body.census.attending, body.blocks),

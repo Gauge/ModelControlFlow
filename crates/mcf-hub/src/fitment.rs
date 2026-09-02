@@ -69,8 +69,15 @@ pub struct Shape {
     /// How many key/value heads — the grouped count, not the query count, and
     /// getting that wrong overstates the cache by the grouping factor.
     pub key_value_heads: u64,
-    /// The width of one head.
-    pub head_dimension: u64,
+    /// How many elements one key/value head keeps per position, keys and
+    /// values together.
+    ///
+    /// Twice the head width where a key and a value are each one head wide,
+    /// which is what a configuration's `head_dim` describes. Not always: a
+    /// model that caches a compressed latent keeps one latent per position
+    /// and reads its values back out of it, and a shape that assumed a value
+    /// for every key would have its cache nearly twice its size (F151).
+    pub per_head: u64,
     /// How many bytes one cached element occupies.
     ///
     /// Two for the half-precision caches every engine uses by default. It is a
@@ -135,7 +142,8 @@ impl Shape {
             // rather than assumptions about the model (§3.18, A21).
             blocks: caching_blocks(list("layer_types"), declared_blocks)?,
             key_value_heads: field("num_key_value_heads")?,
-            head_dimension,
+            // One key and one value per head, each the head's width.
+            per_head: head_dimension.checked_mul(2)?,
             bytes_per_element,
         })
     }
@@ -146,11 +154,9 @@ impl Shape {
     /// broken file rather than a model (§3.7).
     #[must_use]
     pub fn bytes_per_token(&self) -> Option<u64> {
-        // Two: one key and one value per block, per head.
-        2_u64
-            .checked_mul(self.blocks)?
+        self.blocks
             .checked_mul(self.key_value_heads)?
-            .checked_mul(self.head_dimension)?
+            .checked_mul(self.per_head)?
             .checked_mul(self.bytes_per_element)
     }
 }

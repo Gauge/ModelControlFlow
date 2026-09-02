@@ -319,7 +319,7 @@ fn a_shape_is_read_from_a_header() {
     };
     assert!(shape.blocks > 0, "a model with no blocks");
     assert!(shape.key_value_heads > 0, "a model with no key/value heads");
-    assert!(shape.head_dimension > 0, "a model with heads of no width");
+    assert!(shape.per_head > 0, "a model with heads that keep nothing");
     // Half precision, the same parameter a configuration is read with, so the
     // two sources give comparable answers.
     assert_eq!(shape.bytes_per_element, 2);
@@ -331,8 +331,7 @@ fn a_shape_is_read_from_a_header() {
         let from_shape = shape
             .blocks
             .saturating_mul(shape.key_value_heads)
-            .saturating_mul(shape.head_dimension)
-            .saturating_mul(2)
+            .saturating_mul(shape.per_head)
             .saturating_mul(shape.bytes_per_element);
         assert_eq!(
             from_shape, per_token,
@@ -345,9 +344,7 @@ fn a_shape_is_read_from_a_header() {
 /// block count.
 ///
 /// Three recurrent blocks to every one that attends put the cache at four
-/// times its size, which refused contexts that fit (F150). And a directory
-/// with no blocks in it — a header read alone — falls back to the header's
-/// count rather than to zero.
+/// times its size, which refused contexts that fit (F150).
 #[test]
 fn a_hybrid_caches_only_in_the_blocks_that_attend() {
     use mcf_standin::gguf::{Model, Tensor, TensorKind, Value};
@@ -391,10 +388,19 @@ fn a_hybrid_caches_only_in_the_blocks_that_attend() {
     only_recurrent.tensors.truncate(3);
     assert_eq!(cache_bytes_per_token(&only_recurrent), Some(0));
 
-    let mut header_alone = model.clone();
-    header_alone.tensors.clear();
-    assert_eq!(cache_bytes_per_token(&header_alone), Some(4 * 2 * 32 * 2));
-    assert_eq!(shape_of(&header_alone).map(|held| held.blocks), Some(4));
+    // A latent-attention model keeps the latent as its key and no value:
+    // 1 head × 16 × the one block that attends × 2 bytes (F151).
+    let mut latent = model;
+    for (key, value) in [
+        ("hybrid.attention.kv_lora_rank", 12),
+        ("hybrid.attention.value_length", 12),
+        ("hybrid.attention.head_count_kv", 1),
+    ] {
+        latent
+            .metadata
+            .insert(key.to_owned(), Value::Integer(value));
+    }
+    assert_eq!(cache_bytes_per_token(&latent), Some(16 * 2));
 }
 
 /// A header that says nothing yields no shape, and never a zero.

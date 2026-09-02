@@ -257,117 +257,69 @@ const NO_GROWING_CACHE: &[&str] = &[
     "jamba",
 ];
 
-/// How a model is shaped, from its own GGUF header.
+/// How a model is shaped, from its own GGUF header and tensor directory.
 ///
 /// **Because most repositories publish no configuration.** `config.json` is
 /// where `mcf_hub::offer` looks first and it is absent from nearly every
 /// repository that publishes GGUFs — so *will this run here* came back as *MCF
 /// cannot say* for almost everything somebody would try to download. The
-/// header carries the same three numbers, and the hub serves ranges, so a few
+/// header carries the same numbers, and the hub serves ranges, so a few
 /// megabytes of prefix answers it without acquiring the model (B-413, PR3).
 ///
-/// The numbers are read the same way [`cache_bytes_per_token`] reads them,
-/// including the convention that where a header omits the key length it is the
-/// embedding width divided across the heads.
+/// **One arithmetic.** The shape is the one `mcf explain` shows, read by
+/// [`mcf_standin::anatomy::work`]: the blocks that hold keys rather than the
+/// header's block count — a hybrid's cache was stated at four times its size
+/// here (F150) — and, for a latent-attention model, the latent's width with
+/// no value cache beside it, which had been stated at nearly twice (F151).
+/// What the report says and what placement is resolved from cannot differ,
+/// because they are one reading (B-072).
+///
+/// `None` where the header does not name the heads and widths that size a
+/// cache — which is not a zero (A7) — and for a model whose every block keeps
+/// a recurrent state, which has no growing cache to shape.
 #[must_use]
 pub fn shape_of(model: &mcf_standin::gguf::Model) -> Option<mcf_hub::fitment::Shape> {
-    let architecture = model.architecture()?;
-    let number = |suffix: &str| -> Option<u64> {
-        model
-            .get(&format!("{architecture}.{suffix}"))
-            .and_then(mcf_standin::gguf::Value::as_integer)
-            .and_then(|held| u64::try_from(held).ok())
-            .filter(|held| *held > 0)
-    };
-    let heads = number("attention.head_count");
-    let head_dimension = number("attention.key_length").or_else(|| {
-        let width = number("embedding_length")?;
-        let heads = heads?;
-        // Exact by the convention above: the width divides across the heads,
-        // and a float here would round a dimension before a layer count
-        // multiplies it.
-        #[allow(
-            clippy::integer_division,
-            reason = "the division is exact by convention"
-        )]
-        {
-            Some(width / heads)
-        }
-    })?;
-    Some(mcf_hub::fitment::Shape {
-        blocks: caching_blocks(model)?,
-        key_value_heads: number("attention.head_count_kv").or(heads)?,
-        head_dimension,
-        // Half precision, as every engine caches by default. The same
-        // parameter `Shape::from_configuration` is given.
-        bytes_per_element: 2,
-    })
-}
-
-/// How many blocks keep keys and values per position.
-///
-/// Read off the tensor directory rather than the header's block count. A GGUF
-/// header does not carry the per-layer attention types a configuration can,
-/// and a hybrid model — three recurrent blocks to every one that attends —
-/// had its cache stated at four times its size here, which refused contexts
-/// that fit (F150). The directory says which blocks hold keys: those are the
-/// ones that cache. Where the directory holds no blocks at all — a header
-/// read alone — the header's count stands, overstating a hybrid rather than
-/// understating it.
-fn caching_blocks(model: &mcf_standin::gguf::Model) -> Option<u64> {
-    let census = mcf_standin::anatomy::blocks::of(model);
-    if census.attending == 0 && census.recurrent == 0 {
-        let architecture = model.architecture()?;
-        return model
-            .get(&format!("{architecture}.block_count"))
-            .and_then(mcf_standin::gguf::Value::as_integer)
-            .and_then(|held| u64::try_from(held).ok());
+    let body = mcf_standin::anatomy::of(model);
+    match mcf_standin::anatomy::work::of(model, &body).cache {
+        mcf_standin::anatomy::work::Cache::Sized {
+            key_heads,
+            per_head,
+            attending,
+            ..
+        } => Some(mcf_hub::fitment::Shape {
+            blocks: attending.0,
+            key_value_heads: key_heads,
+            per_head,
+            // Half precision, as every engine caches by default. The same
+            // parameter `Shape::from_configuration` is given.
+            bytes_per_element: 2,
+        }),
+        mcf_standin::anatomy::work::Cache::Unsized(_) => None,
     }
-    Some(census.attending)
 }
 
 /// How many bytes of cache one token of context costs.
 ///
-/// Layers times KV heads times key and value lengths, two bytes each — the
-/// engine's cache is sixteen-bit unless it is told otherwise, and that is a
-/// stated condition rather than a constant hidden in a product.
+/// [`shape_of`]'s product, at two bytes an element — the engine's cache is
+/// sixteen-bit unless it is told otherwise, and that is a stated condition
+/// rather than a constant hidden in a product.
 ///
-/// `None` where the header does not say, which is not a zero: an architecture
-/// that keeps no growing cache — a state-space model — has no such number, and
-/// neither has a header that simply omits it (A7).
+/// `None` where the header does not say, which is not a zero: a header that
+/// simply omits its attention geometry has no such number (A7). Zero for an
+/// architecture that keeps no growing cache — a state-space model — whether
+/// its name is on the list or its directory shows every block keeping a
+/// recurrent state.
 #[must_use]
 pub fn cache_bytes_per_token(model: &mcf_standin::gguf::Model) -> Option<u64> {
     let architecture = model.architecture()?;
     if NO_GROWING_CACHE.contains(&architecture) {
         return Some(0);
     }
-    let number = |suffix: &str| -> Option<u64> {
-        model
-            .get(&format!("{architecture}.{suffix}"))
-            .and_then(mcf_standin::gguf::Value::as_integer)
-            .and_then(|held| u64::try_from(held).ok())
-    };
-    let layers = caching_blocks(model)?;
-    let heads = number("attention.head_count");
-    let kv_heads = number("attention.head_count_kv").or(heads)?;
-    let key = number("attention.key_length").or_else(|| {
-        // Most headers omit it, and where they do the convention is the
-        // embedding width divided across the heads.
-        let width = number("embedding_length")?;
-        let heads = heads?;
-        // Exact: the convention is that the width divides across the heads, and
-        // a float here would round a dimension before it is multiplied by a
-        // layer count.
-        #[allow(
-            clippy::integer_division,
-            reason = "the division is exact by convention"
-        )]
-        {
-            (heads > 0).then(|| width / heads)
-        }
-    })?;
-    let value = number("attention.value_length").unwrap_or(key);
-    Some(layers * kv_heads * (key + value) * 2)
+    let census = mcf_standin::anatomy::blocks::of(model);
+    if census.attending == 0 && census.recurrent > 0 {
+        return Some(0);
+    }
+    shape_of(model)?.bytes_per_token()
 }
 
 /// The largest power-of-two context this much memory can hold.
