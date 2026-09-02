@@ -201,3 +201,88 @@ fn the_window_reads_what_the_daemon_wrote() {
         SaidCache::Unsized(why) => panic!("the cache is sized: {why}"),
     }
 }
+
+/// The hybrid with a token list: five tokens, typed, a template that spells
+/// one control token, and an end-of-turn the header names past the list.
+fn a_hybrid_that_speaks() -> Model {
+    let mut model = a_hybrid();
+    let text = |held: &str| Header::Text(held.to_owned());
+    for (key, value) in [
+        ("tokenizer.ggml.model", text("gpt2")),
+        (
+            "tokenizer.ggml.tokens",
+            Header::List(
+                ["<s>", "</s>", "Ġthe", "12", "<|im_end|>"]
+                    .into_iter()
+                    .map(text)
+                    .collect(),
+            ),
+        ),
+        (
+            "tokenizer.ggml.token_type",
+            Header::List([3, 3, 1, 1, 3].into_iter().map(Header::Integer).collect()),
+        ),
+        ("tokenizer.ggml.eos_token_id", Header::Integer(1)),
+        ("tokenizer.ggml.eot_token_id", Header::Integer(9)),
+        ("tokenizer.ggml.add_bos_token", Header::Bool(false)),
+        (
+            "tokenizer.chat_template",
+            text("{{ system }}<|im_end|>{% if add_generation_prompt %}"),
+        ),
+    ] {
+        model.metadata.insert(key.to_owned(), value);
+    }
+    model
+}
+
+#[test]
+fn the_vocabulary_on_the_wire_is_the_one_the_console_prints() {
+    let said = encode("hybrid.gguf", &a_hybrid_that_speaks());
+    let line = said.to_line();
+    let back = mcf_record::json::parse(&line).expect("the line parses");
+    let read = Said::from_value(&back).expect("the value reads back");
+    let spoken = read.vocabulary;
+    assert_eq!(spoken.tokens, 5);
+    assert_eq!(spoken.segmentation, "gpt2");
+    assert_eq!(spoken.word_starts, 1);
+    assert_eq!(
+        spoken.kinds,
+        Some(vec![("text".to_owned(), 2), ("control".to_owned(), 3)])
+    );
+    assert!(spoken.digits.starts_with("1 tokens, the longest 2 digits"));
+    assert_eq!(spoken.longest, Some(("<|im_end|>".to_owned(), 10)));
+    assert_eq!(spoken.beginning, "no, the file says so");
+    // The end of text is spelled from the list; the end of turn is beyond it,
+    // and the wire says so in the sentence the console prints (A2).
+    let end = spoken
+        .named
+        .iter()
+        .find(|named| named.what == "end of text")
+        .expect("end of text");
+    assert_eq!(end.spelled.as_deref(), Some("</s>"));
+    assert_eq!(end.beyond, None);
+    let turn = spoken
+        .named
+        .iter()
+        .find(|named| named.what == "end of turn")
+        .expect("end of turn");
+    assert_eq!(turn.identifier, 9);
+    assert_eq!(turn.spelled, None);
+    assert!(
+        turn.beyond
+            .as_deref()
+            .is_some_and(|why| why.contains("BEYOND THE LIST") && why.contains("holds 5"))
+    );
+    let template = spoken.template.expect("a template");
+    assert_eq!(template.mentions, vec!["system", "add_generation_prompt"]);
+    assert_eq!(template.markers, Ok(vec!["<|im_end|>".to_owned()]));
+
+    // Without a token list, the wire still says what there is to say.
+    let quiet = Said::from_value(&encode("hybrid.gguf", &a_hybrid())).expect("reads back");
+    assert_eq!(quiet.vocabulary.tokens, 0);
+    assert_eq!(quiet.vocabulary.kinds, None);
+    assert_eq!(
+        quiet.vocabulary.template,
+        Err(mcf_standin::anatomy::vocabulary::NO_TEMPLATE.to_owned())
+    );
+}

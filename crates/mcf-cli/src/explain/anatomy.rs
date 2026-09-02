@@ -344,14 +344,7 @@ pub(crate) fn spoken(file: &Model) -> Vec<String> {
          nothing rated)"
             .to_owned(),
     ];
-    lines.extend(row(
-        "segmentation",
-        &match (held.model.as_deref(), held.pre.as_deref()) {
-            (Some(model), Some(pre)) => format!("{model}, pre-tokenised as {pre}"),
-            (Some(model), None) => model.to_owned(),
-            (None, _) => "the file does not say".to_owned(),
-        },
-    ));
+    lines.extend(row("segmentation", &held.segmentation()));
     lines.extend(row(
         "tokens",
         &format!(
@@ -384,21 +377,7 @@ pub(crate) fn spoken(file: &Model) -> Vec<String> {
             percent(held.word_starts, held.tokens)
         ),
     ));
-    lines.extend(row(
-        "digit runs",
-        &match held.digit_tokens {
-            (0, _) => "none: every digit is spelled some other way".to_owned(),
-            (count, 1) => format!(
-                "{} tokens of one digit each — a number is written one digit at a time",
-                with_thousands(count)
-            ),
-            (count, longest) => format!(
-                "{} tokens, the longest {longest} digits — a number is written in pieces of up \
-                 to that many",
-                with_thousands(count)
-            ),
-        },
-    ));
+    lines.extend(row("digit runs", &held.digits_said()));
     if let Some((token, bytes)) = &held.longest {
         lines.push(format!(
             "  {:<38}{bytes} bytes: {}",
@@ -407,14 +386,7 @@ pub(crate) fn spoken(file: &Model) -> Vec<String> {
         ));
     }
     lines.extend(named_lines(&held));
-    lines.extend(row(
-        "beginning token added",
-        match held.adds_beginning {
-            Some(true) => "yes, the file says so",
-            Some(false) => "no, the file says so",
-            None => "the file does not say; the convention for this segmentation applies",
-        },
-    ));
+    lines.extend(row("beginning token added", held.beginning_said()));
     lines.extend(template_lines(&held));
     lines
 }
@@ -424,16 +396,9 @@ fn named_lines(held: &Vocabulary) -> Vec<String> {
     let mut lines = Vec::new();
     let mut label = "named tokens";
     for named in &held.named {
-        let spelled = named.spelled.as_ref().map_or_else(
-            || {
-                format!(
-                    "BEYOND THE LIST — the header names token {} and the list holds {}; an \
-                     engine reading that number indexes past the list",
-                    named.identifier, held.tokens
-                )
-            },
-            |spelled| clipped(spelled),
-        );
+        let spelled = held
+            .beyond(named)
+            .unwrap_or_else(|| named.spelled.as_deref().map_or_else(String::new, clipped));
         lines.push(format!(
             "  {label:<38}{:<20}{:>8}  {spelled}",
             named.what, named.identifier
@@ -446,10 +411,7 @@ fn named_lines(held: &Vocabulary) -> Vec<String> {
 /// The template rows.
 fn template_lines(held: &Vocabulary) -> Vec<String> {
     let Some(template) = &held.template else {
-        return row(
-            "chat template",
-            "none in the file — a chat turn has no framing the file states",
-        );
+        return row("chat template", vocabulary::NO_TEMPLATE);
     };
     let mut lines = row(
         "chat template",
@@ -465,19 +427,18 @@ fn template_lines(held: &Vocabulary) -> Vec<String> {
     );
     lines.extend(row(
         "markers it frames a turn with",
-        &match &template.markers {
-            None => "not read: the file does not type its tokens, so a marker cannot be told \
-                     from text"
-                .to_owned(),
-            Some(markers) if markers.is_empty() => {
-                "none of the control tokens appear in it by spelling".to_owned()
-            }
-            Some(markers) => markers
-                .iter()
-                .map(|marker| clipped(marker))
-                .collect::<Vec<_>>()
-                .join(" "),
-        },
+        &template.no_markers().map_or_else(
+            || {
+                template
+                    .markers
+                    .iter()
+                    .flatten()
+                    .map(|marker| clipped(marker))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            },
+            str::to_owned,
+        ),
     ));
     lines
 }
@@ -545,15 +506,7 @@ fn percent(part: u64, whole: u64) -> String {
 
 /// A count with its thousands separated.
 pub(crate) fn with_thousands(number: u64) -> String {
-    let digits = number.to_string();
-    let mut out = String::with_capacity(digits.len().saturating_mul(4).div_ceil(3));
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len().saturating_sub(index)).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
+    anatomy::grouped(number)
 }
 
 #[cfg(test)]

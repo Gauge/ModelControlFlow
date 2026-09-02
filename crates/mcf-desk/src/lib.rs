@@ -86,6 +86,11 @@ pub const ACTIONS: &[Action] = &[
         reaches: Some("Anatomy"),
     },
     Action {
+        key: "click Vocabulary",
+        does: "count the chosen model's token list and chat template, from What is in it",
+        reaches: Some("Anatomy"),
+    },
+    Action {
         key: "Ctrl+V",
         does: "paste a reference into the field being typed into",
         reaches: None,
@@ -191,6 +196,10 @@ pub enum Page {
     /// says it (A22, B-072). Reached from Models' actions, for the model
     /// chosen there.
     Anatomy,
+    /// What a model says with: its token list and chat template, counted by
+    /// the daemon in the same answer as [`Self::Anatomy`], on a screen of its
+    /// own because the two do not fit on one (B-072). Reached from there.
+    Vocabulary,
 }
 
 impl Page {
@@ -220,9 +229,12 @@ impl Page {
             // `view::host` draws both — so the column carried one screen
             // twice. The screens its actions lead to belong to Models now,
             // and the menu still shows where you came from.
-            Self::Host | Self::Adding | Self::Hosting | Self::Anatomy | Self::Models => {
-                Self::Models
-            }
+            Self::Host
+            | Self::Adding
+            | Self::Hosting
+            | Self::Anatomy
+            | Self::Vocabulary
+            | Self::Models => Self::Models,
             Self::Diagnostics | Self::Prompt => Self::Diagnostics,
             Self::Components => Self::Components,
             Self::Settings => Self::Settings,
@@ -1139,7 +1151,7 @@ impl Desk {
                     if page.section() == Page::Monitor {
                         self.sample();
                     }
-                    if page == Page::Anatomy {
+                    if matches!(page, Page::Anatomy | Page::Vocabulary) {
                         self.read_anatomy();
                     }
                     self.page = page;

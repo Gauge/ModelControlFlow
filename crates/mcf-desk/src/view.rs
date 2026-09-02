@@ -34,6 +34,7 @@ use crate::ui::{self, Kind, Mouse};
 use crate::words;
 use crate::{Act, Desk, Doing, Model, Page, Picker, windows};
 use mcf_record::json::Value;
+use mcf_serve::anatomy::SaidVocabulary;
 
 /// The bar across the top, in points.
 const MENU: f32 = 46.0;
@@ -77,6 +78,7 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Prompt => prompt(paint, desk, mouse, main),
         Page::Components => components(paint, desk, mouse, main),
         Page::Anatomy => anatomy(paint, desk, mouse, main),
+        Page::Vocabulary => vocabulary(paint, desk, mouse, main),
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
@@ -2897,43 +2899,19 @@ fn component_foot(
 /// worked out by the window (B-072). Nothing on it is a measurement either:
 /// it is the file's directory set against the file's header, and one token's
 /// arithmetic from both (A20, A21). A speed is on the Diagnostics screen.
-fn anatomy(paint: &mut Painter, desk: &Desk, _mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    spaced(paint, area.x, area.y, "what is in it", ink.faint);
-    let named = desk
-        .chosen
-        .and_then(|at| desk.models.get(at))
-        .map_or("no model chosen", |held| held.name.as_str());
-    let name = paint.elide(named, Weight::Bold, size::HEAD, area.w);
-    paint.say_at(
-        area.x,
-        area.y + 24.0,
-        &name,
-        Weight::Bold,
-        size::HEAD,
-        ink.ink,
-    );
-    paint.say_at(
-        area.x,
-        area.y + 54.0,
+fn anatomy(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let (switched, top) = counted_head(
+        paint,
+        desk,
+        mouse,
+        area,
+        Page::Anatomy,
         "counted from the file's tensor directory and set against its header — read, not \
          measured",
-        Weight::Regular,
-        size::BODY,
-        ink.quiet,
     );
-    let top = area.y + 90.0;
     let Some(said) = &desk.anatomy else {
-        let why = desk
-            .no_anatomy
-            .clone()
-            .unwrap_or_else(|| "Nothing has been asked yet.".to_owned());
-        let mut y = top;
-        for line in paint.wrap(&why, Weight::Regular, size::BODY, area.w.min(720.0)) {
-            paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.bad);
-            y += 20.0;
-        }
-        return None;
+        not_counted(paint, desk, area, top);
+        return switched;
     };
     // Two columns: the figures and the header check on the left, the tables
     // on the right. The window does not scroll, so a table that does not fit
@@ -2983,7 +2961,309 @@ fn anatomy(paint: &mut Painter, desk: &Desk, _mouse: &Mouse, area: Box) -> Optio
         ),
         said,
     );
-    None
+    switched
+}
+
+/// The heading the two counted screens share: what is in it, and what it
+/// says with — with the switch between them. Returns where the body starts.
+fn counted_head(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    here: Page,
+    subtitle: &str,
+) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "what is in it", ink.faint);
+    let named = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .map_or("no model chosen", |held| held.name.as_str());
+    // The switch first, so the name can be cut short of it.
+    let mut switched = None;
+    let mut right = area.right();
+    for (label, page) in [
+        ("Vocabulary", Page::Vocabulary),
+        ("What is in it", Page::Anatomy),
+    ] {
+        let width = paint.measure(label, Weight::Bold, size::SMALL) + 28.0;
+        right -= width;
+        let button = Box::new(right, area.y + 18.0, width, 28.0);
+        // The screen this is is drawn as text and the other as a button, so
+        // the pair reads as *where you are* and *where else you can be*.
+        let kind = if page == here {
+            Kind::Quiet
+        } else {
+            Kind::Ordinary
+        };
+        if ui::button(paint, mouse, button, label, kind) && page != here {
+            switched = Some(Act::Go(page));
+        }
+        right -= 10.0;
+    }
+    let name = paint.elide(named, Weight::Bold, size::HEAD, right - area.x - 20.0);
+    paint.say_at(
+        area.x,
+        area.y + 24.0,
+        &name,
+        Weight::Bold,
+        size::HEAD,
+        ink.ink,
+    );
+    paint.say_at(
+        area.x,
+        area.y + 54.0,
+        subtitle,
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    (switched, area.y + 90.0)
+}
+
+/// Why there is nothing counted to draw, in the daemon's words or the
+/// window's own (A2).
+fn not_counted(paint: &mut Painter, desk: &Desk, area: Box, top: f32) {
+    let ink = paint.ink;
+    let why = desk
+        .no_anatomy
+        .clone()
+        .unwrap_or_else(|| "Nothing has been asked yet.".to_owned());
+    let mut y = top;
+    for line in paint.wrap(&why, Weight::Regular, size::BODY, area.w.min(720.0)) {
+        paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.bad);
+        y += 20.0;
+    }
+}
+
+/// What a model says with, as the daemon counted its token list.
+///
+/// Nothing is tokenised and nothing is rated: this is the list the header
+/// carries, counted, and the tokens the header names looked up in it — a
+/// number past the end of the list is shown as the fault it is (A2). Every
+/// sentence on the screen came over the socket in the words `mcf explain`
+/// prints (B-072).
+fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
+    let (switched, top) = counted_head(
+        paint,
+        desk,
+        mouse,
+        area,
+        Page::Vocabulary,
+        "counted from the header's token list — nothing tokenised, nothing rated",
+    );
+    let Some(said) = &desk.anatomy else {
+        not_counted(paint, desk, area, top);
+        return switched;
+    };
+    let spoken = &said.vocabulary;
+    let figures = 560.0_f32.min(area.w / 2.0);
+    let left = Box::new(area.x, top, figures, area.bottom() - top);
+    let after = spoken_figures(paint, left, spoken);
+    template(
+        paint,
+        Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
+        spoken,
+    );
+    let right = Box::new(
+        area.x + figures + 40.0,
+        top,
+        (area.w - figures - 40.0).max(200.0),
+        area.bottom() - top,
+    );
+    named_tokens(paint, right, spoken);
+    switched
+}
+
+/// The list, counted: one figure a line, the long ones wrapped.
+fn spoken_figures(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "the token list", ink.faint);
+    let mut rows = vec![
+        ("segmentation", spoken.segmentation.clone()),
+        (
+            "tokens",
+            spoken.merges.map_or_else(
+                || words::grouped(spoken.tokens),
+                |merges| {
+                    format!(
+                        "{}, from {} merges",
+                        words::grouped(spoken.tokens),
+                        words::grouped(merges)
+                    )
+                },
+            ),
+        ),
+        (
+            "by kind",
+            spoken.kinds.as_ref().map_or_else(
+                || "the file does not type its tokens".to_owned(),
+                |kinds| {
+                    kinds
+                        .iter()
+                        .map(|(kind, count)| format!("{} {kind}", words::grouped(*count)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+            ),
+        ),
+        (
+            "begin a word",
+            format!(
+                "{} ({})",
+                words::grouped(spoken.word_starts),
+                percent_of(spoken.word_starts, spoken.tokens)
+            ),
+        ),
+        ("digit runs", spoken.digits.clone()),
+    ];
+    if let Some((token, bytes)) = &spoken.longest {
+        rows.push(("longest token", format!("{bytes} bytes: {token:?}")));
+    }
+    rows.push(("beginning token added", spoken.beginning.clone()));
+    let mut y = area.y + 26.0;
+    for (name, value) in rows {
+        paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
+        for line in paint.wrap(&value, Weight::Bold, size::BODY, area.w - 160.0) {
+            if y > area.bottom() - 18.0 {
+                return y;
+            }
+            // Wrapped at the spaces, then cut: the longest token in a list
+            // is one word hundreds of bytes long, and a line with no space
+            // in it wraps nowhere.
+            let line = paint.elide(&line, Weight::Bold, size::BODY, area.w - 160.0);
+            paint.say_at(area.x + 150.0, y, &line, Weight::Bold, size::BODY, ink.ink);
+            y += 20.0;
+        }
+        y += 2.0;
+    }
+    y
+}
+
+/// The chat template: its size, what it mentions, and the control tokens it
+/// frames a turn with — or why none is shown.
+fn template(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "chat template", ink.faint);
+    let mut y = area.y + 26.0;
+    let mut say = |paint: &mut Painter, text: &str, weight: Weight, colour: Rgb| {
+        for line in paint.wrap(text, weight, size::BODY, area.w) {
+            if y > area.bottom() - 18.0 {
+                return;
+            }
+            paint.say_at(area.x, y, &line, weight, size::BODY, colour);
+            y += 20.0;
+        }
+    };
+    match &spoken.template {
+        Err(none) => say(paint, none, Weight::Regular, ink.quiet),
+        Ok(held) => {
+            let mentions = if held.mentions.is_empty() {
+                String::new()
+            } else {
+                format!(", mentioning {}", held.mentions.join(", "))
+            };
+            say(
+                paint,
+                &format!("{} bytes{mentions}", words::grouped(held.bytes)),
+                Weight::Bold,
+                ink.ink,
+            );
+            match &held.markers {
+                Ok(markers) => say(
+                    paint,
+                    &format!(
+                        "frames a turn with {}",
+                        markers
+                            .iter()
+                            .map(|marker| format!("{marker:?}"))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                    Weight::Regular,
+                    ink.ink,
+                ),
+                Err(why) => say(
+                    paint,
+                    &format!("markers it frames a turn with: {why}"),
+                    Weight::Regular,
+                    ink.quiet,
+                ),
+            }
+        }
+    }
+    y
+}
+
+/// The tokens the header names by number, each spelled from the list — or
+/// shown to be beyond it, which an engine reading the header would not
+/// survive (A2).
+fn named_tokens(paint: &mut Painter, area: Box, spoken: &SaidVocabulary) -> f32 {
+    let ink = paint.ink;
+    let columns = [
+        Column {
+            head: "number",
+            at: 200.0,
+            right: true,
+        },
+        Column {
+            head: "spelled",
+            at: 220.0,
+            right: false,
+        },
+    ];
+    let mut y = heads(paint, area, "named tokens", &columns);
+    if spoken.named.is_empty() {
+        paint.say_at(
+            area.x,
+            y,
+            "the header names none",
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        return y + 22.0;
+    }
+    for (shown, named) in spoken.named.iter().enumerate() {
+        if y > area.bottom() - 60.0 && shown + 1 < spoken.named.len() {
+            let left = spoken.named.len() - shown;
+            paint.say_at(
+                area.x,
+                y,
+                &format!("and {left} more — the window is too short for them"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            return y + 20.0;
+        }
+        let spelled = named.spelled.as_deref().map_or_else(
+            || "—".to_owned(),
+            |token| {
+                paint.elide(
+                    &format!("{token:?}"),
+                    Weight::Bold,
+                    size::BODY,
+                    area.w - 220.0,
+                )
+            },
+        );
+        let cells = [
+            (&columns[0], named.identifier.to_string()),
+            (&columns[1], spelled),
+        ];
+        row(paint, area, y, &named.what, &cells);
+        y += 22.0;
+        if let Some(beyond) = &named.beyond {
+            for line in paint.wrap(beyond, Weight::Regular, size::SMALL, area.w) {
+                paint.say_at(area.x, y, &line, Weight::Regular, size::SMALL, ink.bad);
+                y += 16.0;
+            }
+            y += 4.0;
+        }
+    }
+    y
 }
 
 /// Name and figure, one line each, the way the model's own card is set.

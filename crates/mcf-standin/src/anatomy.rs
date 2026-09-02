@@ -575,6 +575,21 @@ pub fn billions(elements: u64) -> String {
     format!("{whole}.{tenth}")
 }
 
+/// `1,234,567`: a count with its thousands separated, as every surface
+/// writes one a person reads rather than compares.
+#[must_use]
+pub fn grouped(number: u64) -> String {
+    let digits = number.to_string();
+    let mut out = String::with_capacity(digits.len().saturating_mul(4).div_ceil(3));
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len().saturating_sub(index)).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 pub mod blocks;
 pub mod vocabulary;
 pub mod work;

@@ -7,6 +7,13 @@
 //! [`mcf_standin::anatomy`]; this module writes it down as the value a
 //! client reads, and says nothing the counting did not.
 //!
+//! **The sentences travel with the figures.** Where the counting says
+//! something in words — what a block is made of, how a number is written,
+//! why a cache is not sized — the words are the counting's own
+//! (`Shape::said`, `Vocabulary::digits_said`, …) and go on the wire beside
+//! the figures they are said from, so that a client draws them rather than
+//! composing its own (B-072).
+//!
 //! **Nothing here is a measurement** (A20). Every figure is read off the
 //! file — its header, its tensor directory — or is arithmetic on what was
 //! read, and a client is told which by the shape of the value: `declared`
@@ -14,6 +21,7 @@
 
 use mcf_record::json::Value;
 use mcf_standin::anatomy::blocks::{Feed, Mixing, ranges};
+use mcf_standin::anatomy::vocabulary::{self, Vocabulary};
 use mcf_standin::anatomy::work::Cache;
 use mcf_standin::anatomy::{self, Agreement, Share};
 use mcf_standin::gguf::Model;
@@ -161,6 +169,90 @@ pub fn encode(named: &str, model: &Model) -> Value {
                 ("cache", cache(&work.cache)),
             ]),
         ),
+        ("vocabulary", spoken(&vocabulary::of(model))),
+    ])
+}
+
+/// The vocabulary: what the token list holds, and what the header names in
+/// it, with each sentence the counting says beside the figures it says it
+/// from.
+fn spoken(held: &Vocabulary) -> Value {
+    let text = |held: &str| Value::text(held.to_owned());
+    let named: Vec<Value> = held
+        .named
+        .iter()
+        .map(|named| {
+            Value::map([
+                ("what", text(named.what)),
+                ("identifier", Value::Integer(named.identifier)),
+                (
+                    "spelled",
+                    named.spelled.as_deref().map_or(Value::Null, text),
+                ),
+                (
+                    "beyond",
+                    held.beyond(named).as_deref().map_or(Value::Null, text),
+                ),
+            ])
+        })
+        .collect();
+    let template = held.template.as_ref().map_or(Value::Null, |template| {
+        Value::map([
+            ("bytes", count(template.bytes)),
+            (
+                "mentions",
+                Value::List(template.mentions.iter().map(|name| text(name)).collect()),
+            ),
+            (
+                "markers",
+                template.markers.as_ref().map_or(Value::Null, |markers| {
+                    Value::List(markers.iter().map(|marker| text(marker)).collect())
+                }),
+            ),
+            (
+                "no_markers",
+                template.no_markers().map_or(Value::Null, text),
+            ),
+        ])
+    });
+    Value::map([
+        ("tokens", count(held.tokens)),
+        ("segmentation", Value::text(held.segmentation())),
+        ("merges", maybe(held.merges)),
+        (
+            "kinds",
+            held.kinds.as_ref().map_or(Value::Null, |kinds| {
+                Value::List(
+                    kinds
+                        .iter()
+                        .map(|(kind, held)| {
+                            Value::map([
+                                ("kind", Value::text(kind.as_str())),
+                                ("count", count(*held)),
+                            ])
+                        })
+                        .collect(),
+                )
+            }),
+        ),
+        ("word_starts", count(held.word_starts)),
+        ("digit_tokens", count(held.digit_tokens.0)),
+        ("longest_digits", count(held.digit_tokens.1)),
+        ("digits", Value::text(held.digits_said())),
+        (
+            "longest",
+            held.longest.as_ref().map_or(Value::Null, |(token, bytes)| {
+                Value::map([("token", text(token)), ("bytes", count(*bytes))])
+            }),
+        ),
+        ("named", Value::List(named)),
+        (
+            "adds_beginning",
+            held.adds_beginning.map_or(Value::Null, Value::Bool),
+        ),
+        ("beginning", text(held.beginning_said())),
+        ("template", template),
+        ("no_template", text(vocabulary::NO_TEMPLATE)),
     ])
 }
 
@@ -302,6 +394,56 @@ pub enum SaidCache {
     Unsized(String),
 }
 
+/// A token the header names by number, read back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaidNamed {
+    /// What the header calls it.
+    pub what: String,
+    /// The number the header gives.
+    pub identifier: i64,
+    /// How the list spells it, where the list reaches it.
+    pub spelled: Option<String>,
+    /// What is wrong where it does not, in the words every surface uses.
+    pub beyond: Option<String>,
+}
+
+/// The chat template, read back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaidTemplate {
+    /// Its length.
+    pub bytes: u64,
+    /// The variables and tags it was found to use.
+    pub mentions: Vec<String>,
+    /// The control tokens spelled in it, or why none is shown.
+    pub markers: Result<Vec<String>, String>,
+}
+
+/// The vocabulary, read back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaidVocabulary {
+    /// How many tokens the list holds.
+    pub tokens: u64,
+    /// The segmentation, in the words every surface uses.
+    pub segmentation: String,
+    /// How many merges a byte-pair vocabulary lists.
+    pub merges: Option<u64>,
+    /// Each kind's count, where the file types its tokens.
+    pub kinds: Option<Vec<(String, u64)>>,
+    /// How many tokens carry the word-start mark.
+    pub word_starts: u64,
+    /// How a number is written, in the words every surface uses.
+    pub digits: String,
+    /// The longest token and its length in bytes.
+    pub longest: Option<(String, u64)>,
+    /// The tokens the header names.
+    pub named: Vec<SaidNamed>,
+    /// Whether a beginning token is put in front, in the words every surface
+    /// uses.
+    pub beginning: String,
+    /// The chat template, or what is said of a file without one.
+    pub template: Result<SaidTemplate, String>,
+}
+
 /// What the daemon said a model is made of, read back off the wire.
 ///
 /// The desk draws this and counts nothing itself, so that the window and
@@ -345,6 +487,8 @@ pub struct Said {
     pub attention_at_context: Option<u64>,
     /// The cache.
     pub cache: SaidCache,
+    /// The vocabulary.
+    pub vocabulary: SaidVocabulary,
 }
 
 impl Said {
@@ -406,8 +550,63 @@ impl Said {
             queries_per_key: read_count(work, "queries_per_key"),
             attention_at_context: read_count(work, "attention_at_context"),
             cache: read_cache(work.get("cache")?)?,
+            vocabulary: read_vocabulary(held.get("vocabulary")?)?,
         })
     }
+}
+
+/// The vocabulary, read back.
+fn read_vocabulary(held: &Value) -> Option<SaidVocabulary> {
+    let texts = |held: &Value, key: &str| -> Option<Vec<String>> {
+        held.get(key)?
+            .as_list()?
+            .iter()
+            .map(|each| each.as_text().map(str::to_owned))
+            .collect()
+    };
+    let template = match held.get("template") {
+        Some(Value::Null) | None => Err(read_text(held, "no_template")?),
+        Some(template) => Ok(SaidTemplate {
+            bytes: read_count(template, "bytes")?,
+            mentions: texts(template, "mentions")?,
+            markers: match read_text(template, "no_markers") {
+                Some(why) => Err(why),
+                None => Ok(texts(template, "markers")?),
+            },
+        }),
+    };
+    Some(SaidVocabulary {
+        tokens: read_count(held, "tokens")?,
+        segmentation: read_text(held, "segmentation")?,
+        merges: read_count(held, "merges"),
+        kinds: held.get("kinds").and_then(|kinds| {
+            kinds
+                .as_list()?
+                .iter()
+                .map(|each| Some((read_text(each, "kind")?, read_count(each, "count")?)))
+                .collect()
+        }),
+        word_starts: read_count(held, "word_starts")?,
+        digits: read_text(held, "digits")?,
+        longest: held.get("longest").and_then(|longest| {
+            Some((read_text(longest, "token")?, read_count(longest, "bytes")?))
+        }),
+        named: held
+            .get("named")?
+            .as_list()?
+            .iter()
+            .map(|each| {
+                Some(SaidNamed {
+                    what: read_text(each, "what")?,
+                    identifier: each.get("identifier")?.as_integer()?,
+                    spelled: read_text(each, "spelled"),
+                    beyond: read_text(each, "beyond"),
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        beginning: read_text(held, "beginning")?,
+        template,
+    })
 }
 
 /// One shape of block, read back.

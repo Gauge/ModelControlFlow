@@ -51,6 +51,7 @@ fn nothing_in_the_menu_leads_nowhere() {
     assert_eq!(Page::Adding.section(), Page::Models);
     assert_eq!(Page::Hosting.section(), Page::Models);
     assert_eq!(Page::Anatomy.section(), Page::Models);
+    assert_eq!(Page::Vocabulary.section(), Page::Models);
     assert_eq!(Page::Host.section(), Page::Models);
     // And nothing in the column is Host any more.
     assert!(
@@ -290,6 +291,7 @@ fn typing_is_only_typing_where_something_takes_it() {
         Page::Models,
         Page::Diagnostics,
         Page::Anatomy,
+        Page::Vocabulary,
         Page::Settings,
     ] {
         desk.page = page;
@@ -968,12 +970,21 @@ fn what_is_in_it_is_asked_of_the_daemon_and_never_counted_here() {
         !why.contains("sock"),
         "the socket is shown to a person: {why}"
     );
+
+    // The vocabulary is the same answer, asked again on the way to its own
+    // screen, and refused in the same words.
+    desk.no_anatomy = None;
+    desk.act(crate::Act::Go(Page::Vocabulary));
+    assert_eq!(desk.page, Page::Vocabulary);
+    assert!(desk.anatomy.is_none());
+    let why = desk.no_anatomy.clone().unwrap_or_default();
+    assert!(why.contains("not answering"), "{why}");
 }
 
 /// What the daemon says a model is made of is read as it was said.
 #[test]
 fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
-    let line = r#"{"model":"m.gguf","counted":{"elements":100,"bytes":50,"unsized_tensors":0,"blocks":2,"output_tied":true,"active":null,"parts":[{"part":"embedding","tensors":1,"elements":40,"bytes":20}],"encodings":[{"encoding":"Q4_K","tensors":3,"elements":100,"bytes":50}],"block_shapes":[{"blocks":[0,1],"mixing":"attention","feed":"dense","experts":null,"shared_expert":false,"said":"attention over the context, keys and values kept per position; one feed-forward every token passes","ranged":"0–1","bits_hundredths":[400,400],"tensors":2,"elements":60,"bytes":30}],"attending":2,"recurrent":0},"agreements":[{"what":"blocks","declared":"2","observed":"2","agrees":true}],"work":{"multiply_adds":100,"head_width":8,"queries_per_key":1,"attention_at_context":null,"cache":{"sized":true,"per_token":64,"key_heads":1,"per_head":16,"latent":false,"kept":"16 for a key and a value","context":null,"at_context":null,"sliding_window":null,"attending":2,"blocks":2,"recurrent":0}}}"#;
+    let line = r#"{"model":"m.gguf","counted":{"elements":100,"bytes":50,"unsized_tensors":0,"blocks":2,"output_tied":true,"active":null,"parts":[{"part":"embedding","tensors":1,"elements":40,"bytes":20}],"encodings":[{"encoding":"Q4_K","tensors":3,"elements":100,"bytes":50}],"block_shapes":[{"blocks":[0,1],"mixing":"attention","feed":"dense","experts":null,"shared_expert":false,"said":"attention over the context, keys and values kept per position; one feed-forward every token passes","ranged":"0–1","bits_hundredths":[400,400],"tensors":2,"elements":60,"bytes":30}],"attending":2,"recurrent":0},"agreements":[{"what":"blocks","declared":"2","observed":"2","agrees":true}],"work":{"multiply_adds":100,"head_width":8,"queries_per_key":1,"attention_at_context":null,"cache":{"sized":true,"per_token":64,"key_heads":1,"per_head":16,"latent":false,"kept":"16 for a key and a value","context":null,"at_context":null,"sliding_window":null,"attending":2,"blocks":2,"recurrent":0}},"vocabulary":{"tokens":3,"segmentation":"llama","merges":null,"kinds":[{"kind":"text","count":2},{"kind":"control","count":1}],"word_starts":1,"digit_tokens":0,"longest_digits":0,"digits":"none: every digit is spelled some other way","longest":{"token":"▁the","bytes":6},"named":[{"what":"end of text","identifier":2,"spelled":"</s>","beyond":null}],"adds_beginning":true,"beginning":"yes, the file says so","template":null,"no_template":"none in the file — a chat turn has no framing the file states"}}"#;
     let value = mcf_record::json::parse(line).expect("the line parses");
     let said = mcf_serve::anatomy::Said::from_value(&value).expect("the value reads");
     assert_eq!(said.elements, 100);
@@ -986,4 +997,14 @@ fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
         said.cache,
         mcf_serve::anatomy::SaidCache::Sized { per_token: 64, .. }
     ));
+    assert_eq!(said.vocabulary.tokens, 3);
+    assert_eq!(said.vocabulary.segmentation, "llama");
+    assert_eq!(
+        said.vocabulary
+            .named
+            .first()
+            .and_then(|n| n.spelled.as_deref()),
+        Some("</s>")
+    );
+    assert!(said.vocabulary.template.is_err());
 }

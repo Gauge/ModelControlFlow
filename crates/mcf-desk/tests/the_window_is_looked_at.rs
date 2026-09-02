@@ -1145,7 +1145,17 @@ fn an_anatomy_answer() -> mcf_serve::anatomy::Said {
         r#""work":{"multiply_adds":3579571840,"head_width":576,"queries_per_key":20,"#,
         r#""attention_at_context":207358525440,"cache":{"sized":true,"per_token":54144,"key_heads":1,"#,
         r#""per_head":576,"latent":true,"kept":"one latent of 576 per position, which is read back as both key and value — no value cache","#,
-        r#""context":202752,"at_context":10977804288,"sliding_window":null,"attending":47,"blocks":47,"recurrent":0}}}"#
+        r#""context":202752,"at_context":10977804288,"sliding_window":null,"attending":47,"blocks":47,"recurrent":0}},"#,
+        r#""vocabulary":{"tokens":154880,"segmentation":"gpt2, pre-tokenised as glm4","merges":318088,"#,
+        r#""kinds":[{"kind":"text","count":154482},{"kind":"control","count":398}],"word_starts":93571,"#,
+        r#""digit_tokens":10,"longest_digits":1,"digits":"10 tokens of one digit each — a number is written one digit at a time","#,
+        r#""longest":{"token":"ĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠĠ","bytes":256},"#,
+        r#""named":[{"what":"end of text","identifier":151329,"spelled":"<|endoftext|>","beyond":null},"#,
+        r#"{"what":"end of turn","identifier":151336,"spelled":"<|user|>","beyond":null},"#,
+        r#"{"what":"padding","identifier":159999,"spelled":null,"beyond":"BEYOND THE LIST — the header names token 159999 and the list holds 154880; an engine reading that number indexes past the list"}],"#,
+        r#""adds_beginning":false,"beginning":"no, the file says so","#,
+        r#""template":{"bytes":6122,"mentions":["tools","system","enable_thinking","add_generation_prompt"],"markers":["[gMASK]","<sop>","<|system|>","<|user|>","<|assistant|>","<|observation|>","<think>","</think>"],"no_markers":null},"#,
+        r#""no_template":"none in the file — a chat turn has no framing the file states"}}"#
     );
     let Ok(value) = mcf_record::json::parse(line) else {
         panic!("the answer does not parse");
@@ -1193,6 +1203,30 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
             inked > refused + 30_000,
             "the anatomy drew {inked} pixels against {refused} for a refusal: the counting \
              is not on the screen"
+        );
+    }
+
+    // The vocabulary is the other half of the same answer, on its own screen
+    // reached from this one — and back.
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::Go(Page::Vocabulary)),
+        "nothing on What is in it leads to the vocabulary"
+    );
+    desk.page = Page::Vocabulary;
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::Go(Page::Anatomy)),
+        "nothing on Vocabulary leads back to What is in it"
+    );
+    for ink in [NIGHT, DAY] {
+        let paper = drawn(&desk, ink, "vocabulary");
+        let inked = paper.inked(ink.ground);
+        // A shorter screen than the anatomy — a token list is a dozen
+        // figures, not three tables — so the bar is the refusal plus a
+        // screenful of figures, not the anatomy's.
+        assert!(
+            inked > refused + 15_000,
+            "the vocabulary drew {inked} pixels against {refused} for a refusal: the \
+             counting is not on the screen"
         );
     }
 }

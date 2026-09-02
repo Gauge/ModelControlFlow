@@ -18,6 +18,7 @@
 //! spellings without the alphabet, and a count that would be wrong for the
 //! commonest vocabulary kind is not offered for any (A7).
 
+use super::grouped;
 use crate::gguf::{Model, Value};
 
 /// The mark a byte-level vocabulary spells a leading space with.
@@ -97,6 +98,31 @@ pub struct Template {
     pub mentions: Vec<&'static str>,
 }
 
+impl Template {
+    /// Why no marker is shown, where none is — the file does not type its
+    /// tokens, or none of its control tokens is spelled in the template.
+    /// `None` where [`Self::markers`] has some to show.
+    ///
+    /// Here rather than on a surface so that the window and the command line
+    /// say it one way (B-072).
+    #[must_use]
+    pub fn no_markers(&self) -> Option<&'static str> {
+        match &self.markers {
+            None => Some(
+                "not read: the file does not type its tokens, so a marker cannot be told from \
+                 text",
+            ),
+            Some(markers) if markers.is_empty() => {
+                Some("none of the control tokens appear in it by spelling")
+            }
+            Some(_) => None,
+        }
+    }
+}
+
+/// What is said of a file that carries no chat template.
+pub const NO_TEMPLATE: &str = "none in the file — a chat turn has no framing the file states";
+
 /// The vocabulary, counted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vocabulary {
@@ -122,6 +148,60 @@ pub struct Vocabulary {
     pub digit_tokens: (u64, u64),
     /// The chat template, where the file carries one.
     pub template: Option<Template>,
+}
+
+impl Vocabulary {
+    /// The segmentation the file names, in the words every surface uses.
+    #[must_use]
+    pub fn segmentation(&self) -> String {
+        match (self.model.as_deref(), self.pre.as_deref()) {
+            (Some(model), Some(pre)) => format!("{model}, pre-tokenised as {pre}"),
+            (Some(model), None) => model.to_owned(),
+            (None, _) => "the file does not say".to_owned(),
+        }
+    }
+
+    /// How a number is written, read off the digit runs the list holds.
+    #[must_use]
+    pub fn digits_said(&self) -> String {
+        match self.digit_tokens {
+            (0, _) => "none: every digit is spelled some other way".to_owned(),
+            (count, 1) => format!(
+                "{} tokens of one digit each — a number is written one digit at a time",
+                grouped(count)
+            ),
+            (count, longest) => format!(
+                "{} tokens, the longest {longest} digits — a number is written in pieces of up \
+                 to that many",
+                grouped(count)
+            ),
+        }
+    }
+
+    /// Whether a beginning token is put in front, as the file says or does
+    /// not.
+    #[must_use]
+    pub const fn beginning_said(&self) -> &'static str {
+        match self.adds_beginning {
+            Some(true) => "yes, the file says so",
+            Some(false) => "no, the file says so",
+            None => "the file does not say; the convention for this segmentation applies",
+        }
+    }
+
+    /// What is wrong where a named token is beyond the list: the header names
+    /// a number the list does not reach, and an engine reading it indexes
+    /// past the list (A2). `None` where the list spells it.
+    #[must_use]
+    pub fn beyond(&self, named: &Named) -> Option<String> {
+        named.spelled.is_none().then(|| {
+            format!(
+                "BEYOND THE LIST — the header names token {} and the list holds {}; an engine \
+                 reading that number indexes past the list",
+                named.identifier, self.tokens
+            )
+        })
+    }
 }
 
 /// The header's named tokens, and what to call them.
