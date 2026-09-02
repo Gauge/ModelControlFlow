@@ -539,6 +539,25 @@ fn model_from(held: &Value) -> Model {
 }
 
 /// Milliseconds a token, as tokens a second.
+/// Where the answer's first token went with a sentence gone, in a few
+/// characters: `1st` where the model would still have begun the same way,
+/// `#17` where it fell to its seventeenth choice, `past 60` where it was
+/// outside the depth read, and `unread` where no reading was taken — which is
+/// a state and not a rank (A7, B-429).
+///
+/// One implementation for the glass and the text that leaves it (B-072).
+#[must_use]
+pub fn held_mark(held: Option<&Value>, depth: i64) -> String {
+    let Some(held) = held.filter(|held| !matches!(held, Value::Null)) else {
+        return "unread".to_owned();
+    };
+    match held.get("first_rank").and_then(Value::as_integer) {
+        Some(1) => "1st".to_owned(),
+        Some(rank) => format!("#{rank}"),
+        None => format!("past {depth}"),
+    }
+}
+
 fn per_second(ms: f64) -> f64 {
     if ms > 0.0 { 1000.0 / ms } else { 0.0 }
 }
@@ -734,8 +753,6 @@ pub enum Act {
     Close,
     /// Analyse the typed prompt on the chosen model.
     ReportPrompt,
-    /// Put the analysis on the system clipboard.
-    CopyAnalysis,
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -830,9 +847,6 @@ pub struct Desk {
     pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
-    /// Whether the analysis was just put on the clipboard, so the screen can
-    /// say so — a button that gives no sign is one somebody presses twice.
-    pub copied: bool,
     /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
     /// What is running.
@@ -913,7 +927,6 @@ impl Desk {
             refusal: None,
             busy: false,
             typed: String::new(),
-            copied: false,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
@@ -943,12 +956,22 @@ impl Desk {
         matches!(self.page, Page::Adding | Page::Hosting | Page::Prompt)
     }
 
-    /// The longest a pasted value may be.
+    /// The longest a pasted value may be, on a screen whose field takes a
+    /// name.
     ///
     /// An owner/repository reference and a hub URL are both far shorter than
     /// this. The cap is here because a clipboard can hold a whole document and
     /// a field that accepted one would be a field that stopped drawing.
     const PASTE_LIMIT: usize = 512;
+
+    /// The longest the prompt may be.
+    ///
+    /// **A prompt is a document.** What somebody analyses is a persona or an
+    /// instruction sheet — pages, not a line — and the field it goes into
+    /// takes a document (B-430). Sixty-four thousand characters is more than
+    /// any context this window's models take, and the daemon says what a
+    /// prompt past a model's window costs before it is spent (B-382).
+    pub const PROMPT_LIMIT: usize = 65_536;
 
     /// Adds pasted text to the field, as much of it as is a value.
     ///
@@ -957,9 +980,25 @@ impl Desk {
     /// copied out of a terminal can arrive with a tab or a stray control
     /// character. None of those are part of a name, and a field that kept them
     /// would send them to a hub and report a refusal the person could not see
-    /// the cause of. So this takes the text's first line and drops what is not
-    /// printable, rather than refusing a paste that is almost right.
+    /// the cause of. So on a screen whose field takes a name, this takes the
+    /// text's first line and drops what is not printable, rather than refusing
+    /// a paste that is almost right.
+    ///
+    /// **On the prompt screen the whole document is the value.** Its line
+    /// breaks are where the sentences end and its paragraphs are what a report
+    /// takes apart, so they are kept, and only what is neither text nor a
+    /// break is dropped.
     pub fn paste(&mut self, text: &str) {
+        if self.page == Page::Prompt {
+            let kept: String = text
+                .replace("\r\n", "\n")
+                .chars()
+                .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+                .collect();
+            let room = Self::PROMPT_LIMIT.saturating_sub(self.typed.chars().count());
+            self.typed.extend(kept.chars().take(room));
+            return;
+        }
         let first = text.lines().next().unwrap_or_default();
         let kept: String = first
             .chars()
@@ -978,6 +1017,23 @@ impl Desk {
     }
 
     /// What pressing Return means on the screen showing.
+    ///
+    /// **In a document, Return is a line break.** The prompt field holds
+    /// paragraphs, and a Return that ran the analysis would make a field
+    /// nobody could write a second line into; the analysis runs from its
+    /// button, or from Return with Control held. A field that takes one name
+    /// runs on Return as it always has.
+    pub fn returned(&mut self, with_control: bool) {
+        if self.page == Page::Prompt && !with_control {
+            if self.typed.chars().count() < Self::PROMPT_LIMIT {
+                self.typed.push('\n');
+            }
+            return;
+        }
+        self.entered();
+    }
+
+    /// What Return runs on the screen showing.
     pub fn entered(&mut self) {
         match self.page {
             Page::Adding => self.look_up(),
@@ -1175,9 +1231,8 @@ impl Desk {
             Act::HostIt => self.host_it(),
             Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
-            // Both are the loop's: closing is the window's own, and copying
-            // needs the clipboard, which `act` cannot reach from here.
-            Act::Close | Act::CopyAnalysis => {}
+            // The loop's: closing is the window's own.
+            Act::Close => {}
             Act::ShowWithout(at) => {
                 // Pressing the row already shown puts the answer as written
                 // back, so the two are one control rather than a mode nothing
@@ -1463,151 +1518,6 @@ impl Desk {
             },
             format!("looking up {asked}"),
         ));
-    }
-
-    /// The prompt analysis as plain text, for taking out of the window.
-    ///
-    /// **Assembled from the reading rather than scraped off the screen.** What
-    /// is drawn is glyphs; what somebody wants to paste into a message is the
-    /// figures and the sentences they belong to, in an order that survives
-    /// leaving here (A25's shape).
-    #[must_use]
-    pub fn analysis_as_text(&self) -> Option<String> {
-        use std::fmt::Write as _;
-        let Doing::Reporting(job) = &self.doing else {
-            return None;
-        };
-        let found = job.conclusion().or_else(|| job.latest())?;
-        let named = self
-            .chosen
-            .and_then(|at| self.models.get(at))
-            .map_or("a model", |held| held.name.as_str());
-        let count = |key: &str| found.get(key).and_then(Value::as_integer).unwrap_or(0);
-        let share = |parts: i64| {
-            format!(
-                "{}.{}%",
-                parts.saturating_div(10_000),
-                parts.saturating_div(1_000).rem_euclid(10)
-            )
-        };
-        let mut out = format!("prompt analysis on {named}\n\n");
-        let _wrote = write!(out, "prompt:\n{}\n\n", self.typed.trim());
-
-        // **What the screen leads with, led with here too.** This text is what
-        // somebody pastes into a message to a colleague, and a report that
-        // said *96.1%* without saying the run could not separate anything
-        // would travel further than the screen that qualified it (§3.15).
-        let floor = count("floor_parts_per_million");
-        if floor >= 500_000 {
-            let _wrote = writeln!(
-                out,
-                "THIS RUN CANNOT SEPARATE THESE SENTENCES: removing a sentence carrying no \
-                 instruction moved {} of the answer, so a figure near that has told you \
-                 nothing.\n",
-                share(floor)
-            );
-        }
-
-        out.push_str("how much each sentence steered the answer:\n");
-        for clause in found.get("clauses").and_then(Value::as_list).unwrap_or(&[]) {
-            let moved = clause
-                .get("moved_parts_per_million")
-                .and_then(Value::as_integer)
-                .unwrap_or(0);
-            let said = clause
-                .get("text")
-                .and_then(Value::as_text)
-                .unwrap_or_default();
-            let _wrote = writeln!(out, "  {:>7}  {said}", share(moved));
-        }
-        let _wrote = writeln!(
-            out,
-            "\nfloor {} — how much the answer moved for a sentence carrying no instruction. \
-             An ordering, not relevance.",
-            share(floor)
-        );
-
-        out.push_str(&self.words_not_expected(found));
-
-        let _wrote = writeln!(
-            out,
-            "\n{} gave {} distinct answer(s) — asked at temperature 0, where the seed cannot \
-             change the answer, so this measures the sampler rather than the prompt",
-            count("seeds_asked"),
-            count("distinct_answers")
-        );
-        if count("prompt_tokens") > 0 {
-            let _wrote = writeln!(
-                out,
-                "\nthe prompt reached the model as {} token(s); each generation stopped at {}",
-                count("prompt_tokens"),
-                count("token_limit")
-            );
-        }
-        if let Some(said) = found.get("baseline").and_then(Value::as_text) {
-            let _wrote = writeln!(out, "\nthe answer to the prompt as written:\n{said}");
-        }
-        Some(out)
-    }
-
-    /// The tokens the model did not expect, for the text that leaves the
-    /// window.
-    ///
-    /// Its own function because `analysis_as_text` is already the length the
-    /// workspace allows, and because what goes on a clipboard and what goes on
-    /// a screen have to be the same report.
-    fn words_not_expected(&self, found: &Value) -> String {
-        use std::fmt::Write as _;
-        let _ = self;
-        let ranked = found
-            .get("expected")
-            .and_then(Value::as_list)
-            .unwrap_or(&[]);
-        if ranked.is_empty() {
-            return found
-                .get("expected_refused")
-                .and_then(Value::as_text)
-                .map_or_else(String::new, |why| {
-                    format!("\nwhich words the model did not expect — not taken: {why}\n")
-                });
-        }
-        let depth = found
-            .get("ranked_depth")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        let mut surprising: Vec<(i64, String)> = Vec::new();
-        let mut first = 0_usize;
-        for held in ranked {
-            let said = held
-                .get("text")
-                .and_then(Value::as_text)
-                .unwrap_or_default()
-                .to_owned();
-            match held.get("rank").and_then(Value::as_integer) {
-                None => surprising.push((i64::MAX, said)),
-                Some(1) => first = first.saturating_add(1),
-                Some(rank) => surprising.push((rank, said)),
-            }
-        }
-        surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
-        let mut out = String::from(
-            "\nwhich words the model did not expect (where each sat in what it would have \
-             written itself):\n",
-        );
-        for (rank, said) in surprising.iter().take(10) {
-            let where_it_sat = if *rank == i64::MAX {
-                format!("past {depth}")
-            } else {
-                format!("#{rank}")
-            };
-            let _wrote = writeln!(out, "  {where_it_sat:>8}  {said:?}");
-        }
-        let _wrote = writeln!(
-            out,
-            "  {first} of {} were its own first choice",
-            ranked.len()
-        );
-        out
     }
 
     /// Asks what the typed prompt does to the chosen model.
@@ -2065,10 +1975,25 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                             desk.paste(&text);
                         }
                     }
+                    // Copy. The window draws its own text, so nothing in it
+                    // is a thing a window manager can select: the document
+                    // in the prompt field leaves by Ctrl+C, whole, or it
+                    // does not leave at all.
+                    key if key == u32::from(b'c')
+                        && sdl::event_has_ctrl(&event)
+                        && desk.page == Page::Prompt
+                        && !desk.typed.is_empty() =>
+                    {
+                        if let Some(window) = paint.window() {
+                            let _went = window.put_on_clipboard(&desk.typed);
+                        }
+                    }
                     sdl::KEY_BACKSPACE if desk.takes_typing() => {
                         let _removed = desk.typed.pop();
                     }
-                    sdl::KEY_RETURN if desk.takes_typing() => desk.entered(),
+                    sdl::KEY_RETURN if desk.takes_typing() => {
+                        desk.returned(sdl::event_has_ctrl(&event));
+                    }
                     // `q` closes the window — except where somebody is
                     // typing, when it is a letter. A field that ate the
                     // application on the letter q would be a field nobody
@@ -2106,15 +2031,6 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
         }
 
         if let Some(act) = view::draw(&mut paint, &desk, &mouse) {
-            if act == Act::CopyAnalysis {
-                // The window owns the clipboard, so the copy happens here
-                // rather than inside `act`.
-                desk.copied = desk.analysis_as_text().is_some_and(|text| {
-                    paint
-                        .window()
-                        .is_some_and(|window| window.put_on_clipboard(&text))
-                });
-            }
             desk.act(act);
             acted = true;
         }

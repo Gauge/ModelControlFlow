@@ -997,29 +997,6 @@ fn a_window_holding_a_model_says_that_it_is() {
     assert!(said.contains("so far"), "{said}");
 }
 
-/// The analysis can be taken out of the window.
-///
-/// MCF draws its own text, so there is nothing a window manager can select: a
-/// report somebody wants to paste into a message leaves by this control or it
-/// does not leave at all.
-#[test]
-fn the_analysis_can_be_taken_out_of_the_window() {
-    let mut desk = four_models();
-    desk.page = Page::Prompt;
-    desk.chosen = Some(0);
-    desk.typed = "One sentence. And another.".to_owned();
-
-    // With no reading there is nothing to copy, and nothing offers to.
-    assert!(
-        desk.analysis_as_text().is_none(),
-        "there is no analysis to hand over before one has been taken"
-    );
-    assert!(
-        !act_somewhere(&desk, &mcf_desk::Act::CopyAnalysis),
-        "a control offering to copy nothing is a control that lies"
-    );
-}
-
 /// The arithmetic behind the figure, on its own.
 ///
 /// A window costs what a token of cache costs multiplied by the window, and
@@ -1135,6 +1112,14 @@ fn a_report() -> mcf_desk::Desk {
             ("changed", Value::Bool(moved > 0)),
             ("moved_parts_per_million", Value::Integer(moved)),
             ("without", Value::text("a different answer".to_owned())),
+            (
+                "held",
+                Value::map([
+                    ("first_rank", Value::Integer(if moved > 0 { 17 } else { 1 })),
+                    ("kept", Value::Integer(i64::from(moved == 0))),
+                    ("of", Value::Integer(1)),
+                ]),
+            ),
         ])
     };
     let ranked = |text: &str, rank: Option<i64>| {
@@ -1147,6 +1132,16 @@ fn a_report() -> mcf_desk::Desk {
     let found = Value::map([
         ("floor_parts_per_million", Value::Integer(879_000)),
         ("ranked_depth", Value::Integer(60)),
+        ("forced_depth", Value::Integer(60)),
+        (
+            "floor_held",
+            Value::map([
+                ("first_rank", Value::Integer(1)),
+                ("kept", Value::Integer(1)),
+                ("of", Value::Integer(1)),
+            ]),
+        ),
+        ("ranked_under", Value::text("chatml — set by a probe".to_owned())),
         (
             "expected",
             Value::List(vec![
@@ -1259,69 +1254,6 @@ fn pressing_it_again_goes_back_to_the_answer_as_written() {
 
 /// What leaves the window is the report the window is showing.
 ///
-/// The Copy button says it puts *the whole analysis* on the clipboard, and it
-/// had stopped doing that: the screen grew a floor warning and a column of
-/// words the model did not expect, and the text did not. A promise a reader
-/// checks once and finds hollow is worse than a smaller promise (§3.15).
-#[test]
-fn the_copied_analysis_carries_what_the_screen_shows() {
-    let desk = a_report();
-    let text = desk
-        .analysis_as_text()
-        .expect("a finished report can be taken out of the window");
-
-    for wanted in [
-        // The bars.
-        "Write a function called slugify",
-        "96.1%",
-        // The floor, and that this run could not separate anything.
-        "floor 87.9%",
-        "CANNOT SEPARATE",
-        // The reading that a high floor does not invalidate.
-        "did not expect",
-        "past 60",
-        "#29",
-        "handles",
-        "first choice",
-        // What the figures were taken under.
-        "temperature 0",
-        // And the answer itself.
-        "def slugify(title):",
-    ] {
-        assert!(
-            text.contains(wanted),
-            "the copied analysis is missing {wanted:?}, which the screen shows:\n{text}"
-        );
-    }
-}
-
-/// A report MCF could not rank says so on the clipboard too.
-#[test]
-fn the_copied_analysis_says_why_a_reading_is_missing() {
-    let mut desk = a_report();
-    let found = mcf_record::json::Value::map([
-        (
-            "floor_parts_per_million",
-            mcf_record::json::Value::Integer(0),
-        ),
-        (
-            "expected_refused",
-            mcf_record::json::Value::text(
-                "no engine on this machine resolves this model".to_owned(),
-            ),
-        ),
-    ]);
-    desk.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
-        "prompt analysis".to_owned(),
-        vec![found],
-    ));
-    let text = desk.analysis_as_text().expect("a report is in hand");
-    assert!(
-        text.contains("not taken: no engine"),
-        "a reading MCF could not take is absent from the clipboard rather than explained:\n{text}"
-    );
-}
-
 /// What a hybrid mixture's anatomy comes over the socket as: one dense block
 /// and forty-six of experts, latent attention, a cache sized as the key
 /// alone — the shape of the answer the daemon gave for a real file.
@@ -1442,4 +1374,57 @@ fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
              counting is not on the screen"
         );
     }
+}
+
+/// The prompt field takes a document: a paste keeps its lines, Return adds
+/// one, and Control-Return is what runs the analysis (B-430).
+#[test]
+fn the_prompt_field_takes_a_document() {
+    let mut desk = four_models();
+    desk.page = Page::Prompt;
+    desk.chosen = Some(0);
+    desk.paste("You are the dungeon master.\r\n\nNever break character.\tEver.\n");
+    assert_eq!(
+        desk.typed, "You are the dungeon master.\n\nNever break character.\tEver.\n",
+        "a persona's paragraphs are the value, not its first line"
+    );
+    desk.returned(false);
+    assert!(
+        desk.typed.ends_with("Ever.\n\n"),
+        "Return in a document is a line break: {:?}",
+        desk.typed
+    );
+    assert!(
+        matches!(desk.doing, mcf_desk::Doing::Nothing),
+        "Return without Control ran the analysis"
+    );
+
+    // And the name field is still a name field.
+    let mut adding = four_models();
+    adding.page = Page::Adding;
+    adding.paste("owner/repository\nsecond line");
+    assert_eq!(adding.typed, "owner/repository");
+}
+
+/// A document is drawn as its lines, and a long one shows its tail.
+#[test]
+fn a_long_prompt_is_drawn_as_lines_and_the_tail_is_what_shows() {
+    let mut short = four_models();
+    short.page = Page::Prompt;
+    short.chosen = Some(0);
+    short.typed = "One line.".to_owned();
+    let mut long = four_models();
+    long.page = Page::Prompt;
+    long.chosen = Some(0);
+    long.typed = (0..40)
+        .map(|at| format!("Paragraph {at} of the persona, which says something the model is to do."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let ground = DAY.ground;
+    let one = drawn(&short, DAY, "prompt-one-line").inked(ground);
+    let many = drawn(&long, DAY, "prompt-many-lines").inked(ground);
+    assert!(
+        many > one,
+        "forty lines put no more on the glass than one: {many} against {one}"
+    );
 }

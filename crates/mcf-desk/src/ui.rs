@@ -236,6 +236,85 @@ pub fn field(
     mouse.clicked(area)
 }
 
+/// A document somebody is typing or pasting into.
+///
+/// **Many lines, and the end of them.** The prompt somebody analyses is a
+/// persona or an instruction sheet, and a line that scrolled sideways held a
+/// paragraph as one run nobody could read back (B-430). Each of the
+/// document's own lines is wrapped to the width and they are laid out in
+/// order; what is shown is the tail that fits, because the end is where typing
+/// goes and where a paste just landed. There is no selection and no cursor to
+/// move: Ctrl+C takes the whole document and Ctrl+V adds to its end, which is
+/// what a field holding one document needs and nothing more.
+pub fn area(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    held: &str,
+    placeholder: &str,
+    focused: bool,
+) -> bool {
+    let ink = paint.ink;
+    let edge = if focused { ink.accent } else { ink.line };
+    paint.edge(area, RADIUS, edge, ink.card);
+    let inner = area.x + 12.0;
+    let top = area.y + 8.0;
+    let room = area.w - 24.0;
+    let step = 18.0;
+    if held.is_empty() {
+        let shown = paint.elide(placeholder, Weight::Regular, 13.5, room);
+        paint.say_at(inner, top, &shown, Weight::Regular, 13.5, ink.faint);
+        if focused {
+            paint.wash(Box::new(inner, top, 1.5, 17.0), ink.accent, 255);
+        }
+        return mouse.clicked(area);
+    }
+    // The document's lines, each wrapped on its own so a paragraph keeps
+    // its shape; an empty line is a line.
+    let mut lines: Vec<String> = Vec::new();
+    for written in held.split('\n') {
+        if written.trim().is_empty() {
+            lines.push(String::new());
+        } else {
+            lines.extend(paint.wrap(written, Weight::Regular, 13.5, room));
+        }
+    }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "how many lines fit is a count; a part of a line is not drawn"
+    )]
+    let fit = ((area.h - 16.0) / step).floor().max(1.0) as usize;
+    let from = lines.len().saturating_sub(fit);
+    let mut y = top;
+    let mut ended = inner;
+    for line in lines.iter().skip(from) {
+        paint.say_at(inner, y, line, Weight::Regular, 13.5, ink.ink);
+        ended = inner + paint.measure(line, Weight::Regular, 13.5);
+        y += step;
+    }
+    if from > 0 {
+        let hidden = format!("{from} more lines above");
+        let width = paint.measure(&hidden, Weight::Regular, 10.5);
+        paint.say_at(
+            area.right() - width - 12.0,
+            area.y + 6.0,
+            &hidden,
+            Weight::Regular,
+            10.5,
+            ink.faint,
+        );
+    }
+    if focused {
+        paint.wash(
+            Box::new(ended + 1.0, y - step, 1.5, 17.0),
+            ink.accent,
+            255,
+        );
+    }
+    mouse.clicked(area)
+}
+
 /// How far along something is.
 ///
 /// `None` is drawn as a track with no fill and the word beside it — a bar at

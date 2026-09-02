@@ -923,6 +923,29 @@ fn how_many_answers(paint: &mut Painter, at: (f32, f32), found: &Value) {
 /// writer supplied nothing, outside the list means the prompt said something
 /// the model did not expect. Drift does not touch it, because nothing is
 /// compared to anything (§3.8).
+/// Why the ranking is missing, where it is missing: an empty column and one
+/// MCF could not fill look the same (A7).
+fn not_ranked(paint: &mut Painter, area: Box, found: &Value) {
+    let ink = paint.ink;
+    if let Some(why) = found.get("expected_refused").and_then(Value::as_text) {
+        spaced(paint, area.x, area.y, "not expected", ink.faint);
+        for line in paint
+            .wrap(why, Weight::Regular, size::SMALL, area.w)
+            .iter()
+            .take(3)
+        {
+            paint.say_at(
+                area.x,
+                area.y + 20.0,
+                line,
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+        }
+    }
+}
+
 fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
     let ink = paint.ink;
     let ranked = found
@@ -930,25 +953,7 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
         .and_then(Value::as_list)
         .unwrap_or(&[]);
     if ranked.is_empty() {
-        // Why it is missing, where it is missing: an empty column and one MCF
-        // could not fill look the same (A7).
-        if let Some(why) = found.get("expected_refused").and_then(Value::as_text) {
-            spaced(paint, area.x, area.y, "not expected", ink.faint);
-            for line in paint
-                .wrap(why, Weight::Regular, size::SMALL, area.w)
-                .iter()
-                .take(3)
-            {
-                paint.say_at(
-                    area.x,
-                    area.y + 20.0,
-                    line,
-                    Weight::Regular,
-                    size::SMALL,
-                    ink.faint,
-                );
-            }
-        }
+        not_ranked(paint, area, found);
         return;
     }
     let depth = found
@@ -1000,11 +1005,18 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
         );
         y += 17.0;
     }
+    // What the prompt was addressed as while it was read: a prompt read bare
+    // and one read inside its turn are two prompts (§3.4, B-429).
+    let under = found
+        .get("ranked_under")
+        .and_then(Value::as_text)
+        .map(|under| format!(" Read under {under}."))
+        .unwrap_or_default();
     for line in paint
         .wrap(
             &format!(
                 "{first_choice} of {} were its own first choice — a word it would have written \
-                 anyway carries nothing from the writer",
+                 anyway carries nothing from the writer.{under}",
                 ranked.len()
             ),
             Weight::Regular,
@@ -1012,7 +1024,7 @@ fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
             area.w,
         )
         .iter()
-        .take(3)
+        .take(4)
     {
         paint.say_at(
             area.x,
@@ -2368,29 +2380,42 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
 
     let mut act = None;
     let y = area.y + 52.0;
-    let field = Box::new(area.x, y, (area.w - 150.0).min(680.0), 32.0);
-    let _clicked = ui::field(
+    // **A document, not a line.** What is analysed is a persona or an
+    // instruction sheet, pasted in whole; the field is sized for one and the
+    // page below it gives up a little height (B-430).
+    let field = Box::new(
+        area.x,
+        y,
+        area.w.min(960.0),
+        (area.h * 0.26).clamp(120.0, 240.0),
+    );
+    let _clicked = ui::area(
         paint,
         mouse,
         field,
         &desk.typed,
-        "a prompt to analyse",
+        "paste or type the prompt to analyse — a persona, an instruction sheet, a question. \
+         Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
         true,
     );
-    let (asked, _) = ui::fitted(
-        paint,
-        mouse,
-        (field.right() + 10.0, y),
-        "Analyse",
-        Kind::Primary,
-    );
+    let under = field.bottom() + 8.0;
+    let (asked, button) = ui::fitted(paint, mouse, (area.x, under), "Analyse", Kind::Primary);
     if asked && !desk.doing.busy() && desk.chosen.is_some() {
         act = Some(Act::ReportPrompt);
     }
+    let (cleared, cleared_button) = ui::fitted(
+        paint,
+        mouse,
+        (button.right() + 8.0, under),
+        "Clear",
+        Kind::Ordinary,
+    );
+    if cleared && !desk.typed.is_empty() {
+        act = Some(Act::Clear);
+    }
+    what_it_will_cost(paint, desk, (cleared_button.right() + 14.0, under + 8.0));
 
-    what_it_will_cost(paint, desk, (area.x, y + 38.0));
-
-    let mut at = y + 62.0;
+    let mut at = under + 40.0;
     let Some(found) = a_report_or_why_not(paint, desk, area, at) else {
         return act;
     };
@@ -2419,8 +2444,6 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     }
     at = after;
     act = pressed.or(act);
-    act = copy_out(paint, desk, mouse, Box::new(area.x, at + 6.0, area.w, 30.0)).or(act);
-    at += 40.0;
     how_many_answers(paint, (area.x, at + 12.0), found);
     the_answer(
         paint,
@@ -2480,8 +2503,9 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             lines.extend(paint.wrap(written, Weight::Regular, size::SMALL, room));
         }
     }
-    // As many as fit, and no more: this window does not scroll, and the Copy
-    // button beside it takes the whole report out for a reader who wants it.
+    // As many as fit, and no more: this window does not scroll, and the
+    // console's `mcf prompt --json` carries the whole answer for a reader
+    // who wants it.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -2498,7 +2522,7 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             area.x,
             y,
             &format!(
-                "{} more — Copy takes the whole report",
+                "{} more — `mcf prompt … --json` carries the whole answer",
                 count_of(lines.len().saturating_sub(fits), "line")
             ),
             Weight::Regular,
@@ -2506,48 +2530,6 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             ink.faint,
         );
     }
-}
-
-/// The whole analysis as text, with a way to take it out of the window.
-///
-/// **MCF draws its own text, so nothing here is a thing a window manager can
-/// select.** A report somebody wants to paste into a message has to be handed
-/// over deliberately or it cannot leave at all. The panel shows what would be
-/// copied so that pressing the button is not a guess (§3.15).
-fn copy_out(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
-    let ink = paint.ink;
-    let mut act = None;
-    let (pressed, button) = ui::fitted(
-        paint,
-        mouse,
-        (area.x, area.y),
-        if desk.copied {
-            "Copied"
-        } else {
-            "Copy analysis"
-        },
-        if desk.copied {
-            Kind::Ordinary
-        } else {
-            Kind::Primary
-        },
-    );
-    if pressed {
-        act = Some(Act::CopyAnalysis);
-    }
-    paint.say_at(
-        button.right() + 12.0,
-        area.y + 8.0,
-        if desk.copied {
-            "the whole analysis is on the clipboard, ready to paste"
-        } else {
-            "puts the whole analysis on the clipboard: the figures, the floor and the answer"
-        },
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    act
 }
 
 /// How much each sentence steered the answer, drawn as bars.
@@ -2658,7 +2640,33 @@ fn what_the_bars_mean(
         size::SMALL,
         ink.faint,
     );
-    y += 42.0;
+    // The second figure, and what the control sentence did to it.
+    let depth = found
+        .get("forced_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let floor_mark = crate::held_mark(found.get("floor_held"), depth);
+    let second = if floor_mark == "unread" {
+        "The second figure would say where the answer's first token ranked with the sentence \
+         gone; it needs the served engine, and this run had none."
+            .to_owned()
+    } else {
+        format!(
+            "The second figure is where the answer's first token ranked with the sentence gone \
+             — 1st means the answer would have begun the same way. With the control in: \
+             {floor_mark}."
+        )
+    };
+    y += 38.0;
+    for line in paint
+        .wrap(&second, Weight::Regular, size::SMALL, area.w)
+        .iter()
+        .take(2)
+    {
+        paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y += 6.0;
     // Sentences past the cap are not measured, and a list that quietly
     // shortened itself is the one thing a list must not do (A1, A4).
     let over = found
@@ -2757,7 +2765,23 @@ fn steering(
             size::SMALL,
             if moved > floor { ink.ink } else { ink.quiet },
         );
-        let text_at = bar.right() + 68.0;
+        // **Where the answer's first token went without it.** The bar ties
+        // on a short answer; this is what orders the tie, and it is read from
+        // the model rather than from two drifting texts (B-429).
+        let depth = found
+            .get("forced_depth")
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        let mark = crate::held_mark(clause.get("held"), depth);
+        paint.say_at(
+            bar.right() + 66.0,
+            y,
+            &mark,
+            Weight::Bold,
+            size::SMALL,
+            if mark == "1st" { ink.quiet } else { ink.warn },
+        );
+        let text_at = bar.right() + 124.0;
         let shown = paint.elide(
             said,
             Weight::Regular,
