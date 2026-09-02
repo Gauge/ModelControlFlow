@@ -42,3 +42,28 @@ fn the_record_carries_what_the_verdict_rests_on() {
         assert!(said.contains(wanted), "{wanted} is missing from {said}");
     }
 }
+
+/// The sentences every surface prints say the verdict, the figures it rests
+/// on, and what was set aside — and say DIVERGE where it is, rather than
+/// which engine is wrong (A19, B-072).
+#[test]
+fn the_sentences_carry_the_verdict_and_its_figures() {
+    let agreed = an_agreement(3).said();
+    assert_eq!(agreed.len(), 4, "{agreed:?}");
+    assert!(agreed[0].contains("250 position(s)") && agreed[0].contains("at 247"));
+    assert!(agreed[1].contains("1 position(s) set aside"));
+    assert!(agreed[2].starts_with("AGREE") && agreed[2].contains("rank 3"));
+    assert!(agreed[3].contains("neither engine is the authority"));
+
+    let mut apart = an_agreement(618);
+    apart.set_aside = 0;
+    let said = apart.said();
+    assert_eq!(said.len(), 3, "nothing set aside, nothing said about it");
+    assert!(
+        said[1].starts_with("DIVERGE")
+            && said[1].contains("position 61")
+            && said[1].contains("618"),
+        "{said:?}"
+    );
+    assert!(said[1].contains("does not say which"));
+}

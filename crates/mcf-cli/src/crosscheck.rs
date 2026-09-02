@@ -1,20 +1,22 @@
 //! `mcf cross-check <model>` — MCF's engine against the one it provisioned.
+//!
+//! **The command the window's checkbox runs.** A22 asks that everything a
+//! surface can do, the headless path can do; this is that path for the
+//! cross-check, and both send the same control request to the same daemon.
+//! Nothing is compared here — the daemon does it, because the daemon is
+//! where the model and both engines are, and the sentences printed are the
+//! daemon's, so that no surface can say the same figures in different words
+//! (B-072, B-424).
 
-use mcf_serve::crosscheck::{self, Agreement};
+use std::io::{BufRead as _, BufReader, Write as _};
+use std::os::unix::net::UnixStream;
+
+use mcf_record::json::Value;
+use mcf_serve::control::{Answer, Request};
 
 use crate::Response;
 use crate::run::{ambiguous, resolve};
-
-/// How much of a generation to compare.
-///
-/// Long enough to leave the region where two engines agree by construction —
-/// F40 found them parting at step four — and short enough that MCF's own
-/// engine, which pays a forward pass per position, answers in a minute rather
-/// than an afternoon.
-const POSITIONS: usize = 120;
-
-/// What both engines are asked.
-const PROMPT: &str = "The history of the city of Paris begins";
+use crate::say::refused_because;
 
 /// Compares the two engines on one model and says whether they agree.
 pub(crate) fn run(model: &str) -> Response {
@@ -38,184 +40,115 @@ pub(crate) fn run(model: &str) -> Response {
     };
     let Some(socket) = crate::serve::socket_path() else {
         return Response {
-            text: "mcf: there is nowhere a daemon could be listening".to_owned(),
+            text: "mcf: MCF has nowhere to put a control socket on this machine\n  \
+                   a cross-check is served by a running daemon, and there is no path to one"
+                .to_owned(),
             served: false,
         };
     };
-    // Weighed from its directory before it is read, the same way `mcf run`
-    // weighs it: what follows reads the whole file and then dequantizes it,
-    // and a model this machine cannot hold has to be refused with both
-    // numbers rather than discovered by the kernel ending something (B-372,
-    // F136).
-    if let Err(failure) = crate::run::examined(&path) {
+    if let Some(why) = crate::serve::ensure_running(&socket) {
         return Response {
-            text: format!(
-                "mcf: {} cannot be read with MCF's own engine\n  {failure}",
-                path.display()
-            ),
+            text: format!("mcf: MCF could not start\n  {why}"),
             served: false,
         };
     }
-    let Ok(bytes) = std::fs::read(&path) else {
-        return Response {
-            text: format!("mcf: {} could not be read", path.display()),
-            served: false,
-        };
-    };
-
-    // The other engine generates freely; MCF reads what it produced. Asking
-    // both to generate and comparing texts is the thing that does not work
-    // (F27, F40).
-    let (prompt_tokens, produced) = match generated(&socket, &path, &bytes) {
-        Ok(both) => both,
-        Err(why) => {
+    let mut connection = match UnixStream::connect(&socket) {
+        Ok(connection) => connection,
+        Err(error) => {
             return Response {
-                text: format!(
-                    "mcf: the two engines could not be compared on {}\n  {why}",
-                    path.display()
-                ),
+                text: format!("mcf: MCF is not answering\n  {error}"),
                 served: false,
             };
         }
     };
-
-    let free = match mcf_core::hardware::Machine::read().memory.available {
-        mcf_core::attested::Attested::Known(bytes) => Some(bytes.0),
-        mcf_core::attested::Attested::Unknown => None,
-    };
-    match crosscheck::against(&bytes, &prompt_tokens, &produced, free) {
-        Err(failure) => Response {
-            text: format!(
-                "mcf: MCF's own engine could not read {}\n  {failure}",
-                path.display()
-            ),
-            served: false,
-        },
-        Ok(agreement) => Response {
-            text: reported(&path, &agreement),
-            served: agreement.within_arithmetic(),
-        },
-    }
-}
-
-/// What the provisioned engine produced, and the prompt it was given.
-fn generated(
-    socket: &std::path::Path,
-    path: &std::path::Path,
-    bytes: &[u8],
-) -> Result<(Vec<usize>, Vec<usize>), String> {
-    use std::io::{BufRead as _, BufReader, Write as _};
-
-    let file = mcf_standin::gguf::parse(bytes).map_err(|failure| failure.to_string())?;
-    let vocabulary =
-        mcf_standin::tokenizer::Vocabulary::read(&file).map_err(|failure| failure.to_string())?;
-    let prompt_tokens = vocabulary
-        .encode(PROMPT, true)
-        .map_err(|failure| failure.to_string())?;
-
-    let mut connection = std::os::unix::net::UnixStream::connect(socket)
-        .map_err(|_| "nothing is listening; `mcf serve` starts a daemon".to_owned())?;
-    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
-    let request = mcf_serve::control::Request::Generate {
-        // A cross-check asks MCF's own question of two engines: fixture data
-        // (§6.8, B-146).
-        whose: mcf_record::content::Whose::Fixture,
+    // No read timeout: MCF's own engine pays a forward pass per position, and
+    // a deadline here would turn a slow model into a lie about a broken
+    // daemon.
+    let line = Request::CrossCheck {
         model: path.display().to_string(),
-        prompt: String::new(),
-        limit: Some(POSITIONS),
-        seed: 0,
-        tokens: Some(prompt_tokens.clone()),
-        engine: Some("provisioned".to_owned()),
-    };
-    writeln!(connection, "{}", request.to_line())
-        .and_then(|()| connection.flush())
-        .map_err(|_| "the request could not be sent".to_owned())?;
+    }
+    .to_line();
+    if let Err(error) = writeln!(connection, "{line}").and_then(|()| connection.flush()) {
+        return Response {
+            text: format!("mcf: the cross-check could not be asked for\n  {error}"),
+            served: false,
+        };
+    }
 
+    let mut lines: Vec<String> = Vec::new();
+    let mut served = false;
     let reader = BufReader::new(&connection);
-    for line in reader.lines() {
-        let line = line.map_err(|_| "the stream ended before its account".to_owned())?;
-        match mcf_serve::control::Streamed::read(line.trim_end()) {
-            Ok(mcf_serve::control::Streamed::Token { .. }) => {}
-            Ok(mcf_serve::control::Streamed::Done(account)) => {
-                if let Some(failure) = account.get("failure") {
-                    return Err(format!(
-                        "the provisioned engine did not generate: {}",
-                        failure.to_line()
-                    ));
-                }
-                let produced = match account.get("produced_tokens") {
-                    Some(mcf_record::json::Value::List(tokens)) => tokens
-                        .iter()
-                        .filter_map(mcf_record::json::Value::as_integer)
-                        .filter_map(|token| usize::try_from(token).ok())
-                        .collect::<Vec<usize>>(),
-                    _ => Vec::new(),
-                };
-                if produced.is_empty() {
-                    return Err(
-                        "this engine does not hand back the identifiers it produced, \
-                                so there is nothing to read with MCF's own (B-362, B-376)"
-                            .to_owned(),
-                    );
-                }
-                return Ok((prompt_tokens, produced));
-            }
-            Err(_) => return Err("a line of the stream was unreadable".to_owned()),
+    for read in reader.lines() {
+        let Ok(read) = read else { break };
+        let Ok(answer) = Answer::read(read.trim_end()) else {
+            continue;
+        };
+        if !answer.served {
+            lines.push(format!(
+                "mcf: the two engines were not compared on {}\n  {}",
+                path.display(),
+                refused_because(&answer.body)
+            ));
+            break;
+        }
+        lines.extend(said(&answer.body));
+        if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            served = answer
+                .body
+                .get("agreement")
+                .and_then(|agreement| agreement.get("within_arithmetic"))
+                .is_some_and(|within| matches!(within, Value::Bool(true)));
+            break;
         }
     }
-    Err("the stream ended before its account".to_owned())
+    Response {
+        text: lines.join("\n"),
+        served,
+    }
 }
 
-/// The comparison, written so a reader can disagree with the rule as well as
-/// the answer.
-fn reported(path: &std::path::Path, agreement: &Agreement) -> String {
-    let mut lines = vec![
-        format!("cross-checked {}", path.display()),
-        String::new(),
-        format!(
-            "  MCF's own engine read {} position(s) of what the provisioned engine produced,",
-            agreement.positions
-        ),
-        format!(
-            "  and would have chosen the same token at {}.",
-            agreement.agreed
-        ),
-        String::new(),
-    ];
-    if agreement.set_aside > 0 {
-        lines.push(format!(
-            "  {} position(s) set aside: MCF would have ended the turn there, and the other \
-             engine was generating freely — the two are answering different questions at those \
-             positions rather than disagreeing (F40)",
-            agreement.set_aside
-        ));
+/// One answer, as a line or two of terminal output.
+fn said(body: &Value) -> Vec<String> {
+    let text = |key: &str| body.get(key).and_then(Value::as_text).map(str::to_owned);
+    let number = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
+
+    if let (Some(low), Some(high)) = (
+        body.get("estimate_low_seconds").and_then(Value::as_integer),
+        body.get("estimate_high_seconds")
+            .and_then(Value::as_integer),
+    ) {
+        return vec![
+            format!(
+                "cross-checking {}",
+                text("cross_checking").unwrap_or_default()
+            ),
+            format!(
+                "  asking the provisioned engine for {} tokens of \"{}\" ({} tokens of prompt)",
+                number("positions"),
+                text("prompt").unwrap_or_default(),
+                number("prompt_tokens")
+            ),
+            format!("  this will take somewhere between {low} and {high} seconds"),
+            String::new(),
+        ];
+    }
+    if matches!(body.get("reading"), Some(Value::Bool(true))) {
+        return vec![format!(
+            "  {} produced {} tokens; MCF's own engine is reading them",
+            text("engine_ran").unwrap_or_else(|| "the provisioned engine".to_owned()),
+            number("produced")
+        )];
+    }
+    if let Some(sentences) = body.get("said").and_then(Value::as_list) {
+        let mut lines = vec![String::new()];
+        lines.extend(
+            sentences
+                .iter()
+                .filter_map(Value::as_text)
+                .map(|sentence| format!("  {sentence}")),
+        );
         lines.push(String::new());
+        return lines;
     }
-    if agreement.within_arithmetic() {
-        lines.push(format!(
-            "  AGREE    where they differed, the other engine's token was never worse than MCF's \
-             rank {} — the line is {}, and a swap of the top few is two implementations \
-             summing in a different order rather than one of them being wrong (F27, F41)",
-            agreement.furthest,
-            crosscheck::FURTHEST_RANK
-        ));
-    } else {
-        lines.push(format!(
-            "  DIVERGE  at position {} MCF ranked the other engine's token {}, past the {} that \
-             separates arithmetic from a defect. One of these two implementations is wrong and \
-             this does not say which — what it says is that the difference is not summation \
-             order (A19, F41)",
-            agreement.furthest_at,
-            agreement.furthest,
-            crosscheck::FURTHEST_RANK
-        ));
-    }
-    lines.push(String::new());
-    lines.push(
-        "  Neither engine is the authority here. What is compared is two readings of one file, \
-         and a disagreement is a finding about one of them (§II, A12)."
-            .to_owned(),
-    );
-    lines.push(String::new());
-    lines.join("\n")
+    Vec::new()
 }

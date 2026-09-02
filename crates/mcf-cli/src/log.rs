@@ -214,6 +214,33 @@ fn timed(body: &Value) -> String {
     )
 }
 
+/// A cross-check entry, in one line: the verdict and what it rests on.
+fn cross_checked(body: &Value) -> String {
+    let agreement = body.get("agreement");
+    let count = |key: &str| {
+        agreement
+            .and_then(|held| held.get(key))
+            .and_then(Value::as_integer)
+            .unwrap_or(0)
+    };
+    let verdict = match agreement.and_then(|held| held.get("within_arithmetic")) {
+        Some(Value::Bool(true)) => "the engines agree",
+        Some(Value::Bool(false)) => "the engines DIVERGE",
+        _ => "no verdict",
+    };
+    format!(
+        "{verdict}: MCF's engine chose the same token at {} of {} positions, furthest rank {}, \
+         against {}",
+        count("agreed"),
+        count("positions"),
+        count("furthest_rank"),
+        body.get("conditions")
+            .and_then(|conditions| conditions.get("engine_ran"))
+            .and_then(Value::as_text)
+            .unwrap_or("an engine MCF did not name")
+    )
+}
+
 fn described(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
@@ -235,6 +262,7 @@ fn described(entry: &Entry) -> String {
             text(body, "figure").unwrap_or_else(|| "what MCF cost on this machine".to_owned())
         }
         EntryKind::ModelTimed => timed(body),
+        EntryKind::CrossChecked => cross_checked(body),
         EntryKind::ModelHosted => hosted(body),
         EntryKind::ModelUnhosted => format!(
             "stopped hosting {}: {}",

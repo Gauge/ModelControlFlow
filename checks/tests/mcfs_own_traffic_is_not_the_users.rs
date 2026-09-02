@@ -85,7 +85,9 @@ fn each_surface_files_its_traffic_where_it_belongs() {
     for (file, expected) in [
         ("crates/mcf-cli/src/run.rs", "Whose::User"),
         ("crates/mcf-cli/src/bench.rs", "Whose::User"),
-        ("crates/mcf-cli/src/crosscheck.rs", "Whose::Fixture"),
+        // The cross-check's constant prompt is asked for by the daemon since
+        // B-424 (`cross_checking`); the console only asks the daemon.
+        ("crates/mcf-serve/src/daemon.rs", "Whose::Fixture"),
         ("crates/mcf-serve/src/probes.rs", "Whose::Fixture"),
         ("crates/mcf-serve/src/cost.rs", "Whose::Fixture"),
     ] {

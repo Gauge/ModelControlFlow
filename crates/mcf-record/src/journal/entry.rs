@@ -211,11 +211,24 @@ pub enum EntryKind {
     /// nothing is listening, and this line is the only thing that says
     /// anything ever was.
     ModelUnhosted,
+    /// MCF's own engine read what the provisioned one produced from a model,
+    /// and where the two parted (B-362, B-424, A1, A12, §II).
+    ///
+    /// **Because a check nobody can find later is the same as one not made.**
+    /// `mcf cross-check` compared the two engines and printed the verdict, and
+    /// a terminal scrolls: the one thing MCF does that answers §II — is the
+    /// engine behind its claims itself checked? — was the one thing it wrote
+    /// nowhere. A window that runs the same check now writes the same entry.
+    ///
+    /// Distinct from [`Self::Comparison`], which is two *arms* under MCF's
+    /// own protocol with a verdict about a model. This is two *engines* on
+    /// one file, and a verdict about one of them — never about the model.
+    CrossChecked,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -238,6 +251,7 @@ impl EntryKind {
         Self::ModelTimed,
         Self::ModelHosted,
         Self::ModelUnhosted,
+        Self::CrossChecked,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -267,6 +281,7 @@ impl EntryKind {
             Self::ModelTimed => "model_timed",
             Self::ModelHosted => "model_hosted",
             Self::ModelUnhosted => "model_unhosted",
+            Self::CrossChecked => "cross_checked",
         }
     }
 

@@ -156,6 +156,9 @@ fn the_new_requests_survive_the_wire() {
         Request::Anatomy {
             model: "a-model.gguf".to_owned(),
         },
+        Request::CrossCheck {
+            model: "a-model.gguf".to_owned(),
+        },
     ];
     for request in asked {
         let line = request.to_line();

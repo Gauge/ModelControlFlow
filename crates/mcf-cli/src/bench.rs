@@ -46,7 +46,7 @@ use mcf_core::time::{Clock as _, Duration, Monotonic, SystemClock, Timestamp};
 use mcf_core::trial::{Arm, SessionId};
 use mcf_record::journal::{Entry as Record, EntryKind, Journal};
 use mcf_record::json::Value;
-use mcf_serve::control::{Request as Ask, Streamed};
+use mcf_serve::control::{Request, Streamed};
 
 use crate::Response;
 
@@ -969,7 +969,7 @@ fn generate(
     // the provisioned engine's server rather than a fresh process per request
     // (B-376, F64). Where it could not, the text goes and the run says it was
     // cold.
-    let request = Ask::Generate {
+    let request = Request::Generate {
         // `mcf bench --prompt` is the operator's own text, held still across
         // both arms — theirs, not MCF's (§6.8, B-146).
         whose: mcf_record::content::Whose::User,

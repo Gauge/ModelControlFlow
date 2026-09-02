@@ -305,8 +305,7 @@ pub struct Test {
     /// column headed `time` beside a column of measured times would have read
     /// as the same kind of number.
     pub seconds: Option<u64>,
-    /// What runs it: the ladder, or a console command this window does not
-    /// run yet.
+    /// What runs it: the ladder, or the cross-check.
     pub run: Run,
     /// Whether it is selected.
     pub chosen: bool,
@@ -697,11 +696,15 @@ pub enum Act {
         /// The file within it.
         file: String,
     },
-    /// Time the chosen model.
+    /// Time the chosen model: a quick climb of the ladder, whatever is
+    /// ticked.
     Measure {
         /// The deepest context to sample.
         deepest: u64,
     },
+    /// Run what is ticked on the chosen model: the ladder to the chosen
+    /// window, the cross-check, or both in turn.
+    RunChosen,
     /// Open a dropdown, or close it if it is the one already open.
     ///
     /// **The screen had two controls drawn as dropdowns that were not
@@ -783,6 +786,8 @@ pub enum Doing {
     Downloading(job::Job),
     /// Timing one.
     Measuring(job::Job),
+    /// Reading what the provisioned engine produced with MCF's own.
+    CrossChecking(job::Job),
     /// Waiting for a model to answer.
     Answering(job::Job),
     /// Taking a prompt apart.
@@ -799,6 +804,7 @@ impl Doing {
             | Self::Listing(job)
             | Self::Downloading(job)
             | Self::Measuring(job)
+            | Self::CrossChecking(job)
             | Self::Answering(job)
             | Self::Provisioning(job)
             | Self::Hosting(job) => Some(job),
@@ -869,6 +875,11 @@ pub struct Desk {
     /// was pressed for, so that a model chosen meanwhile is not held by a
     /// press that was for another.
     host_after: Option<String>,
+    /// Whether Run Selected still owes a cross-check once the ladder it
+    /// started has finished: one press, two runs, one after the other,
+    /// because the ladder and the cross-check both want the engine and the
+    /// machine's memory to themselves.
+    cross_check_after: bool,
     /// The component being built, by name, while a build runs — so the
     /// Components screen can show the build on the card it is for rather
     /// than somewhere else. Set on every build, whichever screen started it.
@@ -927,6 +938,7 @@ impl Desk {
             no_settings: None,
             needs_engine: None,
             host_after: None,
+            cross_check_after: false,
             building: None,
             build_failed: None,
             hosted: None,
@@ -1000,6 +1012,7 @@ impl Desk {
             Doing::Listing(job)
             | Doing::Downloading(job)
             | Doing::Measuring(job)
+            | Doing::CrossChecking(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
             | Doing::Provisioning(job)
@@ -1038,6 +1051,19 @@ impl Desk {
             && job.finished
         {
             self.keep_the_run();
+            // The other half of what Run Selected was pressed for, now that
+            // the ladder has let the engine go — for the model it was
+            // pressed for, if it is still the one chosen.
+            if std::mem::take(&mut self.cross_check_after)
+                && let Some(at) = self.chosen
+            {
+                self.cross_check(at);
+            }
+        }
+        if let Doing::CrossChecking(job) = &self.doing
+            && job.finished
+        {
+            self.keep_the_cross_check();
         }
         // The engine just built is what the model was waiting for: the
         // settings are asked again, now that there is something to run it
@@ -1162,6 +1188,50 @@ impl Desk {
         }
     }
 
+    /// Writes a finished cross-check onto the row that asked for it.
+    ///
+    /// **The sentences are the daemon's** (B-072): the same ones `mcf
+    /// cross-check` prints, read off the last line rather than composed from
+    /// its figures here, so the window and the console cannot say one
+    /// comparison two ways. A refusal is the row's result too — the check
+    /// ran and could not compare, which is a thing to show, not a blank (A2).
+    fn keep_the_cross_check(&mut self) {
+        let Doing::CrossChecking(job) = &self.doing else {
+            return;
+        };
+        let ran = job.ran();
+        let lines: Vec<String> = if let Some(why) = &job.refused {
+            vec![why.clone()]
+        } else {
+            let last = job.conclusion();
+            let mut said: Vec<String> = last
+                .and_then(|body| body.get("said"))
+                .and_then(Value::as_list)
+                .map(|sentences| {
+                    sentences
+                        .iter()
+                        .filter_map(Value::as_text)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let Some(engine) = last
+                .and_then(|body| body.get("conditions"))
+                .and_then(|conditions| conditions.get("engine_ran"))
+                .and_then(Value::as_text)
+            {
+                said.push(format!("against {engine}"));
+            }
+            said
+        };
+        for test in &mut self.tests {
+            if test.run == Run::CrossCheck {
+                test.ran = Some(ran);
+                test.result = Some(lines.clone());
+            }
+        }
+    }
+
     /// Does what a screen said a click meant.
     pub fn act(&mut self, act: Act) {
         match act {
@@ -1183,6 +1253,12 @@ impl Desk {
                 if let Some(at) = self.chosen {
                     self.page = Page::Diagnostics;
                     self.measure(at, deepest);
+                }
+            }
+            Act::RunChosen => {
+                if let Some(at) = self.chosen {
+                    self.page = Page::Diagnostics;
+                    self.run_chosen(at);
                 }
             }
             // A second click on the open picker shuts it, which is what every
@@ -1708,6 +1784,39 @@ impl Desk {
         ));
     }
 
+    /// Runs what is ticked: the ladder, then the cross-check, each only if a
+    /// row it answers is chosen.
+    ///
+    /// One after the other rather than at once, because both want the engine
+    /// and the machine's memory to themselves, and a cross-check that ran
+    /// beside a timing would have changed the timing (A6).
+    pub fn run_chosen(&mut self, at: usize) {
+        let chosen = |run: Run| self.tests.iter().any(|test| test.chosen && test.run == run);
+        let cross_check = chosen(Run::CrossCheck);
+        if chosen(Run::Ladder) {
+            self.cross_check_after = cross_check;
+            self.measure(at, self.window);
+        } else if cross_check {
+            self.cross_check(at);
+        }
+    }
+
+    /// Reads what the provisioned engine produces from the chosen model with
+    /// MCF's own engine — the same request `mcf cross-check` sends (B-072).
+    pub fn cross_check(&mut self, at: usize) {
+        let Some(held) = self.models.get(at) else {
+            return;
+        };
+        self.chosen = Some(at);
+        self.doing = Doing::CrossChecking(job::Job::start(
+            self.socket.clone(),
+            Request::CrossCheck {
+                model: held.path.clone(),
+            },
+            format!("cross-checking {}", held.name),
+        ));
+    }
+
     /// Asks the chosen model what has been typed.
     pub fn ask(&mut self, at: usize) {
         let Some(held) = self.models.get(at) else {
@@ -1860,6 +1969,7 @@ impl Desk {
             Doing::Listing(job)
             | Doing::Downloading(job)
             | Doing::Measuring(job)
+            | Doing::CrossChecking(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
             | Doing::Provisioning(job)
@@ -1893,16 +2003,12 @@ impl Desk {
         1024
     }
 
-    /// Whether what is chosen is something this window runs: a ladder row.
-    ///
-    /// The console-only row cannot be chosen, so this is false only when
-    /// every ladder row is unchosen — and then Run Selected has nothing to
-    /// run and says so, rather than climbing the ladder anyway (§3.15).
+    /// Whether anything is chosen: with every row unchosen, Run Selected has
+    /// nothing to run and says so, rather than climbing the ladder anyway
+    /// (§3.15).
     #[must_use]
     pub fn runs_something(&self) -> bool {
-        self.tests
-            .iter()
-            .any(|test| test.chosen && test.run == Run::Ladder)
+        self.tests.iter().any(|test| test.chosen)
     }
 
     /// Roughly how long a run takes, as a range.

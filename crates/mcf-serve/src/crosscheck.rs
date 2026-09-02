@@ -28,11 +28,31 @@
 //! orders of magnitude — three against six hundred and eighteen, with the line
 //! at eight (F41). A top-two order swap is arithmetic. A token MCF ranks
 //! hundredth is not.
+//!
+//! **One implementation, three surfaces** (B-072, B-424). The daemon runs the
+//! comparison — `Request::CrossCheck` — and the console, the window and the
+//! terminal ask it to and print what it said. The prompt, the length and the
+//! sentences live here so that no surface can quietly compare something
+//! else, or say the same figures in different words.
+
+use std::path::Path;
 
 use mcf_core::Failure;
 use mcf_core::failure::{Attribution, Category, Disposition, Subsystem};
 use mcf_record::json::Value;
+use mcf_standin::gguf;
 use mcf_standin::tokenizer::Vocabulary;
+
+/// How much of a generation to compare.
+///
+/// Long enough to leave the region where two engines agree by construction —
+/// F40 found them parting at step four — and short enough that MCF's own
+/// engine, which pays a forward pass per position, answers in minutes rather
+/// than an afternoon.
+pub const POSITIONS: usize = 120;
+
+/// What both engines are asked.
+pub const PROMPT: &str = "The history of the city of Paris begins";
 
 /// How far apart two engines may put one token before it stops being
 /// arithmetic.
@@ -73,6 +93,47 @@ impl Agreement {
         self.furthest <= FURTHEST_RANK
     }
 
+    /// The comparison in sentences, written so a reader can disagree with the
+    /// rule as well as the answer — the same sentences on every surface.
+    #[must_use]
+    pub fn said(&self) -> Vec<String> {
+        let mut lines = vec![format!(
+            "MCF's own engine read {} position(s) of what the provisioned engine produced, and \
+             would have chosen the same token at {}",
+            self.positions, self.agreed
+        )];
+        if self.set_aside > 0 {
+            lines.push(format!(
+                "{} position(s) set aside: MCF would have ended the turn there, and the other \
+                 engine was generating freely — the two are answering different questions at \
+                 those positions rather than disagreeing (F40)",
+                self.set_aside
+            ));
+        }
+        if self.within_arithmetic() {
+            lines.push(format!(
+                "AGREE — where they differed, the other engine's token was never worse than \
+                 MCF's rank {}; the line is {}, and a swap of the top few is two implementations \
+                 summing in a different order rather than one of them being wrong (F27, F41)",
+                self.furthest, FURTHEST_RANK
+            ));
+        } else {
+            lines.push(format!(
+                "DIVERGE — at position {} MCF ranked the other engine's token {}, past the {} \
+                 that separates arithmetic from a defect; one of these two implementations is \
+                 wrong and this does not say which — what it says is that the difference is not \
+                 summation order (A19, F41)",
+                self.furthest_at, self.furthest, FURTHEST_RANK
+            ));
+        }
+        lines.push(
+            "neither engine is the authority here: what is compared is two readings of one file, \
+             and a disagreement is a finding about one of them (§II, A12)"
+                .to_owned(),
+        );
+        lines
+    }
+
     /// The record's shape.
     #[must_use]
     pub fn to_value(&self) -> Value {
@@ -87,6 +148,74 @@ impl Agreement {
             ("within_arithmetic", Value::Bool(self.within_arithmetic())),
         ])
     }
+}
+
+/// Reads a file's directory from a bounded prefix and refuses early what can
+/// be refused early: an architecture MCF has not been taught, and a model that
+/// cannot fit dequantized (B-372).
+///
+/// `gguf::parse` was written to read the directory of a file it does not hold
+/// all of — B-213's pre-acquisition fitment needs exactly that — so this reads
+/// sixteen mebibytes, and two hundred and fifty-six only if the metadata alone
+/// outgrows that. The growth rule needs no knowledge of which failure means
+/// "truncated": a prefix that failed to parse is only retried *larger*, and a
+/// whole file that failed to parse is what failing honestly looks like.
+///
+/// `free` is what the platform says is available, observed by the caller —
+/// B4 keeps hardware sampling out of here, and a caller that does not know
+/// passes `None`, which is not a refusal (A7). The directory is handed back
+/// because the caller that weighed a file usually reads its vocabulary next.
+///
+/// # Errors
+///
+/// The file could not be read; its directory could not be parsed; its
+/// architecture is not covered; or, dequantized, it is larger than `free`.
+pub fn examined(path: &Path, free: Option<u64>) -> Result<gguf::Model, Failure> {
+    use std::io::Read as _;
+
+    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
+        let take = cap.min(held);
+        let mut prefix = Vec::new();
+        let opened =
+            std::fs::File::open(path).and_then(|handle| handle.take(take).read_to_end(&mut prefix));
+        if let Err(error) = opened {
+            return Err(Failure::new(
+                Category::ArtifactMissing,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::crosscheck"),
+                "the model file could not be read",
+            )
+            .with_context("path", path.display().to_string())
+            .with_context("os_error", error.to_string()));
+        }
+        match gguf::parse(&prefix) {
+            Ok(file) => {
+                mcf_standin::llama::covers(&file)?;
+                if let Some(available) = free {
+                    file.fits_dequantized(available)?;
+                }
+                return Ok(file);
+            }
+            Err(failure) => {
+                if take >= held {
+                    return Err(failure);
+                }
+                // The directory may simply be longer than this prefix; try the
+                // next size up rather than deciding anything from a partial
+                // read.
+            }
+        }
+    }
+    Err(Failure::new(
+        Category::ArtifactMissing,
+        Attribution::Machine,
+        Disposition::Refused,
+        Subsystem::new("mcf-serve::crosscheck"),
+        "the model file is empty",
+    )
+    .with_context("path", path.display().to_string()))
 }
 
 /// Reads the other engine's tokens with MCF's engine, position by position.

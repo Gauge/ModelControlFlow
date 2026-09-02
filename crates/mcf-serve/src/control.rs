@@ -187,6 +187,20 @@ pub enum Request {
         /// number meant nothing.
         deepest: u64,
     },
+    /// Read what the provisioned engine produces from one model with MCF's
+    /// own engine, and say whether the two agree (B-362, B-424).
+    ///
+    /// Many lines: what is about to run and what it is expected to cost, what
+    /// the provisioned engine produced, and a last line carrying the
+    /// agreement in figures and in sentences — the same sentences on every
+    /// surface, because they are composed once, here, and never at a surface
+    /// (B-072). The prompt and the length are the daemon's
+    /// ([`crate::crosscheck::PROMPT`], [`crate::crosscheck::POSITIONS`]) so
+    /// that every cross-check is the same question.
+    CrossCheck {
+        /// A path, or a name under the daemon's store.
+        model: String,
+    },
     /// What MCF would run this model under, and what it recommends.
     ///
     /// Reading, never starting: a surface asks this to fill in a form, and a
@@ -367,6 +381,10 @@ impl Request {
             ]),
             Self::Hosted => Value::map([("ask", Value::text("hosted"))]),
             Self::Unhost => Value::map([("ask", Value::text("unhost"))]),
+            Self::CrossCheck { model } => Value::map([
+                ("ask", Value::text("cross_check")),
+                ("model", Value::text(model.clone())),
+            ]),
             Self::Measure {
                 model,
                 engine,
@@ -476,6 +494,13 @@ impl Request {
                     .ok_or_else(|| refused("a hosting request naming no model", line))?
                     .to_owned(),
                 settings: value.get("settings").cloned().unwrap_or(Value::Null),
+            }),
+            Some("cross_check") => Ok(Self::CrossCheck {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a cross-check naming no model", line))?
+                    .to_owned(),
             }),
             Some("measure") => Ok(Self::Measure {
                 model: value

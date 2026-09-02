@@ -229,6 +229,23 @@ fn system_memory_free() -> Option<u64> {
     mcf_core::hardware::memory_available_now()
 }
 
+/// What an account's failure says, as `detail (category)`, for a generation
+/// that produced nothing.
+fn failure_said(account: &Value) -> String {
+    let failure = account.get("failure");
+    let said = |key: &str| {
+        failure
+            .and_then(|failure| failure.get(key))
+            .and_then(Value::as_text)
+    };
+    match (said("detail"), said("category")) {
+        (Some(detail), Some(category)) => format!("{detail} ({category})"),
+        (Some(detail), None) => detail.to_owned(),
+        (None, Some(category)) => category.to_owned(),
+        (None, None) => "the account carries no failure".to_owned(),
+    }
+}
+
 /// The last line of an acquisition: where the model went, and what was
 /// written down about it.
 fn acquired(file: &str, done: &mcf_hub::acquisition::Done) -> Answer {
@@ -486,6 +503,60 @@ fn estimated_seconds(ladder: &[u64], bytes: Option<u64>) -> (u64, u64) {
     (low, high)
 }
 
+/// How long a cross-check is expected to take, as a range in seconds.
+///
+/// **The stand-in is the cost.** The provisioned engine reads the model once
+/// and produces a hundred-odd tokens, which is seconds; MCF's own engine then
+/// holds the model dequantized and pays one forward pass — every active
+/// weight read once — per position, prompt and produced. So the middle is the
+/// load, plus the dequantized bytes over a stated bandwidth once per
+/// position. The bandwidth is a round figure from one run — Seed-Coder-8B,
+/// 33 GB dequantized, 129 positions read in 155 s on this machine's
+/// processor, which is 27 GB/s — and the bounds are the ladder's measured
+/// spread (0.58× to 1.42×) borrowed until this run has its own — which is
+/// why it is a range and not a promise (A6, A20).
+#[expect(clippy::integer_division, reason = "a bound on a duration")]
+fn cross_check_seconds(bytes: Option<u64>, dequantized: Option<u64>, prompt: usize) -> (u64, u64) {
+    // A gigabyte a second to load, twice: the file is in the page cache the
+    // second time, and the first is a stated figure and not a measurement.
+    let per_load_ms = bytes.map_or(2_000, |bytes| bytes / 1_000_000);
+    // Milliseconds a pass, at twenty-five gigabytes a second through the
+    // dequantized weights; a directory that does not size itself is read as
+    // the file eight times over, which is what four-bit weights dequantize to.
+    let pass_ms = dequantized
+        .or_else(|| bytes.map(|bytes| bytes.saturating_mul(8)))
+        .map_or(1_000, |bytes| bytes / 25_000_000);
+    let positions = (crate::crosscheck::POSITIONS as u64).saturating_add(prompt as u64);
+    let middle_ms = per_load_ms
+        .saturating_mul(2)
+        .saturating_add(pass_ms.saturating_mul(positions));
+    let low = (middle_ms.saturating_mul(58) / 100_000).max(1);
+    let high = (middle_ms.saturating_mul(142) / 100_000).max(2);
+    (low, high)
+}
+
+/// A duration as whole milliseconds, for a record.
+#[expect(
+    clippy::integer_division,
+    reason = "whole milliseconds; the rest is noise"
+)]
+fn milliseconds(took: mcf_core::time::Duration<Monotonic>) -> Value {
+    Value::Integer(i64::try_from(took.as_nanos() / 1_000_000).unwrap_or(i64::MAX))
+}
+
+/// Why two engines could not be compared on a model, as a refusal.
+fn could_not_compare(path: &Path, why: &str) -> Failure {
+    Failure::new(
+        Category::ProbeInconclusive,
+        Attribution::Machine,
+        Disposition::Refused,
+        WHERE,
+        "the two engines could not be compared",
+    )
+    .with_context("model", path.display().to_string())
+    .with_context("why", why.to_owned())
+}
+
 /// A model MCF is holding for callers.
 #[derive(Debug)]
 struct Holding {
@@ -634,15 +705,17 @@ fn shape_from_a_published_header(
     None
 }
 
-/// The newest measurement of each model, from the record.
+/// The newest entry of one kind about each model, from the record: the
+/// timings, or the cross-checks.
 ///
 /// **Through the index and by kind**, not by replaying the journal: a daemon
 /// start that parsed the whole history would cost seconds on a record that has
 /// been measuring for a while (F14), and a listing that re-read it once a
 /// model would cost the record's whole length once a row (F118). What this
-/// reads is the entries whose kind says they are timings, newest last, and it
-/// keeps one per model.
-fn newest_timings(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> {
+/// reads is the entries whose kind says they are the one asked for, newest
+/// last, and it keeps one per model — the model being what the entry's
+/// conditions name.
+fn newest_of(journal: &Path, kind: EntryKind) -> std::collections::BTreeMap<PathBuf, Value> {
     let mut newest = std::collections::BTreeMap::new();
     if !journal.exists() {
         return newest;
@@ -657,7 +730,7 @@ fn newest_timings(journal: &Path) -> std::collections::BTreeMap<PathBuf, Value> 
         return newest;
     };
     for located in index.entries() {
-        if located.kind() != EntryKind::ModelTimed {
+        if located.kind() != kind {
             continue;
         }
         let Ok(entry) = index.read(located) else {
@@ -708,6 +781,10 @@ pub struct Daemon {
     /// and re-reading a journal of thousands of entries once a model would
     /// make a listing cost the record's whole length (F118).
     timings: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
+    /// The newest cross-check of each model, from the record, kept the way
+    /// the timings are and for the same reason: a listing that re-read the
+    /// record once a model would cost its whole length once a row (F118).
+    cross_checks: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     /// The model being held for callers, if any, with what it was started
     /// under.
     ///
@@ -817,7 +894,11 @@ impl Daemon {
         // not again while this daemon is up.
         let engines = discover_engines(&places);
         let daemon = Self {
-            timings: std::sync::Mutex::new(newest_timings(&places.journal)),
+            timings: std::sync::Mutex::new(newest_of(&places.journal, EntryKind::ModelTimed)),
+            cross_checks: std::sync::Mutex::new(newest_of(
+                &places.journal,
+                EntryKind::CrossChecked,
+            )),
             holding: std::sync::Mutex::new(None),
             places,
             listener,
@@ -1051,6 +1132,14 @@ impl Daemon {
                 "measured",
                 self.last_measurement(path).unwrap_or(Value::Null),
             ),
+            (
+                "cross_checked",
+                self.cross_checks
+                    .lock()
+                    .ok()
+                    .and_then(|held| held.get(path).cloned())
+                    .unwrap_or(Value::Null),
+            ),
             ("trained_context", shape(trained)),
             ("cache_bytes_per_token", shape(cache)),
             ("resolved", resolved),
@@ -1258,6 +1347,10 @@ impl Daemon {
                     deepest,
                 }) => {
                     self.measuring(&model, engine.as_deref(), deepest, &mut writer);
+                    return None;
+                }
+                Ok(Request::CrossCheck { model }) => {
+                    self.cross_checking(&model, &mut writer);
                     return None;
                 }
                 Ok(Request::PromptReport {
@@ -1592,11 +1685,12 @@ impl Daemon {
             Request::Generate { .. }
             | Request::Acquire { .. }
             | Request::Measure { .. }
+            | Request::CrossCheck { .. }
             | Request::Provision { .. }
             | Request::PromptReport { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
-                    "generate, acquire, measure or provision",
+                    "generate, acquire, measure, cross-check or provision",
                 )),
                 None,
             ),
@@ -1730,6 +1824,167 @@ impl Daemon {
             let _replaced = timings.insert(path.clone(), last.body.clone());
         }
         say(writer, &last);
+    }
+
+    /// Reads what the provisioned engine produces from a model with MCF's
+    /// own engine, and says whether the two agree (B-362, B-424, §II).
+    ///
+    /// **The other engine generates freely; MCF reads what it produced.**
+    /// Asking both to generate and comparing texts is the thing that does
+    /// not work (F27, F40): past the first close call they are writing
+    /// different sentences. So the provisioned engine is asked for
+    /// [`crate::crosscheck::POSITIONS`] tokens of
+    /// [`crate::crosscheck::PROMPT`] through the same generation path a
+    /// client's request runs, and [`crate::crosscheck::against`] is then made
+    /// to read those tokens position by position.
+    ///
+    /// **Weighed before anything runs.** MCF's own engine holds the model
+    /// dequantized, and a model this machine cannot hold that way is refused
+    /// from its directory with both numbers, rather than discovered by the
+    /// kernel ending the daemon (B-372, F136).
+    ///
+    /// **Three lines and a record.** What is about to run and what it is
+    /// expected to cost; what the provisioned engine produced, so a window
+    /// can say which half is running; and the agreement, in figures and in
+    /// the sentences every surface prints. The last line is written down as
+    /// it is sent (A1): until this existed the one check that answers §II
+    /// was printed to a terminal and kept nowhere.
+    fn cross_checking(&self, named: &str, writer: &mut &UnixStream) {
+        let say = |writer: &mut &UnixStream, answer: &Answer| {
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+        };
+        let path = crate::generation::resolved(&self.places.models, named);
+        let file = match crate::crosscheck::examined(&path, system_memory_free()) {
+            Ok(file) => file,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let prompt_tokens = match mcf_standin::tokenizer::Vocabulary::read(&file)
+            .and_then(|vocabulary| vocabulary.encode(crate::crosscheck::PROMPT, true))
+        {
+            Ok(tokens) => tokens,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+        let held = std::fs::metadata(&path).map(|about| about.len()).ok();
+        let guess = cross_check_seconds(held, file.dequantized_bytes(), prompt_tokens.len());
+        say(
+            writer,
+            &Answer::served(Value::map([
+                ("cross_checking", Value::text(named.to_owned())),
+                ("prompt", Value::text(crate::crosscheck::PROMPT.to_owned())),
+                ("prompt_tokens", count(prompt_tokens.len())),
+                ("positions", count(crate::crosscheck::POSITIONS)),
+                (
+                    "estimate_low_seconds",
+                    Value::Integer(i64::try_from(guess.0).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "estimate_high_seconds",
+                    Value::Integer(i64::try_from(guess.1).unwrap_or(i64::MAX)),
+                ),
+                ("done", Value::Bool(false)),
+            ])),
+        );
+
+        let (tokens, engine_ran, took) = match self.other_engines_tokens(named, &prompt_tokens) {
+            Ok(produced) => produced,
+            Err(why) => return say(writer, &Answer::refused(&could_not_compare(&path, &why))),
+        };
+        say(
+            writer,
+            &Answer::served(Value::map([
+                ("cross_checking", Value::text(named.to_owned())),
+                ("produced", count(tokens.len())),
+                ("engine_ran", engine_ran.clone()),
+                ("reading", Value::Bool(true)),
+                ("done", Value::Bool(false)),
+            ])),
+        );
+
+        let started = SystemClock.now();
+        let read = std::fs::read(&path).map_err(|error| {
+            could_not_compare(&path, &format!("the model file could not be read: {error}"))
+        });
+        let agreement = read.and_then(|bytes| {
+            crate::crosscheck::against(&bytes, &prompt_tokens, &tokens, system_memory_free())
+        });
+        let agreement = match agreement {
+            Ok(agreement) => agreement,
+            Err(failure) => return say(writer, &Answer::refused(&failure)),
+        };
+        let reading_took = SystemClock.now().saturating_duration_since(started);
+        let conditions = Value::map([
+            ("model", Value::text(path.display().to_string())),
+            ("engine_ran", engine_ran),
+            ("own_engine", Value::text("mcf-standin".to_owned())),
+            // The prompt is MCF's constant, not a person's, and the text the
+            // engine produced is drained rather than filed — but the entry says
+            // whose question it was, as every generation does (§6.8, B-146).
+            (
+                "asked_by",
+                Value::text(mcf_record::content::Whose::Fixture.as_str()),
+            ),
+            ("prompt", Value::text(crate::crosscheck::PROMPT.to_owned())),
+            ("prompt_tokens", count(prompt_tokens.len())),
+            ("positions_asked", count(crate::crosscheck::POSITIONS)),
+            ("produced", count(tokens.len())),
+            ("generating_ms", milliseconds(took)),
+            ("reading_ms", milliseconds(reading_took)),
+        ]);
+        let last = Answer::served(Value::map([
+            ("cross_checked", Value::text(named.to_owned())),
+            ("conditions", conditions),
+            ("agreement", agreement.to_value()),
+            (
+                "said",
+                Value::List(agreement.said().into_iter().map(Value::text).collect()),
+            ),
+            ("done", Value::Bool(true)),
+        ]));
+        let _recorded = self.note(EntryKind::CrossChecked, Timestamp::now(), last.body.clone());
+        if let Ok(mut checks) = self.cross_checks.lock() {
+            let _replaced = checks.insert(path, last.body.clone());
+        }
+        say(writer, &last);
+    }
+
+    /// What the provisioned engine produced from these tokens: the
+    /// identifiers, which engine ran, and how long it took — or why there is
+    /// nothing to read.
+    fn other_engines_tokens(
+        &self,
+        named: &str,
+        prompt_tokens: &[usize],
+    ) -> std::result::Result<(Vec<usize>, Value, mcf_core::time::Duration<Monotonic>), String> {
+        let picked = self.picked_engine(named);
+        let (produced, took) = self.drained_generation(
+            named,
+            Some("provisioned"),
+            prompt_tokens,
+            crate::crosscheck::POSITIONS,
+            picked,
+        )?;
+        let Some(said) = produced.said else {
+            return Err(format!(
+                "the provisioned engine did not generate: {}",
+                failure_said(&produced.account)
+            ));
+        };
+        if said.tokens.is_empty() {
+            return Err(
+                "this engine does not hand back the identifiers it produced, so there is nothing \
+                 to read with MCF's own (B-362, B-376)"
+                    .to_owned(),
+            );
+        }
+        let engine_ran = produced
+            .account
+            .get("conditions")
+            .and_then(|conditions| conditions.get("engine"))
+            .and_then(Value::as_text)
+            .map_or(Value::Null, |engine| Value::text(engine.to_owned()));
+        Ok((said.tokens, engine_ran, took))
     }
 
     /// The engine and layer count this model resolves to.
@@ -1902,18 +2157,62 @@ impl Daemon {
         // Identifier 1 is inside every vocabulary MCF can address. What it
         // means does not matter; that there are `depth` of them does.
         let tokens: Vec<usize> = vec![1; how_many];
+        let (produced, took) = self.drained_generation(
+            named,
+            engine,
+            &tokens,
+            usize::try_from(produce).unwrap_or(1),
+            picked,
+        )?;
+
+        let conditions = produced.account.get("conditions");
+        let condition = |key: &str| {
+            conditions
+                .and_then(|conditions| conditions.get(key))
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+        };
+        if produced.said.is_none() {
+            return Err(failure_said(&produced.account));
+        }
+        Ok(Timed {
+            ns: took.as_nanos(),
+            engine: conditions
+                .and_then(|conditions| conditions.get("engine"))
+                .and_then(Value::as_text)
+                .map(str::to_owned),
+            peak_resident: condition("peak_resident_bytes"),
+            window: condition("window"),
+        })
+    }
+
+    /// One generation nobody is listening to, and how long it took.
+    ///
+    /// A generation streams its tokens to whoever asked. Nothing is asking
+    /// here — what is wanted is the account, or how long it took — so the far
+    /// end of a socket pair is handed over and drained. This runs the *same*
+    /// generation path a client's request runs, rather than a second one
+    /// written to be measured, which is the difference between timing MCF and
+    /// timing something that resembles it (A11, A12).
+    fn drained_generation(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        tokens: &[usize],
+        produce: usize,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    ) -> std::result::Result<
+        (
+            crate::generation::Produced,
+            mcf_core::time::Duration<Monotonic>,
+        ),
+        String,
+    > {
         let mcf_home = self
             .places
             .models
             .parent()
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
-
-        // A generation streams its tokens to whoever asked. Nothing is
-        // asking here — what is wanted is how long it took — so the far end
-        // of a socket pair is handed over and drained. This runs the
-        // *same* generation path a client's request runs, rather than a
-        // second one written to be measured, which is the difference between
-        // timing MCF and timing something that resembles it (A11, A12).
         let (mine, theirs) =
             UnixStream::pair().map_err(|error| format!("no socket pair to drain: {error}"))?;
         let drain = std::thread::spawn(move || {
@@ -1936,9 +2235,9 @@ impl Daemon {
                     .unwrap_or_else(|| Path::new("/tmp")),
                 named,
                 "",
-                Some(usize::try_from(produce).unwrap_or(1)),
+                Some(produce),
                 0,
-                Some(&tokens),
+                Some(tokens),
                 engine,
                 picked,
                 system_memory_free(),
@@ -1948,37 +2247,7 @@ impl Daemon {
         let took = clock.now().saturating_duration_since(started);
         drop(mine);
         let _joined = drain.join();
-
-        let conditions = produced.account.get("conditions");
-        let condition = |key: &str| {
-            conditions
-                .and_then(|conditions| conditions.get(key))
-                .and_then(Value::as_integer)
-                .and_then(|held| u64::try_from(held).ok())
-        };
-        if produced.said.is_none() {
-            let failure = produced.account.get("failure");
-            let said = |key: &str| {
-                failure
-                    .and_then(|failure| failure.get(key))
-                    .and_then(Value::as_text)
-            };
-            return Err(match (said("detail"), said("category")) {
-                (Some(detail), Some(category)) => format!("{detail} ({category})"),
-                (Some(detail), None) => detail.to_owned(),
-                (None, Some(category)) => category.to_owned(),
-                (None, None) => "the account carries no failure".to_owned(),
-            });
-        }
-        Ok(Timed {
-            ns: took.as_nanos(),
-            engine: conditions
-                .and_then(|conditions| conditions.get("engine"))
-                .and_then(Value::as_text)
-                .map(str::to_owned),
-            peak_resident: condition("peak_resident_bytes"),
-            window: condition("window"),
-        })
+        Ok((produced, took))
     }
 
     /// Builds a component, saying each line the build prints as it prints it.

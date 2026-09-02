@@ -433,9 +433,9 @@ fn a_test_that_never_ran_reports_neither_a_time_nor_a_result() {
     }
 }
 
-/// The rows one ladder answers are chosen together, the console-only row
-/// cannot be chosen, and Run Selected runs nothing when nothing chosen runs
-/// here (§3.15, B-072).
+/// The rows one ladder answers are chosen together, the cross-check row is
+/// chosen alone, and Run Selected runs nothing when nothing is chosen
+/// (§3.15, B-072, B-424).
 #[test]
 fn the_rows_one_run_answers_are_chosen_together() {
     let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
@@ -447,23 +447,32 @@ fn the_rows_one_run_answers_are_chosen_together() {
         .map(|(at, _)| at)
         .collect();
     assert_eq!(ladder.len(), 4);
-    let console = desk
+    let cross_check = desk
         .tests
         .iter()
-        .position(|test| test.run != crate::Run::Ladder)
-        .unwrap_or_else(|| panic!("no console-only row"));
+        .position(|test| test.run == crate::Run::CrossCheck)
+        .unwrap_or_else(|| panic!("no cross-check row"));
     assert!(desk.runs_something());
     assert_eq!(desk.estimate(false), (104, 255), "one run's time, not four");
 
     desk.act(crate::Act::Toggle(ladder[1]));
     assert!(ladder.iter().all(|&at| !desk.tests[at].chosen));
     assert!(!desk.runs_something());
-    desk.act(crate::Act::Toggle(console));
+    desk.act(crate::Act::Toggle(cross_check));
     assert!(
-        !desk.tests[console].chosen,
-        "the console-only row was chosen"
+        desk.tests[cross_check].chosen,
+        "the cross-check row was not chosen"
     );
-    assert!(!desk.runs_something());
+    assert!(
+        ladder.iter().all(|&at| !desk.tests[at].chosen),
+        "the ladder came with it"
+    );
+    assert!(desk.runs_something());
+    assert_eq!(
+        desk.estimate(false),
+        (52, 127),
+        "the cross-check's own time"
+    );
     desk.act(crate::Act::Toggle(ladder[3]));
     assert!(ladder.iter().all(|&at| desk.tests[at].chosen));
 }
@@ -693,6 +702,52 @@ fn a_finished_run_fills_the_rows_the_ladder_answers() {
     assert_eq!(
         row(&desk, "MCF's engine and the provisioned one agree"),
         None
+    );
+}
+
+/// A finished cross-check fills its own row with the daemon's sentences,
+/// and a refused one with the refusal — never a blank (A2, B-072, B-424).
+#[test]
+fn a_finished_cross_check_fills_its_row_in_the_daemons_words() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.doing = crate::Doing::CrossChecking(crate::job::Job::already(
+        "cross-checking a-model".to_owned(),
+        vec![Value::map([
+            ("cross_checked", Value::text("a-model")),
+            (
+                "conditions",
+                Value::map([("engine_ran", Value::text("llama.cpp @925e11"))]),
+            ),
+            (
+                "said",
+                Value::List(vec![
+                    Value::text("MCF's own engine read 120 position(s)"),
+                    Value::text("AGREE — never worse than rank 2"),
+                ]),
+            ),
+            ("done", Value::Bool(true)),
+        ])],
+    ));
+    desk.keep_the_cross_check();
+    assert_eq!(
+        row(&desk, "MCF's engine and the provisioned one agree").as_deref(),
+        Some(
+            &[
+                "MCF's own engine read 120 position(s)".to_owned(),
+                "AGREE — never worse than rank 2".to_owned(),
+                "against llama.cpp @925e11".to_owned(),
+            ][..]
+        )
+    );
+    assert_eq!(row(&desk, "Generation speed against depth"), None);
+
+    let mut refused = crate::job::Job::already("cross-checking a-model".to_owned(), Vec::new());
+    refused.refused = Some("the two engines could not be compared".to_owned());
+    desk.doing = crate::Doing::CrossChecking(refused);
+    desk.keep_the_cross_check();
+    assert_eq!(
+        row(&desk, "MCF's engine and the provisioned one agree").as_deref(),
+        Some(&["the two engines could not be compared".to_owned()][..])
     );
 }
 

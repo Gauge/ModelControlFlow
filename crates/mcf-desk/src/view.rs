@@ -1486,9 +1486,7 @@ fn run_buttons(
         && !running
         && desk.runs_something()
     {
-        act = Some(Act::Measure {
-            deepest: desk.window,
-        });
+        act = Some(Act::RunChosen);
     }
     // A prompt is a diagnostic about a prompt rather than about the model, so
     // it is reached from here and not from the column (B-072).
@@ -1526,7 +1524,10 @@ fn run_buttons(
 fn diagnostics(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
-    let running = matches!(&desk.doing, Doing::Measuring(job) if !job.finished);
+    let running = matches!(
+        &desk.doing,
+        Doing::Measuring(job) | Doing::CrossChecking(job) if !job.finished
+    );
     let wide = area.w.min(680.0);
 
     if let Some(said) = run_buttons(paint, desk, mouse, area, running) {
@@ -1709,12 +1710,8 @@ fn test_row(
     if mouse.over(hit) {
         paint.panel(hit, 6.0, ink.line, 90);
     }
-    // A row the window cannot run has no checkbox: a box that could be
-    // ticked and would run nothing is the control §3.15 forbids.
     let mark = Box::new(x, y + 2.0, 13.0, 13.0);
-    if test.run != crate::Run::Ladder {
-        // no box
-    } else if test.chosen {
+    if test.chosen {
         paint.panel(mark, 3.0, ink.accent, 255);
         ui::tick(paint, mark, ink.accent_ink);
     } else {
@@ -1722,24 +1719,6 @@ fn test_row(
     }
     let name = paint.elide(test.name, Weight::Regular, size::BODY, wide - 420.0);
     paint.say_at(x + 26.0, y, &name, Weight::Regular, size::BODY, ink.ink);
-    if let crate::Run::Console(command) = test.run {
-        // Neither devices, an estimate, a run time, a result nor a button,
-        // because the window does not run it: where it lives instead, and
-        // what it costs there, across the columns (B-424).
-        let costs = test
-            .seconds
-            .map(|seconds| format!(", about {}", clock(seconds)))
-            .unwrap_or_default();
-        paint.say_right(
-            x + wide,
-            y,
-            &format!("{}; on the console: {command}{costs}", test.devices),
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        return None;
-    }
     paint.say_right(
         x + wide - 250.0,
         y,
@@ -1751,7 +1730,13 @@ fn test_row(
     // The estimate is the run's, on the row that names it; a row the same
     // run answers says where its time is rather than inventing one (A7).
     let (estimate, estimate_size) = test.seconds.map_or_else(
-        || ("in the ladder".to_owned(), size::SMALL),
+        || {
+            let held_by = match test.run {
+                crate::Run::Ladder => "in the ladder",
+                crate::Run::CrossCheck => "in the cross-check",
+            };
+            (held_by.to_owned(), size::SMALL)
+        },
         |seconds| (clock(seconds), size::BODY),
     );
     paint.say_right(
@@ -1827,9 +1812,86 @@ fn found(paint: &mut Painter, desk: &Desk, area: Box) -> f32 {
     y
 }
 
+/// What a cross-check has said so far: which half is running, then the
+/// daemon's sentences.
+fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
+    let ink = paint.ink;
+    let mut y = area.y;
+    paint.rule(
+        (area.x, y - 12.0),
+        (area.x + area.w, y - 12.0),
+        ink.line,
+        255,
+    );
+    let mut lines: Vec<(String, Weight, crate::paint::Rgb)> = Vec::new();
+    for answer in &job.answers {
+        if let (Some(low), Some(high)) = (
+            answer
+                .get("estimate_low_seconds")
+                .and_then(Value::as_integer),
+            answer
+                .get("estimate_high_seconds")
+                .and_then(Value::as_integer),
+        ) {
+            lines.push((
+                format!(
+                    "asking the provisioned engine for {} tokens, then reading them with MCF's \
+                     own — {}",
+                    answer
+                        .get("positions")
+                        .and_then(Value::as_integer)
+                        .unwrap_or(0),
+                    span(
+                        u64::try_from(low).unwrap_or(0),
+                        u64::try_from(high).unwrap_or(0)
+                    )
+                ),
+                Weight::Regular,
+                ink.quiet,
+            ));
+        } else if matches!(answer.get("reading"), Some(Value::Bool(true))) {
+            lines.push((
+                format!(
+                    "{} produced {} tokens; MCF's own engine is reading them",
+                    answer
+                        .get("engine_ran")
+                        .and_then(Value::as_text)
+                        .unwrap_or("the provisioned engine"),
+                    answer
+                        .get("produced")
+                        .and_then(Value::as_integer)
+                        .unwrap_or(0)
+                ),
+                Weight::Regular,
+                ink.quiet,
+            ));
+        } else if let Some(said) = answer.get("said").and_then(Value::as_list) {
+            for sentence in said.iter().filter_map(Value::as_text) {
+                lines.push((sentence.to_owned(), Weight::Bold, ink.ink));
+            }
+        }
+    }
+    if let Some(why) = &job.refused {
+        lines.push((why.clone(), Weight::Regular, ink.bad));
+    }
+    for (line, weight, colour) in lines {
+        for shown in paint.wrap(&line, weight, size::BODY, area.w).iter().take(3) {
+            paint.say_at(area.x, y, shown, weight, size::BODY, colour);
+            y += 20.0;
+            if y > area.bottom() - 4.0 {
+                return;
+            }
+        }
+        y += 4.0;
+    }
+}
+
 /// What a run has said so far, under the setup rather than instead of it.
 fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
     let ink = paint.ink;
+    if let Doing::CrossChecking(job) = &desk.doing {
+        return cross_check_progress(paint, job, area);
+    }
     let Doing::Measuring(job) = &desk.doing else {
         return;
     };

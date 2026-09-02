@@ -527,6 +527,99 @@ fn the_rows_read_off_the_rungs_open_in_the_daemons_words() {
     );
 }
 
+/// The cross-check row is a run of its own: it carries a checkbox, and its
+/// result and its progress are the daemon's sentences (B-424, B-072).
+///
+/// Drawn twice — with the check running, so the progress under the table is
+/// the daemon's two lines; and finished, with the row filled and opened.
+#[test]
+fn the_cross_check_row_runs_from_the_window() {
+    use mcf_record::json::Value;
+    let mut desk = four_models();
+    desk.page = Page::Diagnostics;
+    desk.chosen = Some(0);
+    let cross_check = desk
+        .tests
+        .iter()
+        .position(|test| test.run == mcf_desk::Run::CrossCheck)
+        .unwrap_or_else(|| panic!("no cross-check row"));
+    desk.act(mcf_desk::Act::Toggle(cross_check));
+    let last = Value::map([
+        ("cross_checked", Value::text("a-model")),
+        (
+            "conditions",
+            Value::map([(
+                "engine_ran",
+                Value::text("provisioned llama.cpp server @925e1179947e"),
+            )]),
+        ),
+        (
+            "said",
+            Value::List(vec![
+                Value::text(
+                    "MCF's own engine read 120 position(s) of what the provisioned engine \
+                     produced, and would have chosen the same token at 118",
+                ),
+                Value::text(
+                    "AGREE — where they differed, the other engine's token was never worse \
+                     than MCF's rank 2; the line is 8, and a swap of the top few is two \
+                     implementations summing in a different order rather than one of them \
+                     being wrong (F27, F41)",
+                ),
+            ]),
+        ),
+        ("done", Value::Bool(true)),
+    ]);
+    desk.doing = mcf_desk::Doing::CrossChecking(mcf_desk::job::Job::already(
+        "cross-checking a-model".to_owned(),
+        vec![
+            Value::map([
+                ("cross_checking", Value::text("a-model")),
+                ("positions", Value::Integer(120)),
+                ("estimate_low_seconds", Value::Integer(52)),
+                ("estimate_high_seconds", Value::Integer(127)),
+                ("done", Value::Bool(false)),
+            ]),
+            Value::map([
+                ("cross_checking", Value::text("a-model")),
+                ("produced", Value::Integer(120)),
+                (
+                    "engine_ran",
+                    Value::text("provisioned llama.cpp server @925e1179947e"),
+                ),
+                ("reading", Value::Bool(true)),
+                ("done", Value::Bool(false)),
+            ]),
+            last,
+        ],
+    ));
+    let running = drawn(&desk, DAY, "cross-check-running");
+    if running.width == 1 {
+        return; // no font here
+    }
+    // Filled the way `keep_the_cross_check` fills it — the daemon's
+    // sentences, then which engine ran — which the unit tests hold it to.
+    let sentences = desk
+        .doing
+        .job()
+        .and_then(mcf_desk::job::Job::conclusion)
+        .and_then(|body| body.get("said"))
+        .and_then(Value::as_list)
+        .map(|said| {
+            said.iter()
+                .filter_map(Value::as_text)
+                .map(str::to_owned)
+                .chain(std::iter::once(
+                    "against provisioned llama.cpp server @925e1179947e".to_owned(),
+                ))
+                .collect::<Vec<String>>()
+        });
+    desk.tests[cross_check].ran = Some(97);
+    desk.tests[cross_check].result = sentences;
+    desk.showing = Some(cross_check);
+    let _open = drawn(&desk, DAY, "cross-check-open");
+}
+
 /// A small rise is drawn as a small rise.
 ///
 /// **The point of the chart, and the one way it could lie.** A plot whose

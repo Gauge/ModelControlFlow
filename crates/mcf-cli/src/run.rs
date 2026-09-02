@@ -23,7 +23,7 @@
 use std::path::{Path, PathBuf};
 
 use mcf_core::attested::Attested;
-use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
+use mcf_core::failure::Failure;
 use mcf_core::hardware::Machine;
 use mcf_standin::gguf;
 use mcf_standin::llama::load;
@@ -186,7 +186,7 @@ fn served(
 ) -> Response {
     use std::io::{BufRead as _, BufReader, Write as _};
 
-    use mcf_serve::control::{Request as Ask, Streamed};
+    use mcf_serve::control::{Request, Streamed};
 
     // Between tokens the stand-in can take a second per token on a
     // half-billion-parameter model; between the request and the first token
@@ -196,7 +196,7 @@ fn served(
     let _writing = connection.set_write_timeout(Some(patience));
     let mut connection = connection;
 
-    let request = Ask::Generate {
+    let request = Request::Generate {
         // A person typed this prompt: their text, and the model's answer to
         // it. The category §6.8 protects (B-146).
         whose: mcf_record::content::Whose::User,
@@ -374,48 +374,16 @@ struct Said {
 /// be refused early: an architecture MCF has not been taught, and a model that
 /// cannot fit dequantized (B-372).
 ///
-/// `gguf::parse` was written to read the directory of a file it does not hold
-/// all of — B-213's pre-acquisition fitment needs exactly that — so this reads
-/// sixteen mebibytes, and two hundred and fifty-six only if the metadata alone
-/// outgrows that. The growth rule needs no knowledge of which failure means
-/// "truncated": a prefix that failed to parse is only retried *larger*, and a
-/// whole file that failed to parse is what failing honestly looks like.
+/// The reading and the arithmetic are [`mcf_serve::crosscheck::examined`],
+/// which the daemon's cross-check applies too (B-072); what this adds is the
+/// observation — what the machine says is free — which B4 keeps out of the
+/// library and at the surface.
 pub(crate) fn examined(path: &Path) -> Result<(), Failure> {
-    use std::io::Read as _;
-
-    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
-    for cap in [16_u64 << 20, 256 << 20, u64::MAX] {
-        let take = cap.min(held);
-        let mut prefix = Vec::new();
-        let opened =
-            std::fs::File::open(path).and_then(|handle| handle.take(take).read_to_end(&mut prefix));
-        if let Err(error) = opened {
-            return Err(Failure::new(
-                Category::ArtifactMissing,
-                Attribution::Machine,
-                Disposition::Refused,
-                Subsystem::new("mcf-cli::run"),
-                "the model file could not be read",
-            )
-            .with_context("path", path.display().to_string())
-            .with_context("os_error", error.to_string()));
-        }
-        match gguf::parse(&prefix) {
-            Ok(file) => {
-                mcf_standin::llama::covers(&file)?;
-                return fits_in_memory(&file);
-            }
-            Err(failure) => {
-                if take >= held {
-                    return Err(failure);
-                }
-                // The directory may simply be longer than this prefix; try the
-                // next size up rather than deciding anything from a partial
-                // read.
-            }
-        }
-    }
-    Ok(())
+    let free = match Machine::read().memory.available {
+        Attested::Known(available) => Some(available.0),
+        Attested::Unknown => None,
+    };
+    mcf_serve::crosscheck::examined(path, free).map(|_| ())
 }
 
 /// Refuses a file the stand-in cannot hold, before a tensor is read (B-372).

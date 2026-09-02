@@ -417,3 +417,57 @@ fn what_it_is_holding_is_read_from_the_disk() {
     );
     let _ended = handle.join();
 }
+
+/// A cross-check of a model that is not there is refused in one line, with
+/// the file named — before any engine is asked for anything (A2, B-424).
+#[test]
+fn a_cross_check_of_nothing_is_refused_with_the_path() {
+    let machine = Machine::new("cross-check-nothing");
+    let (handle, socket) = running(machine.places());
+
+    let answer = ask(
+        &socket,
+        &Request::CrossCheck {
+            model: "not-a-model.gguf".to_owned(),
+        },
+    );
+    assert!(!answer.served, "{:?}", answer.body);
+    let said = answer.body.to_line();
+    assert!(
+        said.contains("not-a-model.gguf"),
+        "the refusal does not name the file: {said}"
+    );
+
+    let _stopped = ask(
+        &socket,
+        &Request::Stop {
+            reason: "done".to_owned(),
+        },
+    );
+    let _ended = handle.join();
+}
+
+/// The cross-check's estimate is a range, grows with the model, and is never
+/// nothing (A6, A20).
+#[test]
+fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
+    let small = super::cross_check_seconds(Some(1 << 30), Some(8 << 30), 9);
+    let large = super::cross_check_seconds(Some(8 << 30), Some(64 << 30), 9);
+    let unknown = super::cross_check_seconds(None, None, 9);
+    assert!(small.0 < small.1, "{small:?}");
+    assert!(small.0 >= 1);
+    assert!(
+        large.0 > small.0 && large.1 > small.1,
+        "{small:?} {large:?}"
+    );
+    assert!(unknown.0 >= 1 && unknown.0 < unknown.1, "{unknown:?}");
+    // The one run the figures come from: Seed-Coder-8B, a 5.2 GB file that
+    // dequantizes to 33 GB, took 162 s end to end on this machine's processor
+    // (7 s generating, 155 s reading). An estimate that does not hold the run
+    // it was fitted to is not an estimate.
+    let fitted = super::cross_check_seconds(Some(5_200_000_000), Some(33_000_000_000), 9);
+    assert!(
+        fitted.0 <= 162 && 162 <= fitted.1,
+        "{fitted:?} does not hold 162 s"
+    );
+}

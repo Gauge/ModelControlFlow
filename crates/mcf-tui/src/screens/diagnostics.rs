@@ -17,9 +17,9 @@
 //! is no run that answers one of the four and not the others, so they are
 //! chosen together, and the estimate is the run's — on the row that names the
 //! run, and on no other, because an estimate for a test that is never run on
-//! its own is a figure for nothing (A7, A20). The fifth row is a console
-//! command the window does not run yet, and says so rather than carrying a
-//! checkbox that would run nothing (§3.15, B-424).
+//! its own is a figure for nothing (A7, A20). The fifth row is its own run —
+//! the cross-check of MCF's engine against the provisioned one — chosen and
+//! unchosen alone, and costed on its own row (B-424).
 
 use crate::screen::{Ink, Screen};
 use crate::screens::columns;
@@ -30,8 +30,9 @@ pub enum Run {
     /// One climb of the depth ladder, which answers every row marked with it
     /// at once.
     Ladder,
-    /// A console command; the window does not run it yet.
-    Console(&'static str),
+    /// One cross-check: MCF's own engine reading what the provisioned one
+    /// produced (`mcf cross-check`).
+    CrossCheck,
 }
 
 /// One measurement that can be asked for.
@@ -70,7 +71,7 @@ pub fn tests() -> Vec<Test> {
             name: "MCF's engine and the provisioned one agree",
             devices: "both engines",
             seconds: Some(90),
-            run: Run::Console("mcf cross-check"),
+            run: Run::CrossCheck,
             chosen: false,
         },
         ladder("Prompt reading speed", None),
@@ -78,16 +79,15 @@ pub fn tests() -> Vec<Test> {
 }
 
 /// Flips the choice at `at`, by the rule both surfaces share (B-072): the
-/// rows one run answers are chosen and unchosen together, and a row the
-/// window cannot run is not chosen at all.
+/// rows one run answers are chosen and unchosen together.
 pub fn toggle<'a>(rows: impl IntoIterator<Item = (Run, &'a mut bool)>, at: usize) {
     let rows: Vec<(Run, &'a mut bool)> = rows.into_iter().collect();
-    let Some((Run::Ladder, chosen)) = rows.get(at) else {
+    let Some((flipped, chosen)) = rows.get(at) else {
         return;
     };
-    let now = !**chosen;
+    let (flipped, now) = (*flipped, !**chosen);
     for (run, chosen) in rows {
-        if run == Run::Ladder {
+        if run == flipped {
             *chosen = now;
         }
     }
@@ -191,7 +191,7 @@ fn estimate_of(test: &Test) -> String {
     match (test.seconds, test.run) {
         (Some(seconds), _) => plain(seconds),
         (None, Run::Ladder) => "in the ladder".to_owned(),
-        (None, Run::Console(command)) => command.to_owned(),
+        (None, Run::CrossCheck) => "in the cross-check".to_owned(),
     }
 }
 
@@ -212,13 +212,9 @@ fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen
     for (index, test) in tests.iter().enumerate() {
         let here = index == at;
         let mark = if test.chosen { "x" } else { " " };
-        if let Run::Console(_) = test.run {
-            into.put(3, row, "   ", Ink::Plain);
-        } else {
-            into.put(3, row, "[", Ink::Plain);
-            into.put(4, row, mark, Ink::Held);
-            into.put(5, row, "]", Ink::Plain);
-        }
+        into.put(3, row, "[", Ink::Plain);
+        into.put(4, row, mark, Ink::Held);
+        into.put(5, row, "]", Ink::Plain);
         let ink = if here {
             Ink::Selected
         } else if test.chosen {
