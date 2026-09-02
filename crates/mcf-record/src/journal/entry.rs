@@ -224,11 +224,30 @@ pub enum EntryKind {
     /// own protocol with a verdict about a model. This is two *engines* on
     /// one file, and a verdict about one of them — never about the model.
     CrossChecked,
+    /// What a prompt was found to do to a model, part by part, as figures
+    /// (B-432, A25, A1, §3.4).
+    ///
+    /// **Because a measurement nobody can find later is the same as one not
+    /// taken** — and because this one is content all the way down. A prompt
+    /// report is twenty generations over a persona somebody is writing, and
+    /// every other diagnostic left an entry while this one left nothing: not
+    /// the report, and not the generations either. The entry holds what was
+    /// measured — the floor, how far each part moved the answer, where the
+    /// answer's first token ranked without it, how many seeds gave how many
+    /// answers — and the conditions those figures were read under. It holds
+    /// the prompt's length and digest so that a second run of the same text
+    /// can be told from a run of a changed one, and never the text: neither
+    /// the prompt, nor a part of it, nor a word the model said (A25).
+    ///
+    /// Distinct from [`Self::Generated`], which is one turn with its text
+    /// filed beside it: the generations behind a report are its trials, and
+    /// they are counted here rather than filed one by one.
+    PromptReported,
 }
 
 impl EntryKind {
     /// Every kind, in the order they were defined.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::MachineProfile,
         Self::Failure,
         Self::SelfCost,
@@ -252,6 +271,7 @@ impl EntryKind {
         Self::ModelHosted,
         Self::ModelUnhosted,
         Self::CrossChecked,
+        Self::PromptReported,
     ];
 
     /// The kind's name, as it appears in the record.
@@ -282,6 +302,7 @@ impl EntryKind {
             Self::ModelHosted => "model_hosted",
             Self::ModelUnhosted => "model_unhosted",
             Self::CrossChecked => "cross_checked",
+            Self::PromptReported => "prompt_reported",
         }
     }
 

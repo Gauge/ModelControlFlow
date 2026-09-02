@@ -364,7 +364,7 @@ fn held_said(held: Option<&Value>, depth: i64) -> Option<String> {
 /// that reaches a record is a figure nobody can compare, and `as_percent`
 /// above has split parts per million into whole and tenth for the same reason
 /// since this file was written.
-fn percent(parts_per_million: i64) -> String {
+pub(crate) fn percent(parts_per_million: i64) -> String {
     let (whole, tenth) = as_percent(parts_per_million);
     format!("{whole}.{tenth}%")
 }
@@ -584,6 +584,21 @@ fn the_answer_and_its_conditions(body: &Value) -> Vec<String> {
             count_of(limit, "token")
         ));
     }
+    // **Where this survives the terminal** (A1, B-432): the figures, under
+    // their conditions, and none of the text — which is why the entry can be
+    // cited and this page cannot.
+    lines.push(String::new());
+    match body.get("recorded").and_then(Value::as_text) {
+        Some(id) => lines.push(format!(
+            "    recorded as {id}: the figures and their conditions, the prompt as a length and \
+             a digest, and no text — `mcf log` lists it"
+        )),
+        None => lines.push(
+            "    NOT RECORDED: the daemon could not write the record, so this report lives only \
+             here"
+                .to_owned(),
+        ),
+    }
     lines.push(String::new());
     lines
 }
@@ -696,7 +711,8 @@ mod tests {
                 "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
                 "most":3,
                 "addressed_as":"one user turn, the whole prompt",
-                "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10}"#,
+                "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10,
+                "recorded":"01J0000000000000000000000A"}"#,
         )
         .expect("a well-formed report")
     }
@@ -780,6 +796,23 @@ mod tests {
         }
         let text = rendered(&alone, "m").join("\n");
         assert!(text.contains("HOW MUCH EACH PARAGRAPH STEERED"), "{text}");
+    }
+
+    /// The report says where it survives the terminal, and says plainly
+    /// when it does not (A1, A2, B-432).
+    #[test]
+    fn the_report_says_where_it_was_recorded_or_that_it_was_not() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("recorded as 01J0000000000000000000000A") && text.contains("no text"),
+            "{text}"
+        );
+        let mut unwritten = body();
+        if let Value::Map(fields) = &mut unwritten {
+            fields.insert("recorded".to_owned(), Value::Null);
+        }
+        let text = rendered(&unwritten, "m").join("\n");
+        assert!(text.contains("NOT RECORDED"), "{text}");
     }
 
     /// Settledness is said under the temperature it was asked at, and where

@@ -166,6 +166,132 @@ fn clause_value(clause: &crate::prompt::Clause) -> Value {
     ])
 }
 
+/// The figures of a served prompt report, for the record, and none of its
+/// text (A25, B-432).
+///
+/// Built by naming what is kept rather than by removing what is not: a key
+/// added to the served report later is absent from the record until somebody
+/// decides it belongs there, which is the direction a mistake should fall.
+/// The prompt is present as its length, its parts and its digest — enough to
+/// tell a second run of the same text from a run of a changed one — and the
+/// answer as its length.
+fn prompt_report_entry(
+    served: &Value,
+    model: &Path,
+    prompt: &str,
+    seed: u64,
+    engines: &std::collections::BTreeSet<String>,
+) -> Value {
+    let kept = |key: &str| served.get(key).cloned().unwrap_or(Value::Null);
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    let characters = |key: &str| {
+        served
+            .get(key)
+            .and_then(Value::as_text)
+            .map_or(Value::Null, |text| count(text.chars().count()))
+    };
+    let clauses = served
+        .get("clauses")
+        .and_then(Value::as_list)
+        .unwrap_or(&[])
+        .iter()
+        .map(|clause| {
+            Value::map([
+                (
+                    "characters",
+                    clause
+                        .get("text")
+                        .and_then(Value::as_text)
+                        .map_or(Value::Null, |text| count(text.chars().count())),
+                ),
+                (
+                    "changed",
+                    clause.get("changed").cloned().unwrap_or(Value::Null),
+                ),
+                (
+                    "moved_parts_per_million",
+                    clause
+                        .get("moved_parts_per_million")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ),
+                ("held", clause.get("held").cloned().unwrap_or(Value::Null)),
+            ])
+        })
+        .collect();
+    // The words the model did not expect are words of the prompt; what is
+    // kept is how many positions were read and how many were first choice.
+    let expected = served
+        .get("expected")
+        .and_then(Value::as_list)
+        .unwrap_or(&[]);
+    let first_choice = expected
+        .iter()
+        .filter(|row| matches!(row.get("rank"), Some(Value::Integer(1))))
+        .count();
+    Value::map([
+        (
+            "conditions",
+            Value::map([
+                ("model", Value::text(model.display().to_string())),
+                (
+                    "engines",
+                    Value::List(engines.iter().cloned().map(Value::text).collect()),
+                ),
+                (
+                    "seed",
+                    Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+                ),
+                ("unit", kept("unit")),
+                ("unit_chosen_by", kept("unit_chosen_by")),
+                ("most", kept("most")),
+                ("token_limit", kept("token_limit")),
+                ("sampler", kept("sampler")),
+                ("addressed_as", kept("addressed_as")),
+                ("ranked_under", kept("ranked_under")),
+                ("forced_depth", kept("forced_depth")),
+                ("ranked_depth", kept("ranked_depth")),
+            ]),
+        ),
+        (
+            "prompt",
+            Value::map([
+                ("characters", count(prompt.chars().count())),
+                ("parts", count(clauses_counted(served))),
+                ("tokens", kept("prompt_tokens")),
+                (
+                    "sha256",
+                    Value::text(mcf_core::digest::sha256(prompt.as_bytes()).hex()),
+                ),
+            ]),
+        ),
+        ("answer_characters", characters("baseline")),
+        ("floor_parts_per_million", kept("floor_parts_per_million")),
+        ("floor_held", kept("floor_held")),
+        ("clauses", Value::List(clauses)),
+        ("clauses_over_the_cap", kept("clauses_over_the_cap")),
+        ("settled", kept("settled")),
+        ("generations", kept("generations")),
+        ("expected_read", count(expected.len())),
+        ("expected_first_choice", count(first_choice)),
+        ("expected_refused", kept("expected_refused")),
+    ])
+}
+
+/// How many parts the prompt had: the ones ablated and the ones over the cap.
+fn clauses_counted(served: &Value) -> usize {
+    let ablated = served
+        .get("clauses")
+        .and_then(Value::as_list)
+        .map_or(0, <[Value]>::len);
+    let over = served
+        .get("clauses_over_the_cap")
+        .and_then(Value::as_integer)
+        .and_then(|held| usize::try_from(held).ok())
+        .unwrap_or(0);
+    ablated.saturating_add(over)
+}
+
 /// Tells a client its request filled the ceiling without ending.
 ///
 /// Before this, the daemon read its 64 kibibytes, failed to parse the
@@ -999,6 +1125,9 @@ pub struct Daemon {
     /// the timings are and for the same reason: a listing that re-read the
     /// record once a model would cost its whole length once a row (F118).
     cross_checks: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
+    /// The newest prompt report of each model, from the record, kept the
+    /// same way (B-432).
+    prompt_reports: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Value>>,
     /// The model being held for callers, if any, with what it was started
     /// under.
     ///
@@ -1112,6 +1241,10 @@ impl Daemon {
             cross_checks: std::sync::Mutex::new(newest_of(
                 &places.journal,
                 EntryKind::CrossChecked,
+            )),
+            prompt_reports: std::sync::Mutex::new(newest_of(
+                &places.journal,
+                EntryKind::PromptReported,
             )),
             holding: std::sync::Mutex::new(None),
             places,
@@ -1349,6 +1482,14 @@ impl Daemon {
             (
                 "cross_checked",
                 self.cross_checks
+                    .lock()
+                    .ok()
+                    .and_then(|held| held.get(path).cloned())
+                    .unwrap_or(Value::Null),
+            ),
+            (
+                "prompt_reported",
+                self.prompt_reports
                     .lock()
                     .ok()
                     .and_then(|held| held.get(path).cloned())
@@ -1918,6 +2059,10 @@ impl Daemon {
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
         let picked = self.picked_engine(named);
         let mut asked = 0_usize;
+        // Which engine answered is a condition of every figure below, and
+        // the account of each generation names it; the report keeps the
+        // names and drains the rest (§3.4).
+        let mut engines = std::collections::BTreeSet::new();
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
             let Ok((mine, theirs)) = UnixStream::pair() else {
@@ -1954,6 +2099,14 @@ impl Daemon {
             };
             drop(mine);
             let _joined = drain.join();
+            if let Some(engine) = produced
+                .account
+                .get("conditions")
+                .and_then(|conditions| conditions.get("engine"))
+                .and_then(Value::as_text)
+            {
+                let _seen = engines.insert(engine.to_owned());
+            }
             produced
                 .said
                 .map(|held| crate::prompt::Answered {
@@ -1980,7 +2133,26 @@ impl Daemon {
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
         let ranked = self.ranked_prompt(named, prompt, picked.clone());
-        let answer = Answer::served(prompt_report_value(&report, asked, tokens, ranked));
+        let mut served = prompt_report_value(&report, asked, tokens, ranked);
+        // **The figures go to the record; the text does not** (A25, B-432).
+        // Every other diagnostic leaves an entry, and a report that lived
+        // only in the terminal it was printed in was a measurement nobody
+        // could find again. The entry is built from what was served, by
+        // naming each figure kept, so that what the record holds is what the
+        // caller saw and nothing the caller typed.
+        let path = crate::generation::resolved(&self.places.models, named);
+        let entry = prompt_report_entry(&served, &path, prompt, seed, &engines);
+        let recorded = self.note(EntryKind::PromptReported, Timestamp::now(), entry.clone());
+        if let Ok(mut reports) = self.prompt_reports.lock() {
+            let _replaced = reports.insert(path, entry);
+        }
+        if let Value::Map(fields) = &mut served {
+            let _added = fields.insert(
+                "recorded".to_owned(),
+                recorded.map_or(Value::Null, |id| Value::text(id.as_str().to_owned())),
+            );
+        }
+        let answer = Answer::served(served);
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }

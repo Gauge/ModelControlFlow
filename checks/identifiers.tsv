@@ -691,6 +691,7 @@ register	B-417
 entry-kind	18	model_hosted
 entry-kind	19	model_unhosted
 entry-kind	20	cross_checked
+entry-kind	21	prompt_reported
 register	B-418
 finding	F134
 register	B-419

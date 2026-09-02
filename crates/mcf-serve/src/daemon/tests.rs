@@ -496,3 +496,131 @@ fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
     assert!(unsaid.contains("an unsaid number"), "{unsaid}");
     assert!(unsaid.contains("did not name"), "{unsaid}");
 }
+
+/// The record's entry for a prompt report is the figures and the conditions,
+/// with the prompt as a length and a digest and the answer as a length —
+/// never a word of either (A25, B-432).
+/// A served prompt report with text in every place a report carries it.
+fn a_served_report() -> Value {
+    Value::map([
+        ("baseline", Value::text("def slugify(title): pass")),
+        ("floor_parts_per_million", Value::Integer(120_000)),
+        ("floor_held", Value::Null),
+        ("forced_depth", Value::Integer(60)),
+        ("ranked_under", Value::text("chatml")),
+        (
+            "clauses",
+            Value::List(vec![
+                Value::map([
+                    ("text", Value::text("You are a careful assistant.")),
+                    ("changed", Value::Bool(false)),
+                    ("moved_parts_per_million", Value::Integer(0)),
+                    ("without", Value::text("def slugify(title): pass")),
+                    ("held", Value::map([("first_rank", Value::Integer(1))])),
+                ]),
+                Value::map([
+                    ("text", Value::text("Reply with only the function.")),
+                    ("changed", Value::Bool(true)),
+                    ("moved_parts_per_million", Value::Integer(900_000)),
+                    ("without", Value::text("Here is a function that ...")),
+                    ("held", Value::Null),
+                ]),
+            ]),
+        ),
+        ("clauses_over_the_cap", Value::Integer(3)),
+        ("unit", Value::text("sentence")),
+        ("unit_chosen_by", Value::text("the text")),
+        ("most", Value::Integer(2)),
+        ("addressed_as", Value::text("one user turn")),
+        ("settled", Value::Null),
+        ("generations", Value::Integer(4)),
+        ("token_limit", Value::Integer(600)),
+        ("sampler", Value::text("greedy")),
+        ("prompt_tokens", Value::Integer(13)),
+        (
+            "expected",
+            Value::List(vec![
+                Value::map([
+                    ("text", Value::text(" careful")),
+                    ("rank", Value::Integer(1)),
+                ]),
+                Value::map([
+                    ("text", Value::text(" slugify")),
+                    ("rank", Value::Integer(41)),
+                ]),
+                Value::map([("text", Value::text(" only")), ("rank", Value::Null)]),
+            ]),
+        ),
+        ("expected_refused", Value::Null),
+    ])
+}
+
+#[test]
+fn a_prompt_report_entry_holds_figures_and_no_text() {
+    let prompt = "You are a careful assistant. Reply with only the function.";
+    let served = a_served_report();
+    let engines = std::iter::once("mcf-standin".to_owned()).collect();
+    let entry = super::prompt_report_entry(
+        &served,
+        std::path::Path::new("/models/a.gguf"),
+        prompt,
+        41,
+        &engines,
+    );
+    let line = entry.to_line();
+    for word in [
+        "careful",
+        "assistant",
+        "slugify",
+        "function",
+        "Here is",
+        "\"text\"",
+        "\"without\"",
+        "\"baseline\"",
+    ] {
+        assert!(!line.contains(word), "{word} reached the record: {line}");
+    }
+    let at = |path: &[&str]| {
+        path.iter()
+            .try_fold(&entry, |held, key| held.get(key))
+            .cloned()
+    };
+    assert_eq!(at(&["prompt", "characters"]), Some(Value::Integer(58)));
+    assert_eq!(at(&["prompt", "parts"]), Some(Value::Integer(5)));
+    assert_eq!(at(&["prompt", "tokens"]), Some(Value::Integer(13)));
+    assert_eq!(
+        at(&["prompt", "sha256"]),
+        Some(Value::text(
+            mcf_core::digest::sha256(prompt.as_bytes()).hex()
+        ))
+    );
+    assert_eq!(at(&["answer_characters"]), Some(Value::Integer(24)));
+    assert_eq!(
+        at(&["conditions", "model"]),
+        Some(Value::text("/models/a.gguf"))
+    );
+    assert_eq!(at(&["conditions", "seed"]), Some(Value::Integer(41)));
+    assert_eq!(
+        at(&["conditions", "engines"]),
+        Some(Value::List(vec![Value::text("mcf-standin")]))
+    );
+    assert_eq!(at(&["conditions", "unit"]), Some(Value::text("sentence")));
+    assert_eq!(
+        at(&["floor_parts_per_million"]),
+        Some(Value::Integer(120_000))
+    );
+    let clauses = entry.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    assert_eq!(clauses.len(), 2);
+    assert_eq!(
+        clauses
+            .get(1)
+            .and_then(|held| held.get("moved_parts_per_million")),
+        Some(&Value::Integer(900_000))
+    );
+    assert_eq!(
+        clauses.get(1).and_then(|held| held.get("characters")),
+        Some(&Value::Integer(29))
+    );
+    assert_eq!(at(&["expected_read"]), Some(Value::Integer(3)));
+    assert_eq!(at(&["expected_first_choice"]), Some(Value::Integer(1)));
+}

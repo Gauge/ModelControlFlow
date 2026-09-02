@@ -1103,8 +1103,8 @@ fn the_monitor_says_what_the_held_window_costs() {
     );
 }
 
-/// A finished prompt report, as a person would be shown one.
-fn a_report() -> mcf_desk::Desk {
+/// One ablated part of a served report, as the daemon writes it.
+fn a_clause(text: &str, moved: i64) -> mcf_record::json::Value {
     use mcf_record::json::Value;
     let clause = |text: &str, moved: i64| {
         Value::map([
@@ -1122,6 +1122,13 @@ fn a_report() -> mcf_desk::Desk {
             ),
         ])
     };
+    clause(text, moved)
+}
+
+/// A finished prompt report, as a person would be shown one.
+fn a_report() -> mcf_desk::Desk {
+    use mcf_record::json::Value;
+    let clause = a_clause;
     let ranked = |text: &str, rank: Option<i64>| {
         Value::map([
             ("text", Value::text(text.to_owned())),
@@ -1178,6 +1185,10 @@ fn a_report() -> mcf_desk::Desk {
         (
             "addressed_as",
             Value::text("one user turn, the whole prompt".to_owned()),
+        ),
+        (
+            "recorded",
+            Value::text("01J0000000000000000000000A".to_owned()),
         ),
         (
             "baseline",

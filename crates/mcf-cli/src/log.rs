@@ -241,6 +241,57 @@ fn cross_checked(body: &Value) -> String {
     )
 }
 
+/// A prompt report entry, in one line: the figures, and never the text —
+/// there is none in it to show (A25, B-432).
+fn prompt_reported(body: &Value) -> String {
+    let conditions = body.get("conditions");
+    let of = |held: Option<&Value>, key: &str| {
+        held.and_then(|held| held.get(key))
+            .and_then(Value::as_integer)
+            .unwrap_or(0)
+    };
+    let floor = integer(body, "floor_parts_per_million");
+    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let past_the_floor = clauses
+        .iter()
+        .filter(|clause| {
+            clause
+                .get("moved_parts_per_million")
+                .and_then(Value::as_integer)
+                .is_some_and(|moved| moved > floor)
+        })
+        .count();
+    let settled = match body.get("settled") {
+        Some(Value::Map(_)) => format!(
+            ", {} seeds at temperature {} gave {} answer(s)",
+            of(body.get("settled"), "seeds_asked"),
+            body.get("settled")
+                .and_then(|held| held.get("temperature"))
+                .and_then(Value::as_text)
+                .unwrap_or("?"),
+            of(body.get("settled"), "distinct_answers")
+        ),
+        _ => String::new(),
+    };
+    format!(
+        "a prompt of {} {}(s), {} characters, taken apart on {}: floor {}, {} of {} removed \
+         moved the answer past it{settled}",
+        of(body.get("prompt"), "parts"),
+        conditions
+            .and_then(|held| held.get("unit"))
+            .and_then(Value::as_text)
+            .unwrap_or("part"),
+        of(body.get("prompt"), "characters"),
+        conditions
+            .and_then(|held| held.get("model"))
+            .and_then(Value::as_text)
+            .unwrap_or("a model MCF did not name"),
+        crate::prompt::percent(floor),
+        past_the_floor,
+        clauses.len(),
+    )
+}
+
 fn described(entry: &Entry) -> String {
     let body = entry.body();
     match entry.kind() {
@@ -263,6 +314,7 @@ fn described(entry: &Entry) -> String {
         }
         EntryKind::ModelTimed => timed(body),
         EntryKind::CrossChecked => cross_checked(body),
+        EntryKind::PromptReported => prompt_reported(body),
         EntryKind::ModelHosted => hosted(body),
         EntryKind::ModelUnhosted => format!(
             "stopped hosting {}: {}",

@@ -2446,13 +2446,37 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     at = after;
     act = pressed.or(act);
     how_many_answers(paint, (area.x, at + 12.0), found);
+    where_it_is_kept(paint, (area.x, at + 34.0), found);
     the_answer(
         paint,
         desk,
-        Box::new(area.x, at + 38.0, area.w, area.bottom() - at - 38.0),
+        Box::new(area.x, at + 54.0, area.w, area.bottom() - at - 54.0),
         found,
     );
     act
+}
+
+/// Where the report survives this window, or that it does not (A1, A2,
+/// B-432): the figures under their conditions are in the record, and the
+/// text is not — which is why the entry can be cited and this screen cannot.
+fn where_it_is_kept(paint: &mut Painter, at: (f32, f32), found: &Value) {
+    let ink = paint.ink;
+    let (said, colour) = match found.get("recorded").and_then(Value::as_text) {
+        Some(id) => (
+            format!(
+                "recorded as {id} — the figures and their conditions, the prompt as a length and \
+                 a digest, and no text"
+            ),
+            ink.faint,
+        ),
+        None => (
+            "NOT RECORDED: the daemon could not write the record, so this report lives only \
+             on this screen"
+                .to_owned(),
+            ink.warn,
+        ),
+    };
+    paint.say_at(at.0, at.1, &said, Weight::Regular, size::SMALL, colour);
 }
 
 /// What the model actually said, under the figures about it.
