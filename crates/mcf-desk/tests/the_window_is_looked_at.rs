@@ -1157,6 +1157,13 @@ fn a_report() -> mcf_desk::Desk {
         ("distinct_answers", Value::Integer(1)),
         ("seeds_asked", Value::Integer(3)),
         ("clauses_over_the_cap", Value::Integer(2)),
+        ("unit", Value::text("sentence".to_owned())),
+        (
+            "unit_chosen_by",
+            Value::text("the text: it has no blank line, so it is sentences".to_owned()),
+        ),
+        ("most", Value::Integer(4)),
+        ("then", Value::text("Write it in Python.".to_owned())),
         (
             "baseline",
             Value::text(
@@ -1404,6 +1411,72 @@ fn the_prompt_field_takes_a_document() {
     adding.page = Page::Adding;
     adding.paste("owner/repository\nsecond line");
     assert_eq!(adding.typed, "owner/repository");
+}
+
+/// The question after the document has its own field, typing goes where the
+/// caret is, and the unit and the cap are choices on the page that reach the
+/// request exactly as chosen (§3.15, B-430).
+#[test]
+fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
+    use mcf_serve::prompt::Unit;
+    let mut desk = four_models();
+    desk.page = Page::Prompt;
+    desk.chosen = Some(0);
+    desk.typed = (0..12)
+        .map(|at| format!("Rule {at}: do the thing the rule says."))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    // The document is what typing goes into until the question is pressed.
+    desk.typing().push_str("\n\nLast rule.");
+    assert!(desk.typed.ends_with("Last rule."));
+    // Under the document field and above the report: a sweep of the whole
+    // window is thousands of renders of a thirteen-paragraph document.
+    let controls = (280.0, 420.0);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::FocusThen(true), controls),
+        "the question field is on the page"
+    );
+    desk.act(mcf_desk::Act::FocusThen(true));
+    desk.paste("Roll for initiative.\nsecond line");
+    desk.typing().push('!');
+    assert_eq!(desk.then, "Roll for initiative.!", "a question is one line");
+    assert!(desk.typed.ends_with("Last rule."), "the document was not typed into");
+    desk.returned(false);
+    assert!(
+        matches!(desk.doing, mcf_desk::Doing::Reporting(_)),
+        "Return in the question field runs the analysis"
+    );
+    desk.doing = mcf_desk::Doing::Nothing;
+
+    // The text decided paragraphs; the page offers the other unit, and the
+    // cap in steps up to every part.
+    let taken = desk.taken();
+    assert_eq!(taken.unit(), (Unit::Paragraph, false));
+    assert_eq!(taken.parts().len(), 13);
+    assert_eq!(taken.cap(), 8);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::TakeApartBy(Some(Unit::Sentence)), controls),
+        "by sentence is offered"
+    );
+    assert!(
+        act_within(&desk, &mcf_desk::Act::MostParts(12), controls),
+        "more: four further parts"
+    );
+    assert!(
+        act_within(&desk, &mcf_desk::Act::MostParts(13), controls),
+        "all: every part"
+    );
+    assert!(
+        act_within(&desk, &mcf_desk::Act::MostParts(4), controls),
+        "fewer: four fewer"
+    );
+    desk.act(mcf_desk::Act::MostParts(13));
+    desk.act(mcf_desk::Act::TakeApartBy(Some(Unit::Sentence)));
+    let taken = desk.taken();
+    assert_eq!(taken.unit(), (Unit::Sentence, true));
+    assert_eq!(taken.cap(), 13);
+    assert_eq!(taken.then, Some("Roll for initiative.!"));
+    let _looked = drawn(&desk, DAY, "prompt-choices");
 }
 
 /// A document is drawn as its lines, and a long one shows its tail.

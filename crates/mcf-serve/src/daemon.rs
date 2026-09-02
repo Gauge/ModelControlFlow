@@ -111,6 +111,64 @@ fn held_value(held: Option<crate::prompt::Held>) -> Value {
     })
 }
 
+/// Who decided what the document was taken apart into (B-430, §3.15).
+///
+/// A report by paragraph and one by sentence are different measurements of
+/// the same text, and which it was is a condition of the run.
+fn unit_chosen_by(report: &crate::prompt::Report) -> &'static str {
+    if report.unit_chosen {
+        "the caller"
+    } else if report.unit == crate::prompt::Unit::Paragraph {
+        "the text: a blank line separates its paragraphs"
+    } else {
+        "the text: it has no blank line, so it is sentences"
+    }
+}
+
+/// One ablated part, as a client reads it.
+fn clause_value(clause: &crate::prompt::Clause) -> Value {
+    Value::map([
+        ("text", Value::text(clause.text.clone())),
+        ("changed", Value::Bool(clause.changed)),
+        (
+            "moved_parts_per_million",
+            Value::Integer(i64::try_from(clause.moved).unwrap_or(i64::MAX)),
+        ),
+        ("without", Value::text(clause.without.clone())),
+        ("held", held_value(clause.held)),
+    ])
+}
+
+/// Tells a client its request filled the ceiling without ending.
+///
+/// Before this, the daemon read its 64 kibibytes, failed to parse the
+/// fragment, and closed while the client was still writing — so the client
+/// saw a connection reset and no reason at all, which is the silent failure
+/// A2 forbids. The probe that found it reported *a line of the stream was
+/// unreadable*, which was true and useless (B-055, F42).
+fn refuse_an_unending_request(writer: &mut &UnixStream) {
+    let failure = Failure::new(
+        Category::ConfigInvalid,
+        Attribution::User,
+        Disposition::Refused,
+        Subsystem::new("mcf-serve::daemon"),
+        "a request longer than this build will read in one line",
+    )
+    .with_context("ceiling_bytes", REQUEST_CEILING.to_string())
+    .with_context(
+        "what_to_do",
+        "a turn of token identifiers this long exceeds what the control protocol carries; ask \
+         for fewer, or a build with a larger ceiling",
+    );
+    let answer = Answer::refused(&failure);
+    let _written = writeln!(writer, "{}", answer.to_line());
+    let _flushed = writer.flush();
+    // The client is still writing, and closing now would lose the answer to
+    // a reset. Its own write timeout ends this; MCF reads nothing further
+    // into memory.
+    let _shutdown = writer.shutdown(std::net::Shutdown::Read);
+}
+
 /// A prompt report, as a client reads it.
 fn prompt_report_value(
     report: &crate::prompt::Report,
@@ -144,28 +202,29 @@ fn prompt_report_value(
         ),
         (
             "clauses",
-            Value::List(
-                report
-                    .clauses
-                    .iter()
-                    .map(|clause| {
-                        Value::map([
-                            ("text", Value::text(clause.text.clone())),
-                            ("changed", Value::Bool(clause.changed)),
-                            (
-                                "moved_parts_per_million",
-                                Value::Integer(i64::try_from(clause.moved).unwrap_or(i64::MAX)),
-                            ),
-                            ("without", Value::text(clause.without.clone())),
-                            ("held", held_value(clause.held)),
-                        ])
-                    })
-                    .collect(),
-            ),
+            Value::List(report.clauses.iter().map(clause_value).collect()),
         ),
         (
             "clauses_over_the_cap",
             Value::Integer(i64::try_from(report.clauses_over_the_cap).unwrap_or(i64::MAX)),
+        ),
+        ("unit", Value::text(report.unit.name().to_owned())),
+        ("unit_chosen_by", Value::text(unit_chosen_by(report).to_owned())),
+        (
+            "most",
+            Value::Integer(i64::try_from(report.most).unwrap_or(i64::MAX)),
+        ),
+        (
+            "then",
+            report.then.clone().map_or(Value::Null, Value::text),
+        ),
+        (
+            "addressed_as",
+            Value::text(
+                "the document and the question in one user turn, the document first — MCF has \
+                 probed no system turn (D43) and assumes none"
+                    .to_owned(),
+            ),
         ),
         (
             "seeds_asked",
@@ -1399,6 +1458,7 @@ impl Daemon {
     }
 
     /// Reads one request, answers it, and says whether that was the last.
+    /// Answers one client, on its own connection.
     fn answer_one(&self, connection: &UnixStream) -> Option<Stopped> {
         // A client that connects and says nothing must not hold the daemon:
         // B7 makes a hang a defined outcome, and this is the one place a
@@ -1414,33 +1474,9 @@ impl Daemon {
         let mut writer = connection;
 
         // A request that filled the ceiling without ending is a request MCF
-        // did not receive, and it has to be *told so*. Before this, the daemon
-        // read its 64 kibibytes, failed to parse the fragment, and closed while
-        // the client was still writing — so the client saw a connection reset
-        // and no reason at all, which is the silent failure A2 forbids. The
-        // probe that found it reported *a line of the stream was unreadable*,
-        // which was true and useless (B-055, F42).
+        // did not receive, and it has to be *told so* (A2, B-055, F42).
         if line.len() >= REQUEST_CEILING && !line.ends_with('\n') {
-            let failure = Failure::new(
-                Category::ConfigInvalid,
-                Attribution::User,
-                Disposition::Refused,
-                Subsystem::new("mcf-serve::daemon"),
-                "a request longer than this build will read in one line",
-            )
-            .with_context("ceiling_bytes", REQUEST_CEILING.to_string())
-            .with_context(
-                "what_to_do",
-                "a turn of token identifiers this long exceeds what the control protocol \
-                 carries; ask for fewer, or a build with a larger ceiling",
-            );
-            let answer = Answer::refused(&failure);
-            let _written = writeln!(writer, "{}", answer.to_line());
-            let _flushed = writer.flush();
-            // The client is still writing, and closing now would lose the
-            // answer to a reset. Its own write timeout ends this; MCF reads
-            // nothing further into memory.
-            let _shutdown = writer.shutdown(std::net::Shutdown::Read);
+            refuse_an_unending_request(&mut writer);
             return None;
         }
 
@@ -1487,13 +1523,26 @@ impl Daemon {
                 Ok(Request::PromptReport {
                     model,
                     prompt,
+                    then,
+                    by,
+                    most,
                     seed,
                 }) => {
                     // Many generations and one report: a request that takes
                     // minutes says what it is doing as it goes, for the same
                     // reason a measurement does — a client cannot tell a long
                     // run from a hung one (B-227).
-                    self.prompt_report(&model, &prompt, seed, &mut writer);
+                    self.prompt_report(
+                        &model,
+                        &crate::prompt::Taken {
+                            text: &prompt,
+                            then: then.as_deref(),
+                            by,
+                            most,
+                        },
+                        seed,
+                        &mut writer,
+                    );
                     return None;
                 }
                 Ok(Request::Acquire {
@@ -1828,7 +1877,13 @@ impl Daemon {
         vocabulary.encode(text, true).ok().map(|held| held.len())
     }
 
-    fn prompt_report(&self, named: &str, prompt: &str, seed: u64, writer: &mut &UnixStream) {
+    fn prompt_report(
+        &self,
+        named: &str,
+        taken: &crate::prompt::Taken<'_>,
+        seed: u64,
+        writer: &mut &UnixStream,
+    ) {
         let mcf_home = self
             .places
             .models
@@ -1882,7 +1937,11 @@ impl Daemon {
         };
         let mut force =
             |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
-        let report = crate::prompt::measure(prompt, seed, &mut ask, &mut force);
+        let report = crate::prompt::measure(taken, seed, &mut ask, &mut force);
+        // What the model was asked, as the baseline was: the document with
+        // its question after it, which is what the counts below are of.
+        let prompt = taken.asked(&crate::prompt::joined(&taken.parts()));
+        let prompt = prompt.as_str();
         // **How the model actually receives the prompt.** The figures above
         // are about answers; this is about the question, it costs no
         // generation, and a reader asking which parts of their prompt carry

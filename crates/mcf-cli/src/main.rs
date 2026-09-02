@@ -293,12 +293,21 @@ enum Request<'a> {
         /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
     },
-    /// What a prompt does to a model: which sentences reach the answer.
+    /// What a prompt does to a model: which of its parts reach the answer.
     PromptReport {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
-        /// The prompt to take apart.
-        prompt: &'a str,
+        /// The document to take apart, as given on the command line.
+        prompt: Option<&'a str>,
+        /// A file holding the document, `-` for standard input: a persona is
+        /// a page, not a shell argument (B-430).
+        file: Option<&'a str>,
+        /// A question every variant of the document is followed by.
+        then: Option<&'a str>,
+        /// What to take it apart into, where the caller says.
+        by: Option<mcf_serve::prompt::Unit>,
+        /// The most parts to remove, where the caller says.
+        most: Option<usize>,
         /// Whether to answer as data rather than as prose.
         as_json: bool,
     },
@@ -547,19 +556,16 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
-        ["prompt"] | ["prompt", _] => Request::MissingArgument {
+        ["prompt"] => Request::MissingArgument {
             command: "prompt",
-            needs: "<model> --prompt <text>",
+            needs: "<model> --prompt <text> or --file <path>",
         },
-        ["prompt", model, "--prompt", prompt] => Request::PromptReport {
-            model,
-            prompt,
-            as_json: false,
-        },
-        ["prompt", model, "--prompt", prompt, "--json"] => Request::PromptReport {
-            model,
-            prompt,
-            as_json: true,
+        ["prompt", model, rest @ ..] => match prompt_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
+                command: "prompt",
+                argument,
+            },
         },
         ["eval", model] => Request::Eval { model },
         ["eval"] => Request::MissingArgument {
@@ -833,6 +839,92 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         model,
         deepest,
         engine,
+    })
+}
+
+/// The flags `mcf prompt <model>` takes, in any order.
+///
+/// The document comes from `--prompt` or `--file`, one or the other: a
+/// persona is a page and a page is a file, and `-` reads the standard input
+/// so that one can be piped in. `--then` is the question every variant is
+/// followed by; `--by` and `--most` are choices the report would otherwise
+/// make and say it made (§3.15, B-430).
+fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut prompt = None;
+    let mut file = None;
+    let mut then = None;
+    let mut by = None;
+    let mut most = None;
+    let mut as_json = false;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        let value = |needs: &'static str, rest: &mut std::slice::Iter<'_, &'a str>| {
+            rest.next().copied().ok_or(Request::MissingArgument {
+                command: "prompt",
+                needs,
+            })
+        };
+        match *argument {
+            "--prompt" => match value("--prompt <text>", &mut rest) {
+                Ok(text) => prompt = Some(text),
+                Err(missing) => return Ok(missing),
+            },
+            "--file" => match value("--file <path>, or - for the standard input", &mut rest) {
+                Ok(path) => file = Some(path),
+                Err(missing) => return Ok(missing),
+            },
+            "--then" => match value("--then <question>", &mut rest) {
+                Ok(question) => then = Some(question),
+                Err(missing) => return Ok(missing),
+            },
+            "--by" => match value("--by sentence, or --by paragraph", &mut rest) {
+                Ok(word) => match mcf_serve::prompt::Unit::named(word) {
+                    Some(unit) => by = Some(unit),
+                    None => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "prompt --by (wants sentence or paragraph)",
+                            argument: word,
+                        });
+                    }
+                },
+                Err(missing) => return Ok(missing),
+            },
+            "--most" => match value("--most <n>, how many parts to remove at most", &mut rest) {
+                Ok(count) => match count.parse::<usize>() {
+                    Ok(count) if count > 0 => most = Some(count),
+                    _ => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "prompt --most (wants a number, 1 or more)",
+                            argument: count,
+                        });
+                    }
+                },
+                Err(missing) => return Ok(missing),
+            },
+            "--json" => as_json = true,
+            other => return Err(other),
+        }
+    }
+    if prompt.is_none() && file.is_none() {
+        return Ok(Request::MissingArgument {
+            command: "prompt",
+            needs: "--prompt <text> or --file <path>",
+        });
+    }
+    if prompt.is_some() && file.is_some() {
+        return Ok(Request::UnexpectedArgument {
+            command: "prompt (takes --prompt or --file, not both)",
+            argument: "--file",
+        });
+    }
+    Ok(Request::PromptReport {
+        model,
+        prompt,
+        file,
+        then,
+        by,
+        most,
+        as_json,
     })
 }
 
@@ -1502,9 +1594,11 @@ const COMMANDS: &str = "\
     \x20                                     in a container, four outcomes and\n\
     \x20                                     no total (B-110)\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
-    \x20                        [--json]     removed in turn, and how much of\n\
-    \x20                                     the answer moved. An ordering,\n\
-    \x20                                     never relevance\n\
+    \x20             or --file <path>         or paragraph removed in turn, and\n\
+    \x20       [--then <question>]            how much of the answer moved. An\n\
+    \x20       [--by sentence|paragraph]      ordering, never relevance. A\n\
+    \x20       [--most <n>] [--json]          persona goes in --file, and the\n\
+    \x20                                     question it is asked in --then\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -1708,8 +1802,22 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
         Request::PromptReport {
             model,
             prompt,
+            file,
+            then,
+            by,
+            most,
             as_json,
-        } => prompt::report(model, prompt, *as_json),
+        } => prompt::report(
+            model,
+            &prompt::Asked {
+                prompt: *prompt,
+                file: *file,
+                then: *then,
+                by: *by,
+                most: *most,
+            },
+            *as_json,
+        ),
         Request::Eval { model } => eval::eval(model),
         Request::Probe {
             model,
@@ -2138,6 +2246,96 @@ mod tests {
             parse(&["measure", "m", "--deepest", "1024", "--bogus"]),
             Request::UnexpectedArgument {
                 command: "measure",
+                argument: "--bogus"
+            }
+        ));
+    }
+
+    /// `mcf prompt` takes a document from the line or a file, a question after
+    /// it, and the unit and the cap as choices — in any order, each said back
+    /// when it is wrong (B-430).
+    #[test]
+    fn prompt_reads_its_flags_in_any_order() {
+        let whole = Request::PromptReport {
+            model: "m",
+            prompt: None,
+            file: Some("persona.md"),
+            then: Some("What is 2 + 2?"),
+            by: Some(mcf_serve::prompt::Unit::Paragraph),
+            most: Some(40),
+            as_json: true,
+        };
+        assert_eq!(
+            parse(&[
+                "prompt",
+                "m",
+                "--file",
+                "persona.md",
+                "--then",
+                "What is 2 + 2?",
+                "--by",
+                "paragraph",
+                "--most",
+                "40",
+                "--json"
+            ]),
+            whole
+        );
+        assert_eq!(
+            parse(&[
+                "prompt",
+                "m",
+                "--json",
+                "--most",
+                "40",
+                "--by",
+                "paragraphs",
+                "--then",
+                "What is 2 + 2?",
+                "--file",
+                "persona.md",
+            ]),
+            whole
+        );
+        assert_eq!(
+            parse(&["prompt", "m", "--prompt", "A. B."]),
+            Request::PromptReport {
+                model: "m",
+                prompt: Some("A. B."),
+                file: None,
+                then: None,
+                by: None,
+                most: None,
+                as_json: false,
+            }
+        );
+        assert!(matches!(
+            parse(&["prompt", "m"]),
+            Request::MissingArgument { .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--then"]),
+            Request::MissingArgument { .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--file", "a", "--by", "word"]),
+            Request::UnexpectedArgument {
+                argument: "word",
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--file", "a", "--most", "0"]),
+            Request::UnexpectedArgument { argument: "0", .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--file", "a", "--prompt", "b"]),
+            Request::UnexpectedArgument { .. }
+        ));
+        assert!(matches!(
+            parse(&["prompt", "m", "--prompt", "a", "--bogus"]),
+            Request::UnexpectedArgument {
+                command: "prompt",
                 argument: "--bogus"
             }
         ));

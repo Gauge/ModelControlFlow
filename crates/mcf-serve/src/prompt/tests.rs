@@ -19,6 +19,15 @@ fn unforced(_: &str, _: &[usize]) -> Option<Held> {
     None
 }
 
+/// A document taken apart on its own: no question after it, the text deciding
+/// the unit, the default cap.
+fn only(text: &str) -> Taken<'_> {
+    Taken {
+        text,
+        ..Taken::default()
+    }
+}
+
 /// The clauses are the sentences a person wrote.
 ///
 /// Not the tokenizer's pieces: what a vocabulary does to the writing is
@@ -43,7 +52,7 @@ fn the_clauses_are_the_sentences_somebody_wrote() {
 /// Leaving a clause out leaves the others in their order.
 #[test]
 fn a_prompt_without_one_clause_keeps_the_rest() {
-    let all = clauses_of("One. Two. Three.");
+    let all = parts_of("One. Two. Three.", Unit::Sentence);
     assert_eq!(without(&all, 1), "One. Three.");
     assert_eq!(without(&all, 0), "Two. Three.");
     // An index past the end removes nothing rather than panicking.
@@ -62,7 +71,7 @@ fn an_unchanged_answer_says_the_clause_was_not_used() {
             said("a different answer")
         }
     };
-    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
     let unused = report.unused();
     assert_eq!(unused.len(), 1, "one clause changed nothing");
     assert_eq!(
@@ -91,7 +100,7 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
         seeds.push(seed);
         said("always the same")
     };
-    let _report = measure("One. Two. Three.", 41, &mut ask, &mut unforced);
+    let _report = measure(&only("One. Two. Three."), 41, &mut ask, &mut unforced);
     // The baseline and the three ablations all at 41; the extra seeds are the
     // settledness question and are meant to differ.
     let ablation_seeds: Vec<u64> = seeds.iter().copied().take(4).collect();
@@ -106,7 +115,7 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
 #[test]
 fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
     let mut ask = |_: &str, _: u64| said("an answer");
-    let report = measure("Just the one sentence.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("Just the one sentence."), 41, &mut ask, &mut unforced);
     assert!(
         report.clauses.is_empty(),
         "there is no clause whose absence could be observed"
@@ -119,7 +128,7 @@ fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
 #[test]
 fn a_prompt_that_settles_the_answer_reports_one_answer() {
     let mut ask = |_: &str, _: u64| said("the one answer");
-    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
     assert_eq!(report.settled.distinct, 1);
 }
 
@@ -127,7 +136,7 @@ fn a_prompt_that_settles_the_answer_reports_one_answer() {
 #[test]
 fn a_prompt_that_does_not_settle_reports_how_many_answers() {
     let mut ask = |_: &str, seed: u64| said(&format!("answer for {seed}"));
-    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("One. Two."), 41, &mut ask, &mut unforced);
     assert_eq!(
         report.settled.distinct, SEEDS,
         "every seed gave its own answer"
@@ -143,7 +152,7 @@ fn a_prompt_longer_than_the_cap_says_what_was_left_out() {
         let _wrote = write!(long, "Sentence {at}. ");
     }
     let mut ask = |_: &str, _: u64| said("an answer");
-    let report = measure(&long, 41, &mut ask, &mut unforced);
+    let report = measure(&only(&long), 41, &mut ask, &mut unforced);
     assert_eq!(report.clauses.len(), MOST_CLAUSES);
     assert_eq!(report.clauses_over_the_cap, 3, "and it says how many");
 }
@@ -186,7 +195,7 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
             said("the answer is five words")
         }
     };
-    let report = measure("First. Second.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("First. Second."), 41, &mut ask, &mut unforced);
     let steered = report
         .clauses
         .iter()
@@ -234,7 +243,7 @@ fn the_floor_is_what_an_inert_sentence_does() {
             said("utterly different words entirely")
         }
     };
-    let report = measure("Steer this. Inert here.", 41, &mut ask, &mut unforced);
+    let report = measure(&only("Steer this. Inert here."), 41, &mut ask, &mut unforced);
     assert!(
         report.floor > 0,
         "an inert sentence moved the answer, and that is the floor"
@@ -268,7 +277,7 @@ fn the_floor_is_what_an_inert_sentence_does() {
 /// at 12.9% against an irrelevant sentence's 50.6%, which separated nothing.
 #[test]
 fn the_inert_sentence_goes_where_a_clause_would_be() {
-    let padded = with_inert("First. Second. Third.");
+    let padded = with_inert(&parts_of("First. Second. Third.", Unit::Sentence));
     assert!(
         padded.contains(NO_INSTRUCTION),
         "the inert sentence is in the prompt: {padded}"
@@ -277,7 +286,107 @@ fn the_inert_sentence_goes_where_a_clause_would_be() {
     // what removing a clause does.
     assert_eq!(padded, format!("First. Second. {NO_INSTRUCTION} Third."));
     // A prompt of one sentence still gets one, before the only sentence.
-    assert_eq!(with_inert("Only."), format!("{NO_INSTRUCTION} Only."));
+    assert_eq!(
+        with_inert(&parts_of("Only.", Unit::Sentence)),
+        format!("{NO_INSTRUCTION} Only.")
+    );
+}
+
+/// A document keeps its line breaks when a part is taken out of it.
+///
+/// F: sentences were rejoined with a space, so every ablation of a multi-line
+/// prompt was also a reformatting of it, and the baseline was the only
+/// variant that had its line breaks (B-430).
+#[test]
+fn a_part_removed_leaves_the_document_as_written() {
+    let text = "Be brief.\n- Do one thing.\n- Say when done.\n\nNever guess.";
+    let sentences = parts_of(text, Unit::Sentence);
+    assert_eq!(
+        sentences.iter().map(|part| part.after.as_str()).collect::<Vec<_>>(),
+        vec!["\n", "\n", "\n\n", ""],
+        "each part carries what followed it: {sentences:?}"
+    );
+    assert_eq!(joined(&sentences), text, "put back together, it is the text");
+    assert_eq!(
+        without(&sentences, 1),
+        "Be brief.\n- Say when done.\n\nNever guess."
+    );
+    assert_eq!(
+        with_inert(&sentences),
+        format!("Be brief.\n- Do one thing.\n- Say when done.\n\n{NO_INSTRUCTION}\n\nNever guess."),
+        "the control takes the separator of the part it follows"
+    );
+}
+
+/// A text with blank lines is paragraphs, and a paragraph holds its lines.
+#[test]
+fn a_document_with_blank_lines_is_taken_apart_by_paragraph() {
+    let text = "You are a dungeon master.\nKeep the party moving.\n\nNever roll for the \
+                players.\n\n\nDescribe rooms in two sentences.";
+    assert_eq!(Unit::for_text(text), Unit::Paragraph);
+    assert_eq!(Unit::for_text("One. Two.\nThree."), Unit::Sentence);
+    let paragraphs = parts_of(text, Unit::Paragraph);
+    assert_eq!(
+        paragraphs.iter().map(|part| part.text.as_str()).collect::<Vec<_>>(),
+        vec![
+            "You are a dungeon master.\nKeep the party moving.",
+            "Never roll for the players.",
+            "Describe rooms in two sentences.",
+        ]
+    );
+    assert_eq!(joined(&paragraphs), text);
+    // A rule of dashes between paragraphs is not a paragraph.
+    let ruled = parts_of("First.\n\n---\n\nSecond.", Unit::Paragraph);
+    assert_eq!(ruled.len(), 2, "{ruled:?}");
+    assert_eq!(without(&ruled, 0), "Second.");
+    assert_eq!(without(&ruled, 1), "First.");
+}
+
+/// The held question follows every variant, and the cap is the caller's.
+#[test]
+fn the_question_follows_every_variant_and_the_cap_is_chosen() {
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: u64| {
+        asked.borrow_mut().push(prompt.to_owned());
+        said("an answer")
+    };
+    let taken = Taken {
+        text: "Be terse.\n\nBe kind.\n\nBe right.",
+        then: Some(" What is 2 + 2? "),
+        by: None,
+        most: Some(2),
+    };
+    let report = measure(&taken, 41, &mut ask, &mut unforced);
+    assert_eq!(report.unit, Unit::Paragraph);
+    assert!(!report.unit_chosen, "the text decided");
+    assert_eq!(report.most, 2);
+    assert_eq!(report.clauses.len(), 2);
+    assert_eq!(report.clauses_over_the_cap, 1);
+    assert_eq!(report.then.as_deref(), Some("What is 2 + 2?"));
+    let asked = asked.borrow();
+    assert!(
+        asked.iter().all(|prompt| prompt.ends_with("\n\nWhat is 2 + 2?")),
+        "every variant was followed by the question: {asked:?}"
+    );
+    assert_eq!(
+        asked.first().map(String::as_str),
+        Some("Be terse.\n\nBe kind.\n\nBe right.\n\nWhat is 2 + 2?")
+    );
+    assert_eq!(
+        asked.get(1).map(String::as_str),
+        Some("Be kind.\n\nBe right.\n\nWhat is 2 + 2?")
+    );
+    drop(asked);
+    // The caller can overrule the text.
+    let by_sentence = Taken {
+        by: Some(Unit::Sentence),
+        most: None,
+        ..taken
+    };
+    let report = measure(&by_sentence, 41, &mut ask, &mut unforced);
+    assert_eq!(report.unit, Unit::Sentence);
+    assert!(report.unit_chosen);
+    assert_eq!(report.most, MOST_CLAUSES);
 }
 
 /// The forced reading is asked with the baseline's own identifiers, for each
@@ -306,7 +415,7 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
             of: opening.len(),
         })
     };
-    let report = measure("One. Two. Three.", 41, &mut ask, &mut force);
+    let report = measure(&only("One. Two. Three."), 41, &mut ask, &mut force);
     // Three clauses and the inert sentence: four readings, each with the
     // baseline's identifiers — `said` makes them the word lengths.
     assert_eq!(forced.len(), 4, "{forced:?}");
@@ -358,7 +467,7 @@ fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
 fn an_empty_answer_has_no_opening_to_force() {
     let mut ask = |_: &str, _: u64| said("");
     let mut force = |_: &str, _: &[usize]| Some(Held::default());
-    let report = measure("One. Two.", 41, &mut ask, &mut force);
+    let report = measure(&only("One. Two."), 41, &mut ask, &mut force);
     assert!(report.clauses.iter().all(|held| held.held.is_none()));
     assert_eq!(report.floor_held, None);
 }

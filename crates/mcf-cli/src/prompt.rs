@@ -10,7 +10,7 @@
 //! wants the same thing as data, and printing it twice in two shapes is how
 //! the two drift apart.
 
-use std::io::{BufRead as _, BufReader, Write as _};
+use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 
 use mcf_record::json::Value;
@@ -24,8 +24,58 @@ use crate::Response;
 /// that moved between two runs of it would make them incomparable (D19).
 const SEED: u64 = 41;
 
+/// What the command line asked to have taken apart, before the file is read.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Asked<'a> {
+    /// The document, given inline.
+    pub prompt: Option<&'a str>,
+    /// The document, in a file; `-` is the standard input.
+    pub file: Option<&'a str>,
+    /// The question every variant is followed by.
+    pub then: Option<&'a str>,
+    /// What to take it apart into, where the caller said.
+    pub by: Option<mcf_serve::prompt::Unit>,
+    /// The most parts to remove, where the caller said.
+    pub most: Option<usize>,
+}
+
+/// The document, from wherever the caller put it.
+///
+/// A file that cannot be read is said with its path and the reason, not
+/// analysed as empty (A2).
+fn document(asked: &Asked<'_>) -> Result<String, String> {
+    match (asked.prompt, asked.file) {
+        (Some(text), _) => Ok(text.to_owned()),
+        (None, Some("-")) => {
+            let mut text = String::new();
+            std::io::stdin()
+                .read_to_string(&mut text)
+                .map(|_read| text)
+                .map_err(|why| format!("the standard input could not be read: {why}"))
+        }
+        (None, Some(path)) => std::fs::read_to_string(path)
+            .map_err(|why| format!("{path} could not be read: {why}")),
+        (None, None) => Err("no document was given".to_owned()),
+    }
+}
+
 /// Asks the daemon what this prompt does.
-pub(crate) fn report(named: &str, prompt: &str, as_json: bool) -> Response {
+pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response {
+    let prompt = match document(asked) {
+        Ok(text) if !text.trim().is_empty() => text,
+        Ok(_) => {
+            return Response {
+                text: "mcf: the document is empty — there is nothing to take apart".to_owned(),
+                served: false,
+            };
+        }
+        Err(why) => {
+            return Response {
+                text: format!("mcf: {why}"),
+                served: false,
+            };
+        }
+    };
     let Some(socket) = crate::serve::socket_path() else {
         return Response {
             text: "mcf: MCF has nowhere to put a control socket on this machine".to_owned(),
@@ -48,7 +98,10 @@ pub(crate) fn report(named: &str, prompt: &str, as_json: bool) -> Response {
     // report a working run as a broken daemon.
     let request = Request::PromptReport {
         model: named.to_owned(),
-        prompt: prompt.to_owned(),
+        prompt,
+        then: asked.then.map(str::to_owned),
+        by: asked.by,
+        most: asked.most,
         seed: SEED,
     };
     if writeln!(connection, "{}", request.to_line())
@@ -94,6 +147,13 @@ pub(crate) fn report(named: &str, prompt: &str, as_json: bool) -> Response {
     }
 }
 
+/// What the document was taken apart into, as the report calls one part.
+fn unit_of(body: &Value) -> &str {
+    body.get("unit")
+        .and_then(Value::as_text)
+        .unwrap_or("sentence")
+}
+
 /// How many tenths of the answer moved, for the bar.
 ///
 /// The truncation is the point: a bar has ten cells and a part-cell is not one
@@ -122,14 +182,14 @@ const fn as_percent(parts_per_million: i64) -> (i64, i64) {
 fn steering_lines(body: &Value) -> Vec<String> {
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
     let depth = count("forced_depth");
+    let unit = unit_of(body);
     let mut lines = Vec::new();
     let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
     if clauses.is_empty() {
-        lines.push(
-            "    this prompt is one sentence, so there is nothing to remove — a prompt of one \
+        lines.push(format!(
+            "    this prompt is one {unit}, so there is nothing to remove — a prompt of one \
              part cannot be taken apart"
-                .to_owned(),
-        );
+        ));
     }
     for clause in clauses {
         lines.extend(clause_lines(clause, depth));
@@ -154,19 +214,18 @@ fn steering_lines(body: &Value) -> Vec<String> {
         // regardless — the sentences are not steering it. Saying so is the
         // difference between a reading and an apparent failure (A7).
         if floor == 0 && at_floor == clauses.len() {
-            lines.push(
-                "    every sentence removed gave the SAME answer, to the character — including \
+            lines.push(format!(
+                "    every {unit} removed gave the SAME answer, to the character — including \
                  the control. This prompt did not steer this model: it would have answered the \
                  same way with less. That is a reading, not a failure of the measurement."
-                    .to_owned(),
-            );
+            ));
             lines.push(String::new());
         }
         lines.push(format!(
             "    the floor is {whole}.{tenth}% — how much the answer moved for a control \
              sentence carrying no instruction, put in and taken out again. Read the column as \
              an ORDERING, not as relevance: removing anything shifts what follows it, and a \
-             sentence well above the floor may still have steered nothing."
+             {unit} well above the floor may still have steered nothing."
         ));
         match held_said(body.get("floor_held"), depth) {
             Some(read) => lines.push(format!("    with the control sentence in, {read}")),
@@ -179,9 +238,9 @@ fn steering_lines(body: &Value) -> Vec<String> {
         if at_floor > 0 {
             let held = if at_floor == 1 { "sits" } else { "sit" };
             lines.push(format!(
-                "    {} {held} at or under it. That is not a claim they are wrong: a sentence \
+                "    {} {held} at or under it. That is not a claim they are wrong: a {unit} \
                  restating another moves little and is not thereby mistaken.",
-                count_of(i64::try_from(at_floor).unwrap_or(0), "sentence")
+                count_of(i64::try_from(at_floor).unwrap_or(0), unit)
             ));
             // **And which ones.** A reader told that one of six sentences did
             // nothing has to work out which, from a column they were just told
@@ -210,8 +269,10 @@ fn steering_lines(body: &Value) -> Vec<String> {
     if over > 0 {
         lines.push(format!(
             "    {} not removed: a report is one generation each, and this one stopped at \
-             the cap",
-            count_of(over, "further sentence")
+             {} — `--most {}` would remove every one",
+            count_of(over, &format!("further {}", unit_of(body))),
+            count_of(count("most"), "part"),
+            count("most").saturating_add(over)
         ));
     }
 
@@ -476,16 +537,40 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
         .get("floor_parts_per_million")
         .and_then(Value::as_integer)
         .unwrap_or(0);
+    let unit = unit_of(body);
     let mut lines = vec![
         format!("what this prompt does to {}", header_name(named)),
         String::new(),
         format!(
-            "  {}: one for the prompt as written, one for each sentence left out, and one for \
-             each extra seed",
+            "  {}: one for the prompt as written, one for each {unit} left out, one for the \
+             control sentence, and one for each further seed",
             count_of(count("generations"), "generation")
         ),
-        String::new(),
     ];
+    // **The unit, and who chose it** (§3.15): a report by paragraph and one
+    // by sentence are different measurements of the same text.
+    if let Some(chosen_by) = body.get("unit_chosen_by").and_then(Value::as_text) {
+        lines.push(format!("  taken apart by {unit}, decided by {chosen_by}"));
+    }
+    // **The question, and how it reached the model.** Every variant was
+    // followed by it, in one turn with the document: the report says so
+    // because a reader crafting a system prompt will assume a system turn,
+    // and MCF has not probed for one (D43).
+    match body.get("then").and_then(Value::as_text) {
+        Some(then) => {
+            lines.push(format!("  every variant was followed by: {then:?}"));
+            if let Some(addressed) = body.get("addressed_as").and_then(Value::as_text) {
+                lines.push(format!("  addressed as {addressed}"));
+            }
+        }
+        None => lines.push(
+            "  the document was asked on its own: nothing followed it. A persona measured this \
+             way is measured against what the model says to a persona alone — `--then` gives \
+             it a question"
+                .to_owned(),
+        ),
+    }
+    lines.push(String::new());
 
     // **Where the floor swamps the column, that is the finding.** A floor of
     // 94.3% means removing a sentence carrying no instruction moved almost the
@@ -495,10 +580,13 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     // reader reads the bars (§3.15, A7, F147).
     let readable = floor_ppm < 500_000;
     if !readable {
-        lines.push("  THIS RUN CANNOT SEPARATE YOUR SENTENCES".to_owned());
+        lines.push(format!(
+            "  THIS RUN CANNOT SEPARATE YOUR {}S",
+            unit.to_uppercase()
+        ));
         lines.push(format!(
             "    removing a sentence that carries no instruction moved {} of the answer, so a \
-             sentence scoring near that has told you nothing. The column below is printed \
+             {unit} scoring near that has told you nothing. The column below is printed \
              because hiding a measurement is worse than showing a poor one — but read it as \
              *this run did not work*, not as an ordering.",
             percent(floor_ppm)
@@ -512,7 +600,10 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
         lines.push(String::new());
     }
 
-    lines.push("  HOW MUCH EACH SENTENCE STEERED THE ANSWER".to_owned());
+    lines.push(format!(
+        "  HOW MUCH EACH {} STEERED THE ANSWER",
+        unit.to_uppercase()
+    ));
     lines.push("  each was removed in turn, with the seed held still".to_owned());
     lines.push(String::new());
 
@@ -541,15 +632,15 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.push(String::new());
     lines.extend(what_the_model_expected(body));
     lines.extend(the_answer_and_its_conditions(body));
-    lines.push(
+    lines.push(format!(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \
-         Those are judgements and they need a rater. What is above is which sentences changed \
+         Those are judgements and they need a rater. What is above is which {}s changed \
          the answer when they were removed, whether the model would still have begun the same \
          answer without each, and where each word sat in what the model would have written \
          itself — three readings of the same prompt, which fail in different ways and are \
-         worth reading against each other."
-            .to_owned(),
-    );
+         worth reading against each other.",
+        unit_of(body)
+    ));
     lines
 }
 
@@ -572,7 +663,10 @@ mod tests {
                    "without":"Yes.","held":{"first_rank":null,"kept":0,"of":2}},
                   {"text":"You are careful.","changed":false,"moved_parts_per_million":0,
                    "without":"Blue.","held":{"first_rank":1,"kept":2,"of":2}}],
-                "clauses_over_the_cap":0,"seeds_asked":3,"distinct_answers":1,"generations":6,
+                "clauses_over_the_cap":3,"seeds_asked":3,"distinct_answers":1,"generations":6,
+                "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
+                "most":3,"then":"What colour is the room?",
+                "addressed_as":"the document and the question in one user turn",
                 "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10}"#,
         )
         .expect("a well-formed report")
@@ -624,5 +718,52 @@ mod tests {
     fn the_rank_reading_says_what_it_was_read_under() {
         let text = what_the_model_expected(&body()).join("\n");
         assert!(text.contains("read under chatml — set by a probe"), "{text}");
+    }
+
+    /// The unit, who decided it, the held question and how it reached the
+    /// model are the conditions of the run, and they are on the page; the
+    /// cap is said with the flag that raises it (§3.4, §3.15, B-430).
+    #[test]
+    fn the_report_says_what_it_took_apart_and_what_it_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("taken apart by sentence, decided by the text: it has no blank line"),
+            "{text}"
+        );
+        assert!(
+            text.contains("every variant was followed by: \"What colour is the room?\""),
+            "{text}"
+        );
+        assert!(text.contains("addressed as the document and the question in one user turn"), "{text}");
+        assert!(text.contains("HOW MUCH EACH SENTENCE STEERED"), "{text}");
+        assert!(
+            text.contains("3 further sentences not removed") && text.contains("`--most 6`"),
+            "the cap is said with what raises it: {text}"
+        );
+        let mut alone = body();
+        if let Value::Map(fields) = &mut alone {
+            fields.insert("then".to_owned(), Value::Null);
+            fields.insert("unit".to_owned(), Value::text("paragraph".to_owned()));
+        }
+        let text = rendered(&alone, "m").join("\n");
+        assert!(text.contains("asked on its own: nothing followed it"), "{text}");
+        assert!(text.contains("HOW MUCH EACH PARAGRAPH STEERED"), "{text}");
+    }
+
+    /// A document in a file that is not there is said with the path, not
+    /// analysed as empty (A2).
+    #[test]
+    fn a_missing_file_is_said_with_its_path() {
+        let asked = Asked {
+            file: Some("/nowhere/persona.md"),
+            ..Asked::default()
+        };
+        let why = document(&asked).expect_err("a file that is not there");
+        assert!(why.contains("/nowhere/persona.md could not be read"), "{why}");
+        let inline = Asked {
+            prompt: Some("A. B."),
+            ..Asked::default()
+        };
+        assert_eq!(document(&inline).as_deref(), Ok("A. B."));
     }
 }

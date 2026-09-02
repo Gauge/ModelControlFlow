@@ -179,6 +179,22 @@ fn the_new_requests_survive_the_wire() {
             whose: mcf_record::content::Whose::User,
             pinned: false,
         },
+        Request::PromptReport {
+            model: "a-model.gguf".to_owned(),
+            prompt: "Be brief.\n\nBe right.".to_owned(),
+            then: None,
+            by: None,
+            most: None,
+            seed: 41,
+        },
+        Request::PromptReport {
+            model: "a-model.gguf".to_owned(),
+            prompt: "Be brief.\n\nBe right.".to_owned(),
+            then: Some("What is 2 + 2?".to_owned()),
+            by: Some(crate::prompt::Unit::Sentence),
+            most: Some(40),
+            seed: 41,
+        },
     ];
     for request in asked {
         let line = request.to_line();
@@ -234,4 +250,22 @@ fn a_generation_that_does_not_say_is_not_pinned() {
         }
         other => panic!("not a generation: {other:?}"),
     }
+}
+
+/// A prompt report taken apart by something MCF does not know, or removing
+/// nothing at most, is refused rather than defaulted (B-430).
+#[test]
+fn a_prompt_report_by_an_unknown_unit_is_refused() {
+    let by_word = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","by":"word"}"#;
+    let refused = Request::read(by_word).expect_err("by word is not a unit");
+    assert!(
+        format!("{refused:?}").contains("neither sentence nor paragraph"),
+        "{refused:?}"
+    );
+    let none = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","most":0}"#;
+    let refused = Request::read(none).expect_err("removing nothing is not a report");
+    assert!(
+        format!("{refused:?}").contains("no parts"),
+        "{refused:?}"
+    );
 }

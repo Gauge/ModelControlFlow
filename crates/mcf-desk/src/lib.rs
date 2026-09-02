@@ -753,6 +753,12 @@ pub enum Act {
     Close,
     /// Analyse the typed prompt on the chosen model.
     ReportPrompt,
+    /// Put the caret in the question field (`true`) or the document (`false`).
+    FocusThen(bool),
+    /// Remove at most this many parts of the document (B-430).
+    MostParts(usize),
+    /// Take the document apart by this unit, or let the text decide.
+    TakeApartBy(Option<mcf_serve::prompt::Unit>),
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -760,7 +766,7 @@ pub enum Act {
     },
     /// Choose a model without leaving the screen.
     Choose(usize),
-    /// Empty the field.
+    /// Empty the field — on the prompt screen, the document.
     Clear,
     /// Forget what just ran, so the screen goes back to its resting state.
     Dismiss,
@@ -847,6 +853,18 @@ pub struct Desk {
     pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
+    /// The question every variant of the document is followed by, on the
+    /// prompt screen; empty asks the document alone (B-430).
+    pub then: String,
+    /// Whether typing on the prompt screen goes into the question rather
+    /// than the document.
+    pub then_focused: bool,
+    /// How many parts to remove at most, where the person chose; `None` is
+    /// the report's default and the page says what that is.
+    pub most: Option<usize>,
+    /// What to take the document apart into, where the person chose; `None`
+    /// lets the text decide.
+    pub by: Option<mcf_serve::prompt::Unit>,
     /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
     /// What is running.
@@ -927,6 +945,10 @@ impl Desk {
             refusal: None,
             busy: false,
             typed: String::new(),
+            then: String::new(),
+            then_focused: false,
+            most: None,
+            by: None,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
@@ -989,7 +1011,7 @@ impl Desk {
     /// takes apart, so they are kept, and only what is neither text nor a
     /// break is dropped.
     pub fn paste(&mut self, text: &str) {
-        if self.page == Page::Prompt {
+        if self.page == Page::Prompt && !self.then_focused {
             let kept: String = text
                 .replace("\r\n", "\n")
                 .chars()
@@ -1009,11 +1031,45 @@ impl Desk {
         if kept.is_empty() {
             return;
         }
-        let room = Self::PASTE_LIMIT.saturating_sub(self.typed.chars().count());
+        let into = self.typing();
+        let room = Self::PASTE_LIMIT.saturating_sub(into.chars().count());
         if room == 0 {
             return;
         }
-        self.typed.extend(kept.chars().take(room));
+        into.extend(kept.chars().take(room));
+    }
+
+    /// The field typing goes into: the question on the prompt screen when it
+    /// has the caret, the one field every other screen has otherwise.
+    pub fn typing(&mut self) -> &mut String {
+        if self.page == Page::Prompt && self.then_focused {
+            &mut self.then
+        } else {
+            &mut self.typed
+        }
+    }
+
+    /// The same field, to read.
+    #[must_use]
+    pub fn being_typed(&self) -> &str {
+        if self.page == Page::Prompt && self.then_focused {
+            &self.then
+        } else {
+            &self.typed
+        }
+    }
+
+    /// What is asked of the daemon from the prompt screen as it stands, or
+    /// why nothing would be: the document, the question, the unit and the
+    /// cap, exactly as Analyse would send them (§3.15).
+    #[must_use]
+    pub fn taken(&self) -> mcf_serve::prompt::Taken<'_> {
+        mcf_serve::prompt::Taken {
+            text: self.typed.trim(),
+            then: Some(self.then.trim()).filter(|then| !then.is_empty()),
+            by: self.by,
+            most: self.most,
+        }
     }
 
     /// What pressing Return means on the screen showing.
@@ -1024,7 +1080,7 @@ impl Desk {
     /// button, or from Return with Control held. A field that takes one name
     /// runs on Return as it always has.
     pub fn returned(&mut self, with_control: bool) {
-        if self.page == Page::Prompt && !with_control {
+        if self.page == Page::Prompt && !with_control && !self.then_focused {
             if self.typed.chars().count() < Self::PROMPT_LIMIT {
                 self.typed.push('\n');
             }
@@ -1256,6 +1312,9 @@ impl Desk {
                 self.read_settings();
             }
             Act::ReportPrompt => self.report_prompt(),
+            Act::FocusThen(then) => self.then_focused = then,
+            Act::MostParts(most) => self.most = Some(most.max(1)),
+            Act::TakeApartBy(by) => self.by = by,
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
         }
@@ -1526,8 +1585,8 @@ impl Desk {
     /// rather than something the window waits on: a screen that froze for
     /// minutes is one a person cannot tell from a broken one (B-227).
     pub fn report_prompt(&mut self) {
-        let asked = self.typed.trim().to_owned();
-        if asked.is_empty() {
+        let taken = self.taken();
+        if taken.text.is_empty() {
             return;
         }
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
@@ -1537,7 +1596,10 @@ impl Desk {
             self.socket.clone(),
             Request::PromptReport {
                 model: held.path.clone(),
-                prompt: asked,
+                prompt: taken.text.to_owned(),
+                then: taken.then.map(str::to_owned),
+                by: taken.by,
+                most: taken.most,
                 seed: 41,
             },
             format!("taking the prompt apart on {}", held.name),
@@ -1956,7 +2018,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     if desk.takes_typing()
                         && let Some(text) = sdl::event_text(&event)
                     {
-                        desk.typed.push_str(&text);
+                        desk.typing().push_str(&text);
                     }
                 }
                 sdl::EVENT_KEY_DOWN => match sdl::event_key(&event) {
@@ -1982,14 +2044,14 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     key if key == u32::from(b'c')
                         && sdl::event_has_ctrl(&event)
                         && desk.page == Page::Prompt
-                        && !desk.typed.is_empty() =>
+                        && !desk.being_typed().is_empty() =>
                     {
                         if let Some(window) = paint.window() {
-                            let _went = window.put_on_clipboard(&desk.typed);
+                            let _went = window.put_on_clipboard(desk.being_typed());
                         }
                     }
                     sdl::KEY_BACKSPACE if desk.takes_typing() => {
-                        let _removed = desk.typed.pop();
+                        let _removed = desk.typing().pop();
                     }
                     sdl::KEY_RETURN if desk.takes_typing() => {
                         desk.returned(sdl::event_has_ctrl(&event));

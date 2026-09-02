@@ -40,6 +40,18 @@
 //! dropped the answer's first token to its seventeenth choice did more than
 //! one that dropped it to its fourth (measured: B-429).
 //!
+//! **What is taken apart is a document, and what is asked is a question after
+//! it.** A persona or an instruction sheet is what a person crafts, and what
+//! it does is only visible under a question: a persona alone is asked nothing,
+//! and the model's answer to nothing measures nothing anybody wants. So the
+//! text is taken apart — by paragraph where it has paragraphs, by sentence
+//! where it does not, or as the caller says — and every variant of it is
+//! followed by the same held question. Both go in the one turn the addressing
+//! probe found: MCF has not probed for a system turn (D43) and does not assume
+//! one here. The cap on how many parts are removed is the caller's, because
+//! forty paragraphs is forty generations and whether that is worth it is a
+//! choice about their time, not a constant (§3.15, B-430).
+//!
 //! **Settledness is the other half.** The same prompt under several seeds
 //! either produces the same answer or does not. Several different answers means
 //! the prompt underdetermines the answer *for this model* — again a fact, and
@@ -90,12 +102,122 @@ pub const NO_INSTRUCTION: &str = "The room is quiet.";
 /// is under a hundred requests, each one cached and generating nothing.
 pub const MOST_FORCED: usize = 12;
 
-/// The most clauses that will be ablated.
+/// The most parts that will be ablated unless the caller says otherwise.
 ///
 /// A long prompt is a long run of generations, and a report that took an hour
-/// is one nobody waits for. What is over the cap is said rather than silently
-/// dropped (A7).
+/// is one nobody asked for. What is over the cap is said rather than silently
+/// dropped (A7), and the cap itself is the caller's to raise ([`Taken::most`]).
 pub const MOST_CLAUSES: usize = 8;
+
+/// What a document is taken apart into.
+///
+/// A person writes in one or the other: a question is sentences, a persona is
+/// paragraphs, and a persona ablated by sentence is hundreds of generations
+/// about text whose units are its paragraphs. Which is which is decided from
+/// the text where the caller does not say ([`Unit::for_text`]), and the
+/// report says which it was and who decided (§3.15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unit {
+    /// A sentence: ended by `.`, `?`, `!` before whitespace, or a line break.
+    Sentence,
+    /// A paragraph: ended by a blank line.
+    Paragraph,
+}
+
+impl Unit {
+    /// The unit a text is written in: paragraphs where a blank line separates
+    /// two of them, sentences otherwise.
+    #[must_use]
+    pub fn for_text(text: &str) -> Self {
+        if parts_of(text, Self::Paragraph).len() > 1 {
+            Self::Paragraph
+        } else {
+            Self::Sentence
+        }
+    }
+
+    /// The word on the wire and in a report.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sentence => "sentence",
+            Self::Paragraph => "paragraph",
+        }
+    }
+
+    /// The unit a word names, if it names one.
+    #[must_use]
+    pub fn named(word: &str) -> Option<Self> {
+        match word {
+            "sentence" | "sentences" => Some(Self::Sentence),
+            "paragraph" | "paragraphs" => Some(Self::Paragraph),
+            _ => None,
+        }
+    }
+}
+
+/// One part of a document, and the whitespace that followed it.
+///
+/// **The separator travels with the part** so that a document with one part
+/// removed is the document as written, less that part — a bullet list stays a
+/// bullet list, paragraphs stay paragraphs. An earlier cut rejoined sentences
+/// with a space, so every ablation of a multi-line prompt was also a
+/// reformatting of it, and the baseline was the only variant with its line
+/// breaks (F: found when the field took a document, B-430).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Part {
+    /// The part, as written, trimmed at both ends.
+    pub text: String,
+    /// What lay between it and the next part: whitespace, and any run of
+    /// punctuation that was not a part by itself. Empty after the last.
+    pub after: String,
+}
+
+/// What is taken apart, and how.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Taken<'a> {
+    /// The document: the text whose parts are removed in turn.
+    pub text: &'a str,
+    /// A question every variant is followed by, held still. `None` asks the
+    /// document alone, which is what a prompt that is itself a question wants.
+    pub then: Option<&'a str>,
+    /// What to take the document apart into; `None` lets the text decide.
+    pub by: Option<Unit>,
+    /// How many parts to remove at most; `None` is [`MOST_CLAUSES`].
+    pub most: Option<usize>,
+}
+
+impl Taken<'_> {
+    /// The unit this will be taken apart by, and whether the caller chose it.
+    #[must_use]
+    pub fn unit(&self) -> (Unit, bool) {
+        self.by
+            .map_or_else(|| (Unit::for_text(self.text), false), |by| (by, true))
+    }
+
+    /// The cap on parts removed.
+    #[must_use]
+    pub fn cap(&self) -> usize {
+        self.most.unwrap_or(MOST_CLAUSES).max(1)
+    }
+
+    /// The parts, in the unit this is taken apart by.
+    #[must_use]
+    pub fn parts(&self) -> Vec<Part> {
+        parts_of(self.text, self.unit().0)
+    }
+
+    /// One variant of the document, followed by the held question.
+    ///
+    /// The question goes after a blank line, in the same turn (D43).
+    #[must_use]
+    pub fn asked(&self, document: &str) -> String {
+        match self.then.map(str::trim).filter(|then| !then.is_empty()) {
+            Some(then) => format!("{document}\n\n{then}"),
+            None => document.to_owned(),
+        }
+    }
+}
 
 /// Whether the model would still have begun the same answer.
 ///
@@ -179,8 +301,16 @@ pub struct Report {
     pub baseline: String,
     /// Each sentence, and what happened without it.
     pub clauses: Vec<Clause>,
-    /// How many sentences the prompt had, where more than were ablated.
+    /// How many parts the document had beyond the ones ablated.
     pub clauses_over_the_cap: usize,
+    /// What the document was taken apart into.
+    pub unit: Unit,
+    /// Whether the caller chose the unit, or the text did.
+    pub unit_chosen: bool,
+    /// The cap the run was under.
+    pub most: usize,
+    /// The question every variant was followed by, if one was.
+    pub then: Option<String>,
     /// What several seeds made of it.
     pub settled: Settled,
 }
@@ -229,66 +359,174 @@ impl Report {
 /// line break; a run of them is one end.
 #[must_use]
 pub fn clauses_of(prompt: &str) -> Vec<String> {
-    let mut found = Vec::new();
+    parts_of(prompt, Unit::Sentence)
+        .into_iter()
+        .map(|part| part.text)
+        .collect()
+}
+
+/// Whether a character ends a sentence here: `.`, `?` or `!` before
+/// whitespace or the end, or a line break.
+///
+/// **A full stop ends a sentence only where a space follows it.** Splitting
+/// on every `.` cut `0.001` into two clauses, `arr.Length` into two, and
+/// `System.Numerics` into two — so a prompt about precision, or one naming
+/// any dotted identifier, was ablated on fragments that were never sentences.
+/// A newline is a break whatever follows it (F147).
+///
+/// What this does not fix is `e.g.`, which ends in a full stop and a space
+/// and is not the end of a sentence. Telling that from a sentence ending in
+/// the letter g needs a list of abbreviations, which is a fact about a
+/// language rather than about this prompt, and getting it wrong in the other
+/// direction would silently join two real sentences. The failure that remains
+/// splits one clause into two; the one removed split a number in half.
+fn ends_a_sentence(character: char, next: Option<char>) -> bool {
+    character == '\n'
+        || (matches!(character, '.' | '?' | '!') && next.is_none_or(char::is_whitespace))
+}
+
+/// Splits a document into its parts, each with the whitespace that followed.
+///
+/// A paragraph ends at a blank line — a run of whitespace with two line
+/// breaks in it. A piece with nothing alphanumeric in it (a lone `...`, a
+/// rule of dashes) is not a part: it is folded into the separator before it,
+/// so that removing the part before it removes it too.
+#[must_use]
+pub fn parts_of(text: &str, by: Unit) -> Vec<Part> {
+    let mut found: Vec<Part> = Vec::new();
     let mut held = String::new();
-    let mut characters = prompt.chars().peekable();
+    let mut characters = text.chars().peekable();
+    // What ended the last part and lay after it, kept until the next part
+    // begins so that the last part's trailing whitespace is not its `after`.
+    let mut between = String::new();
     while let Some(character) = characters.next() {
-        held.push(character);
-        // **A full stop ends a sentence only where a space follows it.**
-        // Splitting on every `.` cut `0.001` into two clauses, `arr.Length`
-        // into two, and `System.Numerics` into two — so a prompt about
-        // precision, or one naming any dotted identifier, was ablated on
-        // fragments that were never sentences. A newline is a break whatever
-        // follows it (F147).
-        //
-        // What this does not fix is `e.g.`, which ends in a full stop and a
-        // space and is not the end of a sentence. Telling that from a sentence
-        // ending in the letter g needs a list of abbreviations, which is a
-        // fact about a language rather than about this prompt, and getting it
-        // wrong in the other direction would silently join two real sentences.
-        // The failure that remains splits one clause into two; the one removed
-        // split a number in half.
-        let ends = character == '\n'
-            || (matches!(character, '.' | '?' | '!')
-                && characters.peek().is_none_or(|next| next.is_whitespace()));
-        if ends {
-            let trimmed = held.trim().to_owned();
-            if !trimmed.is_empty() && trimmed.chars().any(char::is_alphanumeric) {
-                found.push(trimmed);
+        let ends = match by {
+            Unit::Sentence => {
+                held.push(character);
+                ends_a_sentence(character, characters.peek().copied())
             }
-            held.clear();
+            Unit::Paragraph => {
+                if character == '\n' {
+                    // A blank line: this break, then only whitespace up to
+                    // another one.
+                    let mut ahead = characters.clone();
+                    let blank = std::iter::from_fn(|| ahead.next())
+                        .take_while(|next| next.is_whitespace())
+                        .any(|next| next == '\n');
+                    if !blank {
+                        held.push(character);
+                    }
+                    blank
+                } else {
+                    held.push(character);
+                    false
+                }
+            }
+        };
+        if !ends {
+            continue;
+        }
+        let mut after = String::new();
+        if by == Unit::Paragraph {
+            after.push(character);
+        }
+        while let Some(next) = characters.peek().copied().filter(|next| next.is_whitespace()) {
+            after.push(next);
+            characters.next();
+        }
+        // The separator kept from before this piece, and the piece's own
+        // trailing whitespace, which a sentence keeps inside `held`.
+        let trimmed = held.trim().to_owned();
+        let trailing: String = held
+            .chars()
+            .rev()
+            .take_while(|held| held.is_whitespace())
+            .collect::<Vec<char>>()
+            .into_iter()
+            .rev()
+            .collect();
+        held.clear();
+        if trimmed.chars().any(char::is_alphanumeric) {
+            if let Some(last) = found.last_mut() {
+                last.after.push_str(&between);
+            }
+            between.clear();
+            found.push(Part {
+                text: trimmed,
+                after: String::new(),
+            });
+            between.push_str(&trailing);
+            between.push_str(&after);
+        } else {
+            between.push_str(&trimmed);
+            between.push_str(&trailing);
+            between.push_str(&after);
         }
     }
     let trimmed = held.trim().to_owned();
-    if !trimmed.is_empty() && trimmed.chars().any(char::is_alphanumeric) {
-        found.push(trimmed);
+    if trimmed.chars().any(char::is_alphanumeric) {
+        if let Some(last) = found.last_mut() {
+            last.after.push_str(&between);
+        }
+        found.push(Part {
+            text: trimmed,
+            after: String::new(),
+        });
     }
     found
 }
 
-/// The prompt with an inert sentence put into it.
+/// The parts put back together as they were written.
+#[must_use]
+pub fn joined(parts: &[Part]) -> String {
+    let mut text = String::new();
+    for (at, part) in parts.iter().enumerate() {
+        text.push_str(&part.text);
+        // What followed the last part followed nothing that is kept: a
+        // separator, or a rule of dashes folded into one, goes with the part
+        // it led to.
+        if at.saturating_add(1) < parts.len() {
+            text.push_str(&part.after);
+        }
+    }
+    text
+}
+
+/// The document with an inert sentence put into it.
 ///
 /// Second from the end rather than appended, so that removing it disturbs what
 /// follows — which is what removing a clause does, and the whole point of the
-/// control is that the two operations match.
+/// control is that the two operations match. It takes the separator of the
+/// part it follows, so that a paragraph gets a paragraph's break and a
+/// sentence a sentence's.
 #[must_use]
-pub fn with_inert(prompt: &str) -> String {
-    let mut all = clauses_of(prompt);
+pub fn with_inert(parts: &[Part]) -> String {
+    let mut all = parts.to_vec();
     let at = all.len().saturating_sub(1);
-    all.insert(at, NO_INSTRUCTION.to_owned());
-    all.join(" ")
+    let after = at
+        .checked_sub(1)
+        .and_then(|before| all.get(before))
+        .map_or_else(|| " ".to_owned(), |part| part.after.clone());
+    all.insert(
+        at,
+        Part {
+            text: NO_INSTRUCTION.to_owned(),
+            after,
+        },
+    );
+    joined(&all)
 }
 
-/// The prompt with one clause left out.
+/// The document with one part left out, as written.
 #[must_use]
-pub fn without(clauses: &[String], at: usize) -> String {
-    clauses
+pub fn without(parts: &[Part], at: usize) -> String {
+    let kept: Vec<Part> = parts
         .iter()
         .enumerate()
         .filter(|(index, _)| *index != at)
-        .map(|(_, held)| held.as_str())
-        .collect::<Vec<&str>>()
-        .join(" ")
+        .map(|(_, held)| held.clone())
+        .collect();
+    joined(&kept)
 }
 
 /// How much two answers differ, in parts per million of the longer.
@@ -367,21 +605,27 @@ pub type Force<'a> = &'a mut dyn FnMut(&str, &[usize]) -> Option<Held>;
 /// the baseline and a clause left out is the prompt and nothing else; a seed
 /// that moved would make every comparison a comparison of two draws (D19).
 #[must_use]
-pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Report {
-    let all = clauses_of(prompt);
+pub fn measure(taken: &Taken<'_>, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Report {
+    let (unit, unit_chosen) = taken.unit();
+    let all = parts_of(taken.text, unit);
+    // The baseline is the parts put back together, not the text as pasted:
+    // what differs between it and a variant must be the part removed and
+    // nothing else, and a variant is always the joined parts (§3.4).
+    let prompt = taken.asked(&joined(&all));
     let Answered {
         text: baseline,
         tokens: opening,
-    } = ask(prompt, seed);
+    } = ask(&prompt, seed);
     let opening: Vec<usize> = opening.into_iter().take(MOST_FORCED).collect();
 
-    let ablated = all.len().min(MOST_CLAUSES);
+    let most = taken.cap();
+    let ablated = all.len().min(most);
     let mut clauses = Vec::with_capacity(ablated);
     // One clause is nothing to ablate: removing it leaves no prompt, and an
     // empty prompt's answer says nothing about the sentence.
     if all.len() > 1 {
         for at in 0..ablated {
-            let shortened = without(&all, at);
+            let shortened = taken.asked(&without(&all, at));
             let without_it = ask(&shortened, seed).text;
             // The opening is an empty list where the baseline said nothing,
             // and a rank over nothing is not taken rather than read as kept.
@@ -393,7 +637,7 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Repor
             clauses.push(Clause {
                 changed: without_it.trim() != baseline.trim(),
                 moved: moved_by(baseline.trim(), without_it.trim()),
-                text: all.get(at).cloned().unwrap_or_default(),
+                text: all.get(at).map(|part| part.text.clone()).unwrap_or_default(),
                 without: without_it,
                 held,
             });
@@ -413,7 +657,7 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Repor
     // is asked, and the answer compared against the baseline — which is that
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
-    let padded = with_inert(prompt);
+    let padded = taken.asked(&with_inert(&all));
     let floor = moved_by(ask(&padded, seed).text.trim(), baseline.trim());
     let floor_held = if opening.is_empty() || all.len() <= 1 {
         None
@@ -425,7 +669,7 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Repor
     // as one of them, so a report of three asks twice more.
     let mut answers = vec![baseline.trim().to_owned()];
     for extra in 1..SEEDS {
-        let said = ask(prompt, seed.wrapping_add(extra as u64));
+        let said = ask(&prompt, seed.wrapping_add(extra as u64));
         answers.push(said.text.trim().to_owned());
     }
     let mut distinct = answers.clone();
@@ -438,6 +682,14 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Repor
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),
+        unit,
+        unit_chosen,
+        most,
+        then: taken
+            .then
+            .map(str::trim)
+            .filter(|then| !then.is_empty())
+            .map(str::to_owned),
         settled: Settled {
             asked: SEEDS,
             distinct: distinct.len(),

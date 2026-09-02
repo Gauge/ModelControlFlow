@@ -1057,7 +1057,7 @@ fn a_run_that_separated_nothing(paint: &mut Painter, at: (f32, f32), found: &Val
     paint.say_at(
         at.0,
         at.1,
-        "This run cannot separate your sentences.",
+        "This run cannot separate the parts of your document.",
         Weight::Bold,
         size::BODY,
         ink.bad,
@@ -2340,7 +2340,8 @@ fn a_report_or_why_not<'a>(
         paint.say_at(
             area.x,
             at + 20.0,
-            "one generation for the prompt, one for each sentence left out, one for each seed",
+            "one generation for the prompt, one for each part left out, one for the control \
+             sentence, one for each further seed",
             Weight::Regular,
             size::SMALL,
             ink.faint,
@@ -2372,33 +2373,13 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     paint.say_at(
         area.x,
         area.y + 28.0,
-        &format!("what a prompt does to {named}, sentence by sentence"),
+        &format!("what a prompt does to {named}, part by part"),
         Weight::Regular,
         size::BODY,
         ink.quiet,
     );
 
-    let mut act = None;
-    let y = area.y + 52.0;
-    // **A document, not a line.** What is analysed is a persona or an
-    // instruction sheet, pasted in whole; the field is sized for one and the
-    // page below it gives up a little height (B-430).
-    let field = Box::new(
-        area.x,
-        y,
-        area.w.min(960.0),
-        (area.h * 0.26).clamp(120.0, 240.0),
-    );
-    let _clicked = ui::area(
-        paint,
-        mouse,
-        field,
-        &desk.typed,
-        "paste or type the prompt to analyse — a persona, an instruction sheet, a question. \
-         Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
-        true,
-    );
-    let under = field.bottom() + 8.0;
+    let (mut act, under) = the_document_and_its_question(paint, desk, mouse, area);
     let (asked, button) = ui::fitted(paint, mouse, (area.x, under), "Analyse", Kind::Primary);
     if asked && !desk.doing.busy() && desk.chosen.is_some() {
         act = Some(Act::ReportPrompt);
@@ -2413,12 +2394,22 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     if cleared && !desk.typed.is_empty() {
         act = Some(Act::Clear);
     }
-    what_it_will_cost(paint, desk, (cleared_button.right() + 14.0, under + 8.0));
+    let (chosen, bottom) = the_choices(
+        paint,
+        desk,
+        mouse,
+        (cleared_button.right() + 14.0, under),
+        area.x,
+    );
+    if chosen.is_some() {
+        act = chosen;
+    }
 
-    let mut at = under + 40.0;
+    let mut at = bottom + 12.0;
     let Some(found) = a_report_or_why_not(paint, desk, area, at) else {
         return act;
     };
+    at = what_it_was_asked_as(paint, (area.x, at), found, area.w);
     at = a_run_that_separated_nothing(paint, (area.x, at), found);
     let (after, pressed) = steering(
         paint,
@@ -2533,36 +2524,198 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
 }
 
 /// How much each sentence steered the answer, drawn as bars.
-/// What pressing Analyse will cost, before it is pressed.
+/// What pressing Analyse will cost, in generations.
 ///
-/// One generation per sentence plus a seed each, which on a large model on the
+/// The same counting the daemon does — one for the prompt, one for each part
+/// removed, one for the control, and one for each further seed — over the
+/// parts the daemon's own splitting finds, so the forecast and the bill
+/// cannot disagree (B-072, F147).
+fn what_it_will_cost(unit: mcf_serve::prompt::Unit, parts: usize, removed: usize) -> String {
+    use mcf_serve::prompt::SEEDS;
+    if parts <= 1 {
+        return format!(
+            "1 {} — nothing to remove: a document of one part cannot be taken apart",
+            unit.name()
+        );
+    }
+    let generations = removed
+        .saturating_add(2)
+        .saturating_add(SEEDS.saturating_sub(1));
+    format!(
+        "{} — {}: one for the document, {} removed in turn, one for the control sentence, one \
+         for each of {} further seeds",
+        count_of(parts, unit.name()),
+        count_of(generations, "generation"),
+        if removed == parts {
+            "each".to_owned()
+        } else {
+            format!("the first {removed}")
+        },
+        SEEDS.saturating_sub(1)
+    )
+}
+
+/// The two fields: the document, and the question it is asked.
+///
+/// Returns what was pressed and where the row of buttons goes.
+fn the_document_and_its_question(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+) -> (Option<Act>, f32) {
+    let mut act = None;
+    // **A document, not a line.** What is analysed is a persona or an
+    // instruction sheet, pasted in whole; the field is sized for one and the
+    // page below it gives up a little height (B-430). Once there is a report
+    // the report is what the page is for, and the field keeps its tail and
+    // three lines: this window does not scroll.
+    let reported = desk
+        .doing
+        .job()
+        .is_some_and(|job| job.finished && job.latest().is_some());
+    let height = if reported {
+        72.0
+    } else {
+        (area.h * 0.24).clamp(110.0, 220.0)
+    };
+    let field = Box::new(area.x, area.y + 52.0, area.w.min(960.0), height);
+    if ui::area(
+        paint,
+        mouse,
+        field,
+        &desk.typed,
+        "paste or type the document to analyse — a persona, an instruction sheet, a question. \
+         Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
+        !desk.then_focused,
+    ) {
+        act = Some(Act::FocusThen(false));
+    }
+    // **The question the document is asked** (B-430). A persona alone is
+    // asked nothing, and every variant of it below is followed by this, in
+    // the same turn.
+    let then = Box::new(area.x, field.bottom() + 8.0, field.w, 36.0);
+    if ui::field(
+        paint,
+        mouse,
+        then,
+        &desk.then,
+        "then ask it — the question every variant of the document is followed by; empty asks \
+         the document on its own",
+        desk.then_focused,
+    ) {
+        act = Some(Act::FocusThen(true));
+    }
+    (act, then.bottom() + 8.0)
+}
+
+/// What pressing Analyse will do and cost, and the two choices in it.
+///
+/// One generation per part plus a seed each, which on a large model on the
 /// processor is minutes. The only place this was said was a line that appeared
 /// once the wait had already started, which is a cost disclosed after it is
-/// incurred (§3.8, §3.15).
-fn what_it_will_cost(paint: &mut Painter, desk: &Desk, at: (f32, f32)) {
-    if desk.doing.busy() {
-        return;
+/// incurred (§3.8, §3.15). The unit the document is taken apart into and how
+/// many parts are removed are choices on the page rather than constants
+/// behind it: forty paragraphs is forty generations, and whether that is
+/// worth it is the person's (B-430).
+fn the_choices(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: (f32, f32),
+    left: f32,
+) -> (Option<Act>, f32) {
+    use mcf_serve::prompt::{Unit, MOST_CLAUSES};
+    let taken = desk.taken();
+    if desk.doing.busy() || taken.text.is_empty() {
+        return (None, at.1 + ui::BUTTON);
     }
-    let Some(sentences) = sentences_in(&desk.typed) else {
-        return;
-    };
-    paint.say_at(
-        at.0,
-        at.1,
-        &format!(
-            "{} — {}: one for the prompt, one for each sentence left out, one for the control \
-             sentence, and one for each of 2 further seeds",
-            count_of(sentences, "sentence"),
-            // Baseline, one per sentence, the floor's control, and SEEDS - 1
-            // further seeds. This said `sentences + 3` and forgot the control,
-            // so a three-sentence prompt was forecast at six generations and
-            // cost seven (F147).
-            count_of(sentences + 4, "generation")
-        ),
-        Weight::Regular,
-        size::SMALL,
-        paint.ink.faint,
+    let (unit, chosen) = taken.unit();
+    let parts = taken.parts().len();
+    let cap = taken.cap();
+    let removed = parts.min(cap);
+    let faint = paint.ink.faint;
+    let of = what_it_will_cost(unit, parts, removed);
+    paint.say_at(at.0, at.1 + 8.0, &of, Weight::Regular, size::SMALL, faint);
+
+    // The choices, on the line under the buttons.
+    let row = at.1 + ui::BUTTON + 8.0;
+    let mut x = left;
+    let mut act = None;
+    let (by_paragraph, one) = ui::fitted(
+        paint,
+        mouse,
+        (x, row),
+        "by paragraph",
+        if unit == Unit::Paragraph {
+            Kind::Primary
+        } else {
+            Kind::Quiet
+        },
     );
+    x = one.right() + 4.0;
+    let (by_sentence, two) = ui::fitted(
+        paint,
+        mouse,
+        (x, row),
+        "by sentence",
+        if unit == Unit::Sentence {
+            Kind::Primary
+        } else {
+            Kind::Quiet
+        },
+    );
+    x = two.right() + 4.0;
+    if by_paragraph {
+        act = Some(Act::TakeApartBy(Some(Unit::Paragraph)));
+    }
+    if by_sentence {
+        act = Some(Act::TakeApartBy(Some(Unit::Sentence)));
+    }
+    let decided = if chosen {
+        "chosen here".to_owned()
+    } else if unit == Unit::Paragraph {
+        "decided by the text: a blank line separates its paragraphs".to_owned()
+    } else {
+        "decided by the text: it has no blank line".to_owned()
+    };
+    paint.say_at(x + 8.0, row + 8.0, &decided, Weight::Regular, size::SMALL, faint);
+    x += paint.measure(&decided, Weight::Regular, size::SMALL) + 36.0;
+
+    if parts > 1 {
+        let (fewer, three) = ui::fitted(paint, mouse, (x, row), "fewer", Kind::Ordinary);
+        x = three.right() + 4.0;
+        let (more, four) = ui::fitted(paint, mouse, (x, row), "more", Kind::Ordinary);
+        x = four.right() + 4.0;
+        let (all, five) = ui::fitted(paint, mouse, (x, row), "all", Kind::Ordinary);
+        x = five.right() + 8.0;
+        if fewer {
+            act = Some(Act::MostParts(cap.saturating_sub(4).max(1)));
+        }
+        if more {
+            act = Some(Act::MostParts(cap.saturating_add(4).min(parts.max(1))));
+        }
+        if all {
+            act = Some(Act::MostParts(parts));
+        }
+        let said = if removed == parts {
+            format!("removing every one of the {parts}")
+        } else if taken.most.is_some() {
+            format!("removing the first {removed} of {parts}, as chosen here")
+        } else {
+            format!("removing the first {removed} of {parts} — the default is {MOST_CLAUSES}")
+        };
+        paint.say_at(x, row + 8.0, &said, Weight::Regular, size::SMALL, faint);
+    }
+    (act, row + ui::BUTTON)
+}
+
+/// What the report took the document apart into, as it names one part.
+fn unit_of(found: &Value) -> &str {
+    found
+        .get("unit")
+        .and_then(Value::as_text)
+        .unwrap_or("sentence")
 }
 
 /// A count and the thing counted, in English.
@@ -2578,19 +2731,6 @@ fn count_of(how_many: usize, noun: &str) -> String {
     }
 }
 
-/// How many sentences a prompt has, for saying what a run will cost.
-///
-/// The same rule the measurement uses — a sentence ends at `.`, `?` or `!` —
-/// so the forecast and the report cannot disagree about how many there are.
-/// `None` for a prompt with nothing in it to take apart.
-fn sentences_in(prompt: &str) -> Option<usize> {
-    let held = prompt
-        .split_inclusive(['.', '?', '!'])
-        .filter(|part| !part.trim().is_empty())
-        .count();
-    (held > 0).then_some(held)
-}
-
 /// A share of the answer, as a person reads one.
 ///
 /// The wire carries parts per million because that is a count and not a
@@ -2602,6 +2742,51 @@ fn as_percent(parts_per_million: i64) -> String {
     )]
     let held = parts_per_million as f64 / 10_000.0;
     format!("{held:.1}%")
+}
+
+/// What the report is of: the unit, who decided it, and the question every
+/// variant was followed by — or that nothing was.
+///
+/// A reader crafting a system prompt will assume a system turn; MCF has
+/// probed for none (D43), and a report that did not say how the document and
+/// the question reached the model would be read under an addressing it never
+/// used (§3.4).
+fn what_it_was_asked_as(paint: &mut Painter, at: (f32, f32), found: &Value, width: f32) -> f32 {
+    let faint = paint.ink.faint;
+    let mut y = at.1;
+    let text = |key: &str| found.get(key).and_then(Value::as_text);
+    let mut said = format!(
+        "taken apart by {}, decided by {}.",
+        unit_of(found),
+        text("unit_chosen_by").unwrap_or("the report")
+    );
+    match text("then") {
+        Some(then) => {
+            let shown: String = then.chars().take(120).collect();
+            let cut = if shown.chars().count() < then.chars().count() {
+                "…"
+            } else {
+                ""
+            };
+            said = format!(
+                "{said} Every variant was followed by \"{shown}{cut}\", in one user turn with \
+                 the document first — MCF has probed no system turn and assumes none."
+            );
+        }
+        None => said.push_str(
+            " The document was asked on its own: nothing followed it, so a persona here is \
+             measured against what the model says to a persona alone.",
+        ),
+    }
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, width.min(960.0))
+        .iter()
+        .take(3)
+    {
+        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, faint);
+        y += 16.0;
+    }
+    y + 8.0
 }
 
 /// The sentence under the bars: what the quiet ones mean, what the number is
@@ -2646,13 +2831,15 @@ fn what_the_bars_mean(
         .and_then(Value::as_integer)
         .unwrap_or(0);
     let floor_mark = crate::held_mark(found.get("floor_held"), depth);
+    let unit = unit_of(found);
     let second = if floor_mark == "unread" {
-        "The second figure would say where the answer's first token ranked with the sentence \
-         gone; it needs the served engine, and this run had none."
-            .to_owned()
+        format!(
+            "The second figure would say where the answer's first token ranked with the {unit} \
+             gone; it needs the served engine, and this run had none."
+        )
     } else {
         format!(
-            "The second figure is where the answer's first token ranked with the sentence gone \
+            "The second figure is where the answer's first token ranked with the {unit} gone \
              — 1st means the answer would have begun the same way. With the control in: \
              {floor_mark}."
         )
@@ -2678,9 +2865,12 @@ fn what_the_bars_mean(
             area.x,
             y,
             &format!(
-                "{} not measured: each one costs a generation, and the first {} are what \
-                     MCF ablates",
-                count_of(usize::try_from(over).unwrap_or(0), "further sentence"),
+                "{} not measured: each one costs a generation, and the first {} are what was \
+                 chosen — \"more\" or \"all\" above takes the rest",
+                count_of(
+                    usize::try_from(over).unwrap_or(0),
+                    &format!("further {}", unit_of(found))
+                ),
                 clauses_len
             ),
             Weight::Regular,
@@ -2692,7 +2882,7 @@ fn what_the_bars_mean(
     paint.say_at(
         area.x,
         y,
-        "Press a sentence to see what the model wrote without it.",
+        "Press a row to see what the model wrote without it.",
         Weight::Regular,
         size::SMALL,
         ink.faint,
