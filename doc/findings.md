@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 149 | [F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)](#149-f149-the-daemon-found-its-engines-once-and-never-looked-again-so-an-engine-built-while-it-ran-was-a-prefix-on-disk-and-no-engine-on-the-socket-f31-a7-b-367-b-072) |
 | 148 | [F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)](#148-f148-six-readers-told-the-operator-mcf-did-not-say-why-over-a-body-that-said-exactly-why-a2-b-072) |
 | 147 | [F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)](#147-f147-one-real-prompt-found-five-defects-in-prompt-analysis-and-the-report-presented-a-run-that-separated-nothing-exactly-as-it-presents-one-that-works-3-15-a6-a7-3-4) |
 | 146 | [F146 — The completion tool was never given a window, so every generation opened the model's whole trained context: 81.3 GB resident to produce a few hundred tokens (F133, A6, A12, §3.15)](#146-f146-the-completion-tool-was-never-given-a-window-so-every-generation-opened-the-models-whole-trained-context-813-gb-resident-to-produce-a-few-hundred-tokens-f133-a6-a12-3-15) |
@@ -9399,6 +9400,57 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 149 · F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)
+
+The window was asked to build the engine a model needs when the model is
+held, and the first design question was where the build should run. It ran
+in `mcf-cli` — `mcf provision` spawned podman itself — so the window's only
+route was to spawn the command, which is a second implementation of *what a
+build does* on the day one surface diverges from the other (B-072). The
+builder moved into `mcf-serve` as a library with two callers, and the daemon
+gained a `provision` request that streams the build's lines down the socket.
+
+**What the move found.** The daemon sampled its engines once, at start-up —
+deliberately, because asking a build what devices it has means running it,
+and a status request that starts processes costs something (§3.13). The
+consequence nobody had written down: a component provisioned while the
+daemon ran — by `mcf provision` in another terminal, and now by the daemon's
+own hand — was a complete prefix on disk and *no engine is installed yet* on
+the socket until somebody restarted it. F31 was a build that succeeded and
+could not run; this is a build that could run and the one process that
+needed to know had stopped looking. Reporting *no engine* over a directory
+holding one is A7 by the letter.
+
+**What was done.** The engine list is held under a lock and looked for again
+in one place: after a build this daemon finished. That is the one moment the
+set is known to have changed and the one that needs no polling; a build from
+the command line while a daemon runs is still invisible to it, and said so
+here rather than fixed with a directory watch nobody asked for. The final
+line of a build now carries `usable_engine`, which is whether the daemon
+reaches what it built — so a build that completes and is not an engine is
+said in the same line that says it completed.
+
+**Exercised once for real.** A daemon started over an empty `provisioned`
+directory with one model refused its settings with `needs_component:
+llama.cpp` in the context; a `provision` request with no name chose that
+component, said so in its first line, streamed 437 lines of the toolchain
+install, the clone, the configure and the compile, and ended with the
+prefix, the log, the record entry and `usable_engine: true`. The same
+daemon, not restarted, then recommended settings for the model on the engine
+it had built.
+
+**What was not there to stream.** The first run of the same exercise sent
+two lines: the choice and the outcome, with a fifty-second silence between
+them, because the script sent cmake's output to files in the prefix and
+nothing to the pipe the daemon was reading. A window that heard nothing for
+the length of a build could not have told it from a hang (A2). The script
+now announces each stage and copies the configure and build output through
+`tee`, so the logs in the prefix are whole and the surface sees the build
+move; `pipefail` was already set, so a failed cmake behind the tee still
+fails the script.
+
+[`provisioning`]: ../crates/mcf-serve/src/provisioning.rs
 
 ## 148 · F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)
 

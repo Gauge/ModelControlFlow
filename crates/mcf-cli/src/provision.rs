@@ -1,77 +1,32 @@
 //! `mcf provision`: a component MCF installs, builds and pins itself, in an
 //! environment it controls (B-367, D39, DEC-052, F30).
 //!
-//! **What "controlled" means here was decided by measurement, not preference.**
-//! F30 provisioned the same component two ways. The host-tool route failed
-//! D39's first condition on its very first use — the build silently picked up
-//! a cmake from a pyenv shim, recorded nowhere, different from what the system
-//! says — and the container route left container storage byte-identical while
-//! producing a binary that runs on the host and agrees exactly. So: a rootless
-//! container, base image pinned by digest, source cloned at a pinned commit,
-//! everything landing in one prefix the operator can point anywhere, and the
-//! exact package set written into the prefix beside what it built.
+//! **The command, not the build.** What a build is — the container, the
+//! pinned image, the script, the record — lives in
+//! [`mcf_serve::provisioning`], because the daemon builds too, when a window
+//! holds a model that has no engine to run it; one builder, two callers
+//! (A22, B-072). What is here is what makes provisioning a *command*: naming
+//! a component, listing what can be built and what is, and removing one with
+//! a reason.
 //!
-//! **What may be provisioned is a table, not a language.** §5 forbids a
-//! configuration language and §3.13 forbids generality nobody asked for, so
-//! the components are declared here in code, the way the helper's operations
-//! and the engine's architectures are: adding one is editing this file, and
-//! each entry answers *what claim can MCF make once this exists* — the first
-//! entry's answer is B-368's, an oracle anyone can reproduce.
-//!
-//! **Two failure shapes, one honest category.** A machine without `podman` and
-//! a build that did not complete are both the same statement — the mechanism
-//! this decision rests on did not deliver — and the `detail` says which way.
-//! F30 stated the first as a condition a machine can lack; this is where that
-//! statement becomes a classified refusal rather than a stack trace.
+//! **A component that is not named is the one this machine needs.** `mcf
+//! provision` with nothing after it builds what [`mcf_serve::engines::required`]
+//! says a model here would run on — the same answer the window acts on when
+//! a model is held with no engine, so the headless path can do what the window
+//! does (A22).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use mcf_core::component::{COMPONENTS, Component, Packaging};
-use mcf_core::failure::{Attribution, Category, Disposition, Failure, Subsystem};
-use mcf_core::time::Timestamp;
-use mcf_record::journal::{Entry as Record, EntryKind, Journal};
+use mcf_core::component::{COMPONENTS, Component};
+use mcf_record::journal::EntryKind;
 use mcf_record::json::Value;
 use mcf_serve::control::{Answer, Request};
+use mcf_serve::provisioning::{self, Outcome, is_complete, prefix_for, short};
 
 use crate::Response;
-
-const WHERE: Subsystem = Subsystem::new("mcf-cli::provision");
-/// Install the named packages, quietly, without prompting.
-///
-/// A free function rather than a method: [`Packaging`] is the catalogue's type
-/// now, and writing shell is this crate's business rather than the
-/// catalogue's.
-fn install_packages(packaging: Packaging, packages: &str) -> String {
-    {
-        match packaging {
-            Packaging::Dnf => format!("dnf -q install -y {packages}"),
-            // `update` first, because a Debian image ships no package lists and
-            // an install without one fails on every name.
-            Packaging::Apt => format!(
-                "export DEBIAN_FRONTEND=noninteractive\n\
-                 apt-get -qq update > /dev/null\n\
-                 apt-get -qq install -y --no-install-recommends {packages} > /dev/null"
-            ),
-        }
-    }
-}
-
-/// Write down exactly what was installed. A version that is not recorded is
-/// a condition of the artifact nobody can restate (§3.4).
-fn record_packages(packaging: Packaging, packages: &str) -> String {
-    {
-        match packaging {
-            Packaging::Dnf => format!("rpm -q {packages} glibc > /work/toolchain.txt"),
-            Packaging::Apt => format!(
-                "dpkg-query -W -f='${{Package}} ${{Version}}\\n' {packages} libc6 \
-                 > /work/toolchain.txt"
-            ),
-        }
-    }
-}
 
 /// Where a component lands when the operator does not say.
 ///
@@ -80,21 +35,13 @@ fn record_packages(packaging: Packaging, packages: &str) -> String {
 /// anywhere else.
 pub(crate) fn default_root() -> Option<PathBuf> {
     crate::models::default_root().map(|models| {
-        models
-            .parent()
-            .map_or_else(|| models.join("provisioned"), |mcf| mcf.join("provisioned"))
+        models.parent().map_or_else(
+            || provisioning::root_under(&models),
+            provisioning::root_under,
+        )
     })
 }
 
-/// The prefix one component builds into: name and short commit, so that two
-/// pins of the same component are two directories and neither overwrites the
-/// other (A1).
-fn prefix_for(component: &Component, root: &Path) -> PathBuf {
-    let short: String = component.commit.chars().take(12).collect();
-    root.join(format!("{}@{short}", component.name))
-}
-
-/// Lists what can be provisioned and what is.
 /// What a daemon that is *already running* says it can reach.
 ///
 /// **Asked, not started.** Listing what MCF can build is a question about the
@@ -144,6 +91,7 @@ fn reachable_engines() -> std::collections::BTreeMap<String, bool> {
     found
 }
 
+/// Lists what can be provisioned and what is.
 pub(crate) fn list(into: Option<&str>) -> Response {
     let root = match root_from(into) {
         Ok(root) => root,
@@ -162,7 +110,7 @@ pub(crate) fn list(into: Option<&str>) -> Response {
     )];
     for component in COMPONENTS {
         let prefix = prefix_for(component, &root);
-        let state = if prefix.join("mcf-provenance.json").is_file() {
+        let state = if is_complete(&prefix) {
             "provisioned"
         } else if prefix.exists() {
             "INCOMPLETE — a run stopped partway; provision it again or remove it"
@@ -193,21 +141,42 @@ pub(crate) fn list(into: Option<&str>) -> Response {
     }
 }
 
-/// Provisions one component.
-pub(crate) fn run(name: &str, into: Option<&str>) -> Response {
-    let Some(component) = COMPONENTS.iter().find(|component| component.name == name) else {
-        return Response {
-            text: format!(
-                "mcf: MCF does not know how to provision {name}\n  it knows: {}\n  adding one \
-                 is a change to MCF, not a configuration (§5)",
+/// The component to build: the one named, or the engine this machine needs.
+fn chosen_component(name: Option<&str>) -> Result<&'static Component, String> {
+    let Some(name) = name else {
+        let driver = mcf_serve::engines::accelerator_driver_present();
+        return mcf_serve::engines::required(driver).ok_or_else(|| {
+            "mcf: MCF's component table names no engine for this machine — adding one is a \
+             change to MCF, not a setting"
+                .to_owned()
+        });
+    };
+    COMPONENTS
+        .iter()
+        .find(|component| component.name == name)
+        .ok_or_else(|| {
+            format!(
+                "mcf: MCF does not know how to provision {name}\n  it knows: {}\n  adding one is a \
+                 change to MCF, not a configuration (§5)",
                 COMPONENTS
                     .iter()
                     .map(|component| component.name)
                     .collect::<Vec<_>>()
                     .join(", ")
-            ),
-            served: false,
-        };
+            )
+        })
+}
+
+/// Provisions one component — or, unnamed, the one this machine needs.
+pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
+    let component = match chosen_component(name) {
+        Ok(component) => component,
+        Err(text) => {
+            return Response {
+                text,
+                served: false,
+            };
+        }
     };
     let root = match root_from(into) {
         Ok(root) => root,
@@ -219,208 +188,61 @@ pub(crate) fn run(name: &str, into: Option<&str>) -> Response {
         }
     };
     let prefix = prefix_for(component, &root);
+    // Unnamed, the choice is stated: a build the operator did not name is a
+    // choice MCF made, and §3.15 wants it visible.
+    let chosen = if name.is_none() {
+        format!(
+            "{} is what a model on this machine would run on, so that is what is built\n",
+            component.name
+        )
+    } else {
+        String::new()
+    };
 
-    match provision(component, &prefix) {
-        Ok(provisioned) => Response {
-            text: provisioned,
+    // Each line the build prints, as it prints it, on the error stream —
+    // which is where progress goes so that the outcome below stays the one
+    // thing on standard output. The prefix's log keeps every line.
+    let mut progress = |line: &str| eprintln!("  {line}");
+    match provisioning::provision(component, &prefix, &mut progress) {
+        Ok(Outcome::Already { prefix }) => Response {
+            text: format!(
+                "{chosen}{}@{} is already provisioned at {}\n  remove it first to provision it \
+                 again (`mcf provision --remove {}`)",
+                component.name,
+                short(component),
+                prefix.display(),
+                component.name,
+            ),
             served: true,
         },
+        Ok(Outcome::Built(built)) => {
+            let mut lines = vec![
+                format!("provisioned {}@{}", component.name, short(component)),
+                format!("  into    {}", built.prefix.display()),
+                format!("  image   {} ({})", component.image, component.image_digest),
+                format!("  built   {}", component.targets.join(", ")),
+                "  packages, exactly:".to_owned(),
+            ];
+            lines.extend(built.toolchain.lines().map(|line| format!("    {line}")));
+            lines.push(format!(
+                "  provenance beside it: {}",
+                built.prefix.join("mcf-provenance.json").display()
+            ));
+            lines.push(format!("  log kept at {}", built.log.display()));
+            lines.push(match built.recorded {
+                Ok(path) => format!("  recorded in {}", path.display()),
+                Err(failure) => format!("  NOT RECORDED: {failure}"),
+            });
+            Response {
+                text: format!("{chosen}{}", lines.join("\n")),
+                served: true,
+            }
+        }
         Err(failure) => Response {
             text: crate::say::refusal(&format!("{} was not provisioned", component.name), &failure),
             served: false,
         },
     }
-}
-
-/// The provisioning itself: one container run, then the records.
-fn provision(component: &Component, prefix: &Path) -> Result<String, Failure> {
-    let podman = which_podman()?;
-
-    if prefix.join("mcf-provenance.json").is_file() {
-        return Ok(format!(
-            "{}@{} is already provisioned at {}\n  remove it first to provision it again \
-             (`mcf provision --remove {}`)",
-            component.name,
-            short(component),
-            prefix.display(),
-            component.name,
-        ));
-    }
-    std::fs::create_dir_all(prefix).map_err(|error| {
-        Failure::new(
-            Category::ResourceDiskReadonly,
-            Attribution::Machine,
-            Disposition::Refused,
-            WHERE,
-            "the prefix could not be created",
-        )
-        .with_context("prefix", prefix.display().to_string())
-        .with_context("os_error", error.to_string())
-    })?;
-
-    // The whole recipe as one script, written into the prefix so that what ran
-    // is part of what is recorded — a build whose steps are only in MCF's
-    // source is a build somebody has to read MCF to restate (§3.12).
-    std::fs::write(prefix.join("provision.sh"), script_for(component)).map_err(|error| {
-        Failure::new(
-            Category::RecordUnwritable,
-            Attribution::Machine,
-            Disposition::Refused,
-            WHERE,
-            "the provisioning script could not be written into the prefix",
-        )
-        .with_context("os_error", error.to_string())
-    })?;
-
-    let log_path = build_in_container(component, prefix, &podman)?;
-    let toolchain = verified(component, prefix)?;
-    let provenance = provenance_of(component, prefix, &toolchain);
-    std::fs::write(
-        prefix.join("mcf-provenance.json"),
-        format!("{}\n", provenance.to_line()),
-    )
-    .map_err(|error| broke(&error))?;
-    let recorded = record(EntryKind::ComponentProvisioned, &provenance);
-
-    let mut lines = vec![
-        format!("provisioned {}@{}", component.name, short(component)),
-        format!("  into    {}", prefix.display()),
-        format!("  image   {} ({})", component.image, component.image_digest),
-        format!("  built   {}", component.targets.join(", ")),
-        "  packages, exactly:".to_owned(),
-    ];
-    lines.extend(toolchain.lines().map(|line| format!("    {line}")));
-    lines.push(format!(
-        "  provenance beside it: {}",
-        prefix.join("mcf-provenance.json").display()
-    ));
-    lines.push(format!("  log kept at {}", log_path.display()));
-    lines.push(match recorded {
-        Ok(path) => format!("  recorded in {}", path.display()),
-        Err(failure) => format!("  NOT RECORDED: {failure}"),
-    });
-    Ok(lines.join("\n"))
-}
-
-/// The first twelve characters of the pin, for a directory name and a line.
-fn short(component: &Component) -> &str {
-    component.commit.get(..12).unwrap_or(component.commit)
-}
-
-/// One `podman run --rm` over the pinned image, its output kept in the prefix.
-fn build_in_container(
-    component: &Component,
-    prefix: &Path,
-    podman: &Path,
-) -> Result<PathBuf, Failure> {
-    // By digest: the tag is what a person reads, the digest is what runs.
-    let pinned = format!(
-        "{}@{}",
-        component.image.split(':').next().unwrap_or(component.image),
-        component.image_digest
-    );
-    let log_path = prefix.join("provision.log");
-    let log = std::fs::File::create(&log_path).map_err(|error| {
-        Failure::new(
-            Category::RecordUnwritable,
-            Attribution::Machine,
-            Disposition::Refused,
-            WHERE,
-            "the provisioning log could not be created",
-        )
-        .with_context("os_error", error.to_string())
-    })?;
-
-    // Podman's *image store* is not the prefix, and must not follow MCF's data
-    // home. Rootless podman keeps its store under `$XDG_DATA_HOME`, and on this
-    // machine that is the large content drive — a filesystem that will not do
-    // the ownership changes an overlay store needs, so the very first
-    // provisioning failed pulling the image (F31). The prefix, bind-mounted,
-    // lives there without trouble. So the child sees the platform default for
-    // its store and the operator's choice for the output, which is the division
-    // that holds: the store is podman's and shared; the prefix is MCF's and
-    // removable.
-    let status = std::process::Command::new(podman)
-        .env_remove("XDG_DATA_HOME")
-        .arg("run")
-        .arg("--rm")
-        .arg("-v")
-        .arg(format!("{}:/work:z", prefix.display()))
-        .arg(pinned)
-        .arg("bash")
-        .arg("/work/provision.sh")
-        .stdout(log.try_clone().map_err(|error| broke(&error))?)
-        .stderr(log)
-        .status()
-        .map_err(|error| {
-            Failure::new(
-                Category::PlatformMechanismUnavailable,
-                Attribution::Machine,
-                Disposition::Refused,
-                WHERE,
-                "podman could not be started",
-            )
-            .with_context("os_error", error.to_string())
-        })?;
-
-    if status.success() {
-        return Ok(log_path);
-    }
-    Err(Failure::new(
-        Category::PlatformMechanismUnavailable,
-        Attribution::Machine,
-        Disposition::Aborted,
-        WHERE,
-        "the controlled environment did not produce the component",
-    )
-    .with_context("exit", status.to_string())
-    .with_context("log", log_path.display().to_string())
-    .with_context(
-        "what_to_do",
-        "the log holds the build's own words; the prefix is safe to remove and the run safe \
-         to repeat",
-    ))
-}
-
-/// What the run pinned, read back out of the prefix rather than assumed: the
-/// commit the checkout landed on and the packages dnf resolved are what was
-/// *got*, and the recipe is only what was asked for (A21).
-fn verified(component: &Component, prefix: &Path) -> Result<String, Failure> {
-    let commit = std::fs::read_to_string(prefix.join("commit.txt")).unwrap_or_default();
-    mcf_core::provenance::checked_out(component.commit, &commit)?;
-    Ok(std::fs::read_to_string(prefix.join("toolchain.txt")).unwrap_or_default())
-}
-
-/// Everything a rerun needs, as one record.
-fn provenance_of(component: &Component, prefix: &Path, toolchain: &str) -> Value {
-    Value::map([
-        ("component", Value::text(component.name)),
-        ("role", Value::text(component.role)),
-        ("image", Value::text(component.image)),
-        ("image_digest", Value::text(component.image_digest)),
-        ("source", Value::text(component.source)),
-        ("commit", Value::text(component.commit)),
-        (
-            "packages",
-            Value::List(
-                toolchain
-                    .lines()
-                    .map(|line| Value::text(line.trim()))
-                    .collect(),
-            ),
-        ),
-        (
-            "targets",
-            Value::List(
-                component
-                    .targets
-                    .iter()
-                    .map(|target| Value::text(*target))
-                    .collect(),
-            ),
-        ),
-        ("prefix", Value::text(prefix.display().to_string())),
-    ])
 }
 
 /// Removes a provisioned component, and says so in the record first.
@@ -463,7 +285,7 @@ pub(crate) fn remove(name: &str, because: Option<&str>, into: Option<&str>) -> R
         ("prefix", Value::text(prefix.display().to_string())),
         ("reason", Value::text(reason)),
     ]);
-    let recorded = record(EntryKind::ComponentRemoved, &entry);
+    let recorded = provisioning::record(EntryKind::ComponentRemoved, &entry);
 
     match std::fs::remove_dir_all(&prefix) {
         Ok(()) => Response {
@@ -490,77 +312,6 @@ pub(crate) fn remove(name: &str, because: Option<&str>, into: Option<&str>) -> R
     }
 }
 
-/// The recipe as a script: install, record, clone, pin, configure, build.
-///
-/// `safe.directory` is passed per invocation rather than configured: the
-/// prefix is a bind mount whose files present as another owner inside the
-/// container, and git refuses a repository it thinks somebody else owns. The
-/// exception is scoped to the one directory and lives only as long as the
-/// command, which is exactly as far as it should reach.
-fn script_for(component: &Component) -> String {
-    format!(
-        "#!/usr/bin/env bash\n\
-         # Written by `mcf provision {name}`; what ran is part of what is recorded.\n\
-         set -o errexit -o nounset -o pipefail\n\
-         {install}\n\
-         {record}\n\
-         rm -rf /work/source /work/build\n\
-         git clone -q {source} /work/source\n\
-         git -c safe.directory=/work/source -C /work/source checkout -q {commit}\n\
-         git -c safe.directory=/work/source -C /work/source rev-parse HEAD > /work/commit.txt\n\
-         cmake -S /work/source -B /work/build {configure} > /work/configure.log 2>&1\n\
-         cmake --build /work/build -j --target {targets} > /work/build.log 2>&1\n",
-        name = component.name,
-        install = install_packages(component.packaging, &component.packages.join(" ")),
-        record = record_packages(component.packaging, &component.packages.join(" ")),
-        source = component.source,
-        commit = component.commit,
-        configure = component
-            .configure
-            .iter()
-            .map(|flag| shell_quoted(flag))
-            .collect::<Vec<_>>()
-            .join(" "),
-        targets = component.targets.join(" "),
-    )
-}
-
-/// One argument, safe to paste into a shell.
-///
-/// The configure flags are written into a script and run by bash, so an
-/// argument holding a shell metacharacter is a command. `CMAKE_CUDA_ARCHITECTURES`
-/// takes a semicolon-separated list, and unquoted it ended the cmake command
-/// and made `120` the next one — exit 127, after a configure that reported
-/// success while silently dropping the flag (F128). Quoting every argument
-/// rather than that one keeps the next flag from finding the same hole.
-fn shell_quoted(argument: &str) -> String {
-    format!("'{}'", argument.replace('\'', "'\\''"))
-}
-
-/// Where `podman` is, or the refusal F30 promised.
-fn which_podman() -> Result<PathBuf, Failure> {
-    let candidates = ["/usr/bin/podman", "/usr/local/bin/podman"];
-    for candidate in candidates {
-        let path = Path::new(candidate);
-        if path.is_file() {
-            return Ok(path.to_path_buf());
-        }
-    }
-    Err(Failure::new(
-        Category::PlatformMechanismUnavailable,
-        Attribution::Machine,
-        Disposition::Refused,
-        WHERE,
-        "this machine has no podman, and a controlled environment is a container (DEC-052)",
-    )
-    .with_context("looked_at", candidates.join(", "))
-    .with_context(
-        "what_to_do",
-        "install podman from the platform's own repository; MCF will not build with the \
-         host's ambient tools — F30 measured what that route silently does",
-    ))
-}
-
 fn root_from(into: Option<&str>) -> Result<PathBuf, String> {
     match into {
         Some(named) => Ok(PathBuf::from(named)),
@@ -571,32 +322,3 @@ fn root_from(into: Option<&str>) -> Result<PathBuf, String> {
         }),
     }
 }
-
-fn record(kind: EntryKind, body: &Value) -> Result<PathBuf, Failure> {
-    let Some(path) = mcf_record::journal::default_path() else {
-        return Err(Failure::new(
-            Category::RecordUnwritable,
-            Attribution::Machine,
-            Disposition::Refused,
-            WHERE,
-            "there is nowhere to record the provisioning",
-        ));
-    };
-    let mut journal = Journal::open(&path)?;
-    journal.append(&Record::new(kind, Timestamp::now(), body.clone()))?;
-    Ok(path)
-}
-
-fn broke(error: &std::io::Error) -> Failure {
-    Failure::new(
-        Category::RecordUnwritable,
-        Attribution::Machine,
-        Disposition::Aborted,
-        WHERE,
-        "what was provisioned could not be written down beside it",
-    )
-    .with_context("os_error", error.to_string())
-}
-
-#[cfg(test)]
-mod tests;

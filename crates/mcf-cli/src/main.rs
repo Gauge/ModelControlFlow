@@ -204,8 +204,9 @@ enum Request<'a> {
     },
     /// Install, build and pin a component in a controlled environment.
     Provision {
-        /// Which component, from the table MCF carries.
-        name: &'a str,
+        /// Which component, from the table MCF carries — or none, for the
+        /// one a model on this machine would run on.
+        name: Option<&'a str>,
         /// A prefix root other than the default.
         into: Option<&'a str>,
     },
@@ -604,14 +605,21 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             because: Some(because),
             into: Some(into),
         },
-        ["provision", name] => Request::Provision { name, into: None },
-        ["provision", name, "--into", into] => Request::Provision {
-            name,
+        ["provision", "--into", into] => Request::Provision {
+            name: None,
             into: Some(into),
         },
-        ["provision"] => Request::MissingArgument {
-            command: "provision",
-            needs: "<component>, or --list",
+        ["provision", name] => Request::Provision {
+            name: Some(name),
+            into: None,
+        },
+        ["provision", name, "--into", into] => Request::Provision {
+            name: Some(name),
+            into: Some(into),
+        },
+        ["provision"] => Request::Provision {
+            name: None,
+            into: None,
         },
         ["provision", _, argument, ..] => Request::UnexpectedArgument {
             command: "provision",
@@ -1394,9 +1402,10 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                       ask a model to do the thing, and\n\
                  \x20                                     report what it did — configuring\n\
                  \x20                                     nothing (§X, D42)\n\
-                 \x20 mcf provision <component>           build a pinned component in a\n\
+                 \x20 mcf provision [<component>]         build a pinned component in a\n\
                  \x20     [--list] [--remove <c>          container, everything recorded,\n\
-                 \x20      --because <why>] [--into <dir>] removable without residue (B-367)\n\
+                 \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
+                 \x20                                     the engine a model here needs (B-367)\n\
                  \x20 mcf embed <model> --text <text>     ask an embedding model for a\n\
                  \x20                                     vector: JSON first, conditions\n\
                  \x20                                     after (DEC-055)\n\
@@ -1560,7 +1569,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             engine,
             apply,
         } => probe::run(model, *engine, *apply),
-        Request::Provision { name, into } => provision::run(name, *into),
+        Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
             name,

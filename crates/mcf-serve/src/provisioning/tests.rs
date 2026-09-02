@@ -1,6 +1,7 @@
 //! What the recipe table has to keep true without a container in sight.
 
-use super::{COMPONENTS, Component, Packaging, prefix_for, script_for};
+use super::{prefix_for, script_for};
+use mcf_core::component::{COMPONENTS, Component, Packaging};
 
 /// Every component pins everything a rerun needs: an image digest, a full
 /// commit, at least one package and one target.
@@ -175,11 +176,11 @@ fn a_configure_flag_cannot_become_a_command() {
         configure.contains("'-DWITH SPACE=a b'"),
         "a space must not split one argument into two: {configure}"
     );
-    // Nothing outside the redirect may follow the quoted arguments: an
-    // unquoted `;` would leave a second command on this line.
+    // Nothing outside the pipe to the log may follow the quoted arguments:
+    // an unquoted `;` would leave a second command on this line.
     let after = configure
-        .split_once("> /work/configure.log")
-        .expect("the configure output is redirected")
+        .split_once("2>&1 | tee /work/configure.log")
+        .expect("the configure output is copied to the log")
         .0;
     assert!(
         !after
@@ -213,5 +214,33 @@ fn packaging_follows_the_image() {
                 );
             }
         }
+    }
+}
+
+/// Each stage says its name, and the build's own lines are passed through
+/// rather than diverted — so that a surface watching the build sees it move
+/// and the log in the prefix is still whole (A2).
+#[test]
+fn the_script_announces_its_stages_and_keeps_its_logs() {
+    for component in COMPONENTS {
+        let script = script_for(component);
+        for stage in [
+            "echo 'installing the toolchain'",
+            "echo 'fetching the source at",
+            "echo 'configuring'",
+            "echo 'building'",
+        ] {
+            assert!(script.contains(stage), "{}: no {stage}", component.name);
+        }
+        assert!(
+            script.contains("| tee /work/build.log"),
+            "{}: the build log must be copied, not diverted",
+            component.name
+        );
+        assert!(
+            script.contains("set -o errexit -o nounset -o pipefail"),
+            "{}: a failed cmake behind a tee must still fail the script",
+            component.name
+        );
     }
 }

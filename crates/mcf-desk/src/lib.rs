@@ -748,6 +748,12 @@ pub enum Doing {
     Nothing,
     /// Starting a model on a port.
     Hosting(job::Job),
+    /// Building the engine a model needs, so that it can then be held.
+    ///
+    /// Started by Host, never on its own: the window builds only when the
+    /// operator asked for a model to be held and MCF had nothing to hold it
+    /// with — and it says what it is building while it does (§3.15, B-367).
+    Provisioning(job::Job),
     /// Asking a hub what it publishes.
     Listing(job::Job),
     /// Fetching a model.
@@ -771,6 +777,7 @@ impl Doing {
             | Self::Downloading(job)
             | Self::Measuring(job)
             | Self::Answering(job)
+            | Self::Provisioning(job)
             | Self::Hosting(job) => Some(job),
         }
     }
@@ -830,6 +837,15 @@ pub struct Desk {
     pub recommended: Option<mcf_serve::hosting::Hosting>,
     /// Why there are no settings, where there are none.
     pub no_settings: Option<String>,
+    /// The engine MCF said it would build for the chosen model, where there
+    /// are no settings because there is nothing to run it on. Named by the
+    /// daemon, not worked out here, so that what Host builds is what MCF
+    /// would have built from the command line (B-072).
+    pub needs_engine: Option<String>,
+    /// The model to hold once the engine being built is there — the one Host
+    /// was pressed for, so that a model chosen meanwhile is not held by a
+    /// press that was for another.
+    host_after: Option<String>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
     /// The context window a measurement is set up for.
@@ -872,6 +888,8 @@ impl Desk {
             settings: None,
             recommended: None,
             no_settings: None,
+            needs_engine: None,
+            host_after: None,
             hosted: None,
             window: 8192,
             open: None,
@@ -943,6 +961,7 @@ impl Desk {
             | Doing::Measuring(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
+            | Doing::Provisioning(job)
             | Doing::Hosting(job) => job.drain(),
         };
         if !heard {
@@ -978,6 +997,26 @@ impl Desk {
             && job.finished
         {
             self.keep_the_run();
+        }
+        // The engine just built is what the model was waiting for: the
+        // settings are asked again, now that there is something to run it
+        // on, and the hold that was pressed for goes ahead — for the model it
+        // was pressed for, if it is still the one chosen.
+        if let Doing::Provisioning(job) = &self.doing
+            && job.finished
+        {
+            let refused = job.refused.clone();
+            let wanted = self.host_after.take();
+            self.read_settings();
+            let still_chosen = self
+                .chosen
+                .and_then(|at| self.models.get(at))
+                .is_some_and(|held| Some(&held.path) == wanted.as_ref());
+            if refused.is_none() && still_chosen {
+                self.host_it();
+            } else if let Some(why) = refused {
+                self.no_settings = Some(format!("the engine could not be built: {why}"));
+            }
         }
         true
     }
@@ -1137,6 +1176,7 @@ impl Desk {
         self.settings = None;
         self.recommended = None;
         self.no_settings = None;
+        self.needs_engine = None;
         let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
             return;
         };
@@ -1156,6 +1196,12 @@ impl Desk {
             }
             Ok(answer) => {
                 self.no_settings = Some(refused_because(&answer.body));
+                self.needs_engine = answer
+                    .body
+                    .get("context")
+                    .and_then(|context| context.get("needs_component"))
+                    .and_then(Value::as_text)
+                    .map(str::to_owned);
             }
             Err(why) => self.no_settings = Some(why),
         }
@@ -1211,6 +1257,21 @@ impl Desk {
             self.no_settings = Some("choose a model first".to_owned());
             return;
         };
+        // No engine is not a refusal but a step: MCF names what it would
+        // build, and Host builds it — on screen, with the name, and recorded —
+        // and holds the model once it is there. The operator pressed Host;
+        // the build is what holding costs on this machine (B-367, §3.15).
+        if self.settings.is_none()
+            && let Some(engine) = self.needs_engine.clone()
+        {
+            self.host_after = Some(held.path.clone());
+            self.doing = Doing::Provisioning(job::Job::start(
+                self.socket.clone(),
+                Request::Provision { component: None },
+                format!("building {engine} so that {} can be held", held.name),
+            ));
+            return;
+        }
         // Refused in words rather than by doing nothing. What settings a model
         // would run under is the daemon's to say, and where it will not say,
         // that is the answer and it belongs on the screen.
@@ -1640,6 +1701,15 @@ impl Desk {
                 format!("{} — {}s so far", job.what, job.ran()),
             );
         }
+        if self.busy
+            && let Doing::Provisioning(job) = &self.doing
+            && !job.finished
+        {
+            return (
+                "BUILDING".to_owned(),
+                format!("{} — {}s so far", job.what, job.ran()),
+            );
+        }
         if self.busy {
             return (
                 "BUSY".to_owned(),
@@ -1656,6 +1726,7 @@ impl Desk {
             | Doing::Measuring(job)
             | Doing::Answering(job)
             | Doing::Reporting(job)
+            | Doing::Provisioning(job)
             | Doing::Hosting(job) => (
                 if job.finished {
                     "IDLE".to_owned()

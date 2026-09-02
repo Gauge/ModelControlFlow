@@ -149,6 +149,10 @@ fn the_new_requests_survive_the_wire() {
             engine: Some("stand-in".to_owned()),
             deepest: 512,
         },
+        Request::Provision { component: None },
+        Request::Provision {
+            component: Some("llama.cpp".to_owned()),
+        },
     ];
     for request in asked {
         let line = request.to_line();

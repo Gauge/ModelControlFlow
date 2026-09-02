@@ -511,3 +511,18 @@ fn an_engine_records_its_own_component_name() {
         );
     }
 }
+
+/// The engine a machine needs is decided by its driver: the accelerator
+/// build where one is loaded, the processor build otherwise — and both are
+/// components MCF knows how to build.
+#[test]
+fn the_required_engine_follows_the_driver() {
+    let with = super::required(true).expect("the table names the accelerator build");
+    let without = super::required(false).expect("the table names the processor build");
+    assert_eq!(with.name, "llama.cpp-cuda");
+    assert_eq!(without.name, "llama.cpp");
+    assert!(
+        with.targets.contains(&"llama-server") && without.targets.contains(&"llama-server"),
+        "both builds are the same server"
+    );
+}

@@ -466,6 +466,40 @@ fn gigabytes(bytes: u64) -> String {
     }
 }
 
+/// Whether an accelerator's driver is loaded on this machine.
+///
+/// A file read, not a process: the kernel lists the cards its driver holds
+/// under `/proc/driver/nvidia/gpus`, one directory each, and a directory
+/// there is a card a CUDA build could use. Nothing is asked of the card.
+#[must_use]
+pub fn accelerator_driver_present() -> bool {
+    std::fs::read_dir("/proc/driver/nvidia/gpus").is_ok_and(|mut cards| cards.next().is_some())
+}
+
+/// The component a model on this machine would run on: the accelerator build
+/// where the driver for one is loaded, the processor build otherwise.
+///
+/// **Decided from the driver, not the card.** A CUDA build on a machine whose
+/// kernel has no NVIDIA driver finds no device and runs on the processor
+/// anyway, slower to build and no faster to run — so what decides is whether
+/// the driver is there, which is the one thing a build could use. A machine
+/// that gains a card later gains the other build the next time a model is
+/// held with nothing to run it on; nothing here removes the one it has.
+///
+/// `None` only if MCF's own component table has lost the entry, which a test
+/// forbids; a caller says so rather than building something else.
+#[must_use]
+pub fn required(accelerator_driver: bool) -> Option<&'static mcf_core::component::Component> {
+    let wanted = if accelerator_driver {
+        "llama.cpp-cuda"
+    } else {
+        "llama.cpp"
+    };
+    mcf_core::component::COMPONENTS
+        .iter()
+        .find(|component| component.name == wanted)
+}
+
 /// Picks the engine and device that give this model the largest window.
 ///
 /// Largest window rather than fastest device, because speed is a measurement

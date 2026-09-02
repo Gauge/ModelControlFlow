@@ -76,10 +76,21 @@ pub enum Request {
     /// What components MCF can build, and which of them are here.
     ///
     /// Read-only: it says what the catalogue holds and what is on the disk
-    /// beside it. Building one is `mcf provision`, which is a command rather
-    /// than a request — a build takes minutes and writes a record of its own,
-    /// so it is not something a surface waits on a socket for.
+    /// beside it. Building one is [`Request::Provision`].
     Components,
+    /// Provision: build a component, streamed a line at a time as the build
+    /// prints them, so that a surface can show minutes of compiling as
+    /// something happening rather than something hung (B-367).
+    ///
+    /// Unnamed, the engine this machine needs — which the window asks for when
+    /// a model is held and nothing here can run it. The daemon says what it
+    /// chose in the first line, because a build the operator did not name is
+    /// a choice MCF made and §3.15 wants it visible.
+    Provision {
+        /// The component's name in MCF's table, or `None` for the engine this
+        /// machine needs.
+        component: Option<String>,
+    },
     /// Stop: refuse new work, finish what is in hand, and exit.
     Stop {
         /// Why, which is recorded. A26 makes stopping an act with an account
@@ -283,6 +294,13 @@ impl Request {
             Self::Status => Value::map([("ask", Value::text("status"))]),
             Self::Holding => Value::map([("ask", Value::text("holding"))]),
             Self::Components => Value::map([("ask", Value::text("components"))]),
+            Self::Provision { component } => {
+                let mut fields = vec![("ask", Value::text("provision"))];
+                if let Some(component) = component {
+                    fields.push(("component", Value::text(component.clone())));
+                }
+                Value::map(fields)
+            }
             Self::PromptReport {
                 model,
                 prompt,
@@ -456,6 +474,9 @@ impl Request {
             }),
             Some("holding") => Ok(Self::Holding),
             Some("components") => Ok(Self::Components),
+            Some("provision") => Ok(Self::Provision {
+                component: optional("component"),
+            }),
             Some("prompt-report") => Ok(Self::PromptReport {
                 model: value
                     .get("model")

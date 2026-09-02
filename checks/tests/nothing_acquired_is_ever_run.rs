@@ -13,14 +13,16 @@
 //! not an artifact.
 //!
 //! **Provisioning is where the boundary is drawn, not crossed** (B-367, §6.4).
-//! `mcf provision` starts `podman`, a platform binary, and inside the container
-//! it starts, source MCF cloned at a pinned commit is compiled and — during the
+//! `mcf provision`, and the daemon when a window holds a model with no engine
+//! to run it, start `podman`, a platform binary, and inside the container it
+//! starts, source MCF cloned at a pinned commit is compiled and — during the
 //! build — run. That *is* repository code executing, and it is what §6.4
-//! permits: deliberately (the operator named the component), per artifact (one
-//! pin, declared in MCF's own table), with the choice recorded
-//! (`component_provisioned`). Nothing from the container reaches the host's
-//! own process, and nothing MCF *acquires as a model* is ever started by any
-//! path here.
+//! permits: deliberately (the operator named the component, or pressed Host
+//! and was told what would be built for it), per artifact (one pin, declared
+//! in MCF's own table — never a name read from a model or a hub), with the
+//! choice recorded (`component_provisioned`). Nothing from the container
+//! reaches the host's own process, and nothing MCF *acquires as a model* is
+//! ever started by any path here.
 //!
 //! **What this does not prove.** That an artifact's *content* cannot become
 //! code some other way — a library MCF loads, a format that names a plugin. It
@@ -145,12 +147,14 @@ const DECLARED: &[Spawns] = &[
                rather than one MCF makes for them (§3.7, B-416)",
     },
     Spawns {
-        file: "crates/mcf-cli/src/provision.rs",
+        file: "crates/mcf-serve/src/provisioning.rs",
         sites: 1,
         what: "podman, from the platform's own path, running an image pinned by digest and a \
                script MCF wrote into the prefix a moment before. What executes inside the \
-               container is source at a commit MCF's own table names, chosen by the operator \
-               and recorded — §6.4's permitted case, not an acquired model (B-367)",
+               container is source at a commit MCF's own table names — named by the operator, \
+               or the engine the machine needs when a model is held with none, which is \
+               still one of the table's two entries — and recorded either way: §6.4's \
+               permitted case, not an acquired model (B-367)",
     },
     Spawns {
         file: "crates/mcf-core/src/self_cost.rs",

@@ -128,7 +128,7 @@ fn its_status_says_what_it_cannot_do() {
     // disk, with two rule identifiers in it — which is how two provisioned
     // engines sat on the operator's machine while the daemon reported none.
     assert!(cannot.contains("no engine is installed"), "{cannot}");
-    assert!(cannot.contains("build one"), "{cannot}");
+    assert!(cannot.contains("builds one"), "{cannot}");
     for cited in ["B-320", "D32"] {
         assert!(
             !cannot.contains(cited),

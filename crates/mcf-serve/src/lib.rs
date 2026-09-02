@@ -24,4 +24,5 @@ mod generation;
 pub mod hosting;
 pub mod probes;
 pub mod prompt;
+pub mod provisioning;
 pub mod served;

@@ -252,7 +252,7 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
             }
             lines
         }
-        Cache::Unsized(why) => row("key/value cache", &format!("not sized: {why} (A7)")),
+        Cache::Unsized(why) => row("key/value cache", &format!("not sized: {why}")),
     }
 }
 
@@ -347,7 +347,8 @@ fn named_lines(held: &Vocabulary) -> Vec<String> {
         let spelled = named.spelled.as_ref().map_or_else(
             || {
                 format!(
-                    "BEYOND THE LIST — the header names token {} and the list holds {} (A2)",
+                    "BEYOND THE LIST — the header names token {} and the list holds {}; an \
+                     engine reading that number indexes past the list",
                     named.identifier, held.tokens
                 )
             },

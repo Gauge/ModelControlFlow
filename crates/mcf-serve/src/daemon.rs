@@ -193,6 +193,25 @@ pub(crate) fn header_of(path: &std::path::Path) -> Option<mcf_standin::gguf::Mod
     None
 }
 
+/// The engines under this daemon's home, each asked once what it computes on.
+fn discover_engines(places: &Places) -> Vec<(crate::engines::Engine, Vec<crate::engines::Device>)> {
+    let home = places.models.parent().unwrap_or(&places.models).to_owned();
+    let free = system_memory_free();
+    crate::engines::discover(&home)
+        .into_iter()
+        .map(|engine| {
+            let devices = engine.devices(free).unwrap_or_default();
+            (engine, devices)
+        })
+        .collect()
+}
+
+/// The engine a model on this machine would need built: decided by whether
+/// an accelerator's driver is loaded, which is a directory listing.
+fn needed_engine() -> Option<&'static mcf_core::component::Component> {
+    crate::engines::required(crate::engines::accelerator_driver_present())
+}
+
 /// Memory free for a new process, or `None` where the platform will not say.
 ///
 /// Available rather than total: what matters is what a model could take now,
@@ -658,8 +677,10 @@ pub struct Daemon {
     /// The engines found when this daemon started, with what each can compute
     /// on. Asked once: finding them is a directory listing, but asking what
     /// devices they have means running them, and a status request that starts
-    /// processes is a status request that costs something (§3.13).
-    engines: Vec<(crate::engines::Engine, Vec<crate::engines::Device>)>,
+    /// processes is a status request that costs something (§3.13). Asked
+    /// again only after this daemon has built one itself, which is the one
+    /// moment the set is known to have changed.
+    engines: std::sync::Mutex<Vec<(crate::engines::Engine, Vec<crate::engines::Device>)>>,
     listener: UnixListener,
     started: Timestamp,
     since: Instant<Monotonic>,
@@ -752,17 +773,7 @@ impl Daemon {
         let started = Timestamp::now();
         // Before the struct takes ownership of `places`: asked once, here, and
         // not again while this daemon is up.
-        let engines = {
-            let home = places.models.parent().unwrap_or(&places.models).to_owned();
-            let free = system_memory_free();
-            crate::engines::discover(&home)
-                .into_iter()
-                .map(|engine| {
-                    let devices = engine.devices(free).unwrap_or_default();
-                    (engine, devices)
-                })
-                .collect()
-        };
+        let engines = discover_engines(&places);
         let daemon = Self {
             timings: std::sync::Mutex::new(newest_timings(&places.journal)),
             holding: std::sync::Mutex::new(None),
@@ -771,7 +782,7 @@ impl Daemon {
             started,
             since: SystemClock.now(),
             recovered,
-            engines,
+            engines: std::sync::Mutex::new(engines),
             resident: std::sync::Mutex::new(None),
             server: std::sync::Mutex::new(None),
         };
@@ -823,7 +834,7 @@ impl Daemon {
     /// change while it sits on the disk.
     fn engines_as_value(&self) -> Value {
         Value::List(
-            self.engines
+            self.engines_held()
                 .iter()
                 .map(|(engine, devices)| {
                     Value::map([
@@ -881,7 +892,7 @@ impl Daemon {
     /// wrongly takes the machine down with it.
     fn engines_now(&self) -> Vec<(crate::engines::Engine, Vec<crate::engines::Device>)> {
         let free = system_memory_free();
-        self.engines
+        self.engines_held()
             .iter()
             .map(|(engine, devices)| {
                 let devices = devices
@@ -897,6 +908,33 @@ impl Daemon {
                 (engine.clone(), devices)
             })
             .collect()
+    }
+
+    /// The engines as sampled, copied out from under the lock.
+    ///
+    /// A poisoned lock is a thread that panicked while holding it, which this
+    /// crate's lints forbid; the list is taken anyway rather than reported
+    /// empty, because *no engine* is a claim about the disk (A7).
+    fn engines_held(&self) -> Vec<(crate::engines::Engine, Vec<crate::engines::Device>)> {
+        self.engines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Looks for the engines again, after this daemon has built one.
+    ///
+    /// The one exception to *asked once*: a build this daemon just finished
+    /// is a change to the disk it knows about, and an engine it built and
+    /// then could not see would be F31 by MCF's own hand — the prefix there
+    /// and the daemon saying no engine is. Each engine is run once to ask its
+    /// devices, as at start-up.
+    fn rediscover(&self) {
+        let found = discover_engines(&self.places);
+        *self
+            .engines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = found;
     }
 
     /// What MCF worked out about running one model: its shape, and which
@@ -985,9 +1023,9 @@ impl Daemon {
     /// for the record, where it can be followed; on a screen it is noise nobody
     /// can use.
     fn cannot(&self) -> Value {
-        if self.engines.is_empty() {
+        if self.engines_held().is_empty() {
             return Value::List(vec![Value::text(
-                "run a model: no engine is installed yet — MCF can build one for you",
+                "run a model: no engine is installed yet — MCF builds one when a model is held",
             )]);
         }
         Value::List(Vec::new())
@@ -1198,6 +1236,10 @@ impl Daemon {
                     from,
                 }) => {
                     self.acquiring(&reference, &file, from.as_deref(), &mut writer);
+                    return None;
+                }
+                Ok(Request::Provision { component }) => {
+                    self.provisioning(component.as_deref(), &mut writer);
                     return None;
                 }
                 Ok(request) => {
@@ -1507,10 +1549,11 @@ impl Daemon {
             Request::Generate { .. }
             | Request::Acquire { .. }
             | Request::Measure { .. }
+            | Request::Provision { .. }
             | Request::PromptReport { .. } => (
                 Answer::refused(&crate::control::refused(
                     "a request that answers in many lines reached the one-answer path",
-                    "generate, acquire or measure",
+                    "generate, acquire, measure or provision",
                 )),
                 None,
             ),
@@ -1645,8 +1688,8 @@ impl Daemon {
     fn picked_engine(&self, named: &str) -> Option<(crate::adapters::ProvisionedLlama, u32, u64)> {
         let (recommended, _) = self.recommend(named).ok()?;
         let (engine, _) = self
-            .engines
-            .iter()
+            .engines_held()
+            .into_iter()
             .find(|(engine, _)| engine.name == recommended.engine)?;
         Some((
             crate::adapters::ProvisionedLlama {
@@ -1821,6 +1864,121 @@ impl Daemon {
                 .and_then(Value::as_text)
                 .map(str::to_owned),
         })
+    }
+
+    /// Builds a component, saying each line the build prints as it prints it.
+    ///
+    /// **Unnamed, the engine this machine needs** — which is what the window
+    /// asks for when a model is held and nothing here can run it. The choice
+    /// is said in the first line, because a build the operator did not name
+    /// is a choice MCF made (§3.15), and it is recorded by the builder with
+    /// everything else about the build.
+    ///
+    /// **The connection is the progress bar.** A build is minutes of
+    /// compiling, and a window that heard nothing for that long could not
+    /// tell it from a hang (A2), so each line the container prints goes down
+    /// the socket as it arrives, and the log on disk keeps all of them.
+    ///
+    /// **Then the engines are looked for again**, so that the build just
+    /// finished is one the next request can use without a restart. Nothing
+    /// else this daemon holds changes: a build is a new directory beside the
+    /// ones it knew.
+    fn provisioning(&self, component: Option<&str>, writer: &mut &UnixStream) {
+        let say = |writer: &mut &UnixStream, answer: &Answer| {
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+        };
+        let (component, chosen) = match component {
+            Some(name) => match mcf_core::component::COMPONENTS
+                .iter()
+                .find(|held| held.name == name)
+            {
+                Some(component) => (component, false),
+                None => {
+                    return say(
+                        writer,
+                        &Answer::refused(&crate::control::refused(
+                            "a component MCF knows how to build",
+                            name,
+                        )),
+                    );
+                }
+            },
+            None => match needed_engine() {
+                Some(component) => (component, true),
+                None => {
+                    return say(
+                        writer,
+                        &Answer::refused(&crate::control::refused(
+                            "an engine in MCF's own component table",
+                            "none — adding one is a change to MCF, not a setting",
+                        )),
+                    );
+                }
+            },
+        };
+        let mcf_home = self
+            .places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
+        let prefix =
+            crate::provisioning::prefix_for(component, &crate::provisioning::root_under(&mcf_home));
+        let progress = |doing: &str| {
+            Value::map([
+                ("provisioning", Value::text(component.name)),
+                ("commit", Value::text(crate::provisioning::short(component))),
+                ("chosen", Value::Bool(chosen)),
+                ("doing", Value::text(doing.to_owned())),
+                ("done", Value::Bool(false)),
+            ])
+        };
+        say(
+            writer,
+            &Answer::served(progress(if chosen {
+                "chosen: what a model on this machine would run on"
+            } else {
+                "starting"
+            })),
+        );
+        let mut line_out = |line: &str| say(writer, &Answer::served(progress(line)));
+        let built = crate::provisioning::provision(component, &prefix, &mut line_out);
+        let answer = match built {
+            Ok(crate::provisioning::Outcome::Already { prefix }) => Answer::served(Value::map([
+                ("provisioning", Value::text(component.name)),
+                ("already", Value::Bool(true)),
+                ("prefix", Value::text(prefix.display().to_string())),
+                ("done", Value::Bool(true)),
+            ])),
+            Ok(crate::provisioning::Outcome::Built(built)) => {
+                self.rediscover();
+                let reached = self
+                    .engines_held()
+                    .iter()
+                    .any(|(engine, _)| engine.name == component.name);
+                Answer::served(Value::map([
+                    ("provisioning", Value::text(component.name)),
+                    ("already", Value::Bool(false)),
+                    ("prefix", Value::text(built.prefix.display().to_string())),
+                    ("log", Value::text(built.log.display().to_string())),
+                    ("toolchain", Value::text(built.toolchain)),
+                    (
+                        "recorded",
+                        match built.recorded {
+                            Ok(at) => Value::text(at.display().to_string()),
+                            Err(failure) => mcf_record::encode::failure(&failure),
+                        },
+                    ),
+                    // Whether the daemon now reaches it as an engine. A
+                    // library is built and never an engine; an engine built
+                    // and not reached is F31 and is said here, not hidden.
+                    ("usable_engine", Value::Bool(reached)),
+                    ("done", Value::Bool(true)),
+                ]))
+            }
+            Err(failure) => Answer::refused(&failure),
+        };
+        say(writer, &answer);
     }
 
     /// Fetches one published file, saying how far along it is as it goes.
@@ -2047,8 +2205,20 @@ impl Daemon {
                 named,
             )
         })?;
-        let choice = crate::engines::resolve(&self.engines_now(), bytes, cache, trained)
-            .map_err(|refused| crate::control::refused(&refused.says(), named))?;
+        let choice = crate::engines::resolve(&self.engines_now(), bytes, cache, trained).map_err(
+            |refused| {
+                let failure = crate::control::refused(&refused.says(), named);
+                // Named, not only described: a window that reads the name
+                // can build it, where one that reads the sentence could only
+                // print it (B-367).
+                match (&refused, needed_engine()) {
+                    (crate::engines::Refused::NoEngine, Some(component)) => {
+                        failure.with_context("needs_component", component.name)
+                    }
+                    _ => failure,
+                }
+            },
+        )?;
         let on_a_card = matches!(choice.device.kind, crate::engines::Kind::Gpu);
         // Whether the whole thing fits where it is going: the weights plus
         // the cache at the window MCF settled on. This is the figure the
@@ -2083,8 +2253,8 @@ impl Daemon {
         // a card, said so, and started the build that cannot use it. That is
         // the same defect as the hardcoded layer count, one level up (F133).
         let Some((engine, _)) = self
-            .engines
-            .iter()
+            .engines_held()
+            .into_iter()
             .find(|(engine, _)| engine.name == settings.engine)
         else {
             return Answer::refused(&crate::control::refused(

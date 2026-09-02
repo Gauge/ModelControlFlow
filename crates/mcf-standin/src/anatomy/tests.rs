@@ -223,11 +223,11 @@ fn a_mixture_counts_what_a_token_activates() {
         tensor("blk.0.ffn_down_exps.weight", &[32, 64, 8], TensorKind::Q4_K),
     ];
     let mixture = model(
-        "qwen3moe",
+        "mixture",
         &[
-            ("qwen3moe.expert_count", Value::Integer(8)),
-            ("qwen3moe.expert_used_count", Value::Integer(2)),
-            ("qwen3moe.expert_feed_forward_length", Value::Integer(32)),
+            ("mixture.expert_count", Value::Integer(8)),
+            ("mixture.expert_used_count", Value::Integer(2)),
+            ("mixture.expert_feed_forward_length", Value::Integer(32)),
             ("general.size_label", Value::Text("0.0B-A0.0B".to_owned())),
         ],
         tensors,
@@ -405,7 +405,7 @@ fn spoken() -> Model {
         "llama",
         &[
             ("tokenizer.ggml.model", Value::Text("gpt2".to_owned())),
-            ("tokenizer.ggml.pre", Value::Text("qwen2".to_owned())),
+            ("tokenizer.ggml.pre", Value::Text("llama-bpe".to_owned())),
             (
                 "tokenizer.ggml.tokens",
                 Value::List(
@@ -445,7 +445,7 @@ fn a_vocabulary_is_counted_from_its_list() {
     let counted = super::vocabulary::of(&spoken());
     assert_eq!(counted.tokens, 8);
     assert_eq!(counted.model.as_deref(), Some("gpt2"));
-    assert_eq!(counted.pre.as_deref(), Some("qwen2"));
+    assert_eq!(counted.pre.as_deref(), Some("llama-bpe"));
     assert_eq!(counted.merges, Some(3));
     assert_eq!(
         counted.kinds,

@@ -743,6 +743,35 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     .or(act)
 }
 
+/// Why there are no settings, and what Host will do about it where it can.
+fn no_settings(paint: &mut Painter, desk: &Desk, area: Box, why: &str) {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "settings", ink.faint);
+    let lines = paint.wrap(why, Weight::Regular, size::SMALL, area.w.min(430.0));
+    let mut y = area.y + 24.0;
+    for line in lines.iter().take(3) {
+        paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.warn);
+        y += 16.0;
+    }
+    // What Host will do about it, said before it is pressed: a build is
+    // minutes and a container image, and a button that started one without
+    // saying so would be a hidden choice (§3.15, B-367).
+    if let Some(engine) = &desk.needs_engine {
+        let said = format!(
+            "Host builds {engine} first — a pinned source compiled in a container, recorded — \
+             then holds the model on it."
+        );
+        for line in paint
+            .wrap(&said, Weight::Regular, size::SMALL, area.w.min(430.0))
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.quiet);
+            y += 16.0;
+        }
+    }
+}
+
 /// Every setting the chosen model would be hosted under, with what MCF
 /// recommended beside anything somebody has moved.
 ///
@@ -753,13 +782,7 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
 fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     if let Some(why) = &desk.no_settings {
-        spaced(paint, area.x, area.y, "settings", ink.faint);
-        let lines = paint.wrap(why, Weight::Regular, size::SMALL, area.w.min(430.0));
-        let mut y = area.y + 24.0;
-        for line in lines.iter().take(3) {
-            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.warn);
-            y += 16.0;
-        }
+        no_settings(paint, desk, area, why);
         return None;
     }
     let (Some(settings), Some(recommended)) = (desk.settings.as_ref(), desk.recommended.as_ref())
@@ -1088,6 +1111,43 @@ fn what_the_window_costs(
     y
 }
 
+/// The build, as it goes: what is being built and for what, how long so far,
+/// and the last line the compiler printed — which is what tells a person that
+/// minutes of silence are minutes of work (A2).
+fn building(paint: &mut Painter, job: &crate::job::Job, x: f32, mut y: f32, wide: f32) {
+    let ink = paint.ink;
+    let printed = job
+        .answers
+        .iter()
+        .rev()
+        .find_map(|answer| answer.get("doing").and_then(Value::as_text))
+        .unwrap_or("starting");
+    let said = job.refused.clone().map_or_else(
+        || {
+            if job.finished {
+                format!("built — {}", job.what)
+            } else {
+                format!("BUILDING — {}s so far. {}\n{printed}", job.ran(), job.what)
+            }
+        },
+        |why| format!("the engine could not be built: {why}"),
+    );
+    let colour = if job.refused.is_some() {
+        ink.bad
+    } else {
+        ink.quiet
+    };
+    let wrapped: Vec<String> = said
+        .split('\n')
+        .flat_map(|part| paint.wrap(part, Weight::Regular, size::SMALL, wide))
+        .take(5)
+        .collect();
+    for line in &wrapped {
+        paint.say_at(x, y, line, Weight::Regular, size::SMALL, colour);
+        y += 16.0;
+    }
+}
+
 /// What can be done with the model on the left, and where it is reachable
 /// when it is being held.
 fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
@@ -1151,6 +1211,8 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
             size::SMALL,
             ink.accent,
         );
+    } else if let Doing::Provisioning(job) = &desk.doing {
+        building(paint, job, area.x, y + 6.0, list - 16.0);
     } else if let Doing::Hosting(job) = &desk.doing {
         // **How long it has been going, rather than a promise about how long
         // it will take.** This said "a moment", and a seventy-gigabyte model

@@ -808,3 +808,71 @@ fn a_companion_file_is_never_offered_as_a_model() {
         Some("a-model")
     );
 }
+
+/// Host, with no engine to run the model on, builds the one MCF named rather
+/// than doing nothing or refusing.
+///
+/// **The name comes from the daemon.** What engine a machine needs is decided
+/// where `mcf provision` decides it, and the window carries the daemon's
+/// answer into the job it starts — so the sentence on the screen names what
+/// is being built and for what, before a single line of the build arrives
+/// (§3.15, B-072, B-367).
+#[test]
+fn hosting_with_no_engine_builds_the_one_mcf_named() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let answered = Value::map([
+        ("path", Value::text("/models/small.gguf")),
+        ("bytes", Value::Integer(270_000_000)),
+        ("runs", Value::map([("architecture", Value::text("llama"))])),
+    ]);
+    desk.models = vec![model_from(&answered)];
+    desk.chosen = Some(0);
+    // What the daemon's settings refusal carried: no settings, and the
+    // component it would build.
+    desk.settings = None;
+    desk.no_settings = Some("no engine is installed yet — MCF can build one for you".to_owned());
+    desk.needs_engine = Some("llama.cpp".to_owned());
+
+    desk.host_it();
+
+    let crate::Doing::Provisioning(job) = &desk.doing else {
+        panic!("Host with no engine must build one, not {:?}", desk.doing);
+    };
+    assert!(job.what.contains("llama.cpp"), "{}", job.what);
+    assert!(job.what.contains("small"), "for which model: {}", job.what);
+    let (word, said) = {
+        desk.busy = true;
+        desk.state_line()
+    };
+    assert_eq!(word, "BUILDING");
+    assert!(said.contains("so far"), "{said}");
+}
+
+/// Without a name from the daemon, Host does not guess one.
+///
+/// A refusal that names no component is a refusal, and the window shows it;
+/// building *something* on the strength of a sentence would be the window
+/// deciding what MCF should have decided (A2).
+#[test]
+fn hosting_with_a_nameless_refusal_builds_nothing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    let answered = Value::map([
+        ("path", Value::text("/models/small.gguf")),
+        ("bytes", Value::Integer(270_000_000)),
+        ("runs", Value::map([("architecture", Value::text("llama"))])),
+    ]);
+    desk.models = vec![model_from(&answered)];
+    desk.chosen = Some(0);
+    desk.settings = None;
+    desk.no_settings = Some("a model whose header does not say how long".to_owned());
+    desk.needs_engine = None;
+
+    desk.host_it();
+
+    assert!(
+        matches!(desk.doing, crate::Doing::Nothing),
+        "{:?}",
+        desk.doing
+    );
+    assert!(desk.no_settings.is_some());
+}
