@@ -167,7 +167,37 @@ fn chosen_component(name: Option<&str>) -> Result<&'static Component, String> {
         })
 }
 
+/// What a build came to, whichever side of the socket built it.
+///
+/// The daemon's final line and the library's [`Outcome`] say the same things;
+/// this is the one shape the command reports from, so the two paths cannot
+/// drift apart in what they show (B-072).
+enum Came {
+    /// The prefix was complete before anything ran.
+    Already { prefix: PathBuf },
+    /// A build ran to the end.
+    Built {
+        prefix: PathBuf,
+        log: PathBuf,
+        toolchain: String,
+        recorded: Result<PathBuf, String>,
+        /// Whether a daemon now reaches it as an engine — known only when a
+        /// daemon built it, since only a daemon holds engines.
+        usable_engine: Option<bool>,
+    },
+    /// The refusal, already worded for a person.
+    Refused(String),
+}
+
 /// Provisions one component — or, unnamed, the one this machine needs.
+///
+/// **Through the daemon when one is up.** A daemon holds the engines it found
+/// at start and rediscovers them after a build *it* ran; a build the command
+/// ran beside it was a prefix on disk and no engine on the socket until the
+/// daemon restarted (F149). So where a daemon is listening and the build is
+/// bound for its own root, the command asks the daemon to build, and streams
+/// what it says. `--into` names a root the daemon does not look under, so
+/// that build stays local and says so.
 pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
     let component = match chosen_component(name) {
         Ok(component) => component,
@@ -187,7 +217,6 @@ pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
             };
         }
     };
-    let prefix = prefix_for(component, &root);
     // Unnamed, the choice is stated: a build the operator did not name is a
     // choice MCF made, and §3.15 wants it visible.
     let chosen = if name.is_none() {
@@ -199,12 +228,119 @@ pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
         String::new()
     };
 
+    let daemon = crate::serve::socket_path().and_then(|socket| UnixStream::connect(socket).ok());
+    let (came, where_built) = match daemon {
+        Some(connection) if into.is_none() => (through_daemon(connection, name), "by the daemon"),
+        Some(_) => (
+            locally(component, &root),
+            "here, outside the daemon's root — the daemon that is up does not look there",
+        ),
+        None => (
+            locally(component, &root),
+            "here; no daemon is up to hold it yet",
+        ),
+    };
+    report(component, &chosen, where_built, came)
+}
+
+/// Builds in this process, printing each of the build's lines as it comes.
+fn locally(component: &'static Component, root: &std::path::Path) -> Came {
+    let prefix = prefix_for(component, root);
     // Each line the build prints, as it prints it, on the error stream —
     // which is where progress goes so that the outcome below stays the one
     // thing on standard output. The prefix's log keeps every line.
     let mut progress = |line: &str| eprintln!("  {line}");
     match provisioning::provision(component, &prefix, &mut progress) {
-        Ok(Outcome::Already { prefix }) => Response {
+        Ok(Outcome::Already { prefix }) => Came::Already { prefix },
+        Ok(Outcome::Built(built)) => Came::Built {
+            prefix: built.prefix,
+            log: built.log,
+            toolchain: built.toolchain,
+            recorded: built.recorded.map_err(|failure| failure.to_string()),
+            usable_engine: None,
+        },
+        Err(failure) => Came::Refused(crate::say::refusal(
+            &format!("{} was not provisioned", component.name),
+            &failure,
+        )),
+    }
+}
+
+/// Asks the daemon that answered to build, and follows the build line by line.
+///
+/// No read deadline: a build is as long as the compiler makes it, and a
+/// timeout here would report a working build as a dead daemon.
+fn through_daemon(mut connection: UnixStream, name: Option<&str>) -> Came {
+    let request = Request::Provision {
+        component: name.map(str::to_owned),
+    };
+    if writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .is_err()
+    {
+        return Came::Refused("mcf: the daemon is up but the request could not be sent".to_owned());
+    }
+    for read in BufReader::new(&connection).lines() {
+        let Ok(read) = read else { break };
+        let Ok(answer) = Answer::read(read.trim_end()) else {
+            continue;
+        };
+        if !answer.served {
+            return Came::Refused(format!(
+                "mcf: not provisioned\n  {}",
+                crate::say::refused_because(&answer.body)
+            ));
+        }
+        if let Some(doing) = answer.body.get("doing").and_then(Value::as_text) {
+            eprintln!("  {doing}");
+        }
+        if matches!(answer.body.get("done"), Some(Value::Bool(true))) {
+            return came_from(&answer.body);
+        }
+    }
+    Came::Refused(
+        "mcf: the daemon stopped answering before the build ended\n  what it built, if anything, \
+         is in its log; `mcf provision --list` shows whether the prefix is complete"
+            .to_owned(),
+    )
+}
+
+/// The daemon's final line, read back into what the library would have said.
+fn came_from(body: &Value) -> Came {
+    let path = |key: &str| body.get(key).and_then(Value::as_text).map(PathBuf::from);
+    let Some(prefix) = path("prefix") else {
+        return Came::Refused(format!(
+            "mcf: the daemon ended the build without naming a prefix: {}",
+            body.to_line()
+        ));
+    };
+    if matches!(body.get("already"), Some(Value::Bool(true))) {
+        return Came::Already { prefix };
+    }
+    Came::Built {
+        prefix,
+        log: path("log").unwrap_or_default(),
+        toolchain: body
+            .get("toolchain")
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned(),
+        recorded: match body.get("recorded") {
+            Some(Value::Text(at)) => Ok(PathBuf::from(at)),
+            Some(other) => Err(crate::say::refused_because(other)),
+            None => Err("the daemon did not say".to_owned()),
+        },
+        usable_engine: match body.get("usable_engine") {
+            Some(Value::Bool(reached)) => Some(*reached),
+            _ => None,
+        },
+    }
+}
+
+/// One wording for both builders.
+fn report(component: &Component, chosen: &str, where_built: &str, came: Came) -> Response {
+    match came {
+        Came::Already { prefix } => Response {
             text: format!(
                 "{chosen}{}@{} is already provisioned at {}\n  remove it first to provision it \
                  again (`mcf provision --remove {}`)",
@@ -215,31 +351,47 @@ pub(crate) fn run(name: Option<&str>, into: Option<&str>) -> Response {
             ),
             served: true,
         },
-        Ok(Outcome::Built(built)) => {
+        Came::Built {
+            prefix,
+            log,
+            toolchain,
+            recorded,
+            usable_engine,
+        } => {
             let mut lines = vec![
                 format!("provisioned {}@{}", component.name, short(component)),
-                format!("  into    {}", built.prefix.display()),
+                format!("  into    {}", prefix.display()),
                 format!("  image   {} ({})", component.image, component.image_digest),
                 format!("  built   {}", component.targets.join(", ")),
                 "  packages, exactly:".to_owned(),
             ];
-            lines.extend(built.toolchain.lines().map(|line| format!("    {line}")));
+            lines.extend(toolchain.lines().map(|line| format!("    {line}")));
             lines.push(format!(
                 "  provenance beside it: {}",
-                built.prefix.join("mcf-provenance.json").display()
+                prefix.join("mcf-provenance.json").display()
             ));
-            lines.push(format!("  log kept at {}", built.log.display()));
-            lines.push(match built.recorded {
+            lines.push(format!("  log kept at {}", log.display()));
+            lines.push(match recorded {
                 Ok(path) => format!("  recorded in {}", path.display()),
-                Err(failure) => format!("  NOT RECORDED: {failure}"),
+                Err(why) => format!("  NOT RECORDED: {why}"),
             });
+            lines.push(format!("  built {where_built}"));
+            match usable_engine {
+                Some(true) => lines.push("  the daemon now reaches it as an engine".to_owned()),
+                Some(false) => lines.push(
+                    "  the daemon does NOT reach it as an engine — a library builds and is never \
+                     one; an engine here is a build that landed wrong"
+                        .to_owned(),
+                ),
+                None => {}
+            }
             Response {
                 text: format!("{chosen}{}", lines.join("\n")),
                 served: true,
             }
         }
-        Err(failure) => Response {
-            text: crate::say::refusal(&format!("{} was not provisioned", component.name), &failure),
+        Came::Refused(text) => Response {
+            text,
             served: false,
         },
     }
@@ -322,3 +474,6 @@ fn root_from(into: Option<&str>) -> Result<PathBuf, String> {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -9450,6 +9450,22 @@ now announces each stage and copies the configure and build output through
 move; `pipefail` was already set, so a failed cmake behind the tee still
 fails the script.
 
+**The command line goes through the daemon that is up.** The "still
+invisible" above was true for one commit. `mcf provision` now connects to
+the socket first; where a daemon answers and the build is bound for its own
+root, it sends the same `provision` request the window sends, prints each
+streamed line on the error stream and reports the final line in the wording
+the local path uses — plus whose process built it and whether the daemon now
+reaches it as an engine. Where nothing listens, or `--into` names a root the
+daemon does not look under, the command builds in its own process and says
+so in the report. One builder, one wording, two callers, and the CLI can do
+what the window does (A22, B-072). Exercised once for real: a daemon started
+over an empty `provisioned` directory said *it cannot run a model*; `mcf
+provision` beside it streamed 437 lines and ended with *built by the daemon
+/ the daemon now reaches it as an engine*; `mcf status` on the same
+unrestarted daemon no longer listed anything it cannot do, and a second `mcf
+provision` was told the prefix was already there.
+
 [`provisioning`]: ../crates/mcf-serve/src/provisioning.rs
 
 ## 148 · F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)
