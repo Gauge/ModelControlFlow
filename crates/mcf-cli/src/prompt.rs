@@ -532,6 +532,95 @@ fn what_the_model_expected(body: &Value) -> Vec<String> {
     lines
 }
 
+/// Which part of the prompt the model least expected: the same rank reading,
+/// grouped by the parts the ablation removed (B-433).
+///
+/// **A second ordering, for no generation.** The ablation says what each part
+/// did to the answer; this says how much of each part the model would have
+/// written itself. A part it expected wholly and yet needed is doing
+/// structural work; one that surprised it and moved nothing is noise to
+/// this model. Read against the column above, not instead of it. Where no
+/// reading was taken there is nothing to group, and the section above has
+/// already said why (A7).
+fn which_part_was_least_expected(body: &Value) -> Vec<String> {
+    let Some(grouped) = body
+        .get("expected_by_part")
+        .filter(|held| !matches!(held, Value::Null))
+    else {
+        return Vec::new();
+    };
+    let depth = body
+        .get("ranked_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let parts = grouped.get("parts").and_then(Value::as_list).unwrap_or(&[]);
+    let figure = |held: &Value, key: &str| held.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let mut lines = vec![
+        "  WHICH PART THE MODEL LEAST EXPECTED".to_owned(),
+        "  the same reading, grouped by part — how much of each the model would have written itself"
+            .to_owned(),
+        String::new(),
+    ];
+    // The least expected part is the one with the smallest share of first
+    // choices; shares are compared crosswise so no division is done, and a
+    // tie names nobody rather than picking one (A19).
+    let mut least: Option<(usize, i64, i64)> = None;
+    let mut tied = false;
+    for (at, part) in parts.iter().enumerate() {
+        let (tokens, first, past) = (
+            figure(part, "tokens"),
+            figure(part, "first_choice"),
+            figure(part, "past_depth"),
+        );
+        let said = clauses
+            .get(at)
+            .and_then(|clause| clause.get("text"))
+            .and_then(Value::as_text)
+            .map_or_else(|| "(not removed: over the cap)".to_owned(), first_line_of);
+        let outside = if past > 0 {
+            format!(", {past} outside its top {depth}")
+        } else {
+            String::new()
+        };
+        lines.push(format!(
+            "    {first:>3} of {tokens:>3} first choice{outside}   {said}"
+        ));
+        if tokens > 0 {
+            match least {
+                Some((_, held_first, held_tokens)) => {
+                    let mine = first.saturating_mul(held_tokens);
+                    let theirs = held_first.saturating_mul(tokens);
+                    if mine < theirs {
+                        least = Some((at, first, tokens));
+                        tied = false;
+                    } else if mine == theirs {
+                        tied = true;
+                    }
+                }
+                None => least = Some((at, first, tokens)),
+            }
+        }
+    }
+    if let Some((at, _, _)) = least.filter(|_| !tied && parts.len() > 1) {
+        lines.push(String::new());
+        lines.push(format!(
+            "    least expected: part {} — the one carrying most from the writer, by this reading",
+            at.saturating_add(1)
+        ));
+    }
+    let unplaced = figure(grouped, "unplaced");
+    if unplaced > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "    {} in no part: the turn's own pieces, or where the reading stopped short",
+            count_of(unplaced, "token")
+        ));
+    }
+    lines.push(String::new());
+    lines
+}
+
 /// The answer, and the conditions every figure above was computed under.
 ///
 /// How long an answer was allowed to be, how the prompt reached the model, and
@@ -675,6 +764,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
 
     lines.push(String::new());
     lines.extend(what_the_model_expected(body));
+    lines.extend(which_part_was_least_expected(body));
     lines.extend(the_answer_and_its_conditions(body));
     lines.push(format!(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \
@@ -711,7 +801,10 @@ mod tests {
                 "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
                 "most":3,
                 "addressed_as":"one user turn, the whole prompt",
-                "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10,
+                "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10,"ranked_depth":60,
+                "expected_by_part":{"parts":[{"tokens":4,"first_choice":1,"past_depth":1},
+                   {"tokens":3,"first_choice":3,"past_depth":0},{"tokens":2,"first_choice":1,"past_depth":0},
+                   {"tokens":5,"first_choice":4,"past_depth":0}],"unplaced":2},
                 "recorded":"01J0000000000000000000000A"}"#,
         )
         .expect("a well-formed report")
@@ -769,6 +862,27 @@ mod tests {
             text.contains("read under chatml — set by a probe"),
             "{text}"
         );
+    }
+
+    /// The rank reading grouped by part names the part the model least
+    /// expected, says which parts were over the cap, and counts the pieces
+    /// that fell in no part (B-433, A7).
+    #[test]
+    fn the_report_names_the_part_the_model_least_expected() {
+        let text = which_part_was_least_expected(&body()).join("\n");
+        assert!(
+            text.contains("  1 of   4 first choice, 1 outside its top 60   "),
+            "{text}"
+        );
+        assert!(text.contains("  3 of   3 first choice   "), "{text}");
+        assert!(text.contains("(not removed: over the cap)"), "{text}");
+        assert!(text.contains("least expected: part 1"), "{text}");
+        assert!(text.contains("2 tokens in no part"), "{text}");
+        let mut none = body();
+        if let Value::Map(fields) = &mut none {
+            fields.insert("expected_by_part".to_owned(), Value::Null);
+        }
+        assert!(which_part_was_least_expected(&none).is_empty());
     }
 
     /// The unit, who decided it, and how the prompt reached the model are

@@ -561,3 +561,54 @@ fn an_empty_answer_has_no_opening_to_force() {
     assert!(report.clauses.iter().all(|held| held.held.is_none()));
     assert_eq!(report.floor_held, None);
 }
+
+/// The rank reading grouped by part: each token goes to the part the prompt's
+/// cursor is in, a separator to none, and a piece the prompt does not have
+/// next is placed nowhere rather than guessed (B-433, A19).
+#[test]
+fn the_rank_reading_is_grouped_by_part_and_a_stray_piece_is_placed_nowhere() {
+    let parts = parts_of("Answer in one word.\n\nWhat colour is it?", Unit::Paragraph);
+    assert_eq!(parts.len(), 2);
+    let ranked: Vec<(String, Option<usize>)> = [
+        ("<|im_start|>", None),
+        ("Answer", None),
+        (" in", Some(3)),
+        (" one", Some(7)),
+        (" word", Some(32)),
+        (".", Some(1)),
+        ("\n\n", Some(1)),
+        ("What", Some(1)),
+        (" colour", Some(18)),
+        (" is", Some(1)),
+        (" it", Some(2)),
+        ("?", Some(1)),
+    ]
+    .into_iter()
+    .map(|(text, rank)| (text.to_owned(), rank))
+    .collect();
+    let (by_part, nowhere) = surprise_by_part(&parts, &ranked);
+    assert_eq!(
+        nowhere, 1,
+        "the template piece is the prompt's next text nowhere"
+    );
+    assert_eq!(
+        by_part,
+        vec![
+            Surprise {
+                tokens: 5,
+                first_choice: 1,
+                past_depth: 1
+            },
+            Surprise {
+                tokens: 5,
+                first_choice: 3,
+                past_depth: 0
+            },
+        ]
+    );
+    // A reading cut off part-way places what it read and nothing more.
+    let (short, nowhere) = surprise_by_part(&parts, ranked.get(..4).unwrap_or_default());
+    assert_eq!(nowhere, 1);
+    assert_eq!(short.first().map(|held| held.tokens), Some(3));
+    assert_eq!(short.get(1).map(|held| held.tokens), Some(0));
+}

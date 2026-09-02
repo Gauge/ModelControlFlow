@@ -2888,6 +2888,34 @@ fn what_it_was_asked_as(paint: &mut Painter, at: (f32, f32), found: &Value, widt
 
 /// The sentence under the bars: what the quiet ones mean, what the number is
 /// not, and what was left unmeasured.
+/// The third figure, where the reading it comes from was taken (B-433):
+/// nothing is said of a column that is not there (A7).
+fn what_the_third_figure_is(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let mut y = at.1;
+    if found
+        .get("expected_by_part")
+        .is_some_and(|held| !matches!(held, Value::Null))
+    {
+        for line in paint
+            .wrap(
+                "The third figure is how many of the part's tokens were the model's own first \
+                 choice — 1/4 is one of four. A part the model would have written itself \
+                 carries little from the writer; read it against the bar, not instead of it.",
+                Weight::Regular,
+                size::SMALL,
+                width,
+            )
+            .iter()
+            .take(2)
+        {
+            paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
+            y += 16.0;
+        }
+    }
+    y
+}
+
 fn what_the_bars_mean(
     paint: &mut Painter,
     at: (f32, f32),
@@ -2950,6 +2978,7 @@ fn what_the_bars_mean(
         paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
         y += 16.0;
     }
+    y = what_the_third_figure_is(paint, (area.x, y), area.w, found);
     y += 6.0;
     // Sentences past the cap are not measured, and a list that quietly
     // shortened itself is the one thing a list must not do (A1, A4).
@@ -3068,7 +3097,21 @@ fn steering(
             size::SMALL,
             if mark == "1st" { ink.quiet } else { ink.warn },
         );
-        let text_at = bar.right() + 124.0;
+        // **How much of the part the model would have written itself.** The
+        // rank reading grouped by part: a second ordering that spent no
+        // generation, beside the one that did (B-433).
+        let expected = crate::expected_mark(found.get("expected_by_part"), at);
+        if let Some(expected) = &expected {
+            paint.say_at(
+                bar.right() + 124.0,
+                y,
+                expected,
+                Weight::Bold,
+                size::SMALL,
+                ink.quiet,
+            );
+        }
+        let text_at = bar.right() + if expected.is_some() { 172.0 } else { 124.0 };
         let shown = paint.elide(
             said,
             Weight::Regular,

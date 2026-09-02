@@ -274,6 +274,7 @@ fn prompt_report_entry(
         ("generations", kept("generations")),
         ("expected_read", count(expected.len())),
         ("expected_first_choice", count(first_choice)),
+        ("expected_by_part", kept("expected_by_part")),
         ("expected_refused", kept("expected_refused")),
     ])
 }
@@ -322,9 +323,53 @@ fn refuse_an_unending_request(writer: &mut &UnixStream) {
     let _shutdown = writer.shutdown(std::net::Shutdown::Read);
 }
 
+/// The rank reading grouped by part (B-433): which part the model least
+/// expected, spending no generation. Null where no reading was taken, so
+/// that an absent reading is not served as *all expected* (A7).
+fn expected_by_part_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Value {
+    if ranked.is_empty() {
+        return Value::Null;
+    }
+    let pairs: Vec<(String, Option<usize>)> = ranked
+        .iter()
+        .map(|row| {
+            (
+                row.get("text")
+                    .and_then(Value::as_text)
+                    .unwrap_or_default()
+                    .to_owned(),
+                row.get("rank")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| usize::try_from(held).ok()),
+            )
+        })
+        .collect();
+    let (found, nowhere) = crate::prompt::surprise_by_part(parts, &pairs);
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    Value::map([
+        (
+            "parts",
+            Value::List(
+                found
+                    .iter()
+                    .map(|held| {
+                        Value::map([
+                            ("tokens", count(held.tokens)),
+                            ("first_choice", count(held.first_choice)),
+                            ("past_depth", count(held.past_depth)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("unplaced", count(nowhere)),
+    ])
+}
+
 /// A prompt report, as a client reads it.
 fn prompt_report_value(
     report: &crate::prompt::Report,
+    parts: &[crate::prompt::Part],
     generations: usize,
     tokens: Option<usize>,
     ranked: RankedPrompt,
@@ -334,6 +379,7 @@ fn prompt_report_value(
         refused: no_ranking,
         under: ranked_under,
     } = ranked;
+    let by_part = expected_by_part_value(parts, &ranked);
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
         (
@@ -410,6 +456,7 @@ fn prompt_report_value(
             }),
         ),
         ("expected", Value::List(ranked)),
+        ("expected_by_part", by_part),
         (
             "expected_refused",
             no_ranking.map_or(Value::Null, Value::text),
@@ -2063,6 +2110,13 @@ impl Daemon {
         // the account of each generation names it; the report keeps the
         // names and drains the rest (§3.4).
         let mut engines = std::collections::BTreeSet::new();
+        // **A generation that was refused refuses the report.** Before this,
+        // a model name no engine resolved gave seven empty answers, and the
+        // report read them as *every part removed gave the SAME answer* —
+        // a finding printed over a failure, and then recorded (A2, F: seen
+        // with a name that was a directory rather than a file). The first
+        // refusal is kept whole and passed on as the answer.
+        let mut refused: Option<Value> = None;
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
             let Ok((mine, theirs)) = UnixStream::pair() else {
@@ -2099,6 +2153,12 @@ impl Daemon {
             };
             drop(mine);
             let _joined = drain.join();
+            if produced.said.is_none()
+                && let Some(failure) = produced.account.get("failure")
+                && refused.is_none()
+            {
+                refused = Some(failure.clone());
+            }
             if let Some(engine) = produced
                 .account
                 .get("conditions")
@@ -2118,9 +2178,16 @@ impl Daemon {
         let mut force =
             |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
         let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
+        if let Some(failure) = refused {
+            let answer = Answer::refused_as(failure);
+            let _written = writeln!(writer, "{}", answer.to_line());
+            let _flushed = writer.flush();
+            return;
+        }
         // What the model was asked, as the baseline was: the parts put back
         // together, which is what the counts below are of.
-        let prompt = crate::prompt::joined(&taken.parts());
+        let parts = taken.parts();
+        let prompt = crate::prompt::joined(&parts);
         let prompt = prompt.as_str();
         // **How the model actually receives the prompt.** The figures above
         // are about answers; this is about the question, it costs no
@@ -2133,7 +2200,7 @@ impl Daemon {
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
         let ranked = self.ranked_prompt(named, prompt, picked.clone());
-        let mut served = prompt_report_value(&report, asked, tokens, ranked);
+        let mut served = prompt_report_value(&report, &parts, asked, tokens, ranked);
         // **The figures go to the record; the text does not** (A25, B-432).
         // Every other diagnostic leaves an entry, and a report that lived
         // only in the terminal it was printed in was a measurement nobody

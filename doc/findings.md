@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 102 |
+| **Version** | 103 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -164,6 +164,7 @@ forward as one.
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
 | 154 | [F154 — The prototype's bandwidth was the harness's: this machine reads the cache's working set at 95–850 GB/s, F121's constant divided by the wrong denominator, and the engine reaches 40–63% of the machine (B-427, B-400, F121, A20, A21)](#154-f154-the-prototypes-bandwidth-was-the-harnesss-this-machine-reads-the-caches-working-set-at-95850-gbs-f121s-constant-divided-by-the-wrong-denominator-and-the-engine-reaches-4063-of-the-machine-b-427-b-400-f121-a20-a21) |
 | 155 | [F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)](#155-f155-the-ladders-pair-does-not-resolve-a-slope-at-depth-sixteen-tokens-of-generation-against-a-34-second-prefill-one-pair-of-three-came-out-negative-and-a-fall-off-seven-times-the-one-below-it-was-the-jitter-b-427-b-428-b-400-a9-a7-f117) |
+| 156 | [F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)](#156-f156-a-report-was-printed-over-seven-refusals-a-model-name-no-engine-resolved-gave-seven-empty-answers-the-ablation-read-them-as-every-part-gave-the-same-answer-and-the-record-took-it-b-433-b-432-a2-a7) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9418,6 +9419,41 @@ echoing what the operator types, and they will not know why.
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
 
+## 156 · F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)
+
+`mcf prompt Qwen3-VL-2B --file dm.md` — the model named by a directory's
+name rather than the file's — printed a whole report: seven generations,
+five paragraphs at **0.0%** each, a floor of 0.0%, and the sentence the
+report keeps for a prompt that steers nothing: *every paragraph removed gave
+the SAME answer, to the character — including the control*. The answer
+section was empty. The rank section, alone, said *not taken: no engine on
+this machine resolves this model*. The record took the entry.
+
+**Every one of the seven generations had been refused**, with the failure
+in its account — *there is no model at that path or name* — and the
+report's `ask` had mapped a refusal to an empty answer, which is what a
+generation that produced nothing also gives. Seven empty answers are
+identical, so every ablation moved 0.0%, the control moved 0.0%, and the
+arithmetic was right about the wrong thing. The one place the report noticed
+was the rank reading, which asks the engine directly and had the refusal
+in hand; the ablation, which asks through a closure, had thrown it away.
+
+**A refused generation now refuses the report** (B-433): the first failure
+any generation returns is kept whole and sent as the answer, before any
+figure is computed and before anything is recorded. The same name now
+produces `mcf: refused — there is no model at that path or name`, with what
+was asked for and what was looked at.
+
+What this is an instance of: a measurement built on a closure that returns
+a default on failure has the failure's shape erased before the measurement
+sees it, and a default that is also a valid reading (an empty answer *is*
+what a model may say) is the case A2 names — the silence was not visible
+in the report because it looked like a finding. The A7 half is that
+the report's sentence for *this prompt did not steer this model* is the
+right sentence for a reading of noughts, and had no way to tell a reading
+from an absence; the fix is upstream of it, and it now cannot be reached
+with one.
+
 ## 155 · F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)
 
 The first run of the predicted fall-off (F154) took the ladder to 8,192 deep,
@@ -10827,6 +10863,13 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 103 — a report printed over refusals
+
+F156 added. A model name no engine resolved gave seven refused generations,
+each mapped to an empty answer, and the report read seven identical empty
+answers as a prompt that steers nothing — then recorded it. A refused
+generation now refuses the report before any figure is computed (B-433).
 
 ### Version 102 — the rate halves, and the depth is bounded by memory
 

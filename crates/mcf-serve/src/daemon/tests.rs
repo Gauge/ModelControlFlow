@@ -551,6 +551,20 @@ fn a_served_report() -> Value {
                 Value::map([("text", Value::text(" only")), ("rank", Value::Null)]),
             ]),
         ),
+        (
+            "expected_by_part",
+            Value::map([
+                (
+                    "parts",
+                    Value::List(vec![Value::map([
+                        ("tokens", Value::Integer(6)),
+                        ("first_choice", Value::Integer(2)),
+                        ("past_depth", Value::Integer(1)),
+                    ])]),
+                ),
+                ("unplaced", Value::Integer(1)),
+            ]),
+        ),
         ("expected_refused", Value::Null),
     ])
 }
@@ -623,4 +637,89 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     );
     assert_eq!(at(&["expected_read"]), Some(Value::Integer(3)));
     assert_eq!(at(&["expected_first_choice"]), Some(Value::Integer(1)));
+    // The reading grouped by part is counts, and travels whole (B-433).
+    assert_eq!(
+        at(&["expected_by_part", "unplaced"]),
+        Some(Value::Integer(1))
+    );
+    assert_eq!(
+        at(&["expected_by_part", "parts"])
+            .and_then(|held| held.as_list().and_then(<[Value]>::first).cloned())
+            .and_then(|held| held.get("past_depth").cloned()),
+        Some(Value::Integer(1))
+    );
+}
+
+/// The served report groups the rank reading by part, and serves null for
+/// the grouping where no reading was taken, so that an absent reading is not
+/// read as a prompt the model wholly expected (B-433, A7).
+#[test]
+fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
+    use crate::prompt::{Report, Taken, Unit};
+    let taken = Taken {
+        text: "Be terse.\n\nWhat is 2 + 2?",
+        by: Some(Unit::Paragraph),
+        most: None,
+    };
+    let parts = taken.parts();
+    let report = Report {
+        floor: 0,
+        floor_held: None,
+        baseline: "4".to_owned(),
+        clauses: Vec::new(),
+        clauses_over_the_cap: 0,
+        unit: Unit::Paragraph,
+        unit_chosen: true,
+        most: 8,
+        settled: None,
+    };
+    let row = |text: &str, rank: Option<i64>| {
+        Value::map([
+            ("text", Value::text(text)),
+            ("rank", rank.map_or(Value::Null, Value::Integer)),
+            ("engine_said", Value::Null),
+        ])
+    };
+    let ranked = super::RankedPrompt {
+        rows: vec![
+            row("Be", None),
+            row(" terse", Some(9)),
+            row(".", Some(1)),
+            row("What", Some(1)),
+            row(" is", Some(1)),
+            row(" 2", Some(4)),
+        ],
+        refused: None,
+        under: Some("chatml".to_owned()),
+    };
+    let served = super::prompt_report_value(&report, &parts, 1, Some(9), ranked);
+    let grouped = served.get("expected_by_part").cloned();
+    assert_eq!(
+        grouped,
+        Some(Value::map([
+            (
+                "parts",
+                Value::List(vec![
+                    Value::map([
+                        ("tokens", Value::Integer(3)),
+                        ("first_choice", Value::Integer(1)),
+                        ("past_depth", Value::Integer(1)),
+                    ]),
+                    Value::map([
+                        ("tokens", Value::Integer(3)),
+                        ("first_choice", Value::Integer(2)),
+                        ("past_depth", Value::Integer(0)),
+                    ]),
+                ]),
+            ),
+            ("unplaced", Value::Integer(0)),
+        ]))
+    );
+    let none = super::RankedPrompt {
+        rows: Vec::new(),
+        refused: Some("no template".to_owned()),
+        under: None,
+    };
+    let served = super::prompt_report_value(&report, &parts, 1, Some(9), none);
+    assert_eq!(served.get("expected_by_part"), Some(&Value::Null));
 }

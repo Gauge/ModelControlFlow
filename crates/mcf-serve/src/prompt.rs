@@ -507,6 +507,79 @@ pub fn joined(parts: &[Part]) -> String {
     text
 }
 
+/// How expected one part of the prompt was to the model, read from the rank
+/// of each of its tokens: a second ordering of the parts that spends no
+/// generation (B-433).
+///
+/// Read against the ablation rather than instead of it. A part that
+/// surprised the model and changed nothing when removed is noise to the
+/// model; one it fully expected and yet needed is doing structural work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Surprise {
+    /// How many of the part's tokens the reading placed in it.
+    pub tokens: usize,
+    /// How many of them were the model's own first choice.
+    pub first_choice: usize,
+    /// How many ranked past the depth read, where the rank is a bound.
+    pub past_depth: usize,
+}
+
+/// The rank reading grouped by part: one [`Surprise`] a part, in order, and
+/// how many ranked tokens fell nowhere.
+///
+/// The tokens are walked against the joined prompt with a cursor: a token
+/// whose text is the prompt's next text belongs to the part the cursor is
+/// in, and one that is not — a template piece, a piece the reading cut off
+/// mid-way — is placed nowhere and counted as such, never guessed into a
+/// part (A19, A7). Whitespace is skipped on both sides, since a separator
+/// belongs to no part.
+#[must_use]
+pub fn surprise_by_part(
+    parts: &[Part],
+    ranked: &[(String, Option<usize>)],
+) -> (Vec<Surprise>, usize) {
+    let prompt = joined(parts);
+    let mut ends = Vec::with_capacity(parts.len());
+    let mut at = 0_usize;
+    for (index, part) in parts.iter().enumerate() {
+        at = at.saturating_add(part.text.len());
+        ends.push(at);
+        if index.saturating_add(1) < parts.len() {
+            at = at.saturating_add(part.after.len());
+        }
+    }
+    let mut found = vec![Surprise::default(); parts.len()];
+    let mut nowhere = 0_usize;
+    let mut cursor = 0_usize;
+    for (text, rank) in ranked {
+        let piece = text.trim();
+        if piece.is_empty() {
+            continue;
+        }
+        let rest = prompt.get(cursor..).unwrap_or_default();
+        let skipped = rest.len().saturating_sub(rest.trim_start().len());
+        cursor = cursor.saturating_add(skipped);
+        let rest = prompt.get(cursor..).unwrap_or_default();
+        if !rest.starts_with(piece) {
+            nowhere = nowhere.saturating_add(1);
+            continue;
+        }
+        let index = ends.iter().position(|end| cursor < *end);
+        if let Some(surprise) = index.and_then(|index| found.get_mut(index)) {
+            surprise.tokens = surprise.tokens.saturating_add(1);
+            match rank {
+                Some(1) => surprise.first_choice = surprise.first_choice.saturating_add(1),
+                Some(_) => {}
+                None => surprise.past_depth = surprise.past_depth.saturating_add(1),
+            }
+        } else {
+            nowhere = nowhere.saturating_add(1);
+        }
+        cursor = cursor.saturating_add(piece.len());
+    }
+    (found, nowhere)
+}
+
 /// The document with an inert sentence put into it.
 ///
 /// Second from the end rather than appended, so that removing it disturbs what

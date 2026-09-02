@@ -568,6 +568,20 @@ pub fn held_mark(held: Option<&Value>, depth: i64) -> String {
     }
 }
 
+/// How much of one part the model would have written itself, as `1/4`: one
+/// of its four tokens was the model's first choice (B-433). `None` where the
+/// reading was not taken or has no such part, which the row then shows as
+/// nothing rather than as a prompt wholly expected (A7).
+///
+/// One implementation for the glass and the text that leaves it (B-072).
+#[must_use]
+pub fn expected_mark(grouped: Option<&Value>, at: usize) -> Option<String> {
+    let part = grouped?.get("parts")?.as_list()?.get(at)?;
+    let first = part.get("first_choice").and_then(Value::as_integer)?;
+    let tokens = part.get("tokens").and_then(Value::as_integer)?;
+    Some(format!("{first}/{tokens}"))
+}
+
 fn per_second(ms: f64) -> f64 {
     if ms > 0.0 { 1000.0 / ms } else { 0.0 }
 }

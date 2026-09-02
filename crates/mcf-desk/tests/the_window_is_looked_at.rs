@@ -1125,6 +1125,37 @@ fn a_clause(text: &str, moved: i64) -> mcf_record::json::Value {
     clause(text, moved)
 }
 
+/// The rank reading grouped by part, for six parts of which four were
+/// removed (B-433).
+fn a_grouping() -> mcf_record::json::Value {
+    use mcf_record::json::Value;
+    Value::map([
+        (
+            "parts",
+            Value::List(
+                [
+                    (5, 5, 0),
+                    (13, 4, 2),
+                    (3, 2, 0),
+                    (6, 3, 0),
+                    (4, 4, 0),
+                    (7, 1, 1),
+                ]
+                .into_iter()
+                .map(|(tokens, first, past)| {
+                    Value::map([
+                        ("tokens", Value::Integer(tokens)),
+                        ("first_choice", Value::Integer(first)),
+                        ("past_depth", Value::Integer(past)),
+                    ])
+                })
+                .collect(),
+            ),
+        ),
+        ("unplaced", Value::Integer(3)),
+    ])
+}
+
 /// A finished prompt report, as a person would be shown one.
 fn a_report() -> mcf_desk::Desk {
     use mcf_record::json::Value;
@@ -1175,6 +1206,7 @@ fn a_report() -> mcf_desk::Desk {
                 ("from_greedy_parts_per_million", Value::Integer(90_000)),
             ]),
         ),
+        ("expected_by_part", a_grouping()),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("unit", Value::text("sentence".to_owned())),
         (
@@ -1245,6 +1277,38 @@ fn a_prompt_report_shows_its_numbers() {
         "a finished report draws no more than an empty one: {} against {}",
         with.inked(ground),
         empty.inked(ground)
+    );
+}
+
+/// The rank reading grouped by part is a third figure on each row, and a
+/// report without the reading draws the rows without it rather than as
+/// wholly expected (B-433, A7).
+#[test]
+fn each_row_says_how_much_of_it_the_model_expected() {
+    use mcf_record::json::Value;
+    let desk = a_report();
+    let found = match &desk.doing {
+        mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
+        _ => None,
+    }
+    .unwrap_or(Value::Null);
+    let grouped = found.get("expected_by_part");
+    assert_eq!(mcf_desk::expected_mark(grouped, 1), Some("4/13".to_owned()));
+    assert_eq!(mcf_desk::expected_mark(grouped, 9), None);
+    assert_eq!(mcf_desk::expected_mark(Some(&Value::Null), 0), None);
+    assert_eq!(mcf_desk::expected_mark(None, 0), None);
+    let ground = DAY.ground;
+    let with = drawn(&desk, DAY, "prompt-report").inked(ground);
+    let mut unread = a_report();
+    if let mcf_desk::Doing::Reporting(job) = &mut unread.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("expected_by_part");
+    }
+    let without = drawn(&unread, DAY, "prompt-report-unread").inked(ground);
+    assert!(
+        with > without,
+        "the third figure and its legend put no ink on the glass: {with} against {without}"
     );
 }
 

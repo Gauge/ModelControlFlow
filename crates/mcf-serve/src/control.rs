@@ -785,6 +785,16 @@ impl Answer {
         }
     }
 
+    /// A refusal already in the record's shape: a failure one generation
+    /// reported, passed on whole rather than described again (A2).
+    #[must_use]
+    pub fn refused_as(failure: Value) -> Self {
+        Self {
+            served: false,
+            body: failure,
+        }
+    }
+
     /// The line the daemon sends.
     #[must_use]
     pub fn to_line(&self) -> String {
