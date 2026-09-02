@@ -85,19 +85,62 @@ pub struct Places {
 /// computed from it (§3.4, A6).
 const PROMPT_REPORT_LIMIT: usize = 600;
 
+/// Where the model ranked each token of a prompt, or why it was not read.
+struct RankedPrompt {
+    /// One row a position, empty where the reading was not taken.
+    rows: Vec<Value>,
+    /// Why, where it was not.
+    refused: Option<String>,
+    /// What the prompt was addressed as while it was read.
+    under: Option<String>,
+}
+
+/// A forced reading, as a client reads it: null where none was taken.
+fn held_value(held: Option<crate::prompt::Held>) -> Value {
+    held.map_or(Value::Null, |held| {
+        Value::map([
+            (
+                "first_rank",
+                held.first.map_or(Value::Null, |rank| {
+                    Value::Integer(i64::try_from(rank).unwrap_or(i64::MAX))
+                }),
+            ),
+            ("kept", Value::Integer(i64::try_from(held.kept).unwrap_or(i64::MAX))),
+            ("of", Value::Integer(i64::try_from(held.of).unwrap_or(i64::MAX))),
+        ])
+    })
+}
+
 /// A prompt report, as a client reads it.
 fn prompt_report_value(
     report: &crate::prompt::Report,
     generations: usize,
     tokens: Option<usize>,
-    ranked: Vec<Value>,
-    no_ranking: Option<String>,
+    ranked: RankedPrompt,
 ) -> Value {
+    let RankedPrompt {
+        rows: ranked,
+        refused: no_ranking,
+        under: ranked_under,
+    } = ranked;
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
         (
             "floor_parts_per_million",
             Value::Integer(i64::try_from(report.floor).unwrap_or(i64::MAX)),
+        ),
+        // **The forced reading** (B-429): whether the model would still have
+        // begun the baseline's answer under each shortened prompt, and under
+        // the inert one. `forced_depth` bounds a null `first_rank`: outside
+        // the sixty read is a bound, not an absence (A7).
+        ("floor_held", held_value(report.floor_held)),
+        (
+            "forced_depth",
+            Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),
+        ),
+        (
+            "ranked_under",
+            ranked_under.map_or(Value::Null, Value::text),
         ),
         (
             "clauses",
@@ -114,6 +157,7 @@ fn prompt_report_value(
                                 Value::Integer(i64::try_from(clause.moved).unwrap_or(i64::MAX)),
                             ),
                             ("without", Value::text(clause.without.clone())),
+                            ("held", held_value(clause.held)),
                         ])
                     })
                     .collect(),
@@ -1603,13 +1647,17 @@ impl Daemon {
         named: &str,
         prompt: &str,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
-    ) -> (Vec<Value>, Option<String>) {
+    ) -> RankedPrompt {
         // **Why it is missing, where it is missing.** An empty list and a list
         // MCF could not take look the same on the page, and the first draft of
         // this swallowed every failure into `Vec::new()` — the silent failure
         // A2 forbids, written by the hand that had just spent a day finding
         // them.
-        let refused = |why: &str| (Vec::new(), Some(why.to_owned()));
+        let refused = |why: &str| RankedPrompt {
+            rows: Vec::new(),
+            refused: Some(why.to_owned()),
+            under: None,
+        };
         // **The engine this report already resolved, not a fresh answer.**
         // Asking again here asked after the report's own generations had taken
         // the memory, so `resolve` refused a model it had just run — and the
@@ -1626,9 +1674,26 @@ impl Daemon {
         let Ok(vocabulary) = mcf_standin::tokenizer::Vocabulary::read(&file) else {
             return refused("this model's vocabulary could not be read");
         };
-        let Ok(tokens) = vocabulary.encode(prompt, true) else {
+        // **Under the addressing the answer was given.** The ablation's
+        // generations go through the derived addressing, and the first cut of
+        // this ranked the bare prompt: position one was *what follows the
+        // word You with nothing before it*, and the two readings were of two
+        // different prompts with nothing on the page to say so (§3.4, B-429).
+        // What follows the prompt is left open, since that is what is asked.
+        let Some(received) = crate::generation::received(
+            &self.places.models,
+            &self.mcf_home(),
+            named,
+            prompt,
+            false,
+        ) else {
             return refused("this prompt could not be turned into tokens");
         };
+        let crate::generation::Received {
+            tokens,
+            before,
+            under,
+        } = received;
         let runtime = self
             .places
             .socket
@@ -1642,9 +1707,15 @@ impl Daemon {
             gpu_layers,
             context,
         };
-        let ranked = match crate::generation::ranks_over(&where_it_lives, &self.server, &tokens) {
+        let ranked = match crate::generation::ranks_over(
+            &where_it_lives,
+            &self.server,
+            &tokens,
+            before,
+            crate::generation::MOST_RANKED,
+        ) {
             Ok(ranked) => ranked,
-            Err(failure) => return (Vec::new(), Some(failure.to_string())),
+            Err(failure) => return refused(&failure.to_string()),
         };
         // A token's own text is the difference between decoding the first k
         // identifiers and the first k-1, which is by construction what it
@@ -1660,7 +1731,7 @@ impl Daemon {
             .into_iter()
             .enumerate()
             .map(|(at, (rank, said))| {
-                let position = at.saturating_add(1);
+                let position = at.saturating_add(before.max(1));
                 let text = upto(position.saturating_add(1))
                     .strip_prefix(&upto(position))
                     .unwrap_or_default()
@@ -1677,7 +1748,72 @@ impl Daemon {
                 ])
             })
             .collect();
-        (rows, None)
+        RankedPrompt {
+            rows,
+            refused: None,
+            under: Some(under),
+        }
+    }
+
+    /// Where the derived configurations live: beside the model store.
+    fn mcf_home(&self) -> std::path::PathBuf {
+        self.places
+            .models
+            .parent()
+            .map_or_else(|| self.places.models.clone(), Path::to_path_buf)
+    }
+
+    /// Where the model ranks an answer's opening after a prompt it was not
+    /// written to (B-429).
+    ///
+    /// The prompt goes as the generation sent it — addressed, with the turn
+    /// closed — and the opening's own identifiers after it; at each of them
+    /// the model is asked where it ranks the token that stood there. Nothing
+    /// is generated. `None` where no reading could be taken, which the report
+    /// says apart from a rank (A7).
+    fn forced(
+        &self,
+        named: &str,
+        prompt: &str,
+        opening: &[usize],
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    ) -> Option<crate::prompt::Held> {
+        let (llama, gpu_layers, context) = picked?;
+        let mut received = crate::generation::received(
+            &self.places.models,
+            &self.mcf_home(),
+            named,
+            prompt,
+            true,
+        )?;
+        let from = received.tokens.len();
+        received.tokens.extend_from_slice(opening);
+        let runtime = self
+            .places
+            .socket
+            .parent()
+            .unwrap_or_else(|| Path::new("/tmp"));
+        let where_it_lives = crate::generation::Where {
+            store: &self.places.models,
+            llama: &llama,
+            runtime,
+            named,
+            gpu_layers,
+            context,
+        };
+        let ranked = crate::generation::ranks_over(
+            &where_it_lives,
+            &self.server,
+            &received.tokens,
+            from,
+            opening.len(),
+        )
+        .ok()?;
+        Some(crate::prompt::Held {
+            first: ranked.first().and_then(|(rank, _)| *rank),
+            kept: ranked.iter().filter(|(rank, _)| *rank == Some(1)).count(),
+            of: ranked.len(),
+        })
     }
 
     /// How many tokens this model's vocabulary makes of some text.
@@ -1703,7 +1839,7 @@ impl Daemon {
         let mut ask = |prompt: &str, seed: u64| {
             asked = asked.saturating_add(1);
             let Ok((mine, theirs)) = UnixStream::pair() else {
-                return String::new();
+                return crate::prompt::Answered::default();
             };
             let drain = std::thread::spawn(move || {
                 let mut end = &theirs;
@@ -1736,9 +1872,17 @@ impl Daemon {
             };
             drop(mine);
             let _joined = drain.join();
-            produced.said.map(|held| held.text).unwrap_or_default()
+            produced
+                .said
+                .map(|held| crate::prompt::Answered {
+                    text: held.text,
+                    tokens: held.tokens,
+                })
+                .unwrap_or_default()
         };
-        let report = crate::prompt::measure(prompt, seed, &mut ask);
+        let mut force =
+            |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
+        let report = crate::prompt::measure(prompt, seed, &mut ask, &mut force);
         // **How the model actually receives the prompt.** The figures above
         // are about answers; this is about the question, it costs no
         // generation, and a reader asking which parts of their prompt carry
@@ -1749,10 +1893,8 @@ impl Daemon {
         // **Where the model ranked each word of the question.** A second
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
-        let (ranked, no_ranking) = self.ranked_prompt(named, prompt, picked.clone());
-        let answer = Answer::served(prompt_report_value(
-            &report, asked, tokens, ranked, no_ranking,
-        ));
+        let ranked = self.ranked_prompt(named, prompt, picked.clone());
+        let answer = Answer::served(prompt_report_value(&report, asked, tokens, ranked));
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }

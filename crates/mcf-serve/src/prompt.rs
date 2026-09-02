@@ -29,6 +29,17 @@
 //! prompt asked for, which is the laboratory's mechanic, or the model's own
 //! distribution over the prompt (B-373).
 //!
+//! **So a second measurement asks the model directly, without generating.**
+//! The baseline's own opening is put after the shortened prompt, token by
+//! token, and at each position the model is asked where it ranks the token the
+//! baseline actually had there. Nothing is generated and nothing drifts: what
+//! comes back is whether the model would still have *begun* the same answer
+//! without the sentence, and how far its first token fell if not. On a
+//! one-word answer, where every removal that changes the word scores the same
+//! hundred per cent, this is what orders them — a sentence whose absence
+//! dropped the answer's first token to its seventeenth choice did more than
+//! one that dropped it to its fourth (measured: B-429).
+//!
 //! **Settledness is the other half.** The same prompt under several seeds
 //! either produces the same answer or does not. Several different answers means
 //! the prompt underdetermines the answer *for this model* — again a fact, and
@@ -44,7 +55,8 @@
 //! strings (A19).
 //!
 //! **What this costs.** One generation for the baseline, one per clause, and
-//! one per extra seed. A prompt of six sentences under three seeds is nine
+//! one per extra seed; the forced reading is one request a token of the
+//! opening for each clause, cached, and generates nothing. A prompt of six sentences under three seeds is nine
 //! generations, which is why this is a thing somebody asks for rather than
 //! something that happens on the way past (§3.8).
 
@@ -70,12 +82,43 @@ pub const SEEDS: usize = 3;
 /// ordering of the two was informative).
 pub const NO_INSTRUCTION: &str = "The room is quiet.";
 
+/// How many tokens of the baseline's opening are put to the model under each
+/// shortened prompt.
+///
+/// Twelve is an opening: a word or a short sentence, enough to see whether the
+/// answer set off the same way and short enough that a report of eight clauses
+/// is under a hundred requests, each one cached and generating nothing.
+pub const MOST_FORCED: usize = 12;
+
 /// The most clauses that will be ablated.
 ///
 /// A long prompt is a long run of generations, and a report that took an hour
 /// is one nobody waits for. What is over the cap is said rather than silently
 /// dropped (A7).
 pub const MOST_CLAUSES: usize = 8;
+
+/// Whether the model would still have begun the same answer.
+///
+/// **Teacher-forced, so nothing drifts.** The ablation compares two answers,
+/// and under greedy decoding two answers part at their first difference and
+/// are written differently from there on — which is why that column is an
+/// ordering. This puts the baseline's own opening after the shortened prompt
+/// and asks, at each token, where the model ranks the token the baseline had
+/// there. The answer is a rank, not a comparison of texts, and it does not
+/// depend on what was written after the parting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Held {
+    /// Where the model ranked the baseline's first token under this prompt,
+    /// counting from one. `None` where it was outside the depth read — a
+    /// bound rather than an absence (A7); the report says the depth.
+    pub first: Option<usize>,
+    /// How many of the opening's `of` tokens were still the model's first
+    /// choice: the same answer would have begun the same way for this many
+    /// tokens.
+    pub kept: usize,
+    /// How many tokens of the opening were asked about.
+    pub of: usize,
+}
 
 /// One sentence of the prompt, and what happened without it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +143,10 @@ pub struct Clause {
     /// tokens would be a difference about the vocabulary (F: found by putting
     /// an irrelevant sentence into a prompt and watching it report as used).
     pub moved: u64,
+    /// Whether the model would still have begun the baseline's answer without
+    /// this sentence. `None` where the reading could not be taken, which the
+    /// report says separately from a rank (A7).
+    pub held: Option<Held>,
 }
 
 /// What several seeds made of the same prompt.
@@ -123,6 +170,10 @@ pub struct Report {
     /// or less moved the answer no more than an inert sentence would have, and
     /// what it did beyond perturbing the context is not visible here.
     pub floor: u64,
+    /// The same forced reading for the inert sentence: how the baseline's
+    /// opening ranks with a sentence carrying no instruction put in. The
+    /// floor of `held`, taken by the same operation.
+    pub floor_held: Option<Held>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -282,12 +333,33 @@ pub fn moved_by(one: &str, other: &str) -> u64 {
         .wrapping_div(u64::try_from(longest).unwrap_or(1).max(1))
 }
 
+/// What the model said to one question: the text, and the identifiers it
+/// said it in.
+///
+/// Both, because the forced reading puts the *identifiers* back to the model
+/// — re-encoding the text could segment it differently from the way the model
+/// produced it, and a rank read at a token the model never wrote would be a
+/// rank of nothing (A21).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Answered {
+    /// The text.
+    pub text: String,
+    /// The same thing as identifiers.
+    pub tokens: Vec<usize>,
+}
+
 /// How a caller asks the model one question.
 ///
 /// The prompt and the seed in, what it said out. This module starts nothing and
 /// reaches no socket: what generates is the daemon's, and holding that at the
 /// boundary is what lets the whole measurement be tested without a model.
-pub type Ask<'a> = &'a mut dyn FnMut(&str, u64) -> String;
+pub type Ask<'a> = &'a mut dyn FnMut(&str, u64) -> Answered;
+
+/// How a caller asks where the model ranks an opening after a prompt.
+///
+/// The prompt and the opening's identifiers in; where each ranked out, or
+/// `None` where the reading could not be taken at all. Nothing is generated.
+pub type Force<'a> = &'a mut dyn FnMut(&str, &[usize]) -> Option<Held>;
 
 /// Measures what a prompt does.
 ///
@@ -295,9 +367,13 @@ pub type Ask<'a> = &'a mut dyn FnMut(&str, u64) -> String;
 /// the baseline and a clause left out is the prompt and nothing else; a seed
 /// that moved would make every comparison a comparison of two draws (D19).
 #[must_use]
-pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>) -> Report {
+pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>, force: Force<'_>) -> Report {
     let all = clauses_of(prompt);
-    let baseline = ask(prompt, seed);
+    let Answered {
+        text: baseline,
+        tokens: opening,
+    } = ask(prompt, seed);
+    let opening: Vec<usize> = opening.into_iter().take(MOST_FORCED).collect();
 
     let ablated = all.len().min(MOST_CLAUSES);
     let mut clauses = Vec::with_capacity(ablated);
@@ -306,12 +382,20 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>) -> Report {
     if all.len() > 1 {
         for at in 0..ablated {
             let shortened = without(&all, at);
-            let without_it = ask(&shortened, seed);
+            let without_it = ask(&shortened, seed).text;
+            // The opening is an empty list where the baseline said nothing,
+            // and a rank over nothing is not taken rather than read as kept.
+            let held = if opening.is_empty() {
+                None
+            } else {
+                force(&shortened, &opening)
+            };
             clauses.push(Clause {
                 changed: without_it.trim() != baseline.trim(),
                 moved: moved_by(baseline.trim(), without_it.trim()),
                 text: all.get(at).cloned().unwrap_or_default(),
                 without: without_it,
+                held,
             });
         }
     }
@@ -330,14 +414,19 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>) -> Report {
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
     let padded = with_inert(prompt);
-    let floor = moved_by(ask(&padded, seed).trim(), baseline.trim());
+    let floor = moved_by(ask(&padded, seed).text.trim(), baseline.trim());
+    let floor_held = if opening.is_empty() || all.len() <= 1 {
+        None
+    } else {
+        force(&padded, &opening)
+    };
 
     // Settledness: the same prompt, other seeds. The baseline's own seed counts
     // as one of them, so a report of three asks twice more.
     let mut answers = vec![baseline.trim().to_owned()];
     for extra in 1..SEEDS {
         let said = ask(prompt, seed.wrapping_add(extra as u64));
-        answers.push(said.trim().to_owned());
+        answers.push(said.text.trim().to_owned());
     }
     let mut distinct = answers.clone();
     distinct.sort();
@@ -345,6 +434,7 @@ pub fn measure(prompt: &str, seed: u64, ask: Ask<'_>) -> Report {
 
     Report {
         floor,
+        floor_held,
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),

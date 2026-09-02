@@ -336,6 +336,64 @@ fn addressed_as(
     vocabulary.addressed(&pieces)
 }
 
+/// A prompt as the model receives it, and where its own tokens begin.
+///
+/// The derived addressing around the text where somebody has put one on file,
+/// the bare text otherwise — the same choice a generation makes, so that a
+/// reading of the prompt is a reading of the prompt the answer was given
+/// (§3.4). `after` is left off where the caller wants what *follows* the
+/// prompt to be open, which is what ranking the prompt's own tokens needs.
+pub(crate) struct Received {
+    /// The identifiers.
+    pub(crate) tokens: Vec<usize>,
+    /// How many of them stand before the prompt's own: the beginning marker
+    /// and the addressing's opening pieces.
+    pub(crate) before: usize,
+    /// What the prompt was addressed as, in words, for the report.
+    pub(crate) under: String,
+}
+
+/// A prompt as the model receives it.
+///
+/// `None` where the vocabulary cannot be read or the text cannot be encoded.
+pub(crate) fn received(
+    store: &Path,
+    mcf_home: &Path,
+    named: &str,
+    prompt: &str,
+    with_after: bool,
+) -> Option<Received> {
+    let path = resolved(store, named);
+    let file = crate::daemon::header_of(&path)?;
+    let vocabulary = Vocabulary::read(&file).ok()?;
+    let derived = crate::configured::read_derived(mcf_home, &path).addressing;
+    let Some(addressing) = derived else {
+        return Some(Received {
+            tokens: vocabulary.encode(prompt, true).ok()?,
+            before: 1,
+            under: "the prompt alone: no addressing is on file for this model, so it went                     with no turn markers around it"
+                .to_owned(),
+        });
+    };
+    // Pieces encode independently (a marker is looked up, text is segmented),
+    // so the opening on its own is a prefix of the whole turn.
+    let opening = vocabulary.addressed(&addressing.before)?;
+    let mut pieces = addressing.before.clone();
+    pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
+    if with_after {
+        pieces.extend(addressing.after.iter().cloned());
+    }
+    let tokens = vocabulary.addressed(&pieces)?;
+    if !tokens.starts_with(&opening) {
+        return None;
+    }
+    Some(Received {
+        tokens,
+        before: opening.len(),
+        under: addressing.provenance(),
+    })
+}
+
 /// One generation through the provisioned engine driven as a *server*
 /// (B-376), which is the shape that can be probed: the turn goes as
 /// identifiers and the engine says why it stopped.
@@ -397,9 +455,12 @@ pub(crate) const HOW_DEEP: usize = 60;
 /// writer; one it ranked low, or did not list at all, is where the prompt said
 /// something the model did not expect.
 ///
-/// Returns one entry per position after the first — the first token has
-/// nothing before it to be predicted from — each the rank counting from one
-/// and the engine's own figure as the text it sent.
+/// Returns one entry per position from `from` on, at most `most` of them —
+/// `from` is never nought, since the first token has nothing before it to be
+/// predicted from — each the rank counting from one and the engine's own
+/// figure as the text it sent. The same reading serves two questions: the
+/// prompt's own tokens after their addressing, and an answer's opening after
+/// a prompt that is not the one it was written to (B-429).
 ///
 /// # Errors
 ///
@@ -408,6 +469,8 @@ pub(crate) fn ranks_over(
     where_it_lives: &Where<'_>,
     server: &std::sync::Mutex<Option<Served>>,
     tokens: &[usize],
+    from: usize,
+    most: usize,
 ) -> Result<Vec<Ranked>, Failure> {
     let Where {
         store,
@@ -438,7 +501,8 @@ pub(crate) fn ranks_over(
         .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
 
     let mut ranked = Vec::new();
-    for at in 1..tokens.len().min(MOST_RANKED) {
+    let from = from.max(1);
+    for at in from..tokens.len().min(from.saturating_add(most)) {
         let (Some(prefix), Some(wanted)) = (tokens.get(..at), tokens.get(at).copied()) else {
             break;
         };

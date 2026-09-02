@@ -121,6 +121,7 @@ const fn as_percent(parts_per_million: i64) -> (i64, i64) {
 /// figure, the floor, and what the floor means.
 fn steering_lines(body: &Value) -> Vec<String> {
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let depth = count("forced_depth");
     let mut lines = Vec::new();
     let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
     if clauses.is_empty() {
@@ -131,22 +132,7 @@ fn steering_lines(body: &Value) -> Vec<String> {
         );
     }
     for clause in clauses {
-        let said = clause
-            .get("text")
-            .and_then(Value::as_text)
-            .unwrap_or_default();
-        let moved = clause
-            .get("moved_parts_per_million")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        // A bar, so the eye finds the sentences that steered the answer
-        // without reading a column of numbers. Ten cells of ten per cent.
-        let filled = usize::try_from(tenths_of_the_answer(moved))
-            .unwrap_or(0)
-            .min(10);
-        let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
-        let (whole, tenth) = as_percent(moved);
-        lines.push(format!("    {bar}  {whole:>3}.{tenth}%  {said}"));
+        lines.extend(clause_lines(clause, depth));
     }
     if !clauses.is_empty() {
         let floor = count("floor_parts_per_million");
@@ -182,6 +168,14 @@ fn steering_lines(body: &Value) -> Vec<String> {
              an ORDERING, not as relevance: removing anything shifts what follows it, and a \
              sentence well above the floor may still have steered nothing."
         ));
+        match held_said(body.get("floor_held"), depth) {
+            Some(read) => lines.push(format!("    with the control sentence in, {read}")),
+            None => lines.push(
+                "    whether the answer would still have begun the same way was not read: it \
+                 needs the served engine, and this run had none"
+                    .to_owned(),
+            ),
+        }
         if at_floor > 0 {
             let held = if at_floor == 1 { "sits" } else { "sit" };
             lines.push(format!(
@@ -224,7 +218,83 @@ fn steering_lines(body: &Value) -> Vec<String> {
     lines
 }
 
-/// The report, as a person reads it.
+/// One sentence's row: the bar, the figure, the sentence — and under it what
+/// the answer became without it and whether it would still have begun the
+/// same way.
+///
+/// On a one-word answer every removal that changes the word scores a hundred
+/// per cent and the bars tie; the answer itself and the forced rank are what
+/// order them (B-429).
+fn clause_lines(clause: &Value, depth: i64) -> Vec<String> {
+    let said = clause
+        .get("text")
+        .and_then(Value::as_text)
+        .unwrap_or_default();
+    let moved = clause
+        .get("moved_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    // A bar, so the eye finds the sentences that steered the answer without
+    // reading a column of numbers. Ten cells of ten per cent.
+    let filled = usize::try_from(tenths_of_the_answer(moved))
+        .unwrap_or(0)
+        .min(10);
+    let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
+    let (whole, tenth) = as_percent(moved);
+    let mut lines = vec![format!("    {bar}  {whole:>3}.{tenth}%  {said}")];
+    if clause.get("changed").and_then(Value::as_bool) == Some(true) {
+        lines.push(format!(
+            "                        without it: {}",
+            first_line_of(
+                clause
+                    .get("without")
+                    .and_then(Value::as_text)
+                    .unwrap_or_default()
+            )
+        ));
+    }
+    if let Some(read) = held_said(clause.get("held"), depth) {
+        lines.push(format!("                        {read}"));
+    }
+    lines
+}
+
+/// The first line of an answer, cut to a width the column holds.
+fn first_line_of(said: &str) -> String {
+    let line = said.trim().lines().next().unwrap_or_default();
+    let mut shown: String = line.chars().take(72).collect();
+    if shown.chars().count() < line.chars().count() || said.trim().lines().count() > 1 {
+        shown.push('…');
+    }
+    format!("{shown:?}")
+}
+
+/// A forced reading, in words: where the answer's first token went, and how
+/// much of its opening stayed the model's first choice.
+///
+/// `None` where none was taken, which the caller says once rather than on
+/// every line.
+fn held_said(held: Option<&Value>, depth: i64) -> Option<String> {
+    let held = held.filter(|held| !matches!(held, Value::Null))?;
+    let count = |key: &str| held.get(key).and_then(Value::as_integer).unwrap_or(0);
+    let kept = count("kept");
+    let of = count("of");
+    let opening = format!(
+        "{kept} of {} of the opening stayed its first choice",
+        count_of(of, "token")
+    );
+    Some(match held.get("first_rank").and_then(Value::as_integer) {
+        Some(1) if kept == of => {
+            format!("the answer would still have begun the same way: {opening}")
+        }
+        Some(1) => format!("the answer's first token stayed its first choice; {opening}"),
+        Some(rank) => format!(
+            "the answer's first token fell to its number {rank} choice; {opening}"
+        ),
+        None => format!("the answer's first token fell outside its top {depth}; {opening}"),
+    })
+}
+
 /// A share of an answer, written out.
 ///
 /// Integer arithmetic, because the workspace ships no floating point: a NaN
@@ -317,8 +387,14 @@ fn what_the_model_expected(body: &Value) -> Vec<String> {
         String::new(),
         "  WHICH WORDS THE MODEL DID NOT EXPECT".to_owned(),
         "  each token against what it would have written there itself".to_owned(),
-        String::new(),
     ];
+    // Under what addressing: a prompt read bare and one read inside the turn
+    // the answer was given are two different prompts, and the report says
+    // which this was (§3.4, B-429).
+    if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
+        lines.push(format!("  read under {under}"));
+    }
+    lines.push(String::new());
     for (rank, said) in surprising.iter().take(10) {
         if *rank == i64::MAX {
             lines.push(format!("    outside its top {depth}   {said:?}"));
@@ -333,6 +409,7 @@ fn what_the_model_expected(body: &Value) -> Vec<String> {
         expected,
         ranked.len()
     ));
+    lines.push(String::new());
     lines
 }
 
@@ -467,10 +544,85 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.push(
         "  Nothing here says whether the prompt is good, or whether the model understood it. \
          Those are judgements and they need a rater. What is above is which sentences changed \
-         the answer when they were removed, and where each word sat in what the model would \
-         have written itself — two readings of the same prompt, which fail in different ways \
-         and are worth reading against each other."
+         the answer when they were removed, whether the model would still have begun the same \
+         answer without each, and where each word sat in what the model would have written \
+         itself — three readings of the same prompt, which fail in different ways and are \
+         worth reading against each other."
             .to_owned(),
     );
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use super::*;
+
+    fn body() -> Value {
+        mcf_record::json::parse(
+            r#"{"baseline":"Blue.","floor_parts_per_million":0,
+                "floor_held":{"first_rank":1,"kept":2,"of":2},"forced_depth":60,
+                "ranked_under":"chatml — set by a probe",
+                "clauses":[
+                  {"text":"Answer in one word.","changed":true,"moved_parts_per_million":1000000,
+                   "without":"The room is painted blue.\nAnd more.","held":{"first_rank":17,"kept":0,"of":2}},
+                  {"text":"What colour is the room?","changed":true,"moved_parts_per_million":1000000,
+                   "without":"Yes.","held":{"first_rank":null,"kept":0,"of":2}},
+                  {"text":"You are careful.","changed":false,"moved_parts_per_million":0,
+                   "without":"Blue.","held":{"first_rank":1,"kept":2,"of":2}}],
+                "clauses_over_the_cap":0,"seeds_asked":3,"distinct_answers":1,"generations":6,
+                "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10}"#,
+        )
+        .expect("a well-formed report")
+    }
+
+    /// Three sentences at a hundred per cent tie on the bar; what the answer
+    /// became and where its first token went are what order them (B-429).
+    #[test]
+    fn a_tied_column_is_ordered_by_the_answer_and_the_forced_rank() {
+        let text = steering_lines(&body()).join("\n");
+        assert!(
+            text.contains("without it: \"The room is painted blue.…\""),
+            "the first line of the ablated answer is shown, marked as cut: {text}"
+        );
+        assert!(
+            text.contains("fell to its number 17 choice; 0 of 2 tokens of the opening"),
+            "{text}"
+        );
+        assert!(text.contains("fell outside its top 60"), "{text}");
+        assert!(
+            text.contains("would still have begun the same way: 2 of 2"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("without it: \"Blue.\""),
+            "an unchanged answer is not repeated: {text}"
+        );
+        assert!(
+            text.contains("with the control sentence in, the answer would still have begun"),
+            "the floor's own forced reading is beside the floor: {text}"
+        );
+    }
+
+    /// A reading nobody took is said once, not drawn as a rank (A7).
+    #[test]
+    fn an_untaken_forced_reading_is_said_rather_than_ranked() {
+        let mut held = body();
+        if let Value::Map(fields) = &mut held {
+            fields.insert("floor_held".to_owned(), Value::Null);
+        }
+        let text = steering_lines(&held).join("\n");
+        assert!(text.contains("was not read: it needs the served engine"), "{text}");
+        assert_eq!(held_said(Some(&Value::Null), 60), None);
+        assert_eq!(held_said(None, 60), None);
+    }
+
+    /// The addressing the ranks were read under is on the page (§3.4).
+    #[test]
+    fn the_rank_reading_says_what_it_was_read_under() {
+        let text = what_the_model_expected(&body()).join("\n");
+        assert!(text.contains("read under chatml — set by a probe"), "{text}");
+    }
 }

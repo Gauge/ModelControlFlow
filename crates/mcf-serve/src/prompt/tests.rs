@@ -6,6 +6,19 @@
 
 use super::*;
 
+/// What a fake model said, with identifiers to match.
+fn said(text: &str) -> Answered {
+    Answered {
+        text: text.to_owned(),
+        tokens: text.split_whitespace().map(str::len).collect(),
+    }
+}
+
+/// A forced reading nobody took.
+fn unforced(_: &str, _: &[usize]) -> Option<Held> {
+    None
+}
+
 /// The clauses are the sentences a person wrote.
 ///
 /// Not the tokenizer's pieces: what a vocabulary does to the writing is
@@ -44,12 +57,12 @@ fn an_unchanged_answer_says_the_clause_was_not_used() {
     // The model ignores the second sentence entirely.
     let mut ask = |prompt: &str, _: u64| {
         if prompt.contains("One") {
-            "the same answer".to_owned()
+            said("the same answer")
         } else {
-            "a different answer".to_owned()
+            said("a different answer")
         }
     };
-    let report = measure("One. Two.", 41, &mut ask);
+    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
     let unused = report.unused();
     assert_eq!(unused.len(), 1, "one clause changed nothing");
     assert_eq!(
@@ -76,9 +89,9 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
     let mut seeds = Vec::new();
     let mut ask = |_: &str, seed: u64| {
         seeds.push(seed);
-        "always the same".to_owned()
+        said("always the same")
     };
-    let _report = measure("One. Two. Three.", 41, &mut ask);
+    let _report = measure("One. Two. Three.", 41, &mut ask, &mut unforced);
     // The baseline and the three ablations all at 41; the extra seeds are the
     // settledness question and are meant to differ.
     let ablation_seeds: Vec<u64> = seeds.iter().copied().take(4).collect();
@@ -92,8 +105,8 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
 /// nobody made (A7).
 #[test]
 fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
-    let mut ask = |_: &str, _: u64| "an answer".to_owned();
-    let report = measure("Just the one sentence.", 41, &mut ask);
+    let mut ask = |_: &str, _: u64| said("an answer");
+    let report = measure("Just the one sentence.", 41, &mut ask, &mut unforced);
     assert!(
         report.clauses.is_empty(),
         "there is no clause whose absence could be observed"
@@ -105,16 +118,16 @@ fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
 /// The same answer under every seed is one distinct answer.
 #[test]
 fn a_prompt_that_settles_the_answer_reports_one_answer() {
-    let mut ask = |_: &str, _: u64| "the one answer".to_owned();
-    let report = measure("One. Two.", 41, &mut ask);
+    let mut ask = |_: &str, _: u64| said("the one answer");
+    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
     assert_eq!(report.settled.distinct, 1);
 }
 
 /// Different answers under different seeds are counted, not judged.
 #[test]
 fn a_prompt_that_does_not_settle_reports_how_many_answers() {
-    let mut ask = |_: &str, seed: u64| format!("answer for {seed}");
-    let report = measure("One. Two.", 41, &mut ask);
+    let mut ask = |_: &str, seed: u64| said(&format!("answer for {seed}"));
+    let report = measure("One. Two.", 41, &mut ask, &mut unforced);
     assert_eq!(
         report.settled.distinct, SEEDS,
         "every seed gave its own answer"
@@ -129,8 +142,8 @@ fn a_prompt_longer_than_the_cap_says_what_was_left_out() {
         use std::fmt::Write as _;
         let _wrote = write!(long, "Sentence {at}. ");
     }
-    let mut ask = |_: &str, _: u64| "an answer".to_owned();
-    let report = measure(&long, 41, &mut ask);
+    let mut ask = |_: &str, _: u64| said("an answer");
+    let report = measure(&long, 41, &mut ask, &mut unforced);
     assert_eq!(report.clauses.len(), MOST_CLAUSES);
     assert_eq!(report.clauses_over_the_cap, 3, "and it says how many");
 }
@@ -166,14 +179,14 @@ fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {
     // word of four.
     let mut ask = |prompt: &str, _: u64| {
         if !prompt.contains("First") {
-            "something else entirely here".to_owned()
+            said("something else entirely here")
         } else if prompt.contains("Second") {
-            "the answer is four words".to_owned()
+            said("the answer is four words")
         } else {
-            "the answer is five words".to_owned()
+            said("the answer is five words")
         }
     };
-    let report = measure("First. Second.", 41, &mut ask);
+    let report = measure("First. Second.", 41, &mut ask, &mut unforced);
     let steered = report
         .clauses
         .iter()
@@ -214,14 +227,14 @@ fn the_floor_is_what_an_inert_sentence_does() {
     // fixed amount — which is exactly the perturbation the floor is for.
     let mut ask = |prompt: &str, _: u64| {
         if prompt.contains(NO_INSTRUCTION) {
-            "one two three different".to_owned()
+            said("one two three different")
         } else if prompt.contains("Steer") {
-            "one two three four".to_owned()
+            said("one two three four")
         } else {
-            "utterly different words entirely".to_owned()
+            said("utterly different words entirely")
         }
     };
-    let report = measure("Steer this. Inert here.", 41, &mut ask);
+    let report = measure("Steer this. Inert here.", 41, &mut ask, &mut unforced);
     assert!(
         report.floor > 0,
         "an inert sentence moved the answer, and that is the floor"
@@ -265,4 +278,87 @@ fn the_inert_sentence_goes_where_a_clause_would_be() {
     assert_eq!(padded, format!("First. Second. {NO_INSTRUCTION} Third."));
     // A prompt of one sentence still gets one, before the only sentence.
     assert_eq!(with_inert("Only."), format!("{NO_INSTRUCTION} Only."));
+}
+
+/// The forced reading is asked with the baseline's own identifiers, for each
+/// shortened prompt and for the inert one — and never for the baseline itself,
+/// whose opening ranks first under its own prompt by construction.
+///
+/// On a one-word answer every removal that changes the word moves it a
+/// hundred per cent, and three sentences tie. The rank orders them, which is
+/// what B-429 is for: a sentence whose absence dropped the first token to its
+/// seventeenth choice did more than one that dropped it to its fourth.
+#[test]
+fn the_opening_is_put_back_to_the_model_under_each_shortened_prompt() {
+    let mut ask = |prompt: &str, _: u64| {
+        if prompt.starts_with("One.") && prompt.ends_with("Three.") {
+            said("Blue.")
+        } else {
+            said("Something else.")
+        }
+    };
+    let mut forced: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut force = |prompt: &str, opening: &[usize]| {
+        forced.push((prompt.to_owned(), opening.to_vec()));
+        Some(Held {
+            first: if prompt.contains("Two.") { Some(1) } else { Some(17) },
+            kept: usize::from(prompt.contains("Two.")),
+            of: opening.len(),
+        })
+    };
+    let report = measure("One. Two. Three.", 41, &mut ask, &mut force);
+    // Three clauses and the inert sentence: four readings, each with the
+    // baseline's identifiers — `said` makes them the word lengths.
+    assert_eq!(forced.len(), 4, "{forced:?}");
+    assert!(
+        forced.iter().all(|(_, opening)| opening == &vec![5]),
+        "every reading was asked with the baseline's own opening: {forced:?}"
+    );
+    assert!(
+        forced.iter().any(|(prompt, _)| prompt == "One. Three."),
+        "the shortened prompt is what the model is asked under: {forced:?}"
+    );
+    assert!(
+        forced
+            .iter()
+            .any(|(prompt, _)| prompt.contains(NO_INSTRUCTION)),
+        "the floor is read by the same operation: {forced:?}"
+    );
+    let two = report
+        .clauses
+        .iter()
+        .find(|held| held.text == "Two.")
+        .expect("the second clause is reported");
+    // The fake ranks the opening first wherever "Two." is still in the
+    // prompt: so with "Two." removed it fell, and with "One." removed it held.
+    assert_eq!(
+        two.held,
+        Some(Held {
+            first: Some(17),
+            kept: 0,
+            of: 1
+        })
+    );
+    let one = report
+        .clauses
+        .iter()
+        .find(|held| held.text == "One.")
+        .expect("the first clause is reported");
+    assert_eq!(one.held.and_then(|held| held.first), Some(1));
+    assert_eq!(
+        report.floor_held.map(|held| held.of),
+        Some(1),
+        "the floor's reading is kept beside the floor"
+    );
+}
+
+/// A baseline that said nothing has no opening to put back, and the reading
+/// is not taken rather than reported as fully kept (A7).
+#[test]
+fn an_empty_answer_has_no_opening_to_force() {
+    let mut ask = |_: &str, _: u64| said("");
+    let mut force = |_: &str, _: &[usize]| Some(Held::default());
+    let report = measure("One. Two.", 41, &mut ask, &mut force);
+    assert!(report.clauses.iter().all(|held| held.held.is_none()));
+    assert_eq!(report.floor_held, None);
 }
