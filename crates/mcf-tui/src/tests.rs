@@ -95,6 +95,75 @@ fn a_model_that_runs_carries_where() {
     let resolved = held.engine.expect("it runs");
     assert_eq!(resolved.engine, "an-engine");
     assert_eq!(resolved.context, 32_768);
+    assert_eq!(
+        held.measured,
+        screens::host::Measured::default(),
+        "nothing measured is nothing, not a zero"
+    );
+}
+
+/// What the ladder measured reaches the card in the daemon's own figures,
+/// and a rung that did not separate is not the deepest reading (A7, A9).
+#[test]
+fn a_measured_model_carries_the_ends_of_its_ladder() {
+    let reading = |depth: i64, ms: Option<&str>| {
+        Value::map([
+            ("depth", Value::Integer(depth)),
+            ("measured", Value::Bool(ms.is_some())),
+            (
+                "ms_per_token",
+                ms.map_or(Value::Null, |ms| Value::text(ms.to_owned())),
+            ),
+        ])
+    };
+    let model = Value::map([
+        ("path", Value::text("/models/example.gguf")),
+        (
+            "runs",
+            Value::map([(
+                "measured",
+                Value::map([
+                    (
+                        "readings",
+                        Value::List(vec![
+                            reading(512, Some("15.430")),
+                            reading(4096, Some("66.433")),
+                            reading(8192, None),
+                        ]),
+                    ),
+                    (
+                        "first_token",
+                        Value::map([
+                            ("measured", Value::Bool(true)),
+                            ("ms", Value::text("1258.213")),
+                        ]),
+                    ),
+                ]),
+            )]),
+        ),
+    ]);
+    let held = Console::describe(&model);
+    assert_eq!(held.measured.at_512.as_deref(), Some("15.430"));
+    assert_eq!(
+        held.measured.at_window.as_deref(),
+        Some("66.433"),
+        "the rung that did not separate is not the deepest reading"
+    );
+    assert_eq!(held.measured.start_up.as_deref(), Some("1258.213"));
+
+    // And the card says them, with their units, rather than Unknown.
+    let mut console = Console::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    console.models = vec![held];
+    console.at = Where::Models;
+    let mut screen = Screen::new(100, 30);
+    draw(&console, &mut screen);
+    let drawn = screen.rendered();
+    assert!(drawn.contains("15.430 ms/token"), "{drawn}");
+    assert!(drawn.contains("1258.213 ms"), "{drawn}");
+    assert!(
+        !drawn.contains("run diagnostics to fill these in"),
+        "{drawn}"
+    );
 }
 
 /// A daemon that is not there is drawn as a refusal, not as an empty screen —

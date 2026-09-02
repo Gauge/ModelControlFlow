@@ -26,6 +26,24 @@ pub struct Held {
     pub cache_per_token: Option<u64>,
     /// The engine MCF worked out, or why there is none.
     pub engine: Result<Resolved, String>,
+    /// What the ladder measured, where it has run.
+    pub measured: Measured,
+}
+
+/// The ends of a measured ladder, in the daemon's own figures.
+///
+/// **Text, not numbers.** Each is the string the daemon put on the wire —
+/// milliseconds to three places — shown as it came, so that no surface
+/// rounds a measurement its own way (B-072). `None` is not measured, which
+/// the card says in those words and never as a zero (A7).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Measured {
+    /// Milliseconds a token at the shallowest depth that separated.
+    pub at_512: Option<String>,
+    /// The same at the deepest.
+    pub at_window: Option<String>,
+    /// Milliseconds to the first token at the shallowest rung, warm.
+    pub start_up: Option<String>,
 }
 
 /// What MCF worked out about running it.
@@ -245,23 +263,32 @@ fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usiz
             ],
         );
         row += 1;
-        for label in [
-            "at 512 tokens",
-            "at the largest window",
-            "start-up to first token",
+        let figures = &model.measured;
+        let mut missing = false;
+        for (label, figure, unit) in [
+            ("at 512 tokens", &figures.at_512, " ms/token"),
+            ("at the largest window", &figures.at_window, " ms/token"),
+            ("start-up to first token", &figures.start_up, " ms"),
         ] {
+            let (said, ink) = figure.as_ref().map_or_else(
+                || {
+                    missing = true;
+                    ("Unknown".to_owned(), Ink::Refusal)
+                },
+                |ms| (format!("{ms}{unit}"), Ink::Held),
+            );
             columns(
                 into,
                 right,
                 row,
                 &[
                     (label, 26, false, Ink::Quiet),
-                    ("Unknown", 16, true, Ink::Refusal),
+                    (said.as_str(), 16, true, ink),
                 ],
             );
             row += 1;
         }
-        if row < last {
+        if row < last && missing {
             into.put(right, row, "run diagnostics to fill these in", Ink::Quiet);
         }
     }

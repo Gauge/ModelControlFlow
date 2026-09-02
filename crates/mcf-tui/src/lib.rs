@@ -135,6 +135,41 @@ fn why(body: &Value) -> String {
         .to_owned()
 }
 
+/// The ends of what the ladder measured, as the daemon wrote them.
+///
+/// Only the depths that *separated*: a rung the arithmetic could not measure
+/// is not a slow one, and letting it stand in for the deepest reading would
+/// put a number where there is none (A7, A9). The start-up figure is the
+/// daemon's, derived on its side of the wire (B-072); a run that could not
+/// read one says so there, and reads as nothing here.
+fn measured_ends(held: &Value) -> screens::host::Measured {
+    let mut ends = screens::host::Measured {
+        start_up: held
+            .get("first_token")
+            .filter(|figure| matches!(figure.get("measured"), Some(Value::Bool(true))))
+            .and_then(|figure| figure.get("ms"))
+            .and_then(Value::as_text)
+            .map(str::to_owned),
+        ..screens::host::Measured::default()
+    };
+    let Some(readings) = held.get("readings").and_then(Value::as_list) else {
+        return ends;
+    };
+    for reading in readings {
+        if !matches!(reading.get("measured"), Some(Value::Bool(true))) {
+            continue;
+        }
+        let Some(ms) = reading.get("ms_per_token").and_then(Value::as_text) else {
+            continue;
+        };
+        if ends.at_512.is_none() {
+            ends.at_512 = Some(ms.to_owned());
+        }
+        ends.at_window = Some(ms.to_owned());
+    }
+    ends
+}
+
 /// The name a model is known by: the file, not where it sits.
 fn name_of(model: &Value) -> String {
     model
@@ -262,6 +297,10 @@ impl Console {
             trained: number("trained_context"),
             cache_per_token: number("cache_bytes_per_token"),
             engine,
+            measured: runs
+                .and_then(|held| held.get("measured"))
+                .map(measured_ends)
+                .unwrap_or_default(),
         }
     }
 
