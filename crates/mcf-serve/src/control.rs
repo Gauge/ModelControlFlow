@@ -209,6 +209,16 @@ pub enum Request {
     Hosted,
     /// Stop holding it.
     Unhost,
+    /// What a model is made of: its directory counted, its header set against
+    /// the directory, and what one token costs in arithmetic.
+    ///
+    /// Reading, never running: the header and the tensor directory are read
+    /// off the file's prefix, and nothing is loaded. Served here so that the
+    /// window shows what `mcf explain` prints, from one counting (A22, B-072).
+    Anatomy {
+        /// A path, or a name under the daemon's store.
+        model: String,
+    },
 }
 
 /// An optional string, as the protocol carries one.
@@ -346,6 +356,10 @@ impl Request {
                 ("ask", Value::text("settings")),
                 ("model", Value::text(model.clone())),
             ]),
+            Self::Anatomy { model } => Value::map([
+                ("ask", Value::text("anatomy")),
+                ("model", Value::text(model.clone())),
+            ]),
             Self::Host { model, settings } => Value::map([
                 ("ask", Value::text("host")),
                 ("model", Value::text(model.clone())),
@@ -446,6 +460,13 @@ impl Request {
                     .get("model")
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("a settings request naming no model", line))?
+                    .to_owned(),
+            }),
+            Some("anatomy") => Ok(Self::Anatomy {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("an anatomy request naming no model", line))?
                     .to_owned(),
             }),
             Some("host") => Ok(Self::Host {

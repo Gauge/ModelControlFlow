@@ -76,6 +76,7 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Hosting => hosting(paint, desk, mouse, main),
         Page::Prompt => prompt(paint, desk, mouse, main),
         Page::Components => components(paint, desk, mouse, main),
+        Page::Anatomy => anatomy(paint, desk, mouse, main),
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
@@ -695,7 +696,7 @@ fn host(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Ac
     let list = 250.0_f32;
     let right = area.x + list + 40.0;
     let mut act = None;
-    let actions_at = area.bottom() - 160.0;
+    let actions_at = area.bottom() - 200.0;
 
     let chose = model_list(
         paint,
@@ -1167,10 +1168,13 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
         .as_ref()
         .zip(desk.chosen.and_then(|at| desk.models.get(at)))
         .is_some_and(|(hosting, held)| hosting.model == held.path);
-    let actions: [(&str, Kind, Act); 3] = if this_one {
+    // *What is in it* on both: it reads the file and runs nothing, so a model
+    // being held can be counted as well as one that is not.
+    let actions: [(&str, Kind, Act); 4] = if this_one {
         [
             ("Ask it something", Kind::Primary, Act::Go(Page::Hosting)),
             ("Stop hosting", Kind::Ordinary, Act::StopHosting),
+            ("What is in it", Kind::Ordinary, Act::Go(Page::Anatomy)),
             ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
         ]
     } else {
@@ -1181,6 +1185,7 @@ fn actions_panel(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> 
                 Kind::Ordinary,
                 Act::Go(Page::Diagnostics),
             ),
+            ("What is in it", Kind::Ordinary, Act::Go(Page::Anatomy)),
             ("Add a model", Kind::Ordinary, Act::Go(Page::Adding)),
         ]
     };
@@ -2883,6 +2888,491 @@ fn component_foot(
         }
     }
     None
+}
+
+/// What a model is made of, as the daemon counted it.
+///
+/// **Counted there, drawn here.** Every figure on this screen came over the
+/// socket from the same counting `mcf explain` prints, and nothing on it is
+/// worked out by the window (B-072). Nothing on it is a measurement either:
+/// it is the file's directory set against the file's header, and one token's
+/// arithmetic from both (A20, A21). A speed is on the Diagnostics screen.
+fn anatomy(paint: &mut Painter, desk: &Desk, _mouse: &Mouse, area: Box) -> Option<Act> {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "what is in it", ink.faint);
+    let named = desk
+        .chosen
+        .and_then(|at| desk.models.get(at))
+        .map_or("no model chosen", |held| held.name.as_str());
+    let name = paint.elide(named, Weight::Bold, size::HEAD, area.w);
+    paint.say_at(
+        area.x,
+        area.y + 24.0,
+        &name,
+        Weight::Bold,
+        size::HEAD,
+        ink.ink,
+    );
+    paint.say_at(
+        area.x,
+        area.y + 54.0,
+        "counted from the file's tensor directory and set against its header — read, not \
+         measured",
+        Weight::Regular,
+        size::BODY,
+        ink.quiet,
+    );
+    let top = area.y + 90.0;
+    let Some(said) = &desk.anatomy else {
+        let why = desk
+            .no_anatomy
+            .clone()
+            .unwrap_or_else(|| "Nothing has been asked yet.".to_owned());
+        let mut y = top;
+        for line in paint.wrap(&why, Weight::Regular, size::BODY, area.w.min(720.0)) {
+            paint.say_at(area.x, y, &line, Weight::Regular, size::BODY, ink.bad);
+            y += 20.0;
+        }
+        return None;
+    };
+    // Two columns: the figures and the header check on the left, the tables
+    // on the right. The window does not scroll, so a table that does not fit
+    // is cut at a row that says so rather than drawn over the edge.
+    let figures = 460.0_f32.min(area.w / 2.0);
+    let left = Box::new(area.x, top, figures, area.bottom() - top);
+    let after = counted(paint, left, said);
+    // The header check before the arithmetic: a disagreement is the finding
+    // this screen exists to show, and the arithmetic is drawn from a header
+    // the check has just vouched for.
+    let after = agreements(
+        paint,
+        Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
+        &said.agreements,
+    );
+    arithmetic(
+        paint,
+        Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
+        said,
+    );
+    let right = Box::new(
+        area.x + figures + 40.0,
+        top,
+        (area.w - figures - 40.0).max(200.0),
+        area.bottom() - top,
+    );
+    let after = share_table(paint, right, "by part", &said.parts, said.elements);
+    let after = share_table(
+        paint,
+        Box::new(
+            right.x,
+            after + 24.0,
+            right.w,
+            right.bottom() - after - 24.0,
+        ),
+        "by encoding",
+        &said.encodings,
+        said.elements,
+    );
+    by_block(
+        paint,
+        Box::new(
+            right.x,
+            after + 24.0,
+            right.w,
+            right.bottom() - after - 24.0,
+        ),
+        said,
+    );
+    None
+}
+
+/// Name and figure, one line each, the way the model's own card is set.
+fn figures(paint: &mut Painter, area: Box, rows: &[(&str, String)]) -> f32 {
+    let ink = paint.ink;
+    let mut y = area.y;
+    for (name, value) in rows {
+        if y > area.bottom() - 18.0 {
+            break;
+        }
+        paint.say_at(area.x, y, name, Weight::Regular, size::BODY, ink.quiet);
+        let colour = if value == UNKNOWN || value == "—" {
+            ink.faint
+        } else {
+            ink.ink
+        };
+        let shown = paint.elide(value, Weight::Bold, size::BODY, area.w - 160.0);
+        paint.say_at(area.x + 150.0, y, &shown, Weight::Bold, size::BODY, colour);
+        y += 22.0;
+    }
+    y
+}
+
+/// Bits an element, to two places, where the bytes are known.
+fn bits_an_element(bytes: Option<u64>, elements: u64) -> Option<String> {
+    let bytes = bytes?;
+    if elements == 0 {
+        return None;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a density shown to two decimal places"
+    )]
+    let bits = bytes as f64 * 8.0 / elements as f64;
+    Some(format!("{bits:.2} bits an element"))
+}
+
+/// A share of the whole, in percent to one place.
+fn percent_of(part: u64, whole: u64) -> String {
+    if whole == 0 {
+        return "—".to_owned();
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a share shown to one decimal place"
+    )]
+    let share = part as f64 * 100.0 / whole as f64;
+    format!("{share:.1}%")
+}
+
+/// What the file holds, in total.
+fn counted(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "counted", ink.faint);
+    let weight = said.bytes.map_or_else(
+        || {
+            format!(
+                "not sized: {} tensor(s) in an encoding this reader does not size",
+                said.unsized_tensors
+            )
+        },
+        |bytes| {
+            let density = bits_an_element(Some(bytes), said.elements).unwrap_or_default();
+            format!("{} — {density}", gigabytes(bytes))
+        },
+    );
+    let mixing = match (said.attending, said.recurrent) {
+        (0, 0) => String::new(),
+        (attending, 0) if attending == said.blocks => ", all attending".to_owned(),
+        (attending, 0) => format!(" — {attending} attending"),
+        (0, recurrent) => format!(" — {recurrent} keeping a recurrent state"),
+        (attending, recurrent) => {
+            format!(" — {attending} attending, {recurrent} keeping a recurrent state")
+        }
+    };
+    let rows = [
+        ("parameters", words::grouped(said.elements)),
+        (
+            "active per token",
+            said.active.map_or_else(
+                || "all of them".to_owned(),
+                |(active, experts, used)| {
+                    format!("{} — {used} of {experts} experts", words::grouped(active))
+                },
+            ),
+        ),
+        ("weights", weight),
+        ("blocks", format!("{}{mixing}", said.blocks)),
+        (
+            "output head",
+            if said.output_tied {
+                "reuses the embedding table".to_owned()
+            } else {
+                "its own".to_owned()
+            },
+        ),
+    ];
+    figures(
+        paint,
+        Box::new(area.x, area.y + 26.0, area.w, area.h - 26.0),
+        &rows,
+    )
+}
+
+/// One token's arithmetic, and the cache — sized, or why not.
+fn arithmetic(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
+    use mcf_serve::anatomy::SaidCache;
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "one token's arithmetic", ink.faint);
+    let unknown = || UNKNOWN.to_owned();
+    let mut rows = vec![
+        ("multiply-adds", words::grouped(said.multiply_adds)),
+        (
+            "head width",
+            said.head_width
+                .map_or_else(unknown, |held| held.to_string()),
+        ),
+        (
+            "queries per key",
+            said.queries_per_key
+                .map_or_else(unknown, |held| held.to_string()),
+        ),
+        (
+            "attention at full context",
+            said.attention_at_context
+                .map_or_else(unknown, |held| format!("{} more", words::grouped(held))),
+        ),
+    ];
+    let why = match &said.cache {
+        SaidCache::Sized {
+            per_token,
+            key_heads,
+            kept,
+            at_context,
+            sliding_window,
+            attending,
+            recurrent,
+        } => {
+            rows.push((
+                "cache per token",
+                format!("{} bytes", words::grouped(*per_token)),
+            ));
+            if let Some((tokens, bytes)) = at_context {
+                rows.push((
+                    "cache at full context",
+                    format!(
+                        "{} at {} tokens",
+                        gigabytes(*bytes),
+                        words::grouped(*tokens)
+                    ),
+                ));
+            }
+            if let Some(window) = sliding_window {
+                rows.push((
+                    "sliding window",
+                    format!(
+                        "{} tokens — the full-context figure is a ceiling",
+                        words::grouped(*window)
+                    ),
+                ));
+            }
+            let blocks = if *recurrent > 0 {
+                format!(
+                    "; kept in the {} of {} blocks that attend, none in the {recurrent} that keep a state",
+                    attending.0, attending.1
+                )
+            } else {
+                format!("; kept in {} of {} blocks", attending.0, attending.1)
+            };
+            (
+                format!("{key_heads} head(s) keeping {kept}{blocks}"),
+                ink.quiet,
+            )
+        }
+        SaidCache::Unsized(reason) => {
+            rows.push(("cache per token", "not sized".to_owned()));
+            (reason.clone(), ink.quiet)
+        }
+    };
+    let mut y = figures(
+        paint,
+        Box::new(area.x, area.y + 26.0, area.w, area.h - 26.0),
+        &rows,
+    );
+    let (said, colour) = why;
+    y += 4.0;
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, area.w)
+        .iter()
+        .take(5)
+    {
+        paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, colour);
+        y += 16.0;
+    }
+    y
+}
+
+/// Bytes in a table cell: a figure a person reads, at the scale it has.
+fn bytes_figure(bytes: u64) -> String {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a size shown to one or two decimal places"
+    )]
+    let held = bytes as f64;
+    if bytes >= 1_000_000_000 {
+        format!("{:.2} GB", held / 1e9)
+    } else if bytes >= 1_000_000 {
+        format!("{:.1} MB", held / 1e6)
+    } else {
+        format!("{} B", words::grouped(bytes))
+    }
+}
+
+/// Tensors, elements, share and bytes for each part or each encoding.
+fn share_table(
+    paint: &mut Painter,
+    area: Box,
+    first: &str,
+    shares: &[mcf_serve::anatomy::SaidShare],
+    whole: u64,
+) -> f32 {
+    let ink = paint.ink;
+    let columns = [
+        Column {
+            head: "tensors",
+            at: area.w - 300.0,
+            right: true,
+        },
+        Column {
+            head: "elements",
+            at: area.w - 170.0,
+            right: true,
+        },
+        Column {
+            head: "share",
+            at: area.w - 90.0,
+            right: true,
+        },
+        Column {
+            head: "bytes",
+            at: area.w,
+            right: true,
+        },
+    ];
+    let mut y = heads(paint, area, first, &columns);
+    for (shown, share) in shares.iter().enumerate() {
+        if y > area.bottom() - 40.0 && shown + 1 < shares.len() {
+            let left = shares.len() - shown;
+            paint.say_at(
+                area.x,
+                y,
+                &format!("and {left} more — the window is too short for them"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            return y + 20.0;
+        }
+        let cells = [
+            (&columns[0], share.tensors.to_string()),
+            (&columns[1], words::grouped(share.elements)),
+            (&columns[2], percent_of(share.elements, whole)),
+            (
+                &columns[3],
+                share.bytes.map_or_else(|| "—".to_owned(), bytes_figure),
+            ),
+        ];
+        row(paint, area, y, &share.name, &cells);
+        y += 22.0;
+    }
+    y
+}
+
+/// Each shape of block: which blocks, what they hold, and what each is made
+/// of in the words every surface uses.
+fn by_block(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "by block", ink.faint);
+    let under = area.y + 17.0;
+    paint.rule((area.x, under), (area.right(), under), ink.line, 255);
+    let mut y = under + 10.0;
+    for (shown, family) in said.families.iter().enumerate() {
+        if y > area.bottom() - 60.0 && shown + 1 < said.families.len() {
+            let left = said.families.len() - shown;
+            paint.say_at(
+                area.x,
+                y,
+                &format!("and {left} more — the window is too short for them"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            return y + 20.0;
+        }
+        let bits = family.bits.map_or_else(String::new, |(least, most)| {
+            #[expect(
+                clippy::integer_division,
+                reason = "hundredths of a bit into bits and hundredths"
+            )]
+            let said = |held: u64| format!("{}.{:02}", held / 100, held % 100);
+            if least == most {
+                format!(" · {} bits an element", said(least))
+            } else {
+                format!(" · {}–{} bits an element", said(least), said(most))
+            }
+        });
+        let head = format!(
+            "{} block(s), {} · {} elements{bits}",
+            family.blocks.len(),
+            family.ranged,
+            words::grouped(family.share.elements)
+        );
+        let shown = paint.elide(&head, Weight::Bold, size::BODY, area.w);
+        paint.say_at(area.x, y, &shown, Weight::Bold, size::BODY, ink.ink);
+        y += 20.0;
+        for line in paint
+            .wrap(&family.said, Weight::Regular, size::SMALL, area.w)
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.quiet);
+            y += 16.0;
+        }
+        y += 8.0;
+    }
+    y
+}
+
+/// What the header says beside what the directory shows, and whether they
+/// agree — a disagreement in the alarm colour, a missing side in neither
+/// (A21, A7).
+fn agreements(paint: &mut Painter, area: Box, held: &[mcf_serve::anatomy::SaidAgreement]) -> f32 {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "header against directory", ink.faint);
+    let table = Box::new(area.x, area.y + 22.0, area.w, area.h - 22.0);
+    let columns = [
+        Column {
+            head: "header says",
+            at: 120.0,
+            right: false,
+        },
+        Column {
+            head: "directory shows",
+            at: 230.0,
+            right: false,
+        },
+        Column {
+            head: "",
+            at: area.w,
+            right: true,
+        },
+    ];
+    let mut y = heads(paint, table, "what", &columns);
+    for (shown, agreement) in held.iter().enumerate() {
+        if y > table.bottom() - 40.0 && shown + 1 < held.len() {
+            let left = held.len() - shown;
+            paint.say_at(
+                area.x,
+                y,
+                &format!("and {left} more — the window is too short for them"),
+                Weight::Regular,
+                size::SMALL,
+                ink.faint,
+            );
+            return y + 20.0;
+        }
+        let cell = |paint: &mut Painter, held: &Option<String>, room: f32| {
+            held.as_deref().map_or_else(
+                || "—".to_owned(),
+                |text| paint.elide(text, Weight::Bold, size::BODY, room),
+            )
+        };
+        let cells = [
+            (&columns[0], cell(paint, &agreement.declared, 100.0)),
+            (
+                &columns[1],
+                cell(paint, &agreement.observed, area.w - 310.0),
+            ),
+        ];
+        row(paint, table, y, &agreement.what, &cells);
+        let (verdict, colour) = match agreement.agrees {
+            Some(true) => ("agree", ink.good),
+            Some(false) => ("DISAGREE", ink.bad),
+            None => ("—", ink.faint),
+        };
+        paint.say_right(table.right(), y, verdict, Weight::Bold, size::BODY, colour);
+        y += 22.0;
+    }
+    y
 }
 
 fn settings(paint: &mut Painter, area: Box) -> Option<Act> {

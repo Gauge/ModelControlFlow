@@ -110,7 +110,7 @@ fn every_screen_draws_something_in_both_themes() {
             Page::Settings,
         ] {
             desk.page = page;
-            let paper = drawn(&desk, ink, "scratch");
+            let paper = drawn(&desk, ink, &format!("{page:?}").to_lowercase());
             if paper.width == 1 {
                 return; // no font here
             }
@@ -1107,4 +1107,92 @@ fn the_copied_analysis_says_why_a_reading_is_missing() {
         text.contains("not taken: no engine"),
         "a reading MCF could not take is absent from the clipboard rather than explained:\n{text}"
     );
+}
+
+/// What a hybrid mixture's anatomy comes over the socket as: one dense block
+/// and forty-six of experts, latent attention, a cache sized as the key
+/// alone — the shape of the answer the daemon gave for a real file.
+fn an_anatomy_answer() -> mcf_serve::anatomy::Said {
+    let line = concat!(
+        r#"{"model":"/models/Assistant-8B.gguf","counted":{"elements":29943393920,"#,
+        r#""bytes":17510693376,"unsized_tensors":0,"blocks":47,"output_tied":false,"#,
+        r#""active":{"elements":3896766080,"experts":64,"used":4},"#,
+        r#""parts":[{"part":"embedding","tensors":1,"elements":317194240,"bytes":178421760},"#,
+        r#"{"part":"output head","tensors":1,"elements":317194240,"bytes":260198400},"#,
+        r#"{"part":"attention","tensors":282,"elements":1022623744,"bytes":819146752},"#,
+        r#"{"part":"feed-forward","tensors":141,"elements":497025024,"bytes":322977792},"#,
+        r#"{"part":"experts","tensors":138,"elements":27783069696,"bytes":15904800768},"#,
+        r#"{"part":"routing","tensors":46,"elements":6029312,"bytes":24117248},"#,
+        r#"{"part":"norms and biases","tensors":235,"elements":257664,"bytes":1030656}],"#,
+        r#""encodings":[{"encoding":"Q4_K","tensors":306,"elements":26736328704,"bytes":15039184896},"#,
+        r#"{"encoding":"Q5_K","tensors":23,"elements":2286944256,"bytes":1572274176},"#,
+        r#"{"encoding":"Q6_K","tensors":49,"elements":476053504,"bytes":390512640},"#,
+        r#"{"encoding":"q8_0","tensors":180,"elements":418119680,"bytes":444252160},"#,
+        r#"{"encoding":"f16","tensors":5,"elements":19660800,"bytes":39321600},"#,
+        r#"{"encoding":"f32","tensors":281,"elements":6286976,"bytes":25147904}],"#,
+        r#""block_shapes":[{"blocks":[0],"mixing":"attention","feed":"dense","experts":null,"#,
+        r#""shared_expert":false,"said":"attention over the context, keys and values kept per position; one feed-forward every token passes","#,
+        r#""ranged":"0","bits_hundredths":[530,530],"tensors":13,"elements":84677888,"bytes":56185856},"#,
+        r#"{"blocks":[1,2,3],"mixing":"attention","feed":"experts","experts":64,"shared_expert":true,"#,
+        r#""said":"attention over the context, keys and values kept per position; 64 experts and a shared one every token passes","#,
+        r#""ranged":"1–46","bits_hundredths":[455,496],"tensors":828,"elements":29224325504,"bytes":17015879168}],"#,
+        r#""attending":47,"recurrent":0},"#,
+        r#""agreements":[{"what":"blocks","declared":"47","observed":"47","agrees":true},"#,
+        r#"{"what":"embedding width","declared":"2048","observed":"2048","agrees":true},"#,
+        r#"{"what":"key/value heads","declared":"1","observed":"1","agrees":true},"#,
+        r#"{"what":"experts","declared":"64","observed":"64","agrees":true},"#,
+        r#"{"what":"parameters","declared":"64x2.6B (a label)","observed":"29943393920 (29.9B)","agrees":null}],"#,
+        r#""work":{"multiply_adds":3579571840,"head_width":576,"queries_per_key":20,"#,
+        r#""attention_at_context":207358525440,"cache":{"sized":true,"per_token":54144,"key_heads":1,"#,
+        r#""per_head":576,"latent":true,"kept":"one latent of 576 per position, which is read back as both key and value — no value cache","#,
+        r#""context":202752,"at_context":10977804288,"sliding_window":null,"attending":47,"blocks":47,"recurrent":0}}}"#
+    );
+    let Ok(value) = mcf_record::json::parse(line) else {
+        panic!("the answer does not parse");
+    };
+    match mcf_serve::anatomy::Said::from_value(&value) {
+        Some(said) => said,
+        None => panic!("the answer does not read"),
+    }
+}
+
+/// What a model is made of is reachable from its list, and drawn as the
+/// daemon said it.
+///
+/// **The window had no explain page.** Everything `mcf explain` counts was
+/// on the console and nowhere else, so the primary surface said less about
+/// a file than the command line did (A22). The screen draws what came over
+/// the socket and counts nothing itself (B-072).
+#[test]
+fn what_is_in_it_is_reachable_and_drawn_as_the_daemon_said_it() {
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.chosen = Some(0);
+    assert!(
+        act_somewhere(&desk, &mcf_desk::Act::Go(Page::Anatomy)),
+        "nothing on Models leads to what the model is made of"
+    );
+
+    // Refused, in words, where nothing was said.
+    desk.page = Page::Anatomy;
+    desk.anatomy = None;
+    desk.no_anatomy = Some("MCF is not answering".to_owned());
+    let refused = drawn(&desk, NIGHT, "anatomy-refused");
+    if refused.width == 1 {
+        return; // no font here
+    }
+    let refused = refused.inked(NIGHT.ground);
+
+    // And the whole of it where the daemon answered.
+    desk.anatomy = Some(an_anatomy_answer());
+    desk.no_anatomy = None;
+    for ink in [NIGHT, DAY] {
+        let paper = drawn(&desk, ink, "anatomy");
+        let inked = paper.inked(ink.ground);
+        assert!(
+            inked > refused + 30_000,
+            "the anatomy drew {inked} pixels against {refused} for a refusal: the counting \
+             is not on the screen"
+        );
+    }
 }

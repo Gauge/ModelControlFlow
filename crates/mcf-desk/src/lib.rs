@@ -81,6 +81,11 @@ pub const ACTIONS: &[Action] = &[
         reaches: Some("Components"),
     },
     Action {
+        key: "click What is in it",
+        does: "count what the chosen model's file holds, header against directory",
+        reaches: Some("Anatomy"),
+    },
+    Action {
         key: "Ctrl+V",
         does: "paste a reference into the field being typed into",
         reaches: None,
@@ -182,6 +187,10 @@ pub enum Page {
     /// chosen, and the console's menu row has four columns of slack where a
     /// seventh entry needs nine (B-072).
     Prompt,
+    /// What a model is made of: what `mcf explain` counts, as the daemon
+    /// says it (A22, B-072). Reached from Models' actions, for the model
+    /// chosen there.
+    Anatomy,
 }
 
 impl Page {
@@ -211,7 +220,9 @@ impl Page {
             // `view::host` draws both — so the column carried one screen
             // twice. The screens its actions lead to belong to Models now,
             // and the menu still shows where you came from.
-            Self::Host | Self::Adding | Self::Hosting | Self::Models => Self::Models,
+            Self::Host | Self::Adding | Self::Hosting | Self::Anatomy | Self::Models => {
+                Self::Models
+            }
             Self::Diagnostics | Self::Prompt => Self::Diagnostics,
             Self::Components => Self::Components,
             Self::Settings => Self::Settings,
@@ -862,6 +873,12 @@ pub struct Desk {
     pub build_failed: Option<(String, String)>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
+    /// What the chosen model is made of, as the daemon counted it — read
+    /// when the screen for it is opened, never counted here (B-072).
+    pub anatomy: Option<mcf_serve::anatomy::Said>,
+    /// Why there is no anatomy, where there is none: the daemon's refusal,
+    /// or that it could not be asked (A2).
+    pub no_anatomy: Option<String>,
     /// The context window a measurement is set up for.
     ///
     /// Choosing it implies every power of two below it, which is why the
@@ -907,6 +924,8 @@ impl Desk {
             building: None,
             build_failed: None,
             hosted: None,
+            anatomy: None,
+            no_anatomy: None,
             window: 8192,
             open: None,
             showing: None,
@@ -1120,6 +1139,9 @@ impl Desk {
                     if page.section() == Page::Monitor {
                         self.sample();
                     }
+                    if page == Page::Anatomy {
+                        self.read_anatomy();
+                    }
                     self.page = page;
                 }
             }
@@ -1230,6 +1252,37 @@ impl Desk {
                     .map(str::to_owned);
             }
             Err(why) => self.no_settings = Some(why),
+        }
+    }
+
+    /// Asks MCF what the chosen model is made of.
+    ///
+    /// Synchronous, like [`Self::read_settings`]: the daemon reads a header
+    /// and a tensor directory, which is milliseconds, and the answer is
+    /// wanted before the screen it was asked for draws.
+    pub fn read_anatomy(&mut self) {
+        self.anatomy = None;
+        self.no_anatomy = None;
+        let Some(held) = self.chosen.and_then(|at| self.models.get(at)) else {
+            self.no_anatomy = Some("Choose a model on the Models screen first.".to_owned());
+            return;
+        };
+        let asked = Request::Anatomy {
+            model: held.path.clone(),
+        };
+        match ask(&self.socket, &asked) {
+            Ok(answer) if answer.served => {
+                self.anatomy = mcf_serve::anatomy::Said::from_value(&answer.body);
+                if self.anatomy.is_none() {
+                    self.no_anatomy = Some(
+                        "MCF answered, but not in the shape this window reads — the daemon and \
+                         the window are not the same build."
+                            .to_owned(),
+                    );
+                }
+            }
+            Ok(answer) => self.no_anatomy = Some(refused_because(&answer.body)),
+            Err(why) => self.no_anatomy = Some(why),
         }
     }
 

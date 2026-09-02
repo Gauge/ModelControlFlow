@@ -7,7 +7,7 @@
 //! because the label is what the publisher rounded to and the count is what
 //! the file holds.
 
-use mcf_standin::anatomy::blocks::{Census, Feed, Mixing, ranges};
+use mcf_standin::anatomy::blocks::{Census, ranges};
 use mcf_standin::anatomy::vocabulary::{self, Vocabulary};
 use mcf_standin::anatomy::work::{self, Cache};
 use mcf_standin::anatomy::{self, Agreement, Anatomy, Share};
@@ -109,10 +109,7 @@ fn by_block(body: &Anatomy) -> Vec<String> {
             with_thousands(family.share.elements),
             percent(family.share.elements, body.elements),
         ));
-        lines.extend(row(
-            "",
-            &format!("  {}", made_of(family.shape.mixing, family.shape.feed)),
-        ));
+        lines.extend(row("", &format!("  {}", family.shape.said())));
         label = "";
     }
     if census.families.len() > 1 {
@@ -126,30 +123,6 @@ fn by_block(body: &Anatomy) -> Vec<String> {
         ));
     }
     lines
-}
-
-/// What a shape of block is made of, in words.
-fn made_of(mixing: Mixing, feed: Feed) -> String {
-    let mixing = match mixing {
-        Mixing::Attention => "attention over the context, keys and values kept per position",
-        Mixing::Recurrent => "a recurrent state of fixed size, nothing kept per position",
-        Mixing::Nothing => "no mixing across positions",
-    };
-    let feed = match feed {
-        Feed::Dense => "one feed-forward every token passes".to_owned(),
-        Feed::Experts {
-            count,
-            shared: true,
-        } => {
-            format!("{count} experts and a shared one every token passes")
-        }
-        Feed::Experts {
-            count,
-            shared: false,
-        } => format!("{count} experts"),
-        Feed::Nothing => "no feed-forward".to_owned(),
-    };
-    format!("{mixing}; {feed}")
 }
 
 /// Hundredths of a bit as `4.37`.
@@ -310,12 +283,11 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
         Cache::Sized {
             per_token,
             key_heads,
-            per_head,
-            latent,
             at_context,
             sliding_window,
             attending,
             recurrent,
+            ..
         } => {
             let (keeping, blocks) = *attending;
             let mut lines = row(
@@ -323,14 +295,7 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
                 &format!(
                     "{} bytes per token at 16 bits an element: {key_heads} head(s) keeping {}{}",
                     with_thousands(*per_token),
-                    if *latent {
-                        format!(
-                            "one latent of {per_head} per position, which is read back as both \
-                             key and value — no value cache"
-                        )
-                    } else {
-                        format!("{per_head} for a key and a value")
-                    },
+                    cache.kept().unwrap_or_default(),
                     if keeping == blocks {
                         String::new()
                     } else {

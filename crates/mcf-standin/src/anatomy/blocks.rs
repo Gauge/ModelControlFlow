@@ -64,6 +64,36 @@ pub struct Shape {
     pub feed: Feed,
 }
 
+impl Shape {
+    /// What the shape is made of, in the words every surface uses.
+    ///
+    /// Here rather than on a surface so that the window and the command line
+    /// cannot describe one block two ways (B-072).
+    #[must_use]
+    pub fn said(&self) -> String {
+        let mixing = match self.mixing {
+            Mixing::Attention => "attention over the context, keys and values kept per position",
+            Mixing::Recurrent => "a recurrent state of fixed size, nothing kept per position",
+            Mixing::Nothing => "no mixing across positions",
+        };
+        let feed = match self.feed {
+            Feed::Dense => "one feed-forward every token passes".to_owned(),
+            Feed::Experts {
+                count,
+                shared: true,
+            } => {
+                format!("{count} experts and a shared one every token passes")
+            }
+            Feed::Experts {
+                count,
+                shared: false,
+            } => format!("{count} experts"),
+            Feed::Nothing => "no feed-forward".to_owned(),
+        };
+        format!("{mixing}; {feed}")
+    }
+}
+
 /// Every block of one shape, and what they hold together.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Family {

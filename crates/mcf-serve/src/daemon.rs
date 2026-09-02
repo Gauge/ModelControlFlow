@@ -1540,6 +1540,7 @@ impl Daemon {
                 (Self::offered(reference, from.as_deref()), None)
             }
             Request::Settings { model } => (self.settings_for(model), None),
+            Request::Anatomy { model } => (self.anatomy_of(model), None),
             Request::Host { model, settings } => (self.host(model, settings), None),
             Request::Hosted => (Answer::served(self.hosted()), None),
             Request::Unhost => (Answer::served(self.unhost()), None),
@@ -2171,6 +2172,27 @@ impl Daemon {
     ///
     /// `None` where the header does not say enough to work it out — which is a
     /// state, and better than a figure MCF assembled from a guess (A7).
+    /// What a model is made of, counted from its directory.
+    ///
+    /// The prefix that holds the header holds the tensor directory too, so
+    /// this reads what `mcf explain` reads and loads nothing.
+    fn anatomy_of(&self, named: &str) -> Answer {
+        let path = crate::generation::resolved(&self.places.models, named);
+        if !path.is_file() {
+            return Answer::refused(&crate::control::refused(
+                "a model this machine is not holding",
+                named,
+            ));
+        }
+        match header_of(&path) {
+            Some(file) => Answer::served(crate::anatomy::encode(named, &file)),
+            None => Answer::refused(&crate::control::refused(
+                "a file whose header MCF could not read",
+                named,
+            )),
+        }
+    }
+
     fn cache_for(&self, named: &str, context: u64) -> Option<u64> {
         let path = crate::generation::resolved(&self.places.models, named);
         let file = header_of(&path)?;

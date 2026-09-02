@@ -100,7 +100,7 @@ pub(crate) fn unhost() -> Response {
 }
 
 /// Sends one request and returns what it answered, or a sentence.
-fn ask(request: &Request) -> Result<Value, String> {
+pub(crate) fn ask(request: &Request) -> Result<Value, String> {
     let Some(socket) = crate::serve::socket_path() else {
         return Err("mcf: MCF has nowhere to put a control socket on this machine".to_owned());
     };

@@ -72,6 +72,31 @@ pub enum Cache {
     Unsized(&'static str),
 }
 
+impl Cache {
+    /// What one head keeps per position, in the words every surface uses.
+    ///
+    /// `None` for a cache that is not sized.
+    #[must_use]
+    pub fn kept(&self) -> Option<String> {
+        match self {
+            Self::Sized {
+                per_head,
+                latent: true,
+                ..
+            } => Some(format!(
+                "one latent of {per_head} per position, which is read back as both key and \
+                 value — no value cache"
+            )),
+            Self::Sized {
+                per_head,
+                latent: false,
+                ..
+            } => Some(format!("{per_head} for a key and a value")),
+            Self::Unsized(_) => None,
+        }
+    }
+}
+
 /// One token's arithmetic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Work {

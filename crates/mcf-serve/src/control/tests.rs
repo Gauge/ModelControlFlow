@@ -153,6 +153,9 @@ fn the_new_requests_survive_the_wire() {
         Request::Provision {
             component: Some("llama.cpp".to_owned()),
         },
+        Request::Anatomy {
+            model: "a-model.gguf".to_owned(),
+        },
     ];
     for request in asked {
         let line = request.to_line();

@@ -14,6 +14,7 @@
 //! makes central, because a daemon idles far more than it works.
 
 pub mod adapters;
+pub mod anatomy;
 pub mod configured;
 pub mod control;
 pub mod cost;

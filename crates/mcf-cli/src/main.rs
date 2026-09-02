@@ -132,6 +132,9 @@ enum Request<'a> {
     Explain {
         /// The model: a path, or something `mcf list` names.
         model: &'a str,
+        /// The daemon's count of what the file holds, as the one line every
+        /// client reads — the window included — rather than the pages.
+        json: bool,
     },
     /// Ask a model something, with MCF's own engine.
     Run {
@@ -433,7 +436,8 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
                 argument,
             },
         },
-        ["explain", model] => Request::Explain { model },
+        ["explain", model] => Request::Explain { model, json: false },
+        ["explain", model, "--json"] => Request::Explain { model, json: true },
         ["explain"] => Request::MissingArgument {
             command: "explain",
             needs: "<model>",
@@ -1420,9 +1424,11 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                  \x20                                     rests on (B55)\n\
                  \x20 mcf log [--kind <kind>]             what happened on this machine,\n\
                  \x20         [--last <n>] [--full]       read back out of the record\n\
-                 \x20 mcf explain <model>                 what it declares, what MCF read,\n\
+                 \x20 mcf explain <model> [--json]        what it declares, what MCF read,\n\
                  \x20                                     what MCF would choose, and what\n\
-                 \x20                                     it cannot tell you\n\
+                 \x20                                     it cannot tell you; --json is\n\
+                 \x20                                     what the file holds, counted by\n\
+                 \x20                                     the daemon as the window reads it\n\
                  \x20 mcf support [--into <path>]         what a maintainer would need to\n\
                  \x20                                     read this machine's sensors, as a\n\
                  \x20                                     file you read before you send it\n\
@@ -1512,7 +1518,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             from,
             offered,
         } => check::run(*only, *reach, *from, *offered),
-        Request::Explain { model } => explain::run(model),
+        Request::Explain { model, json: false } => explain::run(model),
+        Request::Explain { model, json: true } => explain::json(model),
         Request::Run {
             model,
             prompt,
@@ -1759,6 +1766,33 @@ mod tests {
             Request::UnexpectedArgument {
                 command: "doctor",
                 argument: "--quiet"
+            }
+        );
+    }
+
+    /// `explain` reads the pages here and the JSON through the daemon, and
+    /// refuses anything else by name (A2).
+    #[test]
+    fn explain_reads_its_own_options() {
+        assert_eq!(
+            parse(&["explain", "a-model"]),
+            Request::Explain {
+                model: "a-model",
+                json: false
+            }
+        );
+        assert_eq!(
+            parse(&["explain", "a-model", "--json"]),
+            Request::Explain {
+                model: "a-model",
+                json: true
+            }
+        );
+        assert_eq!(
+            parse(&["explain", "a-model", "--yaml"]),
+            Request::UnexpectedArgument {
+                command: "explain",
+                argument: "--yaml"
             }
         );
     }

@@ -16,7 +16,10 @@ fn every_action_reaches_a_request_or_asks_nothing() {
         assert!(!action.does.is_empty());
         if let Some(reaches) = action.reaches {
             assert!(
-                matches!(reaches, "Status" | "Holding" | "Stop" | "Components"),
+                matches!(
+                    reaches,
+                    "Status" | "Holding" | "Stop" | "Components" | "Anatomy"
+                ),
                 "{} reaches {reaches}, which this surface cannot build",
                 action.key
             );
@@ -47,6 +50,7 @@ fn nothing_in_the_menu_leads_nowhere() {
     // person clicked to reach them.
     assert_eq!(Page::Adding.section(), Page::Models);
     assert_eq!(Page::Hosting.section(), Page::Models);
+    assert_eq!(Page::Anatomy.section(), Page::Models);
     assert_eq!(Page::Host.section(), Page::Models);
     // And nothing in the column is Host any more.
     assert!(
@@ -285,6 +289,7 @@ fn typing_is_only_typing_where_something_takes_it() {
         Page::Host,
         Page::Models,
         Page::Diagnostics,
+        Page::Anatomy,
         Page::Settings,
     ] {
         desk.page = page;
@@ -930,4 +935,55 @@ fn a_refused_build_lands_on_its_own_card() {
     // And a new build clears it.
     desk.build("llama.cpp");
     assert!(desk.build_failed.is_none());
+}
+
+/// *What is in it* asks the daemon, and draws nothing it did not say.
+///
+/// **The window counts nothing.** With no model chosen the screen says to
+/// choose one; with a daemon that is not there it says so in words, and the
+/// anatomy stays `None` rather than being made up from what the list already
+/// knows about the file (B-072, A7).
+#[test]
+fn what_is_in_it_is_asked_of_the_daemon_and_never_counted_here() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.act(crate::Act::Go(Page::Anatomy));
+    assert_eq!(desk.page, Page::Anatomy);
+    assert!(desk.anatomy.is_none());
+    let why = desk.no_anatomy.clone().unwrap_or_default();
+    assert!(why.contains("Choose a model"), "{why}");
+
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    desk.models = vec![Model {
+        name: "a-model".to_owned(),
+        path: "/nowhere/a-model.gguf".to_owned(),
+        bytes: Some(4_000_000_000),
+        ..Model::default()
+    }];
+    desk.chosen = Some(0);
+    desk.act(crate::Act::Go(Page::Anatomy));
+    assert!(desk.anatomy.is_none());
+    let why = desk.no_anatomy.clone().unwrap_or_default();
+    assert!(why.contains("not answering"), "{why}");
+    assert!(
+        !why.contains("sock"),
+        "the socket is shown to a person: {why}"
+    );
+}
+
+/// What the daemon says a model is made of is read as it was said.
+#[test]
+fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
+    let line = r#"{"model":"m.gguf","counted":{"elements":100,"bytes":50,"unsized_tensors":0,"blocks":2,"output_tied":true,"active":null,"parts":[{"part":"embedding","tensors":1,"elements":40,"bytes":20}],"encodings":[{"encoding":"Q4_K","tensors":3,"elements":100,"bytes":50}],"block_shapes":[{"blocks":[0,1],"mixing":"attention","feed":"dense","experts":null,"shared_expert":false,"said":"attention over the context, keys and values kept per position; one feed-forward every token passes","ranged":"0–1","bits_hundredths":[400,400],"tensors":2,"elements":60,"bytes":30}],"attending":2,"recurrent":0},"agreements":[{"what":"blocks","declared":"2","observed":"2","agrees":true}],"work":{"multiply_adds":100,"head_width":8,"queries_per_key":1,"attention_at_context":null,"cache":{"sized":true,"per_token":64,"key_heads":1,"per_head":16,"latent":false,"kept":"16 for a key and a value","context":null,"at_context":null,"sliding_window":null,"attending":2,"blocks":2,"recurrent":0}}}"#;
+    let value = mcf_record::json::parse(line).expect("the line parses");
+    let said = mcf_serve::anatomy::Said::from_value(&value).expect("the value reads");
+    assert_eq!(said.elements, 100);
+    assert_eq!(said.families.len(), 1);
+    assert_eq!(
+        said.agreements.first().and_then(|held| held.agrees),
+        Some(true)
+    );
+    assert!(matches!(
+        said.cache,
+        mcf_serve::anatomy::SaidCache::Sized { per_token: 64, .. }
+    ));
 }

@@ -92,6 +92,49 @@ pub(crate) fn run(model: &str) -> Response {
     }
 }
 
+/// What the file holds, counted by the daemon, as one line of JSON.
+///
+/// **The daemon's answer, not this process's.** The pages above count the
+/// file here, because reading a header needs no daemon; this asks the daemon
+/// for `Anatomy` and prints what it said, because that line is the one shape
+/// every client reads — the window draws exactly this — and a script that
+/// wants the figures should get the same bytes the window got, through the
+/// same code (A22, B-072). The counting is one function either way
+/// ([`mcf_standin::anatomy`]).
+pub(crate) fn json(model: &str) -> Response {
+    let path = match run::resolve(model) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return Response {
+                text: format!(
+                    "mcf: there is no model at {model}\n  `mcf list` says what this machine is \
+                     holding; a path to a file works too"
+                ),
+                served: false,
+            };
+        }
+        Err(found) => {
+            return Response {
+                text: run::ambiguous(model, &found),
+                served: false,
+            };
+        }
+    };
+    let asked = mcf_serve::control::Request::Anatomy {
+        model: path.to_string_lossy().into_owned(),
+    };
+    match crate::hosting::ask(&asked) {
+        Ok(answer) => Response {
+            text: answer.to_line(),
+            served: true,
+        },
+        Err(why) => Response {
+            text: why,
+            served: false,
+        },
+    }
+}
+
 /// The three columns, and then what MCF cannot say.
 fn explain(path: &Path, file: &Model) -> String {
     let mut lines = vec![format!("{}", path.display()), String::new()];
