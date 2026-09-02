@@ -180,220 +180,126 @@ const fn as_percent(parts_per_million: i64) -> (i64, i64) {
     (parts_per_million / 10_000, (parts_per_million / 1_000) % 10)
 }
 
-/// How much each sentence steered the answer, as a person reads it.
+/// A share of an answer, written out.
 ///
-/// Its own function because it is the part of the report that grows: a bar, a
-/// figure, the floor, and what the floor means.
-fn steering_lines(body: &Value) -> Vec<String> {
-    let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
-    let depth = count("forced_depth");
-    let unit = unit_of(body);
-    let mut lines = Vec::new();
-    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
-    if clauses.is_empty() {
-        lines.push(format!(
-            "    this prompt is one {unit}, so there is nothing to remove — a prompt of one \
-             part cannot be taken apart"
-        ));
-    }
-    for clause in clauses {
-        lines.extend(clause_lines(clause, depth));
-    }
-    if !clauses.is_empty() {
-        let floor = count("floor_parts_per_million");
-        let (whole, tenth) = as_percent(floor);
-        let at_floor = clauses
-            .iter()
-            .filter(|clause| {
-                clause
-                    .get("moved_parts_per_million")
-                    .and_then(Value::as_integer)
-                    .unwrap_or(0)
-                    <= floor
-            })
-            .count();
-        lines.push(String::new());
-        // **Every removal giving the same answer is a finding, and it reads
-        // like a broken tool.** A column of noughts is what a well-addressed
-        // model does with a prompt it would have answered the same way
-        // regardless — the sentences are not steering it. Saying so is the
-        // difference between a reading and an apparent failure (A7).
-        if floor == 0 && at_floor == clauses.len() {
-            lines.push(format!(
-                "    every {unit} removed gave the SAME answer, to the character — including \
-                 the control. This prompt did not steer this model: it would have answered the \
-                 same way with less. That is a reading, not a failure of the measurement."
-            ));
-            lines.push(String::new());
-        }
-        lines.push(format!(
-            "    the floor is {whole}.{tenth}% — how much the answer moved for a control \
-             sentence carrying no instruction, put in and taken out again. Read the column as \
-             an ORDERING, not as relevance: removing anything shifts what follows it, and a \
-             {unit} well above the floor may still have steered nothing."
-        ));
-        match held_said(body.get("floor_held"), depth) {
-            Some(read) => lines.push(format!("    with the control sentence in, {read}")),
-            None => lines.push(
-                "    whether the answer would still have begun the same way was not read: it \
-                 needs the served engine, and this run had none"
-                    .to_owned(),
-            ),
-        }
-        if at_floor > 0 {
-            let held = if at_floor == 1 { "sits" } else { "sit" };
-            lines.push(format!(
-                "    {} {held} at or under it. That is not a claim they are wrong: a {unit} \
-                 restating another moves little and is not thereby mistaken.",
-                count_of(i64::try_from(at_floor).unwrap_or(0), unit)
-            ));
-            // **And which ones.** A reader told that one of six sentences did
-            // nothing has to work out which, from a column they were just told
-            // not to read as relevance. Naming them is a fact about the same
-            // measurement, not a further claim.
-            for quiet in body
-                .get("clauses")
-                .and_then(Value::as_list)
-                .unwrap_or(&[])
-                .iter()
-                .filter(|clause| {
-                    clause
-                        .get("moved_parts_per_million")
-                        .and_then(Value::as_integer)
-                        .unwrap_or(0)
-                        <= floor
-                })
-            {
-                if let Some(text) = quiet.get("text").and_then(Value::as_text) {
-                    lines.push(format!("      · {text}"));
-                }
-            }
-        }
-        lines.extend(floor_spread_lines(body, unit, depth));
-    }
-    let over = count("clauses_over_the_cap");
-    if over > 0 {
-        lines.push(format!(
-            "    {} not removed: a report is one generation each, and this one stopped at \
-             {} — `--most {}` would remove every one",
-            count_of(over, &format!("further {}", unit_of(body))),
-            count_of(count("most"), "part"),
-            count("most").saturating_add(over)
-        ));
-    }
-
-    lines
+/// Integer arithmetic, because the workspace ships no floating point: a NaN
+/// that reaches a record is a figure nobody can compare, and `as_percent`
+/// above has split parts per million into whole and tenth for the same reason
+/// since this file was written.
+pub(crate) fn percent(parts_per_million: i64) -> String {
+    let (whole, tenth) = as_percent(parts_per_million);
+    format!("{whole}.{tenth}%")
 }
 
-/// The floor at every position (B-434): its spread, each draw, and how many
-/// parts sit under the widest of them — or, when it was one draw, that it
-/// was and how to make it more (§3.4).
-fn floor_spread_lines(body: &Value, unit: &str, depth: i64) -> Vec<String> {
-    let mut lines = Vec::new();
-    let Some(spread) = body
-        .get("floor_spread")
-        .filter(|spread| !matches!(spread, Value::Null))
-    else {
-        lines.push(format!(
-            "    that is one draw, with the control put before the last {unit}; `--floors` \
-             draws it at every position, one generation each, to say how wide the floor runs"
-        ));
-        return lines;
-    };
-    let figure = |key: &str| {
-        let (whole, tenth) = as_percent(spread.get(key).and_then(Value::as_integer).unwrap_or(0));
-        format!("{whole}.{tenth}%")
-    };
-    let floors = body.get("floors").and_then(Value::as_list).unwrap_or(&[]);
-    let most = spread
-        .get("most_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    lines.push(format!(
-        "    drawn at every position, the floor runs from {} to {}, {} in the middle — the \
-         control put at each of {}, one generation each:",
-        figure("least_parts_per_million"),
-        figure("most_parts_per_million"),
-        figure("middle_parts_per_million"),
-        count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
-    ));
-    for at in floors {
-        let (whole, tenth) = as_percent(
-            at.get("moved_parts_per_million")
-                .and_then(Value::as_integer)
-                .unwrap_or(0),
-        );
-        let held = held_said(at.get("held"), depth)
-            .map(|read| format!(" — {read}"))
-            .unwrap_or_default();
-        let position = at.get("position").and_then(Value::as_integer).unwrap_or(0);
-        let place = if position.saturating_add(1) == i64::try_from(floors.len()).unwrap_or(0) {
-            format!("after the last {unit}")
-        } else {
-            format!("before {unit} {}", position.saturating_add(1))
-        };
-        lines.push(format!("      · {place}: {whole:>3}.{tenth}%{held}"));
+/// A difference of two shares, with its sign: `+2.0`, `-1.3`, `0.0`.
+fn signed_percent(difference: i64) -> String {
+    let (whole, tenth) = as_percent(difference.abs());
+    match difference.signum() {
+        1 => format!("+{whole}.{tenth}"),
+        -1 => format!("-{whole}.{tenth}"),
+        _ => format!("{whole}.{tenth}"),
     }
-    let under_most = body
-        .get("clauses")
-        .and_then(Value::as_list)
-        .unwrap_or(&[])
-        .iter()
-        .filter(|clause| {
-            clause
-                .get("moved_parts_per_million")
-                .and_then(Value::as_integer)
-                .unwrap_or(0)
-                <= most
-        })
-        .count();
-    lines.push(format!(
-        "    read against the widest of them, {} at or under that — a part the control \
-         itself matched somewhere is not shown to have steered",
-        count_of(i64::try_from(under_most).unwrap_or(0), unit)
-    ));
-    lines
 }
 
-/// One sentence's row: the bar, the figure, the sentence — and under it what
-/// the answer became without it and whether it would still have begun the
-/// same way.
-///
-/// On a one-word answer every removal that changes the word scores a hundred
-/// per cent and the bars tie; the answer itself and the forced rank are what
-/// order them (B-429).
-fn clause_lines(clause: &Value, depth: i64) -> Vec<String> {
-    let said = clause
-        .get("text")
-        .and_then(Value::as_text)
-        .unwrap_or_default();
-    let moved = clause
-        .get("moved_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    // A bar, so the eye finds the sentences that steered the answer without
-    // reading a column of numbers. Ten cells of ten per cent.
-    let filled = usize::try_from(tenths_of_the_answer(moved))
+/// Ten cells of ten per cent, so the eye finds the parts that moved the
+/// answer without reading a column of numbers.
+fn bar(parts_per_million: i64) -> String {
+    let filled = usize::try_from(tenths_of_the_answer(parts_per_million))
         .unwrap_or(0)
         .min(10);
-    let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
-    let (whole, tenth) = as_percent(moved);
-    let mut lines = vec![format!("    {bar}  {whole:>3}.{tenth}%  {said}")];
-    if clause.get("changed").and_then(Value::as_bool) == Some(true) {
-        lines.push(format!(
-            "                        without it: {}",
-            first_line_of(
-                clause
-                    .get("without")
-                    .and_then(Value::as_text)
-                    .unwrap_or_default()
-            )
-        ));
+    "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled))
+}
+
+/// A column of a table: what heads it, and whether its cells sit against
+/// the right edge, as figures do, or the left, as text does.
+struct Column {
+    head: String,
+    right: bool,
+}
+
+fn figure(head: &str) -> Column {
+    Column {
+        head: head.to_owned(),
+        right: true,
     }
-    if let Some(read) = held_said(clause.get("held"), depth) {
-        lines.push(format!("                        {read}"));
+}
+
+fn text(head: &str) -> Column {
+    Column {
+        head: head.to_owned(),
+        right: false,
+    }
+}
+
+/// Rows under their heads, each column as wide as its widest cell and the
+/// last one unpadded. A row with fewer cells than columns is drawn as far
+/// as it goes; one starting with `→` is a line under the row before it.
+fn table(columns: &[Column], rows: &[Vec<String>]) -> Vec<String> {
+    let widths: Vec<usize> = columns
+        .iter()
+        .enumerate()
+        .map(|(at, column)| {
+            rows.iter()
+                .filter(|row| !row.first().is_some_and(|cell| cell.starts_with('→')))
+                .filter_map(|row| row.get(at))
+                .map(|cell| cell.chars().count())
+                .chain(std::iter::once(column.head.chars().count()))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    let heads: Vec<String> = columns.iter().map(|column| column.head.clone()).collect();
+    let mut lines = vec![laid_out(&heads, columns, &widths)];
+    for row in rows {
+        if row.first().is_some_and(|cell| cell.starts_with('→')) {
+            lines.push(format!("       {}", row.join(" ")));
+        } else {
+            lines.push(laid_out(row, columns, &widths));
+        }
     }
     lines
+}
+
+fn laid_out(row: &[String], columns: &[Column], widths: &[usize]) -> String {
+    let mut line = String::from("  ");
+    let last = columns.len().saturating_sub(1);
+    for (at, cell) in row.iter().enumerate() {
+        let width = widths.get(at).copied().unwrap_or(0);
+        let right = columns.get(at).is_some_and(|column| column.right);
+        let pad = " ".repeat(width.saturating_sub(cell.chars().count()));
+        if at == last {
+            line.push_str(cell);
+        } else if right {
+            line.push_str(&pad);
+            line.push_str(cell);
+            line.push_str("  ");
+        } else {
+            line.push_str(cell);
+            line.push_str(&pad);
+            line.push_str("  ");
+        }
+    }
+    line.trim_end().to_owned()
+}
+
+/// A section's head: a label, and the conditions its figures were read
+/// under, `·`-separated (§3.4).
+fn head(label: &str, conditions: &[String]) -> String {
+    if conditions.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{label:<9}{}", conditions.join(" · "))
+    }
+}
+
+/// Where the answer's first token ranked, as the window's cell (B-072).
+fn rank_cell(held: Option<&Value>, depth: i64) -> String {
+    mcf_desk::held_mark(held, depth)
+}
+
+/// How much of the answer's opening stayed, as the window's cell (B-072).
+fn open_cell(held: Option<&Value>) -> String {
+    mcf_desk::open_mark(held)
 }
 
 /// The first line of an answer, cut to a width the column holds.
@@ -406,108 +312,42 @@ fn first_line_of(said: &str) -> String {
     format!("{shown:?}")
 }
 
-/// A forced reading, in words: where the answer's first token went, and how
-/// much of its opening stayed the model's first choice.
-///
-/// `None` where none was taken, which the caller says once rather than on
-/// every line.
-fn held_said(held: Option<&Value>, depth: i64) -> Option<String> {
-    let held = held.filter(|held| !matches!(held, Value::Null))?;
-    let count = |key: &str| held.get(key).and_then(Value::as_integer).unwrap_or(0);
-    let kept = count("kept");
-    let of = count("of");
-    let opening = format!(
-        "{kept} of {} of the opening stayed its first choice",
-        count_of(of, "token")
-    );
-    Some(match held.get("first_rank").and_then(Value::as_integer) {
-        Some(1) if kept == of => {
-            format!("the answer would still have begun the same way: {opening}")
-        }
-        Some(1) => format!("the answer's first token stayed its first choice; {opening}"),
-        Some(rank) => {
-            format!("the answer's first token fell to its number {rank} choice; {opening}")
-        }
-        None => format!("the answer's first token fell outside its top {depth}; {opening}"),
-    })
-}
-
-/// A share of an answer, written out.
-///
-/// Integer arithmetic, because the workspace ships no floating point: a NaN
-/// that reaches a record is a figure nobody can compare, and `as_percent`
-/// above has split parts per million into whole and tenth for the same reason
-/// since this file was written.
-pub(crate) fn percent(parts_per_million: i64) -> String {
-    let (whole, tenth) = as_percent(parts_per_million);
-    format!("{whole}.{tenth}%")
-}
-
-/// Whether the prompt settles the answer — under the temperature it was asked
-/// at, or not asked at all.
-///
-/// **Not asked is said as not asked.** Every other generation in the report
-/// is greedy, and under a greedy sampler the seed changes nothing; a report
-/// that drew two more seeds at temperature 0 measured nothing and said so on
-/// every prompt (F147). So the seeds are drawn only at a temperature the
-/// caller states, and a report with none says the question is open rather
-/// than that the answer settled (A7, B-431).
-fn settled_lines(settled: Option<&Value>) -> Vec<String> {
-    let Some(settled) = settled.filter(|held| !matches!(held, Value::Null)) else {
-        return vec![
-            "    not asked: no temperature was stated, and at temperature 0 — which every \
-             other generation here is — the seed changes nothing, so no generation was spent \
-             on the question. `--temperature 0.7` draws three seeds at 0.7 and says how many \
-             answers they gave and how far apart they sat. The temperature is yours to state: \
-             MCF has no house value (B60), and this model's own recommendation, if it \
-             publishes one, is what `mcf explain` shows."
-                .to_owned(),
-        ];
-    };
-    let count = |key: &str| settled.get(key).and_then(Value::as_integer).unwrap_or(0);
-    let temperature = settled
-        .get("temperature")
-        .and_then(Value::as_text)
-        .unwrap_or("?");
-    let distinct = count("distinct_answers");
-    let asked = count("seeds_asked");
-    let spread = count("spread_parts_per_million");
-    let from_greedy = count("from_greedy_parts_per_million");
-    let mut lines = vec![if distinct <= 1 {
-        format!(
-            "    {} at temperature {temperature} gave 1 answer, to the character. Under this \
-             temperature this model settles this prompt — a fact about the pair, not a merit \
-             of the prompt: a question with one answer should settle, and an open one need not.",
-            count_of(asked, "seed")
-        )
-    } else {
-        format!(
-            "    {} at temperature {temperature} gave {distinct} different answers. The two \
-             farthest apart differ in {} of their words. Several answers is what an open \
-             question deserves and what a specification does not; which this is, the report \
-             cannot say.",
-            count_of(asked, "seed"),
-            percent(spread)
-        )
-    }];
-    lines.push(format!(
-        "    the farthest of them sits {} of its words from the greedy answer above — how far \
-         sampling at {temperature} takes this model from the answer the rest of this report is \
-         about.",
-        percent(from_greedy)
-    ));
-    lines
-}
-
-/// A count and the thing counted, in English.
-///
-/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`.
-fn count_of(how_many: i64, noun: &str) -> String {
-    if how_many == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{how_many} {noun}s")
+/// A part's text, cut to a width the column holds.
+fn cut(said: &str, width: usize) -> String {
+    let line = said.trim().lines().next().unwrap_or_default();
+    let mut shown: String = line.chars().take(width).collect();
+    if shown.chars().count() < line.chars().count() || said.trim().lines().count() > 1 {
+        shown.push('…');
     }
+    shown
+}
+
+/// A row under a table's row: what the model wrote, where it was carried.
+fn answer_row(read: &Value, key: &str) -> Option<Vec<String>> {
+    read.get(key)
+        .and_then(Value::as_text)
+        .map(|answer| vec![format!("→ {}", first_line_of(answer))])
+}
+
+fn integer(held: &Value, key: &str) -> i64 {
+    held.get(key).and_then(Value::as_integer).unwrap_or(0)
+}
+
+fn moved_of(read: &Value) -> i64 {
+    integer(read, "moved_parts_per_million")
+}
+
+fn clauses_of(body: &Value) -> &[Value] {
+    body.get("clauses").and_then(Value::as_list).unwrap_or(&[])
+}
+
+fn part_text(body: &Value, at: usize) -> String {
+    clauses_of(body)
+        .get(at)
+        .and_then(|clause| clause.get("text"))
+        .and_then(Value::as_text)
+        .map(|said| cut(said, 64))
+        .unwrap_or_default()
 }
 
 /// What to call the model at the top of the report.
@@ -523,328 +363,590 @@ fn header_name(named: &str) -> &str {
         .unwrap_or(named)
 }
 
-/// Where the model ranked each word of the prompt, given the ones before it.
-///
-/// **A reading of the prompt that does not compare two answers.** The column
-/// above measures what changed when a sentence was removed, and removing
-/// anything shifts everything after it — which is why it is an ordering and
-/// not a measure. This asks something narrower of the same prompt: at each
-/// position, was this the token the model would have written anyway? One it
-/// ranked first carried nothing from the writer; one it ranked low, or did not
-/// list at all, is where the prompt said something the model did not expect.
-///
-/// Only the ones it did not expect are printed. A prompt is mostly words the
-/// model would have chosen, and a list of every position would bury the few
-/// that carry the writing (§3.15).
-fn what_the_model_expected(body: &Value) -> Vec<String> {
-    let ranked = body.get("expected").and_then(Value::as_list).unwrap_or(&[]);
-    if ranked.is_empty() {
-        // Absent and *why* absent are different states, and a report that
-        // showed nothing for both would be reporting ignorance as absence (A7).
-        return body
-            .get("expected_refused")
-            .and_then(Value::as_text)
-            .map(|why| {
-                vec![
-                    String::new(),
-                    "  WHICH WORDS THE MODEL DID NOT EXPECT".to_owned(),
-                    format!("    not taken: {why}"),
-                ]
-            })
-            .unwrap_or_default();
+/// The conditions of the run, a figure a line (§3.4, §3.15): what the
+/// text was cut into and who decided, how it reached the model, what every
+/// generation was allowed to be, what the generations were spent on, the
+/// floor and how it was drawn, whether the floor leaves the rows readable,
+/// and where the figures survive this page.
+fn conditions(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let text = |key: &str| body.get(key).and_then(Value::as_text);
+    let mut rows: Vec<(&str, String)> = Vec::new();
+    rows.push((
+        "unit",
+        match text("unit_chosen_by") {
+            Some(by) => format!("{unit} · {by}"),
+            None => unit.to_owned(),
+        },
+    ));
+    if let Some(addressed) = text("addressed_as") {
+        rows.push(("addressed", addressed.to_owned()));
     }
-    let depth = body
-        .get("ranked_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let text = |held: &Value, key: &str| {
-        held.get(key)
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let mut surprising: Vec<(i64, String)> = Vec::new();
-    let mut expected = 0_usize;
-    for held in ranked {
-        let text = text(held, "text");
-        match held.get("rank").and_then(Value::as_integer) {
-            // Outside the list asked for: a bound, not an absence (A7), and
-            // sorted above everything that was in it.
-            None => surprising.push((i64::MAX, text)),
-            Some(1) => expected = expected.saturating_add(1),
-            Some(rank) => surprising.push((rank, text)),
-        }
+    let tokens = integer(body, "prompt_tokens");
+    if tokens > 0 {
+        rows.push(("prompt", format!("{tokens} tokens · mcf segment")));
     }
-    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
-    let mut lines = vec![
-        String::new(),
-        "  WHICH WORDS THE MODEL DID NOT EXPECT".to_owned(),
-        "  each token against what it would have written there itself".to_owned(),
-    ];
-    // Under what addressing: a prompt read bare and one read inside the turn
-    // the answer was given are two different prompts, and the report says
-    // which this was (§3.4, B-429).
-    if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
-        lines.push(format!("  read under {under}"));
+    let limit = integer(body, "token_limit");
+    if limit > 0 {
+        rows.push(("cap", format!("{limit} tokens a generation")));
     }
-    lines.push(String::new());
-    for (rank, said) in surprising.iter().take(10) {
-        if *rank == i64::MAX {
-            lines.push(format!("    outside its top {depth}   {said:?}"));
+    if let Some(sampler) = text("sampler") {
+        rows.push((
+            "sampler",
+            sampler.split(" — ").next().unwrap_or(sampler).to_owned(),
+        ));
+    }
+    rows.push(("generations", what_the_generations_were(body)));
+    rows.push(("floor", the_floor(body, unit)));
+    let floor = integer(body, "floor_parts_per_million");
+    // **Where the floor swamps the column, that is the finding** (§3.15,
+    // A7, F147): said before the rows, in a line of its own.
+    rows.push((
+        "separable",
+        if floor < 500_000 {
+            "yes".to_owned()
         } else {
-            lines.push(format!("    its number {rank} choice   {said:?}"));
-        }
-    }
-    lines.push(String::new());
-    lines.push(format!(
-        "    {} of {} were the model's own first choice — a word it would have written there \
-         anyway carries nothing from the writer",
-        expected,
-        ranked.len()
+            format!(
+                "NO · floor {} ≥ 50.0% · rows below say this run did not work, not an ordering \
+                 · try a prompt with a short answer, or one part of the work at a time",
+                percent(floor)
+            )
+        },
     ));
-    lines.push(String::new());
-    lines
-}
-
-/// Which part of the prompt the model least expected: the same rank reading,
-/// grouped by the parts the ablation removed (B-433).
-///
-/// **A second ordering, for no generation.** The ablation says what each part
-/// did to the answer; this says how much of each part the model would have
-/// written itself. A part it expected wholly and yet needed is doing
-/// structural work; one that surprised it and moved nothing is noise to
-/// this model. Read against the column above, not instead of it. Where no
-/// reading was taken there is nothing to group, and the section above has
-/// already said why (A7).
-/// Each part asked as the whole prompt in turn (B-435): how far the answer
-/// to it alone sat from the answer as written, what it was, and whether it
-/// still began the same way — read against the control sentence alone, the
-/// answer to nothing from the writer. Not asked is said, with the flag.
-fn what_each_part_does_alone(body: &Value) -> Vec<String> {
-    let unit = unit_of(body);
-    let depth = body
-        .get("forced_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let mut lines = vec![format!("  WHAT EACH {} DOES ALONE", unit.to_uppercase())];
-    let Some(alone) = body.get("alone").and_then(Value::as_list) else {
-        lines.push(format!(
-            "    not asked: `--alone` asks each {unit} as the whole prompt in turn, one \
-             generation each and one for the control, to say which of them carries the \
-             answer on its own — sufficiency, beside the necessity above"
-        ));
-        lines.push(String::new());
-        return lines;
-    };
-    lines.push(
-        "  each was the whole prompt in turn — how far its answer sat from the answer as \
-         written, so LOW is a part that carries the answer on its own"
-            .to_owned(),
-    );
-    lines.push(String::new());
-    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
-    let moved_of = |read: &Value| {
-        read.get("moved_parts_per_million")
-            .and_then(Value::as_integer)
-            .unwrap_or(0)
-    };
-    for (at, read) in alone.iter().enumerate() {
-        let said = clauses
-            .get(at)
-            .and_then(|clause| clause.get("text"))
-            .and_then(Value::as_text)
-            .unwrap_or_default();
-        let moved = moved_of(read);
-        let filled = usize::try_from(tenths_of_the_answer(moved))
-            .unwrap_or(0)
-            .min(10);
-        let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
-        let (whole, tenth) = as_percent(moved);
-        lines.push(format!("    {bar}  {whole:>3}.{tenth}%  {said}"));
-        if let Some(answer) = read.get("answer").and_then(Value::as_text) {
-            lines.push(format!(
-                "                        alone: {}",
-                first_line_of(answer)
-            ));
-        }
-        if let Some(read) = held_said(read.get("held"), depth) {
-            lines.push(format!("                        {read}"));
-        }
-    }
-    lines.push(String::new());
-    match body.get("alone_floor") {
-        Some(control @ Value::Map(_)) => {
-            let floor = moved_of(control);
-            let (whole, tenth) = as_percent(floor);
-            let as_far = alone.iter().filter(|read| moved_of(read) >= floor).count();
-            lines.push(format!(
-                "    the control sentence alone — nothing from the writer — sat {whole}.{tenth}% \
-                 from the answer as written; {} as far off or further, so alone {} nothing of \
-                 it",
-                count_of(i64::try_from(as_far).unwrap_or(0), unit),
-                if as_far == 1 { "carries" } else { "carry" }
-            ));
-            if let Some(answer) = control.get("answer").and_then(Value::as_text) {
-                lines.push(format!(
-                    "                        alone: {}",
-                    first_line_of(answer)
-                ));
+    rows.push((
+        "record",
+        match text("recorded") {
+            Some(id) => {
+                format!("{id} · figures and conditions, length and digest, no text · mcf log")
             }
-            if let Some(read) = held_said(control.get("held"), depth) {
-                lines.push(format!("                        {read}"));
-            }
-        }
-        _ => lines.push(
-            "    the control sentence alone was not read: a figure to read these against is \
-             missing"
+            None => "NOT RECORDED · the daemon could not write it · this page is the only copy"
                 .to_owned(),
-        ),
-    }
-    lines.push(String::new());
-    lines
+        },
+    ));
+    rows.into_iter()
+        .map(|(label, value)| format!("  {label:<13}{value}"))
+        .collect()
 }
 
-/// The prompt grown a part at a time from the front (B-436): how far the
-/// answer to each prefix sat from the answer as written, and the first
-/// prefix that came within the floor of it — after which the rest moved
-/// the answer no more than an inert sentence would.
-fn where_the_answer_arrives(body: &Value) -> Vec<String> {
-    let unit = unit_of(body);
-    let depth = body
-        .get("forced_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let mut lines = vec!["  WHERE THE ANSWER ARRIVES AS THE PROMPT GROWS".to_owned()];
-    let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) else {
-        lines.push(format!(
-            "    not asked: `--prefixes` asks the first {unit}, then the first two, and on to \
-             one short of the whole, one generation each, to say where the answer became the \
-             answer"
-        ));
-        lines.push(String::new());
-        return lines;
-    };
-    lines.push(format!(
-        "  the prompt grown a {unit} at a time from the front — how far each answer sat from \
-         the answer as written, so LOW is a prompt that already had it"
-    ));
-    lines.push(String::new());
-    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
-    let floor = body
-        .get("floor_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let mut arrived = None;
-    for (at, read) in prefixes.iter().enumerate() {
-        let kept = at.saturating_add(1);
-        let moved = read
-            .get("moved_parts_per_million")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        if arrived.is_none() && moved <= floor {
-            arrived = Some(kept);
-        }
-        let last: String = clauses
-            .get(at)
-            .and_then(|clause| clause.get("text"))
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .chars()
-            .take(48)
-            .collect();
-        let filled = usize::try_from(tenths_of_the_answer(moved))
-            .unwrap_or(0)
-            .min(10);
-        let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
-        let (whole, tenth) = as_percent(moved);
-        lines.push(format!(
-            "    {bar}  {whole:>3}.{tenth}%  {}, through “{last}…”",
-            the_first(kept, unit)
-        ));
-        if let Some(answer) = read.get("answer").and_then(Value::as_text) {
-            lines.push(format!(
-                "                        answer: {}",
-                first_line_of(answer)
-            ));
-        }
-        if let Some(read) = held_said(read.get("held"), depth) {
-            lines.push(format!("                        {read}"));
-        }
+/// What the generations were spent on — each thing that cost some, and
+/// only the things this run asked for (A19, §3.4).
+fn what_the_generations_were(body: &Value) -> String {
+    let list = |key: &str| body.get(key).and_then(Value::as_list).map(<[Value]>::len);
+    let mut spent = vec![
+        format!("{}", integer(body, "generations")),
+        "as written 1".to_owned(),
+        format!("removed {}", clauses_of(body).len()),
+        match list("floors") {
+            Some(positions) => format!("control {positions}"),
+            None => "control 1".to_owned(),
+        },
+    ];
+    if let Some(alone) = list("alone") {
+        spent.push(format!("alone {}", alone.saturating_add(1)));
     }
-    lines.push(String::new());
-    let (whole, tenth) = as_percent(floor);
-    lines.push(match arrived {
-        Some(kept) => format!(
-            "    by {} the answer was within the floor ({whole}.{tenth}%) of the answer as \
-             written: what follows moved it no more than an inert sentence would. That is \
-             not a claim the rest is idle — the column above says what each is needed for",
-            the_first(kept, unit)
+    if let Some(prefixes) = list("prefixes") {
+        spent.push(format!("prefixes {prefixes}"));
+    }
+    if let Some(settled) = body
+        .get("settled")
+        .filter(|held| matches!(held, Value::Map(_)))
+    {
+        spent.push(format!("seeds {}", integer(settled, "seeds_asked")));
+    }
+    spent.join(" · ")
+}
+
+/// The floor's line: the figure, and how it was drawn — one draw before the
+/// last part, or at every position with its spread (B-434, §3.4).
+fn the_floor(body: &Value, unit: &str) -> String {
+    let floor = percent(integer(body, "floor_parts_per_million"));
+    let depth = integer(body, "forced_depth");
+    let held = match body.get("floor_held") {
+        Some(held) if !matches!(held, Value::Null) => format!(
+            " · control in: 1st {} · open {}",
+            rank_cell(Some(held), depth),
+            open_cell(Some(held))
+        ),
+        _ => " · control in: 1st — (needs the served engine)".to_owned(),
+    };
+    match body
+        .get("floor_spread")
+        .filter(|spread| !matches!(spread, Value::Null))
+    {
+        Some(spread) => format!(
+            "{floor} · drawn at {} · {}–{} · middle {}{held}",
+            count_of(
+                i64::try_from(
+                    body.get("floors")
+                        .and_then(Value::as_list)
+                        .map_or(0, <[Value]>::len)
+                )
+                .unwrap_or(0),
+                "position"
+            ),
+            percent(integer(spread, "least_parts_per_million")),
+            percent(integer(spread, "most_parts_per_million")),
+            percent(integer(spread, "middle_parts_per_million")),
         ),
         None => format!(
-            "    no prefix short of the whole came within the floor ({whole}.{tenth}%) of the \
-             answer as written: the last {unit} read still moved the answer"
+            "{floor} · 1 draw · control before the last {unit} · --floors: every position{held}"
         ),
+    }
+}
+
+/// The parts removed in turn (§3.8, B-429): a row a part, the control's
+/// row under them, and the parts at or under the floor named.
+fn removed(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = integer(body, "forced_depth");
+    let floor = integer(body, "floor_parts_per_million");
+    let clauses = clauses_of(body);
+    let mut lines = vec![head(
+        "REMOVED",
+        &[
+            format!("answer moved without each {unit}"),
+            "seed held".to_owned(),
+            "an ordering, not relevance".to_owned(),
+        ],
+    )];
+    if clauses.is_empty() {
+        lines.push(format!("  one {unit} · nothing to remove"));
+        lines.push(String::new());
+        return lines;
+    }
+    let mut rows = Vec::new();
+    for (at, clause) in clauses.iter().enumerate() {
+        let moved = moved_of(clause);
+        rows.push(vec![
+            format!("{}", at.saturating_add(1)),
+            percent(moved),
+            bar(moved),
+            signed_percent(moved.saturating_sub(floor)),
+            rank_cell(clause.get("held"), depth),
+            open_cell(clause.get("held")),
+            part_text(body, at),
+        ]);
+        if clause.get("changed").and_then(Value::as_bool) == Some(true)
+            && let Some(row) = answer_row(clause, "without")
+        {
+            rows.push(row);
+        }
+    }
+    rows.push(vec![
+        "ctl".to_owned(),
+        percent(floor),
+        bar(floor),
+        "floor".to_owned(),
+        rank_cell(body.get("floor_held"), depth),
+        open_cell(body.get("floor_held")),
+        "control sentence".to_owned(),
+    ]);
+    lines.extend(table(
+        &[
+            figure("#"),
+            figure("moved"),
+            text(""),
+            figure("vs floor"),
+            figure("1st"),
+            figure("open"),
+            text(unit),
+        ],
+        &rows,
+    ));
+    lines.extend(under_the_floor(body, floor));
+    lines.extend(floors(body, unit));
+    let over = integer(body, "clauses_over_the_cap");
+    if over > 0 {
+        lines.push(format!(
+            "  not removed   {over} · --most {}",
+            integer(body, "most").saturating_add(over)
+        ));
+    }
+    lines.push(String::new());
+    lines
+}
+
+/// Which parts sit at or under the floor — and, where every one did and the
+/// floor was nought, that the prompt did not steer this model (A7).
+fn under_the_floor(body: &Value, floor: i64) -> Vec<String> {
+    let clauses = clauses_of(body);
+    let quiet: Vec<String> = clauses
+        .iter()
+        .enumerate()
+        .filter(|(_, clause)| moved_of(clause) <= floor)
+        .map(|(at, _)| format!("#{}", at.saturating_add(1)))
+        .collect();
+    let mut lines = Vec::new();
+    // **Every removal giving the same answer is a finding, and it reads
+    // like a broken tool** (A7).
+    if floor == 0 && quiet.len() == clauses.len() {
+        lines.push(
+            "  same answer  every removal and the control · the prompt did not steer this model"
+                .to_owned(),
+        );
+    }
+    lines.push(format!(
+        "  at/under floor  {}",
+        if quiet.is_empty() {
+            "none".to_owned()
+        } else {
+            format!("{} · {}", quiet.len(), quiet.join(" "))
+        }
+    ));
+    lines
+}
+
+/// The floor at every position, where it was drawn (B-434): a row a
+/// position, and how many parts sit under the widest of them.
+fn floors(body: &Value, unit: &str) -> Vec<String> {
+    let Some(floors) = body.get("floors").and_then(Value::as_list) else {
+        return Vec::new();
+    };
+    let depth = integer(body, "forced_depth");
+    let rows: Vec<Vec<String>> = floors
+        .iter()
+        .map(|at| {
+            let position = integer(at, "position");
+            let place = if position.saturating_add(1) == i64::try_from(floors.len()).unwrap_or(0) {
+                format!("after #{position}")
+            } else {
+                format!("before #{}", position.saturating_add(1))
+            };
+            vec![
+                place,
+                percent(moved_of(at)),
+                bar(moved_of(at)),
+                rank_cell(at.get("held"), depth),
+                open_cell(at.get("held")),
+            ]
+        })
+        .collect();
+    let most = body
+        .get("floor_spread")
+        .map_or(0, |spread| integer(spread, "most_parts_per_million"));
+    let under = clauses_of(body)
+        .iter()
+        .filter(|clause| moved_of(clause) <= most)
+        .count();
+    let mut lines = vec![
+        String::new(),
+        head(
+            "FLOORS",
+            &[format!(
+                "control at every position · a {unit} the control matched somewhere is not shown to steer"
+            )],
+        ),
+    ];
+    lines.extend(table(
+        &[
+            text("control"),
+            figure("moved"),
+            text(""),
+            figure("1st"),
+            figure("open"),
+        ],
+        &rows,
+    ));
+    lines.push(format!("  at/under widest  {under}"));
+    lines
+}
+
+/// Each part asked as the whole prompt in turn (B-435), read against the
+/// control alone; not asked is said with the flag and its cost.
+fn alone(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = integer(body, "forced_depth");
+    let Some(alone) = body.get("alone").and_then(Value::as_list) else {
+        return vec![
+            not_asked("ALONE", mcf_serve::prompt::Extra::Alone, body),
+            String::new(),
+        ];
+    };
+    let mut lines = vec![head(
+        "ALONE",
+        &[
+            format!("each {unit} as the whole prompt"),
+            "vs the answer as written".to_owned(),
+            "low = carries it alone".to_owned(),
+        ],
+    )];
+    let mut rows = Vec::new();
+    for (at, read) in alone.iter().enumerate() {
+        rows.push(vec![
+            format!("{}", at.saturating_add(1)),
+            percent(moved_of(read)),
+            bar(moved_of(read)),
+            rank_cell(read.get("held"), depth),
+            open_cell(read.get("held")),
+            part_text(body, at),
+        ]);
+        rows.extend(answer_row(read, "answer"));
+    }
+    let control = body
+        .get("alone_floor")
+        .filter(|held| matches!(held, Value::Map(_)));
+    if let Some(control) = control {
+        rows.push(vec![
+            "ctl".to_owned(),
+            percent(moved_of(control)),
+            bar(moved_of(control)),
+            rank_cell(control.get("held"), depth),
+            open_cell(control.get("held")),
+            "control sentence alone".to_owned(),
+        ]);
+        rows.extend(answer_row(control, "answer"));
+    }
+    lines.extend(table(
+        &[
+            figure("#"),
+            figure("moved"),
+            text(""),
+            figure("1st"),
+            figure("open"),
+            text(unit),
+        ],
+        &rows,
+    ));
+    lines.push(match control {
+        Some(control) => format!(
+            "  as far as control or further  {}",
+            alone
+                .iter()
+                .filter(|read| moved_of(read) >= moved_of(control))
+                .count()
+        ),
+        None => "  control alone  not read · nothing to read these against".to_owned(),
     });
     lines.push(String::new());
     lines
 }
 
-/// "the first sentence", "the first 2 sentences".
-fn the_first(kept: usize, unit: &str) -> String {
-    if kept == 1 {
-        format!("the first {unit}")
-    } else {
-        format!(
-            "the first {}",
-            count_of(i64::try_from(kept).unwrap_or(0), unit)
-        )
+/// The prompt grown from the front (B-436): a row a prefix, and the first
+/// within the floor of the answer as written.
+fn prefixes(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = integer(body, "forced_depth");
+    let floor = integer(body, "floor_parts_per_million");
+    let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) else {
+        return vec![
+            not_asked("PREFIXES", mcf_serve::prompt::Extra::Prefixes, body),
+            String::new(),
+        ];
+    };
+    let mut lines = vec![head(
+        "PREFIXES",
+        &[
+            format!("prompt grown a {unit} at a time from the front"),
+            "vs the answer as written".to_owned(),
+            "low = already had it".to_owned(),
+        ],
+    )];
+    let mut rows = Vec::new();
+    let mut arrived = None;
+    for (at, read) in prefixes.iter().enumerate() {
+        let kept = at.saturating_add(1);
+        if arrived.is_none() && moved_of(read) <= floor {
+            arrived = Some(kept);
+        }
+        rows.push(vec![
+            format!("1–{kept}"),
+            percent(moved_of(read)),
+            bar(moved_of(read)),
+            rank_cell(read.get("held"), depth),
+            open_cell(read.get("held")),
+            part_text(body, at),
+        ]);
+        rows.extend(answer_row(read, "answer"));
     }
+    lines.extend(table(
+        &[
+            figure("parts"),
+            figure("moved"),
+            text(""),
+            figure("1st"),
+            figure("open"),
+            text("through"),
+        ],
+        &rows,
+    ));
+    lines.push(format!(
+        "  within floor {}  {}",
+        percent(floor),
+        match arrived {
+            Some(kept) => format!("first at 1–{kept} · not a claim the rest is idle"),
+            None => format!("none short of the whole · the last {unit} still moved the answer"),
+        }
+    ));
+    lines.push(String::new());
+    lines
 }
 
-fn which_part_was_least_expected(body: &Value) -> Vec<String> {
+/// A reading that was not asked for, said as not asked with the flag that
+/// asks it and what it would cost (A7).
+fn not_asked(label: &str, extra: mcf_serve::prompt::Extra, body: &Value) -> String {
+    let removed = clauses_of(body).len();
+    let parts =
+        removed.saturating_add(usize::try_from(integer(body, "clauses_over_the_cap")).unwrap_or(0));
+    head(
+        label,
+        &[
+            "not asked".to_owned(),
+            format!("--{}", extra.name()),
+            count_of(
+                i64::try_from(extra.generations(parts, removed)).unwrap_or(0),
+                "generation",
+            ),
+            extra.asks().to_owned(),
+        ],
+    )
+}
+
+/// Whether several seeds gave several answers, under the temperature it
+/// was asked at — or not asked, which is never *settled* (A7, B-431, B60).
+fn seeds(body: &Value) -> Vec<String> {
+    let Some(settled) = body
+        .get("settled")
+        .filter(|held| matches!(held, Value::Map(_)))
+    else {
+        return vec![
+            head(
+                "SEEDS",
+                &[
+                    "not asked".to_owned(),
+                    "--temperature <t>".to_owned(),
+                    "3 generations at t".to_owned(),
+                    "at temperature 0 the seed changes nothing".to_owned(),
+                    "no house temperature · the model's own: mcf explain".to_owned(),
+                ],
+            ),
+            String::new(),
+        ];
+    };
+    let temperature = settled
+        .get("temperature")
+        .and_then(Value::as_text)
+        .unwrap_or("?");
+    vec![
+        head(
+            "SEEDS",
+            &[
+                format!(
+                    "{} at temperature {temperature}",
+                    count_of(integer(settled, "seeds_asked"), "seed")
+                ),
+                format!("distinct answers {}", integer(settled, "distinct_answers")),
+                format!(
+                    "farthest apart {}",
+                    percent(integer(settled, "spread_parts_per_million"))
+                ),
+                format!(
+                    "farthest from greedy {}",
+                    percent(integer(settled, "from_greedy_parts_per_million"))
+                ),
+                "a fact about the pair, not a merit of the prompt".to_owned(),
+            ],
+        ),
+        String::new(),
+    ]
+}
+
+/// Where the model ranked each word of the prompt, given the ones before it
+/// (B-429): only the ones it did not expect, since a prompt is mostly words
+/// the model would have chosen (§3.15). Not taken is said with why (A7).
+fn tokens(body: &Value) -> Vec<String> {
+    let ranked = body.get("expected").and_then(Value::as_list).unwrap_or(&[]);
+    if ranked.is_empty() {
+        return body
+            .get("expected_refused")
+            .and_then(Value::as_text)
+            .map(|why| {
+                vec![
+                    head("TOKENS", &["not taken".to_owned(), why.to_owned()]),
+                    String::new(),
+                ]
+            })
+            .unwrap_or_default();
+    }
+    let depth = integer(body, "ranked_depth");
+    let mut surprising: Vec<(i64, String)> = Vec::new();
+    let mut expected = 0_usize;
+    for held in ranked {
+        let text = held
+            .get("text")
+            .and_then(Value::as_text)
+            .unwrap_or_default();
+        match held.get("rank").and_then(Value::as_integer) {
+            // Outside the list asked for: a bound, not an absence (A7).
+            None => surprising.push((i64::MAX, format!("{text:?}"))),
+            Some(1) => expected = expected.saturating_add(1),
+            Some(rank) => surprising.push((rank, format!("{text:?}"))),
+        }
+    }
+    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    let mut conditions = vec![
+        "each prompt token's rank in the model's own choice".to_owned(),
+        "1 = it would have written that".to_owned(),
+    ];
+    // Under what addressing (§3.4, B-429).
+    if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
+        conditions.push(format!("read under {under}"));
+    }
+    let mut lines = vec![head("TOKENS", &conditions)];
+    let rows: Vec<Vec<String>> = surprising
+        .iter()
+        .take(10)
+        .map(|(rank, said)| {
+            vec![
+                if *rank == i64::MAX {
+                    format!(">{depth}")
+                } else {
+                    rank.to_string()
+                },
+                said.clone(),
+            ]
+        })
+        .collect();
+    lines.extend(table(&[figure("rank"), text("token")], &rows));
+    lines.push(format!("  first choice  {expected}/{}", ranked.len()));
+    lines.push(String::new());
+    lines
+}
+
+/// The same rank reading grouped by part (B-433): how much of each the
+/// model would have written itself, and the part it least expected. Ties
+/// name nobody (A19).
+fn parts(body: &Value) -> Vec<String> {
     let Some(grouped) = body
         .get("expected_by_part")
         .filter(|held| !matches!(held, Value::Null))
     else {
         return Vec::new();
     };
-    let depth = body
-        .get("ranked_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let unit = unit_of(body);
+    let depth = integer(body, "ranked_depth");
+    let clauses = clauses_of(body);
     let parts = grouped.get("parts").and_then(Value::as_list).unwrap_or(&[]);
-    let figure = |held: &Value, key: &str| held.get(key).and_then(Value::as_integer).unwrap_or(0);
-    let mut lines = vec![
-        "  WHICH PART THE MODEL LEAST EXPECTED".to_owned(),
-        "  the same reading, grouped by part — how much of each the model would have written itself"
-            .to_owned(),
-        String::new(),
-    ];
-    // The least expected part is the one with the smallest share of first
-    // choices; shares are compared crosswise so no division is done, and a
-    // tie names nobody rather than picking one (A19).
+    let mut rows = Vec::new();
     let mut least: Option<(usize, i64, i64)> = None;
     let mut tied = false;
     for (at, part) in parts.iter().enumerate() {
         let (tokens, first, past) = (
-            figure(part, "tokens"),
-            figure(part, "first_choice"),
-            figure(part, "past_depth"),
+            integer(part, "tokens"),
+            integer(part, "first_choice"),
+            integer(part, "past_depth"),
         );
-        let said = clauses
-            .get(at)
-            .and_then(|clause| clause.get("text"))
-            .and_then(Value::as_text)
-            .map_or_else(|| "(not removed: over the cap)".to_owned(), first_line_of);
-        let outside = if past > 0 {
-            format!(", {past} outside its top {depth}")
-        } else {
-            String::new()
-        };
-        lines.push(format!(
-            "    {first:>3} of {tokens:>3} first choice{outside}   {said}"
-        ));
+        rows.push(vec![
+            format!("{}", at.saturating_add(1)),
+            first.to_string(),
+            past.to_string(),
+            tokens.to_string(),
+            if clauses.get(at).is_some() {
+                part_text(body, at)
+            } else {
+                "(over the cap)".to_owned()
+            },
+        ]);
+        // Shares compared crosswise, so no division is done.
         if tokens > 0 {
             match least {
                 Some((_, held_first, held_tokens)) => {
@@ -861,215 +963,94 @@ fn which_part_was_least_expected(body: &Value) -> Vec<String> {
             }
         }
     }
-    if let Some((at, _, _)) = least.filter(|_| !tied && parts.len() > 1) {
-        lines.push(String::new());
-        lines.push(format!(
-            "    least expected: part {} — the one carrying most from the writer, by this reading",
-            at.saturating_add(1)
-        ));
-    }
-    let unplaced = figure(grouped, "unplaced");
+    let past = format!(">{depth}");
+    let mut lines = vec![head(
+        "PARTS",
+        &[
+            "the same reading by part".to_owned(),
+            "first = tokens the model would have written itself".to_owned(),
+        ],
+    )];
+    lines.extend(table(
+        &[
+            figure("#"),
+            figure("first"),
+            figure(&past),
+            figure("tokens"),
+            text(unit),
+        ],
+        &rows,
+    ));
+    lines.push(format!(
+        "  least expected  {}",
+        match least.filter(|_| !tied && parts.len() > 1) {
+            Some((at, _, _)) => format!("#{}", at.saturating_add(1)),
+            None => "tied".to_owned(),
+        }
+    ));
+    let unplaced = integer(grouped, "unplaced");
     if unplaced > 0 {
-        lines.push(String::new());
-        lines.push(format!(
-            "    {} in no part: the turn's own pieces, or where the reading stopped short",
-            count_of(unplaced, "token")
-        ));
+        lines.push(format!("  in no part  {unplaced} tokens"));
     }
     lines.push(String::new());
     lines
 }
 
-/// The answer, and the conditions every figure above was computed under.
-///
-/// How long an answer was allowed to be, how the prompt reached the model, and
-/// what the sampler was: each of them changes what the figures mean, and none
-/// of them was on the page (§3.4, A6, F147).
-fn the_answer_and_its_conditions(body: &Value) -> Vec<String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
-    let mut lines = Vec::new();
-    lines.push("  THE ANSWER TO THE PROMPT AS WRITTEN".to_owned());
-    let baseline = text("baseline");
+/// The answer to the prompt as written, under the cap it was drawn to.
+fn answer(body: &Value) -> Vec<String> {
+    let baseline = body
+        .get("baseline")
+        .and_then(Value::as_text)
+        .unwrap_or_default();
+    let limit = integer(body, "token_limit");
+    let mut conditions = vec!["as written".to_owned()];
+    if limit > 0 {
+        conditions.push(format!("cap {limit} tokens"));
+    }
+    let mut lines = vec![head("ANSWER", &conditions)];
     let written: Vec<&str> = baseline.lines().collect();
     for said in written.iter().take(12) {
-        lines.push(format!("    {said}"));
+        lines.push(format!("  {said}"));
     }
     if written.len() > 12 {
         lines.push(format!(
-            "    … {} — `--json` carries the whole of it",
+            "  … {} more · --json",
             count_of(
                 i64::try_from(written.len().saturating_sub(12)).unwrap_or(0),
-                "further line"
+                "line"
             )
         ));
-    }
-    // **What every answer was allowed to be.** A figure computed from an
-    // answer that stopped at a limit is a figure about a prefix, and a reader
-    // comparing two prefixes is measuring whatever the model puts first
-    // (§3.4, A6, F147).
-    // How the model receives the question, beside what it did with it.
-    let tokens = count("prompt_tokens");
-    if tokens > 0 {
-        lines.push(String::new());
-        lines.push(format!(
-            "    the prompt reached the model as {} — `mcf segment` shows every one of them, and \
-             which words this vocabulary had no single piece for",
-            count_of(tokens, "token")
-        ));
-    }
-    let limit = count("token_limit");
-    if limit > 0 {
-        lines.push(String::new());
-        lines.push(format!(
-            "    each generation stopped at {}. An answer that reached it was cut, and a figure \
-             comparing two cut answers is about their first {limit} tokens",
-            count_of(limit, "token")
-        ));
-    }
-    // **Where this survives the terminal** (A1, B-432): the figures, under
-    // their conditions, and none of the text — which is why the entry can be
-    // cited and this page cannot.
-    lines.push(String::new());
-    match body.get("recorded").and_then(Value::as_text) {
-        Some(id) => lines.push(format!(
-            "    recorded as {id}: the figures and their conditions, the prompt as a length and \
-             a digest, and no text — `mcf log` lists it"
-        )),
-        None => lines.push(
-            "    NOT RECORDED: the daemon could not write the record, so this report lives only \
-             here"
-                .to_owned(),
-        ),
     }
     lines.push(String::new());
     lines
 }
 
-/// What the generations were spent on — each thing that cost one, and only
-/// the things this run asked for (A19, §3.4).
-fn what_the_generations_were(body: &Value, unit: &str) -> String {
-    let mut spent = vec![
-        "one for the prompt as written".to_owned(),
-        format!("one for each {unit} left out"),
-        match body.get("floors").and_then(Value::as_list) {
-            Some(floors) => format!(
-                "one for the control sentence at each of {}",
-                count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
-            ),
-            None => "one for the control sentence".to_owned(),
-        },
-    ];
-    if body.get("alone").and_then(Value::as_list).is_some() {
-        spent.push(format!(
-            "one for each {unit} alone and one for the control alone"
-        ));
-    }
-    if let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) {
-        spent.push(format!(
-            "{} for the prompt grown from the front",
-            count_of(i64::try_from(prefixes.len()).unwrap_or(0), "generation")
-        ));
-    }
-    if matches!(body.get("settled"), Some(Value::Map(_))) {
-        spent.push("one for each further seed".to_owned());
-    }
-    match spent.split_last() {
-        Some((last, first)) => format!("{}, and {last}", first.join(", ")),
-        None => String::new(),
+/// A count and the thing counted, in English.
+///
+/// `1 sentence`, `2 sentences`. Every one of these read `1 sentence(s)`.
+fn count_of(how_many: i64, noun: &str) -> String {
+    if how_many == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{how_many} {noun}s")
     }
 }
 
+/// The report: the conditions, then a table a reading, then the answer.
+/// Figures and short labels; a not-asked reading is a line that says so
+/// and names the flag (A7, §3.4, §3.15).
 fn rendered(body: &Value, named: &str) -> Vec<String> {
-    let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
-
-    let floor_ppm = body
-        .get("floor_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let unit = unit_of(body);
-    let mut lines = vec![
-        format!("what this prompt does to {}", header_name(named)),
-        String::new(),
-        format!(
-            "  {}: {}",
-            count_of(count("generations"), "generation"),
-            what_the_generations_were(body, unit)
-        ),
-    ];
-    // **The unit, and who chose it** (§3.15): a report by paragraph and one
-    // by sentence are different measurements of the same text.
-    if let Some(chosen_by) = body.get("unit_chosen_by").and_then(Value::as_text) {
-        lines.push(format!("  taken apart by {unit}, decided by {chosen_by}"));
-    }
-    // **How the prompt reached the model.** Whole, in one user turn: the
-    // report says so because a reader crafting a system prompt will assume a
-    // system turn, and MCF has not probed for one (D43).
-    if let Some(addressed) = body.get("addressed_as").and_then(Value::as_text) {
-        lines.push(format!("  addressed as {addressed}"));
-    }
+    let mut lines = vec![format!("PROMPT · {}", header_name(named)), String::new()];
+    lines.extend(conditions(body));
     lines.push(String::new());
-
-    // **Where the floor swamps the column, that is the finding.** A floor of
-    // 94.3% means removing a sentence carrying no instruction moved almost the
-    // whole answer, so nothing below separates one sentence from another —
-    // and the report used to draw the bars first and put the number that
-    // invalidates them underneath, in the same voice as everything else. A
-    // reader reads the bars (§3.15, A7, F147).
-    let readable = floor_ppm < 500_000;
-    if !readable {
-        lines.push(format!(
-            "  THIS RUN CANNOT SEPARATE YOUR {}S",
-            unit.to_uppercase()
-        ));
-        lines.push(format!(
-            "    removing a sentence that carries no instruction moved {} of the answer, so a \
-             {unit} scoring near that has told you nothing. The column below is printed \
-             because hiding a measurement is worse than showing a poor one — but read it as \
-             *this run did not work*, not as an ordering.",
-            percent(floor_ppm)
-        ));
-        lines.push(String::new());
-        lines.push(
-            "    a floor this high usually means the answer is long and open-ended: try a \
-             prompt whose answer is short, or ask for one part of the work at a time"
-                .to_owned(),
-        );
-        lines.push(String::new());
-    }
-
-    lines.push(format!(
-        "  HOW MUCH EACH {} STEERED THE ANSWER",
-        unit.to_uppercase()
-    ));
-    lines.push("  each was removed in turn, with the seed held still".to_owned());
-    lines.push(String::new());
-
-    lines.extend(steering_lines(body));
-    lines.push(String::new());
-    lines.extend(what_each_part_does_alone(body));
-    lines.extend(where_the_answer_arrives(body));
-    lines.push("  WHETHER SEVERAL SEEDS GAVE SEVERAL ANSWERS".to_owned());
-    lines.extend(settled_lines(body.get("settled")));
-
-    lines.push(String::new());
-    lines.extend(what_the_model_expected(body));
-    lines.extend(which_part_was_least_expected(body));
-    lines.extend(the_answer_and_its_conditions(body));
-    lines.push(format!(
-        "  Nothing here says whether the prompt is good, or whether the model understood it. \
-         Those are judgements and they need a rater. What is above is which {}s changed \
-         the answer when they were removed, whether the model would still have begun the same \
-         answer without each, and where each word sat in what the model would have written \
-         itself — three readings of the same prompt, which fail in different ways and are \
-         worth reading against each other.",
-        unit_of(body)
-    ));
+    lines.extend(removed(body));
+    lines.extend(alone(body));
+    lines.extend(prefixes(body));
+    lines.extend(seeds(body));
+    lines.extend(tokens(body));
+    lines.extend(parts(body));
+    lines.extend(answer(body));
+    lines.push("  no verdict on the prompt · that needs a rater".to_owned());
     lines
 }
 
@@ -1106,57 +1087,65 @@ mod tests {
     }
 
     /// Three sentences at a hundred per cent tie on the bar; what the answer
-    /// became and where its first token went are what order them (B-429).
+    /// became and where its first token went are the columns that order
+    /// them (B-429).
     #[test]
     fn a_tied_column_is_ordered_by_the_answer_and_the_forced_rank() {
-        let text = steering_lines(&body()).join("\n");
+        let text = removed(&body()).join("\n");
         assert!(
-            text.contains("without it: \"The room is painted blue.…\""),
-            "the first line of the ablated answer is shown, marked as cut: {text}"
+            text.contains("→ \"The room is painted blue.…\""),
+            "the first line of the ablated answer is under its row, marked as cut: {text}"
         );
         assert!(
-            text.contains("fell to its number 17 choice; 0 of 2 tokens of the opening"),
-            "{text}"
-        );
-        assert!(text.contains("fell outside its top 60"), "{text}");
-        assert!(
-            text.contains("would still have begun the same way: 2 of 2"),
+            text.contains("1  100.0%  ##########    +100.0   17   0/2  Answer in one word."),
             "{text}"
         );
         assert!(
-            !text.contains("without it: \"Blue.\""),
+            text.contains("2  100.0%  ##########    +100.0  >60   0/2  What colour is the room?"),
+            "outside the depth read is a bound, not a rank: {text}"
+        );
+        assert!(
+            text.contains("3    0.0%  ··········       0.0    1   2/2  You are careful."),
+            "{text}"
+        );
+        assert!(
+            !text.contains("→ \"Blue.\""),
             "an unchanged answer is not repeated: {text}"
         );
         assert!(
-            text.contains("with the control sentence in, the answer would still have begun"),
-            "the floor's own forced reading is beside the floor: {text}"
+            text.contains("ctl    0.0%  ··········     floor    1   2/2  control sentence"),
+            "the control's own row is under the parts: {text}"
         );
+        assert!(text.contains("at/under floor  1 · #3"), "{text}");
     }
 
-    /// A reading nobody took is said once, not drawn as a rank (A7).
+    /// A reading nobody took is a dash and a reason, not a rank (A7).
     #[test]
     fn an_untaken_forced_reading_is_said_rather_than_ranked() {
         let mut held = body();
         if let Value::Map(fields) = &mut held {
             fields.insert("floor_held".to_owned(), Value::Null);
         }
-        let text = steering_lines(&held).join("\n");
+        let text = conditions(&held).join("\n");
         assert!(
-            text.contains("was not read: it needs the served engine"),
+            text.contains("control in: 1st — (needs the served engine)"),
             "{text}"
         );
-        assert_eq!(held_said(Some(&Value::Null), 60), None);
-        assert_eq!(held_said(None, 60), None);
+        assert_eq!(rank_cell(Some(&Value::Null), 60), "—");
+        assert_eq!(rank_cell(None, 60), "—");
+        assert_eq!(open_cell(None), "—");
     }
 
     /// The addressing the ranks were read under is on the page (§3.4).
     #[test]
     fn the_rank_reading_says_what_it_was_read_under() {
-        let text = what_the_model_expected(&body()).join("\n");
+        let text = tokens(&body()).join("\n");
         assert!(
             text.contains("read under chatml — set by a probe"),
             "{text}"
         );
+        assert!(text.contains(">60  \" are\""), "{text}");
+        assert!(text.contains("first choice  0/1"), "{text}");
     }
 
     /// The rank reading grouped by part names the part the model least
@@ -1164,35 +1153,43 @@ mod tests {
     /// that fell in no part (B-433, A7).
     #[test]
     fn the_report_names_the_part_the_model_least_expected() {
-        let text = which_part_was_least_expected(&body()).join("\n");
+        let text = parts(&body()).join("\n");
+        assert!(text.contains("#  first  >60  tokens  sentence"), "{text}");
         assert!(
-            text.contains("  1 of   4 first choice, 1 outside its top 60   "),
+            text.contains("1      1    1       4  Answer in one word."),
             "{text}"
         );
-        assert!(text.contains("  3 of   3 first choice   "), "{text}");
-        assert!(text.contains("(not removed: over the cap)"), "{text}");
-        assert!(text.contains("least expected: part 1"), "{text}");
-        assert!(text.contains("2 tokens in no part"), "{text}");
+        assert!(
+            text.contains("2      3    0       3  What colour"),
+            "{text}"
+        );
+        assert!(
+            text.contains("4      4    0       5  (over the cap)"),
+            "{text}"
+        );
+        assert!(text.contains("least expected  #1"), "{text}");
+        assert!(text.contains("in no part  2 tokens"), "{text}");
         let mut none = body();
         if let Value::Map(fields) = &mut none {
             fields.insert("expected_by_part".to_owned(), Value::Null);
         }
-        assert!(which_part_was_least_expected(&none).is_empty());
+        assert!(parts(&none).is_empty());
     }
 
-    /// The floor at every position is read as a spread with each draw under
-    /// it and the parts that sit under its widest; a report that drew it once
-    /// says so and says what draws it more (B-434, §3.4).
+    /// The floor at every position is a spread on the floor's line and a
+    /// table of draws with the parts under its widest; a report that drew
+    /// it once says so and names the flag (B-434, §3.4).
     #[test]
     fn the_floor_is_a_spread_when_it_was_drawn_everywhere_and_one_draw_when_not() {
-        let text = steering_lines(&body()).join("\n");
+        let text = rendered(&body(), "m").join("\n");
         assert!(
             text.contains(
-                "that is one draw, with the control put before the last sentence; \
-                           `--floors`"
+                "floor        0.0% · 1 draw · control before the last sentence · --floors: \
+                 every position · control in: 1st 1 · open 2/2"
             ),
             "{text}"
         );
+        assert!(!text.contains("FLOORS"), "{text}");
         let mut everywhere = body();
         if let Value::Map(fields) = &mut everywhere {
             let at = |position: i64, moved: i64, rank: Option<i64>| {
@@ -1229,23 +1226,29 @@ mod tests {
                 ]),
             );
         }
-        let text = steering_lines(&everywhere).join("\n");
+        let text = rendered(&everywhere, "m").join("\n");
         assert!(
-            text.contains("the floor runs from 0.0% to 100.0%, 30.0% in the middle"),
+            text.contains("floor        0.0% · drawn at 4 positions · 0.0%–100.0% · middle 30.0%"),
             "{text}"
         );
-        assert!(text.contains("each of 4 positions"), "{text}");
-        assert!(text.contains("· before sentence 1:  30.0% — "), "{text}");
-        assert!(text.contains("· before sentence 2:   0.0%\n"), "{text}");
+        assert!(text.contains("control 4"), "{text}");
         assert!(
-            text.contains("· after the last sentence:   0.0% — "),
+            text.contains("before #1   30.0%  ###·······    1  2/2"),
             "{text}"
         );
         assert!(
-            text.contains("3 sentences at or under that"),
+            text.contains("before #2    0.0%  ··········    —  —"),
+            "{text}"
+        );
+        assert!(
+            text.contains("after #3     0.0%  ··········    1  2/2"),
+            "{text}"
+        );
+        assert!(
+            text.contains("at/under widest  3"),
             "every part is under a floor that reached a hundred: {text}"
         );
-        assert!(!text.contains("`--floors`"), "{text}");
+        assert!(!text.contains("--floors"), "{text}");
     }
 
     /// The unit, who decided it, and how the prompt reached the model are
@@ -1255,16 +1258,20 @@ mod tests {
     fn the_report_says_what_it_took_apart_and_how_it_was_addressed() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("taken apart by sentence, decided by the text: it has no blank line"),
+            text.contains("unit         sentence · the text: it has no blank line"),
             "{text}"
         );
         assert!(
-            text.contains("addressed as one user turn, the whole prompt"),
+            text.contains("addressed    one user turn, the whole prompt"),
             "{text}"
         );
-        assert!(text.contains("HOW MUCH EACH SENTENCE STEERED"), "{text}");
+        assert!(text.contains("prompt       10 tokens"), "{text}");
         assert!(
-            text.contains("3 further sentences not removed") && text.contains("`--most 6`"),
+            text.contains("REMOVED  answer moved without each sentence"),
+            "{text}"
+        );
+        assert!(
+            text.contains("not removed   3 · --most 6"),
             "the cap is said with what raises it: {text}"
         );
         let mut alone = body();
@@ -1272,7 +1279,29 @@ mod tests {
             fields.insert("unit".to_owned(), Value::text("paragraph".to_owned()));
         }
         let text = rendered(&alone, "m").join("\n");
-        assert!(text.contains("HOW MUCH EACH PARAGRAPH STEERED"), "{text}");
+        assert!(
+            text.contains("REMOVED  answer moved without each paragraph"),
+            "{text}"
+        );
+    }
+
+    /// A floor past a half is said as the finding, before the rows (§3.15).
+    #[test]
+    fn a_floor_past_a_half_says_the_run_did_not_separate_the_parts() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(text.contains("separable    yes"), "{text}");
+        let mut swamped = body();
+        if let Value::Map(fields) = &mut swamped {
+            fields.insert(
+                "floor_parts_per_million".to_owned(),
+                Value::Integer(943_000),
+            );
+        }
+        let text = rendered(&swamped, "m").join("\n");
+        assert!(
+            text.contains("separable    NO · floor 94.3% ≥ 50.0%"),
+            "{text}"
+        );
     }
 
     /// The report says where it survives the terminal, and says plainly
@@ -1281,7 +1310,7 @@ mod tests {
     fn the_report_says_where_it_was_recorded_or_that_it_was_not() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("recorded as 01J0000000000000000000000A") && text.contains("no text"),
+            text.contains("record       01J0000000000000000000000A") && text.contains("no text"),
             "{text}"
         );
         let mut unwritten = body();
@@ -1289,7 +1318,7 @@ mod tests {
             fields.insert("recorded".to_owned(), Value::Null);
         }
         let text = rendered(&unwritten, "m").join("\n");
-        assert!(text.contains("NOT RECORDED"), "{text}");
+        assert!(text.contains("record       NOT RECORDED"), "{text}");
     }
 
     /// Settledness is said under the temperature it was asked at, and where
@@ -1298,11 +1327,14 @@ mod tests {
     fn settledness_is_said_under_its_temperature_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("not asked: no temperature was stated")
-                && text.contains("`--temperature 0.7`"),
+            text.contains("SEEDS    not asked · --temperature <t>"),
             "{text}"
         );
-        assert!(!text.contains("settles this prompt"), "{text}");
+        assert!(!text.contains("distinct answers"), "{text}");
+        assert!(
+            text.contains("generations  6 · as written 1 · removed 3 · control 1\n"),
+            "{text}"
+        );
 
         let mut warm = body();
         if let Value::Map(fields) = &mut warm {
@@ -1320,56 +1352,26 @@ mod tests {
         }
         let text = rendered(&warm, "m").join("\n");
         assert!(
-            text.contains("3 seeds at temperature 0.700 gave 3 different answers"),
+            text.contains(
+                "SEEDS    3 seeds at temperature 0.700 · distinct answers 3 · farthest apart \
+                 41.2% · farthest from greedy 25.0%"
+            ),
             "{text}"
         );
-        assert!(
-            text.contains("control sentence, and one for each further seed"),
-            "{text}"
-        );
-        assert!(
-            text.contains("farthest apart differ in 41.2% of their words"),
-            "{text}"
-        );
-        assert!(
-            text.contains("sits 25.0% of its words from the greedy answer"),
-            "{text}"
-        );
-
-        if let Value::Map(fields) = &mut warm
-            && let Some(Value::Map(settled)) = fields.get_mut("settled")
-        {
-            settled.insert("distinct_answers".to_owned(), Value::Integer(1));
-            settled.insert("spread_parts_per_million".to_owned(), Value::Integer(0));
-        }
-        let text = rendered(&warm, "m").join("\n");
-        assert!(
-            text.contains("3 seeds at temperature 0.700 gave 1 answer, to the character"),
-            "{text}"
-        );
+        assert!(text.contains("control 1 · seeds 3"), "{text}");
     }
 
-    /// Each part alone is said against the control alone, with the answer
-    /// it drew; where it was not asked the report says so and names the
-    /// flag, never a figure (A7, B-435).
+    /// Each part alone is a table read against the control alone, with the
+    /// answer each drew; where it was not asked the report says so with the
+    /// flag and the cost, never a figure (A7, B-435).
     #[test]
     fn each_part_alone_is_said_against_the_control_alone_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("WHAT EACH SENTENCE DOES ALONE")
-                && text.contains("not asked: `--alone` asks each sentence"),
+            text.contains("ALONE    not asked · --alone · 4 generations"),
             "{text}"
         );
-        assert!(!text.contains("the control sentence alone"), "{text}");
-        // The generations line counts what this run spent and nothing else.
-        assert!(
-            text.contains(
-                "6 generations: one for the prompt as written, one for each sentence left \
-                 out, and one for the control sentence"
-            ),
-            "{text}"
-        );
-        assert!(!text.contains("further seed"), "{text}");
+        assert!(!text.contains("control sentence alone"), "{text}");
 
         let reading = |moved: i64, rank: i64, answer: &str| {
             Value::map([
@@ -1401,41 +1403,31 @@ mod tests {
             );
         }
         let text = rendered(&asked, "m").join("\n");
+        assert!(text.contains("control 1 · alone 4"), "{text}");
         assert!(
-            text.contains(
-                "one for the control sentence, and one for each sentence alone and one for \
-                 the control alone"
-            ),
+            text.contains("2   25.0%  ##········    1   1/1  What colour is the room?"),
             "{text}"
         );
         assert!(
-            text.contains("##········   25.0%  What colour is the room?"),
-            "{text}"
+            text.contains("→ \"Blue, I think.…\""),
+            "the answer to the part alone is under its row, marked as cut: {text}"
         );
         assert!(
-            text.contains("alone: \"Blue, I think.…\""),
-            "the answer to the part alone is shown, marked as cut: {text}"
-        );
-        assert!(
-            text.contains(
-                "the control sentence alone — nothing from the writer — sat 100.0% from the \
-                 answer as written; 2 sentences as far off or further, so alone carry nothing \
-                 of it"
-            ),
+            text.contains("ctl  100.0%  ##########   40   0/1  control sentence alone"),
             "{text}"
         );
-        assert!(text.contains("alone: \"Hello! How can I help?\""), "{text}");
+        assert!(text.contains("→ \"Hello! How can I help?\""), "{text}");
+        assert!(text.contains("as far as control or further  2"), "{text}");
     }
 
-    /// The prompt grown from the front is said a prefix at a time with the
-    /// first that came within the floor; where it was not asked the report
-    /// says so and names the flag (A7, B-436).
+    /// The prompt grown from the front is a row a prefix with the first
+    /// that came within the floor; where it was not asked the report says
+    /// so with the flag and the cost (A7, B-436).
     #[test]
     fn the_prompt_grown_from_the_front_says_where_the_answer_arrived_or_that_it_was_not_asked() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("WHERE THE ANSWER ARRIVES AS THE PROMPT GROWS")
-                && text.contains("not asked: `--prefixes` asks the first sentence"),
+            text.contains("PREFIXES not asked · --prefixes · 3 generations"),
             "{text}"
         );
         let reading = |moved: i64, answer: &str| {
@@ -1456,27 +1448,17 @@ mod tests {
             );
         }
         let text = rendered(&asked, "m").join("\n");
+        assert!(text.contains("control 1 · prefixes 2"), "{text}");
         assert!(
-            text.contains(
-                "control sentence, and 2 generations for the prompt grown from the front"
-            ),
+            text.contains("1–1  100.0%  ##########    —     —  Answer in one word."),
             "{text}"
         );
         assert!(
-            text.contains("##########  100.0%  the first sentence, through “Answer in one word.…”"),
+            text.contains("1–2    0.0%  ··········    —     —  What colour is the room?"),
             "{text}"
         );
-        assert!(
-            text.contains(
-                "··········    0.0%  the first 2 sentences, through “What colour is the room?…”"
-            ),
-            "{text}"
-        );
-        assert!(text.contains("answer: \"One word? Which?\""), "{text}");
-        assert!(
-            text.contains("by the first 2 sentences the answer was within the floor (0.0%)"),
-            "{text}"
-        );
+        assert!(text.contains("→ \"One word? Which?\""), "{text}");
+        assert!(text.contains("within floor 0.0%  first at 1–2"), "{text}");
 
         if let Value::Map(fields) = &mut asked {
             fields.insert(
@@ -1486,9 +1468,35 @@ mod tests {
         }
         let text = rendered(&asked, "m").join("\n");
         assert!(
-            text.contains("no prefix short of the whole came within the floor (0.0%)"),
+            text.contains("within floor 0.0%  none short of the whole"),
             "{text}"
         );
+    }
+
+    /// A table pads every column to its widest cell, figures against the
+    /// right edge and text against the left, and never pads the last.
+    #[test]
+    fn a_table_lines_its_columns_up() {
+        let lines = table(
+            &[figure("#"), text("name"), figure("n"), text("note")],
+            &[
+                vec!["1".into(), "ab".into(), "100".into(), "x".into()],
+                vec!["→ under".into()],
+                vec!["12".into(), "a".into(), "7".into(), "yy".into()],
+            ],
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "   #  name    n  note",
+                "   1  ab    100  x",
+                "       → under",
+                "  12  a       7  yy",
+            ]
+        );
+        assert_eq!(signed_percent(-13_000), "-1.3");
+        assert_eq!(signed_percent(20_000), "+2.0");
+        assert_eq!(signed_percent(0), "0.0");
     }
 
     /// A document in a file that is not there is said with the path, not

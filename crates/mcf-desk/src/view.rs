@@ -880,222 +880,6 @@ fn settings_table(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) ->
     act
 }
 
-/// How many answers several seeds gave at the temperature they were drawn
-/// at, and how far apart — or that the question was not asked.
-///
-/// **Not asked is said as not asked.** Every other generation is greedy, and
-/// two more seeds at temperature 0 could not differ; this line once said so
-/// for every prompt on every model, reporting the sampler (F147). The seeds
-/// are drawn only at a temperature the person states, and a report with
-/// none says the question is open rather than that the answer settled
-/// (A7, B-431).
-fn how_many_answers(paint: &mut Painter, at: (f32, f32), found: &Value) {
-    let ink = paint.ink;
-    let said = match found.get("settled") {
-        Some(settled @ Value::Map(_)) => {
-            let count = |key: &str| settled.get(key).and_then(Value::as_integer).unwrap_or(0);
-            let temperature = settled
-                .get("temperature")
-                .and_then(Value::as_text)
-                .unwrap_or("?");
-            let asked = count_of(usize::try_from(count("seeds_asked")).unwrap_or(0), "seed");
-            let distinct = count("distinct_answers");
-            let from_greedy = as_percent(count("from_greedy_parts_per_million"));
-            if distinct <= 1 {
-                format!(
-                    "{asked} at temperature {temperature} gave one answer, to the character — \
-                     this model settles this prompt at {temperature}; the farthest sample sat \
-                     {from_greedy} from the greedy answer"
-                )
-            } else {
-                format!(
-                    "{asked} at temperature {temperature} gave {distinct} answers, the two \
-                     farthest apart differing in {} of their words; the farthest sat \
-                     {from_greedy} from the greedy answer below",
-                    as_percent(count("spread_parts_per_million"))
-                )
-            }
-        }
-        _ => "whether several seeds give several answers was not asked: no temperature was \
-              stated, and at temperature 0 the seed changes nothing. The field above takes \
-              one — the temperature is yours, MCF has no house value (B60)"
-            .to_owned(),
-    };
-    paint.say_at(at.0, at.1, &said, Weight::Regular, size::BODY, ink.quiet);
-}
-
-/// Which words the model did not expect, in the space beside the bars.
-///
-/// **A second reading of the prompt that does not compare two answers.** The
-/// bars measure what changed when a sentence was removed, and removing
-/// anything shifts everything after it. This asks where each token ranked
-/// against what the model would have written there itself: first means the
-/// writer supplied nothing, outside the list means the prompt said something
-/// the model did not expect. Drift does not touch it, because nothing is
-/// compared to anything (§3.8).
-/// Why the ranking is missing, where it is missing: an empty column and one
-/// MCF could not fill look the same (A7).
-fn not_ranked(paint: &mut Painter, area: Box, found: &Value) {
-    let ink = paint.ink;
-    if let Some(why) = found.get("expected_refused").and_then(Value::as_text) {
-        spaced(paint, area.x, area.y, "not expected", ink.faint);
-        for line in paint
-            .wrap(why, Weight::Regular, size::SMALL, area.w)
-            .iter()
-            .take(3)
-        {
-            paint.say_at(
-                area.x,
-                area.y + 20.0,
-                line,
-                Weight::Regular,
-                size::SMALL,
-                ink.faint,
-            );
-        }
-    }
-}
-
-fn not_expected(paint: &mut Painter, area: Box, found: &Value) {
-    let ink = paint.ink;
-    let ranked = found
-        .get("expected")
-        .and_then(Value::as_list)
-        .unwrap_or(&[]);
-    if ranked.is_empty() {
-        not_ranked(paint, area, found);
-        return;
-    }
-    let depth = found
-        .get("ranked_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let mut surprising: Vec<(i64, String)> = Vec::new();
-    let mut first_choice = 0_usize;
-    for held in ranked {
-        let said = held
-            .get("text")
-            .and_then(Value::as_text)
-            .unwrap_or_default()
-            .to_owned();
-        match held.get("rank").and_then(Value::as_integer) {
-            None => surprising.push((i64::MAX, said)),
-            Some(1) => first_choice = first_choice.saturating_add(1),
-            Some(rank) => surprising.push((rank, said)),
-        }
-    }
-    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
-    spaced(paint, area.x, area.y, "words it did not expect", ink.faint);
-    let mut y = area.y + 22.0;
-    for (rank, said) in surprising.iter().take(8) {
-        if y > area.bottom() - 34.0 {
-            break;
-        }
-        let where_it_sat = if *rank == i64::MAX {
-            format!("past {depth}")
-        } else {
-            format!("#{rank}")
-        };
-        paint.say_at(
-            area.x,
-            y,
-            &where_it_sat,
-            Weight::Bold,
-            size::SMALL,
-            ink.warn,
-        );
-        let shown = paint.elide(said.trim(), Weight::Regular, size::SMALL, area.w - 56.0);
-        paint.say_at(
-            area.x + 52.0,
-            y,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.ink,
-        );
-        y += 17.0;
-    }
-    // What the prompt was addressed as while it was read: a prompt read bare
-    // and one read inside its turn are two prompts (§3.4, B-429).
-    let under = found
-        .get("ranked_under")
-        .and_then(Value::as_text)
-        .map(|under| format!(" Read under {under}."))
-        .unwrap_or_default();
-    for line in paint
-        .wrap(
-            &format!(
-                "{first_choice} of {} were its own first choice — a word it would have written \
-                 anyway carries nothing from the writer.{under}",
-                ranked.len()
-            ),
-            Weight::Regular,
-            size::SMALL,
-            area.w,
-        )
-        .iter()
-        .take(4)
-    {
-        paint.say_at(
-            area.x,
-            y + 8.0,
-            line,
-            Weight::Regular,
-            size::SMALL,
-            ink.faint,
-        );
-        y += 15.0;
-    }
-}
-
-/// Where the floor swamps the column, that is the finding.
-///
-/// **A run that separated nothing and one that worked drew the same screen.**
-/// A floor of 87.9% means removing a sentence carrying no instruction moved
-/// almost the whole answer, so no bar below it means anything — and the bars
-/// were drawn first, in full colour, with the number that invalidates them in
-/// grey underneath. A reader reads the bars (§3.15, A7, F147).
-fn a_run_that_separated_nothing(paint: &mut Painter, at: (f32, f32), found: &Value) -> f32 {
-    let ink = paint.ink;
-    let floor = found
-        .get("floor_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    if floor < 500_000 {
-        return at.1;
-    }
-    paint.say_at(
-        at.0,
-        at.1,
-        "This run cannot separate the parts of your document.",
-        Weight::Bold,
-        size::BODY,
-        ink.bad,
-    );
-    paint.say_at(
-        at.0,
-        at.1 + 19.0,
-        &format!(
-            "removing a sentence carrying no instruction moved {} of the answer — a bar near \
-             that has told you nothing",
-            as_percent(floor)
-        ),
-        Weight::Regular,
-        size::SMALL,
-        ink.warn,
-    );
-    paint.say_at(
-        at.0,
-        at.1 + 35.0,
-        "usually the answer is long and open-ended: try one whose answer is short, or ask for \
-         one part at a time",
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    at.1 + 58.0
-}
-
 /// The chosen window's price, written under the window itself.
 ///
 /// Returns where the next row starts, which is unmoved when there is no figure
@@ -2428,8 +2212,9 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     scrolled.or(act)
 }
 
-/// The report under the prompt's controls, from `at` — which is above the
-/// window's top by however far the page has scrolled.
+/// A report as figures and short labels (§3.4, §3.15): the conditions of
+/// the run, a table a reading, and the answer under them. Every row with an
+/// answer behind it is the control that shows it (A19).
 fn prompt_report(
     paint: &mut Painter,
     desk: &Desk,
@@ -2437,73 +2222,1058 @@ fn prompt_report(
     area: Box,
     at: f32,
 ) -> Option<Act> {
-    let mut act = None;
-    let mut at = at;
-    let Some(found) = a_report_or_why_not(paint, desk, area, at) else {
-        return act;
-    };
-    at = what_it_was_asked_as(paint, (area.x, at), found, area.w);
-    at = a_run_that_separated_nothing(paint, (area.x, at), found);
-    let (after, pressed) = steering(
-        paint,
-        desk,
-        mouse,
-        Box::new(area.x, at, area.w, area.bottom() - at),
-        found,
-    );
-    // Beside the bars rather than under them: the screen is wider than the
-    // column and this window does not scroll.
-    let column = 820.0_f32.min(area.w - 260.0).max(0.0);
-    if area.w - column > 200.0 {
-        not_expected(
+    let found = a_report_or_why_not(paint, desk, area, at)?;
+    let wide = area.w.min(820.0);
+    let mut y = report_conditions(paint, (area.x, at + 10.0), wide, found);
+    let (after, mut act) = removed_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0), found);
+    // Beside the rows rather than under them: the screen is wider than the
+    // tables, and the token reading compares nothing to the rows.
+    if area.w - wide > 220.0 {
+        tokens_table(
             paint,
-            Box::new(
-                area.x + column + 20.0,
-                at,
-                area.w - column - 30.0,
-                area.bottom() - at,
-            ),
+            Box::new(area.x + wide + 20.0, y, area.w - wide - 30.0, 0.0),
             found,
         );
     }
-    at = after;
+    y = floors_table(paint, (area.x, after), wide, found);
+    let (after, pressed) = alone_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0), found);
     act = pressed.or(act);
-    let (after, pressed) = where_the_answer_arrives(paint, desk, mouse, (area.x, at), found);
-    at = after;
+    let (after, pressed) = prefixes_table(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, after, wide, 0.0),
+        found,
+    );
     act = pressed.or(act);
-    how_many_answers(paint, (area.x, at + 12.0), found);
-    where_it_is_kept(paint, (area.x, at + 34.0), found);
+    y = seeds_line(paint, (area.x, after), wide, found);
     // The page scrolls, so the answer has a page of its own below the rest.
     the_answer(
         paint,
         desk,
-        Box::new(area.x, at + 54.0, area.w, 640.0),
+        Box::new(area.x, y + 10.0, area.w, 640.0),
         found,
     );
     act
 }
 
-/// Where the report survives this window, or that it does not (A1, A2,
-/// B-432): the figures under their conditions are in the record, and the
-/// text is not — which is why the entry can be cited and this screen cannot.
-fn where_it_is_kept(paint: &mut Painter, at: (f32, f32), found: &Value) {
+/// A reading's label and the conditions it was read under, on one line
+/// (§3.4). Returns the line under it.
+fn section(
+    paint: &mut Painter,
+    at: (f32, f32),
+    width: f32,
+    label: &str,
+    conditions: &[String],
+) -> f32 {
     let ink = paint.ink;
-    let (said, colour) = match found.get("recorded").and_then(Value::as_text) {
-        Some(id) => (
+    spaced(paint, at.0, at.1, label, ink.faint);
+    let said = conditions.join(" · ");
+    let shown = paint.elide(&said, Weight::Regular, size::SMALL, width - 96.0);
+    paint.say_at(
+        at.0 + 96.0,
+        at.1 - 2.0,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    at.1 + 22.0
+}
+
+/// A line of figures under a table: a label and a value.
+fn foot(paint: &mut Painter, at: (f32, f32), label: &str, value: &str, colour: Rgb) -> f32 {
+    let ink = paint.ink;
+    paint.say_at(at.0, at.1, label, Weight::Regular, size::SMALL, ink.quiet);
+    paint.say_at(at.0 + 150.0, at.1, value, Weight::Bold, size::SMALL, colour);
+    at.1 + 18.0
+}
+
+fn integer(held: &Value, key: &str) -> i64 {
+    held.get(key).and_then(Value::as_integer).unwrap_or(0)
+}
+
+fn moved_of(read: &Value) -> i64 {
+    integer(read, "moved_parts_per_million")
+}
+
+fn clauses_of(found: &Value) -> &[Value] {
+    found.get("clauses").and_then(Value::as_list).unwrap_or(&[])
+}
+
+fn part_text(found: &Value, at: usize) -> String {
+    clauses_of(found)
+        .get(at)
+        .and_then(|clause| clause.get("text"))
+        .and_then(Value::as_text)
+        .map(|said| said.trim().lines().next().unwrap_or_default().to_owned())
+        .unwrap_or_default()
+}
+
+/// A difference of two shares with its sign, to a tenth: `+2.0`, `-1.3`.
+fn signed_percent(difference: i64) -> String {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a difference shown to one decimal place"
+    )]
+    let held = difference as f64 / 10_000.0;
+    format!("{held:+.1}")
+}
+
+/// The conditions of the run, a figure a line (§3.4, §3.15): what the text
+/// was cut into and who decided, how it reached the model, what every
+/// generation was allowed to be, what the generations were spent on, the
+/// floor and how it was drawn, whether the floor leaves the rows readable,
+/// and where the figures survive this window.
+fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let unit = unit_of(found);
+    let text = |key: &str| found.get(key).and_then(Value::as_text);
+    let mut rows: Vec<(&str, String, Rgb)> = vec![(
+        "unit",
+        match text("unit_chosen_by") {
+            Some(by) => format!("{unit} · {by}"),
+            None => unit.to_owned(),
+        },
+        ink.ink,
+    )];
+    if let Some(addressed) = text("addressed_as") {
+        rows.push(("addressed", addressed.to_owned(), ink.ink));
+    }
+    let tokens = integer(found, "prompt_tokens");
+    if tokens > 0 {
+        rows.push(("prompt", format!("{tokens} tokens"), ink.ink));
+    }
+    let limit = integer(found, "token_limit");
+    if limit > 0 {
+        rows.push(("cap", format!("{limit} tokens a generation"), ink.ink));
+    }
+    if integer(found, "generations") > 0 {
+        rows.push(("generations", what_the_generations_were(found), ink.ink));
+    }
+    rows.push(("floor", the_floor_line(found, unit), ink.ink));
+    let floor = integer(found, "floor_parts_per_million");
+    // **Where the floor swamps the column, that is the finding** (§3.15,
+    // A7, F147): said before the rows, in a line of its own.
+    rows.push(if floor < 500_000 {
+        ("separable", "yes".to_owned(), ink.ink)
+    } else {
+        (
+            "separable",
             format!(
-                "recorded as {id} — the figures and their conditions, the prompt as a length and \
-                 a digest, and no text"
+                "NO · floor {} >= 50.0% · rows below say this run did not work, not an ordering",
+                as_percent(floor)
             ),
-            ink.faint,
+            ink.bad,
+        )
+    });
+    // **Where this survives the window** (A1, A2, B-432): the figures under
+    // their conditions, and none of the text.
+    rows.push(match text("recorded") {
+        Some(id) => (
+            "record",
+            format!("{id} · figures and conditions, no text"),
+            ink.ink,
         ),
         None => (
-            "NOT RECORDED: the daemon could not write the record, so this report lives only \
-             on this screen"
+            "record",
+            "NOT RECORDED · the daemon could not write it · this window is the only copy"
                 .to_owned(),
             ink.warn,
         ),
+    });
+    let mut y = at.1;
+    for (label, value, colour) in rows {
+        paint.say_at(at.0, y, label, Weight::Regular, size::SMALL, ink.quiet);
+        let shown = paint.elide(&value, Weight::Regular, size::SMALL, width - 96.0);
+        paint.say_at(at.0 + 96.0, y, &shown, Weight::Regular, size::SMALL, colour);
+        y += 18.0;
+    }
+    y + 8.0
+}
+
+/// What the generations were spent on — each thing that cost some, and
+/// only the things this run asked for (A19, §3.4).
+fn what_the_generations_were(found: &Value) -> String {
+    let list = |key: &str| found.get(key).and_then(Value::as_list).map(<[Value]>::len);
+    let mut spent = vec![
+        integer(found, "generations").to_string(),
+        "as written 1".to_owned(),
+        format!("removed {}", clauses_of(found).len()),
+        match list("floors") {
+            Some(positions) => format!("control {positions}"),
+            None => "control 1".to_owned(),
+        },
+    ];
+    if let Some(alone) = list("alone") {
+        spent.push(format!("alone {}", alone.saturating_add(1)));
+    }
+    if let Some(prefixes) = list("prefixes") {
+        spent.push(format!("prefixes {prefixes}"));
+    }
+    if let Some(settled) = found
+        .get("settled")
+        .filter(|held| matches!(held, Value::Map(_)))
+    {
+        spent.push(format!("seeds {}", integer(settled, "seeds_asked")));
+    }
+    spent.join(" · ")
+}
+
+/// The floor's line: the figure, and how it was drawn — one draw before the
+/// last part, or at every position with its spread (B-434, §3.4).
+fn the_floor_line(found: &Value, unit: &str) -> String {
+    let floor = as_percent(integer(found, "floor_parts_per_million"));
+    let depth = integer(found, "forced_depth");
+    let held = match found.get("floor_held") {
+        Some(held) if !matches!(held, Value::Null) => format!(
+            " · control in: 1st {} · open {}",
+            crate::held_mark(Some(held), depth),
+            crate::open_mark(Some(held))
+        ),
+        _ => " · control in: 1st — (needs the served engine)".to_owned(),
     };
-    paint.say_at(at.0, at.1, &said, Weight::Regular, size::SMALL, colour);
+    match found
+        .get("floor_spread")
+        .filter(|spread| !matches!(spread, Value::Null))
+    {
+        Some(spread) => format!(
+            "{floor} · drawn at {} · {}–{} · middle {}{held}",
+            count_of(
+                found
+                    .get("floors")
+                    .and_then(Value::as_list)
+                    .map_or(0, <[Value]>::len),
+                "position"
+            ),
+            as_percent(integer(spread, "least_parts_per_million")),
+            as_percent(integer(spread, "most_parts_per_million")),
+            as_percent(integer(spread, "middle_parts_per_million")),
+        ),
+        None => format!(
+            "{floor} · 1 draw · control before the last {unit} · \"floor at every position\" \
+             above draws it at each{held}"
+        ),
+    }
+}
+
+/// One row of a reading's table: its label, how much the answer moved and
+/// whether that is above the floor, the cells under the columns after the
+/// bar, the part's text, and what pressing it shows, if anything.
+struct ReadingRow {
+    first: String,
+    moved: i64,
+    loud: bool,
+    cells: Vec<String>,
+    text: String,
+    act: Option<Act>,
+    chosen: bool,
+}
+
+/// The columns every reading's table starts with: the figure, then the bar.
+const MOVED_AT: f32 = 76.0;
+const BAR_WIDTH: f32 = 160.0;
+
+/// A table of readings: heads, a rule, and a row a reading with its bar
+/// coloured against the floor. Rows with an answer behind them are pressed
+/// to show it. Returns the line under the table and what was pressed.
+fn reading_table(
+    paint: &mut Painter,
+    mouse: &Mouse,
+    area: Box,
+    first: &str,
+    columns: &[Column],
+    rows: &[ReadingRow],
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let mut y = heads(paint, area, first, columns);
+    let mut act = None;
+    // The figure sits at the first column's edge, the bar after it.
+    let moved_at = columns.first().map_or(MOVED_AT, |column| column.at);
+    for row in rows {
+        let hit = Box::new(area.x - 6.0, y - 3.0, area.w + 12.0, 22.0);
+        if row.act.is_some() {
+            if row.chosen || mouse.over(hit) {
+                paint.panel(hit, 6.0, ink.line, if row.chosen { 140 } else { 80 });
+            }
+            if mouse.clicked(hit) {
+                act.clone_from(&row.act);
+            }
+        }
+        let colour = if row.loud { ink.ink } else { ink.quiet };
+        paint.say_at(
+            area.x,
+            y,
+            &row.first,
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        paint.say_right(
+            area.x + moved_at,
+            y,
+            &as_percent(row.moved),
+            Weight::Bold,
+            size::BODY,
+            colour,
+        );
+        let bar = Box::new(area.x + moved_at + 12.0, y + 4.0, BAR_WIDTH, 10.0);
+        paint.panel(bar, 5.0, ink.sunk, 255);
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a bar's width in points; a part of a point is not drawn"
+        )]
+        let filled = (row.moved as f32 / 1_000_000.0).clamp(0.0, 1.0) * bar.w;
+        paint.panel(
+            Box::new(bar.x, bar.y, filled.max(1.0), bar.h),
+            5.0,
+            if row.loud { ink.accent } else { ink.line },
+            255,
+        );
+        let mut text_at = bar.right() + 14.0;
+        for (column, value) in columns.iter().skip(2).zip(&row.cells) {
+            // An absent figure is drawn quietly (A7).
+            let cell = if value == "—" { ink.faint } else { colour };
+            paint.say_right(area.x + column.at, y, value, Weight::Bold, size::BODY, cell);
+            text_at = area.x + column.at + 14.0;
+        }
+        let shown = paint.elide(
+            &row.text,
+            Weight::Regular,
+            size::BODY,
+            area.right() - text_at,
+        );
+        paint.say_at(text_at, y, &shown, Weight::Regular, size::BODY, colour);
+        y += 22.0;
+    }
+    (y, act)
+}
+
+/// A row's cells after the bar: where the answer's first token ranked and
+/// how much of its opening stayed.
+fn held_cells(read: &Value, depth: i64) -> Vec<String> {
+    vec![
+        crate::held_mark(read.get("held"), depth),
+        crate::open_mark(read.get("held")),
+    ]
+}
+
+/// The parts removed in turn (§3.8, B-429): a row a part with what the
+/// answer did without it, the control's row under them, and the parts at
+/// or under the floor. Each row shows the answer without its part.
+fn removed_table(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let unit = unit_of(found);
+    let floor = integer(found, "floor_parts_per_million");
+    let clauses = clauses_of(found);
+    let grouped = found
+        .get("expected_by_part")
+        .filter(|held| !matches!(held, Value::Null));
+    let mut y = section(
+        paint,
+        (area.x, area.y),
+        area.w,
+        "removed",
+        &[
+            format!("answer moved without each {unit}"),
+            "seed held".to_owned(),
+            "an ordering, not relevance".to_owned(),
+            "press a row → its answer".to_owned(),
+        ],
+    );
+    if clauses.is_empty() {
+        y = foot(
+            paint,
+            (area.x, y),
+            "parts",
+            &format!("one {unit} · nothing to remove"),
+            ink.quiet,
+        );
+        return (y + 8.0, None);
+    }
+    let rows = removed_rows(desk, found, grouped.is_some());
+    let mut columns = vec![
+        Column {
+            head: "moved",
+            at: MOVED_AT,
+            right: true,
+        },
+        Column {
+            head: "",
+            at: MOVED_AT + 12.0 + BAR_WIDTH,
+            right: true,
+        },
+        Column {
+            head: "vs floor",
+            at: 318.0,
+            right: true,
+        },
+        Column {
+            head: "1st",
+            at: 360.0,
+            right: true,
+        },
+        Column {
+            head: "open",
+            at: 414.0,
+            right: true,
+        },
+    ];
+    if grouped.is_some() {
+        columns.push(Column {
+            head: "own",
+            at: 468.0,
+            right: true,
+        });
+    }
+    let (after, act) = reading_table(
+        paint,
+        mouse,
+        Box::new(area.x, y, area.w, 0.0),
+        "#",
+        &columns,
+        &rows,
+    );
+    y = removed_foot(paint, (area.x, after + 4.0), found, floor);
+    (y + 8.0, act)
+}
+
+/// The removed table's rows: a part a row, and the control's row last.
+fn removed_rows(desk: &Desk, found: &Value, own: bool) -> Vec<ReadingRow> {
+    let depth = integer(found, "forced_depth");
+    let floor = integer(found, "floor_parts_per_million");
+    let grouped = found
+        .get("expected_by_part")
+        .filter(|held| !matches!(held, Value::Null));
+    let mut rows: Vec<ReadingRow> = clauses_of(found)
+        .iter()
+        .enumerate()
+        .map(|(at, clause)| {
+            let moved = moved_of(clause);
+            let mut cells = vec![signed_percent(moved.saturating_sub(floor))];
+            cells.extend(held_cells(clause, depth));
+            if own {
+                cells.push(crate::expected_mark(grouped, at).unwrap_or_else(|| "—".to_owned()));
+            }
+            ReadingRow {
+                first: at.saturating_add(1).to_string(),
+                moved,
+                loud: moved > floor,
+                cells,
+                text: part_text(found, at),
+                act: Some(Act::ShowWithout(at)),
+                chosen: desk.shown == Some(crate::Shown::Without(at)),
+            }
+        })
+        .collect();
+    let mut control = vec!["floor".to_owned()];
+    control.push(crate::held_mark(found.get("floor_held"), depth));
+    control.push(crate::open_mark(found.get("floor_held")));
+    if own {
+        control.push("—".to_owned());
+    }
+    rows.push(ReadingRow {
+        first: "ctl".to_owned(),
+        moved: floor,
+        loud: false,
+        cells: control,
+        text: "control sentence".to_owned(),
+        act: None,
+        chosen: false,
+    });
+    rows
+}
+
+/// Under the removed table: which parts sit at or under the floor, the
+/// part the model least expected, and how many parts were not removed.
+fn removed_foot(paint: &mut Painter, at: (f32, f32), found: &Value, floor: i64) -> f32 {
+    let ink = paint.ink;
+    let clauses = clauses_of(found);
+    let quiet: Vec<String> = clauses
+        .iter()
+        .enumerate()
+        .filter(|(_, clause)| moved_of(clause) <= floor)
+        .map(|(at, _)| format!("#{}", at.saturating_add(1)))
+        .collect();
+    let mut y = at.1;
+    // **Every removal giving the same answer is a finding, and it reads
+    // like a broken tool** (A7).
+    if floor == 0 && quiet.len() == clauses.len() {
+        y = foot(
+            paint,
+            (at.0, y),
+            "same answer",
+            "every removal and the control · the prompt did not steer this model",
+            ink.warn,
+        );
+    }
+    y = foot(
+        paint,
+        (at.0, y),
+        "at/under floor",
+        &if quiet.is_empty() {
+            "none".to_owned()
+        } else {
+            format!("{} · {}", quiet.len(), quiet.join(" "))
+        },
+        ink.ink,
+    );
+    if let Some(least) = least_expected(found) {
+        y = foot(paint, (at.0, y), "least expected", &least, ink.ink);
+    }
+    // Sentences past the cap are not measured, and a list that quietly
+    // shortened itself is the one thing a list must not do (A1, A4).
+    let over = integer(found, "clauses_over_the_cap");
+    if over > 0 {
+        y = foot(
+            paint,
+            (at.0, y),
+            "not removed",
+            &format!("{over} · \"more\" or \"all\" above takes the rest"),
+            ink.warn,
+        );
+    }
+    y
+}
+
+/// The part with the smallest share of first choices (B-433), by the rank
+/// reading grouped by part: shares compared crosswise so no division is
+/// done, and a tie names nobody (A19). `None` where no reading was taken.
+fn least_expected(found: &Value) -> Option<String> {
+    let parts = found
+        .get("expected_by_part")
+        .filter(|held| !matches!(held, Value::Null))?
+        .get("parts")
+        .and_then(Value::as_list)?;
+    let mut least: Option<(usize, i64, i64)> = None;
+    let mut tied = false;
+    for (at, part) in parts.iter().enumerate() {
+        let (tokens, first) = (integer(part, "tokens"), integer(part, "first_choice"));
+        if tokens == 0 {
+            continue;
+        }
+        match least {
+            Some((_, held_first, held_tokens)) => {
+                let mine = first.saturating_mul(held_tokens);
+                let theirs = held_first.saturating_mul(tokens);
+                if mine < theirs {
+                    least = Some((at, first, tokens));
+                    tied = false;
+                } else if mine == theirs {
+                    tied = true;
+                }
+            }
+            None => least = Some((at, first, tokens)),
+        }
+    }
+    if parts.len() < 2 {
+        return None;
+    }
+    Some(match least {
+        Some((at, _, _)) if !tied => format!("#{}", at.saturating_add(1)),
+        _ => "tied".to_owned(),
+    })
+}
+
+/// The floor at every position, where it was drawn (B-434): a row a
+/// position, and how many parts sit under the widest of them. Nothing
+/// where one draw was taken; the floor's line above says so (A7).
+fn floors_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let Some(floors) = found.get("floors").and_then(Value::as_list) else {
+        return at.1;
+    };
+    let depth = integer(found, "forced_depth");
+    let unit = unit_of(found);
+    let y = section(
+        paint,
+        at,
+        width,
+        "floors",
+        &[
+            "control at every position".to_owned(),
+            format!("a {unit} the control matched somewhere is not shown to steer"),
+        ],
+    );
+    let rows: Vec<ReadingRow> = floors
+        .iter()
+        .map(|read| {
+            let position = integer(read, "position");
+            let first = if position.saturating_add(1) == i64::try_from(floors.len()).unwrap_or(0) {
+                format!("after #{position}")
+            } else {
+                format!("before #{}", position.saturating_add(1))
+            };
+            ReadingRow {
+                first,
+                moved: moved_of(read),
+                loud: true,
+                cells: held_cells(read, depth),
+                text: String::new(),
+                act: None,
+                chosen: false,
+            }
+        })
+        .collect();
+    let columns = [
+        Column {
+            head: "moved",
+            at: MOVED_AT + 44.0,
+            right: true,
+        },
+        Column {
+            head: "",
+            at: MOVED_AT + 56.0 + BAR_WIDTH,
+            right: true,
+        },
+        Column {
+            head: "1st",
+            at: 320.0,
+            right: true,
+        },
+        Column {
+            head: "open",
+            at: 374.0,
+            right: true,
+        },
+    ];
+    let (after, _) = reading_table(
+        paint,
+        &Mouse::default(),
+        Box::new(at.0, y, width, 0.0),
+        "control",
+        &columns,
+        &rows,
+    );
+    let most = found
+        .get("floor_spread")
+        .map_or(0, |spread| integer(spread, "most_parts_per_million"));
+    let under = clauses_of(found)
+        .iter()
+        .filter(|clause| moved_of(clause) <= most)
+        .count();
+    foot(
+        paint,
+        (at.0, after + 4.0),
+        "at/under widest",
+        &under.to_string(),
+        ink.ink,
+    ) + 8.0
+}
+
+/// A reading that was not asked for, said as not asked with the button that
+/// asks it and what it would cost (A7).
+fn not_asked(
+    paint: &mut Painter,
+    at: (f32, f32),
+    width: f32,
+    label: &str,
+    extra: mcf_serve::prompt::Extra,
+    found: &Value,
+) -> f32 {
+    let removed = clauses_of(found).len();
+    let parts = removed
+        .saturating_add(usize::try_from(integer(found, "clauses_over_the_cap")).unwrap_or(0));
+    section(
+        paint,
+        at,
+        width,
+        label,
+        &[
+            "not asked".to_owned(),
+            format!("\"{}\" above", extra.label()),
+            count_of(extra.generations(parts, removed), "generation"),
+            extra.asks().to_owned(),
+        ],
+    ) + 4.0
+}
+
+/// Each part asked as the whole prompt in turn (B-435), read against the
+/// control alone; each row shows the answer to its part alone.
+fn alone_table(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let unit = unit_of(found);
+    let Some(alone) = found.get("alone").and_then(Value::as_list) else {
+        return (
+            not_asked(
+                paint,
+                (area.x, area.y),
+                area.w,
+                "alone",
+                mcf_serve::prompt::Extra::Alone,
+                found,
+            ),
+            None,
+        );
+    };
+    let y = section(
+        paint,
+        (area.x, area.y),
+        area.w,
+        "alone",
+        &[
+            format!("each {unit} as the whole prompt"),
+            "vs the answer as written".to_owned(),
+            "low = carries it alone".to_owned(),
+            "press a row → its answer".to_owned(),
+        ],
+    );
+    let control_moved = found
+        .get("alone_floor")
+        .filter(|held| matches!(held, Value::Map(_)))
+        .map(moved_of);
+    let rows = alone_rows(desk, found, alone);
+    let columns = [
+        Column {
+            head: "moved",
+            at: MOVED_AT,
+            right: true,
+        },
+        Column {
+            head: "",
+            at: MOVED_AT + 12.0 + BAR_WIDTH,
+            right: true,
+        },
+        Column {
+            head: "1st",
+            at: 300.0,
+            right: true,
+        },
+        Column {
+            head: "open",
+            at: 354.0,
+            right: true,
+        },
+    ];
+    let (after, act) = reading_table(
+        paint,
+        mouse,
+        Box::new(area.x, y, area.w, 0.0),
+        "#",
+        &columns,
+        &rows,
+    );
+    let y = match control_moved {
+        Some(control) => foot(
+            paint,
+            (area.x, after + 4.0),
+            "as far as control or further",
+            &alone
+                .iter()
+                .filter(|read| moved_of(read) >= control)
+                .count()
+                .to_string(),
+            ink.ink,
+        ),
+        None => foot(
+            paint,
+            (area.x, after + 4.0),
+            "control alone",
+            "not read · nothing to read these against",
+            ink.warn,
+        ),
+    };
+    (y + 8.0, act)
+}
+
+/// The alone table's rows: a part a row, and the control alone last where
+/// it was read.
+fn alone_rows(desk: &Desk, found: &Value, alone: &[Value]) -> Vec<ReadingRow> {
+    let depth = integer(found, "forced_depth");
+    let control = found
+        .get("alone_floor")
+        .filter(|held| matches!(held, Value::Map(_)));
+    let control_moved = control.map(moved_of);
+    let mut rows: Vec<ReadingRow> = alone
+        .iter()
+        .enumerate()
+        .map(|(at, read)| ReadingRow {
+            first: at.saturating_add(1).to_string(),
+            moved: moved_of(read),
+            // Under the control alone is a part that carries some of the
+            // answer by itself.
+            loud: control_moved.is_some_and(|control| moved_of(read) < control),
+            cells: held_cells(read, depth),
+            text: part_text(found, at),
+            act: Some(Act::ShowAlone(at)),
+            chosen: desk.shown == Some(crate::Shown::Alone(at)),
+        })
+        .collect();
+    if let Some(control) = control {
+        rows.push(ReadingRow {
+            first: "ctl".to_owned(),
+            moved: moved_of(control),
+            loud: false,
+            cells: held_cells(control, depth),
+            text: "control sentence alone".to_owned(),
+            act: None,
+            chosen: false,
+        });
+    }
+    rows
+}
+
+/// The prompt grown from the front (B-436): a row a prefix, and the first
+/// within the floor of the answer as written. Each row shows its answer.
+fn prefixes_table(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let unit = unit_of(found);
+    let depth = integer(found, "forced_depth");
+    let floor = integer(found, "floor_parts_per_million");
+    let Some(prefixes) = found.get("prefixes").and_then(Value::as_list) else {
+        return (
+            not_asked(
+                paint,
+                (area.x, area.y),
+                area.w,
+                "prefixes",
+                mcf_serve::prompt::Extra::Prefixes,
+                found,
+            ),
+            None,
+        );
+    };
+    let y = section(
+        paint,
+        (area.x, area.y),
+        area.w,
+        "prefixes",
+        &[
+            format!("prompt grown a {unit} at a time from the front"),
+            "vs the answer as written".to_owned(),
+            "low = already had it".to_owned(),
+            "press a row → its answer".to_owned(),
+        ],
+    );
+    let mut arrived = None;
+    let rows: Vec<ReadingRow> = prefixes
+        .iter()
+        .enumerate()
+        .map(|(at, read)| {
+            let kept = at.saturating_add(1);
+            if arrived.is_none() && moved_of(read) <= floor {
+                arrived = Some(kept);
+            }
+            ReadingRow {
+                first: format!("1–{kept}"),
+                moved: moved_of(read),
+                loud: moved_of(read) > floor,
+                cells: held_cells(read, depth),
+                text: part_text(found, at),
+                act: Some(Act::ShowPrefix(at)),
+                chosen: desk.shown == Some(crate::Shown::Prefix(at)),
+            }
+        })
+        .collect();
+    let columns = [
+        Column {
+            head: "moved",
+            at: MOVED_AT,
+            right: true,
+        },
+        Column {
+            head: "",
+            at: MOVED_AT + 12.0 + BAR_WIDTH,
+            right: true,
+        },
+        Column {
+            head: "1st",
+            at: 300.0,
+            right: true,
+        },
+        Column {
+            head: "open",
+            at: 354.0,
+            right: true,
+        },
+    ];
+    let (after, act) = reading_table(
+        paint,
+        mouse,
+        Box::new(area.x, y, area.w, 0.0),
+        "parts",
+        &columns,
+        &rows,
+    );
+    let y = foot(
+        paint,
+        (area.x, after + 4.0),
+        &format!("within floor {}", as_percent(floor)),
+        &match arrived {
+            Some(kept) => format!("first at 1–{kept} · not a claim the rest is idle"),
+            None => format!("none short of the whole · the last {unit} still moved the answer"),
+        },
+        ink.ink,
+    );
+    (y + 8.0, act)
+}
+
+/// Whether several seeds gave several answers, under the temperature it
+/// was asked at — or not asked, which is never *settled* (A7, B-431, B60).
+fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let Some(settled) = found
+        .get("settled")
+        .filter(|held| matches!(held, Value::Map(_)))
+    else {
+        return section(
+            paint,
+            at,
+            width,
+            "seeds",
+            &[
+                "not asked".to_owned(),
+                "temperature field above".to_owned(),
+                "3 generations at it".to_owned(),
+                "at temperature 0 the seed changes nothing".to_owned(),
+                "no house temperature".to_owned(),
+            ],
+        );
+    };
+    let temperature = settled
+        .get("temperature")
+        .and_then(Value::as_text)
+        .unwrap_or("?");
+    section(
+        paint,
+        at,
+        width,
+        "seeds",
+        &[
+            format!(
+                "{} at temperature {temperature}",
+                count_of(
+                    usize::try_from(integer(settled, "seeds_asked")).unwrap_or(0),
+                    "seed"
+                )
+            ),
+            format!("distinct answers {}", integer(settled, "distinct_answers")),
+            format!(
+                "farthest apart {}",
+                as_percent(integer(settled, "spread_parts_per_million"))
+            ),
+            format!(
+                "farthest from greedy {}",
+                as_percent(integer(settled, "from_greedy_parts_per_million"))
+            ),
+            "a fact about the pair, not a merit of the prompt".to_owned(),
+        ],
+    )
+}
+
+/// Where the model ranked each word of the prompt against what it would
+/// have written there itself (B-429): only the ones it did not expect
+/// (§3.15), the share that were its first choice, and the addressing they
+/// were read under (§3.4). Not taken is said with why (A7).
+fn tokens_table(paint: &mut Painter, area: Box, found: &Value) {
+    let ink = paint.ink;
+    spaced(paint, area.x, area.y, "tokens", ink.faint);
+    let ranked = found
+        .get("expected")
+        .and_then(Value::as_list)
+        .unwrap_or(&[]);
+    let mut y = area.y + 22.0;
+    if ranked.is_empty() {
+        let why = found
+            .get("expected_refused")
+            .and_then(Value::as_text)
+            .map_or_else(
+                || "not taken".to_owned(),
+                |why| format!("not taken · {why}"),
+            );
+        for line in paint
+            .wrap(&why, Weight::Regular, size::SMALL, area.w)
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
+            y += 16.0;
+        }
+        return;
+    }
+    let depth = integer(found, "ranked_depth");
+    let mut surprising: Vec<(i64, String)> = Vec::new();
+    let mut first_choice = 0_usize;
+    for held in ranked {
+        let said = held
+            .get("text")
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_owned();
+        match held.get("rank").and_then(Value::as_integer) {
+            // Outside the list asked for: a bound, not an absence (A7).
+            None => surprising.push((i64::MAX, said)),
+            Some(1) => first_choice = first_choice.saturating_add(1),
+            Some(rank) => surprising.push((rank, said)),
+        }
+    }
+    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    spaced(paint, area.x, y, "rank", ink.faint);
+    spaced(paint, area.x + 52.0, y, "token", ink.faint);
+    paint.rule((area.x, y + 17.0), (area.right(), y + 17.0), ink.line, 255);
+    y += 27.0;
+    for (rank, said) in surprising.iter().take(10) {
+        let cell = if *rank == i64::MAX {
+            format!(">{depth}")
+        } else {
+            rank.to_string()
+        };
+        paint.say_right(area.x + 40.0, y, &cell, Weight::Bold, size::SMALL, ink.warn);
+        let shown = paint.elide(
+            &format!("{:?}", said.trim()),
+            Weight::Regular,
+            size::SMALL,
+            area.w - 56.0,
+        );
+        paint.say_at(
+            area.x + 52.0,
+            y,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.ink,
+        );
+        y += 17.0;
+    }
+    y = foot(
+        paint,
+        (area.x, y + 4.0),
+        "first choice",
+        &format!("{first_choice}/{}", ranked.len()),
+        ink.ink,
+    );
+    if let Some(under) = found.get("ranked_under").and_then(Value::as_text) {
+        for line in paint
+            .wrap(
+                &format!("read under {under}"),
+                Weight::Regular,
+                size::SMALL,
+                area.w,
+            )
+            .iter()
+            .take(3)
+        {
+            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
+            y += 16.0;
+        }
+    }
 }
 
 /// What the model actually said, under the figures about it.
@@ -2515,23 +3285,16 @@ fn where_it_is_kept(paint: &mut Painter, at: (f32, f32), found: &Value) {
 /// thing they are about (A19, §3.15).
 fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     let ink = paint.ink;
-    // The answer without whichever sentence is being asked about, or to it
-    // alone, or the answer as written when none is.
-    let text_of = |at: usize| {
-        found
-            .get("clauses")
-            .and_then(Value::as_list)?
-            .get(at)?
-            .get("text")
-            .and_then(Value::as_text)
-    };
+    // The answer without whichever part is being asked about, or to it
+    // alone, or to that much of the prompt — or as written when none is.
+    // The title names the row the way the table does.
     let chosen = desk.shown.and_then(|shown| match shown {
         crate::Shown::Without(at) => {
             let clause = found.get("clauses").and_then(Value::as_list)?.get(at)?;
             let without = clause.get("without").and_then(Value::as_text)?;
             Some((
                 without.to_owned(),
-                format!("the answer without “{}”", text_of(at)?),
+                format!("answer · without #{}", at.saturating_add(1)),
             ))
         }
         crate::Shown::Alone(at) => {
@@ -2539,7 +3302,7 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             let answer = read.get("answer").and_then(Value::as_text)?;
             Some((
                 answer.to_owned(),
-                format!("the answer to “{}” alone", text_of(at)?),
+                format!("answer · #{} alone", at.saturating_add(1)),
             ))
         }
         crate::Shown::Prefix(at) => {
@@ -2547,10 +3310,7 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             let answer = read.get("answer").and_then(Value::as_text)?;
             Some((
                 answer.to_owned(),
-                format!(
-                    "the answer to the first {}",
-                    count_of(at.saturating_add(1), unit_of(found))
-                ),
+                format!("answer · 1–{}", at.saturating_add(1)),
             ))
         }
     });
@@ -2558,7 +3318,7 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
         Some((answer, title)) => (answer.as_str(), title.clone()),
         None => (
             found.get("baseline").and_then(Value::as_text).unwrap_or(""),
-            "the answer as written".to_owned(),
+            "answer · as written".to_owned(),
         ),
     };
     if said.trim().is_empty() || area.h < 40.0 {
@@ -2604,7 +3364,7 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             area.x,
             y,
             &format!(
-                "{} more — `mcf prompt … --json` carries the whole answer",
+                "… {} more · mcf prompt --json",
                 count_of(lines.len().saturating_sub(fits), "line")
             ),
             Weight::Regular,
@@ -2614,7 +3374,6 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     }
 }
 
-/// How much each sentence steered the answer, drawn as bars.
 /// What pressing Analyse will cost, in generations.
 ///
 /// The same counting the daemon does — one for the prompt, one for each part
@@ -2983,549 +3742,6 @@ fn as_percent(parts_per_million: i64) -> String {
     )]
     let held = parts_per_million as f64 / 10_000.0;
     format!("{held:.1}%")
-}
-
-/// What the report is of: the unit, who decided it, and the question every
-/// variant was followed by — or that nothing was.
-///
-/// A reader crafting a system prompt will assume a system turn; MCF has
-/// probed for none (D43), and a report that did not say how the document and
-/// the question reached the model would be read under an addressing it never
-/// used (§3.4).
-fn what_it_was_asked_as(paint: &mut Painter, at: (f32, f32), found: &Value, width: f32) -> f32 {
-    let faint = paint.ink.faint;
-    let mut y = at.1;
-    let text = |key: &str| found.get(key).and_then(Value::as_text);
-    let mut said = format!(
-        "taken apart by {}, decided by {}.",
-        unit_of(found),
-        text("unit_chosen_by").unwrap_or("the report")
-    );
-    if let Some(addressed) = text("addressed_as") {
-        said = format!("{said} Addressed as {addressed}.");
-    }
-    for line in paint
-        .wrap(&said, Weight::Regular, size::SMALL, width.min(960.0))
-        .iter()
-        .take(3)
-    {
-        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, faint);
-        y += 16.0;
-    }
-    y + 8.0
-}
-
-/// The sentence under the bars: what the quiet ones mean, what the number is
-/// not, and what was left unmeasured.
-/// The third figure, where the reading it comes from was taken (B-433):
-/// nothing is said of a column that is not there (A7).
-fn what_the_third_figure_is(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
-    let ink = paint.ink;
-    let mut y = at.1;
-    if found
-        .get("expected_by_part")
-        .is_some_and(|held| !matches!(held, Value::Null))
-    {
-        for line in paint
-            .wrap(
-                "The third figure is how many of the part's tokens were the model's own first \
-                 choice — 1/4 is one of four. A part the model would have written itself \
-                 carries little from the writer; read it against the bar, not instead of it.",
-                Weight::Regular,
-                size::SMALL,
-                width,
-            )
-            .iter()
-            .take(2)
-        {
-            paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
-            y += 16.0;
-        }
-    }
-    y
-}
-
-/// The floor at every position (B-434): its spread, or that it was one draw
-/// and how to make it more. Returns the row's bottom.
-fn what_the_floor_spread_is(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
-    let ink = paint.ink;
-    let said = match found.get("floor_spread") {
-        Some(spread) if !matches!(spread, Value::Null) => {
-            let figure =
-                |key: &str| as_percent(spread.get(key).and_then(Value::as_integer).unwrap_or(0));
-            let positions = found
-                .get("floors")
-                .and_then(Value::as_list)
-                .map_or(0, <[Value]>::len);
-            format!(
-                "Drawn at every position, the floor runs from {} to {}, {} in the middle — the \
-                 control put at each of {}. Read the bars against the widest of them.",
-                figure("least_parts_per_million"),
-                figure("most_parts_per_million"),
-                figure("middle_parts_per_million"),
-                count_of(positions, "position")
-            )
-        }
-        _ => "That is one draw, with the control before the last part; \"floor at every \
-              position\" above draws it at each, one generation apiece, to say how wide it runs."
-            .to_owned(),
-    };
-    let mut y = at.1;
-    for line in paint
-        .wrap(&said, Weight::Regular, size::SMALL, width)
-        .iter()
-        .take(2)
-    {
-        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
-    }
-    y
-}
-
-fn what_the_bars_mean(
-    paint: &mut Painter,
-    at: (f32, f32),
-    floor: i64,
-    shown: usize,
-    found: &Value,
-) -> f32 {
-    let ink = paint.ink;
-    let area = Box::new(at.0, at.1, 820.0, 0.0);
-    let clauses_len = shown;
-    let mut y = at.1;
-    // **What the quiet rows mean, and what the number is not.** The bars
-    // were coloured against the floor and the floor was never shown, so a
-    // reader had a distinction drawn for them with nothing to read it by.
-    paint.say_at(
-        area.x,
-        y + 6.0,
-        &format!(
-            "the floor is {} — a sentence carrying no instruction, put in and taken out \
-                 again. Rows at or under it are quiet.",
-            as_percent(floor)
-        ),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    paint.say_at(
-        area.x,
-        y + 22.0,
-        "An ordering, not relevance: removing anything shifts what follows it.",
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    y = what_the_floor_spread_is(paint, (area.x, y + 38.0), area.w, found) - 38.0;
-    // The second figure, and what the control sentence did to it.
-    let depth = found
-        .get("forced_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let floor_mark = crate::held_mark(found.get("floor_held"), depth);
-    let unit = unit_of(found);
-    let second = if floor_mark == "unread" {
-        format!(
-            "The second figure would say where the answer's first token ranked with the {unit} \
-             gone; it needs the served engine, and this run had none."
-        )
-    } else {
-        format!(
-            "The second figure is where the answer's first token ranked with the {unit} gone \
-             — 1st means the answer would have begun the same way. With the control in: \
-             {floor_mark}."
-        )
-    };
-    y += 38.0;
-    for line in paint
-        .wrap(&second, Weight::Regular, size::SMALL, area.w)
-        .iter()
-        .take(2)
-    {
-        paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
-    }
-    y = what_the_third_figure_is(paint, (area.x, y), area.w, found);
-    y = what_alone_means(paint, (area.x, y), area.w, found);
-    y += 6.0;
-    // Sentences past the cap are not measured, and a list that quietly
-    // shortened itself is the one thing a list must not do (A1, A4).
-    let over = found
-        .get("clauses_over_the_cap")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    if over > 0 {
-        paint.say_at(
-            area.x,
-            y,
-            &format!(
-                "{} not measured: each one costs a generation, and the first {} are what was \
-                 chosen — \"more\" or \"all\" above takes the rest",
-                count_of(
-                    usize::try_from(over).unwrap_or(0),
-                    &format!("further {}", unit_of(found))
-                ),
-                clauses_len
-            ),
-            Weight::Regular,
-            size::SMALL,
-            ink.warn,
-        );
-        y += 20.0;
-    }
-    let alone = found
-        .get("alone")
-        .is_some_and(|alone| alone.as_list().is_some());
-    paint.say_at(
-        area.x,
-        y,
-        if alone {
-            "Press a row to see what the model wrote without it; press its alone line to see \
-             what it wrote to that alone."
-        } else {
-            "Press a row to see what the model wrote without it."
-        },
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    y += 20.0;
-    y
-}
-
-/// What the alone lines are read against (B-435): the control sentence asked
-/// alone, so that a part sitting as far off as the control carries nothing of
-/// the answer by itself. Nothing where alone was not asked (A7).
-fn what_alone_means(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
-    let ink = paint.ink;
-    let Some(control) = found
-        .get("alone_floor")
-        .and_then(|read| read.get("moved_parts_per_million"))
-        .and_then(Value::as_integer)
-    else {
-        return at.1;
-    };
-    let unit = unit_of(found);
-    let far = found
-        .get("alone")
-        .and_then(Value::as_list)
-        .map_or(0, |alone| {
-            alone
-                .iter()
-                .filter(|read| {
-                    read.get("moved_parts_per_million")
-                        .and_then(Value::as_integer)
-                        .is_some_and(|moved| moved >= control)
-                })
-                .count()
-        });
-    let said = format!(
-        "The alone line is each {unit} asked as the whole prompt, read against the answer as \
-         written. The control sentence alone — nothing from the writer — sat {} from it; {} as \
-         far off or further, so alone carry nothing of it.",
-        as_percent(control),
-        count_of(far, unit)
-    );
-    let mut y = at.1;
-    for line in paint
-        .wrap(&said, Weight::Regular, size::SMALL, width)
-        .iter()
-        .take(3)
-    {
-        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
-    }
-    y
-}
-
-fn steering(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    area: Box,
-    found: &Value,
-) -> (f32, Option<Act>) {
-    let ink = paint.ink;
-    let floor = found
-        .get("floor_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let clauses = found.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
-    let wide = area.w.min(820.0);
-    let mut y = area.y;
-    let mut act = None;
-    for (at, clause) in clauses.iter().take(8).enumerate() {
-        let moved = clause
-            .get("moved_parts_per_million")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        let said = clause
-            .get("text")
-            .and_then(Value::as_text)
-            .unwrap_or_default();
-        // **The whole row is the control.** What a sentence did is answerable
-        // from what the model wrote without it, and MCF has that answer for
-        // every row; pressing one shows it, and pressing it again puts the
-        // answer as written back (A19).
-        let hit = Box::new(area.x - 6.0, y - 3.0, wide + 12.0, 22.0);
-        let chosen = desk.shown == Some(crate::Shown::Without(at));
-        if chosen || mouse.over(hit) {
-            paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
-        }
-        if mouse.clicked(hit) {
-            act = Some(Act::ShowWithout(at));
-        }
-        let bar = Box::new(area.x, y + 4.0, 180.0, 10.0);
-        paint.panel(bar, 5.0, ink.sunk, 255);
-        #[allow(
-            clippy::cast_precision_loss,
-            reason = "a bar's width in points; a part of a point is not drawn"
-        )]
-        let filled = (moved as f32 / 1_000_000.0).clamp(0.0, 1.0) * bar.w;
-        paint.panel(
-            Box::new(bar.x, bar.y, filled.max(1.0), bar.h),
-            5.0,
-            // Above the floor is the accent; at or under it is quiet, because
-            // what is at the floor steered nothing that is visible.
-            if moved > floor { ink.accent } else { ink.line },
-            255,
-        );
-        // **The figure beside the bar.** A bar shows an ordering and cannot be
-        // read off: two sentences a few per cent apart draw the same, and a
-        // reader comparing this run against the last one has nothing to
-        // compare. The console has always printed the number (§3.15).
-        paint.say_at(
-            bar.right() + 12.0,
-            y,
-            &as_percent(moved),
-            Weight::Bold,
-            size::SMALL,
-            if moved > floor { ink.ink } else { ink.quiet },
-        );
-        // **Where the answer's first token went without it.** The bar ties
-        // on a short answer; this is what orders the tie, and it is read from
-        // the model rather than from two drifting texts (B-429).
-        let depth = found
-            .get("forced_depth")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        let mark = crate::held_mark(clause.get("held"), depth);
-        paint.say_at(
-            bar.right() + 66.0,
-            y,
-            &mark,
-            Weight::Bold,
-            size::SMALL,
-            if mark == "1st" { ink.quiet } else { ink.warn },
-        );
-        // **How much of the part the model would have written itself.** The
-        // rank reading grouped by part: a second ordering that spent no
-        // generation, beside the one that did (B-433).
-        let expected = crate::expected_mark(found.get("expected_by_part"), at);
-        if let Some(expected) = &expected {
-            paint.say_at(
-                bar.right() + 124.0,
-                y,
-                expected,
-                Weight::Bold,
-                size::SMALL,
-                ink.quiet,
-            );
-        }
-        let text_at = bar.right() + if expected.is_some() { 172.0 } else { 124.0 };
-        let shown = paint.elide(
-            said,
-            Weight::Regular,
-            size::BODY,
-            wide - (text_at - area.x) - 10.0,
-        );
-        paint.say_at(
-            text_at,
-            y,
-            &shown,
-            Weight::Regular,
-            size::BODY,
-            if moved > floor { ink.ink } else { ink.quiet },
-        );
-        y += 24.0;
-        if let Some((pressed, under)) = the_part_alone(paint, desk, mouse, (bar.x, y), found, at) {
-            act = pressed.or(act);
-            y = under;
-        }
-    }
-    if !clauses.is_empty() {
-        y = what_the_bars_mean(paint, (area.x, y), floor, clauses.len(), found);
-    }
-    (y, act)
-}
-
-/// The prompt grown a part at a time from the front, where asked (B-436):
-/// a row a prefix, how far its answer sat from the answer as written, and
-/// the first prefix within the floor of it. Each row is the control that
-/// shows its answer. Nothing where the reading was not taken (A7).
-fn where_the_answer_arrives(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    at: (f32, f32),
-    found: &Value,
-) -> (f32, Option<Act>) {
-    let ink = paint.ink;
-    let Some(prefixes) = found.get("prefixes").and_then(Value::as_list) else {
-        return (at.1, None);
-    };
-    let floor = found
-        .get("floor_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let depth = found
-        .get("forced_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let unit = unit_of(found);
-    let mut y = at.1 + 12.0;
-    paint.say_at(
-        at.0,
-        y,
-        &format!(
-            "where the answer arrives as the prompt grows — the first {unit}, then the first \
-             two, and on; LOW is a prompt that already had the answer"
-        ),
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    y += 22.0;
-    let mut act = None;
-    let mut arrived = None;
-    for (row, read) in prefixes.iter().enumerate() {
-        let kept = row.saturating_add(1);
-        let moved = read
-            .get("moved_parts_per_million")
-            .and_then(Value::as_integer)
-            .unwrap_or(0);
-        if arrived.is_none() && moved <= floor {
-            arrived = Some(kept);
-        }
-        let hit = Box::new(at.0 - 6.0, y - 3.0, 420.0, 20.0);
-        let chosen = desk.shown == Some(crate::Shown::Prefix(row));
-        if chosen || mouse.over(hit) {
-            paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
-        }
-        if mouse.clicked(hit) {
-            act = Some(Act::ShowPrefix(row));
-        }
-        let bar = Box::new(at.0, y + 4.0, 180.0, 10.0);
-        paint.panel(bar, 5.0, ink.sunk, 255);
-        #[allow(
-            clippy::cast_precision_loss,
-            reason = "a bar's width in points; a part of a point is not drawn"
-        )]
-        let filled = (moved as f32 / 1_000_000.0).clamp(0.0, 1.0) * bar.w;
-        paint.panel(
-            Box::new(bar.x, bar.y, filled.max(1.0), bar.h),
-            5.0,
-            if moved > floor { ink.accent } else { ink.line },
-            255,
-        );
-        paint.say_at(
-            bar.right() + 12.0,
-            y,
-            &format!(
-                "{}  {}  {}",
-                as_percent(moved),
-                crate::held_mark(read.get("held"), depth),
-                the_first(kept, unit)
-            ),
-            Weight::Regular,
-            size::SMALL,
-            if moved > floor { ink.ink } else { ink.quiet },
-        );
-        y += 20.0;
-    }
-    let said = match arrived {
-        Some(kept) => format!(
-            "by {} the answer was within the floor ({}) of the answer as written: what \
-             follows moved it no more than an inert sentence would — not a claim the rest \
-             is idle; the rows above say what each is needed for",
-            the_first(kept, unit),
-            as_percent(floor)
-        ),
-        None => format!(
-            "no prefix short of the whole came within the floor ({}) of the answer as \
-             written: the last {unit} read still moved the answer",
-            as_percent(floor)
-        ),
-    };
-    for line in paint
-        .wrap(&said, Weight::Regular, size::SMALL, 820.0)
-        .iter()
-        .take(3)
-    {
-        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
-    }
-    (y + 2.0, act)
-}
-
-/// "the first sentence", "the first 2 sentences".
-fn the_first(kept: usize, unit: &str) -> String {
-    if kept == 1 {
-        format!("the first {unit}")
-    } else {
-        format!("the first {}", count_of(kept, unit))
-    }
-}
-
-/// Under a row, what the part did alone, where that was asked (B-435): the
-/// figure against the control alone, whether the answer still began the same
-/// way, and the row is the control that shows the answer. Nothing where the
-/// reading was not taken (A7).
-fn the_part_alone(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    at: (f32, f32),
-    found: &Value,
-    row: usize,
-) -> Option<(Option<Act>, f32)> {
-    let ink = paint.ink;
-    let read = found.get("alone").and_then(Value::as_list)?.get(row)?;
-    let moved = read
-        .get("moved_parts_per_million")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let control = found
-        .get("alone_floor")
-        .and_then(|held| held.get("moved_parts_per_million"))
-        .and_then(Value::as_integer);
-    let depth = found
-        .get("forced_depth")
-        .and_then(Value::as_integer)
-        .unwrap_or(0);
-    let hit = Box::new(at.0 - 6.0, at.1 - 3.0, 400.0, 18.0);
-    let chosen = desk.shown == Some(crate::Shown::Alone(row));
-    if chosen || mouse.over(hit) {
-        paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
-    }
-    let pressed = mouse.clicked(hit).then_some(Act::ShowAlone(row));
-    // Under the control alone is a part that carries some of the answer by
-    // itself; as far off as the control is one that carries none of it.
-    let carries = control.is_some_and(|control| moved < control);
-    let said = format!(
-        "alone {}  {}",
-        as_percent(moved),
-        crate::held_mark(read.get("held"), depth)
-    );
-    paint.say_at(
-        at.0 + 192.0,
-        at.1,
-        &said,
-        Weight::Regular,
-        size::SMALL,
-        if carries { ink.ink } else { ink.quiet },
-    );
-    Some((pressed, at.1 + 18.0))
 }
 
 /// What MCF can build, and which of it is here.

@@ -549,23 +549,35 @@ fn model_from(held: &Value) -> Model {
 }
 
 /// Milliseconds a token, as tokens a second.
-/// Where the answer's first token went with a sentence gone, in a few
-/// characters: `1st` where the model would still have begun the same way,
-/// `#17` where it fell to its seventeenth choice, `past 60` where it was
-/// outside the depth read, and `unread` where no reading was taken — which is
-/// a state and not a rank (A7, B-429).
+/// Where the answer's first token went with a sentence gone, as a table
+/// cell: `1` where the model would still have begun the same way, `17`
+/// where it fell to its seventeenth choice, `>60` where it was outside the
+/// depth read, and `—` where no reading was taken — which is a state and
+/// not a rank (A7, B-429).
 ///
-/// One implementation for the glass and the text that leaves it (B-072).
+/// One implementation for the glass and the console (B-072).
 #[must_use]
 pub fn held_mark(held: Option<&Value>, depth: i64) -> String {
     let Some(held) = held.filter(|held| !matches!(held, Value::Null)) else {
-        return "unread".to_owned();
+        return "—".to_owned();
     };
     match held.get("first_rank").and_then(Value::as_integer) {
-        Some(1) => "1st".to_owned(),
-        Some(rank) => format!("#{rank}"),
-        None => format!("past {depth}"),
+        Some(rank) => rank.to_string(),
+        None => format!(">{depth}"),
     }
+}
+
+/// How much of the answer's opening stayed the model's first choice with a
+/// sentence gone, as `kept/of`, or `—` where no reading was taken (A7).
+///
+/// One implementation for the glass and the console (B-072).
+#[must_use]
+pub fn open_mark(held: Option<&Value>) -> String {
+    let Some(held) = held.filter(|held| !matches!(held, Value::Null)) else {
+        return "—".to_owned();
+    };
+    let count = |key: &str| held.get(key).and_then(Value::as_integer).unwrap_or(0);
+    format!("{}/{}", count("kept"), count("of"))
 }
 
 /// How much of one part the model would have written itself, as `1/4`: one
