@@ -83,6 +83,7 @@ pub fn tests() -> Vec<Test> {
         ladder("Generation speed against depth", Some(180)),
         ladder("Start-up to first token", None),
         ladder("Memory ceiling — largest context", None),
+        ladder("Fall-off with depth", None),
         Test {
             name: "MCF's engine and the provisioned one agree",
             devices: "both engines",
@@ -168,6 +169,10 @@ pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
             (
                 "Memory ceiling — largest context",
                 mcf_serve::ladder::memory_said(body.get("memory")),
+            ),
+            (
+                "Fall-off with depth",
+                mcf_serve::ladder::fall_off_said(body.get("fall_off")),
             ),
         ]
     });

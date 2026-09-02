@@ -295,12 +295,16 @@ fn measured(
     // And a third, read off the engine's process: what a token of window
     // costs in memory, against what the header planned before the run (B-424).
     let memory = crate::ladder::memory(&readings, planned);
+    // And the fall-off: what a token costs more for every token of depth,
+    // against what the header says that depth re-reads (B-400).
+    let fall_off = crate::ladder::fall_off(&readings, planned, as_milliseconds);
     Answer::served(Value::map([
         ("measuring", Value::text(named.to_owned())),
         ("readings", Value::List(readings)),
         ("prompt_reading", prompt_reading),
         ("first_token", first_token),
         ("memory", memory),
+        ("fall_off", fall_off),
         ("done", Value::Bool(true)),
         (
             "conditions",
@@ -352,19 +356,21 @@ fn measured(
 /// the one file's length stands, which is what the conditions say too.
 fn planned_memory(path: &Path, held: Option<u64>) -> crate::ladder::Planned {
     let file = header_of(path);
-    let trained = file.as_ref().and_then(|file| {
+    let declared = |key: &str| {
+        let file = file.as_ref()?;
         let architecture = file.architecture()?;
-        file.get(&format!("{architecture}.context_length"))
+        file.get(&format!("{architecture}.{key}"))
             .and_then(mcf_standin::gguf::Value::as_integer)
             .and_then(|value| u64::try_from(value).ok())
-    });
+    };
     crate::ladder::Planned {
         per_token: file
             .as_ref()
             .and_then(crate::engines::cache_bytes_per_token),
         weights: mcf_hub::store::bytes_of_the_whole(path).ok().or(held),
         free: system_memory_free(),
-        trained,
+        trained: declared("context_length"),
+        sliding_window: declared("attention.sliding_window"),
     }
 }
 
@@ -2157,6 +2163,11 @@ impl Daemon {
                 Value::map([
                     ("depth", at_depth),
                     ("ms_per_token", Value::text(as_milliseconds(per_token))),
+                    // As a whole number too, for the slope read between rungs.
+                    (
+                        "ns_per_token",
+                        Value::Integer(i64::try_from(per_token).unwrap_or(i64::MAX)),
+                    ),
                     (
                         "first_token_ms",
                         middle(&mut first_token)

@@ -446,14 +446,14 @@ fn the_rows_one_run_answers_are_chosen_together() {
         .filter(|(_, test)| test.run == crate::Run::Ladder)
         .map(|(at, _)| at)
         .collect();
-    assert_eq!(ladder.len(), 4);
+    assert_eq!(ladder.len(), 5);
     let cross_check = desk
         .tests
         .iter()
         .position(|test| test.run == crate::Run::CrossCheck)
         .unwrap_or_else(|| panic!("no cross-check row"));
     assert!(desk.runs_something());
-    assert_eq!(desk.estimate(false), (104, 255), "one run's time, not four");
+    assert_eq!(desk.estimate(false), (104, 255), "one run's time, not five");
 
     desk.act(crate::Act::Toggle(ladder[1]));
     assert!(ladder.iter().all(|&at| !desk.tests[at].chosen));
@@ -611,6 +611,16 @@ fn a_last_line(prompt_reading: Value, first_token: Value) -> Value {
                 ),
             ]),
         ),
+        (
+            "fall_off",
+            Value::map([
+                ("measured", Value::Bool(false)),
+                (
+                    "why",
+                    Value::text("one rung measured, and a fall-off is read between two"),
+                ),
+            ]),
+        ),
         ("done", Value::Bool(true)),
         (
             "conditions",
@@ -643,7 +653,7 @@ fn row(desk: &Desk, name: &str) -> Option<Vec<String>> {
         .clone()
 }
 
-/// A finished run fills the four rows the ladder answers, and leaves the
+/// A finished run fills the five rows the ladder answers, and leaves the
 /// one it does not alone.
 ///
 /// **Five tests were listed and one ran.** The rows for prompt reading and
@@ -703,6 +713,12 @@ fn a_finished_run_fills_the_rows_the_ladder_answers() {
     assert_eq!(
         row(&desk, "Memory ceiling — largest context").as_deref(),
         Some(&["not measured: every rung ran in one window of 4,096 tokens".to_owned()][..])
+    );
+    assert_eq!(
+        row(&desk, "Fall-off with depth").as_deref(),
+        Some(
+            &["not measured: one rung measured, and a fall-off is read between two".to_owned()][..]
+        )
     );
     assert_eq!(
         row(&desk, "MCF's engine and the provisioned one agree"),

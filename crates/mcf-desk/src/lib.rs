@@ -1897,7 +1897,7 @@ impl Desk {
     /// A range because MCF's own estimates land between 0.58× and 1.42× of
     /// what runs actually take, and a single number would be a promise it
     /// cannot keep. Each chosen run is counted once, on the row that names
-    /// it — four rows one ladder answers are one run's time, not four.
+    /// it — five rows one ladder answers are one run's time, not five.
     #[must_use]
     pub fn estimate(&self, quick: bool) -> (u64, u64) {
         // A quick run is the ladder only, and only to `QUICK_DEPTH`; the

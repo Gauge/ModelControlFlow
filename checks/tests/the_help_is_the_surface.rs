@@ -94,13 +94,16 @@ fn commands_parsed(source: &str) -> BTreeSet<String> {
 /// `mcf lab` and `mcf recommend` are not offered, and reported them as
 /// commands the help invents. The usage text is what a reader sees, so the
 /// usage text is what is read.
+///
+/// The text is the `COMMANDS` table, one constant the parser reads too
+/// (B-426); the block is the string literal it is set to.
 fn usage_text(source: &str) -> &str {
-    let Some(from) = source.find("usage:") else {
+    let Some(from) = source.find("const COMMANDS: &str = \"") else {
         return "";
     };
     let rest = source.get(from..).unwrap_or_default();
-    // The block ends where the surface stops being listed.
-    let end = rest.find("Acquisition reaches").unwrap_or(rest.len());
+    // The block ends where the literal does.
+    let end = rest.find("\";").unwrap_or(rest.len());
     rest.get(..end).unwrap_or_default()
 }
 

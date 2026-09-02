@@ -192,7 +192,7 @@ fn said(body: &Value) -> Vec<String> {
     Vec::new()
 }
 
-/// Two figures the run reads off its rungs and derives on the daemon's side,
+/// The figures the run reads off its rungs and derives on the daemon's side,
 /// printed in the daemon's words (B-072); where it could not read one, its
 /// reason is the line (A7, A9).
 fn read_off_the_rungs(body: &Value) -> Vec<String> {
@@ -207,6 +207,10 @@ fn read_off_the_rungs(body: &Value) -> Vec<String> {
             mcf_serve::ladder::first_token_said(body.get("first_token")),
         ),
         ("memory", mcf_serve::ladder::memory_said(body.get("memory"))),
+        (
+            "fall-off",
+            mcf_serve::ladder::fall_off_said(body.get("fall_off")),
+        ),
     ] {
         let mut lines = lines.into_iter();
         out.push(format!("  {what:<15} {}", lines.next().unwrap_or_default()));
