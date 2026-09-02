@@ -2488,16 +2488,36 @@ fn where_it_is_kept(paint: &mut Painter, at: (f32, f32), found: &Value) {
 /// thing they are about (A19, §3.15).
 fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     let ink = paint.ink;
-    // The answer without whichever sentence is being asked about, or the
-    // answer as written when none is.
-    let chosen = desk.without.and_then(|at| {
-        let clause = found.get("clauses").and_then(Value::as_list)?.get(at)?;
-        let without = clause.get("without").and_then(Value::as_text)?;
-        let text = clause.get("text").and_then(Value::as_text)?;
-        Some((without.to_owned(), text.to_owned()))
+    // The answer without whichever sentence is being asked about, or to it
+    // alone, or the answer as written when none is.
+    let text_of = |at: usize| {
+        found
+            .get("clauses")
+            .and_then(Value::as_list)?
+            .get(at)?
+            .get("text")
+            .and_then(Value::as_text)
+    };
+    let chosen = desk.shown.and_then(|shown| match shown {
+        crate::Shown::Without(at) => {
+            let clause = found.get("clauses").and_then(Value::as_list)?.get(at)?;
+            let without = clause.get("without").and_then(Value::as_text)?;
+            Some((
+                without.to_owned(),
+                format!("the answer without “{}”", text_of(at)?),
+            ))
+        }
+        crate::Shown::Alone(at) => {
+            let read = found.get("alone").and_then(Value::as_list)?.get(at)?;
+            let answer = read.get("answer").and_then(Value::as_text)?;
+            Some((
+                answer.to_owned(),
+                format!("the answer to “{}” alone", text_of(at)?),
+            ))
+        }
     });
     let (said, title) = match &chosen {
-        Some((without, text)) => (without.as_str(), format!("the answer without “{text}”")),
+        Some((answer, title)) => (answer.as_str(), title.clone()),
         None => (
             found.get("baseline").and_then(Value::as_text).unwrap_or(""),
             "the answer as written".to_owned(),
@@ -2569,9 +2589,9 @@ fn what_it_will_cost(
     parts: usize,
     removed: usize,
     settling: bool,
-    floors: bool,
+    extras: mcf_serve::prompt::Extras,
 ) -> String {
-    use mcf_serve::prompt::SEEDS;
+    use mcf_serve::prompt::{Extra, SEEDS};
     if parts <= 1 {
         return format!(
             "1 {} — nothing to remove: a document of one part cannot be taken apart",
@@ -2579,13 +2599,23 @@ fn what_it_will_cost(
         );
     }
     let seeds = if settling { SEEDS } else { 0 };
-    // The floor at every position is one more a position, less the one
-    // the single draw already takes.
-    let positions = if floors { parts } else { 0 };
     let generations = removed
         .saturating_add(2)
         .saturating_add(seeds)
-        .saturating_add(positions);
+        .saturating_add(extras.generations(parts, removed));
+    let more: Vec<String> = extras
+        .asked()
+        .map(|extra| {
+            format!(
+                ", {} {}",
+                count_of(extra.generations(parts, removed), "more"),
+                match extra {
+                    Extra::Floors => "for the control at every other position",
+                    Extra::Alone => "for each part alone and the control alone",
+                }
+            )
+        })
+        .collect();
     format!(
         "{} — {}: one for the document, {} removed in turn, one for the control sentence{}{}",
         count_of(parts, unit.name()),
@@ -2595,11 +2625,7 @@ fn what_it_will_cost(
         } else {
             format!("the first {removed}")
         },
-        if floors {
-            format!(" at each of {} positions", parts.saturating_add(1))
-        } else {
-            String::new()
-        },
+        more.concat(),
         if settling {
             format!(", and {SEEDS} seeds at the temperature")
         } else {
@@ -2676,7 +2702,7 @@ fn the_choices(
         parts,
         removed,
         matches!(settle, Ok(Some(_))),
-        taken.floors,
+        taken.extras,
     );
     paint.say_at(at.0, at.1 + 8.0, &of, Weight::Regular, size::SMALL, faint);
 
@@ -2757,61 +2783,62 @@ fn the_choices(
         paint.say_at(x, row + 8.0, &said, Weight::Regular, size::SMALL, faint);
     }
     let settled = the_temperature(paint, desk, mouse, (left, row + ui::BUTTON + 8.0), settle);
-    let floors = the_floors(paint, desk, mouse, (left, settled.1 + 8.0), parts);
-    (floors.0.or(settled.0).or(act), floors.1)
+    let extras = the_extras(paint, desk, mouse, (left, settled.1 + 8.0), parts);
+    (extras.0.or(settled.0).or(act), extras.1)
 }
 
-/// Whether the floor is drawn at every position: a button that says what it
-/// costs, since it is a generation a position (B-434, §3.15).
+/// The further readings, each a button that says what it asks and what it
+/// costs, since each is generations a part (B-434, B-435, §3.15).
 ///
-/// Returns what was pressed and the row's bottom.
-fn the_floors(
+/// Returns what was pressed and the band's bottom.
+fn the_extras(
     paint: &mut Painter,
     desk: &Desk,
     mouse: &Mouse,
     at: (f32, f32),
     parts: usize,
 ) -> (Option<Act>, f32) {
+    use mcf_serve::prompt::Extra;
     let faint = paint.ink.faint;
     if parts <= 1 {
         return (None, at.1);
     }
-    let (pressed, button) = ui::fitted(
-        paint,
-        mouse,
-        at,
-        "floor at every position",
-        if desk.floors {
-            Kind::Primary
-        } else {
-            Kind::Quiet
-        },
-    );
-    let said = if desk.floors {
-        format!(
-            "the control sentence is put at each of the {} positions, {} more generations, \
-             and the floor is a spread rather than one draw",
-            parts.saturating_add(1),
-            parts
-        )
-    } else {
-        "one draw of the floor, at the last position but one; pressing this draws it at every \
-         position, one generation each, so a part near the floor can be read against the \
-         spread"
-            .to_owned()
-    };
-    paint.say_at(
-        button.right() + 8.0,
-        at.1 + 8.0,
-        &said,
-        Weight::Regular,
-        size::SMALL,
-        faint,
-    );
-    (
-        pressed.then_some(Act::FloorEverywhere(!desk.floors)),
-        button.bottom(),
-    )
+    let removed = parts.min(desk.taken().cap());
+    let mut act = None;
+    let mut y = at.1;
+    for extra in Extra::ALL {
+        let asked = desk.extras.has(extra);
+        let label = match extra {
+            Extra::Floors => "floor at every position",
+            Extra::Alone => "each part alone",
+        };
+        let (pressed, button) = ui::fitted(
+            paint,
+            mouse,
+            (at.0, y),
+            label,
+            if asked { Kind::Primary } else { Kind::Quiet },
+        );
+        if pressed {
+            act = Some(Act::Extra(extra, !asked));
+        }
+        let said = format!(
+            "{}{} — {}",
+            if asked { "asks " } else { "would ask " },
+            extra.asks(),
+            count_of(extra.generations(parts, removed), "generation")
+        );
+        paint.say_at(
+            button.right() + 8.0,
+            y + 8.0,
+            &said,
+            Weight::Regular,
+            size::SMALL,
+            faint,
+        );
+        y = button.bottom() + 6.0;
+    }
+    (act, y - 6.0)
 }
 
 /// The temperature the settledness seeds are drawn at, as a field: empty
@@ -3089,6 +3116,7 @@ fn what_the_bars_mean(
         y += 16.0;
     }
     y = what_the_third_figure_is(paint, (area.x, y), area.w, found);
+    y = what_alone_means(paint, (area.x, y), area.w, found);
     y += 6.0;
     // Sentences past the cap are not measured, and a list that quietly
     // shortened itself is the one thing a list must not do (A1, A4).
@@ -3115,15 +3143,68 @@ fn what_the_bars_mean(
         );
         y += 20.0;
     }
+    let alone = found
+        .get("alone")
+        .is_some_and(|alone| alone.as_list().is_some());
     paint.say_at(
         area.x,
         y,
-        "Press a row to see what the model wrote without it.",
+        if alone {
+            "Press a row to see what the model wrote without it; press its alone line to see \
+             what it wrote to that alone."
+        } else {
+            "Press a row to see what the model wrote without it."
+        },
         Weight::Regular,
         size::SMALL,
         ink.faint,
     );
     y += 20.0;
+    y
+}
+
+/// What the alone lines are read against (B-435): the control sentence asked
+/// alone, so that a part sitting as far off as the control carries nothing of
+/// the answer by itself. Nothing where alone was not asked (A7).
+fn what_alone_means(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let Some(control) = found
+        .get("alone_floor")
+        .and_then(|read| read.get("moved_parts_per_million"))
+        .and_then(Value::as_integer)
+    else {
+        return at.1;
+    };
+    let unit = unit_of(found);
+    let far = found
+        .get("alone")
+        .and_then(Value::as_list)
+        .map_or(0, |alone| {
+            alone
+                .iter()
+                .filter(|read| {
+                    read.get("moved_parts_per_million")
+                        .and_then(Value::as_integer)
+                        .is_some_and(|moved| moved >= control)
+                })
+                .count()
+        });
+    let said = format!(
+        "The alone line is each {unit} asked as the whole prompt, read against the answer as \
+         written. The control sentence alone — nothing from the writer — sat {} from it; {} as \
+         far off or further, so alone carry nothing of it.",
+        as_percent(control),
+        count_of(far, unit)
+    );
+    let mut y = at.1;
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, width)
+        .iter()
+        .take(3)
+    {
+        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
     y
 }
 
@@ -3157,7 +3238,7 @@ fn steering(
         // every row; pressing one shows it, and pressing it again puts the
         // answer as written back (A19).
         let hit = Box::new(area.x - 6.0, y - 3.0, wide + 12.0, 22.0);
-        let chosen = desk.without == Some(at);
+        let chosen = desk.shown == Some(crate::Shown::Without(at));
         if chosen || mouse.over(hit) {
             paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
         }
@@ -3237,11 +3318,66 @@ fn steering(
             if moved > floor { ink.ink } else { ink.quiet },
         );
         y += 24.0;
+        if let Some((pressed, under)) = the_part_alone(paint, desk, mouse, (bar.x, y), found, at) {
+            act = pressed.or(act);
+            y = under;
+        }
     }
     if !clauses.is_empty() {
         y = what_the_bars_mean(paint, (area.x, y), floor, clauses.len(), found);
     }
     (y, act)
+}
+
+/// Under a row, what the part did alone, where that was asked (B-435): the
+/// figure against the control alone, whether the answer still began the same
+/// way, and the row is the control that shows the answer. Nothing where the
+/// reading was not taken (A7).
+fn the_part_alone(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: (f32, f32),
+    found: &Value,
+    row: usize,
+) -> Option<(Option<Act>, f32)> {
+    let ink = paint.ink;
+    let read = found.get("alone").and_then(Value::as_list)?.get(row)?;
+    let moved = read
+        .get("moved_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let control = found
+        .get("alone_floor")
+        .and_then(|held| held.get("moved_parts_per_million"))
+        .and_then(Value::as_integer);
+    let depth = found
+        .get("forced_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let hit = Box::new(at.0 - 6.0, at.1 - 3.0, 400.0, 18.0);
+    let chosen = desk.shown == Some(crate::Shown::Alone(row));
+    if chosen || mouse.over(hit) {
+        paint.panel(hit, 6.0, ink.line, if chosen { 140 } else { 80 });
+    }
+    let pressed = mouse.clicked(hit).then_some(Act::ShowAlone(row));
+    // Under the control alone is a part that carries some of the answer by
+    // itself; as far off as the control is one that carries none of it.
+    let carries = control.is_some_and(|control| moved < control);
+    let said = format!(
+        "alone {}  {}",
+        as_percent(moved),
+        crate::held_mark(read.get("held"), depth)
+    );
+    paint.say_at(
+        at.0 + 192.0,
+        at.1,
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        if carries { ink.ink } else { ink.quiet },
+    );
+    Some((pressed, at.1 + 18.0))
 }
 
 /// What MCF can build, and which of it is here.

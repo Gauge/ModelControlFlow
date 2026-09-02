@@ -118,6 +118,54 @@ fn floors_value(floors: Option<&[crate::prompt::FloorAt]>) -> Value {
     })
 }
 
+/// One reading of a variant prompt, as a client reads it: null where none
+/// was taken (B-435).
+fn reading_value(reading: Option<&crate::prompt::Reading>) -> Value {
+    reading.map_or(Value::Null, |read| {
+        Value::map([
+            (
+                "moved_parts_per_million",
+                Value::Integer(i64::try_from(read.moved).unwrap_or(i64::MAX)),
+            ),
+            ("held", held_value(read.held)),
+            ("answer", Value::text(read.answer.clone())),
+        ])
+    })
+}
+
+/// A list of readings, one a part: null where none was taken.
+fn readings_value(readings: Option<&[crate::prompt::Reading]>) -> Value {
+    readings.map_or(Value::Null, |readings| {
+        Value::List(
+            readings
+                .iter()
+                .map(|read| reading_value(Some(read)))
+                .collect(),
+        )
+    })
+}
+
+/// A served reading's figures and none of its text, for the record (A25):
+/// null stays null.
+fn reading_figures(served: Option<&Value>) -> Value {
+    let figures = |read: &Value| {
+        Value::map([
+            (
+                "moved_parts_per_million",
+                read.get("moved_parts_per_million")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            ),
+            ("held", read.get("held").cloned().unwrap_or(Value::Null)),
+        ])
+    };
+    match served {
+        Some(Value::List(readings)) => Value::List(readings.iter().map(figures).collect()),
+        Some(read @ Value::Map(_)) => figures(read),
+        _ => Value::Null,
+    }
+}
+
 /// The least, middle and most of the floors: null where there is one.
 fn spread_value(spread: Option<crate::prompt::Spread>) -> Value {
     let ppm = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
@@ -305,6 +353,8 @@ fn prompt_report_entry(
         ("floor_held", kept("floor_held")),
         ("floors", kept("floors")),
         ("floor_spread", kept("floor_spread")),
+        ("alone", reading_figures(served.get("alone"))),
+        ("alone_floor", reading_figures(served.get("alone_floor"))),
         ("clauses", Value::List(clauses)),
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
@@ -433,6 +483,10 @@ fn prompt_report_value(
         // nothing (A7).
         ("floors", floors_value(report.floors.as_deref())),
         ("floor_spread", spread_value(report.floor_spread())),
+        // **Each part alone, where asked** (B-435): null where not, which is
+        // not *no part carries the answer on its own* (A7).
+        ("alone", readings_value(report.alone.as_deref())),
+        ("alone_floor", reading_value(report.alone_floor.as_ref())),
         (
             "forced_depth",
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),
@@ -1781,7 +1835,7 @@ impl Daemon {
                     prompt,
                     by,
                     most,
-                    floors,
+                    extras,
                     temperature,
                     seed,
                 }) => {
@@ -1795,7 +1849,7 @@ impl Daemon {
                             text: &prompt,
                             by,
                             most,
-                            floors,
+                            extras,
                         },
                         seed,
                         temperature,

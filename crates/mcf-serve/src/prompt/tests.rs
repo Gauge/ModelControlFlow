@@ -440,7 +440,7 @@ fn the_whole_prompt_is_asked_and_the_cap_is_chosen() {
         text: "Be terse.\n\nBe kind.\n\nBe right.\n\nWhat is 2 + 2?",
         by: None,
         most: Some(2),
-        floors: false,
+        extras: Extras::NONE,
     };
     let report = measure(&taken, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.unit, Unit::Paragraph);
@@ -666,7 +666,7 @@ fn the_floor_at_every_position_is_a_spread_and_costs_a_generation_each() {
         text: "One.\n\nTwo.\n\nThree.",
         by: None,
         most: None,
-        floors: true,
+        extras: Extras::NONE.with(Extra::Floors, true),
     };
     let report = measure(&taken, 41, None, &mut ask, &mut unforced);
     let floors = report.floors.clone().unwrap_or_default();
@@ -694,11 +694,73 @@ fn the_floor_at_every_position_is_a_spread_and_costs_a_generation_each() {
 
     asked.borrow_mut().clear();
     let one_draw = Taken {
-        floors: false,
+        extras: Extras::NONE,
         ..taken
     };
     let report = measure(&one_draw, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.floors, None);
     assert_eq!(report.floor_spread(), None);
     assert_eq!(asked.borrow().len(), 5);
+}
+
+/// Each part alone is the part as the whole prompt, the first `most` of
+/// them, read against the answer as written; the control is the inert
+/// sentence alone; a generation each, and none where not asked (B-435).
+#[test]
+fn each_part_alone_is_read_against_the_answer_as_written_and_costs_a_generation_each() {
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: Draw| {
+        asked.borrow_mut().push(prompt.to_owned());
+        match prompt {
+            "One." => said("one two c d"),
+            "Two." => said("one two three four"),
+            "Three." => said("x y z w"),
+            NO_INSTRUCTION => said("hello there friend now"),
+            _ => said("one two three four"),
+        }
+    };
+    let taken = Taken {
+        text: "One.\n\nTwo.\n\nThree.",
+        by: None,
+        most: Some(2),
+        extras: Extras::NONE.with(Extra::Alone, true),
+    };
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let alone = report.alone.clone().expect("asked for, so present");
+    assert_eq!(alone.len(), 2, "the first `most` parts, like the removals");
+    assert_eq!(alone.first().map(|read| read.moved), Some(500_000));
+    assert_eq!(
+        alone.first().map(|read| read.answer.as_str()),
+        Some("one two c d")
+    );
+    assert_eq!(
+        alone.get(1).map(|read| read.moved),
+        Some(0),
+        "a part whose answer alone is the answer as written carries all of it"
+    );
+    let floor = report.alone_floor.clone().expect("asked for, so present");
+    assert_eq!(floor.moved, 1_000_000);
+    assert_eq!(floor.answer, "hello there friend now");
+    assert_eq!(
+        asked
+            .borrow()
+            .iter()
+            .filter(|prompt| prompt.as_str() == NO_INSTRUCTION)
+            .count(),
+        1,
+        "the control alone is asked as itself, nothing joined to it"
+    );
+    // One for the baseline, two removals, one control, two alone, one
+    // control alone.
+    assert_eq!(asked.borrow().len(), 7);
+
+    asked.borrow_mut().clear();
+    let not_asked = Taken {
+        extras: Extras::NONE,
+        ..taken
+    };
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.alone, None);
+    assert_eq!(report.alone_floor, None);
+    assert_eq!(asked.borrow().len(), 4);
 }

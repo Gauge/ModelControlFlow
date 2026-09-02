@@ -38,8 +38,8 @@ pub(crate) struct Asked<'a> {
     /// The temperature to draw the settledness seeds at, where the caller
     /// stated one (B-431).
     pub temperature: Option<mcf_core::configuration::Thousandths>,
-    /// Whether the floor is drawn at every position (B-434).
-    pub floors: bool,
+    /// The further readings asked for (B-434, B-435).
+    pub extras: mcf_serve::prompt::Extras,
 }
 
 /// The document, from wherever the caller put it.
@@ -105,7 +105,7 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
         prompt,
         by: asked.by,
         most: asked.most,
-        floors: asked.floors,
+        extras: asked.extras,
         temperature: asked.temperature,
         seed: SEED,
     };
@@ -616,6 +616,94 @@ fn what_the_model_expected(body: &Value) -> Vec<String> {
 /// this model. Read against the column above, not instead of it. Where no
 /// reading was taken there is nothing to group, and the section above has
 /// already said why (A7).
+/// Each part asked as the whole prompt in turn (B-435): how far the answer
+/// to it alone sat from the answer as written, what it was, and whether it
+/// still began the same way — read against the control sentence alone, the
+/// answer to nothing from the writer. Not asked is said, with the flag.
+fn what_each_part_does_alone(body: &Value) -> Vec<String> {
+    let unit = unit_of(body);
+    let depth = body
+        .get("forced_depth")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    let mut lines = vec![format!("  WHAT EACH {} DOES ALONE", unit.to_uppercase())];
+    let Some(alone) = body.get("alone").and_then(Value::as_list) else {
+        lines.push(format!(
+            "    not asked: `--alone` asks each {unit} as the whole prompt in turn, one \
+             generation each and one for the control, to say which of them carries the \
+             answer on its own — sufficiency, beside the necessity above"
+        ));
+        lines.push(String::new());
+        return lines;
+    };
+    lines.push(
+        "  each was the whole prompt in turn — how far its answer sat from the answer as \
+         written, so LOW is a part that carries the answer on its own"
+            .to_owned(),
+    );
+    lines.push(String::new());
+    let clauses = body.get("clauses").and_then(Value::as_list).unwrap_or(&[]);
+    let moved_of = |read: &Value| {
+        read.get("moved_parts_per_million")
+            .and_then(Value::as_integer)
+            .unwrap_or(0)
+    };
+    for (at, read) in alone.iter().enumerate() {
+        let said = clauses
+            .get(at)
+            .and_then(|clause| clause.get("text"))
+            .and_then(Value::as_text)
+            .unwrap_or_default();
+        let moved = moved_of(read);
+        let filled = usize::try_from(tenths_of_the_answer(moved))
+            .unwrap_or(0)
+            .min(10);
+        let bar: String = "#".repeat(filled) + &"·".repeat(10_usize.saturating_sub(filled));
+        let (whole, tenth) = as_percent(moved);
+        lines.push(format!("    {bar}  {whole:>3}.{tenth}%  {said}"));
+        if let Some(answer) = read.get("answer").and_then(Value::as_text) {
+            lines.push(format!(
+                "                        alone: {}",
+                first_line_of(answer)
+            ));
+        }
+        if let Some(read) = held_said(read.get("held"), depth) {
+            lines.push(format!("                        {read}"));
+        }
+    }
+    lines.push(String::new());
+    match body.get("alone_floor") {
+        Some(control @ Value::Map(_)) => {
+            let floor = moved_of(control);
+            let (whole, tenth) = as_percent(floor);
+            let as_far = alone.iter().filter(|read| moved_of(read) >= floor).count();
+            lines.push(format!(
+                "    the control sentence alone — nothing from the writer — sat {whole}.{tenth}% \
+                 from the answer as written; {} as far off or further, so alone {} nothing of \
+                 it",
+                count_of(i64::try_from(as_far).unwrap_or(0), unit),
+                if as_far == 1 { "carries" } else { "carry" }
+            ));
+            if let Some(answer) = control.get("answer").and_then(Value::as_text) {
+                lines.push(format!(
+                    "                        alone: {}",
+                    first_line_of(answer)
+                ));
+            }
+            if let Some(read) = held_said(control.get("held"), depth) {
+                lines.push(format!("                        {read}"));
+            }
+        }
+        _ => lines.push(
+            "    the control sentence alone was not read: a figure to read these against is \
+             missing"
+                .to_owned(),
+        ),
+    }
+    lines.push(String::new());
+    lines
+}
+
 fn which_part_was_least_expected(body: &Value) -> Vec<String> {
     let Some(grouped) = body
         .get("expected_by_part")
@@ -766,6 +854,34 @@ fn the_answer_and_its_conditions(body: &Value) -> Vec<String> {
     lines
 }
 
+/// What the generations were spent on — each thing that cost one, and only
+/// the things this run asked for (A19, §3.4).
+fn what_the_generations_were(body: &Value, unit: &str) -> String {
+    let mut spent = vec![
+        "one for the prompt as written".to_owned(),
+        format!("one for each {unit} left out"),
+        match body.get("floors").and_then(Value::as_list) {
+            Some(floors) => format!(
+                "one for the control sentence at each of {}",
+                count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
+            ),
+            None => "one for the control sentence".to_owned(),
+        },
+    ];
+    if body.get("alone").and_then(Value::as_list).is_some() {
+        spent.push(format!(
+            "one for each {unit} alone and one for the control alone"
+        ));
+    }
+    if matches!(body.get("settled"), Some(Value::Map(_))) {
+        spent.push("one for each further seed".to_owned());
+    }
+    match spent.split_last() {
+        Some((last, first)) => format!("{}, and {last}", first.join(", ")),
+        None => String::new(),
+    }
+}
+
 fn rendered(body: &Value, named: &str) -> Vec<String> {
     let count = |key: &str| body.get(key).and_then(Value::as_integer).unwrap_or(0);
 
@@ -778,16 +894,9 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
         format!("what this prompt does to {}", header_name(named)),
         String::new(),
         format!(
-            "  {}: one for the prompt as written, one for each {unit} left out, {}, and one \
-             for each further seed",
+            "  {}: {}",
             count_of(count("generations"), "generation"),
-            match body.get("floors").and_then(Value::as_list) {
-                Some(floors) => format!(
-                    "one for the control sentence at each of {}",
-                    count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
-                ),
-                None => "one for the control sentence".to_owned(),
-            }
+            what_the_generations_were(body, unit)
         ),
     ];
     // **The unit, and who chose it** (§3.15): a report by paragraph and one
@@ -840,6 +949,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
 
     lines.extend(steering_lines(body));
     lines.push(String::new());
+    lines.extend(what_each_part_does_alone(body));
     lines.push("  WHETHER SEVERAL SEEDS GAVE SEVERAL ANSWERS".to_owned());
     lines.extend(settled_lines(body.get("settled")));
 
@@ -1110,6 +1220,10 @@ mod tests {
             "{text}"
         );
         assert!(
+            text.contains("control sentence, and one for each further seed"),
+            "{text}"
+        );
+        assert!(
             text.contains("farthest apart differ in 41.2% of their words"),
             "{text}"
         );
@@ -1129,6 +1243,84 @@ mod tests {
             text.contains("3 seeds at temperature 0.700 gave 1 answer, to the character"),
             "{text}"
         );
+    }
+
+    /// Each part alone is said against the control alone, with the answer
+    /// it drew; where it was not asked the report says so and names the
+    /// flag, never a figure (A7, B-435).
+    #[test]
+    fn each_part_alone_is_said_against_the_control_alone_or_as_not_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("WHAT EACH SENTENCE DOES ALONE")
+                && text.contains("not asked: `--alone` asks each sentence"),
+            "{text}"
+        );
+        assert!(!text.contains("the control sentence alone"), "{text}");
+        // The generations line counts what this run spent and nothing else.
+        assert!(
+            text.contains(
+                "6 generations: one for the prompt as written, one for each sentence left \
+                 out, and one for the control sentence"
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("further seed"), "{text}");
+
+        let reading = |moved: i64, rank: i64, answer: &str| {
+            Value::map([
+                ("moved_parts_per_million", Value::Integer(moved)),
+                (
+                    "held",
+                    Value::map([
+                        ("first_rank", Value::Integer(rank)),
+                        ("kept", Value::Integer(i64::from(rank == 1))),
+                        ("of", Value::Integer(1)),
+                    ]),
+                ),
+                ("answer", Value::text(answer.to_owned())),
+            ])
+        };
+        let mut asked = body();
+        if let Value::Map(fields) = &mut asked {
+            fields.insert(
+                "alone".to_owned(),
+                Value::List(vec![
+                    reading(1_000_000, 40, "What would you like me to answer?"),
+                    reading(250_000, 1, "Blue, I think.\nOr green."),
+                    reading(1_000_000, 40, "Thank you."),
+                ]),
+            );
+            fields.insert(
+                "alone_floor".to_owned(),
+                reading(1_000_000, 40, "Hello! How can I help?"),
+            );
+        }
+        let text = rendered(&asked, "m").join("\n");
+        assert!(
+            text.contains(
+                "one for the control sentence, and one for each sentence alone and one for \
+                 the control alone"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("##········   25.0%  What colour is the room?"),
+            "{text}"
+        );
+        assert!(
+            text.contains("alone: \"Blue, I think.…\""),
+            "the answer to the part alone is shown, marked as cut: {text}"
+        );
+        assert!(
+            text.contains(
+                "the control sentence alone — nothing from the writer — sat 100.0% from the \
+                 answer as written; 2 sentences as far off or further, so alone carry nothing \
+                 of it"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("alone: \"Hello! How can I help?\""), "{text}");
     }
 
     /// A document in a file that is not there is said with the path, not

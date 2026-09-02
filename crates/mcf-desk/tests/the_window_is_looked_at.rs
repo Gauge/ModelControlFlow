@@ -1182,6 +1182,40 @@ fn a_spread() -> (mcf_record::json::Value, mcf_record::json::Value) {
     )
 }
 
+/// What one part did asked as the whole prompt (B-435).
+fn a_reading(moved: i64, answer: &str) -> mcf_record::json::Value {
+    use mcf_record::json::Value;
+    Value::map([
+        ("moved_parts_per_million", Value::Integer(moved)),
+        (
+            "held",
+            Value::map([
+                (
+                    "first_rank",
+                    Value::Integer(if moved > 500_000 { 40 } else { 1 }),
+                ),
+                ("kept", Value::Integer(i64::from(moved <= 500_000))),
+                ("of", Value::Integer(1)),
+            ]),
+        ),
+        ("answer", Value::text(answer.to_owned())),
+    ])
+}
+
+/// The four sentences of `a_report` asked alone, and the control alone.
+fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
+    use mcf_record::json::Value;
+    (
+        Value::List(vec![
+            a_reading(970_000, "I am a careful assistant. How can I help?"),
+            a_reading(310_000, "def slugify(title):\n    return title.lower()"),
+            a_reading(990_000, "Please provide the text to lowercase."),
+            a_reading(985_000, "Which function?"),
+        ]),
+        a_reading(980_000, "Hello! How can I help you today?"),
+    )
+}
+
 fn a_report() -> mcf_desk::Desk {
     use mcf_record::json::Value;
     let clause = a_clause;
@@ -1234,6 +1268,8 @@ fn a_report() -> mcf_desk::Desk {
         ("expected_by_part", a_grouping()),
         ("floors", a_spread().0),
         ("floor_spread", a_spread().1),
+        ("alone", each_alone().0),
+        ("alone_floor", each_alone().1),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("unit", Value::text("sentence".to_owned())),
         (
@@ -1354,7 +1390,7 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     // And what is drawn changes: the answer without a sentence is not the
     // answer to the prompt as written.
     let mut chosen = a_report();
-    chosen.without = Some(1);
+    chosen.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let as_written = drawn(&desk, DAY, "answer-as-written").inked(ground);
     let without = drawn(&chosen, DAY, "answer-without").inked(ground);
@@ -1364,14 +1400,64 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     );
 }
 
+/// Beside each sentence removed is the sentence alone, where that was asked,
+/// and pressing it shows what the model wrote to it alone (B-435).
+#[test]
+fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
+    use mcf_record::json::Value;
+    let desk = a_report();
+    // The rows sit under the run's verdict; a sweep of the whole window is
+    // thousands of renders.
+    let rows = (500.0, 580.0);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::ShowAlone(1), rows),
+        "no sentence alone in the report could be pressed"
+    );
+    let mut alone = a_report();
+    alone.shown = Some(mcf_desk::Shown::Alone(1));
+    let mut without = a_report();
+    without.shown = Some(mcf_desk::Shown::Without(1));
+    let ground = DAY.ground;
+    let to_alone = drawn(&alone, DAY, "answer-alone").inked(ground);
+    assert_ne!(
+        drawn(&without, DAY, "answer-without").inked(ground),
+        to_alone,
+        "the answer to a sentence alone drew as the answer without it"
+    );
+    assert_ne!(
+        drawn(&desk, DAY, "answer-as-written").inked(ground),
+        to_alone,
+        "the answer to a sentence alone drew as the answer as written"
+    );
+
+    // A report that did not ask has no alone line to press and none drawn
+    // (A7): the lines say what was read, not what could have been.
+    let mut unasked = a_report();
+    if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("alone");
+        let _taken = fields.remove("alone_floor");
+    }
+    assert!(
+        !act_within(&unasked, &mcf_desk::Act::ShowAlone(1), rows),
+        "a sentence alone is offered where it was never read"
+    );
+    assert_ne!(
+        drawn(&desk, DAY, "prompt-report").inked(ground),
+        drawn(&unasked, DAY, "prompt-report-no-alone").inked(ground),
+        "the report reads the same with each sentence alone and without it"
+    );
+}
+
 /// Pressing the sentence already shown puts the answer as written back.
 #[test]
 fn pressing_it_again_goes_back_to_the_answer_as_written() {
     let mut desk = a_report();
-    desk.without = Some(1);
+    desk.shown = Some(mcf_desk::Shown::Without(1));
     desk.act(mcf_desk::Act::ShowWithout(1));
     assert_eq!(
-        desk.without, None,
+        desk.shown, None,
         "the selection is a mode with no way out of it"
     );
 }
@@ -1628,12 +1714,14 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     let _looked = drawn(&desk, DAY, "prompt-choices");
 }
 
-/// The floor at every position is a choice on the page that says what it
-/// costs, reaches the request as chosen, and is read back as a spread in
-/// the legend — or, left off, as the one draw it was (B-434, §3.15, §3.4).
+/// Each further reading is a choice on the page that says what it costs
+/// and reaches the request as chosen; the floor at every position is read
+/// back as a spread in the legend — or, left off, as the one draw it was
+/// (B-434, B-435, §3.15, §3.4).
 #[test]
 fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     use mcf_record::json::Value;
+    use mcf_serve::prompt::Extra;
     let mut desk = four_models();
     desk.page = Page::Prompt;
     desk.chosen = Some(0);
@@ -1643,21 +1731,27 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
         .join("\n\n");
     // Under the temperature row; a sweep of the whole window is thousands
     // of renders.
-    let controls = (400.0, 500.0);
-    assert!(!desk.taken().floors, "one draw unless asked");
-    assert!(
-        act_within(&desk, &mcf_desk::Act::FloorEverywhere(true), controls),
-        "the floor at every position is offered"
-    );
-    desk.act(mcf_desk::Act::FloorEverywhere(true));
-    assert!(desk.taken().floors, "the choice reaches the request");
-    assert!(
-        act_within(&desk, &mcf_desk::Act::FloorEverywhere(false), controls),
-        "and is offered back"
-    );
+    let controls = (400.0, 540.0);
+    for extra in Extra::ALL {
+        assert!(!desk.taken().extras.has(extra), "{extra:?} unless asked");
+        assert!(
+            act_within(&desk, &mcf_desk::Act::Extra(extra, true), controls),
+            "{extra:?} is offered"
+        );
+        desk.act(mcf_desk::Act::Extra(extra, true));
+        assert!(
+            desk.taken().extras.has(extra),
+            "the choice reaches the request"
+        );
+        assert!(
+            act_within(&desk, &mcf_desk::Act::Extra(extra, false), controls),
+            "and is offered back"
+        );
+    }
     let ground = DAY.ground;
     let on = drawn(&desk, DAY, "prompt-floors-on").inked(ground);
-    desk.act(mcf_desk::Act::FloorEverywhere(false));
+    desk.act(mcf_desk::Act::Extra(Extra::Floors, false));
+    desk.act(mcf_desk::Act::Extra(Extra::Alone, false));
     let off = drawn(&desk, DAY, "prompt-floors-off").inked(ground);
     assert_ne!(on, off, "the cost line does not say which was chosen");
 

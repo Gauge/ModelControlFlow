@@ -184,7 +184,7 @@ fn the_new_requests_survive_the_wire() {
             prompt: "Be brief.\n\nBe right.".to_owned(),
             by: None,
             most: None,
-            floors: false,
+            extras: crate::prompt::Extras::NONE,
             temperature: None,
             seed: 41,
         },
@@ -193,7 +193,9 @@ fn the_new_requests_survive_the_wire() {
             prompt: "Be brief.\n\nBe right.".to_owned(),
             by: Some(crate::prompt::Unit::Sentence),
             most: Some(40),
-            floors: true,
+            extras: crate::prompt::Extras::NONE
+                .with(crate::prompt::Extra::Floors, true)
+                .with(crate::prompt::Extra::Alone, true),
             temperature: Some(mcf_core::configuration::Thousandths(700)),
             seed: 41,
         },

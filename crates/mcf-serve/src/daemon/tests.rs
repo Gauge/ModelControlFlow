@@ -522,6 +522,22 @@ fn a_served_report() -> Value {
                 ("most_parts_per_million", Value::Integer(140_000)),
             ]),
         ),
+        (
+            "alone",
+            Value::List(vec![Value::map([
+                ("moved_parts_per_million", Value::Integer(310_000)),
+                ("held", Value::Null),
+                ("answer", Value::text("Here is a careful function")),
+            ])]),
+        ),
+        (
+            "alone_floor",
+            Value::map([
+                ("moved_parts_per_million", Value::Integer(980_000)),
+                ("held", Value::Null),
+                ("answer", Value::text("Here is nothing")),
+            ]),
+        ),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
         (
@@ -607,6 +623,7 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         "\"text\"",
         "\"without\"",
         "\"baseline\"",
+        "\"answer\"",
     ] {
         assert!(!line.contains(word), "{word} reached the record: {line}");
     }
@@ -663,6 +680,18 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
         at(&["floors"]).and_then(|held| held.as_list().map(<[Value]>::len)),
         Some(1)
     );
+    // Each part alone travels as its figures, and the control alone as its
+    // figure; the answers stay behind (B-435, A25).
+    assert_eq!(
+        at(&["alone"])
+            .and_then(|held| held.as_list().and_then(<[Value]>::first).cloned())
+            .and_then(|held| held.get("moved_parts_per_million").cloned()),
+        Some(Value::Integer(310_000))
+    );
+    assert_eq!(
+        at(&["alone_floor", "moved_parts_per_million"]),
+        Some(Value::Integer(980_000))
+    );
     // The reading grouped by part is counts, and travels whole (B-433).
     assert_eq!(
         at(&["expected_by_part", "unplaced"]),
@@ -686,13 +715,15 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         text: "Be terse.\n\nWhat is 2 + 2?",
         by: Some(Unit::Paragraph),
         most: None,
-        floors: false,
+        extras: crate::prompt::Extras::NONE,
     };
     let parts = taken.parts();
     let report = Report {
         floor: 0,
         floor_held: None,
         floors: None,
+        alone: None,
+        alone_floor: None,
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -750,4 +781,64 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
     };
     let served = super::prompt_report_value(&report, &parts, 1, Some(9), none);
     assert_eq!(served.get("expected_by_part"), Some(&Value::Null));
+    // Not asked is null, not an empty list (A7).
+    assert_eq!(served.get("alone"), Some(&Value::Null));
+    assert_eq!(served.get("alone_floor"), Some(&Value::Null));
+}
+
+/// A report that asked each part alone serves each answer beside its figure,
+/// and the control alone with them (B-435).
+#[test]
+fn a_served_report_carries_each_part_alone_with_its_answer() {
+    use crate::prompt::{Reading, Report, Taken, Unit};
+    let taken = Taken {
+        text: "Be terse.\n\nWhat is 2 + 2?",
+        by: Some(Unit::Paragraph),
+        most: None,
+        extras: crate::prompt::Extras::NONE.with(crate::prompt::Extra::Alone, true),
+    };
+    let parts = taken.parts();
+    let read = |moved: u64, answer: &str| Reading {
+        moved,
+        held: None,
+        answer: answer.to_owned(),
+    };
+    let report = Report {
+        floor: 0,
+        floor_held: None,
+        floors: None,
+        alone: Some(vec![read(1_000_000, "Yes."), read(0, "4")]),
+        alone_floor: Some(read(1_000_000, "Hello!")),
+        baseline: "4".to_owned(),
+        clauses: Vec::new(),
+        clauses_over_the_cap: 0,
+        unit: Unit::Paragraph,
+        unit_chosen: true,
+        most: 8,
+        settled: None,
+    };
+    let none = super::RankedPrompt {
+        rows: Vec::new(),
+        refused: None,
+        under: None,
+    };
+    let served = super::prompt_report_value(&report, &parts, 6, Some(9), none);
+    let alone = served.get("alone").and_then(Value::as_list).unwrap_or(&[]);
+    assert_eq!(alone.len(), 2);
+    assert_eq!(
+        alone.get(1).and_then(|held| held.get("answer")),
+        Some(&Value::text("4"))
+    );
+    assert_eq!(
+        alone
+            .first()
+            .and_then(|held| held.get("moved_parts_per_million")),
+        Some(&Value::Integer(1_000_000))
+    );
+    assert_eq!(
+        served
+            .get("alone_floor")
+            .and_then(|held| held.get("answer")),
+        Some(&Value::text("Hello!"))
+    );
 }

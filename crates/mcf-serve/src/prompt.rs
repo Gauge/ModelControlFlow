@@ -193,10 +193,128 @@ pub struct Taken<'a> {
     pub by: Option<Unit>,
     /// How many parts to remove at most; `None` is [`MOST_CLAUSES`].
     pub most: Option<usize>,
-    /// Whether to put the inert sentence at every position rather than one,
-    /// so that the floor is a spread and not a draw (B-434). A generation a
-    /// position, so the caller's to ask for.
-    pub floors: bool,
+    /// The further readings asked for, each costing generations; none
+    /// unless asked (§3.15).
+    pub extras: Extras,
+}
+
+/// A further reading of the prompt, asked for by name: each costs
+/// generations, so none is taken unasked (§3.15), and each is served as
+/// null where it was not (A7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Extra {
+    /// The inert sentence put at every position rather than one, so that
+    /// the floor is a spread and not a draw (B-434). A generation a
+    /// position.
+    Floors,
+    /// Each part asked as the whole prompt in turn, to say which of them
+    /// carries the answer on its own (B-435). A generation a part and one
+    /// for the control.
+    Alone,
+}
+
+impl Extra {
+    /// Every reading there is, in the order they are asked and reported.
+    pub const ALL: [Self; 2] = [Self::Floors, Self::Alone];
+
+    /// The name a flag and the wire use.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Floors => "floors",
+            Self::Alone => "alone",
+        }
+    }
+
+    /// The reading a name means, or `None` where it names nothing.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|extra| extra.name() == name)
+    }
+
+    /// What the reading costs, in generations, on a prompt of `parts` parts
+    /// of which the first `removed` are removed in turn. The one place this
+    /// is counted, so a forecast and the bill cannot disagree (B-072).
+    #[must_use]
+    pub const fn generations(self, parts: usize, removed: usize) -> usize {
+        match self {
+            // One a position, less the one the single draw already takes.
+            Self::Floors => parts,
+            // One a part removed, and the control alone.
+            Self::Alone => removed.saturating_add(1),
+        }
+    }
+
+    /// What the reading is, for a button or a line: what it asks, in a
+    /// sentence a reader chooses by.
+    #[must_use]
+    pub const fn asks(self) -> &'static str {
+        match self {
+            Self::Floors => {
+                "the control sentence at every position, so the floor is a spread rather than \
+                 one draw"
+            }
+            Self::Alone => {
+                "each part as the whole prompt in turn, to say which carries the answer on its \
+                 own"
+            }
+        }
+    }
+
+    const fn bit(self) -> u8 {
+        match self {
+            Self::Floors => 1,
+            Self::Alone => 2,
+        }
+    }
+}
+
+/// Which further readings were asked for: a set of [`Extra`], small enough
+/// to copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Extras(u8);
+
+impl Extras {
+    /// None asked for.
+    pub const NONE: Self = Self(0);
+
+    /// Whether this reading was asked for.
+    #[must_use]
+    pub const fn has(self, extra: Extra) -> bool {
+        self.0 & extra.bit() != 0
+    }
+
+    /// This set with the reading asked for, or not.
+    #[must_use]
+    pub const fn with(self, extra: Extra, asked: bool) -> Self {
+        if asked {
+            Self(self.0 | extra.bit())
+        } else {
+            Self(self.0 & !extra.bit())
+        }
+    }
+
+    /// What the readings asked for cost together, in generations.
+    #[must_use]
+    pub fn generations(self, parts: usize, removed: usize) -> usize {
+        self.asked().fold(0, |sum, extra| {
+            sum.saturating_add(extra.generations(parts, removed))
+        })
+    }
+
+    /// The readings asked for, in order.
+    pub fn asked(self) -> impl Iterator<Item = Extra> {
+        Extra::ALL.into_iter().filter(move |extra| self.has(*extra))
+    }
+
+    /// The set the names mean; a name that means nothing is ignored, so
+    /// the caller that reads a wire says what it could not read.
+    pub fn named<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+        names
+            .into_iter()
+            .filter_map(Extra::named)
+            .fold(Self::NONE, |set, extra| set.with(extra, true))
+    }
 }
 
 impl Taken<'_> {
@@ -328,6 +446,51 @@ pub struct Spread {
     pub most: u64,
 }
 
+/// One variant of the prompt, asked and read against the answer as written:
+/// how far the answer moved, whether it still began the same way, and what
+/// it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reading {
+    /// How much of the answer moved, in parts per million of the longer.
+    pub moved: u64,
+    /// The forced reading under this prompt.
+    pub held: Option<Held>,
+    /// The answer, as the model wrote it.
+    pub answer: String,
+}
+
+/// What every variant is read against: the answer as written and its
+/// opening, the seed held still, and the two ways of asking. One place
+/// that asks and compares, so every figure in a report is the same
+/// operation on a different prompt (B-072, §3.4).
+struct Bench<'a, 'b> {
+    baseline: &'a str,
+    opening: &'a [usize],
+    seed: u64,
+    ask: Ask<'b>,
+    force: Force<'b>,
+}
+
+impl Bench<'_, '_> {
+    /// Asks the prompt, greedy at the held seed, and reads the answer.
+    ///
+    /// The opening is an empty list where the baseline said nothing, and a
+    /// rank over nothing is not taken rather than read as kept.
+    fn read(&mut self, prompt: &str) -> Reading {
+        let answer = (self.ask)(prompt, Draw::greedy(self.seed)).text;
+        let held = if self.opening.is_empty() {
+            None
+        } else {
+            (self.force)(prompt, self.opening)
+        };
+        Reading {
+            moved: moved_by(self.baseline.trim(), answer.trim()),
+            held,
+            answer,
+        }
+    }
+}
+
 /// What a prompt did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report {
@@ -344,6 +507,16 @@ pub struct Report {
     /// The floor at every position, in position order, where the caller
     /// asked for it; `None` where one draw was taken (B-434).
     pub floors: Option<Vec<FloorAt>>,
+    /// Each part asked as the whole prompt in turn, the first `most` of
+    /// them, where asked (B-435): how far the answer to it alone sat from
+    /// the answer as written. `None` where not asked, which is not *every
+    /// part alone gives the same answer* (A7).
+    pub alone: Option<Vec<Reading>>,
+    /// The inert sentence asked alone, where `alone` was: what the model
+    /// says with nothing from the writer, read against the answer as
+    /// written. A part whose answer alone sits as far off as this carries
+    /// nothing of the whole on its own.
+    pub alone_floor: Option<Reading>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -796,6 +969,13 @@ pub fn measure(
         tokens: opening,
     } = ask(&prompt, Draw::greedy(seed));
     let opening: Vec<usize> = opening.into_iter().take(MOST_FORCED).collect();
+    let mut bench = Bench {
+        baseline: &baseline,
+        opening: &opening,
+        seed,
+        ask,
+        force,
+    };
 
     let most = taken.cap();
     let ablated = all.len().min(most);
@@ -805,23 +985,16 @@ pub fn measure(
     if all.len() > 1 {
         for at in 0..ablated {
             let shortened = without(&all, at);
-            let without_it = ask(&shortened, Draw::greedy(seed)).text;
-            // The opening is an empty list where the baseline said nothing,
-            // and a rank over nothing is not taken rather than read as kept.
-            let held = if opening.is_empty() {
-                None
-            } else {
-                force(&shortened, &opening)
-            };
+            let read = bench.read(&shortened);
             clauses.push(Clause {
-                changed: without_it.trim() != baseline.trim(),
-                moved: moved_by(baseline.trim(), without_it.trim()),
+                changed: read.answer.trim() != baseline.trim(),
+                moved: read.moved,
                 text: all
                     .get(at)
                     .map(|part| part.text.clone())
                     .unwrap_or_default(),
-                without: without_it,
-                held,
+                without: read.answer,
+                held: read.held,
             });
         }
     }
@@ -839,56 +1012,27 @@ pub fn measure(
     // is asked, and the answer compared against the baseline — which is that
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
-    let padded = with_inert(&all);
-    let floor = moved_by(
-        ask(&padded, Draw::greedy(seed)).text.trim(),
-        baseline.trim(),
-    );
-    let floor_held = if opening.is_empty() || all.len() <= 1 {
-        None
+    let read = bench.read(&with_inert(&all));
+    let floor = read.moved;
+    let floor_held = if all.len() <= 1 { None } else { read.held };
+    let floors = (taken.extras.has(Extra::Floors) && all.len() > 1)
+        .then(|| floors_of(&mut bench, &all, (floor, floor_held)));
+    let (alone, alone_floor) = if taken.extras.has(Extra::Alone) && all.len() > 1 {
+        let (alone, floor) = alone_of(&mut bench, &all, ablated);
+        (Some(alone), Some(floor))
     } else {
-        force(&padded, &opening)
+        (None, None)
     };
-    // **The floor at every position, where asked** (B-434). One draw of the
-    // floor is one number, and a part a few points under it may be under
-    // the floor or under that draw. The position already drawn is not drawn
-    // again: its figure is the one above.
-    let floors = (taken.floors && all.len() > 1).then(|| {
-        let drawn_at = all.len().saturating_sub(1);
-        (0..=all.len())
-            .map(|position| {
-                if position == drawn_at {
-                    return FloorAt {
-                        position,
-                        moved: floor,
-                        held: floor_held,
-                    };
-                }
-                let padded = with_inert_at(&all, position);
-                let moved = moved_by(
-                    ask(&padded, Draw::greedy(seed)).text.trim(),
-                    baseline.trim(),
-                );
-                let held = if opening.is_empty() {
-                    None
-                } else {
-                    force(&padded, &opening)
-                };
-                FloorAt {
-                    position,
-                    moved,
-                    held,
-                }
-            })
-            .collect()
-    });
 
-    let settled = settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, ask));
+    let settled =
+        settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, bench.ask));
 
     Report {
         floor,
         floor_held,
         floors,
+        alone,
+        alone_floor,
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),
@@ -897,6 +1041,50 @@ pub fn measure(
         most,
         settled,
     }
+}
+
+/// The floor at every position (B-434).
+///
+/// One draw of the floor is one number, and a part a few points under it
+/// may be under the floor or under that draw. The position already drawn
+/// is not drawn again: its figure is the one passed in.
+fn floors_of(bench: &mut Bench<'_, '_>, all: &[Part], drawn: (u64, Option<Held>)) -> Vec<FloorAt> {
+    let drawn_at = all.len().saturating_sub(1);
+    (0..=all.len())
+        .map(|position| {
+            if position == drawn_at {
+                return FloorAt {
+                    position,
+                    moved: drawn.0,
+                    held: drawn.1,
+                };
+            }
+            let read = bench.read(&with_inert_at(all, position));
+            FloorAt {
+                position,
+                moved: read.moved,
+                held: read.held,
+            }
+        })
+        .collect()
+}
+
+/// Each part alone, and the inert sentence alone (B-435).
+///
+/// **Sufficiency, beside necessity.** Removing a part says what the answer
+/// loses without it; asking the part on its own says how much of the answer
+/// it carries by itself. A part can be both, either or neither, and the two
+/// readings disagree in ways that are the point of having both. The control
+/// is the inert sentence alone — the answer to nothing from the writer —
+/// which is as far from the answer as written as a part alone can be
+/// expected to sit while carrying nothing of it.
+fn alone_of(bench: &mut Bench<'_, '_>, all: &[Part], first: usize) -> (Vec<Reading>, Reading) {
+    let alone = all
+        .iter()
+        .take(first)
+        .map(|part| bench.read(part.text.trim()))
+        .collect();
+    (alone, bench.read(NO_INSTRUCTION))
 }
 
 /// The settledness question: the same prompt, `SEEDS` seeds, one temperature.

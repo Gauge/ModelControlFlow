@@ -707,6 +707,16 @@ pub const fn windows() -> [u64; 7] {
     [1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536]
 }
 
+/// Which answer the prompt screen shows beside the figures: the one without
+/// a part, or the one to a part alone (B-435).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shown {
+    /// The answer without this part.
+    Without(usize),
+    /// The answer to this part alone.
+    Alone(usize),
+}
+
 /// One thing a screen asks the window to do.
 ///
 /// Immediate mode has no callbacks: a screen draws, notices it was clicked,
@@ -751,6 +761,8 @@ pub enum Act {
     /// checkable only beside the answer it moved, and MCF has held both since
     /// the measurement was written (A19).
     ShowWithout(usize),
+    /// Show the answer to one part alone, where each was asked (B-435).
+    ShowAlone(usize),
     /// Close whatever dropdown is open, choosing nothing.
     Shut,
     /// Set the context window to one of the offered powers of two.
@@ -783,8 +795,8 @@ pub enum Act {
     MostParts(usize),
     /// Take the document apart by this unit, or let the text decide.
     TakeApartBy(Option<mcf_serve::prompt::Unit>),
-    /// Draw the floor at every position, or at one (B-434).
-    FloorEverywhere(bool),
+    /// Ask for a further reading, or stop asking (B-434, B-435).
+    Extra(mcf_serve::prompt::Extra, bool),
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -861,9 +873,9 @@ pub struct Desk {
     pub page: Page,
     /// Every model this computer holds.
     pub models: Vec<Model>,
-    /// Which sentence's absence is being shown on the prompt screen, where one
-    /// is. `None` is the answer to the prompt as written.
-    pub without: Option<usize>,
+    /// Which answer is being shown on the prompt screen: one part's absence,
+    /// or one part alone. `None` is the answer to the prompt as written.
+    pub shown: Option<Shown>,
     /// How far down a long list has been scrolled, in points.
     pub scroll: f32,
     /// The last reading of the machine.
@@ -890,9 +902,9 @@ pub struct Desk {
     /// What to take the document apart into, where the person chose; `None`
     /// lets the text decide.
     pub by: Option<mcf_serve::prompt::Unit>,
-    /// Whether the floor is drawn at every position, a generation each
-    /// (B-434).
-    pub floors: bool,
+    /// The further readings asked for, each costing generations (B-434,
+    /// B-435).
+    pub extras: mcf_serve::prompt::Extras,
     /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
     /// What is running.
@@ -967,7 +979,7 @@ impl Desk {
             socket,
             page: Page::Models,
             models: Vec::new(),
-            without: None,
+            shown: None,
             scroll: 0.0,
             reading: mcf_tui::machine::Reading::default(),
             refusal: None,
@@ -977,7 +989,7 @@ impl Desk {
             caret: Caret::Document,
             most: None,
             by: None,
-            floors: false,
+            extras: mcf_serve::prompt::Extras::NONE,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
@@ -1116,7 +1128,7 @@ impl Desk {
             text: self.typed.trim(),
             by: self.by,
             most: self.most,
-            floors: self.floors,
+            extras: self.extras,
         }
     }
 
@@ -1272,6 +1284,17 @@ impl Desk {
         mcf_tui::screens::diagnostics::keep_the_cross_check(&mut self.tests, job);
     }
 
+    /// Shows one answer beside the figures, or — pressing the one already
+    /// shown — puts the answer as written back, so the rows are one control
+    /// rather than a mode nothing leaves.
+    fn show(&mut self, shown: Shown) {
+        self.shown = if self.shown == Some(shown) {
+            None
+        } else {
+            Some(shown)
+        };
+    }
+
     /// Does what a screen said a click meant.
     pub fn act(&mut self, act: Act) {
         match act {
@@ -1337,16 +1360,8 @@ impl Desk {
             Act::StopHosting => self.stop_hosting(),
             // The loop's: closing is the window's own.
             Act::Close => {}
-            Act::ShowWithout(at) => {
-                // Pressing the row already shown puts the answer as written
-                // back, so the two are one control rather than a mode nothing
-                // leaves.
-                self.without = if self.without == Some(at) {
-                    None
-                } else {
-                    Some(at)
-                };
-            }
+            Act::ShowWithout(at) => self.show(Shown::Without(at)),
+            Act::ShowAlone(at) => self.show(Shown::Alone(at)),
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);
@@ -1363,7 +1378,7 @@ impl Desk {
             Act::Focus(caret) => self.caret = caret,
             Act::MostParts(most) => self.most = Some(most.max(1)),
             Act::TakeApartBy(by) => self.by = by,
-            Act::FloorEverywhere(everywhere) => self.floors = everywhere,
+            Act::Extra(extra, asked) => self.extras = self.extras.with(extra, asked),
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
         }
@@ -1653,7 +1668,7 @@ impl Desk {
                 prompt: taken.text.to_owned(),
                 by: taken.by,
                 most: taken.most,
-                floors: taken.floors,
+                extras: taken.extras,
                 temperature,
                 seed: 41,
             },
