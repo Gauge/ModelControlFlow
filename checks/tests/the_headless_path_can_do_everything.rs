@@ -199,13 +199,20 @@ fn surfaces_in_the_tree() -> Vec<String> {
         // the literal `control::Request` missed a surface that wrote
         // `control::{Answer, Request}` — the same defect as the tripwire this
         // replaced, one layer down.
-        let reaches = sources(&format!("crates/{name}")).into_iter().any(|path| {
-            let source = std::fs::read_to_string(path).unwrap_or_default();
-            source.contains("mcf_serve::control")
-                && operations()
-                    .iter()
-                    .any(|operation| source.contains(&format!("Request::{operation}")))
-        });
+        //
+        // What ships, not what tests it: a crate's `tests/` may speak to a
+        // daemon to prove the daemon's behaviour (B-396 does), and a test
+        // that sends a request is a check of the control plane, not a way a
+        // person reaches it.
+        let reaches = sources(&format!("crates/{name}/src"))
+            .into_iter()
+            .any(|path| {
+                let source = std::fs::read_to_string(path).unwrap_or_default();
+                source.contains("mcf_serve::control")
+                    && operations()
+                        .iter()
+                        .any(|operation| source.contains(&format!("Request::{operation}")))
+            });
         if reaches {
             found.push(name);
         }

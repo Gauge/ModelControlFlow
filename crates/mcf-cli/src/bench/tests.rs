@@ -1,7 +1,8 @@
 //! A benchmark has no pass condition, and refuses what it cannot measure.
 
-use super::{bench_where, is_a_stand_in, per_cent_of};
+use super::{bench_where, held_the_pin, is_a_stand_in, per_cent_of};
 use mcf_core::measurement::PartsPerMillion;
+use mcf_record::json::Value;
 
 /// A model MCF will not find, so the refusal is about the reference rather
 /// than about the machine.
@@ -251,4 +252,28 @@ fn a_run_that_decided_renders_no_snapshot() {
         source.contains("if let Some(snapshot) = competing {"),
         "and the section conditional on there being one"
     );
+}
+
+/// A trial is a trial only where the account's count is the pinned one; a
+/// trial that fell short, or went through a path that does not count, is
+/// refused with the reason (B-396, A21).
+#[test]
+fn a_trial_that_did_not_produce_what_it_pinned_is_refused() {
+    let account = |tokens: i64, stopped: &str, length: &str| {
+        Value::map([
+            ("tokens", Value::Integer(tokens)),
+            ("stopped", Value::text(stopped)),
+            ("conditions", Value::map([("length", Value::text(length))])),
+        ])
+    };
+    assert_eq!(held_the_pin(&account(128, "limit", "exactly"), 128), Ok(()));
+    let short =
+        held_the_pin(&account(41, "stop_token", "exactly"), 128).expect_err("41 is not 128");
+    assert!(short.contains("41 of the 128 tokens pinned"), "{short}");
+    assert!(short.contains("stop_token"), "{short}");
+    let uncounted = held_the_pin(&account(128, "limit", "exactly_but_uncounted"), 128)
+        .expect_err("a chunk count is not a token count");
+    assert!(uncounted.contains("cannot be proven"), "{uncounted}");
+    let unsaid = held_the_pin(&Value::map::<&str>([]), 128).expect_err("no count at all");
+    assert!(unsaid.contains("an unsaid number"), "{unsaid}");
 }

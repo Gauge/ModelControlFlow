@@ -206,6 +206,9 @@ fn served(
         seed,
         tokens: None,
         engine: engine.map(str::to_owned),
+        // A ceiling: a person asking a model a question wants its answer,
+        // which ends where the model ends it.
+        pinned: false,
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())

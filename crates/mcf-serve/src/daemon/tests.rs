@@ -471,3 +471,28 @@ fn a_cross_check_estimate_is_a_range_that_grows_with_the_model() {
         "{fitted:?} does not hold 162 s"
     );
 }
+
+/// A run is a sample only if it produced exactly what it was pinned to, and
+/// one that did not says how far short and why (B-396, A21).
+#[test]
+fn a_timed_run_holds_its_pin_or_says_how_it_fell_short() {
+    let timed = |produced: Option<u64>, stopped: Option<&str>| super::Timed {
+        ns: 1_000,
+        engine: None,
+        peak_resident: None,
+        window: None,
+        produced,
+        stopped: stopped.map(str::to_owned),
+    };
+    assert!(timed(Some(17), Some("limit")).held_the_pin(17));
+    assert!(!timed(Some(16), Some("limit")).held_the_pin(17));
+    // A count the engine did not say is not a count that matched.
+    assert!(!timed(None, Some("limit")).held_the_pin(17));
+    // An engine that stopped on the model's ending five tokens in.
+    let short = timed(Some(5), Some("stop_token")).short_of(17);
+    assert!(short.contains("5 of the 17 tokens pinned"), "{short}");
+    assert!(short.contains("stop_token"), "{short}");
+    let unsaid = timed(None, None).short_of(1);
+    assert!(unsaid.contains("an unsaid number"), "{unsaid}");
+    assert!(unsaid.contains("did not name"), "{unsaid}");
+}

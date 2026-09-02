@@ -121,6 +121,15 @@ impl Value {
         }
     }
 
+    /// The boolean, if this is one.
+    #[must_use]
+    pub const fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// The elements, if this is an array.
     #[must_use]
     pub fn as_list(&self) -> Option<&[Self]> {

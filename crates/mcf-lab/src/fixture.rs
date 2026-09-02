@@ -69,7 +69,25 @@ const WIDTH: usize = TOKENS.len();
 /// `yes`, greedy decoding answers ` yes` for as many tokens as it is given.
 #[must_use]
 pub fn a_model_that_runs() -> Vec<u8> {
-    let metadata = vec![
+    runnable(None)
+}
+
+/// The same model, declaring `<s>` as its end of text.
+///
+/// Asked for `<s>`, it answers `<s>` — which is its end of text, so a
+/// generation that honours the model's ending produces nothing, and one told
+/// to run past it produces as many as it was pinned to (B-396). That is the
+/// whole difference between a ceiling and a length, in a model whose answer
+/// a person can state in advance. [`a_model_that_runs`] declares no ending,
+/// so nothing that asks it a word is changed by this one existing.
+#[must_use]
+pub fn a_model_that_ends_its_turn() -> Vec<u8> {
+    runnable(Some(0))
+}
+
+/// The one-hot model, with or without a declared end of text.
+fn runnable(ending: Option<usize>) -> Vec<u8> {
+    let mut metadata = vec![
         text("general.architecture", "llama"),
         text("tokenizer.ggml.model", "llama"),
         integer("llama.block_count", 1),
@@ -84,6 +102,9 @@ pub fn a_model_that_runs() -> Vec<u8> {
         // vocabulary has and the reason a merge algorithm reaches it.
         score_list("tokenizer.ggml.scores", &scores()),
     ];
+    if let Some(ending) = ending {
+        metadata.push(integer("tokenizer.ggml.eos_token_id", ending));
+    }
 
     let mut table = vec![0.0_f32; WIDTH * WIDTH];
     for token in 0..WIDTH {

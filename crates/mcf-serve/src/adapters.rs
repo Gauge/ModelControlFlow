@@ -252,8 +252,21 @@ impl ProvisionedLlama {
     /// uses — so what the daemon serves through this engine is what the
     /// oracle compared.
     #[must_use]
-    pub fn generate(&self, model: &Path, prompt: &str, limit: usize, seed: u64) -> Command {
+    pub fn generate(
+        &self,
+        model: &Path,
+        prompt: &str,
+        limit: usize,
+        seed: u64,
+        pinned: bool,
+    ) -> Command {
         let mut command = Command::new(self.completion());
+        if pinned {
+            // The length is the limit, not a ceiling on it (B-396). The
+            // tool honours this; what it does not do is count, so a caller
+            // that needs the count proven cannot have it from this path.
+            command.arg("--ignore-eos");
+        }
         command
             .arg("-m")
             .arg(model)

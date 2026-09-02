@@ -159,6 +159,26 @@ fn the_new_requests_survive_the_wire() {
         Request::CrossCheck {
             model: "a-model.gguf".to_owned(),
         },
+        Request::Generate {
+            model: "a-model.gguf".to_owned(),
+            prompt: String::new(),
+            limit: Some(17),
+            seed: 0,
+            tokens: Some(vec![1; 4]),
+            engine: None,
+            whose: mcf_record::content::Whose::Fixture,
+            pinned: true,
+        },
+        Request::Generate {
+            model: "a-model.gguf".to_owned(),
+            prompt: "yes".to_owned(),
+            limit: None,
+            seed: 7,
+            tokens: None,
+            engine: Some("stand-in".to_owned()),
+            whose: mcf_record::content::Whose::User,
+            pinned: false,
+        },
     ];
     for request in asked {
         let line = request.to_line();
@@ -192,4 +212,26 @@ fn an_acquisition_must_name_the_file() {
         Request::read(line).is_err(),
         "an acquisition with no file was accepted"
     );
+}
+
+/// A generation from a client that predates the pin asked for a ceiling,
+/// which is what every generation was: absent reads as unpinned, never as
+/// pinned (B-396).
+#[test]
+fn a_generation_that_does_not_say_is_not_pinned() {
+    let line = Value::map([
+        ("protocol", Value::Integer(VERSION)),
+        ("ask", Value::text("generate")),
+        ("model", Value::text("a-model.gguf")),
+        ("prompt", Value::text("yes")),
+        ("limit", Value::Integer(4)),
+    ])
+    .to_line();
+    match Request::read(&line).expect("a generation") {
+        Request::Generate { pinned, limit, .. } => {
+            assert!(!pinned, "{line}");
+            assert_eq!(limit, Some(4));
+        }
+        other => panic!("not a generation: {other:?}"),
+    }
 }

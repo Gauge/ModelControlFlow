@@ -927,18 +927,62 @@ fn timed(
     seed: u64,
     engine: Option<&str>,
 ) -> Result<(Duration<Monotonic>, Warmth), String> {
-    generate(socket, path, prompt, identifiers, limit, seed, engine).map(|(took, account)| {
-        // §6.13: what the trial reused is a condition of it, and the daemon
-        // already says so in its account. Reading it is what makes a warm
-        // measurement distinguishable from a cold one (B-081).
-        let warmth = Warmth::from_account(
-            account
-                .get("conditions")
-                .and_then(|conditions| conditions.get("loaded"))
-                .and_then(Value::as_text),
+    let (took, account) = generate(socket, path, prompt, identifiers, limit, seed, engine)?;
+    // The pin, proven: the request said how many tokens, and the account
+    // says how many there were. A trial that produced fewer is not a trial
+    // under this discipline — its duration is a duration of something else,
+    // and dividing it by the pinned count would put a per-token figure on
+    // the record that no token cost (B-396, A21).
+    if let Some(pinned) = limit {
+        held_the_pin(&account, pinned)?;
+    }
+    // §6.13: what the trial reused is a condition of it, and the daemon
+    // already says so in its account. Reading it is what makes a warm
+    // measurement distinguishable from a cold one (B-081).
+    let warmth = Warmth::from_account(
+        account
+            .get("conditions")
+            .and_then(|conditions| conditions.get("loaded"))
+            .and_then(Value::as_text),
+    );
+    Ok((took, warmth))
+}
+
+/// Whether the account proves the trial produced what it was pinned to.
+///
+/// The count is the engine's, read back rather than assumed from the request
+/// (A21). A path that hands back text and no count — the completion tool —
+/// says so under `conditions.length`, and a pin through it is asked and not
+/// proven, which is not the same as held.
+fn held_the_pin(account: &Value, pinned: usize) -> Result<(), String> {
+    let length = account
+        .get("conditions")
+        .and_then(|conditions| conditions.get("length"))
+        .and_then(Value::as_text);
+    if length == Some("exactly_but_uncounted") {
+        return Err(
+            "mcf: the trial went through an engine path that hands back text and no token \
+             count, so the pinned length cannot be proven; a timing needs the count (B-396)"
+                .to_owned(),
         );
-        (took, warmth)
-    })
+    }
+    let produced = account
+        .get("tokens")
+        .and_then(Value::as_integer)
+        .and_then(|held| usize::try_from(held).ok());
+    if produced == Some(pinned) {
+        return Ok(());
+    }
+    let stopped = account
+        .get("stopped")
+        .and_then(Value::as_text)
+        .unwrap_or("something it did not name");
+    Err(format!(
+        "mcf: the trial produced {} of the {pinned} tokens pinned and stopped at {stopped} — a \
+         run that did not produce what it pinned is not a trial, because the cost a token is \
+         read off the count (B-396)",
+        produced.map_or_else(|| "an unsaid number".to_owned(), |count| count.to_string()),
+    ))
 }
 
 /// One generation: how long the whole request took, and its account.
@@ -982,6 +1026,9 @@ fn generate(
         seed,
         tokens: identifiers.cloned(),
         engine: engine.map(str::to_owned),
+        // A timing divides by the count, so the count is pinned, and the
+        // account's own count is read back below to prove it was (B-396).
+        pinned: true,
     };
     let clock = SystemClock;
     let began = clock.now();

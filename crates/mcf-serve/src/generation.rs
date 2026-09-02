@@ -153,6 +153,9 @@ pub(crate) fn serve_generation(
     // sampling out of the serving path, so this is a number the caller
     // observed and not one this function goes and takes.
     free: Option<u64>,
+    // Whether the limit is the length: a timing's request, which the engine
+    // is told to run to and the account counts (B-396).
+    pinned: bool,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -188,12 +191,12 @@ pub(crate) fn serve_generation(
         Ok(Chosen::Provisioned(llama)) => match tokens {
             Some(tokens) => through_served(
                 store, &llama, server, runtime, named, tokens, limit, seed, gpu_layers, context,
-                writer,
+                pinned, writer,
             ),
-            None => through_provisioned(store, &llama, named, prompt, limit, seed, writer),
+            None => through_provisioned(store, &llama, named, prompt, limit, seed, pinned, writer),
         },
         Ok(Chosen::StandIn) => attempt(
-            store, resident, named, prompt, tokens, limit, seed, free, writer,
+            store, resident, named, prompt, tokens, limit, seed, free, pinned, writer,
         ),
         Err(failure) => Err(failure),
     };
@@ -416,13 +419,7 @@ pub(crate) fn ranks_over(
     } = *where_it_lives;
     let path = resolved(store, named);
     let mut slot = server.lock().map_err(|_poisoned| {
-        Failure::new(
-            mcf_core::failure::Category::EngineUnavailable,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Aborted,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            "the served engine's slot was left poisoned by an earlier failure",
-        )
+        unavailable("the served engine's slot was left poisoned by an earlier failure")
     })?;
     let reused = slot.as_ref().is_some_and(|held| held.model == path);
     let asked_for = u64::try_from(tokens.len()).unwrap_or(SMALLEST_WINDOW);
@@ -436,15 +433,9 @@ pub(crate) fn ranks_over(
         *slot = None;
         *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
     }
-    let engine = slot.as_ref().ok_or_else(|| {
-        Failure::new(
-            mcf_core::failure::Category::EngineUnavailable,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Aborted,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            "the served engine was started and then was not there",
-        )
-    })?;
+    let engine = slot
+        .as_ref()
+        .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
 
     let mut ranked = Vec::new();
     for at in 1..tokens.len().min(MOST_RANKED) {
@@ -499,6 +490,7 @@ fn through_served(
     seed: u64,
     gpu_layers: u32,
     context: u64,
+    pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     let given = Path::new(named);
@@ -511,13 +503,7 @@ fn through_served(
     let held = metadata.len();
 
     let mut slot = server.lock().map_err(|_poisoned| {
-        Failure::new(
-            mcf_core::failure::Category::EngineUnavailable,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Aborted,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            "the served engine's slot was left poisoned by an earlier failure",
-        )
+        unavailable("the served engine's slot was left poisoned by an earlier failure")
     })?;
     // A server holding a different model is stopped rather than kept beside
     // this one: two resident models is a decision about memory nobody has
@@ -538,17 +524,11 @@ fn through_served(
         *slot = None;
         *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
     }
-    let engine = slot.as_ref().ok_or_else(|| {
-        Failure::new(
-            mcf_core::failure::Category::EngineUnavailable,
-            mcf_core::failure::Attribution::Machine,
-            mcf_core::failure::Disposition::Aborted,
-            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
-            "the served engine was started and then was not there",
-        )
-    })?;
+    let engine = slot
+        .as_ref()
+        .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
 
-    let completed = engine.complete(tokens, limit, seed)?;
+    let completed = engine.complete(tokens, limit, seed, pinned)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
@@ -573,6 +553,10 @@ fn through_served(
     let mut conditions = conditions(named, Some((&path, held)), seed, limit);
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(engine_name));
+        fields.insert(
+            "length".to_owned(),
+            Value::text(Length::of(pinned).as_str()),
+        );
         fields.insert(
             "loaded".to_owned(),
             Value::text(if reused {
@@ -687,6 +671,10 @@ fn without_the_marker(said: &str) -> (String, &'static str) {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's conditions, each named in the account"
+)]
 fn through_provisioned(
     store: &Path,
     llama: &crate::adapters::ProvisionedLlama,
@@ -694,6 +682,7 @@ fn through_provisioned(
     prompt: &str,
     limit: usize,
     seed: u64,
+    pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     let given = Path::new(named);
@@ -705,7 +694,7 @@ fn through_provisioned(
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
     let held = metadata.len();
 
-    let mut command = llama.generate(&path, prompt, limit, seed);
+    let mut command = llama.generate(&path, prompt, limit, seed, pinned);
     let mut at = 0_usize;
     let mut text = String::new();
     // Held back until it is known not to be the start of the marker, so that
@@ -751,6 +740,17 @@ fn through_provisioned(
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(engine_name));
         fields.insert("loaded".to_owned(), Value::text("per_request_subprocess"));
+        // The tool was told, and it does not count: `tokens` below is a count
+        // of chunks it printed, so a pin through this path is asked and not
+        // proven, and the account says which (A21).
+        fields.insert(
+            "length".to_owned(),
+            Value::text(if pinned {
+                Length::ExactlyButUncounted.as_str()
+            } else {
+                Length::AtMost.as_str()
+            }),
+        );
         fields.insert(
             "peak_resident_bytes".to_owned(),
             ended
@@ -763,44 +763,36 @@ fn through_provisioned(
         );
     }
 
-    let bytes = Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX));
-    let said = Some(Said {
-        text,
-        tokens: Vec::new(),
-    });
-    match ended {
-        Ok(_) => Ok(Produced {
-            account: Value::map([
-                (
-                    "tokens",
-                    Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
-                ),
-                // Its own end-of-turn token where the tool said so, and
-                // *unknown* where it did not — which is A7 keeping what MCF
-                // knows and what it does not apart, rather than discarding
-                // both (F142).
-                ("stopped", Value::text(why)),
-                ("text_bytes", bytes),
-                ("conditions", conditions),
-            ]),
-            said,
-        }),
-        // The engine died. What it produced was produced (A4); the failure is
+    let mut account = vec![
+        (
+            "tokens",
+            Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
+        ),
+        // Its own end-of-turn token where the tool said so, and *unknown*
+        // where it did not — which is A7 keeping what MCF knows and what it
+        // does not apart, rather than discarding both (F142). And where the
+        // engine died: what it produced was produced (A4), the failure is
         // the account, and the daemon is still here (§3.1).
-        Err(failure) => Ok(Produced {
-            account: Value::map([
-                (
-                    "tokens",
-                    Value::Integer(i64::try_from(at).unwrap_or(i64::MAX)),
-                ),
-                ("stopped", Value::text("engine_died")),
-                ("text_bytes", bytes),
-                ("failure", mcf_record::encode::failure(&failure)),
-                ("conditions", conditions),
-            ]),
-            said,
-        }),
+        (
+            "stopped",
+            Value::text(if ended.is_ok() { why } else { "engine_died" }),
+        ),
+        (
+            "text_bytes",
+            Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX)),
+        ),
+    ];
+    if let Err(failure) = &ended {
+        account.push(("failure", mcf_record::encode::failure(failure)));
     }
+    account.push(("conditions", conditions));
+    Ok(Produced {
+        account: Value::map(account),
+        said: Some(Said {
+            text,
+            tokens: Vec::new(),
+        }),
+    })
 }
 
 /// The conditions every account carries, whether it succeeded or not.
@@ -858,6 +850,7 @@ fn attempt(
     limit: usize,
     seed: u64,
     free: Option<u64>,
+    pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     // A path as given, or a name under the daemon's store — the two ways a
@@ -974,8 +967,14 @@ fn attempt(
             // The model's own end of text, which the file states and MCF was
             // reading and never using: without it a generation always runs to
             // the budget, and *the model finished* is unobservable — which is
-            // what the chat-template probe found first (F37).
-            stop: vocabulary.ending.into_iter().collect(),
+            // what the chat-template probe found first (F37). Unless the
+            // length is pinned, in which case running to the budget is the
+            // point (B-396).
+            stop: if pinned {
+                Vec::new()
+            } else {
+                vocabulary.ending.into_iter().collect()
+            },
         },
         &mut |token| {
             // Each token goes out as it exists. A write that fails — the
@@ -1019,11 +1018,9 @@ fn attempt(
             ),
             (
                 "conditions",
-                conditions(named, Some((&path, held_bytes)), seed, limit).with_residency(
-                    loaded,
-                    &since,
-                    dequantized,
-                ),
+                conditions(named, Some((&path, held_bytes)), seed, limit)
+                    .with_residency(loaded, &since, dequantized)
+                    .with_length(pinned),
             ),
             ("degraded", Value::text(degradation)),
         ]),
@@ -1032,6 +1029,17 @@ fn attempt(
             tokens: produced.tokens.clone(),
         }),
     })
+}
+
+/// The served engine is not there to ask, and this is why.
+fn unavailable(why: &'static str) -> Failure {
+    Failure::new(
+        mcf_core::failure::Category::EngineUnavailable,
+        mcf_core::failure::Attribution::Machine,
+        mcf_core::failure::Disposition::Aborted,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        why,
+    )
 }
 
 /// The refusal for a model that is not where it was said to be.
@@ -1048,8 +1056,42 @@ fn missing(named: &str, path: &Path, error: &std::io::Error) -> Failure {
     .with_context("os_error", error.to_string())
 }
 
+/// What the request's limit was: a ceiling, or the length.
+///
+/// Said in every account under `conditions.length`, so that a reader dividing
+/// a duration by the count knows whether the count was the one asked for —
+/// and, for a pin that went through a path that cannot count, that it was
+/// asked and not proven (B-396, A21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Length {
+    /// The limit was a ceiling; the model's end of text ends the turn.
+    AtMost,
+    /// The limit was the length; the engine ran to it and counted.
+    Exactly,
+    /// The limit was the length and the engine was told so, but this path
+    /// hands back text rather than a token count, so the pin is not proven.
+    ExactlyButUncounted,
+}
+
+impl Length {
+    /// The pin's word for a path that counts.
+    pub(crate) const fn of(pinned: bool) -> Self {
+        if pinned { Self::Exactly } else { Self::AtMost }
+    }
+
+    /// The word on the wire.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::AtMost => "at_most",
+            Self::Exactly => "exactly",
+            Self::ExactlyButUncounted => "exactly_but_uncounted",
+        }
+    }
+}
+
 /// Residency, stated on every account (D41).
 trait WithResidency {
+    fn with_length(self, pinned: bool) -> Self;
     fn with_residency(self, loaded: &str, since: &str, dequantized: u64) -> Self;
 }
 
@@ -1063,6 +1105,17 @@ impl WithResidency for Value {
         fields.insert(
             "resident_bytes_dequantized".to_owned(),
             Value::Integer(i64::try_from(dequantized).unwrap_or(i64::MAX)),
+        );
+        Value::Map(fields)
+    }
+
+    fn with_length(self, pinned: bool) -> Self {
+        let Value::Map(mut fields) = self else {
+            return self;
+        };
+        fields.insert(
+            "length".to_owned(),
+            Value::text(Length::of(pinned).as_str()),
         );
         Value::Map(fields)
     }

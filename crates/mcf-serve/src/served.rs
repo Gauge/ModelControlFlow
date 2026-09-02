@@ -445,6 +445,11 @@ impl Served {
 
     /// One greedy generation from a turn of token identifiers.
     ///
+    /// `pinned` tells the engine to run past the model's end of text to the
+    /// limit, so that `limit` is the length rather than a ceiling on it; the
+    /// count that comes back in [`Completed::predicted`] is what proves it
+    /// did (B-396).
+    ///
     /// # Errors
     ///
     /// `engine.protocol.malformed` for an answer MCF cannot read, and
@@ -454,6 +459,7 @@ impl Served {
         tokens: &[usize],
         limit: usize,
         seed: u64,
+        pinned: bool,
     ) -> Result<Completed, Failure> {
         let identifiers = Value::List(
             tokens
@@ -479,6 +485,10 @@ impl Served {
             // Every request starts from the same state, or a trial would be
             // measuring what the previous trial left behind (§3.12).
             ("cache_prompt", Value::Bool(false)),
+            // The model's end of text is not an end where the length is
+            // pinned: the server keeps sampling to `n_predict` and says it
+            // stopped at the limit, which the caller reads back (B-396).
+            ("ignore_eos", Value::Bool(pinned)),
         ])
         .to_line();
 

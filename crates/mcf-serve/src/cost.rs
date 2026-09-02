@@ -133,6 +133,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
         // D24's figure is about what MCF interposes around its own engine; a
         // provisioned one would put its own load inside the number.
         engine: Some("stand-in".to_owned()),
+        pinned: false,
     }
     .to_line();
     let started = clock.now();

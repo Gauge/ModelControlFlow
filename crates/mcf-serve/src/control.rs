@@ -104,7 +104,6 @@ pub enum Request {
         model: String,
         /// What to ask.
         prompt: String,
-        /// How many tokens at most.
         /// How many tokens, if the caller said.
         ///
         /// `None` is not the same as the default. A caller that said nothing
@@ -143,6 +142,17 @@ pub enum Request {
         /// tidiness problem, and a person's filed under MCF's is the privacy
         /// failure §6.8 exists to prevent.
         whose: mcf_record::content::Whose,
+        /// Whether `limit` is the length rather than a ceiling on it.
+        ///
+        /// A timing divides a duration by a count of tokens, so the count
+        /// has to be the one that was asked for: a pinned generation tells
+        /// the engine to ignore the model's end of text and run to the limit,
+        /// and the account's `tokens` is what proves it did (B-396, A21).
+        /// The pin travels with the request rather than being assumed by
+        /// whoever reads the account, because a declaration is not an
+        /// observation — the ladder and `mcf bench` read the count back and
+        /// keep no run that fell short of it.
+        pinned: bool,
     },
     /// What a hub publishes under a reference, and which of it will run here.
     ///
@@ -257,6 +267,7 @@ fn generate_line(
     tokens: Option<&[usize]>,
     engine: Option<&str>,
     whose: mcf_record::content::Whose,
+    pinned: bool,
 ) -> Value {
     Value::map([
         ("ask", Value::text("generate")),
@@ -293,6 +304,7 @@ fn generate_line(
             },
         ),
         ("whose", Value::text(whose.as_str())),
+        ("pinned", Value::Bool(pinned)),
     ])
 }
 
@@ -342,6 +354,7 @@ impl Request {
                 tokens,
                 engine,
                 whose,
+                pinned,
             } => generate_line(
                 model,
                 prompt,
@@ -350,6 +363,7 @@ impl Request {
                 tokens.as_deref(),
                 engine.as_deref(),
                 *whose,
+                *pinned,
             ),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
@@ -591,6 +605,13 @@ impl Request {
                         .and_then(Value::as_text)
                         .and_then(mcf_record::content::Whose::parse)
                         .unwrap_or(mcf_record::content::Whose::User),
+                    // Absent means a ceiling, which is what every request
+                    // was before there was a pin: a client that predates the
+                    // field asked for at most `limit`, and is given that.
+                    pinned: value
+                        .get("pinned")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

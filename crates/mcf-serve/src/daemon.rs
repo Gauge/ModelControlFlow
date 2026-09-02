@@ -386,6 +386,64 @@ struct Timed {
     peak_resident: Option<u64>,
     /// The window the engine ran in, which is what its cache was sized to.
     window: Option<u64>,
+    /// How many tokens the account says were produced — the engine's count,
+    /// which is what proves the pin held (B-396).
+    produced: Option<u64>,
+    /// Why the engine stopped, in the account's word.
+    stopped: Option<String>,
+}
+
+impl Timed {
+    /// Whether the run produced exactly what it was pinned to.
+    ///
+    /// The engine's count, not the request's: a run whose end of text came
+    /// early produced fewer tokens than the difference divides by, and a
+    /// per-token cost read off it would be a per-token cost of nothing in
+    /// particular (B-396, A21).
+    fn held_the_pin(&self, pinned: u32) -> bool {
+        self.produced == Some(u64::from(pinned))
+    }
+
+    /// The pin it fell short of, said.
+    fn short_of(&self, pinned: u32) -> String {
+        format!(
+            "the engine produced {} of the {pinned} tokens pinned, and stopped at {}",
+            self.produced
+                .map_or_else(|| "an unsaid number".to_owned(), |count| count.to_string()),
+            self.stopped
+                .as_deref()
+                .unwrap_or("something it did not name"),
+        )
+    }
+}
+
+/// A rung with no per-token cost, and why.
+///
+/// No pair came back in the right order, so nothing here is a per-token
+/// cost. The honest reading is that there is none — never a zero, and never
+/// the unsubtracted number standing in for the subtracted one (A7, A9). And
+/// where the engine refused the depth, that is the reason, not the pair
+/// (F152); where it ran but did not produce the pinned count, that is
+/// (B-396).
+fn not_measured(depth: Value, refused: Option<String>, fell_short: Option<String>) -> Value {
+    Value::map([
+        ("depth", depth),
+        ("measured", Value::Bool(false)),
+        (
+            "why",
+            Value::text(match (refused, fell_short) {
+                (Some(why), _) => format!("the engine produced nothing at this depth: {why}"),
+                (None, Some(why)) => format!(
+                    "{why} — a run that did not produce what it pinned is not a sample, \
+                     because the cost a token is read off the count (B-396)"
+                ),
+                (None, None) => "no pair of runs at this depth separated: the longer one \
+                                 finished no later than the shorter, so their difference is \
+                                 not a cost"
+                    .to_owned(),
+            }),
+        ),
+    ])
 }
 
 /// Nanoseconds as milliseconds, to three places, without a float.
@@ -1326,6 +1384,7 @@ impl Daemon {
                     seed,
                     tokens,
                     engine,
+                    pinned,
                 }) => {
                     // A generation is one request and many lines, so it has
                     // its own path: nothing about it fits in one `Answer`.
@@ -1337,6 +1396,7 @@ impl Daemon {
                         tokens.as_deref(),
                         engine.as_deref(),
                         whose,
+                        pinned,
                         &mut writer,
                     );
                     return None;
@@ -1418,6 +1478,7 @@ impl Daemon {
         tokens: Option<&[usize]>,
         engine: Option<&str>,
         whose: mcf_record::content::Whose,
+        pinned: bool,
         writer: &mut &UnixStream,
     ) {
         let at = Timestamp::now();
@@ -1449,6 +1510,7 @@ impl Daemon {
             engine,
             picked,
             system_memory_free(),
+            pinned,
             writer,
         );
         // The account goes to the record and what the model said goes to the
@@ -1639,6 +1701,9 @@ impl Daemon {
                     None,
                     picked.clone(),
                     system_memory_free(),
+                    // What the model says to a prompt, ended where the model
+                    // ends it: a report on the prompt is not a timing.
+                    false,
                     &mut into,
                 )
             };
@@ -1963,6 +2028,9 @@ impl Daemon {
             Some("provisioned"),
             prompt_tokens,
             crate::crosscheck::POSITIONS,
+            // Not pinned: the cross-check compares what two engines say from
+            // the same prefix, and where one ends its turn is part of that.
+            false,
             picked,
         )?;
         let Some(said) = produced.said else {
@@ -2042,20 +2110,30 @@ impl Daemon {
         // Why a run produced nothing, where the engine said: a rung the
         // engine refused is not a rung whose pair did not separate (F152).
         let mut refused: Option<String> = None;
+        // And why a run that produced something is not a sample: it did not
+        // produce what it was pinned to. The difference is divided by
+        // sixteen because sixteen is what separates the two runs, and a
+        // pair where that is not so is not divided (B-396).
+        let mut fell_short: Option<String> = None;
         for _ in 0..REPEATS {
             let one = self.timed_generation(named, engine, depth, 1, picked.cloned());
             let many = self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned());
-            for run in [&one, &many] {
+            for (run, pinned) in [(&one, 1), (&many, 1 + SETTLED)] {
                 match run {
                     Ok(timed) => {
                         ran_on = ran_on.take().or_else(|| timed.engine.clone());
                         peak_resident = timed.peak_resident.max(peak_resident);
                         window = timed.window.max(window);
+                        if !timed.held_the_pin(pinned) {
+                            fell_short = fell_short.take().or_else(|| Some(timed.short_of(pinned)));
+                        }
                     }
                     Err(why) => refused = refused.take().or_else(|| Some(why.clone())),
                 }
             }
             if let (Ok(short), Ok(long)) = (&one, &many)
+                && short.held_the_pin(1)
+                && long.held_the_pin(1 + SETTLED)
                 && long.ns > short.ns
             {
                 #[expect(
@@ -2114,26 +2192,7 @@ impl Daemon {
                     ("measured", Value::Bool(true)),
                 ])
             }
-            // No pair came back in the right order, so nothing here is a
-            // per-token cost. The honest reading is that there is none —
-            // never a zero, and never the unsubtracted number standing in for
-            // the subtracted one (A7, A9). And where the engine refused the
-            // depth, that is the reason, not the pair (F152).
-            None => Value::map([
-                ("depth", at_depth),
-                ("measured", Value::Bool(false)),
-                (
-                    "why",
-                    Value::text(refused.map_or_else(
-                        || {
-                            "no pair of runs at this depth separated: the longer one finished \
-                             no later than the shorter, so their difference is not a cost"
-                                .to_owned()
-                        },
-                        |why| format!("the engine produced nothing at this depth: {why}"),
-                    )),
-                ),
-            ]),
+            None => not_measured(at_depth, refused, fell_short),
         };
         (reading, ran_on)
     }
@@ -2157,11 +2216,17 @@ impl Daemon {
         // Identifier 1 is inside every vocabulary MCF can address. What it
         // means does not matter; that there are `depth` of them does.
         let tokens: Vec<usize> = vec![1; how_many];
+        // Pinned: the difference between the two runs is divided by the
+        // tokens between them, so both have to have produced exactly what
+        // they were asked for. The engine is told to run past its end of
+        // text, and the count comes back with the account — a run that fell
+        // short is refused below rather than divided by (B-396).
         let (produced, took) = self.drained_generation(
             named,
             engine,
             &tokens,
             usize::try_from(produce).unwrap_or(1),
+            true,
             picked,
         )?;
 
@@ -2183,6 +2248,16 @@ impl Daemon {
                 .map(str::to_owned),
             peak_resident: condition("peak_resident_bytes"),
             window: condition("window"),
+            produced: produced
+                .account
+                .get("tokens")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok()),
+            stopped: produced
+                .account
+                .get("stopped")
+                .and_then(Value::as_text)
+                .map(str::to_owned),
         })
     }
 
@@ -2200,6 +2275,7 @@ impl Daemon {
         engine: Option<&str>,
         tokens: &[usize],
         produce: usize,
+        pinned: bool,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     ) -> std::result::Result<
         (
@@ -2241,6 +2317,7 @@ impl Daemon {
                 engine,
                 picked,
                 system_memory_free(),
+                pinned,
                 &mut writer,
             )
         };

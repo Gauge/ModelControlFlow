@@ -11,6 +11,15 @@
 //! away, while the screen listed *prompt reading speed* and *start-up* as
 //! tests that never ran (A7, §3.15).
 //!
+//! **Both runs of a pair are pinned, and the pin is proven.** The difference
+//! is divided by sixteen because sixteen tokens separate the two runs, which
+//! is only so if the engine produced one and seventeen — a model whose end of
+//! text came fifth would have produced five, and a cost read off that pair
+//! would be a cost of nothing in particular (F117). So the request tells the
+//! engine to run past its end of text, and the daemon reads the count back
+//! from the account rather than assuming it: a pair that did not produce what
+//! it pinned is not a sample, and a rung with none says so (B-396, A21).
+//!
 //! **Derived here, once** — in the daemon, from the readings it took — so that
 //! the command line, the window and the record hold one figure, not three
 //! arithmetics that agree today (B-072).

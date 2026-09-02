@@ -8715,6 +8715,17 @@ would have a much smaller fixed cost and the same slope; that is the next thing
 to measure, and it is not measured here. `prototypes/generation-timing` is the
 instrument, and A20 keeps every figure above out of anything MCF publishes.
 
+**Closed on the wire it happened on (B-396).** *At most n* and *exactly n* are
+now two requests: a generation carries `pinned`, the engine is told to run past
+its end of text, and the account's own count is read back by whoever divides
+by it — the ladder keeps only a pair whose runs produced one and seventeen, and
+`mcf bench` stops at the first trial whose count is not the pin. Against
+Qwen3-VL-2B served by the daemon, the same chat turn asked for 64 tokens
+produced **3** and stopped at the model's end of text unpinned, and **64**,
+stopped at the limit, pinned. The completion tool honours `--ignore-eos` and
+does not count, and its account says `exactly_but_uncounted` rather than
+`exactly` (A21).
+
 ## 118 · F118 — Generation is not a constant-rate process: the rate halves with context depth, and the depth a machine can reach is bounded by memory rather than by the model (B-396, B-397, D19, §3.4, A19, F117)
 
 **The operator's design, tested.** The proposal was to let every model generate

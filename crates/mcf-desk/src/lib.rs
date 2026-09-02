@@ -1721,6 +1721,7 @@ impl Desk {
                 // being inferred at the far end, and a window is never a
                 // probe.
                 whose: mcf_record::content::Whose::User,
+                pinned: false,
             },
             format!("asking {}", held.name),
         ));
