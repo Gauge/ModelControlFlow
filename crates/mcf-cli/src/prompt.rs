@@ -1074,7 +1074,7 @@ mod tests {
                   {"text":"You are careful.","changed":false,"moved_parts_per_million":0,
                    "without":"Blue.","held":{"first_rank":1,"kept":2,"of":2}}],
                 "clauses_over_the_cap":3,"settled":null,"generations":6,
-                "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
+                "unit":"sentence","unit_chosen_by":"text: no blank line",
                 "most":3,
                 "addressed_as":"one user turn, the whole prompt",
                 "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10,"ranked_depth":60,
@@ -1258,7 +1258,7 @@ mod tests {
     fn the_report_says_what_it_took_apart_and_how_it_was_addressed() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
-            text.contains("unit         sentence · the text: it has no blank line"),
+            text.contains("unit         sentence · text: no blank line"),
             "{text}"
         );
         assert!(

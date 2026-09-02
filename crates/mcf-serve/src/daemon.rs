@@ -206,11 +206,11 @@ fn held_value(held: Option<crate::prompt::Held>) -> Value {
 /// the same text, and which it was is a condition of the run.
 fn unit_chosen_by(report: &crate::prompt::Report) -> &'static str {
     if report.unit_chosen {
-        "the caller"
+        "chosen"
     } else if report.unit == crate::prompt::Unit::Paragraph {
-        "the text: a blank line separates its paragraphs"
+        "text: blank lines"
     } else {
-        "the text: it has no blank line, so it is sentences"
+        "text: no blank line"
     }
 }
 
@@ -517,11 +517,7 @@ fn prompt_report_value(
         ),
         (
             "addressed_as",
-            Value::text(
-                "one user turn, the whole prompt — MCF has probed no system turn (D43) and \
-                 assumes none"
-                    .to_owned(),
-            ),
+            Value::text("one user turn · whole prompt · system turn: none, not probed".to_owned()),
         ),
         // **Settledness, under its condition or not at all.** The seeds are
         // drawn at a temperature the caller stated, and where none was the
@@ -544,8 +540,7 @@ fn prompt_report_value(
         (
             "sampler",
             Value::text(
-                "greedy, temperature 0, for the baseline, every ablation and the control — \
-                 the seed cannot change those",
+                "greedy · temperature 0 · seed held · as written, every removal, the control",
             ),
         ),
         (

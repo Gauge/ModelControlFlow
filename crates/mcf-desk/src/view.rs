@@ -2167,10 +2167,18 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     paint.say_at(
         area.x,
         area.y + 28.0,
-        &format!("what a prompt does to {named}, part by part"),
+        "model",
         Weight::Regular,
         size::BODY,
         ink.quiet,
+    );
+    paint.say_at(
+        area.x + READING_CHOICE,
+        area.y + 28.0,
+        named,
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
     );
 
     let (mut act, under) = the_document(paint, desk, mouse, area);
@@ -2188,12 +2196,12 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
     if cleared && !desk.typed.is_empty() {
         act = Some(Act::Clear);
     }
-    let (chosen, bottom) = the_choices(
+    let (chosen, bottom) = the_readings(
         paint,
         desk,
         mouse,
-        (cleared_button.right() + 14.0, under),
-        area.x,
+        (area.x, cleared_button.bottom() + 12.0),
+        area.w.min(820.0),
     );
     if chosen.is_some() {
         act = chosen;
@@ -2581,10 +2589,10 @@ fn removed_table(
         area.w,
         "removed",
         &[
-            format!("answer moved without each {unit}"),
+            format!("without each {unit}"),
             "seed held".to_owned(),
-            "an ordering, not relevance".to_owned(),
-            "press a row → its answer".to_owned(),
+            "ordering, not relevance".to_owned(),
+            "row → answer".to_owned(),
         ],
     );
     if clauses.is_empty() {
@@ -2798,7 +2806,7 @@ fn floors_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) 
         "floors",
         &[
             "control at every position".to_owned(),
-            format!("a {unit} the control matched somewhere is not shown to steer"),
+            format!("a {unit} matched anywhere → not steering"),
         ],
     );
     let rows: Vec<ReadingRow> = floors
@@ -2887,9 +2895,8 @@ fn not_asked(
         label,
         &[
             "not asked".to_owned(),
-            format!("\"{}\" above", extra.label()),
+            format!("{} above", extra.name()),
             count_of(extra.generations(parts, removed), "generation"),
-            extra.asks().to_owned(),
         ],
     ) + 4.0
 }
@@ -2925,9 +2932,9 @@ fn alone_table(
         "alone",
         &[
             format!("each {unit} as the whole prompt"),
-            "vs the answer as written".to_owned(),
+            "vs as written".to_owned(),
             "low = carries it alone".to_owned(),
-            "press a row → its answer".to_owned(),
+            "row → answer".to_owned(),
         ],
     );
     let control_moved = found
@@ -3057,10 +3064,10 @@ fn prefixes_table(
         area.w,
         "prefixes",
         &[
-            format!("prompt grown a {unit} at a time from the front"),
-            "vs the answer as written".to_owned(),
+            format!("grown a {unit} at a time"),
+            "vs as written".to_owned(),
             "low = already had it".to_owned(),
-            "press a row → its answer".to_owned(),
+            "row → answer".to_owned(),
         ],
     );
     let mut arrived = None;
@@ -3140,10 +3147,9 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
             "seeds",
             &[
                 "not asked".to_owned(),
-                "temperature field above".to_owned(),
-                "3 generations at it".to_owned(),
-                "at temperature 0 the seed changes nothing".to_owned(),
-                "no house temperature".to_owned(),
+                "temperature above".to_owned(),
+                "3 generations".to_owned(),
+                "at 0 the seed changes nothing".to_owned(),
             ],
         );
     };
@@ -3173,7 +3179,7 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
                 "farthest from greedy {}",
                 as_percent(integer(settled, "from_greedy_parts_per_million"))
             ),
-            "a fact about the pair, not a merit of the prompt".to_owned(),
+            "about the pair, not the prompt".to_owned(),
         ],
     )
 }
@@ -3374,59 +3380,6 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
     }
 }
 
-/// What pressing Analyse will cost, in generations.
-///
-/// The same counting the daemon does — one for the prompt, one for each part
-/// removed, one for the control, and one for each further seed — over the
-/// parts the daemon's own splitting finds, so the forecast and the bill
-/// cannot disagree (B-072, F147).
-fn what_it_will_cost(
-    unit: mcf_serve::prompt::Unit,
-    parts: usize,
-    removed: usize,
-    settling: bool,
-    extras: mcf_serve::prompt::Extras,
-) -> String {
-    use mcf_serve::prompt::SEEDS;
-    if parts <= 1 {
-        return format!(
-            "1 {} — nothing to remove: a document of one part cannot be taken apart",
-            unit.name()
-        );
-    }
-    let seeds = if settling { SEEDS } else { 0 };
-    let generations = removed
-        .saturating_add(2)
-        .saturating_add(seeds)
-        .saturating_add(extras.generations(parts, removed));
-    let more: Vec<String> = extras
-        .asked()
-        .map(|extra| {
-            format!(
-                ", {} {}",
-                count_of(extra.generations(parts, removed), "more"),
-                extra.spent_on()
-            )
-        })
-        .collect();
-    format!(
-        "{} — {}: one for the document, {} removed in turn, one for the control sentence{}{}",
-        count_of(parts, unit.name()),
-        count_of(generations, "generation"),
-        if removed == parts {
-            "each".to_owned()
-        } else {
-            format!("the first {removed}")
-        },
-        more.concat(),
-        if settling {
-            format!(", and {SEEDS} seeds at the temperature")
-        } else {
-            String::new()
-        }
-    )
-}
-
 /// The one field: the prompt, whole.
 ///
 /// Returns what was pressed and where the row of buttons goes.
@@ -3454,8 +3407,7 @@ fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (
         mouse,
         field,
         &desk.typed,
-        "paste or type the prompt to analyse, whole — a persona, an instruction sheet, a \
-         question. Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
+        "the prompt, whole · Return: new line · Ctrl+Return: analyse · Ctrl+C: copy",
         desk.caret == Caret::Document,
     ) {
         act = Some(Act::Focus(Caret::Document));
@@ -3463,251 +3415,348 @@ fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (
     (act, field.bottom() + 8.0)
 }
 
-/// What pressing Analyse will do and cost, and the two choices in it.
+/// What pressing Analyse will do and cost, as a table: a row a reading,
+/// with the choice in it, the condition it is read under, and the
+/// generations it spends — and the total, before it is spent (§3.8,
+/// §3.15). The unit the document is taken apart into, how many parts are
+/// removed, the temperature the seeds are drawn at and every further
+/// reading are choices on the page rather than constants behind it
+/// (B-430, B-431, B-434, B-435, B-436, B60).
 ///
-/// One generation per part plus a seed each, which on a large model on the
-/// processor is minutes. The only place this was said was a line that appeared
-/// once the wait had already started, which is a cost disclosed after it is
-/// incurred (§3.8, §3.15). The unit the document is taken apart into and how
-/// many parts are removed are choices on the page rather than constants
-/// behind it: forty paragraphs is forty generations, and whether that is
-/// worth it is the person's (B-430).
-fn the_choices(
+/// Returns what was pressed and the table's bottom.
+fn the_readings(
     paint: &mut Painter,
     desk: &Desk,
     mouse: &Mouse,
     at: (f32, f32),
-    left: f32,
+    width: f32,
 ) -> (Option<Act>, f32) {
-    use mcf_serve::prompt::{MOST_CLAUSES, Unit};
     let taken = desk.taken();
     if desk.doing.busy() || taken.text.is_empty() {
-        return (None, at.1 + ui::BUTTON);
-    }
-    let (unit, chosen) = taken.unit();
-    let parts = taken.parts().len();
-    let cap = taken.cap();
-    let removed = parts.min(cap);
-    let faint = paint.ink.faint;
-    let settle = desk.settle();
-    let of = what_it_will_cost(
-        unit,
-        parts,
-        removed,
-        matches!(settle, Ok(Some(_))),
-        taken.extras,
-    );
-    paint.say_at(at.0, at.1 + 8.0, &of, Weight::Regular, size::SMALL, faint);
-
-    // The choices, on the line under the buttons.
-    let row = at.1 + ui::BUTTON + 8.0;
-    let mut x = left;
-    let mut act = None;
-    let (by_paragraph, one) = ui::fitted(
-        paint,
-        mouse,
-        (x, row),
-        "by paragraph",
-        if unit == Unit::Paragraph {
-            Kind::Primary
-        } else {
-            Kind::Quiet
-        },
-    );
-    x = one.right() + 4.0;
-    let (by_sentence, two) = ui::fitted(
-        paint,
-        mouse,
-        (x, row),
-        "by sentence",
-        if unit == Unit::Sentence {
-            Kind::Primary
-        } else {
-            Kind::Quiet
-        },
-    );
-    x = two.right() + 4.0;
-    if by_paragraph {
-        act = Some(Act::TakeApartBy(Some(Unit::Paragraph)));
-    }
-    if by_sentence {
-        act = Some(Act::TakeApartBy(Some(Unit::Sentence)));
-    }
-    let decided = if chosen {
-        "chosen here".to_owned()
-    } else if unit == Unit::Paragraph {
-        "decided by the text: a blank line separates its paragraphs".to_owned()
-    } else {
-        "decided by the text: it has no blank line".to_owned()
-    };
-    paint.say_at(
-        x + 8.0,
-        row + 8.0,
-        &decided,
-        Weight::Regular,
-        size::SMALL,
-        faint,
-    );
-    x += paint.measure(&decided, Weight::Regular, size::SMALL) + 36.0;
-
-    if parts > 1 {
-        let (fewer, three) = ui::fitted(paint, mouse, (x, row), "fewer", Kind::Ordinary);
-        x = three.right() + 4.0;
-        let (more, four) = ui::fitted(paint, mouse, (x, row), "more", Kind::Ordinary);
-        x = four.right() + 4.0;
-        let (all, five) = ui::fitted(paint, mouse, (x, row), "all", Kind::Ordinary);
-        x = five.right() + 8.0;
-        if fewer {
-            act = Some(Act::MostParts(cap.saturating_sub(4).max(1)));
-        }
-        if more {
-            act = Some(Act::MostParts(cap.saturating_add(4).min(parts.max(1))));
-        }
-        if all {
-            act = Some(Act::MostParts(parts));
-        }
-        let said = if removed == parts {
-            format!("removing every one of the {parts}")
-        } else if taken.most.is_some() {
-            format!("removing the first {removed} of {parts}, as chosen here")
-        } else {
-            format!("removing the first {removed} of {parts} — the default is {MOST_CLAUSES}")
-        };
-        paint.say_at(x, row + 8.0, &said, Weight::Regular, size::SMALL, faint);
-    }
-    let settled = the_temperature(paint, desk, mouse, (left, row + ui::BUTTON + 8.0), settle);
-    let extras = the_extras(paint, desk, mouse, (left, settled.1 + 8.0), parts);
-    (extras.0.or(settled.0).or(act), extras.1)
-}
-
-/// The further readings, each a button that says what it asks and what it
-/// costs, since each is generations a part (B-434, B-435, §3.15).
-///
-/// Returns what was pressed and the band's bottom.
-fn the_extras(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    at: (f32, f32),
-    parts: usize,
-) -> (Option<Act>, f32) {
-    use mcf_serve::prompt::Extra;
-    let faint = paint.ink.faint;
-    if parts <= 1 {
         return (None, at.1);
     }
-    let removed = parts.min(desk.taken().cap());
-    let mut act = None;
-    let mut y = at.1;
-    for extra in Extra::ALL {
-        let asked = desk.extras.has(extra);
-        let (pressed, button) = ui::fitted(
+    let area = Box::new(at.0, at.1, width, 0.0);
+    let columns = [
+        Column {
+            head: "choice",
+            at: READING_CHOICE,
+            right: false,
+        },
+        Column {
+            head: "condition",
+            at: READING_CONDITION,
+            right: false,
+        },
+        Column {
+            head: "generations",
+            at: width,
+            right: true,
+        },
+    ];
+    // The answer as written is the one generation every run spends.
+    let mut table = Readings {
+        area,
+        y: heads(paint, area, "reading", &columns),
+        total: 1,
+        act: None,
+    };
+    let ink = paint.ink;
+    let parts = taken.parts().len();
+    table.unit_row(paint, mouse, &taken);
+    if parts <= 1 {
+        table.row(
             paint,
-            mouse,
-            (at.0, y),
-            extra.label(),
-            if asked { Kind::Primary } else { Kind::Quiet },
+            "removed",
+            ("nothing to remove · one part", ink.warn),
+            Some((0, true)),
         );
-        if pressed {
-            act = Some(Act::Extra(extra, !asked));
-        }
-        let said = format!(
-            "{}{} — {}",
-            if asked { "asks " } else { "would ask " },
-            extra.asks(),
-            count_of(extra.generations(parts, removed), "generation")
-        );
-        paint.say_at(
-            button.right() + 8.0,
-            y + 8.0,
-            &said,
-            Weight::Regular,
-            size::SMALL,
-            faint,
-        );
-        y = button.bottom() + 6.0;
+    } else {
+        table.removed_row(paint, mouse, &taken);
+        table.extra_rows(paint, desk, mouse, &taken);
+        table.seeds_row(paint, desk, mouse);
     }
-    (act, y - 6.0)
+    let bottom = table.total_row(paint);
+    (table.act, bottom)
 }
 
-/// The temperature the settledness seeds are drawn at, as a field: empty
-/// asks the question nothing, and the page says so rather than settling on
-/// a value of its own (B60, B-431).
-///
-/// Returns what was pressed and the row's bottom.
-fn the_temperature(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    at: (f32, f32),
-    settle: Result<Option<mcf_core::configuration::Thousandths>, &str>,
-) -> (Option<Act>, f32) {
-    use mcf_serve::prompt::SEEDS;
-    let ink = paint.ink;
-    let label = "settle at temperature";
-    paint.say_at(
-        at.0,
-        at.1 + 8.0,
-        label,
-        Weight::Regular,
-        size::SMALL,
-        ink.faint,
-    );
-    let x = at.0 + paint.measure(label, Weight::Regular, size::SMALL) + 10.0;
-    let field = Box::new(x, at.1, 96.0, ui::BUTTON);
-    let mut act = None;
-    if ui::field(
-        paint,
-        mouse,
-        field,
-        &desk.temperature,
-        "e.g. 0.7",
-        desk.caret == Caret::Temperature,
+/// The readings table as it is drawn, a row at a time.
+struct Readings {
+    area: Box,
+    y: f32,
+    total: usize,
+    act: Option<Act>,
+}
+
+/// Where the readings table's choice and condition columns start.
+const READING_CHOICE: f32 = 96.0;
+const READING_CONDITION: f32 = 330.0;
+/// A readings row: a button's height and a little air.
+const READING_ROW: f32 = ui::BUTTON + 2.0;
+
+impl Readings {
+    /// One row's label, condition and cost. A reading not asked for still
+    /// says what it would cost, quietly, and adds nothing to the total
+    /// (§3.15).
+    fn row(
+        &mut self,
+        paint: &mut Painter,
+        label: &str,
+        condition: (&str, Rgb),
+        spent: Option<(usize, bool)>,
     ) {
-        act = Some(Act::Focus(Caret::Temperature));
-    }
-    let (said, colour) = match settle {
-        Ok(None) => (
-            format!(
-                "empty: whether several seeds give several answers is not asked, since at \
-                 temperature 0 they cannot. A temperature draws {SEEDS} seeds at it — yours to \
-                 state, MCF has no house value (B60)"
-            ),
-            ink.faint,
-        ),
-        Ok(Some(held)) => (
-            format!(
-                "{SEEDS} seeds drawn at {held}, to say how many answers they give and how far \
-                 apart; every other generation stays greedy"
-            ),
-            ink.faint,
-        ),
-        Err(typed) => (
-            format!(
-                "\"{typed}\" is not a temperature: a decimal above 0, to three places — or \
-                 empty. Analyse waits until it is"
-            ),
-            ink.bad,
-        ),
-    };
-    let width = (at.0 + 820.0 - field.right() - 10.0).max(200.0);
-    let mut y = at.1 + 8.0;
-    for line in paint
-        .wrap(&said, Weight::Regular, size::SMALL, width)
-        .iter()
-        .take(2)
-    {
+        let ink = paint.ink;
+        let (area, y) = (self.area, self.y);
         paint.say_at(
-            field.right() + 10.0,
-            y,
-            line,
+            area.x,
+            y + 8.0,
+            label,
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        let shown = paint.elide(
+            condition.0,
             Weight::Regular,
             size::SMALL,
-            colour,
+            area.w - READING_CONDITION - 110.0,
         );
-        y += 15.0;
+        paint.say_at(
+            area.x + READING_CONDITION,
+            y + 10.0,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            condition.1,
+        );
+        if let Some((generations, asked)) = spent {
+            paint.say_right(
+                area.right(),
+                y + 8.0,
+                &generations.to_string(),
+                Weight::Bold,
+                size::BODY,
+                if asked { ink.ink } else { ink.faint },
+            );
+            if asked {
+                self.total = self.total.saturating_add(generations);
+            }
+        }
+        self.y += READING_ROW;
     }
-    (act, at.1 + ui::BUTTON)
+
+    /// The unit, decided by the text unless chosen here.
+    fn unit_row(
+        &mut self,
+        paint: &mut Painter,
+        mouse: &Mouse,
+        taken: &mcf_serve::prompt::Taken<'_>,
+    ) {
+        use mcf_serve::prompt::Unit;
+        let (unit, chosen) = taken.unit();
+        let parts = taken.parts().len();
+        let mut x = self.area.x + READING_CHOICE;
+        for (name, each) in [("paragraph", Unit::Paragraph), ("sentence", Unit::Sentence)] {
+            let (pressed, button) = ui::fitted(
+                paint,
+                mouse,
+                (x, self.y),
+                name,
+                if unit == each {
+                    Kind::Primary
+                } else {
+                    Kind::Quiet
+                },
+            );
+            if pressed {
+                self.act = Some(Act::TakeApartBy(Some(each)));
+            }
+            x = button.right() + 4.0;
+        }
+        let decided = format!(
+            "{} · {}",
+            if chosen {
+                "chosen here"
+            } else if unit == Unit::Paragraph {
+                "text: blank lines"
+            } else {
+                "text: no blank line"
+            },
+            count_of(parts, unit.name())
+        );
+        let quiet = paint.ink.quiet;
+        self.row(paint, "unit", (&decided, quiet), None);
+    }
+
+    /// How many parts are removed: in steps, up to every one.
+    fn removed_row(
+        &mut self,
+        paint: &mut Painter,
+        mouse: &Mouse,
+        taken: &mcf_serve::prompt::Taken<'_>,
+    ) {
+        let parts = taken.parts().len();
+        let cap = taken.cap();
+        let removed = parts.min(cap);
+        let mut x = self.area.x + READING_CHOICE;
+        for (name, to) in [
+            ("fewer", cap.saturating_sub(4).max(1)),
+            ("more", cap.saturating_add(4).min(parts)),
+            ("all", parts),
+        ] {
+            let (pressed, button) = ui::fitted(paint, mouse, (x, self.y), name, Kind::Ordinary);
+            if pressed {
+                self.act = Some(Act::MostParts(to));
+            }
+            x = button.right() + 4.0;
+        }
+        let how_many = if removed == parts {
+            format!("{removed} of {parts}")
+        } else if taken.most.is_some() {
+            format!("first {removed} of {parts} · chosen here")
+        } else {
+            format!(
+                "first {removed} of {parts} · default {}",
+                mcf_serve::prompt::MOST_CLAUSES
+            )
+        };
+        let quiet = paint.ink.quiet;
+        self.row(paint, "removed", (&how_many, quiet), Some((removed, true)));
+    }
+
+    /// The control — one draw, or at every position — and the further
+    /// readings, each a switch with its cost beside it (B-434, B-435,
+    /// B-436).
+    fn extra_rows(
+        &mut self,
+        paint: &mut Painter,
+        desk: &Desk,
+        mouse: &Mouse,
+        taken: &mcf_serve::prompt::Taken<'_>,
+    ) {
+        use mcf_serve::prompt::Extra;
+        let parts = taken.parts().len();
+        let removed = parts.min(taken.cap());
+        for extra in Extra::ALL {
+            let asked = desk.extras.has(extra);
+            let (pressed, _) = ui::fitted(
+                paint,
+                mouse,
+                (self.area.x + READING_CHOICE, self.y),
+                if asked { "on" } else { "off" },
+                if asked { Kind::Primary } else { Kind::Quiet },
+            );
+            if pressed {
+                self.act = Some(Act::Extra(extra, !asked));
+            }
+            let (label, condition, generations) = match extra {
+                Extra::Floors => (
+                    "control",
+                    if asked {
+                        format!(
+                            "every position · {}",
+                            count_of(removed.saturating_add(1), "draw")
+                        )
+                    } else {
+                        "1 draw · before the last part".to_owned()
+                    },
+                    if asked {
+                        extra.generations(parts, removed).saturating_add(1)
+                    } else {
+                        1
+                    },
+                ),
+                Extra::Alone => (
+                    "alone",
+                    "each part as the whole prompt · control alone".to_owned(),
+                    extra.generations(parts, removed),
+                ),
+                Extra::Prefixes => (
+                    "prefixes",
+                    "grown a part at a time from the front · short of the whole".to_owned(),
+                    extra.generations(parts, removed),
+                ),
+            };
+            let quiet = paint.ink.quiet;
+            self.row(
+                paint,
+                label,
+                (&condition, quiet),
+                Some((generations, asked || extra == Extra::Floors)),
+            );
+        }
+    }
+
+    /// The temperature the seeds are drawn at: empty asks nothing, and the
+    /// page says so rather than settling on a value of its own (B60,
+    /// B-431). What is not a temperature holds Analyse (§3.15).
+    fn seeds_row(&mut self, paint: &mut Painter, desk: &Desk, mouse: &Mouse) {
+        use mcf_serve::prompt::SEEDS;
+        let ink = paint.ink;
+        let field = Box::new(self.area.x + READING_CHOICE, self.y, 96.0, ui::BUTTON);
+        if ui::field(
+            paint,
+            mouse,
+            field,
+            &desk.temperature,
+            "e.g. 0.7",
+            desk.caret == Caret::Temperature,
+        ) {
+            self.act = Some(Act::Focus(Caret::Temperature));
+        }
+        let (condition, colour, seeds) = match desk.settle() {
+            Ok(None) => (
+                "empty · at 0 the seed changes nothing · no house value".to_owned(),
+                ink.quiet,
+                false,
+            ),
+            Ok(Some(held)) => (
+                format!("{SEEDS} at {held} · every other generation greedy"),
+                ink.quiet,
+                true,
+            ),
+            Err(typed) => (
+                format!(
+                    "\"{typed}\" is not a temperature · a decimal above 0, to 3 places, or \
+                     empty · Analyse waits"
+                ),
+                ink.bad,
+                false,
+            ),
+        };
+        self.row(paint, "seeds", (&condition, colour), Some((SEEDS, seeds)));
+    }
+
+    /// The total under the rows. Returns the line under it.
+    fn total_row(&self, paint: &mut Painter) -> f32 {
+        let ink = paint.ink;
+        let (area, y) = (self.area, self.y);
+        paint.rule((area.x, y + 2.0), (area.right(), y + 2.0), ink.line, 255);
+        paint.say_at(
+            area.x,
+            y + 10.0,
+            "total",
+            Weight::Regular,
+            size::BODY,
+            ink.quiet,
+        );
+        paint.say_at(
+            area.x + READING_CONDITION,
+            y + 12.0,
+            "+ 1 as written · greedy · seed held",
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        paint.say_right(
+            area.right(),
+            y + 10.0,
+            &self.total.to_string(),
+            Weight::Bold,
+            size::BODY,
+            ink.ink,
+        );
+        y + 36.0
+    }
 }
 
 /// What the report took the document apart into, as it names one part.
