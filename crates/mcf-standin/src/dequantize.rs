@@ -80,6 +80,10 @@ fn decode_block(kind: TensorKind, raw: &[u8], out: &mut Vec<f32>) -> Result<()> 
             byte(raw, 3),
         ]))),
         TensorKind::F16 => out.push(from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]))),
+        // The sixteen bits are the top half of the single-precision word.
+        TensorKind::BF16 => out.push(f32::from_bits(
+            u32::from(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)])) << 16,
+        )),
         TensorKind::Q8_0 => {
             // A half-precision scale, then thirty-two signed bytes.
             let scale = from_half(u16::from_le_bytes([byte(raw, 0), byte(raw, 1)]));

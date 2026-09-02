@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 150 | [F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)](#150-f150-the-cache-of-a-hybrid-was-sized-by-the-headers-block-count-and-came-out-four-times-too-large-the-same-files-heads-read-as-thirty-two-against-sixteen-declared-and-its-bf16-tensors-as-a-type-mcf-does-not-read-b-038-a7-a21-f16) |
 | 149 | [F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)](#149-f149-the-daemon-found-its-engines-once-and-never-looked-again-so-an-engine-built-while-it-ran-was-a-prefix-on-disk-and-no-engine-on-the-socket-f31-a7-b-367-b-072) |
 | 148 | [F148 — Six readers told the operator MCF did not say why, over a body that said exactly why (A2, B-072)](#148-f148-six-readers-told-the-operator-mcf-did-not-say-why-over-a-body-that-said-exactly-why-a2-b-072) |
 | 147 | [F147 — One real prompt found five defects in prompt analysis, and the report presented a run that separated nothing exactly as it presents one that works (§3.15, A6, A7, §3.4)](#147-f147-one-real-prompt-found-five-defects-in-prompt-analysis-and-the-report-presented-a-run-that-separated-nothing-exactly-as-it-presents-one-that-works-3-15-a6-a7-3-4) |
@@ -9400,6 +9401,70 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 150 · F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)
+
+`mcf explain` was run over a file whose architecture keeps a recurrent
+state in three of every four blocks and attends in the fourth — forty-eight
+blocks, twelve of them holding keys and values. Three things in the report
+were wrong, and each was the header believed where the directory could have
+been read (A21).
+
+**The cache was sized by the block count.** The key/value cache per token
+was *layers × key/value heads × (key + value widths) × 2 bytes* with
+*layers* the header's `block_count`, so the file's 24,576 bytes per token
+were stated as 98,304 and the cache at its declared context as 24 GiB
+rather than 6. The arithmetic in `mcf-serve` — the one placement is
+resolved from and *largest context* is computed from — carried the same
+count, with a comment saying a hybrid's cache is overstated here and that
+overstating errs toward refusing. It does: four times the cache is a
+context that fits refused (F16 made the same choice for a configuration
+that does not say which layers attend). A GGUF header does not say either;
+its tensor directory does. Every block that attends holds an `attn_k` or
+`attn_qkv` projection, every block that keeps a recurrent state holds
+`ssm_*` tensors, and counting the blocks by what each holds gives the
+number of blocks that cache. Both surfaces now size the cache from that
+count — one census, read in `mcf-standin`, used by the explain report and
+the serving arithmetic alike (B-072) — and a header read with no directory
+behind it falls back to the block count, overstating rather than
+understating. The report says which it did: *across the 12 of 48 blocks
+that keep keys — the other 36 keep a fixed recurrent state*.
+
+**The blocks were a count, and they are not alike.** The same census is a
+section of the report: each shape of block, which blocks are that shape,
+what the shape is made of (attention or a recurrent state; a dense
+feed-forward, experts with or without a shared one, or neither), how many
+parameters the shape holds and at what encoding — a range where the blocks
+of one shape are encoded differently, as the first block of this file is.
+A second file read this way showed a dense first block among forty-six
+expert blocks, which its header says nowhere.
+
+**Heads were read off the wrong projection.** Observed attention heads were
+the query projection's width divided by the key width. The recurrent
+architecture's attention blocks carry a gate beside every query in the same
+tensor, so the projection is twice the heads' width, and the row said
+*declared 16, found 32, DISAGREE* about a file that was fine — a
+disagreement MCF invented, on a line whose whole purpose is to be believed
+over the header. The output projection gathers exactly one head's output
+per head, and its first dimension divided by the head's value width — the
+latent value width where the header declares one, else the value width,
+else the key width — reads sixteen on this file and twenty on the latent-
+attention file whose query projection does not exist under that name at
+all. The query projection is the fallback, where there is no output
+projection to read.
+
+**Five tensors were a type MCF does not read.** GGML type 30 is `BF16`,
+which a converter leaves the tensors it keeps at training precision in.
+Unknown, it left five tensors unsized, which left the file's weight bytes
+*not totalled*, the attention and feed-forward parts *unsized*, and every
+recurrent block's bits *unsized* — a hole of 28 million elements in a total
+of 79 billion, correctly refused as a total (A7) and cheaply closed. And the
+recurrent tensors themselves counted as *other*, with the decay `ssm_a` —
+a name with no `.weight` after it — read as a tensor whose leaf was `0`.
+They are a part now, *recurrent state*, and a name's last segment is a
+suffix only when it is one.
+
+[`blocks`]: ../crates/mcf-standin/src/anatomy/blocks.rs
 
 ## 149 · F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)
 

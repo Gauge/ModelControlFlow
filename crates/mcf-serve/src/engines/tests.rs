@@ -341,6 +341,62 @@ fn a_shape_is_read_from_a_header() {
     }
 }
 
+/// A hybrid's cache is sized by the blocks that attend, not by the header's
+/// block count.
+///
+/// Three recurrent blocks to every one that attends put the cache at four
+/// times its size, which refused contexts that fit (F150). And a directory
+/// with no blocks in it — a header read alone — falls back to the header's
+/// count rather than to zero.
+#[test]
+fn a_hybrid_caches_only_in_the_blocks_that_attend() {
+    use mcf_standin::gguf::{Model, Tensor, TensorKind, Value};
+    let tensor = |name: String, dimensions: &[u64]| Tensor {
+        name,
+        dimensions: dimensions.to_vec(),
+        kind: TensorKind::Q4_K,
+        offset: 0,
+    };
+    let mut metadata = std::collections::BTreeMap::new();
+    for (key, value) in [
+        ("general.architecture", Value::Text("hybrid".to_owned())),
+        ("hybrid.block_count", Value::Integer(4)),
+        ("hybrid.embedding_length", Value::Integer(64)),
+        ("hybrid.attention.head_count", Value::Integer(4)),
+        ("hybrid.attention.head_count_kv", Value::Integer(2)),
+        ("hybrid.attention.key_length", Value::Integer(16)),
+    ] {
+        metadata.insert(key.to_owned(), value);
+    }
+    let mut tensors = Vec::new();
+    for block in 0..4_u64 {
+        if block == 3 {
+            tensors.push(tensor(format!("blk.{block}.attn_k.weight"), &[64, 32]));
+        } else {
+            tensors.push(tensor(format!("blk.{block}.ssm_out.weight"), &[64, 64]));
+        }
+    }
+    let model = Model {
+        version: 3,
+        metadata,
+        tensors,
+        data_offset: 0,
+        alignment: 32,
+    };
+    // 2 heads × (16 + 16) × 2 bytes, in the ONE block that attends.
+    assert_eq!(cache_bytes_per_token(&model), Some(2 * 32 * 2));
+    assert_eq!(shape_of(&model).map(|held| held.blocks), Some(1));
+
+    let mut only_recurrent = model.clone();
+    only_recurrent.tensors.truncate(3);
+    assert_eq!(cache_bytes_per_token(&only_recurrent), Some(0));
+
+    let mut header_alone = model.clone();
+    header_alone.tensors.clear();
+    assert_eq!(cache_bytes_per_token(&header_alone), Some(4 * 2 * 32 * 2));
+    assert_eq!(shape_of(&header_alone).map(|held| held.blocks), Some(4));
+}
+
 /// A header that says nothing yields no shape, and never a zero.
 #[test]
 fn a_header_that_says_nothing_yields_no_shape() {

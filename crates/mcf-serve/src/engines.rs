@@ -295,18 +295,35 @@ pub fn shape_of(model: &mcf_standin::gguf::Model) -> Option<mcf_hub::fitment::Sh
         }
     })?;
     Some(mcf_hub::fitment::Shape {
-        // Every block caches. A GGUF header does not carry the per-layer
-        // attention types a configuration can, so a hybrid model's cache is
-        // overstated here — which errs toward refusing a model that would fit
-        // rather than accepting one that would not, and is stated rather than
-        // silent (A7, F16).
-        blocks: number("block_count")?,
+        blocks: caching_blocks(model)?,
         key_value_heads: number("attention.head_count_kv").or(heads)?,
         head_dimension,
         // Half precision, as every engine caches by default. The same
         // parameter `Shape::from_configuration` is given.
         bytes_per_element: 2,
     })
+}
+
+/// How many blocks keep keys and values per position.
+///
+/// Read off the tensor directory rather than the header's block count. A GGUF
+/// header does not carry the per-layer attention types a configuration can,
+/// and a hybrid model — three recurrent blocks to every one that attends —
+/// had its cache stated at four times its size here, which refused contexts
+/// that fit (F150). The directory says which blocks hold keys: those are the
+/// ones that cache. Where the directory holds no blocks at all — a header
+/// read alone — the header's count stands, overstating a hybrid rather than
+/// understating it.
+fn caching_blocks(model: &mcf_standin::gguf::Model) -> Option<u64> {
+    let census = mcf_standin::anatomy::blocks::of(model);
+    if census.attending == 0 && census.recurrent == 0 {
+        let architecture = model.architecture()?;
+        return model
+            .get(&format!("{architecture}.block_count"))
+            .and_then(mcf_standin::gguf::Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok());
+    }
+    Some(census.attending)
 }
 
 /// How many bytes of cache one token of context costs.
@@ -330,7 +347,7 @@ pub fn cache_bytes_per_token(model: &mcf_standin::gguf::Model) -> Option<u64> {
             .and_then(mcf_standin::gguf::Value::as_integer)
             .and_then(|held| u64::try_from(held).ok())
     };
-    let layers = number("block_count")?;
+    let layers = caching_blocks(model)?;
     let heads = number("attention.head_count");
     let kv_heads = number("attention.head_count_kv").or(heads)?;
     let key = number("attention.key_length").or_else(|| {

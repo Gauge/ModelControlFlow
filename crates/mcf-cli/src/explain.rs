@@ -461,6 +461,7 @@ pub(crate) fn quantizations(file: &Model) -> String {
         let name = match tensor.kind {
             TensorKind::F32 => "F32".to_owned(),
             TensorKind::F16 => "F16".to_owned(),
+            TensorKind::BF16 => "BF16".to_owned(),
             TensorKind::Q4_0 => "Q4_0".to_owned(),
             TensorKind::Q4_1 => "Q4_1".to_owned(),
             TensorKind::Q8_0 => "Q8_0".to_owned(),

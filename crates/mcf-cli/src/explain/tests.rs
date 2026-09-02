@@ -309,6 +309,8 @@ fn an_explanation_counts_compares_and_costs_the_model() {
 
     assert!(said.contains("parameters, counted"), "{said}");
     assert!(said.contains("by part"), "{said}");
+    assert!(said.contains("by block"), "{said}");
+    assert!(said.contains("1 block(s), 0:"), "{said}");
     assert!(said.contains("by encoding"), "{said}");
     assert!(
         said.contains("WHAT THE HEADER DECLARES, AGAINST WHAT THE DIRECTORY HOLDS"),

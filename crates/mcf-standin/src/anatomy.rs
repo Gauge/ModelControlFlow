@@ -47,6 +47,9 @@ pub enum Role {
     Experts,
     /// The router that chooses which experts a token visits.
     Routing,
+    /// The projections and decays of a block that keeps a fixed recurrent
+    /// state across positions rather than keys and values per position.
+    Recurrent,
     /// Normalisation weights and every bias.
     NormsAndBiases,
     /// A name this module does not place.
@@ -64,19 +67,21 @@ impl Role {
             Self::FeedForward => "feed-forward",
             Self::Experts => "experts",
             Self::Routing => "routing",
+            Self::Recurrent => "recurrent state",
             Self::NormsAndBiases => "norms and biases",
             Self::Other => "other",
         }
     }
 
     /// Every role, in the order a surface lists them.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Embedding,
         Self::Output,
         Self::Attention,
         Self::FeedForward,
         Self::Experts,
         Self::Routing,
+        Self::Recurrent,
         Self::NormsAndBiases,
         Self::Other,
     ];
@@ -85,9 +90,14 @@ impl Role {
 /// Which part of the model a tensor is, read from its name.
 #[must_use]
 pub fn role_of(name: &str) -> Role {
-    let (leaf, suffix) = name.rsplit_once('.').map_or((name, ""), |(before, after)| {
-        (before.rsplit('.').next().unwrap_or(before), after)
-    });
+    // `blk.N.ssm_a` carries no `.weight`: a name's last segment is its suffix
+    // only when it is one, else it is the leaf itself.
+    let (leaf, suffix) = match name.rsplit_once('.') {
+        Some((before, after)) if after == "weight" || after == "bias" => {
+            (before.rsplit('.').next().unwrap_or(before), after)
+        }
+        _ => (name.rsplit('.').next().unwrap_or(name), ""),
+    };
     // An expert's bias is stacked like its weight and is divided among the
     // experts the same way, so it is counted with them.
     if leaf.starts_with("ffn_") && leaf.ends_with("_exps") {
@@ -110,6 +120,12 @@ pub fn role_of(name: &str) -> Role {
     }
     if leaf.starts_with("attn_") {
         return Role::Attention;
+    }
+    // The state-space convention: `ssm_conv1d`, `ssm_a`, `ssm_dt`, `ssm_out`.
+    // A recurrent block's own query, key and value projections are still
+    // named `attn_qkv` and counted as attention above; this is the rest of it.
+    if leaf.starts_with("ssm_") {
+        return Role::Recurrent;
     }
     Role::Other
 }
@@ -139,7 +155,7 @@ impl Default for Share {
 }
 
 impl Share {
-    fn add(&mut self, tensor: &Tensor) {
+    pub(crate) fn add(&mut self, tensor: &Tensor) {
         self.tensors = self.tensors.saturating_add(1);
         self.elements = self.elements.saturating_add(tensor.elements().unwrap_or(0));
         self.bytes = match (self.bytes, tensor.bytes()) {
@@ -226,6 +242,8 @@ pub struct Anatomy {
     pub active: Option<Active>,
     /// Header against directory, figure by figure.
     pub agreements: Vec<Agreement>,
+    /// The blocks, grouped by what each is made of.
+    pub census: blocks::Census,
 }
 
 /// Counts a model from its directory.
@@ -279,11 +297,12 @@ pub fn of(model: &Model) -> Anatomy {
         output_tied,
         active,
         agreements,
+        census: blocks::of(model),
     }
 }
 
 /// The `N` of `blk.N.`, where the name has one.
-fn block_index(name: &str) -> Option<u64> {
+pub(crate) fn block_index(name: &str) -> Option<u64> {
     name.strip_prefix("blk.")?.split('.').next()?.parse().ok()
 }
 
@@ -380,6 +399,27 @@ fn agreements_of(
             }
         })
     };
+    // Heads are read off the output projection, whose first dimension is the
+    // heads' outputs laid side by side, rather than off the query projection.
+    // A query projection may be wider than the heads it serves: one hybrid's
+    // carries a gate beside every query (F150), and reading heads from it
+    // said thirty-two against a header that declared sixteen. The head's
+    // output width is the latent value width where the header declares one,
+    // else the value width, else the key width.
+    let value = declared(model, "attention.value_length_mla")
+        .or_else(|| declared(model, "attention.value_length"))
+        .or(key);
+    let heads_from_output = || {
+        let shape = shape_of(model, "attn_output.weight")?;
+        let gathered = *shape.first()?;
+        let value = value?;
+        (value > 0 && gathered % value == 0).then(|| {
+            #[allow(clippy::integer_division, reason = "checked exact by the guard")]
+            {
+                gathered / value
+            }
+        })
+    };
     let mut found = vec![
         Agreement::of("blocks", declared(model, "block_count"), Some(blocks)),
         Agreement::of(
@@ -400,7 +440,7 @@ fn agreements_of(
         Agreement::of(
             "attention heads",
             declared(model, "attention.head_count"),
-            heads_from("attn_q.weight"),
+            heads_from_output().or_else(|| heads_from("attn_q.weight")),
         ),
         Agreement::of(
             "key/value heads",
@@ -532,6 +572,7 @@ pub fn billions(elements: u64) -> String {
     format!("{whole}.{tenth}")
 }
 
+pub mod blocks;
 pub mod vocabulary;
 pub mod work;
 

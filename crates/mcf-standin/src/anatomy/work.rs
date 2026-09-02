@@ -18,6 +18,14 @@
 //! latent cache, whose width is not the key width the header names — the
 //! figure is withheld with the reason, rather than computed from the wrong
 //! formula and shown with confidence (A7).
+//!
+//! **Per block that attends, not per block.** The cache and the attention
+//! arithmetic were multiplied by the block count, and a model that keeps a
+//! recurrent state in three blocks of every four was sized four times too
+//! large. The count that multiplies is [`super::blocks::Census::attending`],
+//! read off which blocks hold keys; the blocks that keep a state instead are
+//! said, and their state is not sized here, because its width is not among
+//! the header's attention widths.
 
 use super::{Anatomy, Role, declared};
 use crate::gguf::Model;
@@ -38,6 +46,10 @@ pub enum Cache {
         /// context some blocks read — the full-window figure is then an upper
         /// bound, not the figure.
         sliding_window: Option<u64>,
+        /// How many blocks keep keys, of how many there are.
+        attending: (u64, u64),
+        /// How many keep a fixed recurrent state instead, unsized here.
+        recurrent: u64,
     },
     /// Not sized, and why.
     Unsized(&'static str),
@@ -110,15 +122,20 @@ pub fn of(model: &Model, body: &Anatomy) -> Work {
             return None;
         }
         let per_block = heads?.checked_mul(widths?)?.checked_mul(context?)?;
-        per_block.checked_mul(body.blocks)
+        per_block.checked_mul(body.census.attending)
     })();
     let cache = if latent {
         Cache::Unsized(
             "this model caches a compressed latent rather than its keys and values, and its \
              width is not the key width the header names",
         )
+    } else if body.census.attending == 0 && body.census.recurrent > 0 {
+        Cache::Unsized(
+            "every block keeps a fixed recurrent state rather than keys and values per \
+             position, and its width is not among the header's attention widths",
+        )
     } else {
-        cache_of(key_heads, widths, context, body.blocks, model)
+        cache_of(key_heads, widths, context, body, model)
     };
     Work {
         multiply_adds,
@@ -134,13 +151,13 @@ fn cache_of(
     key_heads: Option<u64>,
     widths: Option<u64>,
     context: Option<u64>,
-    blocks: u64,
+    body: &Anatomy,
     model: &Model,
 ) -> Cache {
     let per_token = (|| {
         key_heads?
             .checked_mul(widths?)?
-            .checked_mul(blocks)?
+            .checked_mul(body.census.attending)?
             .checked_mul(CACHE_ELEMENT_BYTES)
     })();
     match per_token {
@@ -148,6 +165,8 @@ fn cache_of(
             per_token,
             at_context: context.and_then(|tokens| Some((tokens, tokens.checked_mul(per_token)?))),
             sliding_window: declared(model, "attention.sliding_window"),
+            attending: (body.census.attending, body.blocks),
+            recurrent: body.census.recurrent,
         },
         None => Cache::Unsized(
             "the header does not name the key/value head count and the head widths, which are \

@@ -7,6 +7,7 @@
 //! because the label is what the publisher rounded to and the count is what
 //! the file holds.
 
+use mcf_standin::anatomy::blocks::{Census, Feed, Mixing, ranges};
 use mcf_standin::anatomy::vocabulary::{self, Vocabulary};
 use mcf_standin::anatomy::work::{self, Cache};
 use mcf_standin::anatomy::{self, Agreement, Anatomy, Share};
@@ -81,7 +82,84 @@ pub(crate) fn counted(file: &Model) -> Vec<String> {
     ));
     lines.extend(by_part(&body));
     lines.extend(by_encoding(&body));
+    lines.extend(by_block(&body));
     lines
+}
+
+/// Each shape of block: which blocks, what they are made of, what they hold.
+///
+/// A block count says nothing about whether the blocks are alike, and a
+/// model that keeps a recurrent state in three of every four, or whose first
+/// block is dense among experts, is a different thing from its count. Each
+/// shape is two lines: the blocks, then the make-up and the share.
+fn by_block(body: &Anatomy) -> Vec<String> {
+    let census: &Census = &body.census;
+    let mut lines = Vec::new();
+    let mut label = "by block";
+    for family in &census.families {
+        let bits = match family.bits {
+            Some((least, most)) if least == most => hundredths(least),
+            Some((least, most)) => format!("{}–{}", hundredths(least), hundredths(most)),
+            None => "unsized".to_owned(),
+        };
+        lines.push(format!(
+            "  {label:<38}{} block(s), {}: {} ({}) at {bits} bits",
+            family.blocks.len(),
+            ranges(&family.blocks, 6),
+            with_thousands(family.share.elements),
+            percent(family.share.elements, body.elements),
+        ));
+        lines.extend(row(
+            "",
+            &format!("  {}", made_of(family.shape.mixing, family.shape.feed)),
+        ));
+        label = "";
+    }
+    if census.families.len() > 1 {
+        lines.extend(row(
+            "",
+            &format!(
+                "{} shapes of block, read off the tensors each holds; the header's block \
+                 count says only how many there are",
+                census.families.len()
+            ),
+        ));
+    }
+    lines
+}
+
+/// What a shape of block is made of, in words.
+fn made_of(mixing: Mixing, feed: Feed) -> String {
+    let mixing = match mixing {
+        Mixing::Attention => "attention over the context, keys and values kept per position",
+        Mixing::Recurrent => "a recurrent state of fixed size, nothing kept per position",
+        Mixing::Nothing => "no mixing across positions",
+    };
+    let feed = match feed {
+        Feed::Dense => "one feed-forward every token passes".to_owned(),
+        Feed::Experts {
+            count,
+            shared: true,
+        } => {
+            format!("{count} experts and a shared one every token passes")
+        }
+        Feed::Experts {
+            count,
+            shared: false,
+        } => format!("{count} experts"),
+        Feed::Nothing => "no feed-forward".to_owned(),
+    };
+    format!("{mixing}; {feed}")
+}
+
+/// Hundredths of a bit as `4.37`.
+fn hundredths(held: u64) -> String {
+    #[allow(
+        clippy::integer_division,
+        reason = "hundredths into a whole and a fraction; nothing is lost"
+    )]
+    let (whole, fraction) = (held / 100, held % 100);
+    format!("{whole}.{fraction:02}")
 }
 
 /// Each part of the model, as a share of the elements.
@@ -208,9 +286,17 @@ pub(crate) fn costed(file: &Model) -> Vec<String> {
         lines.extend(row(
             "attention over the context",
             &format!(
-                "{} ({}B) more for the last token of a full declared context",
+                "{} ({}B) more for the last token of a full declared context{}",
                 with_thousands(added),
-                anatomy::billions(added)
+                anatomy::billions(added),
+                if body.census.attending == body.blocks {
+                    String::new()
+                } else {
+                    format!(
+                        ", in the {} of {} blocks that attend",
+                        body.census.attending, body.blocks
+                    )
+                }
             ),
         ));
     }
@@ -225,12 +311,30 @@ fn cache_lines(cache: &Cache) -> Vec<String> {
             per_token,
             at_context,
             sliding_window,
+            attending,
+            recurrent,
         } => {
+            let (keeping, blocks) = *attending;
             let mut lines = row(
                 "key/value cache",
                 &format!(
-                    "{} bytes per token at 16 bits an element",
-                    with_thousands(*per_token)
+                    "{} bytes per token at 16 bits an element{}",
+                    with_thousands(*per_token),
+                    if keeping == blocks {
+                        String::new()
+                    } else {
+                        format!(
+                            ", across the {keeping} of {blocks} blocks that keep keys{}",
+                            if *recurrent > 0 {
+                                format!(
+                                    " — the other {recurrent} keep a fixed recurrent state, \
+                                     which the header's attention widths do not size"
+                                )
+                            } else {
+                                String::new()
+                            }
+                        )
+                    }
                 ),
             );
             if let Some((tokens, bytes)) = at_context {

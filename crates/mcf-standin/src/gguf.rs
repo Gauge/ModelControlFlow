@@ -234,6 +234,10 @@ pub enum TensorKind {
     F32,
     /// 16-bit floating point.
     F16,
+    /// 16-bit *brain* floating point: the top half of an `f32`, so the same
+    /// exponent range as single precision with seven bits of mantissa. What
+    /// a converter leaves the tensors it keeps at the training precision in.
+    BF16,
     /// The 4-bit scheme with one scale per block of 32.
     Q4_0,
     /// The 4-bit scheme with a scale and a minimum per block of 32.
@@ -288,6 +292,7 @@ impl TensorKind {
         match number {
             0 => Self::F32,
             1 => Self::F16,
+            30 => Self::BF16,
             2 => Self::Q4_0,
             3 => Self::Q4_1,
             6 => Self::Q5_0,
@@ -314,7 +319,7 @@ impl TensorKind {
     #[must_use]
     pub const fn block_size(self) -> u64 {
         match self {
-            Self::F32 | Self::F16 => 1,
+            Self::F32 | Self::F16 | Self::BF16 => 1,
             // `IQ4_NL` is here rather than beside the other non-linear scheme:
             // it shares the four-bit table with `IQ4_XS` and the block of 32
             // with `Q4_0`, and the block size is what this function is about.
@@ -349,7 +354,7 @@ impl TensorKind {
     pub const fn bytes_per_block(self) -> u64 {
         match self {
             Self::F32 => 4,
-            Self::F16 => 2,
+            Self::F16 | Self::BF16 => 2,
             // A scale in half precision, then 32 four-bit values.
             // One multiplier and sixteen bytes of four-bit codes, whichever way
             // the codes are read: `Q4_0`'s are offsets from eight, `IQ4_NL`'s
@@ -401,6 +406,7 @@ impl core::fmt::Display for TensorKind {
         match self {
             Self::F32 => f.write_str("f32"),
             Self::F16 => f.write_str("f16"),
+            Self::BF16 => f.write_str("bf16"),
             Self::Q2_K => f.write_str("Q2_K"),
             Self::Q3_K => f.write_str("Q3_K"),
             Self::Q4_K => f.write_str("Q4_K"),

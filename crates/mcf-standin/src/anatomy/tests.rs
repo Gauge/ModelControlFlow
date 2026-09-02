@@ -335,6 +335,8 @@ fn one_token_is_costed_from_the_widths_the_header_names() {
             per_token: 2 * 32 * 2 * 2,
             at_context: Some((1024, 1024 * 2 * 32 * 2 * 2)),
             sliding_window: None,
+            attending: (2, 2),
+            recurrent: 0,
         }
     );
 }
@@ -506,4 +508,199 @@ fn a_vocabulary_without_types_says_so_rather_than_guessing() {
     let counted = super::vocabulary::of(&file);
     assert_eq!(counted.kinds, None);
     assert_eq!(counted.template.unwrap().markers, None);
+}
+
+/// A model whose blocks are not alike is grouped by what each is made of,
+/// and the cache is sized from the blocks that keep keys, not from the block
+/// count.
+///
+/// Four blocks: 0, 1 and 2 keep a recurrent state (`ssm_*`, with an
+/// `attn_qkv` that is their input projection and not attention); 3 attends.
+/// All four carry experts and a shared expert. Sized from the block count the
+/// cache was four times what it is.
+#[test]
+fn blocks_that_differ_are_grouped_and_only_the_attending_ones_are_cached() {
+    use super::blocks::{Feed, Mixing, ranges};
+    let mut tensors = vec![
+        tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K),
+        tensor("output_norm.weight", &[64], TensorKind::F32),
+    ];
+    for block in 0..4_u64 {
+        let named = |leaf: &str| format!("blk.{block}.{leaf}");
+        if block == 3 {
+            tensors.extend([
+                tensor(&named("attn_q.weight"), &[64, 64], TensorKind::Q4_K),
+                tensor(&named("attn_k.weight"), &[64, 32], TensorKind::Q4_K),
+                tensor(&named("attn_v.weight"), &[64, 32], TensorKind::Q4_K),
+                tensor(&named("attn_output.weight"), &[64, 64], TensorKind::Q4_K),
+            ]);
+        } else {
+            let kind = if block == 0 {
+                TensorKind::Q6_K
+            } else {
+                TensorKind::Q4_K
+            };
+            tensors.extend([
+                tensor(&named("attn_qkv.weight"), &[64, 128], kind),
+                tensor(&named("ssm_conv1d.weight"), &[4, 128], TensorKind::F32),
+                tensor(&named("ssm_out.weight"), &[64, 64], kind),
+            ]);
+        }
+        tensors.extend([
+            tensor(&named("ffn_gate_inp.weight"), &[64, 8], TensorKind::F32),
+            tensor(&named("ffn_up_exps.weight"), &[64, 32, 8], TensorKind::Q4_K),
+            tensor(
+                &named("ffn_down_exps.weight"),
+                &[32, 64, 8],
+                TensorKind::Q4_K,
+            ),
+            tensor(&named("ffn_up_shexp.weight"), &[64, 32], TensorKind::Q4_K),
+            tensor(&named("ffn_down_shexp.weight"), &[32, 64], TensorKind::Q4_K),
+        ]);
+    }
+    let file = model(
+        "hybrid",
+        &[
+            ("hybrid.block_count", Value::Integer(4)),
+            ("hybrid.embedding_length", Value::Integer(64)),
+            ("hybrid.context_length", Value::Integer(1024)),
+            ("hybrid.attention.head_count", Value::Integer(4)),
+            ("hybrid.attention.head_count_kv", Value::Integer(2)),
+            ("hybrid.attention.key_length", Value::Integer(16)),
+            ("hybrid.expert_count", Value::Integer(8)),
+            ("hybrid.expert_used_count", Value::Integer(2)),
+        ],
+        tensors,
+    );
+    let counted = of(&file);
+    let census = &counted.census;
+    assert_eq!(census.families.len(), 2, "{census:?}");
+    let recurrent = &census.families[0];
+    assert_eq!(recurrent.blocks, vec![0, 1, 2]);
+    assert_eq!(recurrent.shape.mixing, Mixing::Recurrent);
+    assert_eq!(
+        recurrent.shape.feed,
+        Feed::Experts {
+            count: 8,
+            shared: true
+        }
+    );
+    // Block 0 is encoded more finely than 1 and 2, so the family's bits are
+    // a range, not a figure.
+    let (least, most) = recurrent.bits.expect("every block is sized");
+    assert!(least < most, "{least} {most}");
+    let attending = &census.families[1];
+    assert_eq!(attending.blocks, vec![3]);
+    assert_eq!(attending.shape.mixing, Mixing::Attention);
+    assert_eq!((census.attending, census.recurrent), (1, 3));
+    assert_eq!(census.outside.tensors, 2);
+    assert_eq!(ranges(&[0, 1, 2, 4, 5, 6, 8, 9], 2), "0–2, 4–6, …");
+    assert_eq!(ranges(&[3, 7, 11], 5), "3, 7, 11");
+
+    let work = super::work::of(&file, &counted);
+    // 4 heads × (16 + 16) × 1024 positions × the ONE block that attends.
+    assert_eq!(work.attention_at_context, Some(4 * 32 * 1024));
+    assert_eq!(
+        work.cache,
+        super::work::Cache::Sized {
+            per_token: 2 * 32 * 2,
+            at_context: Some((1024, 1024 * 2 * 32 * 2)),
+            sliding_window: None,
+            attending: (1, 4),
+            recurrent: 3,
+        }
+    );
+    // The recurrent blocks' state tensors are their own part, not *other*.
+    assert_eq!(role_of("blk.0.ssm_conv1d.weight"), Role::Recurrent);
+    // A decay with no `.weight` after it is still the leaf, not a suffix.
+    assert_eq!(role_of("blk.0.ssm_a"), Role::Recurrent);
+    assert_eq!(role_of("blk.0.ssm_norm.weight"), Role::NormsAndBiases);
+    assert!(
+        counted
+            .roles
+            .iter()
+            .any(|(role, share)| *role == Role::Recurrent && share.tensors == 6),
+        "{:?}",
+        counted.roles
+    );
+}
+
+/// Heads are read off the output projection, not the query projection.
+///
+/// A hybrid's query projection carries a gate beside every query, so it is
+/// twice as wide as its heads: read from it, sixteen declared heads were
+/// thirty-two observed and the row said DISAGREE about a file that was fine
+/// (F150). The output projection gathers exactly one head's output per head.
+#[test]
+fn heads_are_read_off_the_output_projection() {
+    let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
+    let named = |leaf: &str| format!("blk.0.{leaf}");
+    tensors.extend([
+        // Four heads of sixteen, and a gate of the same width beside them.
+        tensor(&named("attn_q.weight"), &[64, 128], TensorKind::Q4_K),
+        tensor(&named("attn_k.weight"), &[64, 32], TensorKind::Q4_K),
+        tensor(&named("attn_v.weight"), &[64, 32], TensorKind::Q4_K),
+        tensor(&named("attn_output.weight"), &[64, 64], TensorKind::Q4_K),
+    ]);
+    let file = model(
+        "gated",
+        &[
+            ("gated.block_count", Value::Integer(1)),
+            ("gated.embedding_length", Value::Integer(64)),
+            ("gated.attention.head_count", Value::Integer(4)),
+            ("gated.attention.head_count_kv", Value::Integer(2)),
+            ("gated.attention.key_length", Value::Integer(16)),
+            ("gated.attention.value_length", Value::Integer(16)),
+        ],
+        tensors,
+    );
+    let counted = of(&file);
+    let heads = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "attention heads")
+        .expect("the header declares heads");
+    assert_eq!(
+        (
+            heads.declared.as_deref(),
+            heads.observed.as_deref(),
+            heads.agrees
+        ),
+        (Some("4"), Some("4"), Some(true))
+    );
+
+    // Latent attention: the output projection gathers the latent value width
+    // per head, which the header declares apart from the cache's value width.
+    let mut tensors = vec![tensor("token_embd.weight", &[64, 256], TensorKind::Q4_K)];
+    tensors.extend([
+        tensor(&named("attn_kv_a_mqa.weight"), &[64, 72], TensorKind::Q4_K),
+        tensor(&named("attn_output.weight"), &[80, 64], TensorKind::Q4_K),
+    ]);
+    let file = model(
+        "latent",
+        &[
+            ("latent.block_count", Value::Integer(1)),
+            ("latent.embedding_length", Value::Integer(64)),
+            ("latent.attention.head_count", Value::Integer(5)),
+            ("latent.attention.key_length", Value::Integer(72)),
+            ("latent.attention.value_length", Value::Integer(64)),
+            ("latent.attention.key_length_mla", Value::Integer(32)),
+            ("latent.attention.value_length_mla", Value::Integer(16)),
+        ],
+        tensors,
+    );
+    let counted = of(&file);
+    let heads = counted
+        .agreements
+        .iter()
+        .find(|held| held.what == "attention heads")
+        .expect("the header declares heads");
+    assert_eq!(
+        (
+            heads.declared.as_deref(),
+            heads.observed.as_deref(),
+            heads.agrees
+        ),
+        (Some("5"), Some("5"), Some(true))
+    );
 }
