@@ -456,6 +456,29 @@ pub(crate) fn ranks_over(
     Ok(ranked)
 }
 
+/// **The window the REQUEST needs, not the largest one that fits.**
+///
+/// `context` arrives as what MCF resolved for this model on this machine,
+/// which is the largest window it could hold — the right answer for a model
+/// somebody is hosting and will send long prompts to, and the wrong one
+/// here. A request of a few hundred tokens opened a 262,144-token window
+/// because that is what fits: 57 GiB resident for a 17.6 GiB model, and the
+/// allocation dominating the very timing being taken.
+///
+/// So the window is sized to this turn — what was sent plus what was asked
+/// for, doubled for room to work — with a floor, and never more than the
+/// machine was said to hold. A measurement then carries the window it
+/// actually ran in (§3.4).
+fn window_for(sent: usize, limit: usize, context: u64) -> u64 {
+    let asked_for = u64::try_from(sent.saturating_add(limit)).unwrap_or(SMALLEST_WINDOW);
+    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
+    if context == 0 {
+        needed
+    } else {
+        needed.min(context)
+    }
+}
+
 /// The server holds the model between requests, which is the residency F36
 /// left open. A request for a different model replaces the server, and
 /// replacing it stops the old one — `Served` kills its child when it is
@@ -500,27 +523,17 @@ fn through_served(
     // this one: two resident models is a decision about memory nobody has
     // taken (D41, DEC-018), and taking it here silently would be the hidden
     // choice §3.15 forbids.
-    let reused = slot.as_ref().is_some_and(|held| held.model == path);
-    // **The window the REQUEST needs, not the largest one that fits.**
-    //
-    // `context` arrives as what MCF resolved for this model on this machine,
-    // which is the largest window it could hold — the right answer for a model
-    // somebody is hosting and will send long prompts to, and the wrong one
-    // here. A request of a few hundred tokens opened a 262,144-token window
-    // because that is what fits: 57 GiB resident for a 17.6 GiB model, and the
-    // allocation dominating the very timing being taken.
-    //
-    // So the window is sized to this turn — what was sent plus what was asked
-    // for, doubled for room to work — with a floor, and never more than the
-    // machine was said to hold. A measurement then carries the window it
-    // actually ran in (§3.4).
-    let asked_for = u64::try_from(tokens.len().saturating_add(limit)).unwrap_or(SMALLEST_WINDOW);
-    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
-    let window = if context == 0 {
-        needed
-    } else {
-        needed.min(context)
-    };
+    let window = window_for(tokens.len(), limit, context);
+    // **A server whose window is too small for this turn is not this
+    // turn's server.** Reuse went by the model alone, so a ladder's first
+    // rung opened a 4,096-token window and every rung past it was sent to
+    // that server, which refuses a turn longer than its window — and the
+    // refusal was read as a pair of runs that did not separate. No rung
+    // deeper than 2,048 was ever measured, on any model, and the record
+    // said *not measured* for the wrong reason (F152).
+    let reused = slot
+        .as_ref()
+        .is_some_and(|held| held.model == path && held.window >= window);
     if !reused {
         *slot = None;
         *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
@@ -536,6 +549,9 @@ fn through_served(
     })?;
 
     let completed = engine.complete(tokens, limit, seed)?;
+    // Read after the turn, while the mark includes it (B-424).
+    let peak_resident = engine.peak_resident_bytes();
+    let ran_in = engine.window;
 
     // The answer arrives whole rather than token by token, so it is one chunk
     // of the stream. Calling it several would be inventing a shape the engine
@@ -575,6 +591,18 @@ fn through_served(
         fields.insert(
             "identifiers_read".to_owned(),
             Value::Integer(i64::try_from(completed.evaluated).unwrap_or(i64::MAX)),
+        );
+        fields.insert(
+            "window".to_owned(),
+            Value::Integer(i64::try_from(ran_in).unwrap_or(i64::MAX)),
+        );
+        // The engine's peak resident memory, or nothing where the kernel did
+        // not say — never zero (A7).
+        fields.insert(
+            "peak_resident_bytes".to_owned(),
+            peak_resident.map_or(Value::Null, |bytes| {
+                Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+            }),
         );
     }
 
@@ -723,6 +751,16 @@ fn through_provisioned(
     if let Value::Map(fields) = &mut conditions {
         fields.insert("engine".to_owned(), Value::text(engine_name));
         fields.insert("loaded".to_owned(), Value::text("per_request_subprocess"));
+        fields.insert(
+            "peak_resident_bytes".to_owned(),
+            ended
+                .as_ref()
+                .ok()
+                .and_then(|ended| ended.peak_resident)
+                .map_or(Value::Null, |bytes| {
+                    Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+                }),
+        );
     }
 
     let bytes = Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX));

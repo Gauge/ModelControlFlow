@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
 | 150 | [F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)](#150-f150-the-cache-of-a-hybrid-was-sized-by-the-headers-block-count-and-came-out-four-times-too-large-the-same-files-heads-read-as-thirty-two-against-sixteen-declared-and-its-bf16-tensors-as-a-type-mcf-does-not-read-b-038-a7-a21-f16) |
 | 149 | [F149 — The daemon found its engines once and never looked again, so an engine built while it ran was a prefix on disk and *no engine* on the socket (F31, A7, B-367, B-072)](#149-f149-the-daemon-found-its-engines-once-and-never-looked-again-so-an-engine-built-while-it-ran-was-a-prefix-on-disk-and-no-engine-on-the-socket-f31-a7-b-367-b-072) |
@@ -9402,6 +9403,60 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 152 · F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)
+
+Filling the *Memory ceiling* row (B-424) meant reading the engine's peak
+resident memory after each rung, and the first ladder run to look at it —
+Qwen3-VL-2B, to 8,192 — measured 512, 1,024 and 2,048 and said of 4,096
+and 8,192 *not measured: no pair of runs at this depth separated: the
+longer one finished no later than the shorter, so their difference is not
+a cost*. Both rungs took under a second. Nothing had run.
+
+**The server was reused by model alone.** A served engine is started with
+a window sized to the request — what was sent plus what was asked for,
+doubled, with a floor of 4,096 — and held between requests so that the
+next turn on the same model does not load it again. The rule for keeping
+it was *same model*. A ladder's first rung opened a 4,096-token window;
+every rung after it was sent to that server; and llama-server refuses a
+turn longer than its window with a 400, which the adapter turned into a
+failure with the engine's words in it, which `timed_generation` turned into
+`None`, which `one_depth` could not tell from a pair of timings in the
+wrong order — the one other way a rung comes back with nothing. So the
+reason written down was the wrong one: not *the engine refused this
+depth*, but *the runs did not separate* (A2, A7).
+
+**And it had always been so.** The reuse rule predates the ladder going
+past 2,048, and no `ModelTimed` entry in this machine's record — 1,633
+entries — has ever carried a measured rung at 4,096 or deeper. Every
+*deepest* the console and the window accepted above 2,048 was a promise
+the daemon could not keep, and the record said *not measured* for each of
+them with a sentence that named a cause that had not happened. A rung that
+is not measured is a result (A9); a result with the wrong reason is worse
+than none, because it stops the reader looking.
+
+**Two fixes, both small.** A server whose window is smaller than the turn
+needs is not that turn's server: `through_served` restarts it when
+`held.window < window`, and the window each rung ran in is a condition of
+its account (`conditions.window`) and of its reading. And a rung that
+produced nothing says why in the engine's words — `timed_generation` hands
+back the failure's detail and category, and `one_depth` prefers a refusal
+over the non-separating sentence when it has one, so that the next such
+rung reads *the engine produced nothing at this depth: …* with the 400 in
+it. The same ladder after the fix, on the same model and the same
+processor build: 512 at 15.4 ms a token, 1,024 at 17.3, 2,048 at 19.4,
+4,096 at 66.4 and 8,192 at 139.1 — every rung measured, and the last two
+in windows of 8,226 and 16,418 that the record now names. The memory row
+this was found on reads off the same run: 117,346 bytes a token of window
+between windows of 4,096 and 16,418, against 114,688 planned from the
+header — 2.3 % over, which is the engine's own bookkeeping around the
+cache — and 3.64 GB held at 8,192 deep.
+
+**What it says about the check that was missing.** The window is a
+condition of every timing (§3.4) and was recorded on the request that
+opened the server, then never compared with the request that reused it.
+A condition that is not compared on reuse is a declaration, not an
+observation (A21); the comparison is now the reuse rule.
 
 ## 151 · F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)
 

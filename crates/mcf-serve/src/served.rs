@@ -170,6 +170,10 @@ pub struct Served {
     pub model: PathBuf,
     /// The pin it was built from, for the conditions.
     pub commit: String,
+    /// The context window it was started with, in tokens. A request that
+    /// needs a larger one needs a different server: this one refuses a turn
+    /// longer than its window, and a refusal is not a reading (F152).
+    pub window: u64,
 }
 
 impl Served {
@@ -244,6 +248,7 @@ impl Served {
             socket: PathBuf::from(settings.address()),
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
+            window: settings.context,
         };
         served.wait_until_answering(settings.port, ATTEMPTS)?;
         Ok(served)
@@ -371,6 +376,7 @@ impl Served {
             socket,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
+            window: context,
         };
         served.wait_until_listening(attempts)?;
         Ok(served)
@@ -422,6 +428,19 @@ impl Served {
             "waited",
             format!("{} ms", attempts as u128 * BETWEEN.as_millis()),
         ))
+    }
+
+    /// The most memory the server's process has held resident, in bytes, as
+    /// the kernel keeps it — or `None` where the kernel does not say.
+    ///
+    /// A high-water mark rather than the moment's figure: what a request
+    /// costs in memory is what it took at its peak, which for a turn is the
+    /// cache and the working buffers at their fullest. A server reused across
+    /// requests carries the mark of the largest so far, which is what a
+    /// ceiling is (B-424).
+    #[must_use]
+    pub fn peak_resident_bytes(&self) -> Option<u64> {
+        crate::adapters::peak_resident_of(self.child.id())
     }
 
     /// One greedy generation from a turn of token identifiers.

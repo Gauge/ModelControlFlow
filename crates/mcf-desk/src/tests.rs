@@ -548,6 +548,16 @@ fn a_last_line(prompt_reading: Value, first_token: Value) -> Value {
         ("readings", Value::List(vec![a_rung()])),
         ("prompt_reading", prompt_reading),
         ("first_token", first_token),
+        (
+            "memory",
+            Value::map([
+                ("measured", Value::Bool(false)),
+                (
+                    "why",
+                    Value::text("every rung ran in one window of 4,096 tokens"),
+                ),
+            ]),
+        ),
         ("done", Value::Bool(true)),
         (
             "conditions",
@@ -580,8 +590,8 @@ fn row(desk: &Desk, name: &str) -> Option<Vec<String>> {
         .clone()
 }
 
-/// A finished run fills the three rows the ladder answers, and leaves the
-/// two it does not alone.
+/// A finished run fills the four rows the ladder answers, and leaves the
+/// one it does not alone.
 ///
 /// **Five tests were listed and one ran.** The rows for prompt reading and
 /// start-up said nothing after a run that had measured both and thrown them
@@ -637,7 +647,10 @@ fn a_finished_run_fills_the_rows_the_ladder_answers() {
             ][..]
         )
     );
-    assert_eq!(row(&desk, "Memory ceiling — largest context"), None);
+    assert_eq!(
+        row(&desk, "Memory ceiling — largest context").as_deref(),
+        Some(&["not measured: every rung ran in one window of 4,096 tokens".to_owned()][..])
+    );
     assert_eq!(row(&desk, "CPU and GPU agree on the output"), None);
 }
 

@@ -1147,37 +1147,38 @@ impl Desk {
                 lines.push(format!("measured on {engine}"));
             }
         }
-        // Two more rows the same run measured: the daemon reads a prompt's
-        // cost and the time to a first token off the rungs it climbed, and
-        // says so in its last line — so those rows are filled from that line
-        // and never worked out here (B-072). A run that was refused before
-        // it climbed anything leaves them as they were, because it measured
-        // neither.
+        // Three more rows the same run measured: the daemon reads a prompt's
+        // cost, the time to a first token and the memory a token of window
+        // costs off the rungs it climbed, and says so in its last line — so
+        // those rows are filled from that line and never worked out here
+        // (B-072). A run that was refused before it climbed anything leaves
+        // them as they were, because it measured none of them.
         let derived = job.conclusion().map(|body| {
-            (
-                mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
-                mcf_serve::ladder::first_token_said(body.get("first_token")),
-            )
+            [
+                (
+                    "Prompt reading speed",
+                    mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
+                ),
+                (
+                    "Start-up to first token",
+                    mcf_serve::ladder::first_token_said(body.get("first_token")),
+                ),
+                (
+                    "Memory ceiling — largest context",
+                    mcf_serve::ladder::memory_said(body.get("memory")),
+                ),
+            ]
         });
         for test in &mut self.tests {
-            match test.name {
-                "Generation speed against depth" => {
-                    test.ran = Some(ran);
-                    test.result = Some(lines.clone());
-                }
-                "Prompt reading speed" => {
-                    if let Some((reading, _)) = &derived {
-                        test.ran = Some(ran);
-                        test.result = Some(reading.clone());
-                    }
-                }
-                "Start-up to first token" => {
-                    if let Some((_, start)) = &derived {
-                        test.ran = Some(ran);
-                        test.result = Some(start.clone());
-                    }
-                }
-                _ => {}
+            if test.name == "Generation speed against depth" {
+                test.ran = Some(ran);
+                test.result = Some(lines.clone());
+            } else if let Some((_, said)) = derived
+                .as_ref()
+                .and_then(|rows| rows.iter().find(|(name, _)| *name == test.name))
+            {
+                test.ran = Some(ran);
+                test.result = Some(said.clone());
             }
         }
     }

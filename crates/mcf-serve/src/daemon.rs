@@ -269,16 +269,21 @@ fn measured(
     asked: Option<&str>,
     ran_on: Option<&str>,
     readings: Vec<Value>,
+    planned: crate::ladder::Planned,
 ) -> Answer {
     // Two measurements the run took and used to throw away: what reading a
     // token of prompt costs, and the time to a first token (A7).
     let prompt_reading = crate::ladder::prompt_reading(&readings, as_milliseconds);
     let first_token = crate::ladder::first_token(&readings, as_milliseconds);
+    // And a third, read off the engine's process: what a token of window
+    // costs in memory, against what the header planned before the run (B-424).
+    let memory = crate::ladder::memory(&readings, planned);
     Answer::served(Value::map([
         ("measuring", Value::text(named.to_owned())),
         ("readings", Value::List(readings)),
         ("prompt_reading", prompt_reading),
         ("first_token", first_token),
+        ("memory", memory),
         ("done", Value::Bool(true)),
         (
             "conditions",
@@ -320,6 +325,32 @@ fn measured(
     ]))
 }
 
+/// What the header and the machine say about memory before a run, for the
+/// measured figure to be set against.
+///
+/// Taken before the ladder runs: the engine that serves the last rung is
+/// still resident when the last line is composed, and the memory it holds is
+/// not free memory the plan may count twice. The weights are the whole set,
+/// not the part the model is named by (F138); where the store cannot say,
+/// the one file's length stands, which is what the conditions say too.
+fn planned_memory(path: &Path, held: Option<u64>) -> crate::ladder::Planned {
+    let file = header_of(path);
+    let trained = file.as_ref().and_then(|file| {
+        let architecture = file.architecture()?;
+        file.get(&format!("{architecture}.context_length"))
+            .and_then(mcf_standin::gguf::Value::as_integer)
+            .and_then(|value| u64::try_from(value).ok())
+    });
+    crate::ladder::Planned {
+        per_token: file
+            .as_ref()
+            .and_then(crate::engines::cache_bytes_per_token),
+        weights: mcf_hub::store::bytes_of_the_whole(path).ok().or(held),
+        free: system_memory_free(),
+        trained,
+    }
+}
+
 /// One timed generation: how long it took, and what actually ran it.
 ///
 /// **Nanoseconds, as a whole number.** Floating point does not appear in a
@@ -333,6 +364,11 @@ struct Timed {
     /// The engine the account says served it, which is not necessarily the
     /// one that was asked for.
     engine: Option<String>,
+    /// The most memory the engine's process held resident, where the account
+    /// says (B-424).
+    peak_resident: Option<u64>,
+    /// The window the engine ran in, which is what its cache was sized to.
+    window: Option<u64>,
 }
 
 /// Nanoseconds as milliseconds, to three places, without a float.
@@ -1649,6 +1685,7 @@ impl Daemon {
         // engine is started, so a measurement is taken on the device it says
         // it was taken on (A6, A12, F133).
         let picked = self.picked_engine(named);
+        let planned = planned_memory(&path, held);
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
         for depth in &ladder {
@@ -1673,7 +1710,15 @@ impl Daemon {
             );
         }
 
-        let last = measured(named, &path, held, engine, ran_on.as_deref(), readings);
+        let last = measured(
+            named,
+            &path,
+            held,
+            engine,
+            ran_on.as_deref(),
+            readings,
+            planned,
+        );
         // Written down as it is sent, the way a generation's account is. A
         // measurement nobody can find later is the same as one not taken
         // (A1), and until this existed a model's page said `Unknown` about
@@ -1736,14 +1781,26 @@ impl Daemon {
         // move the answer (F53).
         let mut samples: Vec<u64> = Vec::new();
         let mut first_token: Vec<u64> = Vec::new();
+        let mut peak_resident: Option<u64> = None;
+        let mut window: Option<u64> = None;
         let mut ran_on: Option<String> = None;
+        // Why a run produced nothing, where the engine said: a rung the
+        // engine refused is not a rung whose pair did not separate (F152).
+        let mut refused: Option<String> = None;
         for _ in 0..REPEATS {
             let one = self.timed_generation(named, engine, depth, 1, picked.cloned());
             let many = self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned());
-            if let Some(short) = &one {
-                ran_on = ran_on.take().or_else(|| short.engine.clone());
+            for run in [&one, &many] {
+                match run {
+                    Ok(timed) => {
+                        ran_on = ran_on.take().or_else(|| timed.engine.clone());
+                        peak_resident = timed.peak_resident.max(peak_resident);
+                        window = timed.window.max(window);
+                    }
+                    Err(why) => refused = refused.take().or_else(|| Some(why.clone())),
+                }
             }
-            if let (Some(short), Some(long)) = (&one, &many)
+            if let (Ok(short), Ok(long)) = (&one, &many)
                 && long.ns > short.ns
             {
                 #[expect(
@@ -1784,29 +1841,50 @@ impl Daemon {
                         "samples",
                         Value::Integer(i64::try_from(samples.len()).unwrap_or(i64::MAX)),
                     ),
+                    // The window the engine ran in and its peak resident
+                    // memory across the repeats, for what is read between
+                    // rungs (B-424).
+                    (
+                        "window",
+                        window.map_or(Value::Null, |tokens| {
+                            Value::Integer(i64::try_from(tokens).unwrap_or(i64::MAX))
+                        }),
+                    ),
+                    (
+                        "peak_resident_bytes",
+                        peak_resident.map_or(Value::Null, |bytes| {
+                            Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX))
+                        }),
+                    ),
                     ("measured", Value::Bool(true)),
                 ])
             }
             // No pair came back in the right order, so nothing here is a
             // per-token cost. The honest reading is that there is none —
             // never a zero, and never the unsubtracted number standing in for
-            // the subtracted one (A7, A9).
+            // the subtracted one (A7, A9). And where the engine refused the
+            // depth, that is the reason, not the pair (F152).
             None => Value::map([
                 ("depth", at_depth),
                 ("measured", Value::Bool(false)),
                 (
                     "why",
-                    Value::text(
-                        "no pair of runs at this depth separated: the longer one finished no \
-                         later than the shorter, so their difference is not a cost",
-                    ),
+                    Value::text(refused.map_or_else(
+                        || {
+                            "no pair of runs at this depth separated: the longer one finished \
+                             no later than the shorter, so their difference is not a cost"
+                                .to_owned()
+                        },
+                        |why| format!("the engine produced nothing at this depth: {why}"),
+                    )),
                 ),
             ]),
         };
         (reading, ran_on)
     }
 
-    /// One generation, timed, or `None` if it produced nothing.
+    /// One generation, timed — or, where it produced nothing, why, in the
+    /// words of the account's failure.
     ///
     /// The prompt is a run of identifiers rather than text: what is being
     /// measured is depth, and depth is a count of tokens. Sending text would
@@ -1818,8 +1896,9 @@ impl Daemon {
         depth: u64,
         produce: u32,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
-    ) -> Option<Timed> {
-        let how_many = usize::try_from(depth).ok()?;
+    ) -> std::result::Result<Timed, String> {
+        let how_many =
+            usize::try_from(depth).map_err(|_| "a depth this machine cannot count".to_owned())?;
         // Identifier 1 is inside every vocabulary MCF can address. What it
         // means does not matter; that there are `depth` of them does.
         let tokens: Vec<usize> = vec![1; how_many];
@@ -1835,7 +1914,8 @@ impl Daemon {
         // *same* generation path a client's request runs, rather than a
         // second one written to be measured, which is the difference between
         // timing MCF and timing something that resembles it (A11, A12).
-        let (mine, theirs) = UnixStream::pair().ok()?;
+        let (mine, theirs) =
+            UnixStream::pair().map_err(|error| format!("no socket pair to drain: {error}"))?;
         let drain = std::thread::spawn(move || {
             let mut end = &theirs;
             let _emptied = std::io::copy(&mut end, &mut std::io::sink());
@@ -1869,14 +1949,35 @@ impl Daemon {
         drop(mine);
         let _joined = drain.join();
 
-        produced.said.is_some().then(|| Timed {
+        let conditions = produced.account.get("conditions");
+        let condition = |key: &str| {
+            conditions
+                .and_then(|conditions| conditions.get(key))
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+        };
+        if produced.said.is_none() {
+            let failure = produced.account.get("failure");
+            let said = |key: &str| {
+                failure
+                    .and_then(|failure| failure.get(key))
+                    .and_then(Value::as_text)
+            };
+            return Err(match (said("detail"), said("category")) {
+                (Some(detail), Some(category)) => format!("{detail} ({category})"),
+                (Some(detail), None) => detail.to_owned(),
+                (None, Some(category)) => category.to_owned(),
+                (None, None) => "the account carries no failure".to_owned(),
+            });
+        }
+        Ok(Timed {
             ns: took.as_nanos(),
-            engine: produced
-                .account
-                .get("conditions")
+            engine: conditions
                 .and_then(|conditions| conditions.get("engine"))
                 .and_then(Value::as_text)
                 .map(str::to_owned),
+            peak_resident: condition("peak_resident_bytes"),
+            window: condition("window"),
         })
     }
 

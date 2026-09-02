@@ -22,6 +22,18 @@
 //! costs and not what the first one after a reboot does. A cold disk is a
 //! different measurement, not taken here.
 //!
+//! **The memory a rung costs is read off the engine's process** (B-424). The
+//! kernel keeps each process's high-water mark of resident memory, and the
+//! engine that served a rung is asked for it after the rung. The window an
+//! engine runs in is sized for the request, and the cache is allocated for
+//! the window, so between two rungs that ran in different windows the growth
+//! in the high-water mark over the tokens between is what a token of window
+//! costs — measured, against the figure the header plans. What the two say a
+//! machine's free memory can hold is then the same arithmetic the planner
+//! does, on the measured figure instead of the declared one (A20, A21). What
+//! is not observed is said: the mark is the process's own memory, and a
+//! device's memory is not in it.
+//!
 //! **The sentences travel with the figures.** What a surface prints of each
 //! figure is composed here too, so that the window's row and the console's
 //! line cannot drift into two readings of one object (B-072).
@@ -137,6 +149,222 @@ pub fn first_token(readings: &[Value], as_milliseconds: fn(u64) -> String) -> Va
             )),
         ),
     ])
+}
+
+/// What the run knew about memory before it ran: the header's arithmetic
+/// and the machine, for the measured figure to be set against.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Planned {
+    /// The cache one token costs by the header's widths, where it names them.
+    pub per_token: Option<u64>,
+    /// The weights, whole.
+    pub weights: Option<u64>,
+    /// The memory free on the machine when the run started.
+    pub free: Option<u64>,
+    /// The context the model was trained for, where the header says.
+    pub trained: Option<u64>,
+}
+
+/// A reading's depth, the window it ran in and the engine's peak resident
+/// memory, where it measured and the engine's process was observed.
+fn peak_of(reading: &Value) -> Option<(u64, u64, u64)> {
+    if reading.get("measured") != Some(&Value::Bool(true)) {
+        return None;
+    }
+    let held = |key: &str| {
+        reading
+            .get(key)?
+            .as_integer()
+            .and_then(|value| u64::try_from(value).ok())
+    };
+    Some((
+        held("depth")?,
+        held("window")?,
+        held("peak_resident_bytes")?,
+    ))
+}
+
+/// A figure that was not taken, and why (A7).
+fn unmeasured(why: String) -> Value {
+    Value::map([("measured", Value::Bool(false)), ("why", Value::text(why))])
+}
+
+/// The memory a token of window costs, read off the engine's peak resident
+/// memory between the shallowest and deepest rungs that ran in different
+/// windows — and the largest context the machine's free memory holds at
+/// that cost, by the planner's own arithmetic.
+///
+/// Not measured, and said so, where no rung's engine was observed, where
+/// every rung ran in one window (the cache is sized to the window, so it did
+/// not grow between them), or where the deeper rung held no more than the
+/// shallower (A7, A9).
+#[must_use]
+pub fn memory(readings: &[Value], planned: Planned) -> Value {
+    let rungs: Vec<(u64, u64, u64)> = readings.iter().filter_map(peak_of).collect();
+    let (Some(shallow), Some(deep)) = (rungs.first(), rungs.last()) else {
+        return unmeasured(
+            "no rung's engine was observed, so there is no peak to read a cost off".to_owned(),
+        );
+    };
+    if deep.1 <= shallow.1 {
+        return unmeasured(format!(
+            "every rung ran in one window of {} tokens, and the cache is sized to the window, so \
+             it did not grow between them; a rung deeper than half the window would",
+            grouped(shallow.1)
+        ));
+    }
+    if deep.2 <= shallow.2 {
+        return unmeasured(format!(
+            "the engine held no more at a window of {} than at {}, so their difference is not a \
+             cost",
+            grouped(deep.1),
+            grouped(shallow.1)
+        ));
+    }
+    #[expect(
+        clippy::integer_division,
+        reason = "a difference in bytes over the tokens between two windows; the remainder is \
+                  under a byte a token"
+    )]
+    let per_token = (deep.2 - shallow.2) / (deep.1 - shallow.1);
+    let largest = match (planned.weights, planned.free, planned.trained) {
+        (Some(weights), Some(free), Some(trained)) => Value::map([
+            (
+                "measured",
+                count(crate::engines::largest_context(
+                    weights, per_token, free, trained,
+                )),
+            ),
+            (
+                "planned",
+                planned.per_token.map_or(Value::Null, |per_token| {
+                    count(crate::engines::largest_context(
+                        weights, per_token, free, trained,
+                    ))
+                }),
+            ),
+            ("weights", count(weights)),
+            ("free", count(free)),
+            ("trained", count(trained)),
+        ]),
+        _ => Value::map([
+            ("measured", Value::Null),
+            ("planned", Value::Null),
+            (
+                "why",
+                Value::text(
+                    "the weights, the free memory or the trained context is not known, and the \
+                     ceiling is arithmetic on all three",
+                ),
+            ),
+        ]),
+    };
+    Value::map([
+        ("measured", Value::Bool(true)),
+        ("per_token_bytes", count(per_token)),
+        (
+            "between_windows",
+            Value::List(vec![count(shallow.1), count(deep.1)]),
+        ),
+        (
+            "at_deepest",
+            Value::map([
+                ("depth", count(deep.0)),
+                ("window", count(deep.1)),
+                ("bytes", count(deep.2)),
+            ]),
+        ),
+        (
+            "planned_per_token_bytes",
+            planned.per_token.map_or(Value::Null, count),
+        ),
+        ("largest_context", largest),
+        (
+            "what",
+            Value::text(
+                "the engine process's peak resident memory, read from the kernel's high-water \
+                 mark, over the window each rung ran in; a device's memory is not in it",
+            ),
+        ),
+    ])
+}
+
+/// The lines a surface prints of the memory figure: the cost of a token of
+/// window against the planned one, what the deepest rung held, the largest
+/// context the machine holds at that cost, and what was observed — or why
+/// there is none.
+#[must_use]
+pub fn memory_said(held: Option<&Value>) -> Vec<String> {
+    let Some(held) = measured_or_said(held) else {
+        return not_measured(held);
+    };
+    let number = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_integer)
+            .and_then(|value| u64::try_from(value).ok())
+    };
+    let windows = held
+        .get("between_windows")
+        .and_then(Value::as_list)
+        .map(|windows| {
+            windows
+                .iter()
+                .filter_map(Value::as_integer)
+                .map(|window| grouped(u64::try_from(window).unwrap_or(0)))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        })
+        .unwrap_or_default();
+    let planned = number(held.get("planned_per_token_bytes")).map_or_else(
+        || "the header does not size a cache".to_owned(),
+        |bytes| format!("{} bytes planned from the header", grouped(bytes)),
+    );
+    let deepest = held.get("at_deepest");
+    let largest = held.get("largest_context");
+    let ceiling = match number(largest.and_then(|figure| figure.get("measured"))) {
+        Some(tokens) => format!(
+            "{} tokens is the largest context the free memory holds at that cost — {}",
+            grouped(tokens),
+            number(largest.and_then(|figure| figure.get("planned"))).map_or_else(
+                || "unplanned".to_owned(),
+                |planned| format!("{} tokens planned", grouped(planned))
+            )
+        ),
+        None => format!(
+            "no ceiling: {}",
+            largest
+                .and_then(|figure| figure.get("why"))
+                .and_then(Value::as_text)
+                .unwrap_or("MCF did not say why")
+        ),
+    };
+    vec![
+        format!(
+            "{} bytes a token of window between windows of {windows}; {planned}",
+            grouped(number(held.get("per_token_bytes")).unwrap_or(0))
+        ),
+        format!(
+            "{} held at {} deep, in a window of {}",
+            gigabytes(number(deepest.and_then(|at| at.get("bytes"))).unwrap_or(0)),
+            grouped(number(deepest.and_then(|at| at.get("depth"))).unwrap_or(0)),
+            grouped(number(deepest.and_then(|at| at.get("window"))).unwrap_or(0)),
+        ),
+        ceiling,
+        text(held, "what").to_owned(),
+    ]
+}
+
+/// A size in gigabytes to two places, exact and without a float.
+fn gigabytes(bytes: u64) -> String {
+    #[expect(
+        clippy::integer_division,
+        reason = "exact: a float would round a byte count before printing it"
+    )]
+    {
+        let whole = bytes / 1_000_000_000;
+        let hundredths = (bytes % 1_000_000_000) / 10_000_000;
+        format!("{whole}.{hundredths:02} GB")
+    }
 }
 
 /// The lines a surface prints of the prompt-reading figure: the cost, the
@@ -323,5 +551,123 @@ mod tests {
         let lines = prompt_reading_said(Some(&prompt_reading(&one, ms)));
         assert_eq!(lines.len(), 1);
         assert!(lines.iter().all(|line| line.starts_with("not measured: ")));
+    }
+
+    fn held(depth: i64, window: i64, peak: Option<i64>) -> Value {
+        let mut fields = vec![
+            ("depth", Value::Integer(depth)),
+            ("window", Value::Integer(window)),
+            ("measured", Value::Bool(true)),
+        ];
+        if let Some(peak) = peak {
+            fields.push(("peak_resident_bytes", Value::Integer(peak)));
+        }
+        Value::map(fields)
+    }
+
+    /// Windows of 4,096 and 8,228 with 500 MB between them: about 121 kB a
+    /// token of window, read between the outer rungs whatever the rungs
+    /// between held — and the ceiling is the planner's arithmetic on it.
+    #[test]
+    fn a_memory_cost_is_read_between_the_outer_windows() {
+        let readings = [
+            held(512, 4096, Some(2_000_000_000)),
+            held(1024, 4096, Some(2_000_000_000)),
+            held(2048, 4132, None),
+            held(4096, 8228, Some(2_500_000_000)),
+        ];
+        let planned = Planned {
+            per_token: Some(114_688),
+            weights: Some(1_000_000_000),
+            free: Some(10_000_000_000),
+            trained: Some(32_768),
+        };
+        let said = memory(&readings, planned);
+        assert_eq!(said.get("measured"), Some(&Value::Bool(true)));
+        assert_eq!(
+            said.get("per_token_bytes").and_then(Value::as_integer),
+            Some(121_006)
+        );
+        let ceiling = said.get("largest_context").expect("a ceiling");
+        assert_eq!(
+            ceiling.get("measured").and_then(Value::as_integer),
+            i64::try_from(crate::engines::largest_context(
+                1_000_000_000,
+                121_006,
+                10_000_000_000,
+                32_768
+            ))
+            .ok()
+        );
+        assert_eq!(
+            ceiling.get("planned").and_then(Value::as_integer),
+            i64::try_from(crate::engines::largest_context(
+                1_000_000_000,
+                114_688,
+                10_000_000_000,
+                32_768
+            ))
+            .ok()
+        );
+        let lines = memory_said(Some(&said));
+        assert_eq!(
+            lines.first().map(String::as_str),
+            Some(
+                "121,006 bytes a token of window between windows of 4,096 and 8,228; 114,688 \
+                 bytes planned from the header"
+            )
+        );
+        assert_eq!(
+            lines.get(1).map(String::as_str),
+            Some("2.50 GB held at 4,096 deep, in a window of 8,228")
+        );
+        assert!(
+            lines
+                .get(2)
+                .is_some_and(|line| line.contains("largest context"))
+        );
+    }
+
+    /// One window, an engine that held no more deeper, or no peak at all is
+    /// not a cost (A7, A9) — and without the machine there is no ceiling.
+    #[test]
+    fn what_memory_cannot_be_read_is_said_not_read() {
+        let why = |readings: &[Value]| {
+            let said = memory(readings, Planned::default());
+            assert_eq!(said.get("measured"), Some(&Value::Bool(false)));
+            said.get("why")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        assert!(why(&[held(512, 4096, None)]).contains("no rung's engine was observed"));
+        assert!(
+            why(&[
+                held(512, 4096, Some(2_000_000_000)),
+                held(2048, 4096, Some(2_100_000_000)),
+            ])
+            .contains("one window of 4,096")
+        );
+        assert!(
+            why(&[
+                held(512, 4096, Some(2_000_000_000)),
+                held(4096, 8228, Some(2_000_000_000)),
+            ])
+            .contains("held no more")
+        );
+        let said = memory(
+            &[
+                held(512, 4096, Some(2_000_000_000)),
+                held(4096, 8228, Some(2_500_000_000)),
+            ],
+            Planned::default(),
+        );
+        assert_eq!(said.get("measured"), Some(&Value::Bool(true)));
+        assert!(
+            memory_said(Some(&said))
+                .get(2)
+                .is_some_and(|line| line.starts_with("no ceiling: "))
+        );
+        assert_eq!(memory_said(None), vec!["MCF did not say".to_owned()]);
     }
 }

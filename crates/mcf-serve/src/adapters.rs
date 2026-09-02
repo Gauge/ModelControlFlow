@@ -38,6 +38,31 @@ pub struct Ended {
     pub produced: usize,
     /// Its standard error, bounded — the engine's own words about why.
     pub said: String,
+    /// The most memory it held resident, in bytes, where the kernel said —
+    /// sampled as its output arrived, so the mark is at least what it had
+    /// reached by its last word.
+    pub peak_resident: Option<u64>,
+}
+
+/// The most memory a process has held resident, in bytes, from the kernel's
+/// own high-water mark (`VmHWM` in `/proc/<pid>/status`).
+///
+/// `None` where there is no such file — another kernel, or a process already
+/// gone — which is *not observed*, never zero (A7). Reading a process's own
+/// accounting is not sampling the hardware (B4): nothing here touches a
+/// counter that costs anything, and it is read only of a child MCF started.
+#[must_use]
+pub fn peak_resident_of(pid: u32) -> Option<u64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
+    let kibibytes: u64 = line
+        .trim_start_matches("VmHWM:")
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .ok()?;
+    kibibytes.checked_mul(1024)
 }
 
 /// Starts `command`, streams its standard output to `on_chunk` as it arrives,
@@ -97,6 +122,10 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
     });
 
     let mut produced = 0_usize;
+    // The mark is read while the process is still there to be read: after
+    // `wait` its accounting is gone with it. Each chunk is a moment it is
+    // known to be alive, and the last chunk comes after the work.
+    let mut peak_resident: Option<u64> = None;
     if let Some(mut stdout) = child.stdout.take() {
         let mut buffer = [0_u8; 4096];
         loop {
@@ -107,10 +136,12 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
                     if let Some(chunk) = buffer.get(..count) {
                         on_chunk(chunk);
                     }
+                    peak_resident = peak_resident_of(child.id()).max(peak_resident);
                 }
             }
         }
     }
+    peak_resident = peak_resident_of(child.id()).max(peak_resident);
     let status = child.wait().map_err(|error| {
         Failure::new(
             Category::EngineExitSignal,
@@ -136,6 +167,7 @@ pub fn supervise(command: &mut Command, on_chunk: &mut dyn FnMut(&[u8])) -> Resu
         return Ok(Ended {
             produced,
             said: tail,
+            peak_resident,
         });
     }
 

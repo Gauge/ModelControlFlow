@@ -206,6 +206,7 @@ fn read_off_the_rungs(body: &Value) -> Vec<String> {
             "start-up",
             mcf_serve::ladder::first_token_said(body.get("first_token")),
         ),
+        ("memory", mcf_serve::ladder::memory_said(body.get("memory"))),
     ] {
         let mut lines = lines.into_iter();
         out.push(format!("  {what:<15} {}", lines.next().unwrap_or_default()));
