@@ -440,6 +440,7 @@ fn the_whole_prompt_is_asked_and_the_cap_is_chosen() {
         text: "Be terse.\n\nBe kind.\n\nBe right.\n\nWhat is 2 + 2?",
         by: None,
         most: Some(2),
+        floors: false,
     };
     let report = measure(&taken, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.unit, Unit::Paragraph);
@@ -611,4 +612,93 @@ fn the_rank_reading_is_grouped_by_part_and_a_stray_piece_is_placed_nowhere() {
     assert_eq!(nowhere, 1);
     assert_eq!(short.first().map(|held| held.tokens), Some(3));
     assert_eq!(short.get(1).map(|held| held.tokens), Some(0));
+}
+
+/// The inert sentence lands at every position, with the separator of the
+/// part before it, and at the end the last part takes the separator so the
+/// two are not run together (B-434).
+#[test]
+fn the_inert_sentence_can_be_put_at_any_position() {
+    let parts = parts_of("One.\n\nTwo.\n\nThree.", Unit::Paragraph);
+    let inert = NO_INSTRUCTION;
+    assert_eq!(
+        with_inert_at(&parts, 0),
+        format!("{inert}\n\nOne.\n\nTwo.\n\nThree.")
+    );
+    assert_eq!(
+        with_inert_at(&parts, 1),
+        format!("One.\n\n{inert}\n\nTwo.\n\nThree.")
+    );
+    assert_eq!(with_inert_at(&parts, 2), with_inert(&parts));
+    assert_eq!(
+        with_inert_at(&parts, 3),
+        format!("One.\n\nTwo.\n\nThree.\n\n{inert}")
+    );
+    // Past the end is the end, not a panic.
+    assert_eq!(with_inert_at(&parts, 9), with_inert_at(&parts, 3));
+    // The prompt with the sentence removed again is the prompt as written.
+    let sentences = parts_of("Be terse. Be kind.", Unit::Sentence);
+    assert_eq!(
+        with_inert_at(&sentences, 2),
+        format!("Be terse. Be kind. {inert}")
+    );
+}
+
+/// Asked for, the floor is drawn at every position — one generation a
+/// position, the one already drawn reused — and the report carries the
+/// least, the middle and the most of them; not asked for, none is spent
+/// and the spread is absent rather than one number wide (B-434, A7).
+#[test]
+fn the_floor_at_every_position_is_a_spread_and_costs_a_generation_each() {
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: Draw| {
+        asked.borrow_mut().push(prompt.to_owned());
+        // The inert sentence moves the answer more the earlier it lands.
+        match prompt.find(NO_INSTRUCTION) {
+            Some(0) => said("a b c d e f g h"),
+            Some(_) if prompt.starts_with("One.\n\nNothing") => said("one b c d e f g h"),
+            Some(_) if prompt.ends_with(NO_INSTRUCTION) => said("one two three d e f g h"),
+            Some(_) => said("one two c d e f g h"),
+            None => said("one two three four e f g h"),
+        }
+    };
+    let taken = Taken {
+        text: "One.\n\nTwo.\n\nThree.",
+        by: None,
+        most: None,
+        floors: true,
+    };
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let floors = report.floors.clone().unwrap_or_default();
+    assert_eq!(
+        floors.iter().map(|at| at.position).collect::<Vec<_>>(),
+        vec![0, 1, 2, 3]
+    );
+    assert_eq!(
+        floors.get(2).map(|at| at.moved),
+        Some(report.floor),
+        "the position already drawn is the floor itself"
+    );
+    // One for the baseline, three removals, one control, and three further
+    // positions: the drawn position is not asked twice.
+    assert_eq!(asked.borrow().len(), 8);
+    let spread = report.floor_spread().expect("asked for, so present");
+    assert_eq!(spread.least, floors.get(3).map_or(0, |at| at.moved));
+    assert_eq!(spread.most, floors.first().map_or(0, |at| at.moved));
+    assert_eq!(
+        spread.middle,
+        floors.get(2).map_or(0, |at| at.moved),
+        "the upper median of four draws is the third smallest"
+    );
+    assert!(spread.least < spread.middle && spread.middle < spread.most);
+
+    asked.borrow_mut().clear();
+    let one_draw = Taken {
+        floors: false,
+        ..taken
+    };
+    let report = measure(&one_draw, 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.floors, None);
+    assert_eq!(report.floor_spread(), None);
+    assert_eq!(asked.borrow().len(), 5);
 }

@@ -193,6 +193,10 @@ pub struct Taken<'a> {
     pub by: Option<Unit>,
     /// How many parts to remove at most; `None` is [`MOST_CLAUSES`].
     pub most: Option<usize>,
+    /// Whether to put the inert sentence at every position rather than one,
+    /// so that the floor is a spread and not a draw (B-434). A generation a
+    /// position, so the caller's to ask for.
+    pub floors: bool,
 }
 
 impl Taken<'_> {
@@ -295,6 +299,35 @@ pub struct Settled {
     pub from_greedy: u64,
 }
 
+/// The floor taken at one position: the inert sentence put in before the
+/// part at `position` (or at the end, where `position` is the part count),
+/// and what its removal did (B-434).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorAt {
+    /// Where the inert sentence was put: before this part, or at the end.
+    pub position: usize,
+    /// How much the answer moved for it, in parts per million.
+    pub moved: u64,
+    /// The forced reading with it in.
+    pub held: Option<Held>,
+}
+
+/// The least, the middle and the most of the floor across positions.
+///
+/// **A floor is a draw, and a draw has a spread.** One inert sentence at one
+/// position gave 84.9% on a persona; whether a part at 83.6% sits under the
+/// floor or under that draw of it is what this answers. The middle is the
+/// upper median, so it is one of the draws and not a number between two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Spread {
+    /// The smallest floor any position gave.
+    pub least: u64,
+    /// The median draw.
+    pub middle: u64,
+    /// The largest.
+    pub most: u64,
+}
+
 /// What a prompt did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report {
@@ -308,6 +341,9 @@ pub struct Report {
     /// opening ranks with a sentence carrying no instruction put in. The
     /// floor of `held`, taken by the same operation.
     pub floor_held: Option<Held>,
+    /// The floor at every position, in position order, where the caller
+    /// asked for it; `None` where one draw was taken (B-434).
+    pub floors: Option<Vec<FloorAt>>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -327,6 +363,24 @@ pub struct Report {
 }
 
 impl Report {
+    /// The least, middle and most of the floor across positions, where the
+    /// floor was taken at every one.
+    #[must_use]
+    pub fn floor_spread(&self) -> Option<Spread> {
+        let mut drawn: Vec<u64> = self.floors.as_ref()?.iter().map(|at| at.moved).collect();
+        drawn.sort_unstable();
+        #[allow(
+            clippy::integer_division,
+            reason = "the upper median's index: a position in a list, not a figure"
+        )]
+        let middle = *drawn.get(drawn.len() / 2)?;
+        Some(Spread {
+            least: *drawn.first()?,
+            middle,
+            most: *drawn.last()?,
+        })
+    }
+
     /// The sentences whose removal changed nothing at all.
     #[must_use]
     pub fn unused(&self) -> Vec<&Clause> {
@@ -589,19 +643,48 @@ pub fn surprise_by_part(
 /// sentence a sentence's.
 #[must_use]
 pub fn with_inert(parts: &[Part]) -> String {
+    with_inert_at(parts, parts.len().saturating_sub(1))
+}
+
+/// The document with an inert sentence put in before the part at `at`, or
+/// at the end where `at` is the part count (B-434).
+///
+/// The separator is the one of the part before the insertion, or the first
+/// the document has where there is none before it, so that a paragraph gets
+/// a paragraph's break wherever the sentence lands; at the end, the part
+/// that was last takes that separator and the inert sentence takes none.
+#[must_use]
+pub fn with_inert_at(parts: &[Part], at: usize) -> String {
     let mut all = parts.to_vec();
-    let at = all.len().saturating_sub(1);
-    let after = at
+    let at = at.min(all.len());
+    let separator = at
         .checked_sub(1)
         .and_then(|before| all.get(before))
-        .map_or_else(|| " ".to_owned(), |part| part.after.clone());
-    all.insert(
-        at,
-        Part {
+        .map(|part| part.after.clone())
+        .filter(|after| !after.is_empty())
+        .or_else(|| {
+            all.iter()
+                .map(|part| part.after.clone())
+                .find(|after| !after.is_empty())
+        })
+        .unwrap_or_else(|| " ".to_owned());
+    if at == all.len() {
+        if let Some(last) = all.last_mut() {
+            last.after.clone_from(&separator);
+        }
+        all.push(Part {
             text: NO_INSTRUCTION.to_owned(),
-            after,
-        },
-    );
+            after: String::new(),
+        });
+    } else {
+        all.insert(
+            at,
+            Part {
+                text: NO_INSTRUCTION.to_owned(),
+                after: separator,
+            },
+        );
+    }
     joined(&all)
 }
 
@@ -766,12 +849,46 @@ pub fn measure(
     } else {
         force(&padded, &opening)
     };
+    // **The floor at every position, where asked** (B-434). One draw of the
+    // floor is one number, and a part a few points under it may be under
+    // the floor or under that draw. The position already drawn is not drawn
+    // again: its figure is the one above.
+    let floors = (taken.floors && all.len() > 1).then(|| {
+        let drawn_at = all.len().saturating_sub(1);
+        (0..=all.len())
+            .map(|position| {
+                if position == drawn_at {
+                    return FloorAt {
+                        position,
+                        moved: floor,
+                        held: floor_held,
+                    };
+                }
+                let padded = with_inert_at(&all, position);
+                let moved = moved_by(
+                    ask(&padded, Draw::greedy(seed)).text.trim(),
+                    baseline.trim(),
+                );
+                let held = if opening.is_empty() {
+                    None
+                } else {
+                    force(&padded, &opening)
+                };
+                FloorAt {
+                    position,
+                    moved,
+                    held,
+                }
+            })
+            .collect()
+    });
 
     let settled = settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, ask));
 
     Report {
         floor,
         floor_held,
+        floors,
         baseline,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),

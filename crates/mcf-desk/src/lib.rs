@@ -783,6 +783,8 @@ pub enum Act {
     MostParts(usize),
     /// Take the document apart by this unit, or let the text decide.
     TakeApartBy(Option<mcf_serve::prompt::Unit>),
+    /// Draw the floor at every position, or at one (B-434).
+    FloorEverywhere(bool),
     /// Ask a model what has been typed.
     Ask {
         /// Which, by position in the list.
@@ -888,6 +890,9 @@ pub struct Desk {
     /// What to take the document apart into, where the person chose; `None`
     /// lets the text decide.
     pub by: Option<mcf_serve::prompt::Unit>,
+    /// Whether the floor is drawn at every position, a generation each
+    /// (B-434).
+    pub floors: bool,
     /// Which model a measurement or a question is about.
     pub chosen: Option<usize>,
     /// What is running.
@@ -972,6 +977,7 @@ impl Desk {
             caret: Caret::Document,
             most: None,
             by: None,
+            floors: false,
             chosen: None,
             doing: Doing::Nothing,
             said: String::new(),
@@ -1110,6 +1116,7 @@ impl Desk {
             text: self.typed.trim(),
             by: self.by,
             most: self.most,
+            floors: self.floors,
         }
     }
 
@@ -1356,6 +1363,7 @@ impl Desk {
             Act::Focus(caret) => self.caret = caret,
             Act::MostParts(most) => self.most = Some(most.max(1)),
             Act::TakeApartBy(by) => self.by = by,
+            Act::FloorEverywhere(everywhere) => self.floors = everywhere,
             Act::Clear => self.typed.clear(),
             Act::Dismiss => self.doing = Doing::Nothing,
         }
@@ -1645,6 +1653,7 @@ impl Desk {
                 prompt: taken.text.to_owned(),
                 by: taken.by,
                 most: taken.most,
+                floors: taken.floors,
                 temperature,
                 seed: 41,
             },

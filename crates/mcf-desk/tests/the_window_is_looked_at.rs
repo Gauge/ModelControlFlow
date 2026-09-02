@@ -1157,6 +1157,31 @@ fn a_grouping() -> mcf_record::json::Value {
 }
 
 /// A finished prompt report, as a person would be shown one.
+/// The floor drawn at every position, and its spread (B-434).
+fn a_spread() -> (mcf_record::json::Value, mcf_record::json::Value) {
+    use mcf_record::json::Value;
+    let at = |position: i64, moved: i64| {
+        Value::map([
+            ("position", Value::Integer(position)),
+            ("moved_parts_per_million", Value::Integer(moved)),
+            ("held", Value::Null),
+        ])
+    };
+    (
+        Value::List(vec![
+            at(0, 140_000),
+            at(1, 120_000),
+            at(2, 879_000),
+            at(3, 140_000),
+        ]),
+        Value::map([
+            ("least_parts_per_million", Value::Integer(120_000)),
+            ("middle_parts_per_million", Value::Integer(140_000)),
+            ("most_parts_per_million", Value::Integer(879_000)),
+        ]),
+    )
+}
+
 fn a_report() -> mcf_desk::Desk {
     use mcf_record::json::Value;
     let clause = a_clause;
@@ -1207,6 +1232,8 @@ fn a_report() -> mcf_desk::Desk {
             ]),
         ),
         ("expected_by_part", a_grouping()),
+        ("floors", a_spread().0),
+        ("floor_spread", a_spread().1),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("unit", Value::text("sentence".to_owned())),
         (
@@ -1599,6 +1626,68 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
         "the document was not typed into"
     );
     let _looked = drawn(&desk, DAY, "prompt-choices");
+}
+
+/// The floor at every position is a choice on the page that says what it
+/// costs, reaches the request as chosen, and is read back as a spread in
+/// the legend — or, left off, as the one draw it was (B-434, §3.15, §3.4).
+#[test]
+fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
+    use mcf_record::json::Value;
+    let mut desk = four_models();
+    desk.page = Page::Prompt;
+    desk.chosen = Some(0);
+    desk.typed = (0..5)
+        .map(|at| format!("Rule {at}: do the thing the rule says."))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    // Under the temperature row; a sweep of the whole window is thousands
+    // of renders.
+    let controls = (400.0, 500.0);
+    assert!(!desk.taken().floors, "one draw unless asked");
+    assert!(
+        act_within(&desk, &mcf_desk::Act::FloorEverywhere(true), controls),
+        "the floor at every position is offered"
+    );
+    desk.act(mcf_desk::Act::FloorEverywhere(true));
+    assert!(desk.taken().floors, "the choice reaches the request");
+    assert!(
+        act_within(&desk, &mcf_desk::Act::FloorEverywhere(false), controls),
+        "and is offered back"
+    );
+    let ground = DAY.ground;
+    let on = drawn(&desk, DAY, "prompt-floors-on").inked(ground);
+    desk.act(mcf_desk::Act::FloorEverywhere(false));
+    let off = drawn(&desk, DAY, "prompt-floors-off").inked(ground);
+    assert_ne!(on, off, "the cost line does not say which was chosen");
+
+    // A report that drew the spread reads it back; one that did not says so.
+    let with = a_report();
+    let found = match &with.doing {
+        mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
+        _ => None,
+    }
+    .unwrap_or(Value::Null);
+    assert_eq!(
+        found
+            .get("floor_spread")
+            .and_then(|spread| spread.get("most_parts_per_million"))
+            .and_then(Value::as_integer),
+        Some(879_000)
+    );
+    let spread = drawn(&with, DAY, "prompt-report").inked(ground);
+    let mut one = a_report();
+    if let mcf_desk::Doing::Reporting(job) = &mut one.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("floor_spread");
+        let _taken = fields.remove("floors");
+    }
+    let draw = drawn(&one, DAY, "prompt-report-one-floor").inked(ground);
+    assert_ne!(
+        spread, draw,
+        "the legend reads the same with the spread and without it"
+    );
 }
 
 /// A document is drawn as its lines, and a long one shows its tail.

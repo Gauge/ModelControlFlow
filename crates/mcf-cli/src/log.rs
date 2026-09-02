@@ -273,9 +273,17 @@ fn prompt_reported(body: &Value) -> String {
         ),
         _ => String::new(),
     };
+    let spread = match body.get("floor_spread") {
+        Some(spread @ Value::Map(_)) => format!(
+            " (drawn at every position: {} to {})",
+            crate::prompt::percent(integer(spread, "least_parts_per_million")),
+            crate::prompt::percent(integer(spread, "most_parts_per_million"))
+        ),
+        _ => String::new(),
+    };
     format!(
-        "a prompt of {} {}(s), {} characters, taken apart on {}: floor {}, {} of {} removed \
-         moved the answer past it{settled}",
+        "a prompt of {} {}(s), {} characters, taken apart on {}: floor {}{spread}, {} of {} \
+         removed moved the answer past it{settled}",
         of(body.get("prompt"), "parts"),
         conditions
             .and_then(|held| held.get("unit"))

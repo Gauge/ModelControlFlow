@@ -74,6 +74,9 @@ pub enum Request {
         by: Option<crate::prompt::Unit>,
         /// How many parts to remove at most; `None` is the default cap.
         most: Option<usize>,
+        /// Whether the floor is drawn at every position rather than one, a
+        /// generation a position (B-434).
+        floors: bool,
         /// The temperature the settledness seeds are drawn at, in
         /// thousandths; `None` spends no generation on the question (B-431).
         temperature: Option<mcf_core::configuration::Thousandths>,
@@ -327,6 +330,7 @@ fn prompt_report_line(request: &Request) -> Value {
         prompt,
         by,
         most,
+        floors,
         temperature,
         seed,
     } = request
@@ -344,6 +348,9 @@ fn prompt_report_line(request: &Request) -> Value {
     }
     if let Some(most) = most {
         fields.push(("most", Value::Integer(i64::try_from(*most).unwrap_or(0))));
+    }
+    if *floors {
+        fields.push(("floors", Value::Bool(true)));
     }
     if let Some(temperature) = temperature {
         fields.push((
@@ -597,6 +604,7 @@ impl Request {
                             })?,
                     ),
                 },
+                floors: value.get("floors").and_then(Value::as_bool) == Some(true),
                 // In thousandths, so that no fraction crosses the wire (A19).
                 // Nought is not a temperature to settle at: it is what every
                 // other generation draws at, and asking for it would spend

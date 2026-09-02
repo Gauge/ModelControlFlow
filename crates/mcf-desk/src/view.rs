@@ -2569,6 +2569,7 @@ fn what_it_will_cost(
     parts: usize,
     removed: usize,
     settling: bool,
+    floors: bool,
 ) -> String {
     use mcf_serve::prompt::SEEDS;
     if parts <= 1 {
@@ -2578,15 +2579,26 @@ fn what_it_will_cost(
         );
     }
     let seeds = if settling { SEEDS } else { 0 };
-    let generations = removed.saturating_add(2).saturating_add(seeds);
+    // The floor at every position is one more a position, less the one
+    // the single draw already takes.
+    let positions = if floors { parts } else { 0 };
+    let generations = removed
+        .saturating_add(2)
+        .saturating_add(seeds)
+        .saturating_add(positions);
     format!(
-        "{} — {}: one for the document, {} removed in turn, one for the control sentence{}",
+        "{} — {}: one for the document, {} removed in turn, one for the control sentence{}{}",
         count_of(parts, unit.name()),
         count_of(generations, "generation"),
         if removed == parts {
             "each".to_owned()
         } else {
             format!("the first {removed}")
+        },
+        if floors {
+            format!(" at each of {} positions", parts.saturating_add(1))
+        } else {
+            String::new()
         },
         if settling {
             format!(", and {SEEDS} seeds at the temperature")
@@ -2659,7 +2671,13 @@ fn the_choices(
     let removed = parts.min(cap);
     let faint = paint.ink.faint;
     let settle = desk.settle();
-    let of = what_it_will_cost(unit, parts, removed, matches!(settle, Ok(Some(_))));
+    let of = what_it_will_cost(
+        unit,
+        parts,
+        removed,
+        matches!(settle, Ok(Some(_))),
+        taken.floors,
+    );
     paint.say_at(at.0, at.1 + 8.0, &of, Weight::Regular, size::SMALL, faint);
 
     // The choices, on the line under the buttons.
@@ -2739,7 +2757,61 @@ fn the_choices(
         paint.say_at(x, row + 8.0, &said, Weight::Regular, size::SMALL, faint);
     }
     let settled = the_temperature(paint, desk, mouse, (left, row + ui::BUTTON + 8.0), settle);
-    (settled.0.or(act), settled.1)
+    let floors = the_floors(paint, desk, mouse, (left, settled.1 + 8.0), parts);
+    (floors.0.or(settled.0).or(act), floors.1)
+}
+
+/// Whether the floor is drawn at every position: a button that says what it
+/// costs, since it is a generation a position (B-434, §3.15).
+///
+/// Returns what was pressed and the row's bottom.
+fn the_floors(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    at: (f32, f32),
+    parts: usize,
+) -> (Option<Act>, f32) {
+    let faint = paint.ink.faint;
+    if parts <= 1 {
+        return (None, at.1);
+    }
+    let (pressed, button) = ui::fitted(
+        paint,
+        mouse,
+        at,
+        "floor at every position",
+        if desk.floors {
+            Kind::Primary
+        } else {
+            Kind::Quiet
+        },
+    );
+    let said = if desk.floors {
+        format!(
+            "the control sentence is put at each of the {} positions, {} more generations, \
+             and the floor is a spread rather than one draw",
+            parts.saturating_add(1),
+            parts
+        )
+    } else {
+        "one draw of the floor, at the last position but one; pressing this draws it at every \
+         position, one generation each, so a part near the floor can be read against the \
+         spread"
+            .to_owned()
+    };
+    paint.say_at(
+        button.right() + 8.0,
+        at.1 + 8.0,
+        &said,
+        Weight::Regular,
+        size::SMALL,
+        faint,
+    );
+    (
+        pressed.then_some(Act::FloorEverywhere(!desk.floors)),
+        button.bottom(),
+    )
 }
 
 /// The temperature the settledness seeds are drawn at, as a field: empty
@@ -2916,6 +2988,43 @@ fn what_the_third_figure_is(paint: &mut Painter, at: (f32, f32), width: f32, fou
     y
 }
 
+/// The floor at every position (B-434): its spread, or that it was one draw
+/// and how to make it more. Returns the row's bottom.
+fn what_the_floor_spread_is(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let ink = paint.ink;
+    let said = match found.get("floor_spread") {
+        Some(spread) if !matches!(spread, Value::Null) => {
+            let figure =
+                |key: &str| as_percent(spread.get(key).and_then(Value::as_integer).unwrap_or(0));
+            let positions = found
+                .get("floors")
+                .and_then(Value::as_list)
+                .map_or(0, <[Value]>::len);
+            format!(
+                "Drawn at every position, the floor runs from {} to {}, {} in the middle — the \
+                 control put at each of {}. Read the bars against the widest of them.",
+                figure("least_parts_per_million"),
+                figure("most_parts_per_million"),
+                figure("middle_parts_per_million"),
+                count_of(positions, "position")
+            )
+        }
+        _ => "That is one draw, with the control before the last part; \"floor at every \
+              position\" above draws it at each, one generation apiece, to say how wide it runs."
+            .to_owned(),
+    };
+    let mut y = at.1;
+    for line in paint
+        .wrap(&said, Weight::Regular, size::SMALL, width)
+        .iter()
+        .take(2)
+    {
+        paint.say_at(at.0, y, line, Weight::Regular, size::SMALL, ink.faint);
+        y += 16.0;
+    }
+    y
+}
+
 fn what_the_bars_mean(
     paint: &mut Painter,
     at: (f32, f32),
@@ -2950,6 +3059,7 @@ fn what_the_bars_mean(
         size::SMALL,
         ink.faint,
     );
+    y = what_the_floor_spread_is(paint, (area.x, y + 38.0), area.w, found) - 38.0;
     // The second figure, and what the control sentence did to it.
     let depth = found
         .get("forced_depth")

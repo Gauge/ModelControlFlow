@@ -38,6 +38,8 @@ pub(crate) struct Asked<'a> {
     /// The temperature to draw the settledness seeds at, where the caller
     /// stated one (B-431).
     pub temperature: Option<mcf_core::configuration::Thousandths>,
+    /// Whether the floor is drawn at every position (B-434).
+    pub floors: bool,
 }
 
 /// The document, from wherever the caller put it.
@@ -103,6 +105,7 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
         prompt,
         by: asked.by,
         most: asked.most,
+        floors: asked.floors,
         temperature: asked.temperature,
         seed: SEED,
     };
@@ -266,6 +269,7 @@ fn steering_lines(body: &Value) -> Vec<String> {
                 }
             }
         }
+        lines.extend(floor_spread_lines(body, unit, depth));
     }
     let over = count("clauses_over_the_cap");
     if over > 0 {
@@ -278,6 +282,76 @@ fn steering_lines(body: &Value) -> Vec<String> {
         ));
     }
 
+    lines
+}
+
+/// The floor at every position (B-434): its spread, each draw, and how many
+/// parts sit under the widest of them — or, when it was one draw, that it
+/// was and how to make it more (§3.4).
+fn floor_spread_lines(body: &Value, unit: &str, depth: i64) -> Vec<String> {
+    let mut lines = Vec::new();
+    let Some(spread) = body
+        .get("floor_spread")
+        .filter(|spread| !matches!(spread, Value::Null))
+    else {
+        lines.push(format!(
+            "    that is one draw, with the control put before the last {unit}; `--floors` \
+             draws it at every position, one generation each, to say how wide the floor runs"
+        ));
+        return lines;
+    };
+    let figure = |key: &str| {
+        let (whole, tenth) = as_percent(spread.get(key).and_then(Value::as_integer).unwrap_or(0));
+        format!("{whole}.{tenth}%")
+    };
+    let floors = body.get("floors").and_then(Value::as_list).unwrap_or(&[]);
+    let most = spread
+        .get("most_parts_per_million")
+        .and_then(Value::as_integer)
+        .unwrap_or(0);
+    lines.push(format!(
+        "    drawn at every position, the floor runs from {} to {}, {} in the middle — the \
+         control put at each of {}, one generation each:",
+        figure("least_parts_per_million"),
+        figure("most_parts_per_million"),
+        figure("middle_parts_per_million"),
+        count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
+    ));
+    for at in floors {
+        let (whole, tenth) = as_percent(
+            at.get("moved_parts_per_million")
+                .and_then(Value::as_integer)
+                .unwrap_or(0),
+        );
+        let held = held_said(at.get("held"), depth)
+            .map(|read| format!(" — {read}"))
+            .unwrap_or_default();
+        let position = at.get("position").and_then(Value::as_integer).unwrap_or(0);
+        let place = if position.saturating_add(1) == i64::try_from(floors.len()).unwrap_or(0) {
+            format!("after the last {unit}")
+        } else {
+            format!("before {unit} {}", position.saturating_add(1))
+        };
+        lines.push(format!("      · {place}: {whole:>3}.{tenth}%{held}"));
+    }
+    let under_most = body
+        .get("clauses")
+        .and_then(Value::as_list)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|clause| {
+            clause
+                .get("moved_parts_per_million")
+                .and_then(Value::as_integer)
+                .unwrap_or(0)
+                <= most
+        })
+        .count();
+    lines.push(format!(
+        "    read against the widest of them, {} at or under that — a part the control \
+         itself matched somewhere is not shown to have steered",
+        count_of(i64::try_from(under_most).unwrap_or(0), unit)
+    ));
     lines
 }
 
@@ -704,9 +778,16 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
         format!("what this prompt does to {}", header_name(named)),
         String::new(),
         format!(
-            "  {}: one for the prompt as written, one for each {unit} left out, one for the \
-             control sentence, and one for each further seed",
-            count_of(count("generations"), "generation")
+            "  {}: one for the prompt as written, one for each {unit} left out, {}, and one \
+             for each further seed",
+            count_of(count("generations"), "generation"),
+            match body.get("floors").and_then(Value::as_list) {
+                Some(floors) => format!(
+                    "one for the control sentence at each of {}",
+                    count_of(i64::try_from(floors.len()).unwrap_or(0), "position")
+                ),
+                None => "one for the control sentence".to_owned(),
+            }
         ),
     ];
     // **The unit, and who chose it** (§3.15): a report by paragraph and one
@@ -883,6 +964,74 @@ mod tests {
             fields.insert("expected_by_part".to_owned(), Value::Null);
         }
         assert!(which_part_was_least_expected(&none).is_empty());
+    }
+
+    /// The floor at every position is read as a spread with each draw under
+    /// it and the parts that sit under its widest; a report that drew it once
+    /// says so and says what draws it more (B-434, §3.4).
+    #[test]
+    fn the_floor_is_a_spread_when_it_was_drawn_everywhere_and_one_draw_when_not() {
+        let text = steering_lines(&body()).join("\n");
+        assert!(
+            text.contains(
+                "that is one draw, with the control put before the last sentence; \
+                           `--floors`"
+            ),
+            "{text}"
+        );
+        let mut everywhere = body();
+        if let Value::Map(fields) = &mut everywhere {
+            let at = |position: i64, moved: i64, rank: Option<i64>| {
+                Value::map([
+                    ("position", Value::Integer(position)),
+                    ("moved_parts_per_million", Value::Integer(moved)),
+                    (
+                        "held",
+                        rank.map_or(Value::Null, |rank| {
+                            Value::map([
+                                ("first_rank", Value::Integer(rank)),
+                                ("kept", Value::Integer(2)),
+                                ("of", Value::Integer(2)),
+                            ])
+                        }),
+                    ),
+                ])
+            };
+            fields.insert(
+                "floors".to_owned(),
+                Value::List(vec![
+                    at(0, 300_000, Some(1)),
+                    at(1, 0, None),
+                    at(2, 1_000_000, Some(4)),
+                    at(3, 0, Some(1)),
+                ]),
+            );
+            fields.insert(
+                "floor_spread".to_owned(),
+                Value::map([
+                    ("least_parts_per_million", Value::Integer(0)),
+                    ("middle_parts_per_million", Value::Integer(300_000)),
+                    ("most_parts_per_million", Value::Integer(1_000_000)),
+                ]),
+            );
+        }
+        let text = steering_lines(&everywhere).join("\n");
+        assert!(
+            text.contains("the floor runs from 0.0% to 100.0%, 30.0% in the middle"),
+            "{text}"
+        );
+        assert!(text.contains("each of 4 positions"), "{text}");
+        assert!(text.contains("· before sentence 1:  30.0% — "), "{text}");
+        assert!(text.contains("· before sentence 2:   0.0%\n"), "{text}");
+        assert!(
+            text.contains("· after the last sentence:   0.0% — "),
+            "{text}"
+        );
+        assert!(
+            text.contains("3 sentences at or under that"),
+            "every part is under a floor that reached a hundred: {text}"
+        );
+        assert!(!text.contains("`--floors`"), "{text}");
     }
 
     /// The unit, who decided it, and how the prompt reached the model are

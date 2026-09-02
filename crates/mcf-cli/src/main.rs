@@ -309,6 +309,9 @@ enum Request<'a> {
         /// The temperature to draw the settledness seeds at, where the
         /// caller states one; none spends nothing on the question (B-431).
         temperature: Option<mcf_core::configuration::Thousandths>,
+        /// Whether to draw the floor at every position, a generation each
+        /// (B-434).
+        floors: bool,
         /// Whether to answer as data rather than as prose.
         as_json: bool,
     },
@@ -855,6 +858,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     let mut by = None;
     let mut most = None;
     let mut temperature = None;
+    let mut floors = false;
     let mut as_json = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
@@ -913,6 +917,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 },
                 Err(missing) => return Ok(missing),
             },
+            "--floors" => floors = true,
             "--json" => as_json = true,
             other => return Err(other),
         }
@@ -936,6 +941,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
         by,
         most,
         temperature,
+        floors,
         as_json,
     })
 }
@@ -1609,9 +1615,11 @@ const COMMANDS: &str = "\
     \x20             or --file <path>         or paragraph removed in turn, and\n\
     \x20       [--by sentence|paragraph]      how much the answer moved. An\n\
     \x20       [--most <n>] [--json]          ordering, never relevance. A\n\
-    \x20       [--temperature <t>]            persona goes in --file, whole;\n\
+    \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
     \x20                                     --temperature draws three seeds\n\
-    \x20                                     at t to see whether it settles\n\
+    \x20                                     at t to see whether it settles;\n\
+    \x20                                     --floors puts the control at\n\
+    \x20                                     every position, one each\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -1819,6 +1827,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             by,
             most,
             temperature,
+            floors,
             as_json,
         } => prompt::report(
             model,
@@ -1828,6 +1837,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 by: *by,
                 most: *most,
                 temperature: *temperature,
+                floors: *floors,
             },
             *as_json,
         ),
@@ -2276,6 +2286,7 @@ mod tests {
             by: Some(mcf_serve::prompt::Unit::Paragraph),
             most: Some(40),
             temperature: Some(mcf_core::configuration::Thousandths(700)),
+            floors: true,
             as_json: true,
         };
         assert_eq!(
@@ -2290,6 +2301,7 @@ mod tests {
                 "40",
                 "--temperature",
                 "0.7",
+                "--floors",
                 "--json"
             ]),
             whole
@@ -2299,6 +2311,7 @@ mod tests {
                 "prompt",
                 "m",
                 "--json",
+                "--floors",
                 "--temperature",
                 "0.700",
                 "--most",
@@ -2319,6 +2332,7 @@ mod tests {
                 by: None,
                 most: None,
                 temperature: None,
+                floors: false,
                 as_json: false,
             }
         );

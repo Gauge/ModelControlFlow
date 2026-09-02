@@ -95,6 +95,41 @@ struct RankedPrompt {
     under: Option<String>,
 }
 
+/// The floor at every position, as a client reads it: null where one draw
+/// was taken (B-434).
+fn floors_value(floors: Option<&[crate::prompt::FloorAt]>) -> Value {
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    floors.map_or(Value::Null, |floors| {
+        Value::List(
+            floors
+                .iter()
+                .map(|at| {
+                    Value::map([
+                        ("position", count(at.position)),
+                        (
+                            "moved_parts_per_million",
+                            Value::Integer(i64::try_from(at.moved).unwrap_or(i64::MAX)),
+                        ),
+                        ("held", held_value(at.held)),
+                    ])
+                })
+                .collect(),
+        )
+    })
+}
+
+/// The least, middle and most of the floors: null where there is one.
+fn spread_value(spread: Option<crate::prompt::Spread>) -> Value {
+    let ppm = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    spread.map_or(Value::Null, |spread| {
+        Value::map([
+            ("least_parts_per_million", ppm(spread.least)),
+            ("middle_parts_per_million", ppm(spread.middle)),
+            ("most_parts_per_million", ppm(spread.most)),
+        ])
+    })
+}
+
 /// A forced reading, as a client reads it: null where none was taken.
 fn held_value(held: Option<crate::prompt::Held>) -> Value {
     held.map_or(Value::Null, |held| {
@@ -268,6 +303,8 @@ fn prompt_report_entry(
         ("answer_characters", characters("baseline")),
         ("floor_parts_per_million", kept("floor_parts_per_million")),
         ("floor_held", kept("floor_held")),
+        ("floors", kept("floors")),
+        ("floor_spread", kept("floor_spread")),
         ("clauses", Value::List(clauses)),
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
@@ -391,6 +428,11 @@ fn prompt_report_value(
         // the inert one. `forced_depth` bounds a null `first_rank`: outside
         // the sixty read is a bound, not an absence (A7).
         ("floor_held", held_value(report.floor_held)),
+        // **The floor at every position, where asked** (B-434): null where
+        // one draw was taken, which a reader must not read as a spread of
+        // nothing (A7).
+        ("floors", floors_value(report.floors.as_deref())),
+        ("floor_spread", spread_value(report.floor_spread())),
         (
             "forced_depth",
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),
@@ -1739,6 +1781,7 @@ impl Daemon {
                     prompt,
                     by,
                     most,
+                    floors,
                     temperature,
                     seed,
                 }) => {
@@ -1752,6 +1795,7 @@ impl Daemon {
                             text: &prompt,
                             by,
                             most,
+                            floors,
                         },
                         seed,
                         temperature,

@@ -196,3 +196,52 @@ fn neither_new_kind_is_a_failure() {
         );
     }
 }
+
+/// A prompt report's line carries the floor's spread where it was drawn at
+/// every position, and only there (B-434, A7).
+#[test]
+fn a_prompt_report_says_the_floor_and_its_spread_where_there_is_one() {
+    let clause = |moved: i64| Value::map([("moved_parts_per_million", Value::Integer(moved))]);
+    let mut body = Value::map([
+        ("floor_parts_per_million", Value::Integer(849_000)),
+        (
+            "prompt",
+            Value::map([
+                ("parts", Value::Integer(5)),
+                ("characters", Value::Integer(397)),
+            ]),
+        ),
+        (
+            "conditions",
+            Value::map([
+                ("unit", Value::text("paragraph")),
+                ("model", Value::text("dm.gguf")),
+            ]),
+        ),
+        (
+            "clauses",
+            Value::List(vec![clause(869_000), clause(836_000)]),
+        ),
+    ]);
+    let one = summarize(&an_entry(EntryKind::PromptReported, body.clone()));
+    assert!(
+        one.contains("floor 84.9%, 1 of 2 removed moved the answer past it"),
+        "{one}"
+    );
+    assert!(!one.contains("every position"), "{one}");
+    if let Value::Map(fields) = &mut body {
+        fields.insert(
+            "floor_spread".to_owned(),
+            Value::map([
+                ("least_parts_per_million", Value::Integer(732_000)),
+                ("middle_parts_per_million", Value::Integer(843_000)),
+                ("most_parts_per_million", Value::Integer(933_000)),
+            ]),
+        );
+    }
+    let spread = summarize(&an_entry(EntryKind::PromptReported, body));
+    assert!(
+        spread.contains("floor 84.9% (drawn at every position: 73.2% to 93.3%), 1 of 2"),
+        "{spread}"
+    );
+}

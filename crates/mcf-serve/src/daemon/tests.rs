@@ -506,6 +506,22 @@ fn a_served_report() -> Value {
         ("baseline", Value::text("def slugify(title): pass")),
         ("floor_parts_per_million", Value::Integer(120_000)),
         ("floor_held", Value::Null),
+        (
+            "floors",
+            Value::List(vec![Value::map([
+                ("position", Value::Integer(0)),
+                ("moved_parts_per_million", Value::Integer(140_000)),
+                ("held", Value::Null),
+            ])]),
+        ),
+        (
+            "floor_spread",
+            Value::map([
+                ("least_parts_per_million", Value::Integer(120_000)),
+                ("middle_parts_per_million", Value::Integer(140_000)),
+                ("most_parts_per_million", Value::Integer(140_000)),
+            ]),
+        ),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
         (
@@ -637,6 +653,16 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     );
     assert_eq!(at(&["expected_read"]), Some(Value::Integer(3)));
     assert_eq!(at(&["expected_first_choice"]), Some(Value::Integer(1)));
+    // The floor at every position travels whole: positions and figures,
+    // no text (B-434).
+    assert_eq!(
+        at(&["floor_spread", "most_parts_per_million"]),
+        Some(Value::Integer(140_000))
+    );
+    assert_eq!(
+        at(&["floors"]).and_then(|held| held.as_list().map(<[Value]>::len)),
+        Some(1)
+    );
     // The reading grouped by part is counts, and travels whole (B-433).
     assert_eq!(
         at(&["expected_by_part", "unplaced"]),
@@ -660,11 +686,13 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         text: "Be terse.\n\nWhat is 2 + 2?",
         by: Some(Unit::Paragraph),
         most: None,
+        floors: false,
     };
     let parts = taken.parts();
     let report = Report {
         floor: 0,
         floor_held: None,
+        floors: None,
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
