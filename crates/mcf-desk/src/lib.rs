@@ -716,6 +716,12 @@ pub enum Act {
     Recommended,
     /// Hold the chosen model under the settings as they stand.
     HostIt,
+    /// Build one component, by name, from the Components screen.
+    ///
+    /// The window is the surface; a card that said *mcf provision llama.cpp*
+    /// was sending the operator to a terminal for what the daemon behind the
+    /// window could do on request (A22, B-367).
+    Build(String),
     /// Stop holding it.
     StopHosting,
     /// Close the window.
@@ -846,6 +852,14 @@ pub struct Desk {
     /// was pressed for, so that a model chosen meanwhile is not held by a
     /// press that was for another.
     host_after: Option<String>,
+    /// The component being built, by name, while a build runs — so the
+    /// Components screen can show the build on the card it is for rather
+    /// than somewhere else. Set on every build, whichever screen started it.
+    pub building: Option<String>,
+    /// Which build last stopped badly, and why, in the daemon's words: the
+    /// component's name and the refusal. The card for it says so, and a new
+    /// build clears it.
+    pub build_failed: Option<(String, String)>,
     /// What is being hosted: where it is reachable, and since when.
     pub hosted: Option<Hosted>,
     /// The context window a measurement is set up for.
@@ -890,6 +904,8 @@ impl Desk {
             no_settings: None,
             needs_engine: None,
             host_after: None,
+            building: None,
+            build_failed: None,
             hosted: None,
             window: 8192,
             open: None,
@@ -1007,6 +1023,10 @@ impl Desk {
         {
             let refused = job.refused.clone();
             let wanted = self.host_after.take();
+            // The card the build was for flips on what the daemon now says
+            // of it, which is read rather than assumed (A21).
+            let built = self.building.take();
+            self.read_components();
             self.read_settings();
             let still_chosen = self
                 .chosen
@@ -1015,7 +1035,12 @@ impl Desk {
             if refused.is_none() && still_chosen {
                 self.host_it();
             } else if let Some(why) = refused {
-                self.no_settings = Some(format!("the engine could not be built: {why}"));
+                // Said where it was asked for: on Host when Host started the
+                // build, on the component's card either way.
+                if wanted.is_some() {
+                    self.no_settings = Some(format!("the engine could not be built: {why}"));
+                }
+                self.build_failed = built.map(|name| (name, why));
             }
         }
         true
@@ -1135,6 +1160,7 @@ impl Desk {
             Act::Cycle(at) => self.cycle(at),
             Act::Recommended => self.settings.clone_from(&self.recommended),
             Act::HostIt => self.host_it(),
+            Act::Build(name) => self.build(&name),
             Act::StopHosting => self.stop_hosting(),
             // Both are the loop's: closing is the window's own, and copying
             // needs the clipboard, which `act` cannot reach from here.
@@ -1265,6 +1291,7 @@ impl Desk {
             && let Some(engine) = self.needs_engine.clone()
         {
             self.host_after = Some(held.path.clone());
+            self.building = Some(engine.clone());
             self.doing = Doing::Provisioning(job::Job::start(
                 self.socket.clone(),
                 Request::Provision { component: None },
@@ -1290,6 +1317,27 @@ impl Desk {
                 settings: settings.to_value(),
             },
             format!("holding {}", held.name),
+        ));
+    }
+
+    /// Builds one component the operator named on the Components screen.
+    ///
+    /// One job at a time: while anything else runs, the button is not drawn,
+    /// and a press that reached here anyway does nothing rather than start a
+    /// second build beside a first (A6).
+    pub fn build(&mut self, name: &str) {
+        if self.doing.job().is_some_and(|job| !job.finished) {
+            return;
+        }
+        self.host_after = None;
+        self.build_failed = None;
+        self.building = Some(name.to_owned());
+        self.doing = Doing::Provisioning(job::Job::start(
+            self.socket.clone(),
+            Request::Provision {
+                component: Some(name.to_owned()),
+            },
+            format!("building {name}"),
         ));
     }
 

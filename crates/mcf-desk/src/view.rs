@@ -75,7 +75,7 @@ pub fn draw(paint: &mut Painter, desk: &Desk, mouse: &Mouse) -> Option<Act> {
         Page::Adding => adding(paint, desk, mouse, main),
         Page::Hosting => hosting(paint, desk, mouse, main),
         Page::Prompt => prompt(paint, desk, mouse, main),
-        Page::Components => components(paint, desk, main),
+        Page::Components => components(paint, desk, mouse, main),
         Page::Settings => settings(paint, main),
         Page::Exit => leaving(paint, mouse, main),
     };
@@ -2657,7 +2657,7 @@ fn steering(
 /// its own, so it is a command rather than something a window waits on a
 /// socket for — and a screen that offered a button it could not honour would
 /// be worse than one that names the command (A7).
-fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
+fn components(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<Act> {
     let ink = paint.ink;
     spaced(paint, area.x, area.y, "components", ink.faint);
     paint.say_at(
@@ -2681,6 +2681,7 @@ fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
         return None;
     }
 
+    let mut act = None;
     let mut y = area.y + 58.0;
     let wide = area.w.min(920.0);
     for component in &desk.components {
@@ -2689,84 +2690,197 @@ fn components(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
         if y + tall > area.bottom() {
             break;
         }
-        ui::card(paint, card, component.provisioned);
+        act = component_card(paint, desk, mouse, component, card).or(act);
+        y += tall + 10.0;
+    }
+    act
+}
 
-        // The name, and exactly which source it was built from.
-        paint.say_at(
-            card.x + 14.0,
-            card.y + 14.0,
-            &component.name,
-            Weight::Bold,
-            size::BODY,
-            ink.ink,
-        );
-        let after = paint.measure(&component.name, Weight::Bold, size::BODY);
-        paint.say_at(
-            card.x + 14.0 + after + 8.0,
-            card.y + 14.0,
-            &format!("@{}", component.commit),
+/// One component: what it is, what state it is in, and what can be done.
+fn component_card(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    component: &crate::Component,
+    card: Box,
+) -> Option<Act> {
+    let ink = paint.ink;
+    ui::card(paint, card, component.provisioned);
+
+    // The name, and exactly which source it was built from.
+    paint.say_at(
+        card.x + 14.0,
+        card.y + 14.0,
+        &component.name,
+        Weight::Bold,
+        size::BODY,
+        ink.ink,
+    );
+    let after = paint.measure(&component.name, Weight::Bold, size::BODY);
+    paint.say_at(
+        card.x + 14.0 + after + 8.0,
+        card.y + 14.0,
+        &format!("@{}", component.commit),
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+
+    // What it is, wrapped rather than cut: the sentence is the reason to
+    // have it, and half of one is not a reason.
+    let mut at = card.y + 34.0;
+    for line in paint
+        .wrap(
+            &component.role,
             Weight::Regular,
             size::SMALL,
-            ink.faint,
+            card.w - 190.0,
+        )
+        .iter()
+        .take(2)
+    {
+        paint.say_at(
+            card.x + 14.0,
+            at,
+            line,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
         );
+        at += 16.0;
+    }
 
-        // What it is, wrapped rather than cut: the sentence is the reason to
-        // have it, and half of one is not a reason.
-        let mut at = card.y + 34.0;
-        for line in paint
-            .wrap(&component.role, Weight::Regular, size::SMALL, wide - 190.0)
-            .iter()
-            .take(2)
+    // A build of this one, running: the card it is for shows it, with how
+    // long so far and the last line the build printed, so that a build that
+    // takes minutes is watched rather than waited on (A2, B-367).
+    let running = match &desk.doing {
+        Doing::Provisioning(job)
+            if !job.finished && desk.building.as_deref() == Some(component.name.as_str()) =>
         {
-            paint.say_at(
-                card.x + 14.0,
-                at,
-                line,
-                Weight::Regular,
-                size::SMALL,
-                ink.quiet,
-            );
-            at += 16.0;
+            Some(job)
         }
+        _ => None,
+    };
 
-        // Three states, not two. The middle one is a run that stopped partway:
-        // a prefix with no provenance beside it. Saying that plainly is what
-        // keeps a person from reading a half-build as a build (A7).
-        //
-        // Whether MCF can reach it as an ENGINE is a separate fact, said
-        // below — not every component is an engine, and a window library that
-        // reported itself unreachable would be answering a question nobody
-        // asked.
-        let (word, ground, colour) = if component.provisioned {
-            ("Provisioned", ink.accent_soft, ink.good)
-        } else if component.present {
-            ("Incomplete", ink.warn_soft, ink.warn)
-        } else {
-            ("Not provisioned", ink.sunk, ink.quiet)
-        };
-        let _wide = ui::tag(
-            paint,
-            (card.right() - 130.0, card.y + 13.0),
-            word,
-            ground,
-            colour,
-        );
+    // Four states, not two. The third is a run that stopped partway: a prefix
+    // with no provenance beside it. Saying that plainly is what keeps a person
+    // from reading a half-build as a build (A7).
+    //
+    // Whether MCF can reach it as an ENGINE is a separate fact, said below —
+    // not every component is an engine, and a window library that reported
+    // itself unreachable would be answering a question nobody asked.
+    let (word, ground, colour) = if running.is_some() {
+        ("Building", ink.warn_soft, ink.warn)
+    } else if component.provisioned {
+        ("Provisioned", ink.accent_soft, ink.good)
+    } else if component.present {
+        ("Incomplete", ink.warn_soft, ink.warn)
+    } else {
+        ("Not provisioned", ink.sunk, ink.quiet)
+    };
+    let _wide = ui::tag(
+        paint,
+        (card.right() - 130.0, card.y + 13.0),
+        word,
+        ground,
+        colour,
+    );
 
+    let foot = card.bottom() - 24.0;
+    if let Some(job) = running {
+        let printed = job
+            .answers
+            .iter()
+            .rev()
+            .find_map(|answer| answer.get("doing").and_then(Value::as_text))
+            .unwrap_or("starting");
+        let said = format!("{}s so far — {printed}", job.ran());
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, card.w - 28.0);
         paint.say_right(
             card.right() - 14.0,
-            card.bottom() - 24.0,
+            foot,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.quiet,
+        );
+        return None;
+    }
+    component_foot(paint, desk, mouse, component, card, foot)
+}
+
+/// The bottom line of a card that is not building: where it is, why the last
+/// build stopped, and the button that builds it.
+fn component_foot(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    component: &crate::Component,
+    card: Box,
+    foot: f32,
+) -> Option<Act> {
+    let ink = paint.ink;
+    // The failure first, in red, where there was one; else where the prefix
+    // is. A finished build puts the prefix on the right, alone; an
+    // unfinished one leaves the right to the button that builds it again.
+    let failed = desk
+        .build_failed
+        .as_ref()
+        .filter(|(failed, _)| failed == &component.name)
+        .map(|(_, why)| format!("not built: {why}"));
+    if let Some(said) = failed {
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, card.w - 130.0);
+        paint.say_at(
+            card.x + 14.0,
+            foot,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.bad,
+        );
+    } else if component.provisioned {
+        paint.say_right(
+            card.right() - 14.0,
+            foot,
             &if component.usable_engine {
                 format!("{} — MCF reaches this as an engine", component.prefix)
-            } else if component.present {
-                component.prefix.clone()
             } else {
-                format!("mcf provision {}", component.name)
+                component.prefix.clone()
             },
             Weight::Regular,
             size::SMALL,
             ink.faint,
         );
-        y += tall + 10.0;
+    } else if component.present {
+        let shown = paint.elide(
+            &component.prefix,
+            Weight::Regular,
+            size::SMALL,
+            card.w - 130.0,
+        );
+        paint.say_at(
+            card.x + 14.0,
+            foot,
+            &shown,
+            Weight::Regular,
+            size::SMALL,
+            ink.faint,
+        );
+    }
+    // Build here, from the window, while nothing else runs: one job at a time
+    // is the window's rule, and a button that would be refused is not drawn.
+    let idle = desk.doing.job().is_none_or(|job| job.finished);
+    if !component.provisioned && idle {
+        let label = if component.present {
+            "Build again"
+        } else {
+            "Build"
+        };
+        let width = paint.measure(label, Weight::Bold, size::SMALL) + 28.0;
+        let button = Box::new(card.right() - 14.0 - width, foot - 6.0, width, 26.0);
+        if ui::button(paint, mouse, button, label, Kind::Ordinary) {
+            return Some(Act::Build(component.name.clone()));
+        }
     }
     None
 }

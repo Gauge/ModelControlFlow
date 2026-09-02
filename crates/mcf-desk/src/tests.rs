@@ -876,3 +876,58 @@ fn hosting_with_a_nameless_refusal_builds_nothing() {
     );
     assert!(desk.no_settings.is_some());
 }
+
+/// The Components screen builds by name, on the card, without a terminal.
+///
+/// The card used to say `mcf provision llama.cpp` — a command line shown in
+/// the window that exists so nobody needs one. Pressing Build sends the same
+/// request the command sends, names the component on the card while it runs,
+/// and refuses a second build while the first is going (A22, A6, B-367).
+#[test]
+fn build_on_the_components_screen_builds_that_component() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.act(super::Act::Build("llama.cpp".to_owned()));
+
+    let super::Doing::Provisioning(job) = &desk.doing else {
+        panic!("Build must build, not {:?}", desk.doing);
+    };
+    assert_eq!(job.what, "building llama.cpp");
+    assert_eq!(desk.building.as_deref(), Some("llama.cpp"));
+
+    // A second press while the first runs starts nothing. The job at
+    // /nowhere may already have been refused by now, so the assertion is on
+    // what was started, not on the job's state.
+    let before = desk.doing.job().map(|job| job.what.clone());
+    desk.act(super::Act::Build("sdl3".to_owned()));
+    let after = desk.doing.job().map(|job| job.what.clone());
+    assert!(
+        after == before || desk.doing.job().is_some_and(|job| job.finished),
+        "{before:?} then {after:?}"
+    );
+}
+
+/// A build that stops badly says so on the card it was for, and nowhere else.
+#[test]
+fn a_refused_build_lands_on_its_own_card() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere"));
+    desk.build("llama.cpp");
+    // Nothing listens at /nowhere, so the job refuses itself; this waits for
+    // that refusal to arrive rather than assuming it has.
+    let started = std::time::Instant::now();
+    while !desk.doing.job().is_some_and(|job| job.finished) {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "a job at /nowhere must refuse itself promptly"
+        );
+        if !desk.hear() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    assert!(desk.building.is_none(), "{:?}", desk.building);
+    let (failed, why) = desk.build_failed.clone().expect("the refusal is kept");
+    assert_eq!(failed, "llama.cpp");
+    assert!(why.contains("not answering"), "{why}");
+    // And a new build clears it.
+    desk.build("llama.cpp");
+    assert!(desk.build_failed.is_none());
+}
