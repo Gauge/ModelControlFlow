@@ -31,8 +31,6 @@ pub(crate) struct Asked<'a> {
     pub prompt: Option<&'a str>,
     /// The document, in a file; `-` is the standard input.
     pub file: Option<&'a str>,
-    /// The question every variant is followed by.
-    pub then: Option<&'a str>,
     /// What to take it apart into, where the caller said.
     pub by: Option<mcf_serve::prompt::Unit>,
     /// The most parts to remove, where the caller said.
@@ -103,7 +101,6 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
     let request = Request::PromptReport {
         model: named.to_owned(),
         prompt,
-        then: asked.then.map(str::to_owned),
         by: asked.by,
         most: asked.most,
         temperature: asked.temperature,
@@ -613,23 +610,11 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     if let Some(chosen_by) = body.get("unit_chosen_by").and_then(Value::as_text) {
         lines.push(format!("  taken apart by {unit}, decided by {chosen_by}"));
     }
-    // **The question, and how it reached the model.** Every variant was
-    // followed by it, in one turn with the document: the report says so
-    // because a reader crafting a system prompt will assume a system turn,
-    // and MCF has not probed for one (D43).
-    match body.get("then").and_then(Value::as_text) {
-        Some(then) => {
-            lines.push(format!("  every variant was followed by: {then:?}"));
-            if let Some(addressed) = body.get("addressed_as").and_then(Value::as_text) {
-                lines.push(format!("  addressed as {addressed}"));
-            }
-        }
-        None => lines.push(
-            "  the document was asked on its own: nothing followed it. A persona measured this \
-             way is measured against what the model says to a persona alone — `--then` gives \
-             it a question"
-                .to_owned(),
-        ),
+    // **How the prompt reached the model.** Whole, in one user turn: the
+    // report says so because a reader crafting a system prompt will assume a
+    // system turn, and MCF has not probed for one (D43).
+    if let Some(addressed) = body.get("addressed_as").and_then(Value::as_text) {
+        lines.push(format!("  addressed as {addressed}"));
     }
     lines.push(String::new());
 
@@ -709,8 +694,8 @@ mod tests {
                    "without":"Blue.","held":{"first_rank":1,"kept":2,"of":2}}],
                 "clauses_over_the_cap":3,"settled":null,"generations":6,
                 "unit":"sentence","unit_chosen_by":"the text: it has no blank line, so it is sentences",
-                "most":3,"then":"What colour is the room?",
-                "addressed_as":"the document and the question in one user turn",
+                "most":3,
+                "addressed_as":"one user turn, the whole prompt",
                 "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10}"#,
         )
         .expect("a well-formed report")
@@ -770,22 +755,18 @@ mod tests {
         );
     }
 
-    /// The unit, who decided it, the held question and how it reached the
-    /// model are the conditions of the run, and they are on the page; the
-    /// cap is said with the flag that raises it (§3.4, §3.15, B-430).
+    /// The unit, who decided it, and how the prompt reached the model are
+    /// the conditions of the run, and they are on the page; the cap is said
+    /// with the flag that raises it (§3.4, §3.15, B-430).
     #[test]
-    fn the_report_says_what_it_took_apart_and_what_it_asked() {
+    fn the_report_says_what_it_took_apart_and_how_it_was_addressed() {
         let text = rendered(&body(), "m").join("\n");
         assert!(
             text.contains("taken apart by sentence, decided by the text: it has no blank line"),
             "{text}"
         );
         assert!(
-            text.contains("every variant was followed by: \"What colour is the room?\""),
-            "{text}"
-        );
-        assert!(
-            text.contains("addressed as the document and the question in one user turn"),
+            text.contains("addressed as one user turn, the whole prompt"),
             "{text}"
         );
         assert!(text.contains("HOW MUCH EACH SENTENCE STEERED"), "{text}");
@@ -795,14 +776,9 @@ mod tests {
         );
         let mut alone = body();
         if let Value::Map(fields) = &mut alone {
-            fields.insert("then".to_owned(), Value::Null);
             fields.insert("unit".to_owned(), Value::text("paragraph".to_owned()));
         }
         let text = rendered(&alone, "m").join("\n");
-        assert!(
-            text.contains("asked on its own: nothing followed it"),
-            "{text}"
-        );
         assert!(text.contains("HOW MUCH EACH PARAGRAPH STEERED"), "{text}");
     }
 

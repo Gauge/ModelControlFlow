@@ -67,12 +67,9 @@ pub enum Request {
     PromptReport {
         /// A path, or a name under the daemon's store.
         model: String,
-        /// The document to take apart: a persona, an instruction sheet, or a
-        /// question on its own.
+        /// The prompt to take apart, whole: a persona, an instruction sheet,
+        /// or a question on its own (B-430).
         prompt: String,
-        /// A question every variant of the document is followed by, held
-        /// still; `None` asks the document alone (B-430).
-        then: Option<String>,
         /// What to take it apart into; `None` lets the text decide.
         by: Option<crate::prompt::Unit>,
         /// How many parts to remove at most; `None` is the default cap.
@@ -328,7 +325,6 @@ fn prompt_report_line(request: &Request) -> Value {
     let Request::PromptReport {
         model,
         prompt,
-        then,
         by,
         most,
         temperature,
@@ -343,9 +339,6 @@ fn prompt_report_line(request: &Request) -> Value {
         ("prompt", Value::text(prompt.clone())),
         ("seed", Value::Integer(i64::try_from(*seed).unwrap_or(0))),
     ];
-    if let Some(then) = then {
-        fields.push(("then", Value::text(then.clone())));
-    }
     if let Some(by) = by {
         fields.push(("by", Value::text(by.name().to_owned())));
     }
@@ -583,7 +576,6 @@ impl Request {
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("a prompt report with no prompt", line))?
                     .to_owned(),
-                then: optional("then"),
                 by: match value.get("by").and_then(Value::as_text) {
                     None => None,
                     Some(word) => Some(crate::prompt::Unit::named(word).ok_or_else(|| {

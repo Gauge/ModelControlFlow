@@ -1175,7 +1175,10 @@ fn a_report() -> mcf_desk::Desk {
             Value::text("the text: it has no blank line, so it is sentences".to_owned()),
         ),
         ("most", Value::Integer(4)),
-        ("then", Value::text("Write it in Python.".to_owned())),
+        (
+            "addressed_as",
+            Value::text("one user turn, the whole prompt".to_owned()),
+        ),
         (
             "baseline",
             Value::text(
@@ -1425,11 +1428,12 @@ fn the_prompt_field_takes_a_document() {
     assert_eq!(adding.typed, "owner/repository");
 }
 
-/// The question after the document has its own field, typing goes where the
-/// caret is, and the unit and the cap are choices on the page that reach the
-/// request exactly as chosen (§3.15, B-430).
+/// The prompt is one field and all of it is analysed — there is no second
+/// field holding a question out — typing goes where the caret is, and the
+/// unit and the cap are choices on the page that reach the request exactly
+/// as chosen (§3.15, B-430).
 #[test]
-fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
+fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     use mcf_serve::prompt::Unit;
     let mut desk = four_models();
     desk.page = Page::Prompt;
@@ -1438,34 +1442,24 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
         .map(|at| format!("Rule {at}: do the thing the rule says."))
         .collect::<Vec<_>>()
         .join("\n\n");
-    // The document is what typing goes into until the question is pressed.
-    desk.typing().push_str("\n\nLast rule.");
-    assert!(desk.typed.ends_with("Last rule."));
-    // Under the document field and above the report: a sweep of the whole
-    // window is thousands of renders of a thirteen-paragraph document.
-    let controls = (280.0, 420.0);
-    assert!(
-        act_within(
-            &desk,
-            &mcf_desk::Act::Focus(mcf_desk::Caret::Question),
-            controls
-        ),
-        "the question field is on the page"
-    );
-    desk.act(mcf_desk::Act::Focus(mcf_desk::Caret::Question));
-    desk.paste("Roll for initiative.\nsecond line");
-    desk.typing().push('!');
-    assert_eq!(desk.then, "Roll for initiative.!", "a question is one line");
-    assert!(
-        desk.typed.ends_with("Last rule."),
-        "the document was not typed into"
-    );
+    // The document is what typing goes into, and its last line is a part of
+    // it like any other: Return starts a new line, Ctrl+Return runs it.
+    desk.typing().push_str("\n\nRoll for initiative.");
     desk.returned(false);
     assert!(
+        desk.typed.ends_with("Roll for initiative.\n"),
+        "Return in the document is a new line"
+    );
+    desk.typed.pop();
+    desk.returned(true);
+    assert!(
         matches!(desk.doing, mcf_desk::Doing::Reporting(_)),
-        "Return in the question field runs the analysis"
+        "Ctrl+Return runs the analysis"
     );
     desk.doing = mcf_desk::Doing::Nothing;
+    // Under the document field and above the report: a sweep of the whole
+    // window is thousands of renders of a thirteen-paragraph document.
+    let controls = (240.0, 400.0);
 
     // The text decided paragraphs; the page offers the other unit, and the
     // cap in steps up to every part.
@@ -1498,7 +1492,6 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
     let taken = desk.taken();
     assert_eq!(taken.unit(), (Unit::Sentence, true));
     assert_eq!(taken.cap(), 13);
-    assert_eq!(taken.then, Some("Roll for initiative.!"));
 
     // The temperature the seeds are drawn at is a field under the choices:
     // empty asks nothing, a decimal is the condition, and what is not a
@@ -1526,9 +1519,9 @@ fn the_question_the_unit_and_the_cap_are_choices_on_the_page() {
         desk.settle(),
         Ok(Some(mcf_core::configuration::Thousandths(700)))
     );
-    assert_eq!(
-        desk.then, "Roll for initiative.!",
-        "the question was not typed into"
+    assert!(
+        desk.typed.ends_with("Roll for initiative."),
+        "the document was not typed into"
     );
     let _looked = drawn(&desk, DAY, "prompt-choices");
 }

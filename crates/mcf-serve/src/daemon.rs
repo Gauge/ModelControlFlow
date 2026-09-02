@@ -244,12 +244,11 @@ fn prompt_report_value(
             "most",
             Value::Integer(i64::try_from(report.most).unwrap_or(i64::MAX)),
         ),
-        ("then", report.then.clone().map_or(Value::Null, Value::text)),
         (
             "addressed_as",
             Value::text(
-                "the document and the question in one user turn, the document first — MCF has \
-                 probed no system turn (D43) and assumes none"
+                "one user turn, the whole prompt — MCF has probed no system turn (D43) and \
+                 assumes none"
                     .to_owned(),
             ),
         ),
@@ -1550,7 +1549,6 @@ impl Daemon {
                 Ok(Request::PromptReport {
                     model,
                     prompt,
-                    then,
                     by,
                     most,
                     temperature,
@@ -1564,7 +1562,6 @@ impl Daemon {
                         &model,
                         &crate::prompt::Taken {
                             text: &prompt,
-                            then: then.as_deref(),
                             by,
                             most,
                         },
@@ -1968,9 +1965,9 @@ impl Daemon {
         let mut force =
             |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
         let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
-        // What the model was asked, as the baseline was: the document with
-        // its question after it, which is what the counts below are of.
-        let prompt = taken.asked(&crate::prompt::joined(&taken.parts()));
+        // What the model was asked, as the baseline was: the parts put back
+        // together, which is what the counts below are of.
+        let prompt = crate::prompt::joined(&taken.parts());
         let prompt = prompt.as_str();
         // **How the model actually receives the prompt.** The figures above
         // are about answers; this is about the question, it costs no

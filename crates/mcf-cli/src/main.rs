@@ -302,8 +302,6 @@ enum Request<'a> {
         /// A file holding the document, `-` for standard input: a persona is
         /// a page, not a shell argument (B-430).
         file: Option<&'a str>,
-        /// A question every variant of the document is followed by.
-        then: Option<&'a str>,
         /// What to take it apart into, where the caller says.
         by: Option<mcf_serve::prompt::Unit>,
         /// The most parts to remove, where the caller says.
@@ -849,13 +847,11 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
 ///
 /// The document comes from `--prompt` or `--file`, one or the other: a
 /// persona is a page and a page is a file, and `-` reads the standard input
-/// so that one can be piped in. `--then` is the question every variant is
-/// followed by; `--by` and `--most` are choices the report would otherwise
-/// make and say it made (§3.15, B-430).
+/// so that one can be piped in. `--by` and `--most` are choices the report
+/// would otherwise make and say it made (§3.15, B-430).
 fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut prompt = None;
     let mut file = None;
-    let mut then = None;
     let mut by = None;
     let mut most = None;
     let mut temperature = None;
@@ -875,10 +871,6 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
             },
             "--file" => match value("--file <path>, or - for the standard input", &mut rest) {
                 Ok(path) => file = Some(path),
-                Err(missing) => return Ok(missing),
-            },
-            "--then" => match value("--then <question>", &mut rest) {
-                Ok(question) => then = Some(question),
                 Err(missing) => return Ok(missing),
             },
             "--by" => match value("--by sentence, or --by paragraph", &mut rest) {
@@ -941,7 +933,6 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
         model,
         prompt,
         file,
-        then,
         by,
         most,
         temperature,
@@ -1616,10 +1607,9 @@ const COMMANDS: &str = "\
     \x20                                     no total (B-110)\n\
     \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
     \x20             or --file <path>         or paragraph removed in turn, and\n\
-    \x20       [--then <question>]            how much of the answer moved. An\n\
-    \x20       [--by sentence|paragraph]      ordering, never relevance. A\n\
-    \x20       [--most <n>] [--json]          persona goes in --file, and the\n\
-    \x20       [--temperature <t>]            question it is asked in --then;\n\
+    \x20       [--by sentence|paragraph]      how much the answer moved. An\n\
+    \x20       [--most <n>] [--json]          ordering, never relevance. A\n\
+    \x20       [--temperature <t>]            persona goes in --file, whole;\n\
     \x20                                     --temperature draws three seeds\n\
     \x20                                     at t to see whether it settles\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
@@ -1826,7 +1816,6 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             model,
             prompt,
             file,
-            then,
             by,
             most,
             temperature,
@@ -1836,7 +1825,6 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             &prompt::Asked {
                 prompt: *prompt,
                 file: *file,
-                then: *then,
                 by: *by,
                 most: *most,
                 temperature: *temperature,
@@ -2285,7 +2273,6 @@ mod tests {
             model: "m",
             prompt: None,
             file: Some("persona.md"),
-            then: Some("What is 2 + 2?"),
             by: Some(mcf_serve::prompt::Unit::Paragraph),
             most: Some(40),
             temperature: Some(mcf_core::configuration::Thousandths(700)),
@@ -2297,8 +2284,6 @@ mod tests {
                 "m",
                 "--file",
                 "persona.md",
-                "--then",
-                "What is 2 + 2?",
                 "--by",
                 "paragraph",
                 "--most",
@@ -2320,8 +2305,6 @@ mod tests {
                 "40",
                 "--by",
                 "paragraphs",
-                "--then",
-                "What is 2 + 2?",
                 "--file",
                 "persona.md",
             ]),
@@ -2333,7 +2316,6 @@ mod tests {
                 model: "m",
                 prompt: Some("A. B."),
                 file: None,
-                then: None,
                 by: None,
                 most: None,
                 temperature: None,
@@ -2345,7 +2327,7 @@ mod tests {
             Request::MissingArgument { .. }
         ));
         assert!(matches!(
-            parse(&["prompt", "m", "--then"]),
+            parse(&["prompt", "m", "--file"]),
             Request::MissingArgument { .. }
         ));
         assert!(matches!(

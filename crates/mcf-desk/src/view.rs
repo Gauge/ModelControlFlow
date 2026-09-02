@@ -2389,7 +2389,7 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         ink.quiet,
     );
 
-    let (mut act, under) = the_document_and_its_question(paint, desk, mouse, area);
+    let (mut act, under) = the_document(paint, desk, mouse, area);
     let (asked, button) = ui::fitted(paint, mouse, (area.x, under), "Analyse", Kind::Primary);
     if asked && !desk.doing.busy() && desk.chosen.is_some() {
         act = Some(Act::ReportPrompt);
@@ -2572,19 +2572,16 @@ fn what_it_will_cost(
     )
 }
 
-/// The two fields: the document, and the question it is asked.
+/// The one field: the prompt, whole.
 ///
 /// Returns what was pressed and where the row of buttons goes.
-fn the_document_and_its_question(
-    paint: &mut Painter,
-    desk: &Desk,
-    mouse: &Mouse,
-    area: Box,
-) -> (Option<Act>, f32) {
+fn the_document(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
     let mut act = None;
-    // **A document, not a line.** What is analysed is a persona or an
-    // instruction sheet, pasted in whole; the field is sized for one and the
-    // page below it gives up a little height (B-430). Once there is a report
+    // **A document, not a line, and one of them.** What is analysed is a
+    // persona or an instruction sheet, pasted in whole — every part of it,
+    // with nothing held out of the ablation in a second field; the field is
+    // sized for one and the page below it gives up a little height (B-430).
+    // Once there is a report
     // the report is what the page is for, and the field keeps its tail and
     // three lines: this window does not scroll.
     let reported = desk
@@ -2602,28 +2599,13 @@ fn the_document_and_its_question(
         mouse,
         field,
         &desk.typed,
-        "paste or type the document to analyse — a persona, an instruction sheet, a question. \
-         Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
+        "paste or type the prompt to analyse, whole — a persona, an instruction sheet, a \
+         question. Return starts a new line; Ctrl+Return or Analyse runs it; Ctrl+C copies it out",
         desk.caret == Caret::Document,
     ) {
         act = Some(Act::Focus(Caret::Document));
     }
-    // **The question the document is asked** (B-430). A persona alone is
-    // asked nothing, and every variant of it below is followed by this, in
-    // the same turn.
-    let then = Box::new(area.x, field.bottom() + 8.0, field.w, 36.0);
-    if ui::field(
-        paint,
-        mouse,
-        then,
-        &desk.then,
-        "then ask it — the question every variant of the document is followed by; empty asks \
-         the document on its own",
-        desk.caret == Caret::Question,
-    ) {
-        act = Some(Act::Focus(Caret::Question));
-    }
-    (act, then.bottom() + 8.0)
+    (act, field.bottom() + 8.0)
 }
 
 /// What pressing Analyse will do and cost, and the two choices in it.
@@ -2866,23 +2848,8 @@ fn what_it_was_asked_as(paint: &mut Painter, at: (f32, f32), found: &Value, widt
         unit_of(found),
         text("unit_chosen_by").unwrap_or("the report")
     );
-    match text("then") {
-        Some(then) => {
-            let shown: String = then.chars().take(120).collect();
-            let cut = if shown.chars().count() < then.chars().count() {
-                "…"
-            } else {
-                ""
-            };
-            said = format!(
-                "{said} Every variant was followed by \"{shown}{cut}\", in one user turn with \
-                 the document first — MCF has probed no system turn and assumes none."
-            );
-        }
-        None => said.push_str(
-            " The document was asked on its own: nothing followed it, so a persona here is \
-             measured against what the model says to a persona alone.",
-        ),
+    if let Some(addressed) = text("addressed_as") {
+        said = format!("{said} Addressed as {addressed}.");
     }
     for line in paint
         .wrap(&said, Weight::Regular, size::SMALL, width.min(960.0))

@@ -40,17 +40,17 @@
 //! dropped the answer's first token to its seventeenth choice did more than
 //! one that dropped it to its fourth (measured: B-429).
 //!
-//! **What is taken apart is a document, and what is asked is a question after
-//! it.** A persona or an instruction sheet is what a person crafts, and what
-//! it does is only visible under a question: a persona alone is asked nothing,
-//! and the model's answer to nothing measures nothing anybody wants. So the
-//! text is taken apart — by paragraph where it has paragraphs, by sentence
-//! where it does not, or as the caller says — and every variant of it is
-//! followed by the same held question. Both go in the one turn the addressing
-//! probe found: MCF has not probed for a system turn (D43) and does not assume
-//! one here. The cap on how many parts are removed is the caller's, because
-//! forty paragraphs is forty generations and whether that is worth it is a
-//! choice about their time, not a constant (§3.15, B-430).
+//! **What is taken apart is one prompt, whole.** A persona or an instruction
+//! sheet is what a person crafts, and every part of it is a part the report
+//! weighs — a closing line that says *begin the adventure* is as much a
+//! sentence of the prompt as the persona above it, and nothing is held out
+//! of the ablation. The text is taken apart by paragraph where it has
+//! paragraphs, by sentence where it does not, or as the caller says, and
+//! every variant goes in the one turn the addressing probe found: MCF has not
+//! probed for a system turn (D43) and does not assume one here. The cap on
+//! how many parts are removed is the caller's, because forty paragraphs is
+//! forty generations and whether that is worth it is a choice about their
+//! time, not a constant (§3.15, B-430).
 //!
 //! **Settledness is the other half, and it is asked only at a temperature the
 //! caller states.** The same prompt under several seeds either produces the
@@ -187,11 +187,8 @@ pub struct Part {
 /// What is taken apart, and how.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Taken<'a> {
-    /// The document: the text whose parts are removed in turn.
+    /// The prompt: the text whose parts are removed in turn.
     pub text: &'a str,
-    /// A question every variant is followed by, held still. `None` asks the
-    /// document alone, which is what a prompt that is itself a question wants.
-    pub then: Option<&'a str>,
     /// What to take the document apart into; `None` lets the text decide.
     pub by: Option<Unit>,
     /// How many parts to remove at most; `None` is [`MOST_CLAUSES`].
@@ -216,17 +213,6 @@ impl Taken<'_> {
     #[must_use]
     pub fn parts(&self) -> Vec<Part> {
         parts_of(self.text, self.unit().0)
-    }
-
-    /// One variant of the document, followed by the held question.
-    ///
-    /// The question goes after a blank line, in the same turn (D43).
-    #[must_use]
-    pub fn asked(&self, document: &str) -> String {
-        match self.then.map(str::trim).filter(|then| !then.is_empty()) {
-            Some(then) => format!("{document}\n\n{then}"),
-            None => document.to_owned(),
-        }
     }
 }
 
@@ -335,8 +321,6 @@ pub struct Report {
     pub unit_chosen: bool,
     /// The cap the run was under.
     pub most: usize,
-    /// The question every variant was followed by, if one was.
-    pub then: Option<String>,
     /// What several seeds made of it at a stated temperature, or `None`
     /// where no temperature was stated and the question was not asked.
     pub settled: Option<Settled>,
@@ -650,7 +634,7 @@ pub fn measure(
     // The baseline is the parts put back together, not the text as pasted:
     // what differs between it and a variant must be the part removed and
     // nothing else, and a variant is always the joined parts (§3.4).
-    let prompt = taken.asked(&joined(&all));
+    let prompt = joined(&all);
     let Answered {
         text: baseline,
         tokens: opening,
@@ -664,7 +648,7 @@ pub fn measure(
     // empty prompt's answer says nothing about the sentence.
     if all.len() > 1 {
         for at in 0..ablated {
-            let shortened = taken.asked(&without(&all, at));
+            let shortened = without(&all, at);
             let without_it = ask(&shortened, Draw::greedy(seed)).text;
             // The opening is an empty list where the baseline said nothing,
             // and a rank over nothing is not taken rather than read as kept.
@@ -699,7 +683,7 @@ pub fn measure(
     // is asked, and the answer compared against the baseline — which is that
     // same prompt with the inert sentence removed. One removal against
     // another, which is the comparison the numbers above need.
-    let padded = taken.asked(&with_inert(&all));
+    let padded = with_inert(&all);
     let floor = moved_by(
         ask(&padded, Draw::greedy(seed)).text.trim(),
         baseline.trim(),
@@ -721,11 +705,6 @@ pub fn measure(
         unit,
         unit_chosen,
         most,
-        then: taken
-            .then
-            .map(str::trim)
-            .filter(|then| !then.is_empty())
-            .map(str::to_owned),
         settled,
     }
 }

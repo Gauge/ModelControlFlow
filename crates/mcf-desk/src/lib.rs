@@ -165,11 +165,9 @@ pub fn component_from(held: &Value) -> Component {
 /// Which field on the prompt screen typing goes into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Caret {
-    /// The document being taken apart.
+    /// The prompt being taken apart.
     #[default]
     Document,
-    /// The question every variant of it is followed by.
-    Question,
     /// The temperature the settledness seeds are drawn at (B-431).
     Temperature,
 }
@@ -865,9 +863,6 @@ pub struct Desk {
     pub busy: bool,
     /// What is being typed, on the screen that has a field.
     pub typed: String,
-    /// The question every variant of the document is followed by, on the
-    /// prompt screen; empty asks the document alone (B-430).
-    pub then: String,
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
@@ -959,7 +954,6 @@ impl Desk {
             refusal: None,
             busy: false,
             typed: String::new(),
-            then: String::new(),
             temperature: String::new(),
             caret: Caret::Document,
             most: None,
@@ -1058,7 +1052,6 @@ impl Desk {
     /// has the caret, the one field every other screen has otherwise.
     pub fn typing(&mut self) -> &mut String {
         match (self.page, self.caret) {
-            (Page::Prompt, Caret::Question) => &mut self.then,
             (Page::Prompt, Caret::Temperature) => &mut self.temperature,
             _ => &mut self.typed,
         }
@@ -1068,7 +1061,6 @@ impl Desk {
     #[must_use]
     pub fn being_typed(&self) -> &str {
         match (self.page, self.caret) {
-            (Page::Prompt, Caret::Question) => &self.then,
             (Page::Prompt, Caret::Temperature) => &self.temperature,
             _ => &self.typed,
         }
@@ -1096,13 +1088,12 @@ impl Desk {
     }
 
     /// What is asked of the daemon from the prompt screen as it stands, or
-    /// why nothing would be: the document, the question, the unit and the
-    /// cap, exactly as Analyse would send them (§3.15).
+    /// why nothing would be: the prompt, the unit and the cap, exactly as
+    /// Analyse would send them (§3.15).
     #[must_use]
     pub fn taken(&self) -> mcf_serve::prompt::Taken<'_> {
         mcf_serve::prompt::Taken {
             text: self.typed.trim(),
-            then: Some(self.then.trim()).filter(|then| !then.is_empty()),
             by: self.by,
             most: self.most,
         }
@@ -1638,7 +1629,6 @@ impl Desk {
             Request::PromptReport {
                 model: held.path.clone(),
                 prompt: taken.text.to_owned(),
-                then: taken.then.map(str::to_owned),
                 by: taken.by,
                 most: taken.most,
                 temperature,

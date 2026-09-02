@@ -182,7 +182,6 @@ fn the_new_requests_survive_the_wire() {
         Request::PromptReport {
             model: "a-model.gguf".to_owned(),
             prompt: "Be brief.\n\nBe right.".to_owned(),
-            then: None,
             by: None,
             most: None,
             temperature: None,
@@ -191,7 +190,6 @@ fn the_new_requests_survive_the_wire() {
         Request::PromptReport {
             model: "a-model.gguf".to_owned(),
             prompt: "Be brief.\n\nBe right.".to_owned(),
-            then: Some("What is 2 + 2?".to_owned()),
             by: Some(crate::prompt::Unit::Sentence),
             most: Some(40),
             temperature: Some(mcf_core::configuration::Thousandths(700)),

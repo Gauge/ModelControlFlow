@@ -427,17 +427,17 @@ fn a_document_with_blank_lines_is_taken_apart_by_paragraph() {
     assert_eq!(without(&ruled, 1), "First.");
 }
 
-/// The held question follows every variant, and the cap is the caller's.
+/// The whole prompt is what is asked — its last paragraph is a part like any
+/// other, not a question held out — and the cap is the caller's.
 #[test]
-fn the_question_follows_every_variant_and_the_cap_is_chosen() {
+fn the_whole_prompt_is_asked_and_the_cap_is_chosen() {
     let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     let mut ask = |prompt: &str, _: Draw| {
         asked.borrow_mut().push(prompt.to_owned());
         said("an answer")
     };
     let taken = Taken {
-        text: "Be terse.\n\nBe kind.\n\nBe right.",
-        then: Some(" What is 2 + 2? "),
+        text: "Be terse.\n\nBe kind.\n\nBe right.\n\nWhat is 2 + 2?",
         by: None,
         most: Some(2),
     };
@@ -446,14 +446,13 @@ fn the_question_follows_every_variant_and_the_cap_is_chosen() {
     assert!(!report.unit_chosen, "the text decided");
     assert_eq!(report.most, 2);
     assert_eq!(report.clauses.len(), 2);
-    assert_eq!(report.clauses_over_the_cap, 1);
-    assert_eq!(report.then.as_deref(), Some("What is 2 + 2?"));
+    assert_eq!(report.clauses_over_the_cap, 2);
     let asked = asked.borrow();
     assert!(
         asked
             .iter()
             .all(|prompt| prompt.ends_with("\n\nWhat is 2 + 2?")),
-        "every variant was followed by the question: {asked:?}"
+        "under a cap of two the question at the end was never removed: {asked:?}"
     );
     assert_eq!(
         asked.first().map(String::as_str),
