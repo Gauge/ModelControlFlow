@@ -21,8 +21,11 @@
 //! the cross-check of MCF's engine against the provisioned one — chosen and
 //! unchosen alone, and costed on its own row (B-424).
 
+use mcf_record::json::Value;
+
+use crate::job::Job;
 use crate::screen::{Ink, Screen};
-use crate::screens::columns;
+use crate::screens::{columns, grouped};
 
 /// What runs a test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +53,17 @@ pub struct Test {
     pub run: Run,
     /// Whether it is selected.
     pub chosen: bool,
+    /// How long the last run of this test actually took, in seconds.
+    ///
+    /// **`None` until it has run, and `None` is not zero** (A7). A test that
+    /// has never run has no run time, and the screen draws a dash rather than
+    /// a figure somebody could read as *instant*.
+    pub ran: Option<u64>,
+    /// What the last run found, in the words the daemon used.
+    ///
+    /// **Absent until there is a result to show.** Nothing here is written by
+    /// the surface: every line comes from the answer MCF sent.
+    pub result: Option<Vec<String>>,
 }
 
 /// The tests MCF knows how to run, in the order the window and the console
@@ -62,6 +76,8 @@ pub fn tests() -> Vec<Test> {
         seconds,
         run: Run::Ladder,
         chosen: true,
+        ran: None,
+        result: None,
     };
     vec![
         ladder("Generation speed against depth", Some(180)),
@@ -73,6 +89,8 @@ pub fn tests() -> Vec<Test> {
             seconds: Some(90),
             run: Run::CrossCheck,
             chosen: false,
+            ran: None,
+            result: None,
         },
         ladder("Prompt reading speed", None),
     ]
@@ -91,6 +109,143 @@ pub fn toggle<'a>(rows: impl IntoIterator<Item = (Run, &'a mut bool)>, at: usize
             *chosen = now;
         }
     }
+}
+
+/// Writes a finished ladder onto every row it answers.
+///
+/// **The figures are the daemon's** (B-072): each rung as it came, and the
+/// three rows the same run measured — a prompt's cost, the time to a first
+/// token, the memory a token of window costs — from the sentences the last
+/// line carries, never worked out here. A run that was refused before it
+/// climbed anything leaves those as they were, because it measured none of
+/// them; the row that names the run carries the refusal (A2).
+pub fn keep_the_ladder(tests: &mut [Test], job: &Job) {
+    let ran = job.ran();
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(why) = &job.refused {
+        lines.push(why.clone());
+    } else {
+        for answer in &job.answers {
+            let Some(reading) = answer.get("reading") else {
+                continue;
+            };
+            let depth = reading
+                .get("depth")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+                .unwrap_or(0);
+            let said = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
+                reading
+                    .get("ms_per_token")
+                    .and_then(Value::as_text)
+                    .map_or_else(|| "Unknown".to_owned(), |ms| format!("{ms} ms a token"))
+            } else {
+                "Unknown".to_owned()
+            };
+            lines.push(format!("at {} tokens   {said}", grouped(depth)));
+        }
+        if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
+            // B65 and D31: which engine ran is a condition of every figure
+            // above it, so it travels with them rather than being read off a
+            // screen that has moved on.
+            let engine = conditions
+                .get("engine_ran")
+                .and_then(Value::as_text)
+                .unwrap_or("MCF did not say");
+            lines.push(format!("measured on {engine}"));
+        }
+    }
+    let derived = job.conclusion().map(|body| {
+        [
+            (
+                "Prompt reading speed",
+                mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
+            ),
+            (
+                "Start-up to first token",
+                mcf_serve::ladder::first_token_said(body.get("first_token")),
+            ),
+            (
+                "Memory ceiling — largest context",
+                mcf_serve::ladder::memory_said(body.get("memory")),
+            ),
+        ]
+    });
+    for test in tests {
+        if test.name == "Generation speed against depth" {
+            test.ran = Some(ran);
+            test.result = Some(lines.clone());
+        } else if let Some((_, said)) = derived
+            .as_ref()
+            .and_then(|rows| rows.iter().find(|(name, _)| *name == test.name))
+        {
+            test.ran = Some(ran);
+            test.result = Some(said.clone());
+        }
+    }
+}
+
+/// Writes a finished cross-check onto the row that asked for it.
+///
+/// **The sentences are the daemon's** (B-072): the same ones `mcf
+/// cross-check` prints, read off the last line rather than composed from its
+/// figures here, so the window and the console cannot say one comparison two
+/// ways. A refusal is the row's result too — the check ran and could not
+/// compare, which is a thing to show, not a blank (A2).
+pub fn keep_the_cross_check(tests: &mut [Test], job: &Job) {
+    let ran = job.ran();
+    let lines: Vec<String> = if let Some(why) = &job.refused {
+        vec![why.clone()]
+    } else {
+        let last = job.conclusion();
+        let mut said: Vec<String> = last
+            .and_then(|body| body.get("said"))
+            .and_then(Value::as_list)
+            .map(|sentences| {
+                sentences
+                    .iter()
+                    .filter_map(Value::as_text)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(engine) = last
+            .and_then(|body| body.get("conditions"))
+            .and_then(|conditions| conditions.get("engine_ran"))
+            .and_then(Value::as_text)
+        {
+            said.push(format!("against {engine}"));
+        }
+        said
+    };
+    for test in tests {
+        if test.run == Run::CrossCheck {
+            test.ran = Some(ran);
+            test.result = Some(lines.clone());
+        }
+    }
+}
+
+/// The deepest rung a Quick Run climbs to: the shallowest and one above it,
+/// so that it is a fall-off rather than a single number, and quick. One
+/// depth for the window and the console (B-072) — the console once sent
+/// half the model's context under a button whose estimate assumed this.
+pub const QUICK_DEPTH: u64 = 1024;
+
+/// The estimate for a Quick Run, in seconds: a sixth of the ladder's, since
+/// it climbs two rungs of a ladder whose top rungs are most of its time.
+#[must_use]
+pub fn quick_seconds(tests: &[Test]) -> u64 {
+    #[expect(
+        clippy::integer_division,
+        reason = "a sixth of a test, in whole seconds"
+    )]
+    let sixth = tests
+        .iter()
+        .find(|test| test.run == Run::Ladder)
+        .and_then(|test| test.seconds)
+        .map_or(30, |seconds| seconds / 6);
+    sixth
 }
 
 /// The estimate for what is chosen, in seconds: each chosen run once.
@@ -126,21 +281,44 @@ fn plain(seconds: u64) -> String {
     }
 }
 
-/// Draws the screen.
+/// The buttons, in the order the cursor visits them.
+pub const BUTTONS: [&str; 3] = [" Quick Run ", " Run Selected ", " Back "];
+
+/// Where the cursor is on this screen.
+#[derive(Debug, Clone, Copy)]
+pub struct Cursor {
+    /// The highlighted row of the table.
+    pub row: usize,
+    /// The highlighted button.
+    pub button: usize,
+    /// Whether the cursor is in the buttons rather than the table.
+    pub on_buttons: bool,
+}
+
+/// Draws the screen. `running` is the run in progress or the one just
+/// finished, whose progress or result goes under the table.
 pub fn draw(
     into: &mut Screen,
     from: usize,
     model: &str,
     window: Option<u64>,
     tests: &[Test],
-    at: usize,
+    cursor: Cursor,
+    running: Option<&Job>,
 ) {
     let mut row = from + 1;
-    into.put(3, row, " Quick Run ", Ink::Selected);
-    into.put(20, row, " Run Selected ", Ink::Plain);
-    into.put_right(into.width().saturating_sub(3), row, " Back ", Ink::Plain);
+    let button = |index: usize| {
+        if cursor.on_buttons && cursor.button == index {
+            Ink::Selected
+        } else {
+            Ink::Plain
+        }
+    };
+    into.put(3, row, BUTTONS[0], button(0));
+    into.put(20, row, BUTTONS[1], button(1));
+    into.put_right(into.width().saturating_sub(3), row, BUTTONS[2], button(2));
     row += 1;
-    into.put(3, row, &span(40), Ink::Quiet);
+    into.put(3, row, &span(quick_seconds(tests)), Ink::Quiet);
     let chosen = chosen_seconds(tests);
     into.put(20, row, &span(chosen), Ink::Quiet);
     row += 2;
@@ -182,7 +360,108 @@ pub fn draw(
             Ink::Quiet,
         );
     }
-    tests_table(into, row + 2, tests, at, chosen);
+    let after = tests_table(into, row + 2, tests, cursor.row, chosen);
+    under_the_table(into, after, tests, cursor.row, running);
+}
+
+/// What goes under the table: a run's progress while it goes, and what the
+/// highlighted row found once it has.
+///
+/// **Every line is the daemon's** — a rung as it came, the estimate it gave,
+/// the sentences it composed — and a refusal is drawn as one (A2). The rows
+/// the terminal has left bound it; a result longer than that says how much
+/// more there is rather than stopping as if that were all (A7).
+fn under_the_table(
+    into: &mut Screen,
+    from: usize,
+    tests: &[Test],
+    at: usize,
+    running: Option<&Job>,
+) {
+    let last = into.height().saturating_sub(2);
+    let mut row = from;
+    if row > last {
+        return;
+    }
+    let mut lines: Vec<(String, Ink)> = Vec::new();
+    match running {
+        Some(job) if !job.finished => {
+            lines.push((format!("{}, {} s so far", job.what, job.ran()), Ink::Held));
+            lines.extend(progress_of(job));
+        }
+        _ => {
+            if let Some(test) = tests.get(at)
+                && let (Some(ran), Some(found)) = (test.ran, &test.result)
+            {
+                lines.push((format!("{} — ran {}", test.name, plain(ran)), Ink::Heading));
+                lines.extend(found.iter().map(|line| (line.clone(), Ink::Plain)));
+            }
+        }
+    }
+    let room = last.saturating_sub(row) + 1;
+    let shown = if lines.len() > room {
+        room.saturating_sub(1)
+    } else {
+        lines.len()
+    };
+    for (line, ink) in lines.iter().take(shown) {
+        let fitted: String = line.chars().take(into.width().saturating_sub(6)).collect();
+        into.put(3, row, &fitted, *ink);
+        row += 1;
+    }
+    if lines.len() > shown {
+        into.put(
+            3,
+            row,
+            &format!(
+                "… {} more line(s) than this terminal has rows",
+                lines.len() - shown
+            ),
+            Ink::Quiet,
+        );
+    }
+}
+
+/// What a run has said so far, one line each, in the order it said them.
+fn progress_of(job: &Job) -> Vec<(String, Ink)> {
+    let mut lines = Vec::new();
+    if let Some(why) = &job.refused {
+        lines.push((why.clone(), Ink::Refusal));
+    }
+    for answer in &job.answers {
+        if let (Some(low), Some(high)) = (
+            answer
+                .get("estimate_low_seconds")
+                .and_then(Value::as_integer),
+            answer
+                .get("estimate_high_seconds")
+                .and_then(Value::as_integer),
+        ) {
+            lines.push((
+                format!("somewhere between {low} and {high} seconds, MCF estimates"),
+                Ink::Quiet,
+            ));
+        }
+        if let Some(reading) = answer.get("reading") {
+            let depth = reading
+                .get("depth")
+                .and_then(Value::as_integer)
+                .and_then(|held| u64::try_from(held).ok())
+                .unwrap_or(0);
+            let said = reading
+                .get("ms_per_token")
+                .and_then(Value::as_text)
+                .map_or_else(|| "Unknown".to_owned(), |ms| format!("{ms} ms a token"));
+            lines.push((format!("at {} tokens   {said}", grouped(depth)), Ink::Plain));
+        }
+        if matches!(answer.get("reading"), Some(Value::Bool(true))) {
+            lines.push((
+                "the provisioned engine has produced; MCF's own engine is reading".to_owned(),
+                Ink::Quiet,
+            ));
+        }
+    }
+    lines
 }
 
 /// The estimate column: the run's time on the row that names the run, and
@@ -195,8 +474,9 @@ fn estimate_of(test: &Test) -> String {
     }
 }
 
-/// The tests, and what has been chosen of them.
-fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen: u64) {
+/// The tests, and what has been chosen of them. Returns the first free row
+/// beneath.
+fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen: u64) -> usize {
     let mut row = from;
     columns(
         into,
@@ -252,4 +532,5 @@ fn tests_table(into: &mut Screen, from: usize, tests: &[Test], at: usize, chosen
             (&span(chosen), 26, false, Ink::Heading),
         ],
     );
+    row + 2
 }

@@ -45,20 +45,10 @@ pub fn basis() -> String {
     )
 }
 
-/// A whole number with thousands separated, for figures a person reads rather
-/// than compares — `25,000`.
+/// A count with its thousands separated — the console's (B-072).
 #[must_use]
 pub fn grouped(number: u64) -> String {
-    let digits = number.to_string();
-    let mut out = String::new();
-    let total = digits.len();
-    for (at, digit) in digits.chars().enumerate() {
-        if at > 0 && (total - at).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
+    mcf_tui::screens::grouped(number)
 }
 
 /// How quickly a model produces text, in words a second.

@@ -16,6 +16,8 @@ use crate::screens::{UNKNOWN, columns, gigabytes};
 pub struct Held {
     /// The file's name.
     pub name: String,
+    /// Where it is, as the daemon named it: what a request names it by.
+    pub path: String,
     /// Its size.
     pub bytes: Option<u64>,
     /// What the header says it is.
@@ -38,12 +40,48 @@ pub struct Held {
 /// the card says in those words and never as a zero (A7).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Measured {
-    /// Milliseconds a token at the shallowest depth that separated.
-    pub at_512: Option<String>,
-    /// The same at the deepest.
-    pub at_window: Option<String>,
+    /// The shallowest depth that separated, and milliseconds a token there.
+    pub shallowest: Option<(u64, String)>,
+    /// The same at the deepest — of the latest ladder, which is as deep as
+    /// it was asked to climb and not the model's window: the row is
+    /// labelled with the depth, because a Quick Run's 1,024 said *at the
+    /// largest window* until the label came from the reading (A20).
+    pub deepest: Option<(u64, String)>,
     /// Milliseconds to the first token at the shallowest rung, warm.
     pub start_up: Option<String>,
+}
+
+impl Measured {
+    /// The three rows of the card: what each is, the figure, and its unit.
+    ///
+    /// A row that was not measured is labelled with what it would be — the
+    /// ladder starts at 512 by design — and `None` where the figure goes.
+    #[must_use]
+    pub fn rows(&self) -> [(String, Option<&str>, &'static str); 3] {
+        let at = |end: &Option<(u64, String)>, or: &str| {
+            end.as_ref().map_or_else(
+                || or.to_owned(),
+                |(depth, _)| format!("at {} tokens", super::grouped(*depth)),
+            )
+        };
+        [
+            (
+                at(&self.shallowest, "at 512 tokens"),
+                self.shallowest.as_ref().map(|(_, ms)| ms.as_str()),
+                " ms/token",
+            ),
+            (
+                at(&self.deepest, "at the deepest rung"),
+                self.deepest.as_ref().map(|(_, ms)| ms.as_str()),
+                " ms/token",
+            ),
+            (
+                "start-up to first token".to_owned(),
+                self.start_up.as_deref(),
+                " ms",
+            ),
+        ]
+    }
 }
 
 /// What MCF worked out about running it.
@@ -263,14 +301,9 @@ fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usiz
             ],
         );
         row += 1;
-        let figures = &model.measured;
         let mut missing = false;
-        for (label, figure, unit) in [
-            ("at 512 tokens", &figures.at_512, " ms/token"),
-            ("at the largest window", &figures.at_window, " ms/token"),
-            ("start-up to first token", &figures.start_up, " ms"),
-        ] {
-            let (said, ink) = figure.as_ref().map_or_else(
+        for (label, figure, unit) in model.measured.rows() {
+            let (said, ink) = figure.map_or_else(
                 || {
                     missing = true;
                     ("Unknown".to_owned(), Ink::Refusal)
@@ -282,7 +315,7 @@ fn engine_and_measured(into: &mut Screen, from: usize, model: &Held, right: usiz
                 right,
                 row,
                 &[
-                    (label, 26, false, Ink::Quiet),
+                    (label.as_str(), 26, false, Ink::Quiet),
                     (said.as_str(), 16, true, ink),
                 ],
             );

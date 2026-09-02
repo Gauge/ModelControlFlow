@@ -19,6 +19,14 @@ pub enum Key {
     Right,
     /// Return or enter.
     Enter,
+    /// Tab: between a screen's list and its buttons.
+    ///
+    /// Its own key rather than `Character('\t')`, because a tab is below the
+    /// printable range and the character arm never produced one — the
+    /// buttons were unreachable from a keyboard for as long as the console
+    /// had them, and the tests that pressed them fed `act` a key the decoder
+    /// never made (F153).
+    Tab,
     /// The escape key alone, not the start of a sequence.
     Escape,
     /// Ctrl-C. Delivered as a key rather than a signal, because the terminal
@@ -43,6 +51,7 @@ pub fn decode(bytes: &[u8]) -> Option<(Key, usize)> {
     match first {
         0x03 => Some((Key::Interrupt, 1)),
         b'\r' | b'\n' => Some((Key::Enter, 1)),
+        b'\t' => Some((Key::Tab, 1)),
         0x1b => {
             // Incomplete, and the caller must read more rather than decide.
             //

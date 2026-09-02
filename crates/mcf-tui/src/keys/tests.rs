@@ -5,6 +5,9 @@ fn the_keys_the_application_acts_on_decode() {
     assert_eq!(decode(b"q"), Some((Key::Character('q'), 1)));
     assert_eq!(decode(b"\x03"), Some((Key::Interrupt, 1)));
     assert_eq!(decode(b"\r"), Some((Key::Enter, 1)));
+    // A tab is below the printable range, and for as long as the buttons
+    // were reached by `Character('\t')` nothing reached them (F153).
+    assert_eq!(decode(b"\t"), Some((Key::Tab, 1)));
     assert_eq!(decode(b"\x1b[A"), Some((Key::Up, 3)));
     assert_eq!(decode(b"\x1b[B"), Some((Key::Down, 3)));
     // A lone escape is incomplete until nothing more arrives; see

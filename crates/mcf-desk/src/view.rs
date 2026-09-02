@@ -1418,12 +1418,13 @@ fn what_was_measured(paint: &mut Painter, area: Box, held: &Model) -> f32 {
         at: wide,
         right: true,
     };
+    let [shallowest, deepest] = held.speed_rows();
     for (what, value) in [
-        ("at 512 tokens", held.speed_at_512()),
-        ("at the largest window", held.speed_at_window()),
-        ("start-up to first token", held.start_up()),
+        shallowest,
+        deepest,
+        ("start-up to first token".to_owned(), held.start_up()),
     ] {
-        row(paint, table, y, what, &[(&speed, value)]);
+        row(paint, table, y, &what, &[(&speed, value)]);
         y += 22.0;
     }
     if !held.measured() {
@@ -2031,7 +2032,7 @@ fn adding(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
             ui::progress(
                 paint,
                 Box::new(area.x, y, area.w.min(520.0), 8.0),
-                job.fraction(),
+                crate::job::fraction(job),
             );
             y += 22.0;
             paint.say_at(

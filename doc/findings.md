@@ -162,6 +162,7 @@ forward as one.
 | 132 | [F132 — Three of the window's new capabilities were caught by checks before they shipped: a progress bar that reported zero at the moment it finished, a plan that sampled hardware from the serving path, and a timing in floating point (B-412, A7, B4, A6)](#132-f132-three-of-the-windows-new-capabilities-were-caught-by-checks-before-they-shipped-a-progress-bar-that-reported-zero-at-the-moment-it-finished-a-plan-that-sampled-hardware-from-the-serving-path-and-a-timing-in-floating-point-b-412-a7-b4-a6) |
 | 133 | [F133 — MCF said a model ran on the graphics card and ran it on the processor: the layer count was written into the source as zero, and it cost 4.9× (B-416, A6, A12, §3.15)](#133-f133-mcf-said-a-model-ran-on-the-graphics-card-and-ran-it-on-the-processor-the-layer-count-was-written-into-the-source-as-zero-and-it-cost-49-b-416-a6-a12-3-15) |
 | 134 | [F134 — A type MCF already had, written a second time: sampling in thousandths, without the one distinction the original carries (B-419, A1, B-281)](#134-f134-a-type-mcf-already-had-written-a-second-time-sampling-in-thousandths-without-the-one-distinction-the-original-carries-b-419-a1-b-281) |
+| 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
 | 150 | [F150 — The cache of a hybrid was sized by the header's block count and came out four times too large; the same file's heads read as thirty-two against sixteen declared, and its BF16 tensors as a type MCF does not read (B-038, A7, A21, F16)](#150-f150-the-cache-of-a-hybrid-was-sized-by-the-headers-block-count-and-came-out-four-times-too-large-the-same-files-heads-read-as-thirty-two-against-sixteen-declared-and-its-bf16-tensors-as-a-type-mcf-does-not-read-b-038-a7-a21-f16) |
@@ -9403,6 +9404,76 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 153 · F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)
+
+Wiring the console's buttons to the daemon (B-404) ended with a driver that
+runs `mcf tui` in a pseudo-terminal and types at it — Right, Enter, Tab,
+Down, Enter — because every unit test of the screen calls `act` with a
+`Key` already made, and the question was whether a person's keyboard
+produces that key. It does not. The console had drawn *Quick Run*, *Run
+Selected* and *Back* since B-404's first cut and nothing typed at it had
+ever reached them.
+
+**Tab is 0x09, and the decoder's printable arm starts at 0x20.** The
+`Character('\t')` arm in the console's key handling was written on the
+assumption that a tab arrives as a character, the way a letter does; the
+decoder that turns bytes into keys hands back `Character` only for
+`0x20..=0x7e`, and lets the byte fall through otherwise. So the arm was
+dead code from the day it was written — reachable by no byte sequence a
+terminal sends — and the compiler has no way of knowing that one match
+arm's pattern is a value another function never constructs.
+
+**The tests could not see it** because they were testing the wrong seam.
+Every test of the buttons — moving between them, pressing them, refusing
+a press while a run is going — fed `Key::Character('\t')` straight into
+`act`, and `act` did what it said. The decoder had its own tests, and
+none of them asked about a tab, because nothing said a tab mattered. The
+seam that failed was between two things each tested alone, which is the
+shape of F130 (a discovery that matched a name) and F131 (an SDL constant
+named the wrong event): a layer's tests pass, and the layer above assumed
+a fact about it that was never asserted anywhere.
+
+**Found by driving the thing.** The pseudo-terminal driver captured the
+frame after each key, and the frame after Tab was the frame before it —
+the cursor still on a row, the buttons still plain. That is the only kind
+of test that would have found this: one that starts from bytes, because
+the assumption being tested was about bytes. The driver is not a shipped
+test (it needs a daemon, a model and minutes), but the byte is now: the
+decoder's tests assert that `\t` decodes, and to what.
+
+**The fix is a variant, not a character.** `Key::Tab` is decoded from
+0x09 the way Enter is from 0x0d and Escape from 0x1b — the control keys
+are their own variants and the printable range stays what it is. The
+console's arm names `Key::Tab`; the tests feed it the key the decoder
+makes. A headless surface is only equal to the window (A22) when its
+keys can be pressed.
+
+**What the same driver found once Tab worked**, each of them a seam
+between two things tested alone. The console's Quick Run sent half the
+model's window as the deepest rung — 131,072 on a 2B model whose button
+said *28 s – 68 s* — where the window's sends 1,024, the depth that
+estimate was for; the daemon's own estimate of 298–730 s under a button
+promising a minute was the first frame to say so. One depth and one
+estimate now serve both (B-072). A finished run was heard again on every
+key pressed: the console kept it so the screen could still say what it
+was, and `hear` took it again each pass — filling the rows again with a
+longer time, *ran 30 s*, *32 s*, *39 s*, and asking the daemon for the
+status and the listing again each time. And the console left the moment
+the ladder finished: it polls while a run is going and waits for a key
+otherwise, and decided what a read of nothing meant *after* the read,
+by asking again whether it was busy — so the pass in which the run
+finished took its own timed-out poll for the end of input. Which of the
+two a read was is now decided once, before it. None of these could be
+seen from a test that hands the console a key, because each is about
+what happens between two keys, or between a key and the daemon.
+
+**And one thing the driver could not find, written down instead.** The
+daemon answers one connection at a time, so a `stop` sent while the
+ladder ran sat unanswered for the ladder's length, and the console's
+status word stood at *Idle* through a run it could not ask about. The
+console now says what it is running from its own job; the daemon
+answering while it measures is B-425.
 
 ## 152 · F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)
 

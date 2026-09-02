@@ -291,37 +291,9 @@ pub struct Model {
     pub ladder: Vec<crate::chart::Reading>,
 }
 
-/// One measurement that can be asked for, as the console lists them.
-#[derive(Debug, Clone)]
-pub struct Test {
-    /// What it measures, in words.
-    pub name: &'static str,
-    /// Which devices it needs.
-    pub devices: &'static str,
-    /// Roughly how long the run takes, in seconds, at this machine's speed —
-    /// on the row that names the run, and `None` on a row that run answers
-    /// along the way. An estimate, and named one on the screen: MCF's own
-    /// estimate lands between 0.58x and 1.42x of what a run takes, so a
-    /// column headed `time` beside a column of measured times would have read
-    /// as the same kind of number.
-    pub seconds: Option<u64>,
-    /// What runs it: the ladder, or the cross-check.
-    pub run: Run,
-    /// Whether it is selected.
-    pub chosen: bool,
-    /// How long the last run of this test actually took, in seconds.
-    ///
-    /// **`None` until it has run, and `None` is not zero** (A7). A test that
-    /// has never run has no run time, and the screen draws a dash rather than
-    /// a figure somebody could read as *instant*.
-    pub ran: Option<u64>,
-    /// What the last run found, in the words the daemon used.
-    ///
-    /// **Absent until there is a result to show**, which is what the results
-    /// button on the screen is enabled by. Nothing here is written by the
-    /// window: every line comes from the answer MCF sent.
-    pub result: Option<Vec<String>>,
-}
+/// One measurement that can be asked for — the console's row, with what its
+/// last run found (B-072).
+pub use mcf_tui::screens::diagnostics::Test;
 
 /// What runs a test — the console's word for it.
 pub use mcf_tui::screens::diagnostics::Run;
@@ -335,17 +307,6 @@ pub use mcf_tui::screens::diagnostics::Run;
 #[must_use]
 pub fn tests() -> Vec<Test> {
     mcf_tui::screens::diagnostics::tests()
-        .into_iter()
-        .map(|listed| Test {
-            name: listed.name,
-            devices: listed.devices,
-            seconds: listed.seconds,
-            run: listed.run,
-            chosen: listed.chosen,
-            ran: None,
-            result: None,
-        })
-        .collect()
 }
 
 impl Model {
@@ -408,13 +369,38 @@ impl Model {
         )
     }
 
-    /// What was measured at the largest window this machine allows.
+    /// What was measured at the deepest rung the latest ladder climbed.
     #[must_use]
     pub fn speed_at_window(&self) -> String {
         self.slowest.map_or_else(
             || crate::view::UNKNOWN.to_owned(),
             |ms| format!("{ms:.2} ms/token"),
         )
+    }
+
+    /// What the two speed rows are rows of: the depth each end was measured
+    /// at, since the deepest rung is as deep as the ladder was asked to climb
+    /// and not the model's window — a Quick Run's 1,024 said *at the largest
+    /// window* until the label came from the reading (A20). The console
+    /// labels its card the same way (B-072).
+    #[must_use]
+    pub fn speed_rows(&self) -> [(String, String); 2] {
+        let at = |reading: Option<&crate::chart::Reading>, or: &str| {
+            reading.map_or_else(
+                || or.to_owned(),
+                |held| format!("at {} tokens", words::grouped(held.depth)),
+            )
+        };
+        [
+            (
+                at(self.ladder.first(), "at 512 tokens"),
+                self.speed_at_512(),
+            ),
+            (
+                at(self.ladder.last(), "at the deepest rung"),
+                self.speed_at_window(),
+            ),
+        ]
     }
 
     /// How long the first token takes, warm.
@@ -1114,122 +1100,16 @@ impl Desk {
         let Doing::Measuring(job) = &self.doing else {
             return;
         };
-        let ran = job.ran();
-        let mut lines: Vec<String> = Vec::new();
-        if let Some(why) = &job.refused {
-            lines.push(why.clone());
-        } else {
-            for answer in &job.answers {
-                let Some(reading) = answer.get("reading") else {
-                    continue;
-                };
-                let depth = reading
-                    .get("depth")
-                    .and_then(Value::as_integer)
-                    .and_then(|held| u64::try_from(held).ok())
-                    .unwrap_or(0);
-                let said = if matches!(reading.get("measured"), Some(Value::Bool(true))) {
-                    reading
-                        .get("ms_per_token")
-                        .and_then(Value::as_text)
-                        .map_or_else(
-                            || crate::view::UNKNOWN.to_owned(),
-                            |ms| format!("{ms} ms a token"),
-                        )
-                } else {
-                    crate::view::UNKNOWN.to_owned()
-                };
-                lines.push(format!("at {} tokens   {said}", words::grouped(depth)));
-            }
-            if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
-                // B65 and D31: which engine ran is a condition of every figure
-                // above it, so it travels with them rather than being read off
-                // a screen that has moved on.
-                let engine = conditions
-                    .get("engine_ran")
-                    .and_then(Value::as_text)
-                    .unwrap_or("MCF did not say");
-                lines.push(format!("measured on {engine}"));
-            }
-        }
-        // Three more rows the same run measured: the daemon reads a prompt's
-        // cost, the time to a first token and the memory a token of window
-        // costs off the rungs it climbed, and says so in its last line — so
-        // those rows are filled from that line and never worked out here
-        // (B-072). A run that was refused before it climbed anything leaves
-        // them as they were, because it measured none of them.
-        let derived = job.conclusion().map(|body| {
-            [
-                (
-                    "Prompt reading speed",
-                    mcf_serve::ladder::prompt_reading_said(body.get("prompt_reading")),
-                ),
-                (
-                    "Start-up to first token",
-                    mcf_serve::ladder::first_token_said(body.get("first_token")),
-                ),
-                (
-                    "Memory ceiling — largest context",
-                    mcf_serve::ladder::memory_said(body.get("memory")),
-                ),
-            ]
-        });
-        for test in &mut self.tests {
-            if test.name == "Generation speed against depth" {
-                test.ran = Some(ran);
-                test.result = Some(lines.clone());
-            } else if let Some((_, said)) = derived
-                .as_ref()
-                .and_then(|rows| rows.iter().find(|(name, _)| *name == test.name))
-            {
-                test.ran = Some(ran);
-                test.result = Some(said.clone());
-            }
-        }
+        mcf_tui::screens::diagnostics::keep_the_ladder(&mut self.tests, job);
     }
 
-    /// Writes a finished cross-check onto the row that asked for it.
-    ///
-    /// **The sentences are the daemon's** (B-072): the same ones `mcf
-    /// cross-check` prints, read off the last line rather than composed from
-    /// its figures here, so the window and the console cannot say one
-    /// comparison two ways. A refusal is the row's result too — the check
-    /// ran and could not compare, which is a thing to show, not a blank (A2).
+    /// Writes a finished cross-check onto the row that asked for it, in the
+    /// console's words (B-072).
     fn keep_the_cross_check(&mut self) {
         let Doing::CrossChecking(job) = &self.doing else {
             return;
         };
-        let ran = job.ran();
-        let lines: Vec<String> = if let Some(why) = &job.refused {
-            vec![why.clone()]
-        } else {
-            let last = job.conclusion();
-            let mut said: Vec<String> = last
-                .and_then(|body| body.get("said"))
-                .and_then(Value::as_list)
-                .map(|sentences| {
-                    sentences
-                        .iter()
-                        .filter_map(Value::as_text)
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default();
-            if let Some(engine) = last
-                .and_then(|body| body.get("conditions"))
-                .and_then(|conditions| conditions.get("engine_ran"))
-                .and_then(Value::as_text)
-            {
-                said.push(format!("against {engine}"));
-            }
-            said
-        };
-        for test in &mut self.tests {
-            if test.run == Run::CrossCheck {
-                test.ran = Some(ran);
-                test.result = Some(lines.clone());
-            }
-        }
+        mcf_tui::screens::diagnostics::keep_the_cross_check(&mut self.tests, job);
     }
 
     /// Does what a screen said a click meant.
@@ -2000,7 +1880,7 @@ impl Desk {
     /// that it is a fall-off rather than a single number, and quick.
     #[must_use]
     pub fn quick_depth(&self) -> u64 {
-        1024
+        mcf_tui::screens::diagnostics::QUICK_DEPTH
     }
 
     /// Whether anything is chosen: with every row unchosen, Run Selected has
@@ -2019,25 +1899,12 @@ impl Desk {
     /// it — four rows one ladder answers are one run's time, not four.
     #[must_use]
     pub fn estimate(&self, quick: bool) -> (u64, u64) {
+        // A quick run is the ladder only, and only to `QUICK_DEPTH`; the
+        // console prints the same two figures (B-072).
         let seconds: u64 = if quick {
-            // A quick run is the ladder only, and only to 1 024.
-            #[expect(
-                clippy::integer_division,
-                reason = "a sixth of a test, in whole seconds"
-            )]
-            let sixth = self
-                .tests
-                .iter()
-                .find(|test| test.run == Run::Ladder)
-                .and_then(|test| test.seconds)
-                .map_or(30, |seconds| seconds / 6);
-            sixth
+            mcf_tui::screens::diagnostics::quick_seconds(&self.tests)
         } else {
-            self.tests
-                .iter()
-                .filter(|test| test.chosen)
-                .filter_map(|test| test.seconds)
-                .sum()
+            mcf_tui::screens::diagnostics::chosen_seconds(&self.tests)
         };
         #[expect(
             clippy::integer_division,

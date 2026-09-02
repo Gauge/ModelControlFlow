@@ -176,6 +176,21 @@ pub fn gigabytes(bytes: u64) -> String {
     }
 }
 
+/// A count with its thousands separated: `40,960`.
+#[must_use]
+pub fn grouped(number: u64) -> String {
+    let digits = number.to_string();
+    let mut out = String::new();
+    let total = digits.len();
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (total - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 /// What a reading MCF could not take looks like: a dash, never a zero (A7).
 pub const UNKNOWN: &str = "—";
 

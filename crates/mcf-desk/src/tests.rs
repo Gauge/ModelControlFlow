@@ -540,6 +540,11 @@ fn a_measurement_in_the_record_reaches_the_model() {
     assert_eq!(held.slowest, Some(1.412));
     assert_eq!(held.speed_at_512(), "1.53 ms/token");
     assert_eq!(held.speed_at_window(), "1.41 ms/token");
+    // The rows are labelled with the depths the ends were measured at, not
+    // with a window the ladder did not climb to (A20).
+    let [shallowest, deepest] = held.speed_rows();
+    assert_eq!(shallowest.0, "at 512 tokens");
+    assert_eq!(deepest.0, "at 2,048 tokens", "{deepest:?}");
     // The run said nothing of a first token, so nothing claims one.
     assert_eq!(held.start_up(), crate::view::UNKNOWN);
 }

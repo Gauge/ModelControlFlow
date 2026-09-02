@@ -19,6 +19,7 @@
 //! empty table — a screen that shows nothing where a failure happened is a
 //! screen that reports success (A2).
 
+pub mod job;
 pub mod keys;
 pub mod machine;
 pub mod screen;
@@ -35,6 +36,7 @@ use mcf_serve::control::{Answer, Request};
 use keys::Key;
 use screen::{Ink, Screen};
 use screens::Where;
+use screens::diagnostics::{QUICK_DEPTH, Run};
 use screens::host::{Held, Resolved};
 
 /// One thing the operator can do, and the control-plane request it reaches.
@@ -76,6 +78,21 @@ pub const ACTIONS: &[Action] = &[
         reaches: Some("Status"),
     },
     Action {
+        key: "⇥",
+        does: "to the buttons and back",
+        reaches: None,
+    },
+    Action {
+        key: "⏎ Quick Run",
+        does: "climb the ladder",
+        reaches: Some("Measure"),
+    },
+    Action {
+        key: "⏎ Run Selected",
+        does: "the cross-check",
+        reaches: Some("CrossCheck"),
+    },
+    Action {
         key: "S",
         does: "stop the daemon",
         reaches: Some("Stop"),
@@ -101,9 +118,14 @@ struct Console {
     button: usize,
     /// Whether the cursor is in the buttons rather than the list.
     on_buttons: bool,
+    /// The model chosen on the Models screen, which is the one a run is set
+    /// up for — the diagnostics screen's own cursor is in its table of tests.
+    model: usize,
     status: Option<Result<Value, String>>,
     models: Vec<Held>,
     tests: Vec<screens::diagnostics::Test>,
+    /// A run in progress, if one is: the job, and what to do after it.
+    running: Option<Running>,
     /// What MCF can build, and which of it is here.
     components: Vec<(String, String, bool, bool, bool)>,
     said: Option<(String, Ink)>,
@@ -162,10 +184,17 @@ fn measured_ends(held: &Value) -> screens::host::Measured {
         let Some(ms) = reading.get("ms_per_token").and_then(Value::as_text) else {
             continue;
         };
-        if ends.at_512.is_none() {
-            ends.at_512 = Some(ms.to_owned());
+        let Some(depth) = reading
+            .get("depth")
+            .and_then(Value::as_integer)
+            .and_then(|held| u64::try_from(held).ok())
+        else {
+            continue;
+        };
+        if ends.shallowest.is_none() {
+            ends.shallowest = Some((depth, ms.to_owned()));
         }
-        ends.at_window = Some(ms.to_owned());
+        ends.deepest = Some((depth, ms.to_owned()));
     }
     ends
 }
@@ -180,6 +209,27 @@ fn name_of(model: &Value) -> String {
         .to_owned()
 }
 
+/// A run the console is waiting on.
+///
+/// **The job is the window's** (`crate::job`, B-072): the same thread, the
+/// same channel, the same lines heard. What the console adds is the reading
+/// loop — while a run is going the terminal read gives up every so often, the
+/// way the monitor's does, so that what the daemon has said so far is drawn.
+#[derive(Debug)]
+struct Running {
+    /// The ladder, or the cross-check.
+    run: Run,
+    job: job::Job,
+    /// Whether the cross-check is to follow, because its row was ticked
+    /// beside the ladder's. One after the other rather than at once: both
+    /// want the engine and the machine's memory to themselves, and a
+    /// cross-check beside a timing would have changed the timing (A6).
+    then_cross_check: bool,
+    /// Whether what it found has been written onto the rows: a finished run
+    /// is kept so the screen can still say what it was, and is heard once.
+    kept: bool,
+}
+
 impl Console {
     fn new(socket: std::path::PathBuf) -> Self {
         Self {
@@ -189,9 +239,11 @@ impl Console {
             row: 0,
             button: 0,
             on_buttons: false,
+            model: 0,
             status: None,
             models: Vec::new(),
             tests: screens::diagnostics::tests(),
+            running: None,
             components: Vec::new(),
             said: None,
             sampler: machine::Sampler::new(),
@@ -286,6 +338,11 @@ impl Console {
         };
         Held {
             name: name_of(model),
+            path: model
+                .get("path")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned(),
             bytes: model
                 .get("bytes")
                 .and_then(Value::as_integer)
@@ -326,6 +383,206 @@ impl Console {
             _ => 0,
         }
     }
+
+    /// How many buttons the open screen has.
+    fn buttons(&self) -> usize {
+        match self.at {
+            Where::Models => screens::host::BUTTONS.len(),
+            Where::Diagnostics => screens::diagnostics::BUTTONS.len(),
+            _ => 0,
+        }
+    }
+
+    /// Whether a run is still going.
+    fn busy(&self) -> bool {
+        self.running.as_ref().is_some_and(|held| !held.job.finished)
+    }
+
+    /// The deepest rung the chosen model's window allows, which is what the
+    /// screen's samples row says will run: every power of two to half the
+    /// window, so that the deepest rung still has room to produce (§3.15).
+    fn deepest(&self) -> Option<u64> {
+        let resolved = self.models.get(self.model)?.engine.as_ref().ok()?;
+        #[expect(clippy::integer_division, reason = "half a window, exactly")]
+        let deepest = resolved.context / 2;
+        (deepest >= 512).then_some(deepest)
+    }
+
+    /// Starts the ladder on the chosen model — the request `mcf measure`
+    /// sends (B-072).
+    fn measure(&mut self, deepest: Option<u64>, then_cross_check: bool) {
+        let Some(held) = self.models.get(self.model) else {
+            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
+            return;
+        };
+        let Some(deepest) = deepest else {
+            self.said = Some((
+                "MCF has not said what window this model runs in, so there is no ladder \
+                 to climb"
+                    .to_owned(),
+                Ink::Refusal,
+            ));
+            return;
+        };
+        self.said = None;
+        self.running = Some(Running {
+            run: Run::Ladder,
+            job: job::Job::start(
+                self.socket.clone(),
+                Request::Measure {
+                    model: held.path.clone(),
+                    engine: None,
+                    deepest,
+                },
+                format!("measuring {}", held.name),
+            ),
+            then_cross_check,
+            kept: false,
+        });
+    }
+
+    /// Starts the cross-check on the chosen model — the request `mcf
+    /// cross-check` sends (B-072).
+    fn cross_check(&mut self) {
+        let Some(held) = self.models.get(self.model) else {
+            self.said = Some(("no model is chosen".to_owned(), Ink::Refusal));
+            return;
+        };
+        self.said = None;
+        self.running = Some(Running {
+            run: Run::CrossCheck,
+            job: job::Job::start(
+                self.socket.clone(),
+                Request::CrossCheck {
+                    model: held.path.clone(),
+                },
+                format!("cross-checking {}", held.name),
+            ),
+            then_cross_check: false,
+            kept: false,
+        });
+    }
+
+    /// Runs what is ticked: the ladder, then the cross-check, each only if a
+    /// row it answers is chosen — the window's rule (B-072).
+    fn run_chosen(&mut self) {
+        let chosen = |run: Run| self.tests.iter().any(|test| test.chosen && test.run == run);
+        let cross_check = chosen(Run::CrossCheck);
+        if chosen(Run::Ladder) {
+            self.measure(self.deepest(), cross_check);
+        } else if cross_check {
+            self.cross_check();
+        } else {
+            self.said = Some(("nothing chosen runs here".to_owned(), Ink::Refusal));
+        }
+    }
+
+    /// Takes what the run has said since the last pass, and when it has
+    /// finished, writes it onto the rows and starts what was to follow.
+    fn hear(&mut self) {
+        let Some(running) = self.running.as_mut() else {
+            return;
+        };
+        if running.kept {
+            return;
+        }
+        let _anything = running.job.drain();
+        if !running.job.finished {
+            return;
+        }
+        let Some(mut finished) = self.running.take() else {
+            return;
+        };
+        finished.kept = true;
+        match finished.run {
+            Run::Ladder => screens::diagnostics::keep_the_ladder(&mut self.tests, &finished.job),
+            Run::CrossCheck => {
+                screens::diagnostics::keep_the_cross_check(&mut self.tests, &finished.job);
+            }
+        }
+        // The rows are filled from the run; the card is filled from the
+        // record, which the daemon has just written to.
+        self.refresh();
+        if finished.then_cross_check {
+            self.cross_check();
+        } else {
+            // Kept, finished, so the screen can still say what it was and
+            // how long it took.
+            self.running = Some(finished);
+        }
+    }
+
+    /// Presses the button under the cursor on the open screen.
+    fn press(&mut self) {
+        match (self.at, self.button) {
+            (Where::Models, 0) => {
+                // Holding a model is choosing what it runs under (B-416), and
+                // the console has no screen for that yet: say so rather than
+                // hold it under settings nobody saw (§3.15, A2).
+                self.said = Some((
+                    "holding from the console is not built yet — `mcf host` does it, and \
+                     the window"
+                        .to_owned(),
+                    Ink::Refusal,
+                ));
+            }
+            (Where::Models, 1) => self.open(Where::Diagnostics),
+            (Where::Models, _) => self.open(Where::Monitor),
+            (Where::Diagnostics, 0 | 1) if self.busy() => {
+                self.said = Some(("a run is already going".to_owned(), Ink::Refusal));
+            }
+            (Where::Diagnostics, 0) => self.measure(Some(QUICK_DEPTH), false),
+            (Where::Diagnostics, 1) => self.run_chosen(),
+            (Where::Diagnostics, _) => self.open(Where::Models),
+            _ => {}
+        }
+    }
+
+    /// Opens a screen, as choosing it from the menu does.
+    fn open(&mut self, screen: Where) {
+        self.at = screen;
+        self.cursor = Where::ALL
+            .iter()
+            .position(|held| *held == screen)
+            .unwrap_or(0);
+        self.said = None;
+        self.on_buttons = false;
+        self.button = 0;
+        self.row = if screen == Where::Models {
+            self.model
+        } else {
+            0
+        };
+        if matches!(screen, Where::Models | Where::Diagnostics) {
+            self.refresh();
+        }
+    }
+}
+
+/// The diagnostics screen: set up for the model chosen on the Models screen.
+fn draw_diagnostics(console: &Console, into: &mut Screen, from: usize) {
+    let model = console
+        .models
+        .get(console.model)
+        .map_or("nothing selected", |held| held.name.as_str());
+    let window = console
+        .models
+        .get(console.model)
+        .and_then(|held| held.engine.as_ref().ok())
+        .map(|resolved| resolved.context);
+    screens::diagnostics::draw(
+        into,
+        from,
+        model,
+        window,
+        &console.tests,
+        screens::diagnostics::Cursor {
+            row: console.row,
+            button: console.button,
+            on_buttons: console.on_buttons,
+        },
+        console.running.as_ref().map(|held| &held.job),
+    );
 }
 
 fn draw(console: &Console, into: &mut Screen) {
@@ -336,9 +593,20 @@ fn draw(console: &Console, into: &mut Screen) {
         .and_then(|status| status.get("resident"))
         .and_then(Value::as_text)
         .is_some();
-    let state = match (&console.status, serving) {
-        (Some(Err(_)), _) => Some(("not running", Ink::Refusal)),
-        (_, true) => Some(("Serving", Ink::Held)),
+    // A run the console started is the daemon's whole attention — it
+    // answers one connection at a time — so the last status it gave is not
+    // what it is doing now, and the console says what it knows instead (A7).
+    let running = console.running.as_ref().filter(|held| !held.job.finished);
+    let state = match (&console.status, serving, running) {
+        (Some(Err(_)), _, _) => Some(("not running", Ink::Refusal)),
+        (_, _, Some(held)) => Some((
+            match held.run {
+                Run::Ladder => "Measuring",
+                Run::CrossCheck => "Cross-checking",
+            },
+            Ink::Held,
+        )),
+        (_, true, None) => Some(("Serving", Ink::Held)),
         _ => Some(("Idle", Ink::Quiet)),
     };
     let from = screens::frame(into, console.at, console.cursor, state);
@@ -363,18 +631,7 @@ fn draw(console: &Console, into: &mut Screen) {
             console.button,
             console.on_buttons,
         ),
-        Where::Diagnostics => {
-            let model = console
-                .models
-                .get(console.row)
-                .map_or("nothing selected", |held| held.name.as_str());
-            let window = console
-                .models
-                .get(console.row)
-                .and_then(|held| held.engine.as_ref().ok())
-                .map(|resolved| resolved.context);
-            screens::diagnostics::draw(into, from, model, window, &console.tests, console.row);
-        }
+        Where::Diagnostics => draw_diagnostics(console, into, from),
         Where::Components => {
             into.put(2, from + 1, "COMPONENTS", Ink::Heading);
             if console.components.is_empty() {
@@ -477,13 +734,19 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
     let mut buffer = [0_u8; 64];
 
     loop {
-        // Live on the monitor, still everywhere else. This is the whole of it:
-        // a read that gives up is a screen that redraws, and a read that waits
-        // is a process asleep.
-        terminal::wait_for_a_key(console.at != Where::Monitor);
+        // Live on the monitor and while a run is going, still everywhere
+        // else. This is the whole of it: a read that gives up is a screen
+        // that redraws, and a read that waits is a process asleep. Which of
+        // the two a read was is decided here, once, because it is what a
+        // read of nothing means below: a run that finished during a pass
+        // once turned that pass's timed-out poll into the end of input, and
+        // the console left the moment the ladder did (F153).
+        let waiting = console.at != Where::Monitor && !console.busy();
+        terminal::wait_for_a_key(waiting);
         if console.at == Where::Monitor {
             console.reading = console.sampler.read();
         }
+        console.hear();
 
         let (width, height) = terminal::size();
         let mut screen = Screen::new(width, height);
@@ -510,7 +773,7 @@ pub fn run(socket: std::path::PathBuf) -> Result<(), String> {
                     console.said = None;
                 }
             }
-            if console.at == Where::Monitor {
+            if !waiting {
                 continue;
             }
             break;
@@ -561,6 +824,7 @@ fn act(console: &mut Console, key: Key) -> Leaving {
             Key::Right => {
                 console.cursor = (console.cursor + 1).min(Where::ALL.len() - 1);
             }
+            Key::Enter if console.on_buttons => console.press(),
             Key::Enter => {
                 let chosen = Where::ALL
                     .get(console.cursor)
@@ -569,12 +833,7 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 if chosen == Where::Exit {
                     return Leaving::Yes;
                 }
-                console.at = chosen;
-                console.said = None;
-                console.on_buttons = false;
-                if matches!(chosen, Where::Models | Where::Diagnostics) {
-                    console.refresh();
-                }
+                console.open(chosen);
             }
             Key::Up => {
                 if console.on_buttons {
@@ -582,15 +841,23 @@ fn act(console: &mut Console, key: Key) -> Leaving {
                 } else {
                     console.row = console.row.saturating_sub(1);
                 }
+                if console.at == Where::Models {
+                    console.model = console.row;
+                }
             }
             Key::Down => {
                 if console.on_buttons {
-                    console.button = (console.button + 1).min(screens::host::BUTTONS.len() - 1);
+                    console.button = (console.button + 1).min(console.buttons().saturating_sub(1));
                 } else {
                     console.row = (console.row + 1).min(console.rows().saturating_sub(1));
                 }
+                if console.at == Where::Models {
+                    console.model = console.row;
+                }
             }
-            Key::Character('\t') => console.on_buttons = !console.on_buttons,
+            Key::Tab if console.buttons() > 0 => {
+                console.on_buttons = !console.on_buttons;
+            }
             Key::Character('r') => {
                 console.said = None;
                 console.refresh();
