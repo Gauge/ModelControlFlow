@@ -1265,6 +1265,35 @@ fn some_expected() -> mcf_record::json::Value {
     ])
 }
 
+/// The rank reading of `a_report` by word: five words, one past the depth,
+/// one the model would have written whole (B-443).
+fn some_words() -> mcf_record::json::Value {
+    use mcf_record::json::Value;
+    let word = |text: &str, pieces: i64, rank: Option<i64>, first: i64, part: Option<i64>| {
+        Value::map([
+            ("text", Value::text(text.to_owned())),
+            ("pieces", Value::Integer(pieces)),
+            ("rank", rank.map_or(Value::Null, Value::Integer)),
+            ("first_choice", Value::Integer(first)),
+            ("part", part.map_or(Value::Null, Value::Integer)),
+        ])
+    };
+    Value::map([
+        (
+            "words",
+            Value::List(vec![
+                word("class", 1, None, 0, Some(1)),
+                word("each", 1, None, 0, Some(1)),
+                word("handles", 1, Some(29), 0, Some(2)),
+                word("output#.", 2, Some(19), 0, None),
+                word("the", 1, Some(1), 1, Some(3)),
+                word("function", 1, Some(1), 1, Some(3)),
+            ]),
+        ),
+        ("unplaced", Value::Integer(0)),
+    ])
+}
+
 fn a_report() -> mcf_desk::Desk {
     use mcf_record::json::Value;
     let clause = a_clause;
@@ -1285,6 +1314,7 @@ fn a_report() -> mcf_desk::Desk {
             Value::text("chatml — set by a probe".to_owned()),
         ),
         ("expected", some_expected()),
+        ("expected_by_word", some_words()),
         (
             "settled",
             Value::map([
@@ -1396,7 +1426,7 @@ fn each_row_says_how_much_of_it_the_model_expected() {
     // The rows sit under the readings table, past the window's foot until
     // the report is scrolled up to them.
     let mut desk = a_report();
-    desk.scroll = 150.0;
+    desk.scroll = 330.0;
     let found = match &desk.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -1410,7 +1440,7 @@ fn each_row_says_how_much_of_it_the_model_expected() {
     let ground = DAY.ground;
     let with = drawn(&desk, DAY, "prompt-report").inked(ground);
     let mut unread = a_report();
-    unread.scroll = 150.0;
+    unread.scroll = 330.0;
     if let mcf_desk::Doing::Reporting(job) = &mut unread.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1426,6 +1456,34 @@ fn each_row_says_how_much_of_it_the_model_expected() {
     );
 }
 
+/// The word table comes first under the conditions (B-443): the words the
+/// model did not expect, least expected first, and a report with no word
+/// reading says so rather than drawing an empty table (A7).
+#[test]
+fn the_words_the_model_did_not_expect_come_first() {
+    use mcf_record::json::Value;
+    let mut desk = a_report();
+    desk.scroll = 200.0;
+    let ground = DAY.ground;
+    let with = drawn(&desk, DAY, "prompt-expected").inked(ground);
+    let mut unread = a_report();
+    unread.scroll = 200.0;
+    if let mcf_desk::Doing::Reporting(job) = &mut unread.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("expected_by_word");
+        fields.insert(
+            "expected_refused".to_owned(),
+            Value::text("needs the served engine".to_owned()),
+        );
+    }
+    let without = drawn(&unread, DAY, "prompt-expected-untaken").inked(ground);
+    assert_ne!(
+        with, without,
+        "the word table and its absence draw the same ink: {with} against {without}"
+    );
+}
+
 /// Pressing a sentence shows what the model wrote without it.
 ///
 /// The figures are checkable only beside the answer they are about, and MCF
@@ -1435,7 +1493,7 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     // The rows sit under the readings table, past the window's foot until
     // the report is scrolled up to them.
     let mut desk = a_report();
-    desk.scroll = 150.0;
+    desk.scroll = 330.0;
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowWithout(1), (540.0, 720.0)),
         "no sentence in the report could be pressed"
@@ -1444,7 +1502,7 @@ fn pressing_a_sentence_shows_the_answer_without_it() {
     // And what is drawn changes: the answer without a sentence is not the
     // answer to the prompt as written.
     let mut chosen = a_report();
-    chosen.scroll = 150.0;
+    chosen.scroll = 330.0;
     chosen.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let as_written = drawn(&desk, DAY, "answer-as-written").inked(ground);
@@ -1463,19 +1521,19 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     // The alone table sits under the removed and floors tables, past the
     // window's foot: the page is scrolled to it, as a reader would.
     let mut desk = a_report();
-    desk.scroll = 600.0;
+    desk.scroll = 780.0;
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowAlone(1), rows),
         "no sentence alone in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1030.0;
+    desk.scroll = 1210.0;
     let mut alone = a_report();
-    alone.scroll = 1030.0;
+    alone.scroll = 1210.0;
     alone.shown = Some(mcf_desk::Shown::Alone(1));
     let mut without = a_report();
-    without.scroll = 1030.0;
+    without.scroll = 1210.0;
     without.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let to_alone = drawn(&alone, DAY, "answer-alone").inked(ground);
@@ -1493,7 +1551,7 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
     // A report that did not ask has no alone line to press and none drawn
     // (A7): the lines say what was read, not what could have been.
     let mut unasked = a_report();
-    unasked.scroll = 600.0;
+    unasked.scroll = 780.0;
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1504,7 +1562,7 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         !act_within(&unasked, &mcf_desk::Act::ShowAlone(1), rows),
         "a sentence alone is offered where it was never read"
     );
-    desk.scroll = 600.0;
+    desk.scroll = 780.0;
     assert_ne!(
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-alone").inked(ground),
@@ -1521,16 +1579,16 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
     // window's foot: the page is scrolled to them, which is how a reader
     // reaches them too.
     let mut desk = a_report();
-    desk.scroll = 800.0;
+    desk.scroll = 980.0;
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowPrefix(1), rows),
         "no prefix in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1030.0;
+    desk.scroll = 1210.0;
     let mut prefix = a_report();
-    prefix.scroll = 1030.0;
+    prefix.scroll = 1210.0;
     prefix.shown = Some(mcf_desk::Shown::Prefix(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1539,7 +1597,7 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         "the answer to a prefix drew as the answer as written"
     );
     let mut unasked = a_report();
-    unasked.scroll = 800.0;
+    unasked.scroll = 980.0;
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1549,7 +1607,7 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         !act_within(&unasked, &mcf_desk::Act::ShowPrefix(1), rows),
         "a prefix is offered where none was read"
     );
-    desk.scroll = 800.0;
+    desk.scroll = 980.0;
     assert_ne!(
         drawn(&desk, DAY, "prompt-report").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-prefixes").inked(ground),
@@ -1565,16 +1623,16 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
     // The rows sit under the prefixes, past the window's foot: the page is
     // scrolled to them, which is how a reader reaches them too.
     let mut desk = a_report();
-    desk.scroll = 925.0;
+    desk.scroll = 1105.0;
     let rows = (520.0, 640.0);
     assert!(
         act_within(&desk, &mcf_desk::Act::ShowSwap(1), rows),
         "no swap in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1030.0;
+    desk.scroll = 1210.0;
     let mut swap = a_report();
-    swap.scroll = 1030.0;
+    swap.scroll = 1210.0;
     swap.shown = Some(mcf_desk::Shown::Swap(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1583,7 +1641,7 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         "the answer to a swap drew as the answer as written"
     );
     let mut unasked = a_report();
-    unasked.scroll = 925.0;
+    unasked.scroll = 1105.0;
     if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {
@@ -1593,7 +1651,7 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         !act_within(&unasked, &mcf_desk::Act::ShowSwap(1), rows),
         "a swap is offered where none was read"
     );
-    desk.scroll = 925.0;
+    desk.scroll = 1105.0;
     assert_ne!(
         drawn(&desk, DAY, "prompt-report-swaps").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-swaps").inked(ground),
@@ -1607,7 +1665,7 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
 fn the_report_scrolls_under_the_controls_and_not_over_them() {
     let still = a_report();
     let mut scrolled = a_report();
-    scrolled.scroll = 200.0;
+    scrolled.scroll = 380.0;
     let before = drawn(&still, DAY, "prompt-report");
     let after = drawn(&scrolled, DAY, "prompt-report-scrolled");
     if before.width < 2 {
@@ -1643,9 +1701,9 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
 fn the_seeds_section_says_how_the_draws_were_cut() {
     use mcf_record::json::Value;
     let mut stated = a_report();
-    stated.scroll = 1000.0;
+    stated.scroll = 1180.0;
     let mut unstated = a_report();
-    unstated.scroll = 1000.0;
+    unstated.scroll = 1180.0;
     let mut found = match &unstated.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -1983,7 +2041,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     // The legend sits under the rows, past the window's foot until the
     // report is scrolled up to it.
     let mut with = a_report();
-    with.scroll = 300.0;
+    with.scroll = 480.0;
     let found = match &with.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -1998,7 +2056,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
     );
     let spread = drawn(&with, DAY, "prompt-report").inked(ground);
     let mut one = a_report();
-    one.scroll = 300.0;
+    one.scroll = 480.0;
     if let mcf_desk::Doing::Reporting(job) = &mut one.doing
         && let Some(Value::Map(fields)) = job.answers.first_mut()
     {

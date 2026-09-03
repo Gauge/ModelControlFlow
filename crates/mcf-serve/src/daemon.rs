@@ -382,7 +382,46 @@ fn prompt_report_entry(
         ("expected_read", count(expected.len())),
         ("expected_first_choice", count(first_choice)),
         ("expected_by_part", kept("expected_by_part")),
+        ("expected_by_word", words_counted(served)),
         ("expected_refused", kept("expected_refused")),
+    ])
+}
+
+/// The word reading as figures for the record: how many words, how many
+/// in more than one piece, how many whose first piece was past the depth
+/// read — the words themselves are the prompt's and stay out (A25).
+fn words_counted(served: &Value) -> Value {
+    let Some(words) = served
+        .get("expected_by_word")
+        .and_then(|held| held.get("words"))
+        .and_then(Value::as_list)
+    else {
+        return Value::Null;
+    };
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    let integer = |word: &Value, key: &str| word.get(key).and_then(Value::as_integer);
+    Value::map([
+        ("words", count(words.len())),
+        (
+            "in_pieces",
+            count(
+                words
+                    .iter()
+                    .filter(|word| integer(word, "pieces").unwrap_or(0) > 1)
+                    .count(),
+            ),
+        ),
+        (
+            "past_depth",
+            count(
+                words
+                    .iter()
+                    .filter(|word| {
+                        integer(word, "pieces").unwrap_or(0) > 0 && integer(word, "rank").is_none()
+                    })
+                    .count(),
+            ),
+        ),
     ])
 }
 
@@ -473,6 +512,52 @@ fn expected_by_part_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Va
     ])
 }
 
+/// The rank reading by word (B-443): each word's pieces and the rank of
+/// its first, in the order written, for a reader asking *which words*. The
+/// words are the prompt's and go to the client, not the record (A25). Null
+/// where no reading was taken (A7).
+fn expected_by_word_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Value {
+    if ranked.is_empty() {
+        return Value::Null;
+    }
+    let pairs: Vec<(String, Option<usize>)> = ranked
+        .iter()
+        .map(|row| {
+            (
+                row.get("text")
+                    .and_then(Value::as_text)
+                    .unwrap_or_default()
+                    .to_owned(),
+                row.get("rank")
+                    .and_then(Value::as_integer)
+                    .and_then(|held| usize::try_from(held).ok()),
+            )
+        })
+        .collect();
+    let (found, nowhere) = crate::prompt::expected_by_word(parts, &pairs);
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    Value::map([
+        (
+            "words",
+            Value::List(
+                found
+                    .into_iter()
+                    .map(|word| {
+                        Value::map([
+                            ("text", Value::text(word.text)),
+                            ("pieces", count(word.pieces)),
+                            ("rank", word.rank.map_or(Value::Null, count)),
+                            ("first_choice", count(word.first_choice)),
+                            ("part", word.part.map_or(Value::Null, count)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("unplaced", count(nowhere)),
+    ])
+}
+
 /// A prompt report, as a client reads it.
 fn prompt_report_value(
     report: &crate::prompt::Report,
@@ -488,6 +573,7 @@ fn prompt_report_value(
         under: ranked_under,
     } = ranked;
     let by_part = expected_by_part_value(parts, &ranked);
+    let by_word = expected_by_word_value(parts, &ranked);
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
         (
@@ -580,6 +666,7 @@ fn prompt_report_value(
         ("read_by", Value::text(read_by)),
         ("expected", Value::List(ranked)),
         ("expected_by_part", by_part),
+        ("expected_by_word", by_word),
         (
             "expected_refused",
             no_ranking.map_or(Value::Null, Value::text),

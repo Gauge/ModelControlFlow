@@ -261,11 +261,11 @@ fn a_generation_that_does_not_say_is_not_pinned() {
 /// nothing at most, is refused rather than defaulted (B-430).
 #[test]
 fn a_prompt_report_by_an_unknown_unit_is_refused() {
-    let by_word =
-        r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","by":"word"}"#;
-    let refused = Request::read(by_word).expect_err("by word is not a unit");
+    let by_letter =
+        r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","by":"letter"}"#;
+    let refused = Request::read(by_letter).expect_err("by letter is not a unit");
     assert!(
-        format!("{refused:?}").contains("neither sentence nor paragraph"),
+        format!("{refused:?}").contains("none of word, phrase, sentence or paragraph"),
         "{refused:?}"
     );
     let none = r#"{"protocol":1,"ask":"prompt-report","model":"m","prompt":"A. B.","most":0}"#;

@@ -416,7 +416,7 @@ fn a_document_with_blank_lines_is_taken_apart_by_paragraph() {
     let text = "You are a dungeon master.\nKeep the party moving.\n\nNever roll for the \
                 players.\n\n\nDescribe rooms in two sentences.";
     assert_eq!(Unit::for_text(text), Unit::Paragraph);
-    assert_eq!(Unit::for_text("One. Two.\nThree."), Unit::Sentence);
+    assert_eq!(Unit::for_text("One. Two.\nThree."), Unit::Phrase);
     let paragraphs = parts_of(text, Unit::Paragraph);
     assert_eq!(
         paragraphs
@@ -906,4 +906,89 @@ fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
     };
     let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
     assert_eq!(report.swaps, None);
+}
+
+/// A phrase is the part of a sentence a comma, semicolon or colon ends —
+/// the unit an instruction is written in — and its punctuation stays with
+/// it, as a sentence keeps its full stop.
+#[test]
+fn a_sentence_is_taken_apart_by_phrase_at_its_commas() {
+    let phrases = parts_of(
+        "As a senior engineer, answer in one word: what is 1,000 plus a::b?",
+        Unit::Phrase,
+    );
+    assert_eq!(
+        phrases
+            .iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "As a senior engineer,",
+            "answer in one word:",
+            "what is 1,000 plus a::b?"
+        ],
+        "a comma inside a number and a colon inside a name end nothing"
+    );
+    assert_eq!(
+        without(&phrases, 0),
+        "answer in one word: what is 1,000 plus a::b?"
+    );
+    assert_eq!(Unit::for_text("Be terse, be kind."), Unit::Phrase);
+}
+
+/// A word ends at whitespace and keeps the punctuation attached to it;
+/// removing one leaves the rest as written.
+#[test]
+fn a_prompt_is_taken_apart_by_word_at_its_spaces() {
+    let words = parts_of("Answer in one word.\nWhat colour?", Unit::Word);
+    assert_eq!(
+        words
+            .iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Answer", "in", "one", "word.", "What", "colour?"]
+    );
+    assert_eq!(
+        words.get(3).map(|part| part.after.as_str()),
+        Some("\n"),
+        "the line break travels with the word before it"
+    );
+    assert_eq!(without(&words, 2), "Answer in word.\nWhat colour?");
+    assert_eq!(joined(&words), "Answer in one word.\nWhat colour?");
+}
+
+/// The rank reading by word: each word's pieces and the rank of its first,
+/// placed in the part it begins in; a template piece falls in no word.
+#[test]
+fn the_reading_is_placed_by_word() {
+    let parts = parts_of("Be terse, be meticulous.", Unit::Phrase);
+    let ranked: Vec<(String, Option<usize>)> = vec![
+        ("<|im_start|>".to_owned(), Some(1)),
+        ("Be".to_owned(), Some(3)),
+        (" terse".to_owned(), None),
+        (",".to_owned(), Some(1)),
+        (" be".to_owned(), Some(1)),
+        (" met".to_owned(), Some(40)),
+        ("icul".to_owned(), Some(1)),
+        ("ous".to_owned(), Some(1)),
+        (".".to_owned(), Some(1)),
+    ];
+    let (words, nowhere) = expected_by_word(&parts, &ranked);
+    assert_eq!(nowhere, 1, "the marker is in no word");
+    let word = |text: &str, pieces, rank, first_choice, part| Expected {
+        text: text.to_owned(),
+        pieces,
+        rank,
+        first_choice,
+        part,
+    };
+    assert_eq!(
+        words,
+        vec![
+            word("Be", 1, Some(3), 0, Some(1)),
+            word("terse,", 2, None, 1, Some(1)),
+            word("be", 1, Some(1), 1, Some(2)),
+            word("meticulous.", 4, Some(40), 3, Some(2)),
+        ]
+    );
 }

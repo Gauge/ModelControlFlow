@@ -122,13 +122,19 @@ pub const MOST_CLAUSES: usize = 8;
 
 /// What a document is taken apart into.
 ///
-/// A person writes in one or the other: a question is sentences, a persona is
-/// paragraphs, and a persona ablated by sentence is hundreds of generations
-/// about text whose units are its paragraphs. Which is which is decided from
-/// the text where the caller does not say ([`Unit::for_text`]), and the
-/// report says which it was and who decided (§3.15).
+/// A person asking *which words to use* wants the answer by word or by
+/// phrase; a persona ablated by word is hundreds of generations about text
+/// whose units are its paragraphs. Which is which is decided from the text
+/// where the caller does not say ([`Unit::for_text`]), and the report says
+/// which it was and who decided (§3.15).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
+    /// A word: ended by whitespace. Punctuation stays with the word it is
+    /// attached to, as a sentence keeps its full stop.
+    Word,
+    /// A phrase: a sentence, or the part of one ended by `,`, `;` or `:`
+    /// before whitespace — *in one word*, *as a senior engineer*.
+    Phrase,
     /// A sentence: ended by `.`, `?`, `!` before whitespace, or a line break.
     Sentence,
     /// A paragraph: ended by a blank line.
@@ -136,14 +142,18 @@ pub enum Unit {
 }
 
 impl Unit {
+    /// Every unit, finest first.
+    pub const ALL: [Self; 4] = [Self::Word, Self::Phrase, Self::Sentence, Self::Paragraph];
+
     /// The unit a text is written in: paragraphs where a blank line separates
-    /// two of them, sentences otherwise.
+    /// two of them, phrases otherwise — the unit an instruction is written
+    /// in, and the one a question about *which words* is answered at.
     #[must_use]
     pub fn for_text(text: &str) -> Self {
         if parts_of(text, Self::Paragraph).len() > 1 {
             Self::Paragraph
         } else {
-            Self::Sentence
+            Self::Phrase
         }
     }
 
@@ -151,6 +161,8 @@ impl Unit {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Word => "word",
+            Self::Phrase => "phrase",
             Self::Sentence => "sentence",
             Self::Paragraph => "paragraph",
         }
@@ -160,6 +172,8 @@ impl Unit {
     #[must_use]
     pub fn named(word: &str) -> Option<Self> {
         match word {
+            "word" | "words" => Some(Self::Word),
+            "phrase" | "phrases" => Some(Self::Phrase),
             "sentence" | "sentences" => Some(Self::Sentence),
             "paragraph" | "paragraphs" => Some(Self::Paragraph),
             _ => None,
@@ -706,6 +720,16 @@ fn ends_a_sentence(character: char, next: Option<char>) -> bool {
         || (matches!(character, '.' | '?' | '!') && next.is_none_or(char::is_whitespace))
 }
 
+/// Whether a character ends a phrase here: a sentence end, or `,`, `;`, `:`
+/// before whitespace or the end.
+///
+/// The same rule as the full stop's, for the same reason: `1,000` and
+/// `a::b` are not two phrases.
+fn ends_a_phrase(character: char, next: Option<char>) -> bool {
+    ends_a_sentence(character, next)
+        || (matches!(character, ',' | ';' | ':') && next.is_none_or(char::is_whitespace))
+}
+
 /// Splits a document into its parts, each with the whitespace that followed.
 ///
 /// A paragraph ends at a blank line — a run of whitespace with two line
@@ -722,6 +746,14 @@ pub fn parts_of(text: &str, by: Unit) -> Vec<Part> {
     let mut between = String::new();
     while let Some(character) = characters.next() {
         let ends = match by {
+            Unit::Word => {
+                held.push(character);
+                characters.peek().is_none_or(|next| next.is_whitespace())
+            }
+            Unit::Phrase => {
+                held.push(character);
+                ends_a_phrase(character, characters.peek().copied())
+            }
             Unit::Sentence => {
                 held.push(character);
                 ends_a_sentence(character, characters.peek().copied())
@@ -881,6 +913,103 @@ pub fn surprise_by_part(
                 Some(1) => surprise.first_choice = surprise.first_choice.saturating_add(1),
                 Some(_) => {}
                 None => surprise.past_depth = surprise.past_depth.saturating_add(1),
+            }
+        } else {
+            nowhere = nowhere.saturating_add(1);
+        }
+        cursor = cursor.saturating_add(piece.len());
+    }
+    (found, nowhere)
+}
+
+/// One word of the prompt as the model received it: how many pieces the
+/// tokenizer split it into, and where the model ranked the first of them.
+///
+/// Two readings of *how the model receives a word* that spend no
+/// generation. A word in many pieces is one the vocabulary was not built
+/// around — it was rare where the vocabulary was learned; a first piece the
+/// model ranked far down is one it did not expect there. Neither is
+/// comprehension, which nothing here observes; they are what is observable,
+/// and are named as what they are (A7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Expected {
+    /// The word, as written.
+    pub text: String,
+    /// How many of the reading's tokens fell in it.
+    pub pieces: usize,
+    /// Where the model ranked its first piece, counting from one; `None`
+    /// where that was past the depth read — a bound, not an absence.
+    pub rank: Option<usize>,
+    /// How many of its pieces were the model's own first choice.
+    pub first_choice: usize,
+    /// Which part of the document — in the unit the report is by, counting
+    /// from one — the word begins in. `None` for a word placed in no part.
+    pub part: Option<usize>,
+}
+
+/// The rank reading by word: one [`Expected`] a word, in the order written,
+/// and how many ranked tokens fell in no word.
+///
+/// The same cursor walk as [`surprise_by_part`], over the words rather than
+/// the parts; a word's part is the part it begins in.
+#[must_use]
+pub fn expected_by_word(
+    parts: &[Part],
+    ranked: &[(String, Option<usize>)],
+) -> (Vec<Expected>, usize) {
+    let prompt = joined(parts);
+    let words = parts_of(&prompt, Unit::Word);
+    let ends_of = |held: &[Part]| {
+        let mut ends = Vec::with_capacity(held.len());
+        let mut at = 0_usize;
+        for (index, part) in held.iter().enumerate() {
+            at = at.saturating_add(part.text.len());
+            ends.push(at);
+            if index.saturating_add(1) < held.len() {
+                at = at.saturating_add(part.after.len());
+            }
+        }
+        ends
+    };
+    let word_ends = ends_of(&words);
+    let part_ends = ends_of(parts);
+    let mut found: Vec<Expected> = words
+        .iter()
+        .zip(&word_ends)
+        .map(|(word, end)| Expected {
+            text: word.text.clone(),
+            pieces: 0,
+            rank: None,
+            first_choice: 0,
+            part: part_ends
+                .iter()
+                .position(|part_end| end.saturating_sub(word.text.len()) < *part_end)
+                .map(|index| index.saturating_add(1)),
+        })
+        .collect();
+    let mut nowhere = 0_usize;
+    let mut cursor = 0_usize;
+    for (text, rank) in ranked {
+        let piece = text.trim();
+        if piece.is_empty() {
+            continue;
+        }
+        let rest = prompt.get(cursor..).unwrap_or_default();
+        let skipped = rest.len().saturating_sub(rest.trim_start().len());
+        cursor = cursor.saturating_add(skipped);
+        let rest = prompt.get(cursor..).unwrap_or_default();
+        if !rest.starts_with(piece) {
+            nowhere = nowhere.saturating_add(1);
+            continue;
+        }
+        let index = word_ends.iter().position(|end| cursor < *end);
+        if let Some(word) = index.and_then(|index| found.get_mut(index)) {
+            if word.pieces == 0 {
+                word.rank = *rank;
+            }
+            word.pieces = word.pieces.saturating_add(1);
+            if *rank == Some(1) {
+                word.first_choice = word.first_choice.saturating_add(1);
             }
         } else {
             nowhere = nowhere.saturating_add(1);

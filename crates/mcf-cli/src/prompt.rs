@@ -513,11 +513,12 @@ fn removed(body: &Value) -> Vec<String> {
     let floor = integer(body, "floor_parts_per_million");
     let clauses = clauses_of(body);
     let mut lines = vec![head(
-        "REMOVED",
+        "IMPACT",
         &[
             format!("answer moved without each {unit}"),
             "seed held".to_owned(),
             "an ordering, not relevance".to_owned(),
+            "own = pieces the model would have written".to_owned(),
         ],
     )];
     if clauses.is_empty() {
@@ -525,6 +526,7 @@ fn removed(body: &Value) -> Vec<String> {
         lines.push(String::new());
         return lines;
     }
+    let by_part = body.get("expected_by_part");
     let mut rows = Vec::new();
     for (at, clause) in clauses.iter().enumerate() {
         let moved = moved_of(clause);
@@ -535,6 +537,7 @@ fn removed(body: &Value) -> Vec<String> {
             signed_percent(moved.saturating_sub(floor)),
             rank_cell(clause.get("held"), depth),
             open_cell(clause.get("held")),
+            own_cell(by_part, at),
             part_text(body, at),
         ]);
         if clause.get("changed").and_then(Value::as_bool) == Some(true)
@@ -550,6 +553,7 @@ fn removed(body: &Value) -> Vec<String> {
         "floor".to_owned(),
         rank_cell(body.get("floor_held"), depth),
         open_cell(body.get("floor_held")),
+        "—".to_owned(),
         "control sentence".to_owned(),
     ]);
     lines.extend(table(
@@ -560,6 +564,7 @@ fn removed(body: &Value) -> Vec<String> {
             figure("vs floor"),
             figure("1st"),
             figure("open"),
+            figure("own"),
             text(unit),
         ],
         &rows,
@@ -573,8 +578,28 @@ fn removed(body: &Value) -> Vec<String> {
             integer(body, "most").saturating_add(over)
         ));
     }
+    lines.extend(least_expected(body));
     lines.push(String::new());
     lines
+}
+
+/// A part's share of the rank reading, `first choice/pieces`; a dash
+/// where the reading was not taken or the part fell past it (A7).
+fn own_cell(by_part: Option<&Value>, at: usize) -> String {
+    by_part
+        .and_then(|grouped| grouped.get("parts"))
+        .and_then(Value::as_list)
+        .and_then(|parts| parts.get(at))
+        .map_or_else(
+            || "—".to_owned(),
+            |part| {
+                format!(
+                    "{}/{}",
+                    integer(part, "first_choice"),
+                    integer(part, "tokens")
+                )
+            },
+        )
 }
 
 /// Which parts sit at or under the floor — and, where every one did and the
@@ -668,10 +693,7 @@ fn alone(body: &Value) -> Vec<String> {
     let unit = unit_of(body);
     let depth = integer(body, "forced_depth");
     let Some(alone) = body.get("alone").and_then(Value::as_list) else {
-        return vec![
-            not_asked("ALONE", mcf_serve::prompt::Extra::Alone, body),
-            String::new(),
-        ];
+        return Vec::new();
     };
     let mut lines = vec![head(
         "ALONE",
@@ -739,10 +761,7 @@ fn prefixes(body: &Value) -> Vec<String> {
     let depth = integer(body, "forced_depth");
     let floor = integer(body, "floor_parts_per_million");
     let Some(prefixes) = body.get("prefixes").and_then(Value::as_list) else {
-        return vec![
-            not_asked("PREFIXES", mcf_serve::prompt::Extra::Prefixes, body),
-            String::new(),
-        ];
+        return Vec::new();
     };
     let mut lines = vec![head(
         "PREFIXES",
@@ -799,10 +818,7 @@ fn swaps(body: &Value) -> Vec<String> {
     let depth = integer(body, "forced_depth");
     let floor = integer(body, "floor_parts_per_million");
     let Some(swaps) = body.get("swaps").and_then(Value::as_list) else {
-        return vec![
-            not_asked("SWAPS", mcf_serve::prompt::Extra::Swaps, body),
-            String::new(),
-        ];
+        return Vec::new();
     };
     let mut lines = vec![head(
         "SWAPS",
@@ -851,22 +867,51 @@ fn swaps(body: &Value) -> Vec<String> {
 
 /// A reading that was not asked for, said as not asked with the flag that
 /// asks it and what it would cost (A7).
-fn not_asked(label: &str, extra: mcf_serve::prompt::Extra, body: &Value) -> String {
+fn not_asked(extra: mcf_serve::prompt::Extra, body: &Value) -> Vec<String> {
     let removed = clauses_of(body).len();
     let parts =
         removed.saturating_add(usize::try_from(integer(body, "clauses_over_the_cap")).unwrap_or(0));
-    head(
-        label,
-        &[
-            "not asked".to_owned(),
-            format!("--{}", extra.name()),
-            count_of(
-                i64::try_from(extra.generations(parts, removed)).unwrap_or(0),
-                "generation",
-            ),
-            extra.asks().to_owned(),
-        ],
-    )
+    vec![
+        format!("--{}", extra.name()),
+        count_of(
+            i64::try_from(extra.generations(parts, removed)).unwrap_or(0),
+            "generation",
+        ),
+        extra.asks().to_owned(),
+    ]
+}
+
+/// The readings not asked for, each with its flag and its cost, on one
+/// table rather than four empty sections (§3.15, B-443). Nothing where
+/// every one was asked.
+fn more(body: &Value) -> Vec<String> {
+    let mut rows = Vec::new();
+    if body.get("alone").and_then(Value::as_list).is_none() {
+        rows.push(not_asked(mcf_serve::prompt::Extra::Alone, body));
+    }
+    if body.get("prefixes").and_then(Value::as_list).is_none() {
+        rows.push(not_asked(mcf_serve::prompt::Extra::Prefixes, body));
+    }
+    if body.get("swaps").and_then(Value::as_list).is_none() {
+        rows.push(not_asked(mcf_serve::prompt::Extra::Swaps, body));
+    }
+    if !matches!(body.get("settled"), Some(Value::Map(_))) {
+        rows.push(vec![
+            "--temperature <t>".to_owned(),
+            "3 generations".to_owned(),
+            "the same prompt under three seeds at t, to say whether the answer is settled; at \
+             temperature 0 the seed changes nothing, and there is no house temperature — the \
+             model's own: mcf explain"
+                .to_owned(),
+        ]);
+    }
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![head("MORE", &["not asked".to_owned()])];
+    lines.extend(table(&[text("flag"), figure("cost"), text("asks")], &rows));
+    lines.push(String::new());
+    lines
 }
 
 /// Whether several seeds gave several answers, under the temperature it
@@ -876,19 +921,7 @@ fn seeds(body: &Value) -> Vec<String> {
         .get("settled")
         .filter(|held| matches!(held, Value::Map(_)))
     else {
-        return vec![
-            head(
-                "SEEDS",
-                &[
-                    "not asked".to_owned(),
-                    "--temperature <t>".to_owned(),
-                    "3 generations at t".to_owned(),
-                    "at temperature 0 the seed changes nothing".to_owned(),
-                    "no house temperature · the model's own: mcf explain".to_owned(),
-                ],
-            ),
-            String::new(),
-        ];
+        return Vec::new();
     };
     let temperature = settled
         .get("temperature")
@@ -937,42 +970,55 @@ fn cut_line(settled: &Value) -> String {
     }
 }
 
-/// Where the model ranked each word of the prompt, given the ones before it
-/// (B-429): only the ones it did not expect, since a prompt is mostly words
-/// the model would have chosen (§3.15). Not taken is said with why (A7).
-fn tokens(body: &Value) -> Vec<String> {
-    let ranked = body.get("expected").and_then(Value::as_list).unwrap_or(&[]);
-    if ranked.is_empty() {
+/// How the model received each word (B-443): where its first piece ranked
+/// in the model's own choice, how many of its pieces the model would have
+/// written itself, and the part it begins in. Least expected first, a
+/// word the model would have written whole left off the table; past the
+/// depth read is a bound, not an absence (A7). Not taken is said with why.
+fn expected(body: &Value) -> Vec<String> {
+    let Some(by_word) = body
+        .get("expected_by_word")
+        .filter(|held| matches!(held, Value::Map(_)))
+    else {
         return body
             .get("expected_refused")
             .and_then(Value::as_text)
             .map(|why| {
                 vec![
-                    head("TOKENS", &["not taken".to_owned(), why.to_owned()]),
+                    head("EXPECTED", &["not taken".to_owned(), why.to_owned()]),
                     String::new(),
                 ]
             })
             .unwrap_or_default();
-    }
+    };
     let depth = integer(body, "ranked_depth");
-    let mut surprising: Vec<(i64, String)> = Vec::new();
-    let mut expected = 0_usize;
-    for held in ranked {
-        let text = held
-            .get("text")
-            .and_then(Value::as_text)
-            .unwrap_or_default();
-        match held.get("rank").and_then(Value::as_integer) {
-            // Outside the list asked for: a bound, not an absence (A7).
-            None => surprising.push((i64::MAX, format!("{text:?}"))),
-            Some(1) => expected = expected.saturating_add(1),
-            Some(rank) => surprising.push((rank, format!("{text:?}"))),
+    let words = by_word.get("words").and_then(Value::as_list).unwrap_or(&[]);
+    let mut surprising: Vec<(i64, &Value)> = Vec::new();
+    let (mut whole, mut own, mut pieces, mut past) = (0_i64, 0_i64, 0_i64, 0_i64);
+    for word in words {
+        pieces = pieces.saturating_add(integer(word, "pieces"));
+        own = own.saturating_add(integer(word, "first_choice"));
+        // Outside the list asked for: a bound, not an absence (A7).
+        let rank = word
+            .get("rank")
+            .and_then(Value::as_integer)
+            .unwrap_or(i64::MAX);
+        if rank == i64::MAX {
+            past = past.saturating_add(1);
+        }
+        if integer(word, "first_choice") == integer(word, "pieces") {
+            whole = whole.saturating_add(1);
+        } else {
+            surprising.push((rank, word));
         }
     }
     surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
     let mut conditions = vec![
-        "each prompt token's rank in the model's own choice".to_owned(),
-        "1 = it would have written that".to_owned(),
+        "how the model received each word".to_owned(),
+        "rank = its first piece in the model's own choice, 1 = it would have written that"
+            .to_owned(),
+        "own = pieces it would have written".to_owned(),
+        format!("# = {}", unit_of(body)),
     ];
     // Under what addressing (§3.4, B-429).
     if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
@@ -981,108 +1027,112 @@ fn tokens(body: &Value) -> Vec<String> {
     if let Some(by) = body.get("read_by").and_then(Value::as_text) {
         conditions.push(format!("read by {by}"));
     }
-    let mut lines = vec![head("TOKENS", &conditions)];
+    let mut lines = vec![head("EXPECTED", &conditions)];
     let rows: Vec<Vec<String>> = surprising
         .iter()
-        .take(10)
-        .map(|(rank, said)| {
-            vec![
-                if *rank == i64::MAX {
-                    format!(">{depth}")
-                } else {
-                    rank.to_string()
-                },
-                said.clone(),
-            ]
-        })
+        .take(MOST_WORDS)
+        .map(|(rank, word)| word_row(*rank, word, depth))
         .collect();
-    lines.extend(table(&[figure("rank"), text("token")], &rows));
-    lines.push(format!("  first choice  {expected}/{}", ranked.len()));
+    lines.extend(table(
+        &[figure("rank"), figure("own"), figure("#"), text("word")],
+        &rows,
+    ));
+    let left = surprising.len().saturating_sub(MOST_WORDS);
+    if left > 0 {
+        lines.push(format!("  {left} more · --json"));
+    }
+    lines.push(format!(
+        "  first choice  {whole}/{} words · {own}/{pieces} pieces",
+        words.len()
+    ));
+    if past > 0 {
+        lines.push(format!(
+            "  past depth  {} · rank {depth} or further",
+            count_of(past, "word")
+        ));
+    }
+    let unplaced = integer(by_word, "unplaced");
+    if unplaced > 0 {
+        lines.push(format!("  in no word  {}", count_of(unplaced, "piece")));
+    }
     lines.push(String::new());
     lines
 }
 
-/// The same rank reading grouped by part (B-433): how much of each the
-/// model would have written itself, and the part it least expected. Ties
-/// name nobody (A19).
-fn parts(body: &Value) -> Vec<String> {
-    let Some(grouped) = body
+/// How many words the table shows before it says how many more there are.
+const MOST_WORDS: usize = 20;
+
+/// One word's row: its first piece's rank, its pieces the model would have
+/// written itself over its pieces, the part it begins in, and the word.
+fn word_row(rank: i64, word: &Value, depth: i64) -> Vec<String> {
+    vec![
+        if rank == i64::MAX {
+            format!(">{depth}")
+        } else {
+            rank.to_string()
+        },
+        format!(
+            "{}/{}",
+            integer(word, "first_choice"),
+            integer(word, "pieces")
+        ),
+        word.get("part")
+            .and_then(Value::as_integer)
+            .map_or_else(|| "—".to_owned(), |part| part.to_string()),
+        format!(
+            "{:?}",
+            word.get("text")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+        ),
+    ]
+}
+
+/// The part the model least expected, by its share of first-choice pieces
+/// (B-433). Ties name nobody, and one part is nobody's least (A19). Shares
+/// are compared crosswise, so no division is done.
+fn least_expected(body: &Value) -> Vec<String> {
+    let Some(parts) = body
         .get("expected_by_part")
-        .filter(|held| !matches!(held, Value::Null))
+        .and_then(|grouped| grouped.get("parts"))
+        .and_then(Value::as_list)
     else {
         return Vec::new();
     };
-    let unit = unit_of(body);
-    let depth = integer(body, "ranked_depth");
-    let clauses = clauses_of(body);
-    let parts = grouped.get("parts").and_then(Value::as_list).unwrap_or(&[]);
-    let mut rows = Vec::new();
     let mut least: Option<(usize, i64, i64)> = None;
     let mut tied = false;
     for (at, part) in parts.iter().enumerate() {
-        let (tokens, first, past) = (
-            integer(part, "tokens"),
-            integer(part, "first_choice"),
-            integer(part, "past_depth"),
-        );
-        rows.push(vec![
-            format!("{}", at.saturating_add(1)),
-            first.to_string(),
-            past.to_string(),
-            tokens.to_string(),
-            if clauses.get(at).is_some() {
-                part_text(body, at)
-            } else {
-                "(over the cap)".to_owned()
-            },
-        ]);
-        // Shares compared crosswise, so no division is done.
-        if tokens > 0 {
-            match least {
-                Some((_, held_first, held_tokens)) => {
-                    let mine = first.saturating_mul(held_tokens);
-                    let theirs = held_first.saturating_mul(tokens);
-                    if mine < theirs {
-                        least = Some((at, first, tokens));
-                        tied = false;
-                    } else if mine == theirs {
-                        tied = true;
-                    }
+        let (tokens, first) = (integer(part, "tokens"), integer(part, "first_choice"));
+        if tokens == 0 {
+            continue;
+        }
+        match least {
+            Some((_, held_first, held_tokens)) => {
+                let mine = first.saturating_mul(held_tokens);
+                let theirs = held_first.saturating_mul(tokens);
+                if mine < theirs {
+                    least = Some((at, first, tokens));
+                    tied = false;
+                } else if mine == theirs {
+                    tied = true;
                 }
-                None => least = Some((at, first, tokens)),
             }
+            None => least = Some((at, first, tokens)),
         }
     }
-    let past = format!(">{depth}");
-    let mut lines = vec![head(
-        "PARTS",
-        &[
-            "the same reading by part".to_owned(),
-            "first = tokens the model would have written itself".to_owned(),
-        ],
-    )];
-    lines.extend(table(
-        &[
-            figure("#"),
-            figure("first"),
-            figure(&past),
-            figure("tokens"),
-            text(unit),
-        ],
-        &rows,
-    ));
-    lines.push(format!(
+    let mut lines = vec![format!(
         "  least expected  {}",
         match least.filter(|_| !tied && parts.len() > 1) {
             Some((at, _, _)) => format!("#{}", at.saturating_add(1)),
             None => "tied".to_owned(),
         }
-    ));
-    let unplaced = integer(grouped, "unplaced");
+    )];
+    let unplaced = body
+        .get("expected_by_part")
+        .map_or(0, |grouped| integer(grouped, "unplaced"));
     if unplaced > 0 {
-        lines.push(format!("  in no part  {unplaced} tokens"));
+        lines.push(format!("  in no part  {}", count_of(unplaced, "piece")));
     }
-    lines.push(String::new());
     lines
 }
 
@@ -1133,13 +1183,13 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     let mut lines = vec![format!("PROMPT · {}", header_name(named)), String::new()];
     lines.extend(conditions(body));
     lines.push(String::new());
+    lines.extend(expected(body));
     lines.extend(removed(body));
     lines.extend(alone(body));
     lines.extend(prefixes(body));
     lines.extend(swaps(body));
     lines.extend(seeds(body));
-    lines.extend(tokens(body));
-    lines.extend(parts(body));
+    lines.extend(more(body));
     lines.extend(answer(body));
     lines.push("  no verdict on the prompt · that needs a rater".to_owned());
     lines
@@ -1173,6 +1223,17 @@ mod tests {
                 "expected_by_part":{"parts":[{"tokens":4,"first_choice":1,"past_depth":1},
                    {"tokens":3,"first_choice":3,"past_depth":0},{"tokens":2,"first_choice":1,"past_depth":0},
                    {"tokens":5,"first_choice":4,"past_depth":0}],"unplaced":2},
+                "expected_by_word":{"words":[
+                   {"text":"Answer","pieces":1,"rank":17,"first_choice":0,"part":1},
+                   {"text":"in","pieces":1,"rank":1,"first_choice":1,"part":1},
+                   {"text":"one","pieces":1,"rank":1,"first_choice":1,"part":1},
+                   {"text":"word.","pieces":2,"rank":1,"first_choice":1,"part":1},
+                   {"text":"What","pieces":1,"rank":null,"first_choice":0,"part":2},
+                   {"text":"colour","pieces":1,"rank":3,"first_choice":0,"part":2},
+                   {"text":"is","pieces":1,"rank":1,"first_choice":1,"part":2},
+                   {"text":"the","pieces":1,"rank":1,"first_choice":1,"part":null},
+                   {"text":"room?","pieces":2,"rank":1,"first_choice":2,"part":2}],
+                   "unplaced":1},
                 "recorded":"01J0000000000000000000000A"}"#,
         )
         .expect("a well-formed report")
@@ -1189,15 +1250,17 @@ mod tests {
             "the first line of the ablated answer is under its row, marked as cut: {text}"
         );
         assert!(
-            text.contains("1  100.0%  ##########    +100.0   17   0/2  Answer in one word."),
+            text.contains("1  100.0%  ##########    +100.0   17   0/2  1/4  Answer in one word."),
             "{text}"
         );
         assert!(
-            text.contains("2  100.0%  ##########    +100.0  >60   0/2  What colour is the room?"),
+            text.contains(
+                "2  100.0%  ##########    +100.0  >60   0/2  3/3  What colour is the room?"
+            ),
             "outside the depth read is a bound, not a rank: {text}"
         );
         assert!(
-            text.contains("3    0.0%  ··········       0.0    1   2/2  You are careful."),
+            text.contains("3    0.0%  ··········       0.0    1   2/2  1/2  You are careful."),
             "{text}"
         );
         assert!(
@@ -1205,7 +1268,7 @@ mod tests {
             "an unchanged answer is not repeated: {text}"
         );
         assert!(
-            text.contains("ctl    0.0%  ··········     floor    1   2/2  control sentence"),
+            text.contains("ctl    0.0%  ··········     floor    1   2/2    —  control sentence"),
             "the control's own row is under the parts: {text}"
         );
         assert!(text.contains("at/under floor  1 · #3"), "{text}");
@@ -1228,44 +1291,106 @@ mod tests {
         assert_eq!(open_cell(None), "—");
     }
 
-    /// The addressing the ranks were read under is on the page (§3.4).
+    /// The addressing the ranks were read under is on the page (§3.4), and
+    /// the words come least expected first — past the depth read before
+    /// any rank, a word the model would have written whole not at all
+    /// (B-443, A7).
     #[test]
-    fn the_rank_reading_says_what_it_was_read_under() {
-        let text = tokens(&body()).join("\n");
+    fn the_words_come_least_expected_first_under_what_they_were_read_under() {
+        let text = expected(&body()).join("\n");
         assert!(
             text.contains("read under chatml — set by a probe"),
             "{text}"
         );
-        assert!(text.contains(">60  \" are\""), "{text}");
-        assert!(text.contains("first choice  0/1"), "{text}");
+        assert!(text.contains("read by a test's tokenizer"), "{text}");
+        assert!(text.contains("# = sentence"), "{text}");
+        let rows: Vec<&str> = text
+            .lines()
+            .skip_while(|line| !line.starts_with("  rank"))
+            .skip(1)
+            .take_while(|line| !line.starts_with("  first"))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                "   >60  0/1  2  \"What\"",
+                "    17  0/1  1  \"Answer\"",
+                "     3  0/1  2  \"colour\"",
+                "     1  1/2  1  \"word.\"",
+            ],
+            "{text}"
+        );
+        assert!(
+            text.contains("first choice  5/9 words · 7/11 pieces"),
+            "{text}"
+        );
+        assert!(
+            text.contains("past depth  1 word · rank 60 or further"),
+            "{text}"
+        );
+        assert!(text.contains("in no word  1 piece"), "{text}");
+        assert!(!text.contains("more ·"), "{text}");
+    }
+
+    /// A reading nobody took is said with why, not drawn empty (A7); a
+    /// long prompt's table stops and says how many words it left off.
+    #[test]
+    fn an_untaken_word_reading_says_why_and_a_long_one_says_how_many_more() {
+        let mut none = body();
+        if let Value::Map(fields) = &mut none {
+            fields.insert("expected_by_word".to_owned(), Value::Null);
+            fields.insert(
+                "expected_refused".to_owned(),
+                Value::text("needs the served engine"),
+            );
+        }
+        let text = expected(&none).join("\n");
+        assert!(
+            text.starts_with("EXPECTED not taken · needs the served engine"),
+            "{text}"
+        );
+        let mut long = body();
+        if let Value::Map(fields) = &mut long {
+            let words: Vec<Value> = (0..25)
+                .map(|at| {
+                    Value::map([
+                        ("text", Value::text(format!("w{at}"))),
+                        ("pieces", Value::Integer(1)),
+                        ("rank", Value::Integer(2)),
+                        ("first_choice", Value::Integer(0)),
+                        ("part", Value::Integer(1)),
+                    ])
+                })
+                .collect();
+            fields.insert(
+                "expected_by_word".to_owned(),
+                Value::map([
+                    ("words", Value::List(words)),
+                    ("unplaced", Value::Integer(0)),
+                ]),
+            );
+        }
+        let text = expected(&long).join("\n");
+        assert!(text.contains("  5 more · --json"), "{text}");
+        assert!(text.contains("first choice  0/25 words"), "{text}");
     }
 
     /// The rank reading grouped by part names the part the model least
-    /// expected, says which parts were over the cap, and counts the pieces
-    /// that fell in no part (B-433, A7).
+    /// expected under the impact table, with each part's share on its row,
+    /// and counts the pieces that fell in no part (B-433, A7).
     #[test]
     fn the_report_names_the_part_the_model_least_expected() {
-        let text = parts(&body()).join("\n");
-        assert!(text.contains("#  first  >60  tokens  sentence"), "{text}");
-        assert!(
-            text.contains("1      1    1       4  Answer in one word."),
-            "{text}"
-        );
-        assert!(
-            text.contains("2      3    0       3  What colour"),
-            "{text}"
-        );
-        assert!(
-            text.contains("4      4    0       5  (over the cap)"),
-            "{text}"
-        );
+        let text = removed(&body()).join("\n");
+        assert!(text.contains("open  own  sentence"), "{text}");
         assert!(text.contains("least expected  #1"), "{text}");
-        assert!(text.contains("in no part  2 tokens"), "{text}");
+        assert!(text.contains("in no part  2 pieces"), "{text}");
         let mut none = body();
         if let Value::Map(fields) = &mut none {
             fields.insert("expected_by_part".to_owned(), Value::Null);
         }
-        assert!(parts(&none).is_empty());
+        let text = removed(&none).join("\n");
+        assert!(!text.contains("least expected"), "{text}");
+        assert!(text.contains("2/2    —  You are careful."), "{text}");
     }
 
     /// The floor at every position is a spread on the floor's line and a
@@ -1359,7 +1484,7 @@ mod tests {
         );
         assert!(text.contains("prompt       10 tokens"), "{text}");
         assert!(
-            text.contains("REMOVED  answer moved without each sentence"),
+            text.contains("IMPACT   answer moved without each sentence"),
             "{text}"
         );
         assert!(
@@ -1372,7 +1497,7 @@ mod tests {
         }
         let text = rendered(&alone, "m").join("\n");
         assert!(
-            text.contains("REMOVED  answer moved without each paragraph"),
+            text.contains("IMPACT   answer moved without each paragraph"),
             "{text}"
         );
     }
@@ -1418,10 +1543,7 @@ mod tests {
     #[test]
     fn settledness_is_said_under_its_temperature_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
-        assert!(
-            text.contains("SEEDS    not asked · --temperature <t>"),
-            "{text}"
-        );
+        assert!(text.contains("--temperature <t>  3 generations"), "{text}");
         assert!(!text.contains("distinct answers"), "{text}");
         assert!(
             text.contains("generations  6 · as written 1 · removed 3 · control 1\n"),
@@ -1472,10 +1594,7 @@ mod tests {
     #[test]
     fn each_part_alone_is_said_against_the_control_alone_or_as_not_asked() {
         let text = rendered(&body(), "m").join("\n");
-        assert!(
-            text.contains("ALONE    not asked · --alone · 4 generations"),
-            "{text}"
-        );
+        assert!(text.contains("--alone            4 generations"), "{text}");
         assert!(!text.contains("control sentence alone"), "{text}");
 
         let reading = |moved: i64, rank: i64, answer: &str| {
@@ -1531,10 +1650,7 @@ mod tests {
     #[test]
     fn the_prompt_grown_from_the_front_says_where_the_answer_arrived_or_that_it_was_not_asked() {
         let text = rendered(&body(), "m").join("\n");
-        assert!(
-            text.contains("PREFIXES not asked · --prefixes · 3 generations"),
-            "{text}"
-        );
+        assert!(text.contains("--prefixes         3 generations"), "{text}");
         let reading = |moved: i64, answer: &str| {
             Value::map([
                 ("moved_parts_per_million", Value::Integer(moved)),
@@ -1584,10 +1700,7 @@ mod tests {
     #[test]
     fn neighbours_swapped_says_how_many_pairs_the_order_carries_or_that_it_was_not_asked() {
         let text = rendered(&body(), "m").join("\n");
-        assert!(
-            text.contains("SWAPS    not asked · --swaps · 3 generations"),
-            "{text}"
-        );
+        assert!(text.contains("--swaps            3 generations"), "{text}");
         let reading = |moved: i64, answer: &str| {
             Value::map([
                 ("moved_parts_per_million", Value::Integer(moved)),

@@ -2201,7 +2201,9 @@ fn prompt(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option<
         desk,
         mouse,
         (area.x, cleared_button.bottom() + 12.0),
-        area.w.min(820.0),
+        // As wide as the document above it: four unit buttons and a
+        // condition beside them need the room (B-443).
+        area.w.min(960.0),
     );
     if chosen.is_some() {
         act = chosen;
@@ -2233,16 +2235,8 @@ fn prompt_report(
     let found = a_report_or_why_not(paint, desk, area, at)?;
     let wide = area.w.min(820.0);
     let mut y = report_conditions(paint, (area.x, at + 10.0), wide, found);
+    y = expected_table(paint, (area.x, y), wide, found);
     let (after, mut act) = removed_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0), found);
-    // Beside the rows rather than under them: the screen is wider than the
-    // tables, and the token reading compares nothing to the rows.
-    if area.w - wide > 220.0 {
-        tokens_table(
-            paint,
-            Box::new(area.x + wide + 20.0, y, area.w - wide - 30.0, 0.0),
-            found,
-        );
-    }
     y = floors_table(paint, (area.x, after), wide, found);
     let (after, pressed) = alone_table(paint, desk, mouse, Box::new(area.x, y, wide, 0.0), found);
     act = pressed.or(act);
@@ -2263,6 +2257,7 @@ fn prompt_report(
     );
     act = pressed.or(act);
     y = seeds_line(paint, (area.x, after), wide, found);
+    y = more_line(paint, (area.x, y), wide, found);
     // The page scrolls, so the answer has a page of its own below the rest.
     the_answer(
         paint,
@@ -2611,11 +2606,12 @@ fn removed_table(
         paint,
         (area.x, area.y),
         area.w,
-        "removed",
+        "impact",
         &[
-            format!("without each {unit}"),
+            format!("answer moved without each {unit}"),
             "seed held".to_owned(),
             "ordering, not relevance".to_owned(),
+            "own = pieces the model would have written".to_owned(),
             "row → answer".to_owned(),
         ],
     );
@@ -2899,30 +2895,41 @@ fn floors_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) 
     ) + 8.0
 }
 
-/// A reading that was not asked for, said as not asked with the button that
-/// asks it and what it would cost (A7).
-fn not_asked(
-    paint: &mut Painter,
-    at: (f32, f32),
-    width: f32,
-    label: &str,
-    extra: mcf_serve::prompt::Extra,
-    found: &Value,
-) -> f32 {
+/// A reading that was not asked for, as a phrase for the `more` line: the
+/// button above that asks it, and what it costs (§3.15).
+fn not_asked(extra: mcf_serve::prompt::Extra, found: &Value) -> String {
     let removed = clauses_of(found).len();
     let parts = removed
         .saturating_add(usize::try_from(integer(found, "clauses_over_the_cap")).unwrap_or(0));
-    section(
-        paint,
-        at,
-        width,
-        label,
-        &[
-            "not asked".to_owned(),
-            format!("{} above", extra.name()),
-            count_of(extra.generations(parts, removed), "generation"),
-        ],
-    ) + 4.0
+    format!(
+        "{} {}",
+        extra.name(),
+        count_of(extra.generations(parts, removed), "generation")
+    )
+}
+
+/// The readings not asked for, on one line rather than four empty sections
+/// (B-443): each with the button above that asks it and its cost. Nothing
+/// where every one was asked.
+fn more_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
+    let mut conditions = vec!["not asked".to_owned()];
+    if found.get("alone").and_then(Value::as_list).is_none() {
+        conditions.push(not_asked(mcf_serve::prompt::Extra::Alone, found));
+    }
+    if found.get("prefixes").and_then(Value::as_list).is_none() {
+        conditions.push(not_asked(mcf_serve::prompt::Extra::Prefixes, found));
+    }
+    if found.get("swaps").and_then(Value::as_list).is_none() {
+        conditions.push(not_asked(mcf_serve::prompt::Extra::Swaps, found));
+    }
+    if !matches!(found.get("settled"), Some(Value::Map(_))) {
+        conditions.push("temperature 3 generations · at 0 the seed changes nothing".to_owned());
+    }
+    if conditions.len() == 1 {
+        return at.1;
+    }
+    conditions.push("buttons above".to_owned());
+    section(paint, at, width, "more", &conditions) + 4.0
 }
 
 /// Each part asked as the whole prompt in turn (B-435), read against the
@@ -2937,17 +2944,7 @@ fn alone_table(
     let ink = paint.ink;
     let unit = unit_of(found);
     let Some(alone) = found.get("alone").and_then(Value::as_list) else {
-        return (
-            not_asked(
-                paint,
-                (area.x, area.y),
-                area.w,
-                "alone",
-                mcf_serve::prompt::Extra::Alone,
-                found,
-            ),
-            None,
-        );
+        return (area.y, None);
     };
     let y = section(
         paint,
@@ -3070,17 +3067,7 @@ fn prefixes_table(
     let depth = integer(found, "forced_depth");
     let floor = integer(found, "floor_parts_per_million");
     let Some(prefixes) = found.get("prefixes").and_then(Value::as_list) else {
-        return (
-            not_asked(
-                paint,
-                (area.x, area.y),
-                area.w,
-                "prefixes",
-                mcf_serve::prompt::Extra::Prefixes,
-                found,
-            ),
-            None,
-        );
+        return (area.y, None);
     };
     let y = section(
         paint,
@@ -3171,17 +3158,7 @@ fn swaps_table(
     let depth = integer(found, "forced_depth");
     let floor = integer(found, "floor_parts_per_million");
     let Some(swaps) = found.get("swaps").and_then(Value::as_list) else {
-        return (
-            not_asked(
-                paint,
-                (area.x, area.y),
-                area.w,
-                "swaps",
-                mcf_serve::prompt::Extra::Swaps,
-                found,
-            ),
-            None,
-        );
+        return (area.y, None);
     };
     let y = section(
         paint,
@@ -3259,18 +3236,7 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
         .get("settled")
         .filter(|held| matches!(held, Value::Map(_)))
     else {
-        return section(
-            paint,
-            at,
-            width,
-            "seeds",
-            &[
-                "not asked".to_owned(),
-                "temperature above".to_owned(),
-                "3 generations".to_owned(),
-                "at 0 the seed changes nothing".to_owned(),
-            ],
-        );
+        return at.1;
     };
     let temperature = settled
         .get("temperature")
@@ -3325,111 +3291,192 @@ fn cut_lines(settled: &Value) -> Vec<String> {
     }
 }
 
-/// Where the model ranked each word of the prompt against what it would
-/// have written there itself (B-429): only the ones it did not expect
-/// (§3.15), the share that were its first choice, and the addressing they
-/// were read under (§3.4). Not taken is said with why (A7).
-fn tokens_table(paint: &mut Painter, area: Box, found: &Value) {
+/// How the model received each word (B-443): where its first piece ranked
+/// in the model's own choice, how many of its pieces the model would have
+/// written itself, and the part it begins in. Least expected first, a word
+/// the model would have written whole left off the table; past the depth
+/// read is a bound, not an absence (A7). Not taken is said with why.
+fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> f32 {
     let ink = paint.ink;
-    spaced(paint, area.x, area.y, "tokens", ink.faint);
-    let ranked = found
-        .get("expected")
-        .and_then(Value::as_list)
-        .unwrap_or(&[]);
-    let mut y = area.y + 22.0;
-    if ranked.is_empty() {
+    let Some(by_word) = found
+        .get("expected_by_word")
+        .filter(|held| matches!(held, Value::Map(_)))
+    else {
         let why = found
             .get("expected_refused")
             .and_then(Value::as_text)
-            .map_or_else(
-                || "not taken".to_owned(),
-                |why| format!("not taken · {why}"),
-            );
-        for line in paint
-            .wrap(&why, Weight::Regular, size::SMALL, area.w)
-            .iter()
-            .take(3)
-        {
-            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
-            y += 16.0;
-        }
-        return;
-    }
-    let depth = integer(found, "ranked_depth");
-    let mut surprising: Vec<(i64, String)> = Vec::new();
-    let mut first_choice = 0_usize;
-    for held in ranked {
-        let said = held
-            .get("text")
-            .and_then(Value::as_text)
-            .unwrap_or_default()
+            .unwrap_or("not taken")
             .to_owned();
-        match held.get("rank").and_then(Value::as_integer) {
-            // Outside the list asked for: a bound, not an absence (A7).
-            None => surprising.push((i64::MAX, said)),
-            Some(1) => first_choice = first_choice.saturating_add(1),
-            Some(rank) => surprising.push((rank, said)),
+        return section(paint, at, width, "expected", &["not taken".to_owned(), why]) + 4.0;
+    };
+    let depth = integer(found, "ranked_depth");
+    let words = by_word.get("words").and_then(Value::as_list).unwrap_or(&[]);
+    let mut surprising: Vec<(i64, &Value)> = Vec::new();
+    let (mut whole, mut own, mut pieces, mut past) = (0_i64, 0_i64, 0_i64, 0_i64);
+    for word in words {
+        pieces = pieces.saturating_add(integer(word, "pieces"));
+        own = own.saturating_add(integer(word, "first_choice"));
+        // Outside the list asked for: a bound, not an absence (A7).
+        let rank = word
+            .get("rank")
+            .and_then(Value::as_integer)
+            .unwrap_or(i64::MAX);
+        if rank == i64::MAX {
+            past = past.saturating_add(1);
+        }
+        if integer(word, "first_choice") == integer(word, "pieces") {
+            whole = whole.saturating_add(1);
+        } else {
+            surprising.push((rank, word));
         }
     }
     surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
-    spaced(paint, area.x, y, "rank", ink.faint);
-    spaced(paint, area.x + 52.0, y, "token", ink.faint);
-    paint.rule((area.x, y + 17.0), (area.right(), y + 17.0), ink.line, 255);
-    y += 27.0;
-    for (rank, said) in surprising.iter().take(10) {
-        let cell = if *rank == i64::MAX {
-            format!(">{depth}")
-        } else {
-            rank.to_string()
-        };
-        paint.say_right(area.x + 40.0, y, &cell, Weight::Bold, size::SMALL, ink.warn);
-        let shown = paint.elide(
-            &format!("{:?}", said.trim()),
-            Weight::Regular,
-            size::SMALL,
-            area.w - 56.0,
+    let mut y = section(paint, at, width, "expected", &expected_conditions(found));
+    y = heads(paint, Box::new(at.0, y, width, 0.0), "rank", &WORD_COLUMNS);
+    for (rank, word) in surprising.iter().take(MOST_WORDS) {
+        word_row(paint, (at.0, y), width, (*rank, word), depth);
+        y += 20.0;
+    }
+    let left = surprising.len().saturating_sub(MOST_WORDS);
+    if left > 0 {
+        y = foot(
+            paint,
+            (at.0, y + 4.0),
+            "more",
+            &format!("{} · mcf prompt --json", count_of(left, "word")),
+            ink.quiet,
         );
-        paint.say_at(
-            area.x + 52.0,
-            y,
-            &shown,
-            Weight::Regular,
-            size::SMALL,
-            ink.ink,
-        );
-        y += 17.0;
+    } else {
+        y += 4.0;
     }
     y = foot(
         paint,
-        (area.x, y + 4.0),
+        (at.0, y),
         "first choice",
-        &format!("{first_choice}/{}", ranked.len()),
+        &format!("{whole}/{} words · {own}/{pieces} pieces", words.len()),
         ink.ink,
     );
-    let read = [
-        found
-            .get("ranked_under")
-            .and_then(Value::as_text)
-            .map(|under| format!("read under {under}")),
-        found
-            .get("read_by")
-            .and_then(Value::as_text)
-            .map(|by| format!("read by {by}")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>()
-    .join(" · ");
-    if !read.is_empty() {
-        for line in paint
-            .wrap(&read, Weight::Regular, size::SMALL, area.w)
-            .iter()
-            .take(3)
-        {
-            paint.say_at(area.x, y, line, Weight::Regular, size::SMALL, ink.faint);
-            y += 16.0;
-        }
+    if past > 0 {
+        y = foot(
+            paint,
+            (at.0, y),
+            "past depth",
+            &format!(
+                "{} · rank {depth} or further",
+                count_of(usize::try_from(past).unwrap_or(0), "word")
+            ),
+            ink.warn,
+        );
     }
+    let unplaced = integer(by_word, "unplaced");
+    if unplaced > 0 {
+        y = foot(
+            paint,
+            (at.0, y),
+            "in no word",
+            &count_of(usize::try_from(unplaced).unwrap_or(0), "piece"),
+            ink.quiet,
+        );
+    }
+    y + 8.0
+}
+
+/// How many words the table shows before it says how many more there are.
+const MOST_WORDS: usize = 15;
+
+/// The word table's columns after the rank.
+const WORD_COLUMNS: [Column; 3] = [
+    Column {
+        head: "own",
+        at: 110.0,
+        right: true,
+    },
+    Column {
+        head: "#",
+        at: 150.0,
+        right: true,
+    },
+    Column {
+        head: "word",
+        at: 170.0,
+        right: false,
+    },
+];
+
+/// What the word reading says and was read under (§3.4, B-429).
+fn expected_conditions(found: &Value) -> Vec<String> {
+    let mut conditions = vec![
+        "rank of each word's first piece in the model's own choice".to_owned(),
+        "1 = it would have written that".to_owned(),
+        "own = pieces it would have written".to_owned(),
+        format!("# = {}", unit_of(found)),
+    ];
+    if let Some(under) = found.get("ranked_under").and_then(Value::as_text) {
+        conditions.push(format!("read under {under}"));
+    }
+    if let Some(by) = found.get("read_by").and_then(Value::as_text) {
+        conditions.push(format!("read by {by}"));
+    }
+    conditions
+}
+
+/// One word's row: its first piece's rank, its pieces the model would have
+/// written itself over its pieces, the part it begins in, and the word.
+fn word_row(paint: &mut Painter, at: (f32, f32), width: f32, held: (i64, &Value), depth: i64) {
+    let ink = paint.ink;
+    let (rank, word) = held;
+    let cell = if rank == i64::MAX {
+        format!(">{depth}")
+    } else {
+        rank.to_string()
+    };
+    paint.say_right(
+        at.0 + 52.0,
+        at.1,
+        &cell,
+        Weight::Bold,
+        size::SMALL,
+        ink.warn,
+    );
+    let own = format!(
+        "{}/{}",
+        integer(word, "first_choice"),
+        integer(word, "pieces")
+    );
+    paint.say_right(at.0 + 110.0, at.1, &own, Weight::Bold, size::SMALL, ink.ink);
+    // A word in no part is drawn quietly (A7).
+    let part = word
+        .get("part")
+        .and_then(Value::as_integer)
+        .map_or_else(|| "—".to_owned(), |part| part.to_string());
+    let quiet = if part == "—" { ink.faint } else { ink.quiet };
+    paint.say_right(
+        at.0 + 150.0,
+        at.1,
+        &part,
+        Weight::Regular,
+        size::SMALL,
+        quiet,
+    );
+    let shown = paint.elide(
+        &format!(
+            "{:?}",
+            word.get("text")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+        ),
+        Weight::Regular,
+        size::SMALL,
+        width - 170.0,
+    );
+    paint.say_at(
+        at.0 + 170.0,
+        at.1,
+        &shown,
+        Weight::Regular,
+        size::SMALL,
+        ink.ink,
+    );
 }
 
 /// What the model actually said, under the figures about it.
@@ -3647,7 +3694,7 @@ struct Readings {
 
 /// Where the readings table's choice and condition columns start.
 const READING_CHOICE: f32 = 96.0;
-const READING_CONDITION: f32 = 330.0;
+const READING_CONDITION: f32 = 440.0;
 /// A readings row: a button's height and a little air.
 const READING_ROW: f32 = ui::BUTTON + 2.0;
 
@@ -3713,12 +3760,12 @@ impl Readings {
         let (unit, chosen) = taken.unit();
         let parts = taken.parts().len();
         let mut x = self.area.x + READING_CHOICE;
-        for (name, each) in [("paragraph", Unit::Paragraph), ("sentence", Unit::Sentence)] {
+        for each in Unit::ALL {
             let (pressed, button) = ui::fitted(
                 paint,
                 mouse,
                 (x, self.y),
-                name,
+                each.name(),
                 if unit == each {
                     Kind::Primary
                 } else {

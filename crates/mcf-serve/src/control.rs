@@ -592,7 +592,7 @@ impl Request {
                     Some(word) => Some(crate::prompt::Unit::named(word).ok_or_else(|| {
                         refused(
                             "a prompt report taking the text apart by something that is \
-                             neither sentence nor paragraph",
+                             none of word, phrase, sentence or paragraph",
                             line,
                         )
                     })?),

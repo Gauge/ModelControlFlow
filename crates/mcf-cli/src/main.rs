@@ -877,12 +877,12 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 Ok(path) => file = Some(path),
                 Err(missing) => return Ok(missing),
             },
-            "--by" => match value("--by sentence, or --by paragraph", &mut rest) {
+            "--by" => match value("--by word, phrase, sentence or paragraph", &mut rest) {
                 Ok(word) => match mcf_serve::prompt::Unit::named(word) {
                     Some(unit) => by = Some(unit),
                     None => {
                         return Ok(Request::UnexpectedArgument {
-                            command: "prompt --by (wants sentence or paragraph)",
+                            command: "prompt --by (wants word, phrase, sentence or paragraph)",
                             argument: word,
                         });
                     }
@@ -1618,10 +1618,11 @@ const COMMANDS: &str = "\
     \x20                                     check what it did: each answer run\n\
     \x20                                     in a container, four outcomes and\n\
     \x20                                     no total (B-110)\n\
-    \x20 mcf prompt <model> --prompt <text>   what a prompt does: each sentence\n\
-    \x20             or --file <path>         or paragraph removed in turn, and\n\
-    \x20       [--by sentence|paragraph]      how much the answer moved. An\n\
-    \x20       [--most <n>] [--json]          ordering, never relevance. A\n\
+    \x20 mcf prompt <model> --prompt <text>   what a prompt does: how the model\n\
+    \x20             or --file <path>         receives each word, and how much\n\
+    \x20       [--by word|phrase|sentence|   the answer moves without each\n\
+    \x20             paragraph] [--most <n>]  part. An ordering, never\n\
+    \x20       [--json]                      relevance. A\n\
     \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
     \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
     \x20       [--swaps]                     at t to see whether it settles;\n\
@@ -2373,9 +2374,9 @@ mod tests {
             Request::MissingArgument { .. }
         ));
         assert!(matches!(
-            parse(&["prompt", "m", "--file", "a", "--by", "word"]),
+            parse(&["prompt", "m", "--file", "a", "--by", "letter"]),
             Request::UnexpectedArgument {
-                argument: "word",
+                argument: "letter",
                 ..
             }
         ));

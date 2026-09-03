@@ -167,6 +167,7 @@ forward as one.
 | 156 | [F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)](#156-f156-a-report-was-printed-over-seven-refusals-a-model-name-no-engine-resolved-gave-seven-empty-answers-the-ablation-read-them-as-every-part-gave-the-same-answer-and-the-record-took-it-b-433-b-432-a2-a7) |
 | 157 | [F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)](#157-f157-three-files-on-the-machine-recommend-how-to-be-sampled-and-mcf-said-they-recommend-nothing-and-above-nought-the-engine-truncates-every-draw-with-values-mcf-never-stated-b-440-b-281-b60-a7-315-34) |
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
+| 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9420,6 +9421,57 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 159 · F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)
+
+The report had eight sections and a person crafting a persona could act on
+one of them. REMOVED said how much the answer moved without each sentence —
+that is an ordering of sentences, and it is the reading a writer wants first.
+TOKENS then listed the ten *tokens* the model least expected: ` output`,
+`#.`, ` handles`, a rank beside each. A token is not a thing a person
+writes; a word is. The reader saw that `#.` ranked sixteenth and could not
+tell which sentence it was in, whether the word it belonged to was one the
+model knew, or what to change. PARTS repeated the rank reading a third way —
+by sentence, with a *least expected* line — so one reading was on the page
+three times and the question behind it (*which of my words does this model
+fight?*) was answered by none of them. ALONE, PREFIXES, SWAPS and SEEDS each
+took a heading to say they were not asked. The page was correct and it was
+noise.
+
+**The unit was wrong for the work, too.** A persona or a build-agent
+instruction is a document of clauses: *You are a senior engineer, terse,
+who never edits a file without reading it.* By sentence that is one part;
+by paragraph it is one part. The reading that orders parts had nothing to
+order. And there was no way to read it by word at all.
+
+**What changed (B-443).** The page answers two questions in two tables, in
+the order a writer asks them. EXPECTED is by *word*: each word the model
+did not receive as its own first choice, least expected first, with the rank
+of its first piece, how many of its pieces the model would have written
+itself (*own 1/2*), and the part it begins in — the word the model fought,
+and where. Words it would have written whole are counted in the foot
+(*first choice 5/9 words · 7/11 pieces*) and not listed; a word past the
+depth read is a bound, `>60`, and not a rank (A7). IMPACT is the removed
+table renamed for what it says, with each part's share of the same reading
+as a column beside the answer's movement, so the two readings sit on one
+row: a part the answer cannot do without, and whether the model expected
+it. The readings not asked for are one line — the flag or the button, and
+the cost — rather than four empty headings (§3.15). TOKENS and PARTS are
+gone; what they carried is on the two tables and in `--json`.
+
+The document is cut by **phrase** unless it has blank lines: a phrase ends
+at a sentence end or at a comma, semicolon or colon, so an instruction's
+clauses are parts the removal can order. **Word** is a unit as well, so a
+short prompt can be removed a word at a time. The four units are buttons
+in the window and `--by` at the console, and the report says which was
+taken and why.
+
+What it does not do: judge a word. A rank is where the model would have
+put it, and a word ranked sixtieth may be the one word that makes the
+prompt work — IMPACT is where that is read, and only for the parts removed.
+There is no rating (A19), and there is no reading yet of the *form* of a
+document — the same instruction as a list, as headed sections, in capitals —
+which is the next thing a writer asks (B-444).
 
 ## 158 · F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)
 
