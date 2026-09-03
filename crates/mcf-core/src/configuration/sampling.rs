@@ -95,6 +95,11 @@ pub struct Sampling {
     pub top_p: Attested<Thousandths>,
     /// Top-k cutoff.
     pub top_k: Attested<u32>,
+    /// The floor on a token's probability, as a fraction of the most likely
+    /// token's — the third truncation a model file can recommend, and the one
+    /// the provisioned engine applies at a house value of its own where the
+    /// file says nothing (F157).
+    pub min_p: Attested<Thousandths>,
     /// Repetition penalty.
     pub repetition_penalty: Attested<Thousandths>,
     /// The cap on generated tokens.
@@ -115,6 +120,7 @@ impl Sampling {
             temperature: Attested::Unknown,
             top_p: Attested::Unknown,
             top_k: Attested::Unknown,
+            min_p: Attested::Unknown,
             repetition_penalty: Attested::Unknown,
             max_output_tokens: Attested::Unknown,
         }
@@ -122,11 +128,12 @@ impl Sampling {
 
     /// Each parameter, paired with the question it answers.
     #[must_use]
-    pub fn entries(&self) -> [(&'static str, String); 5] {
+    pub fn entries(&self) -> [(&'static str, String); 6] {
         [
             ("temperature", self.temperature.to_string()),
             ("top_p", self.top_p.to_string()),
             ("top_k", self.top_k.to_string()),
+            ("min_p", self.min_p.to_string()),
             ("repetition_penalty", self.repetition_penalty.to_string()),
             ("max_output_tokens", self.max_output_tokens.to_string()),
         ]

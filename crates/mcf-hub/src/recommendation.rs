@@ -123,6 +123,7 @@ pub fn from_json(body: &Value) -> Recommendation {
     };
     let temperature = fraction("temperature");
     let top_p = fraction("top_p");
+    let min_p = fraction("min_p");
     let repetition_penalty = fraction("repetition_penalty");
 
     let mut whole = |name: &str| -> Attested<u32> {
@@ -148,6 +149,7 @@ pub fn from_json(body: &Value) -> Recommendation {
             temperature,
             top_p,
             top_k,
+            min_p,
             repetition_penalty,
             max_output_tokens,
         },

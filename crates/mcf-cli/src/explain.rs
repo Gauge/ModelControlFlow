@@ -475,21 +475,27 @@ fn millisecond_band(held: &mcf_core::measurement::Estimate<Duration<Monotonic>>)
 /// MCF's own choice is named **as MCF's**, with the reason it had to make one.
 /// A house choice that says it is a house choice is a condition a reader can
 /// weigh; one that does not is the hidden default §3.15 forbids.
+///
+/// Where it recommends something, the line no longer says *adopted*: nothing
+/// on MCF's generating path reads the recommendation, every request states its
+/// own temperature and seed, and what truncates a draw above nought is the
+/// engine's reading of the file rather than MCF's (F157, B-440).
 fn sampler(file: &Model) -> (String, String) {
     match mcf_standin::recommended::read(file) {
         Recommendation::Declared { sampling, keys } => (
             sampling.to_string(),
             format!(
-                "declared by the file ({}) and unverified here — adopted because the publisher \
-                 knows what this model was trained for (A21, B60)",
+                "declared by the file ({}) and unverified here. Each request states its own \
+                 temperature and seed; how a draw above nought is truncated is the engine's \
+                 reading of the file until MCF states that too",
                 keys.join(", ")
             ),
         ),
         Recommendation::NoneDeclared => (
             "greedy".to_owned(),
-            "MCF's own, because this file recommends none: no sampler key in its metadata, and a \
-             conversion repository publishes no generation_config.json either (B60, F63). Stated \
-             in crates/mcf-cli/src/run.rs"
+            "MCF's own, because this file recommends none: no sampler key in its metadata under \
+             either namespace, and a conversion repository publishes no generation_config.json \
+             either. Stated in crates/mcf-cli/src/run.rs"
                 .to_owned(),
         ),
     }

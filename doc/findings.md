@@ -165,6 +165,7 @@ forward as one.
 | 154 | [F154 — The prototype's bandwidth was the harness's: this machine reads the cache's working set at 95–850 GB/s, F121's constant divided by the wrong denominator, and the engine reaches 40–63% of the machine (B-427, B-400, F121, A20, A21)](#154-f154-the-prototypes-bandwidth-was-the-harnesss-this-machine-reads-the-caches-working-set-at-95850-gbs-f121s-constant-divided-by-the-wrong-denominator-and-the-engine-reaches-4063-of-the-machine-b-427-b-400-f121-a20-a21) |
 | 155 | [F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)](#155-f155-the-ladders-pair-does-not-resolve-a-slope-at-depth-sixteen-tokens-of-generation-against-a-34-second-prefill-one-pair-of-three-came-out-negative-and-a-fall-off-seven-times-the-one-below-it-was-the-jitter-b-427-b-428-b-400-a9-a7-f117) |
 | 156 | [F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)](#156-f156-a-report-was-printed-over-seven-refusals-a-model-name-no-engine-resolved-gave-seven-empty-answers-the-ablation-read-them-as-every-part-gave-the-same-answer-and-the-record-took-it-b-433-b-432-a2-a7) |
+| 157 | [F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)](#157-f157-three-files-on-the-machine-recommend-how-to-be-sampled-and-mcf-said-they-recommend-nothing-and-above-nought-the-engine-truncates-every-draw-with-values-mcf-never-stated-b-440-b-281-b60-a7-315-34) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9418,6 +9419,53 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 157 · F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)
+
+`mcf explain GLM-4.7-Flash` read *sampler: greedy — MCF's own, because this
+file recommends none: no sampler key in its metadata*. The file's header
+carries `general.sampling.temp = 1.0` and `general.sampling.top_p = 0.95`.
+Qwen3-Coder-Next and Qwen3.8-Flash-Next carry `temp`, `top_p` and `top_k`
+under the same prefix. Three of ten files on the machine recommend, and MCF
+reported all three as recommending nothing — the substitution A7 names,
+*ignorance reported as absence*, and here the ignorance was a namespace.
+
+**The format has two places and the converter writes the second.** F63 read
+the GGUF specification's `<arch>.temperature`, `<arch>.top_p` and neighbours,
+found none in six of six files, and stopped there. The converter has since
+been writing the repository's `generation_config.json` into
+`general.sampling.*`, with the engine's own spellings (`temp`,
+`penalty_repeat`), and the provisioned engine reads exactly that prefix
+(`common_init_sampler_from_model`, `llama.cpp@925e1179`). `recommended::read`
+now looks in both, the engine's first, and the key read travels with the
+value.
+
+**What the engine does with it is the larger half.** MCF sends every request
+a temperature and a seed and nothing else. At temperature nought that is the
+whole condition — greedy is greedy. Above nought, which is every seeded draw
+in the prompt report, the engine truncates the distribution with whatever it
+has: the file's `general.sampling.top_p` where the file states one, and
+otherwise its own house values — `top_k 40`, `top_p 0.95`, `min_p 0.05`. A
+seeded draw at `--temperature 0.7` on GLM-4.7-Flash runs under `top_p 0.95`
+from the file; the same draw on Seed-Coder-8B runs under `top_k 40`,
+`top_p 0.95` and `min_p 0.05` from the engine. Neither condition appears in
+the record, the served answer, or the page (§3.4), neither was chosen by MCF
+(B60), and a reader comparing two models' seeded readings is comparing two
+truncations they were never shown (§3.15).
+
+**And `mcf explain` said *adopted*.** The declared line read *adopted because
+the publisher knows what this model was trained for*; nothing on MCF's
+generating path reads the recommendation, and the temperature MCF sends
+overrides the file's on every request. The line now says *unverified here*
+and that the truncation is the engine's reading of the file until
+MCF states it — which is B-440: each request states `top_k`, `top_p` and
+`min_p` itself, from the file where declared and *off* where not, and the
+three travel with the seed and the temperature as one condition.
+
+What this is an instance of: an engine that fills in what the caller left
+unsaid is a house default at one remove, and the only defence is to leave
+nothing unsaid. F133 was the same shape for the context window; this is the
+sampler.
 
 ## 156 · F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)
 

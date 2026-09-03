@@ -8,12 +8,22 @@
 //! ([`mcf_hub`]'s generation configuration is the second, and needs the
 //! repository).
 //!
-//! **The format defines keys for it and files rarely carry them.** GGUF's
-//! general specification admits `<arch>.temperature`, `<arch>.top_p` and their
-//! neighbours; six of six model files examined for
-//! [findings.md](../../../doc/findings.md) F63 carry none. So the honest
-//! outcome of this module is usually *nothing declared*, which is a state to
-//! report rather than a hole to fill (A7).
+//! **The format defines two places for it, and files carry them under the
+//! second.** GGUF's general specification admits `<arch>.temperature`,
+//! `<arch>.top_p` and their neighbours, and six of six model files examined
+//! for [findings.md](../../../doc/findings.md) F63 carried none of those. The
+//! converter now writes a second namespace, `general.sampling.temp`,
+//! `general.sampling.top_p`, `general.sampling.top_k`, `general.sampling.min_p`
+//! and `general.sampling.penalty_repeat`, from the repository's
+//! `generation_config.json` — and three of ten files on the machine that
+//! found this carry it, while this module looked only in the first place and
+//! reported them as recommending nothing (F157). Both namespaces are read.
+//! Where a file states a parameter in both, the engine's namespace governs,
+//! because it is the one the provisioned engine applies when it runs the
+//! file; the key read travels with the value either way.
+//!
+//! *Nothing declared* is still the common outcome, and is a state to report
+//! rather than a hole to fill (A7).
 //!
 //! **Read, never believed** (A21). A value here is what the file says, and
 //! saying so is all this does: whether it is a good setting for this machine
@@ -63,44 +73,40 @@ impl Recommendation {
 
 /// Reads a model file's sampling recommendation.
 ///
-/// The keys are looked for under the architecture the file declares, which is
-/// how GGUF namespaces everything else it says about a model. A file that
-/// declares no architecture has no namespace to look in and therefore
-/// recommends nothing — which is the same answer as a file that declares one
-/// and says nothing in it, and is right for the same reason.
+/// Each parameter is looked for first under `general.sampling`, the namespace
+/// the converter writes and the engine reads, and then under the architecture
+/// the file declares, which is how the specification namespaces everything
+/// else it says about a model. A file that declares no architecture has only
+/// the first place to look in.
 #[must_use]
 pub fn read(file: &Model) -> Recommendation {
-    let Some(architecture) = file.get("general.architecture").and_then(Value::as_text) else {
-        return Recommendation::NoneDeclared;
-    };
-
+    let architecture = file.get("general.architecture").and_then(Value::as_text);
     let mut keys = Vec::new();
-    let mut fraction = |name: &str| -> Attested<Thousandths> {
-        let key = format!("{architecture}.{name}");
-        match file.get(&key).and_then(thousandths) {
-            Some(held) => {
+    let mut fraction = |engine_name: &str, spec_name: &str| -> Attested<Thousandths> {
+        match stated(file, architecture, engine_name, spec_name) {
+            Some((key, value)) => thousandths(value).map_or(Attested::Unknown, |held| {
                 keys.push(key);
                 Attested::Known(held)
-            }
+            }),
             None => Attested::Unknown,
         }
     };
-    let temperature = fraction("temperature");
-    let top_p = fraction("top_p");
-    let repetition_penalty = fraction("repetition_penalty");
+    let temperature = fraction("temp", "temperature");
+    let top_p = fraction("top_p", "top_p");
+    let min_p = fraction("min_p", "min_p");
+    let repetition_penalty = fraction("penalty_repeat", "repetition_penalty");
 
-    let mut whole = |name: &str| -> Attested<u32> {
-        let key = format!("{architecture}.{name}");
-        match file.get(&key).and_then(count) {
-            Some(held) => {
+    let mut whole = |engine_name: &str, spec_name: &str| -> Attested<u32> {
+        match stated(file, architecture, engine_name, spec_name) {
+            Some((key, value)) => count(value).map_or(Attested::Unknown, |held| {
                 keys.push(key);
                 Attested::Known(held)
-            }
+            }),
             None => Attested::Unknown,
         }
     };
-    let top_k = whole("top_k");
-    let max_output_tokens = whole("max_output_tokens");
+    let top_k = whole("top_k", "top_k");
+    let max_output_tokens = whole("max_output_tokens", "max_output_tokens");
 
     if keys.is_empty() {
         return Recommendation::NoneDeclared;
@@ -110,11 +116,28 @@ pub fn read(file: &Model) -> Recommendation {
             temperature,
             top_p,
             top_k,
+            min_p,
             repetition_penalty,
             max_output_tokens,
         },
         keys,
     }
+}
+
+/// Where the file states one parameter, and under which key: the engine's
+/// namespace first, then the architecture's.
+fn stated<'file>(
+    file: &'file Model,
+    architecture: Option<&str>,
+    engine_name: &str,
+    spec_name: &str,
+) -> Option<(String, &'file Value)> {
+    let engine_key = format!("general.sampling.{engine_name}");
+    let spec_key = architecture.map(|held| format!("{held}.{spec_name}"));
+    [Some(engine_key), spec_key]
+        .into_iter()
+        .flatten()
+        .find_map(|key| file.get(&key).map(|value| (key, value)))
 }
 
 /// A fraction, in thousandths.

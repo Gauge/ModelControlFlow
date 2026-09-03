@@ -75,21 +75,91 @@ fn every_parameter_is_read_under_the_declared_architecture() {
         ("an-architecture.temperature", Value::Float(0.6)),
         ("an-architecture.top_p", Value::Float(0.95)),
         ("an-architecture.top_k", Value::Integer(20)),
+        ("an-architecture.min_p", Value::Float(0.05)),
         ("an-architecture.repetition_penalty", Value::Float(1.05)),
         ("an-architecture.max_output_tokens", Value::Integer(2048)),
     ]));
     let Recommendation::Declared { sampling, keys } = &held else {
-        panic!("five stated parameters are a recommendation: {held:?}")
+        panic!("six stated parameters are a recommendation: {held:?}")
     };
     assert_eq!(sampling.temperature, Attested::Known(Thousandths(600)));
     assert_eq!(sampling.top_p, Attested::Known(Thousandths(950)));
     assert_eq!(sampling.top_k, Attested::Known(20));
+    assert_eq!(sampling.min_p, Attested::Known(Thousandths(50)));
     assert_eq!(
         sampling.repetition_penalty,
         Attested::Known(Thousandths(1_050))
     );
     assert_eq!(sampling.max_output_tokens, Attested::Known(2_048));
-    assert_eq!(keys.len(), 5);
+    assert_eq!(keys.len(), 6);
+}
+
+/// **The namespace the converter writes and the engine reads** (F157). Three
+/// of ten files on the machine that found this state their recommendation as
+/// `general.sampling.temp`, `general.sampling.top_p` and
+/// `general.sampling.top_k` — the engine's own spellings, under no
+/// architecture — and were reported as recommending nothing.
+#[test]
+fn the_engines_namespace_is_read_with_its_own_spellings() {
+    let held = read(&file(&[
+        ("general.architecture", Value::Text("llama".to_owned())),
+        ("general.sampling.temp", Value::Float(0.7)),
+        ("general.sampling.top_p", Value::Float(0.8)),
+        ("general.sampling.top_k", Value::Integer(20)),
+        ("general.sampling.min_p", Value::Float(0.0)),
+        ("general.sampling.penalty_repeat", Value::Float(1.05)),
+    ]));
+    let Recommendation::Declared { sampling, keys } = &held else {
+        panic!("the engine's namespace is a recommendation: {held:?}")
+    };
+    assert_eq!(sampling.temperature, Attested::Known(Thousandths(700)));
+    assert_eq!(sampling.top_p, Attested::Known(Thousandths(800)));
+    assert_eq!(sampling.top_k, Attested::Known(20));
+    assert_eq!(sampling.min_p, Attested::Known(Thousandths(0)));
+    assert_eq!(
+        sampling.repetition_penalty,
+        Attested::Known(Thousandths(1_050))
+    );
+    assert_eq!(sampling.max_output_tokens, Attested::Unknown);
+    assert_eq!(
+        keys,
+        &[
+            "general.sampling.temp".to_owned(),
+            "general.sampling.top_p".to_owned(),
+            "general.sampling.min_p".to_owned(),
+            "general.sampling.penalty_repeat".to_owned(),
+            "general.sampling.top_k".to_owned(),
+        ],
+        "the keys read are the engine's spellings, so the claim is checkable against the file"
+    );
+}
+
+/// The engine's namespace needs no architecture to be looked in: it is where
+/// the engine looks, and the engine does not ask first.
+#[test]
+fn the_engines_namespace_is_read_without_an_architecture() {
+    let held = read(&file(&[("general.sampling.temp", Value::Float(0.6))]));
+    assert!(
+        matches!(held.sampling(), Some(sampling) if sampling.temperature == Attested::Known(Thousandths(600))),
+        "{held:?}"
+    );
+}
+
+/// Where a file states one parameter in both namespaces, the engine's governs
+/// — it is the value the provisioned engine applies when it runs the file —
+/// and the key recorded is the one whose value was taken.
+#[test]
+fn where_both_namespaces_state_a_parameter_the_engines_governs() {
+    let held = read(&file(&[
+        ("general.architecture", Value::Text("llama".to_owned())),
+        ("general.sampling.temp", Value::Float(0.6)),
+        ("llama.temperature", Value::Float(1.0)),
+    ]));
+    let Recommendation::Declared { sampling, keys } = &held else {
+        panic!("{held:?}")
+    };
+    assert_eq!(sampling.temperature, Attested::Known(Thousandths(600)));
+    assert_eq!(keys, &["general.sampling.temp".to_owned()]);
 }
 
 /// A file that declares no architecture has no namespace to look in, so it

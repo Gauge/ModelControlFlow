@@ -27,6 +27,7 @@ fn configuration() -> Configuration {
             temperature: Attested::Known(Thousandths(700)),
             top_p: Attested::Known(Thousandths(950)),
             top_k: Attested::Known(40),
+            min_p: Attested::Known(Thousandths(50)),
             repetition_penalty: Attested::Known(Thousandths(1_050)),
             max_output_tokens: Attested::Known(2048),
         },
