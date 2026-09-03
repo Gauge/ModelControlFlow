@@ -760,6 +760,34 @@ impl Vocabulary {
         self.byte_tokens.get(identifier).copied().unwrap_or(false)
     }
 
+    /// The bytes one token contributes to a decoding, on its own.
+    ///
+    /// A byte token is its byte and a byte-level token is its bytes, whether
+    /// or not they are a character by themselves — which is why this is bytes
+    /// and not text: what a token spells is settled once every token of a
+    /// character is there, and a reader of one token at a time gets the bytes
+    /// and decides how to show them (F19). `None` for an identifier the
+    /// vocabulary does not have.
+    #[must_use]
+    pub fn bytes_of(&self, identifier: usize) -> Option<Vec<u8>> {
+        let token = self.token(identifier)?;
+        Some(match self.scheme {
+            Scheme::Pairs { .. } => token
+                .chars()
+                .flat_map(|character| match bpe::byte_of(character) {
+                    Some(byte) => vec![byte],
+                    None => character.to_string().into_bytes(),
+                })
+                .collect(),
+            Scheme::Unigram | Scheme::WordPieces { .. } => {
+                match byte_of(token).filter(|_byte| self.is_byte(identifier)) {
+                    Some(byte) => vec![byte],
+                    None => token.replace(SPACE, " ").into_bytes(),
+                }
+            }
+        })
+    }
+
     /// Turns identifiers back into text.
     ///
     /// Unknown identifiers are rendered as `<id N>` rather than dropped: a

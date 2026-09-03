@@ -105,7 +105,7 @@ fn with_bytes(tokens: &[&str]) -> Vec<String> {
 }
 
 /// A vocabulary that can be addressed as `ChatML`.
-fn chatml() -> Vec<u8> {
+pub(crate) fn chatml() -> Vec<u8> {
     a_vocabulary(
         &with_bytes(&["<s>", "\u{2581}a", "a", "<|im_start|>", "<|im_end|>"]),
         true,

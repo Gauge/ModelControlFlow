@@ -762,7 +762,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         refused: None,
         under: Some("chatml".to_owned()),
     };
-    let served = super::prompt_report_value(&report, &parts, 1, Some(9), ranked);
+    let served = super::prompt_report_value(&report, &parts, 1, Ok(9), ranked, "a test".to_owned());
     let grouped = served.get("expected_by_part").cloned();
     assert_eq!(
         grouped,
@@ -790,7 +790,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         refused: Some("no template".to_owned()),
         under: None,
     };
-    let served = super::prompt_report_value(&report, &parts, 1, Some(9), none);
+    let served = super::prompt_report_value(&report, &parts, 1, Ok(9), none, "a test".to_owned());
     assert_eq!(served.get("expected_by_part"), Some(&Value::Null));
     // Not asked is null, not an empty list (A7).
     assert_eq!(served.get("alone"), Some(&Value::Null));
@@ -836,7 +836,7 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         refused: None,
         under: None,
     };
-    let served = super::prompt_report_value(&report, &parts, 6, Some(9), none);
+    let served = super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned());
     let alone = served.get("alone").and_then(Value::as_list).unwrap_or(&[]);
     assert_eq!(alone.len(), 2);
     assert_eq!(

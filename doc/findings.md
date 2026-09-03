@@ -166,6 +166,7 @@ forward as one.
 | 155 | [F155 — The ladder's pair does not resolve a slope at depth: sixteen tokens of generation against a 34-second prefill, one pair of three came out negative, and a fall-off seven times the one below it was the jitter (B-427, B-428, B-400, A9, A7, F117)](#155-f155-the-ladders-pair-does-not-resolve-a-slope-at-depth-sixteen-tokens-of-generation-against-a-34-second-prefill-one-pair-of-three-came-out-negative-and-a-fall-off-seven-times-the-one-below-it-was-the-jitter-b-427-b-428-b-400-a9-a7-f117) |
 | 156 | [F156 — A report was printed over seven refusals: a model name no engine resolved gave seven empty answers, the ablation read them as *every part gave the same answer*, and the record took it (B-433, B-432, A2, A7)](#156-f156-a-report-was-printed-over-seven-refusals-a-model-name-no-engine-resolved-gave-seven-empty-answers-the-ablation-read-them-as-every-part-gave-the-same-answer-and-the-record-took-it-b-433-b-432-a2-a7) |
 | 157 | [F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)](#157-f157-three-files-on-the-machine-recommend-how-to-be-sampled-and-mcf-said-they-recommend-nothing-and-above-nought-the-engine-truncates-every-draw-with-values-mcf-never-stated-b-440-b-281-b60-a7-315-34) |
+| 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9419,6 +9420,65 @@ echoing what the operator types, and they will not know why.
 **And it refuses where there is no terminal**, rather than drawing at nothing:
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
+
+## 158 · F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)
+
+`mcf prompt Qwen3-VL-2B --prompt …` counted the prompt, ranked each of its
+tokens and printed *15 tokens · mcf segment*. The count and the ranks came
+from MCF's own tokenizer, reading the file's vocabulary; the five answers
+above them came from the provisioned llama.cpp server, which reads the same
+file with its own. Two readings of one prompt on one page, under one heading,
+and nothing on the page said so. Where the two agree — Qwen's `qwen2`
+pre-tokenizer is one MCF transcribed — the page is right by coincidence.
+Where they do not, a rank is a rank of a token the answer was never given
+(§3.4), and the reader cannot tell which page they are on.
+
+**On a vocabulary MCF's own tokenizer does not segment, the report read
+nothing.** Devstral-Small-2-24B asks for the `tekken` pre-tokenizer and
+GLM-4.7-Flash for `glm4`; MCF's own answers to neither and refuses, correctly,
+rather than cut the text somewhere else (A7, F23). The refusal reached the
+prompt report as *no count, no ranks* — on a model the server had just
+answered five prompts for. The engine that generated could have read the
+prompt the whole time: llama.cpp's server has a `/tokenize` endpoint that
+returns identifiers and, asked, each token's piece, and it is the tokenizer
+the answers went through.
+
+**And the addressing on file was dropped, silently.** A generation on the
+provisioned engine wrapped the prompt in the turn markers somebody put on
+file only if MCF's own tokenizer could build the turn; where it could not,
+the prompt went bare and the account said nothing about it — the hidden
+choice §3.15 forbids, on exactly the models where an addressing matters most.
+Devstral-Small under a bare prompt does not end its turn: *Blue / Answer in
+one word. What colour is the grass? Green / …* for 600 tokens.
+
+**What changed (B-441).** A report, and a generation, chooses its tokenizer
+once, from the engine the request resolved to: the provisioned server where
+one was resolved, MCF's own where its own engine answers. Every count, every
+rank and every addressed turn goes through that one, and the page and the
+record say who read the prompt (*read by provisioned llama.cpp server
+@925e1179947e, which generated*). A marker of an addressing must be one token
+of the vocabulary by that tokenizer or the turn is refused by name (F37); a
+turn that cannot be built is now the generation's failure and not a fallback
+to the bare prompt. Devstral-Small's report now reads *11 tokens*, ranks
+every one of them, and says under what: *the prompt alone: no addressing is
+on file for this model* — which is true, and is the next defect: the probes
+that would put one on file still read with MCF's own tokenizer, so on a
+tekken or glm4 vocabulary they still refuse (B-442).
+
+Two smaller things fell out of writing the tests. The count of what stands
+before a bare prompt's own tokens was taken from a reading of *empty text*,
+which a unigram vocabulary encodes as the space it prefixes everything with —
+one too many, so the first token of every such prompt would have been skipped
+by the ranking. And a token's piece was taken as the difference between
+decoding the first *k* identifiers and the first *k−1*, which for one byte of
+a character the vocabulary splits is a replacement mark followed by nothing
+(F19 again); a piece is now the bytes the token contributes, written as
+`<0xE2>` where they are not text on their own, which is the server's own
+convention for the same case.
+
+What this is an instance of: B-072, one implementation. Two tokenizers in one
+process are two implementations of the same reading, and the second one is
+never the one that answered.
 
 ## 157 · F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)
 

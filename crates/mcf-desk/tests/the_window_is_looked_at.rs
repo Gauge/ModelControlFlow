@@ -1310,6 +1310,10 @@ fn a_report() -> mcf_desk::Desk {
         ("clauses_over_the_cap", Value::Integer(2)),
         ("generations", Value::Integer(17)),
         ("prompt_tokens", Value::Integer(31)),
+        (
+            "read_by",
+            Value::text("a test's tokenizer, which generated".to_owned()),
+        ),
         ("token_limit", Value::Integer(96)),
         ("unit", Value::text("sentence".to_owned())),
         (

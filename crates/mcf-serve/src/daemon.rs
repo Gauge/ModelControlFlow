@@ -263,6 +263,37 @@ fn clause_value(clause: &crate::prompt::Clause) -> Value {
 /// The prompt is present as its length, its parts and its digest — enough to
 /// tell a second run of the same text from a run of a changed one — and the
 /// answer as its length.
+/// The conditions a recorded prompt report carries (§3.4).
+fn prompt_report_conditions(
+    served: &Value,
+    model: &Path,
+    seed: u64,
+    engines: &std::collections::BTreeSet<String>,
+) -> Value {
+    let kept = |key: &str| served.get(key).cloned().unwrap_or(Value::Null);
+    Value::map([
+        ("model", Value::text(model.display().to_string())),
+        (
+            "engines",
+            Value::List(engines.iter().cloned().map(Value::text).collect()),
+        ),
+        (
+            "seed",
+            Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
+        ),
+        ("unit", kept("unit")),
+        ("unit_chosen_by", kept("unit_chosen_by")),
+        ("most", kept("most")),
+        ("token_limit", kept("token_limit")),
+        ("sampler", kept("sampler")),
+        ("addressed_as", kept("addressed_as")),
+        ("ranked_under", kept("ranked_under")),
+        ("read_by", kept("read_by")),
+        ("forced_depth", kept("forced_depth")),
+        ("ranked_depth", kept("ranked_depth")),
+    ])
+}
+
 fn prompt_report_entry(
     served: &Value,
     model: &Path,
@@ -320,26 +351,7 @@ fn prompt_report_entry(
     Value::map([
         (
             "conditions",
-            Value::map([
-                ("model", Value::text(model.display().to_string())),
-                (
-                    "engines",
-                    Value::List(engines.iter().cloned().map(Value::text).collect()),
-                ),
-                (
-                    "seed",
-                    Value::Integer(i64::try_from(seed).unwrap_or(i64::MAX)),
-                ),
-                ("unit", kept("unit")),
-                ("unit_chosen_by", kept("unit_chosen_by")),
-                ("most", kept("most")),
-                ("token_limit", kept("token_limit")),
-                ("sampler", kept("sampler")),
-                ("addressed_as", kept("addressed_as")),
-                ("ranked_under", kept("ranked_under")),
-                ("forced_depth", kept("forced_depth")),
-                ("ranked_depth", kept("ranked_depth")),
-            ]),
+            prompt_report_conditions(served, model, seed, engines),
         ),
         (
             "prompt",
@@ -347,6 +359,7 @@ fn prompt_report_entry(
                 ("characters", count(prompt.chars().count())),
                 ("parts", count(clauses_counted(served))),
                 ("tokens", kept("prompt_tokens")),
+                ("tokens_refused", kept("prompt_tokens_refused")),
                 (
                     "sha256",
                     Value::text(mcf_core::digest::sha256(prompt.as_bytes()).hex()),
@@ -465,8 +478,9 @@ fn prompt_report_value(
     report: &crate::prompt::Report,
     parts: &[crate::prompt::Part],
     generations: usize,
-    tokens: Option<usize>,
+    tokens: core::result::Result<usize, String>,
     ranked: RankedPrompt,
+    read_by: String,
 ) -> Value {
     let RankedPrompt {
         rows: ranked,
@@ -553,10 +567,17 @@ fn prompt_report_value(
         ),
         (
             "prompt_tokens",
-            tokens.map_or(Value::Null, |held| {
-                Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+            tokens.as_ref().map_or(Value::Null, |held| {
+                Value::Integer(i64::try_from(*held).unwrap_or(i64::MAX))
             }),
         ),
+        (
+            "prompt_tokens_refused",
+            tokens.err().map_or(Value::Null, Value::text),
+        ),
+        // **Who read the prompt** (B-441): the engine that generated, so the
+        // count and the ranks are of the prompt the answers were given.
+        ("read_by", Value::text(read_by)),
         ("expected", Value::List(ranked)),
         ("expected_by_part", by_part),
         (
@@ -2011,6 +2032,7 @@ impl Daemon {
     /// as a row of nothing (A7).
     fn ranked_prompt(
         &self,
+        tokenizer: &Result<crate::generation::Tokenizer<'_>>,
         named: &str,
         prompt: &str,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
@@ -2035,11 +2057,9 @@ impl Daemon {
             return refused("no engine on this machine resolves this model");
         };
         let path = crate::generation::resolved(&self.places.models, named);
-        let Some(file) = header_of(&path) else {
-            return refused("this model's header could not be read");
-        };
-        let Ok(vocabulary) = mcf_standin::tokenizer::Vocabulary::read(&file) else {
-            return refused("this model's vocabulary could not be read");
+        let tokenizer = match tokenizer {
+            Ok(tokenizer) => tokenizer,
+            Err(failure) => return refused(&failure.to_string()),
         };
         // **Under the addressing the answer was given.** The ablation's
         // generations go through the derived addressing, and the first cut of
@@ -2047,17 +2067,14 @@ impl Daemon {
         // word You with nothing before it*, and the two readings were of two
         // different prompts with nothing on the page to say so (§3.4, B-429).
         // What follows the prompt is left open, since that is what is asked.
-        let Some(received) = crate::generation::received(
-            &self.places.models,
-            &self.mcf_home(),
-            named,
-            prompt,
-            false,
-        ) else {
-            return refused("this prompt could not be turned into tokens");
-        };
+        let received =
+            match crate::generation::received(tokenizer, &self.mcf_home(), &path, prompt, false) {
+                Ok(received) => received,
+                Err(failure) => return refused(&failure.to_string()),
+            };
+        let tokens = received.tokens();
         let crate::generation::Received {
-            tokens,
+            read,
             before,
             under,
         } = received;
@@ -2084,25 +2101,15 @@ impl Daemon {
             Ok(ranked) => ranked,
             Err(failure) => return refused(&failure.to_string()),
         };
-        // A token's own text is the difference between decoding the first k
-        // identifiers and the first k-1, which is by construction what it
-        // contributed — decoding one alone is wrong for a byte-level
-        // vocabulary (F19).
-        let upto = |k: usize| {
-            tokens
-                .get(..k)
-                .map(|held| vocabulary.decode(held))
-                .unwrap_or_default()
-        };
         let rows = ranked
             .into_iter()
             .enumerate()
             .map(|(at, (rank, said))| {
                 let position = at.saturating_add(before.max(1));
-                let text = upto(position.saturating_add(1))
-                    .strip_prefix(&upto(position))
-                    .unwrap_or_default()
-                    .to_owned();
+                let text = read
+                    .get(position)
+                    .map(|held| held.piece.clone())
+                    .unwrap_or_default();
                 Value::map([
                     ("text", Value::text(text)),
                     (
@@ -2140,21 +2147,25 @@ impl Daemon {
     /// says apart from a rank (A7).
     fn forced(
         &self,
+        tokenizer: &Result<crate::generation::Tokenizer<'_>>,
         named: &str,
         prompt: &str,
         opening: &[usize],
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     ) -> Option<crate::prompt::Held> {
         let (llama, gpu_layers, context) = picked?;
-        let mut received = crate::generation::received(
-            &self.places.models,
+        let path = crate::generation::resolved(&self.places.models, named);
+        let received = crate::generation::received(
+            tokenizer.as_ref().ok()?,
             &self.mcf_home(),
-            named,
+            &path,
             prompt,
             true,
-        )?;
-        let from = received.tokens.len();
-        received.tokens.extend_from_slice(opening);
+        )
+        .ok()?;
+        let mut tokens = received.tokens();
+        let from = tokens.len();
+        tokens.extend_from_slice(opening);
         let runtime = self
             .places
             .socket
@@ -2171,7 +2182,7 @@ impl Daemon {
         let ranked = crate::generation::ranks_over(
             &where_it_lives,
             &self.server,
-            &received.tokens,
+            &tokens,
             from,
             opening.len(),
         )
@@ -2183,16 +2194,55 @@ impl Daemon {
         })
     }
 
-    /// How many tokens this model's vocabulary makes of some text.
+    /// How many tokens the prompt's own text makes, by the tokenizer of the
+    /// engine that answers it (B-441).
     ///
-    /// Read from the file's header, so it costs a bounded read and no
-    /// generation. `None` where the vocabulary cannot be read, which is a
-    /// state and not a zero (A7).
-    fn tokens_in(&self, named: &str, text: &str) -> Option<usize> {
-        let path = crate::generation::resolved(&self.places.models, named);
-        let file = header_of(&path)?;
-        let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).ok()?;
-        vocabulary.encode(text, true).ok().map(|held| held.len())
+    /// The prompt's own: a beginning marker or a turn's opening is not the
+    /// prompt, and the PARTS table this count sits above sums to the same
+    /// figure. Why not, in words, where it could not be read (A7).
+    fn tokens_in(
+        tokenizer: &Result<crate::generation::Tokenizer<'_>>,
+        text: &str,
+    ) -> core::result::Result<usize, String> {
+        tokenizer
+            .as_ref()
+            .map_err(ToString::to_string)?
+            .encode(text, false)
+            .map(|held| held.len())
+            .map_err(|failure| failure.to_string())
+    }
+
+    /// The tokenizer a prompt report reads with: the engine that answers it
+    /// (B-441). The provisioned server where one was resolved, MCF's own
+    /// where its own engine answers — and where its own cannot read the
+    /// file, that is the report's reason, carried into every reading that
+    /// needed it rather than each reading finding out for itself.
+    fn tokenizer_for<'a>(
+        &'a self,
+        named: &'a str,
+        picked: Option<&'a (crate::adapters::ProvisionedLlama, u32, u64)>,
+    ) -> Result<crate::generation::Tokenizer<'a>> {
+        match picked {
+            Some((llama, gpu_layers, context)) => Ok(crate::generation::Tokenizer::Engine {
+                where_it_lives: crate::generation::Where {
+                    store: &self.places.models,
+                    llama,
+                    runtime: self
+                        .places
+                        .socket
+                        .parent()
+                        .unwrap_or_else(|| Path::new("/tmp")),
+                    named,
+                    gpu_layers: *gpu_layers,
+                    context: *context,
+                },
+                server: &self.server,
+            }),
+            None => crate::generation::Tokenizer::own(&crate::generation::resolved(
+                &self.places.models,
+                named,
+            )),
+        }
     }
 
     /// **How the seeded draws of a prompt report are cut is decided here,
@@ -2227,6 +2277,51 @@ impl Daemon {
         })
     }
 
+    /// One generation for a report, with its stream drained rather than
+    /// written anywhere: what the report keeps is the account and the words
+    /// at the end of it. `None` where no pair of sockets could be had.
+    fn generated_quietly(
+        &self,
+        named: &str,
+        prompt: &str,
+        draw: crate::prompt::Draw,
+        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    ) -> Option<crate::generation::Produced> {
+        let (mine, theirs) = UnixStream::pair().ok()?;
+        let drain = std::thread::spawn(move || {
+            let mut end = &theirs;
+            let _emptied = std::io::copy(&mut end, &mut std::io::sink());
+        });
+        let produced = {
+            let mut into = &mine;
+            crate::generation::serve_generation(
+                &self.places.models,
+                &self.mcf_home(),
+                &self.resident,
+                &self.server,
+                self.places
+                    .socket
+                    .parent()
+                    .unwrap_or_else(|| Path::new("/tmp")),
+                named,
+                prompt,
+                Some(PROMPT_REPORT_LIMIT),
+                draw,
+                None,
+                None,
+                picked,
+                system_memory_free(),
+                // What the model says to a prompt, ended where the model
+                // ends it: a report on the prompt is not a timing.
+                false,
+                &mut into,
+            )
+        };
+        drop(mine);
+        let _joined = drain.join();
+        Some(produced)
+    }
+
     fn prompt_report(
         &self,
         named: &str,
@@ -2235,11 +2330,6 @@ impl Daemon {
         settle: Option<mcf_core::configuration::Thousandths>,
         writer: &mut &UnixStream,
     ) {
-        let mcf_home = self
-            .places
-            .models
-            .parent()
-            .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
         let picked = self.picked_engine(named);
         let settle = match settle {
             Some(temperature) => match self.settle_for(named, temperature) {
@@ -2267,40 +2357,9 @@ impl Daemon {
         let mut refused: Option<Value> = None;
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
-            let Ok((mine, theirs)) = UnixStream::pair() else {
+            let Some(produced) = self.generated_quietly(named, prompt, draw, picked.clone()) else {
                 return crate::prompt::Answered::default();
             };
-            let drain = std::thread::spawn(move || {
-                let mut end = &theirs;
-                let _emptied = std::io::copy(&mut end, &mut std::io::sink());
-            });
-            let produced = {
-                let mut into = &mine;
-                crate::generation::serve_generation(
-                    &self.places.models,
-                    &mcf_home,
-                    &self.resident,
-                    &self.server,
-                    self.places
-                        .socket
-                        .parent()
-                        .unwrap_or_else(|| Path::new("/tmp")),
-                    named,
-                    prompt,
-                    Some(PROMPT_REPORT_LIMIT),
-                    draw,
-                    None,
-                    None,
-                    picked.clone(),
-                    system_memory_free(),
-                    // What the model says to a prompt, ended where the model
-                    // ends it: a report on the prompt is not a timing.
-                    false,
-                    &mut into,
-                )
-            };
-            drop(mine);
-            let _joined = drain.join();
             if produced.said.is_none()
                 && let Some(failure) = produced.account.get("failure")
                 && refused.is_none()
@@ -2323,8 +2382,10 @@ impl Daemon {
                 })
                 .unwrap_or_default()
         };
-        let mut force =
-            |prompt: &str, opening: &[usize]| self.forced(named, prompt, opening, picked.clone());
+        let tokenizer = self.tokenizer_for(named, picked.as_ref());
+        let mut force = |prompt: &str, opening: &[usize]| {
+            self.forced(&tokenizer, named, prompt, opening, picked.clone())
+        };
         let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
         if let Some(failure) = refused {
             let answer = Answer::refused_as(failure);
@@ -2343,12 +2404,16 @@ impl Daemon {
         // weight wants to know that `c#` reached the model as two pieces.
         // `mcf segment` shows every fragment; what belongs in a report about
         // one prompt is how many there were (§3.15, B-381).
-        let tokens = self.tokens_in(named, prompt);
+        let tokens = Self::tokens_in(&tokenizer, prompt);
         // **Where the model ranked each word of the question.** A second
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
-        let ranked = self.ranked_prompt(named, prompt, picked.clone());
-        let served = prompt_report_value(&report, &parts, asked, tokens, ranked);
+        let ranked = self.ranked_prompt(&tokenizer, named, prompt, picked.clone());
+        let read_by = tokenizer.as_ref().map_or_else(
+            |failure| format!("nothing: {failure}"),
+            crate::generation::Tokenizer::named,
+        );
+        let served = prompt_report_value(&report, &parts, asked, tokens, ranked, read_by);
         let served = self.record_prompt_report(served, named, prompt, seed, &engines);
         let answer = Answer::served(served);
         let _written = writeln!(writer, "{}", answer.to_line());

@@ -411,11 +411,6 @@ pub(crate) fn serve_generation(
         .unwrap_or(crate::control::DEFAULT_LIMIT);
     let derived_budget = derived.budget.clone();
     let derived = derived.addressing;
-    let wrapped = match (tokens, derived.as_ref()) {
-        (None, Some(addressing)) => addressed_as(store, named, prompt, addressing),
-        _ => None,
-    };
-    let tokens = wrapped.as_deref().or(tokens);
 
     let (chosen, gpu_layers, context) = match (picked, engine) {
         // A caller that asked for MCF's own engine gets it, whatever was
@@ -424,59 +419,55 @@ pub(crate) fn serve_generation(
         (Some((llama, layers, window)), _) => (Ok(Chosen::Provisioned(llama)), layers, window),
         (None, asked) => (choose_engine(mcf_home, asked), 0, 0),
     };
-    let produced = match chosen {
+    // **The addressed turn is tokenized by the engine that will answer it**
+    // (B-441): the server's own tokenizer where the server answers, MCF's
+    // where the stand-in does. A turn that cannot be built is the
+    // generation's failure, not a bare prompt sent instead (F158).
+    let wrapped = match (tokens, derived.as_ref(), &chosen) {
+        (None, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
+            let tokenizer = Tokenizer::Engine {
+                where_it_lives: Where {
+                    store,
+                    llama,
+                    runtime,
+                    named,
+                    gpu_layers,
+                    context,
+                },
+                server,
+            };
+            addressed_as(&tokenizer, prompt, addressing).map(Some)
+        }
+        (None, Some(addressing), Ok(Chosen::StandIn)) => Tokenizer::own(&resolved(store, named))
+            .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
+            .map(Some),
+        _ => Ok(None),
+    };
+    let produced = match (chosen, wrapped) {
+        (_, Err(failure)) | (Err(failure), _) => Err(failure),
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
-        Ok(Chosen::Provisioned(llama)) => match tokens {
+        (Ok(Chosen::Provisioned(llama)), Ok(wrapped)) => match wrapped.as_deref().or(tokens) {
             Some(tokens) => through_served(
                 store, &llama, server, runtime, named, tokens, limit, draw, gpu_layers, context,
                 pinned, writer,
             ),
             None => through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer),
         },
-        Ok(Chosen::StandIn) => attempt(
-            store, resident, named, prompt, tokens, limit, draw, free, pinned, writer,
+        (Ok(Chosen::StandIn), Ok(wrapped)) => attempt(
+            store,
+            resident,
+            named,
+            prompt,
+            wrapped.as_deref().or(tokens),
+            limit,
+            draw,
+            free,
+            pinned,
+            writer,
         ),
-        Err(failure) => Err(failure),
     };
-    // The provenance travels into the account, so that a measurement taken
-    // through a derived configuration carries what set it — which is what
-    // makes *are yesterday's number and today's comparable* answerable rather
-    // than assumed (D43, §3.4).
-    let produced = produced.map(|produced| Produced {
-        account: match (produced.account, derived) {
-            (Value::Map(mut fields), Some(addressing)) => {
-                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
-                    conditions.insert(
-                        "addressed_as".to_owned(),
-                        Value::text(if wrapped.is_some() {
-                            addressing.provenance()
-                        } else {
-                            format!(
-                                "{} — not applied here: the caller sent its own identifiers",
-                                addressing.provenance()
-                            )
-                        }),
-                    );
-                }
-                Value::Map(fields)
-            }
-            (account, _) => account,
-        },
-        said: produced.said,
-    });
-    let produced = produced.map(|produced| Produced {
-        account: match (produced.account, derived_budget) {
-            (Value::Map(mut fields), Some(budget)) => {
-                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
-                    conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
-                }
-                Value::Map(fields)
-            }
-            (account, _) => account,
-        },
-        said: produced.said,
-    });
+    let produced = with_provenance(produced, derived, derived_budget, tokens.is_none());
     let produced = match produced {
         Ok(produced) => produced,
         Err(failure) => Produced {
@@ -496,6 +487,53 @@ pub(crate) fn serve_generation(
     );
     let _flushed = writer.flush();
     produced
+}
+
+/// The provenance travels into the account, so that a measurement taken
+/// through a derived configuration carries what set it — which is what
+/// makes *are yesterday's number and today's comparable* answerable rather
+/// than assumed (D43, §3.4). `wrapped` is whether the addressing was applied:
+/// a caller that sent its own identifiers is not overridden.
+fn with_provenance(
+    produced: Result<Produced, Failure>,
+    derived: Option<crate::configured::Addressing>,
+    derived_budget: Option<crate::configured::Budget>,
+    wrapped: bool,
+) -> Result<Produced, Failure> {
+    let produced = produced.map(|produced| Produced {
+        account: match (produced.account, derived) {
+            (Value::Map(mut fields), Some(addressing)) => {
+                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                    conditions.insert(
+                        "addressed_as".to_owned(),
+                        Value::text(if wrapped {
+                            addressing.provenance()
+                        } else {
+                            format!(
+                                "{} — not applied here: the caller sent its own identifiers",
+                                addressing.provenance()
+                            )
+                        }),
+                    );
+                }
+                Value::Map(fields)
+            }
+            (account, _) => account,
+        },
+        said: produced.said,
+    });
+    produced.map(|produced| Produced {
+        account: match (produced.account, derived_budget) {
+            (Value::Map(mut fields), Some(budget)) => {
+                if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
+                    conditions.insert("budget_from".to_owned(), Value::text(budget.provenance()));
+                }
+                Value::Map(fields)
+            }
+            (account, _) => account,
+        },
+        said: produced.said,
+    })
 }
 
 /// Which engine serves a request (B-032, §3.15).
@@ -548,31 +586,202 @@ pub(crate) fn resolved(store: &Path, named: &str) -> std::path::PathBuf {
     }
 }
 
-/// A prompt wrapped the way somebody decided this model should be addressed.
+/// Which tokenizer reads a prompt: the one that will generate from it
+/// (B-441).
 ///
-/// `None` where the turn cannot be built — a vocabulary that will not read, a
-/// marker the file no longer holds. That is not a silent fallback to raw: the
-/// generation proceeds with the prompt as text, which is what would have
-/// happened anyway, and the account still carries the configuration so a
-/// reader can see it was on file. Wrapping *some* of a turn would be worse
-/// than not wrapping it (F37).
+/// **The tokenizer that generates is the tokenizer that reads.** A prompt
+/// report counted and ranked the prompt through MCF's own segmentation while
+/// the answers it compared came through the provisioned server, so one
+/// report carried two readings of one prompt — and for a vocabulary MCF's
+/// tokenizer does not segment, no reading at all, on a model the server had
+/// just answered for (F158). The choice is made once, by whichever engine
+/// the request resolved to, and every count, rank and addressed turn goes
+/// through that one.
+pub(crate) enum Tokenizer<'a> {
+    /// MCF's own, which is what the stand-in generates with.
+    Own(Vocabulary),
+    /// The provisioned server, which is what it generates with.
+    Engine {
+        /// Which model, and where.
+        where_it_lives: Where<'a>,
+        /// The slot the daemon holds a server in.
+        server: &'a std::sync::Mutex<Option<Served>>,
+    },
+}
+
+/// One token as a tokenizer read it: the identifier and what it spells.
+pub(crate) type Read = crate::served::Token;
+
+impl Tokenizer<'_> {
+    /// MCF's own tokenizer for this file, or why not.
+    ///
+    /// # Errors
+    ///
+    /// The header or the vocabulary could not be read, in the vocabulary's
+    /// own words.
+    pub(crate) fn own(path: &Path) -> Result<Self, Failure> {
+        let file = crate::daemon::header_of(path).ok_or_else(|| {
+            Failure::new(
+                mcf_core::failure::Category::ArtifactMissing,
+                mcf_core::failure::Attribution::Machine,
+                mcf_core::failure::Disposition::Refused,
+                mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+                "this model's header could not be read",
+            )
+            .with_context("path", path.display().to_string())
+        })?;
+        Vocabulary::read(&file).map(Self::Own)
+    }
+
+    /// Who read the prompt, in words, for the account.
+    pub(crate) fn named(&self) -> String {
+        match self {
+            Self::Own(_) => "MCF's own tokenizer, which its engine generates with".to_owned(),
+            Self::Engine { where_it_lives, .. } => format!(
+                "provisioned {} server @{}, which generated",
+                where_it_lives.llama.component,
+                where_it_lives
+                    .llama
+                    .commit
+                    .get(..12)
+                    .unwrap_or(&where_it_lives.llama.commit)
+            ),
+        }
+    }
+
+    /// Text as the model receives it, with the model's own beginning
+    /// convention where `with_beginning` asks for it.
+    ///
+    /// # Errors
+    ///
+    /// Text the vocabulary cannot represent, or a server that did not answer.
+    pub(crate) fn encode(&self, text: &str, with_beginning: bool) -> Result<Vec<Read>, Failure> {
+        match self {
+            Self::Own(vocabulary) => {
+                let identifiers = vocabulary.encode(text, with_beginning)?;
+                Ok(spelled_by(vocabulary, &identifiers))
+            }
+            Self::Engine {
+                where_it_lives,
+                server,
+            } => {
+                let mut slot = server.lock().map_err(|_poisoned| {
+                    unavailable("the served engine's slot was left poisoned by an earlier failure")
+                })?;
+                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                engine.tokenize(text, with_beginning)
+            }
+        }
+    }
+
+    /// An addressed turn: the beginning convention, then each piece — a
+    /// marker looked up, which must be one token of the vocabulary and not a
+    /// spelling that segments into several (F37); text segmented the ordinary
+    /// way.
+    ///
+    /// # Errors
+    ///
+    /// A marker that is not one token, text the vocabulary cannot represent,
+    /// or a server that did not answer.
+    pub(crate) fn addressed(
+        &self,
+        pieces: &[mcf_standin::tokenizer::Piece],
+    ) -> Result<Vec<Read>, Failure> {
+        use mcf_standin::tokenizer::Piece;
+        let not_a_token = |marker: &str| {
+            Failure::new(
+                mcf_core::failure::Category::ConfigInvalid,
+                mcf_core::failure::Attribution::Machine,
+                mcf_core::failure::Disposition::Refused,
+                mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+                "a marker of this model's addressing is not one token of its vocabulary",
+            )
+            .with_context("marker", marker.to_owned())
+        };
+        match self {
+            Self::Own(vocabulary) => {
+                if let Some(marker) = pieces.iter().find_map(|piece| match piece {
+                    Piece::Marker(marker) if !vocabulary.has_token(marker) => Some(marker.as_str()),
+                    _ => None,
+                }) {
+                    return Err(not_a_token(marker));
+                }
+                let Some(identifiers) = vocabulary.addressed(pieces) else {
+                    // Every marker is a token, so what refused was text; the
+                    // vocabulary says which, in its own words.
+                    for piece in pieces {
+                        if let Piece::Text(text) = piece {
+                            let _represented = vocabulary.encode(text, false)?;
+                        }
+                    }
+                    return Err(unavailable("the addressed turn could not be encoded"));
+                };
+                Ok(spelled_by(vocabulary, &identifiers))
+            }
+            Self::Engine { .. } => {
+                let mut read = self.encode("", true)?;
+                for piece in pieces {
+                    match piece {
+                        Piece::Marker(marker) => {
+                            let held = self.encode(marker, false)?;
+                            if held.len() != 1 {
+                                return Err(not_a_token(marker));
+                            }
+                            read.extend(held);
+                        }
+                        Piece::Text(text) => read.extend(self.encode(text, false)?),
+                    }
+                }
+                Ok(read)
+            }
+        }
+    }
+}
+
+/// Identifiers with what each spells, by MCF's own vocabulary.
+///
+/// Each token's piece is the bytes it contributes, not a decoding of it on
+/// its own — one byte of a character the vocabulary splits is not text by
+/// itself, and is written as a byte (F19). An identifier the vocabulary does
+/// not have is said rather than dropped (A1).
+fn spelled_by(vocabulary: &Vocabulary, identifiers: &[usize]) -> Vec<Read> {
+    identifiers
+        .iter()
+        .map(|id| {
+            vocabulary.bytes_of(*id).map_or_else(
+                || Read {
+                    id: *id,
+                    piece: format!("<id {id}>"),
+                },
+                |bytes| Read::from_bytes(*id, &bytes),
+            )
+        })
+        .collect()
+}
+
+/// A prompt wrapped the way somebody decided this model should be addressed,
+/// by the tokenizer of the engine that will answer it.
+///
+/// # Errors
+///
+/// A turn that cannot be built — a marker the vocabulary does not hold as one
+/// token, text it cannot represent, a server that did not answer — is a
+/// failure and not a fallback to the bare prompt: wrapping *none* of a turn
+/// somebody put on file, silently, would be the hidden choice §3.15 forbids
+/// (F37, F158).
 fn addressed_as(
-    store: &Path,
-    named: &str,
+    tokenizer: &Tokenizer<'_>,
     prompt: &str,
     addressing: &crate::configured::Addressing,
-) -> Option<Vec<usize>> {
-    let path = resolved(store, named);
-    // **The header, not the model.** This read the whole file to reach the
-    // vocabulary, and it sits in the serving path: every generation of a model
-    // somebody has given an addressing paid it. A vocabulary is metadata and
-    // arrives in the same bounded prefix everything else reads (F145, B-372).
-    let file = crate::daemon::header_of(&path)?;
-    let vocabulary = Vocabulary::read(&file).ok()?;
+) -> Result<Vec<usize>, Failure> {
     let mut pieces = addressing.before.clone();
     pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
     pieces.extend(addressing.after.iter().cloned());
-    vocabulary.addressed(&pieces)
+    Ok(tokenizer
+        .addressed(&pieces)?
+        .into_iter()
+        .map(|held| held.id)
+        .collect())
 }
 
 /// A prompt as the model receives it, and where its own tokens begin.
@@ -583,8 +792,8 @@ fn addressed_as(
 /// (§3.4). `after` is left off where the caller wants what *follows* the
 /// prompt to be open, which is what ranking the prompt's own tokens needs.
 pub(crate) struct Received {
-    /// The identifiers.
-    pub(crate) tokens: Vec<usize>,
+    /// The identifiers, each with what it spells.
+    pub(crate) read: Vec<Read>,
     /// How many of them stand before the prompt's own: the beginning marker
     /// and the addressing's opening pieces.
     pub(crate) before: usize,
@@ -592,45 +801,86 @@ pub(crate) struct Received {
     pub(crate) under: String,
 }
 
-/// A prompt as the model receives it.
+impl Received {
+    /// The identifiers alone.
+    pub(crate) fn tokens(&self) -> Vec<usize> {
+        self.read.iter().map(|held| held.id).collect()
+    }
+}
+
+/// A prompt as the model receives it, read by the tokenizer of the engine
+/// that answers it.
 ///
-/// `None` where the vocabulary cannot be read or the text cannot be encoded.
+/// # Errors
+///
+/// Whatever the tokenizer refused.
 pub(crate) fn received(
-    store: &Path,
+    tokenizer: &Tokenizer<'_>,
     mcf_home: &Path,
-    named: &str,
+    path: &Path,
     prompt: &str,
     with_after: bool,
-) -> Option<Received> {
-    let path = resolved(store, named);
-    let file = crate::daemon::header_of(&path)?;
-    let vocabulary = Vocabulary::read(&file).ok()?;
-    let derived = crate::configured::read_derived(mcf_home, &path).addressing;
+) -> Result<Received, Failure> {
+    let derived = crate::configured::read_derived(mcf_home, path).addressing;
+    let not_within = |what: &str| {
+        Failure::new(
+            mcf_core::failure::Category::EngineProtocolMalformed,
+            mcf_core::failure::Attribution::Machine,
+            mcf_core::failure::Disposition::Aborted,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            what,
+        )
+    };
     let Some(addressing) = derived else {
-        return Some(Received {
-            tokens: vocabulary.encode(prompt, true).ok()?,
-            before: 1,
-            under: "the prompt alone: no addressing is on file for this model, so it went                     with no turn markers around it"
+        // What the beginning convention adds is whatever the prompt's own
+        // reading is surrounded by once it is asked for — not a reading of
+        // empty text, which a unigram vocabulary encodes as the space it
+        // prefixes everything with.
+        let read = tokenizer.encode(prompt, true)?;
+        let own = tokenizer.encode(prompt, false)?;
+        let before = offset_of(&read, &own)
+            .ok_or_else(|| not_within("the prompt's own tokens are not within its reading"))?;
+        return Ok(Received {
+            read,
+            before,
+            under: "the prompt alone: no addressing is on file for this model, so it went \
+                    with no turn markers around it"
                 .to_owned(),
         });
     };
     // Pieces encode independently (a marker is looked up, text is segmented),
     // so the opening on its own is a prefix of the whole turn.
-    let opening = vocabulary.addressed(&addressing.before)?;
+    let opening = tokenizer.addressed(&addressing.before)?;
     let mut pieces = addressing.before.clone();
     pieces.push(mcf_standin::tokenizer::Piece::Text(prompt.to_owned()));
     if with_after {
         pieces.extend(addressing.after.iter().cloned());
     }
-    let tokens = vocabulary.addressed(&pieces)?;
-    if !tokens.starts_with(&opening) {
-        return None;
+    let read = tokenizer.addressed(&pieces)?;
+    if !read.starts_with(&opening) {
+        return Err(not_within(
+            "the addressing's opening is not a prefix of the addressed turn",
+        ));
     }
-    Some(Received {
-        tokens,
+    Ok(Received {
+        read,
         before: opening.len(),
         under: addressing.provenance(),
     })
+}
+
+/// Where `held` sits within `read`, as a run of the same identifiers.
+///
+/// An empty `held` sits at the end: a prompt that reads as nothing has
+/// nothing of its own after whatever surrounds it.
+fn offset_of(read: &[Read], held: &[Read]) -> Option<usize> {
+    if held.is_empty() {
+        return Some(read.len());
+    }
+    let ids = |tokens: &[Read]| tokens.iter().map(|token| token.id).collect::<Vec<_>>();
+    let within = ids(read);
+    let wanted = ids(held);
+    within.windows(wanted.len()).position(|run| run == wanted)
 }
 
 /// One generation through the provisioned engine driven as a *server*
@@ -711,33 +961,14 @@ pub(crate) fn ranks_over(
     from: usize,
     most: usize,
 ) -> Result<Vec<Ranked>, Failure> {
-    let Where {
-        store,
-        llama,
-        runtime,
-        named,
-        gpu_layers,
-        context,
-    } = *where_it_lives;
-    let path = resolved(store, named);
     let mut slot = server.lock().map_err(|_poisoned| {
         unavailable("the served engine's slot was left poisoned by an earlier failure")
     })?;
-    let reused = slot.as_ref().is_some_and(|held| held.model == path);
-    let asked_for = u64::try_from(tokens.len()).unwrap_or(SMALLEST_WINDOW);
-    let needed = asked_for.saturating_mul(2).max(SMALLEST_WINDOW);
-    let window = if context == 0 {
-        needed
-    } else {
-        needed.min(context)
-    };
-    if !reused {
-        *slot = None;
-        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
-    }
-    let engine = slot
-        .as_ref()
-        .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
+    let (engine, _reused) = serving(
+        &mut slot,
+        where_it_lives,
+        window_for(tokens.len(), 0, where_it_lives.context),
+    )?;
 
     let mut ranked = Vec::new();
     let from = from.max(1);
@@ -748,6 +979,48 @@ pub(crate) fn ranks_over(
         ranked.push(engine.ranked_next(prefix, wanted, HOW_DEEP)?);
     }
     Ok(ranked)
+}
+
+/// The server for this model: the one already holding it where its window
+/// is wide enough, started otherwise.
+///
+/// A server holding a different model is stopped rather than kept beside
+/// this one: two resident models is a decision about memory nobody has
+/// taken (D41, DEC-018), and taking it here silently would be the hidden
+/// choice §3.15 forbids. **A server whose window is too small for this turn
+/// is not this turn's server.** Reuse went by the model alone, so a ladder's
+/// first rung opened a 4,096-token window and every rung past it was sent
+/// to that server, which refuses a turn longer than its window — and the
+/// refusal was read as a pair of runs that did not separate (F152). Written
+/// once for the three things that ask — a generation, a ranking, a
+/// tokenization — so that they cannot answer differently (B-072).
+///
+/// Returns the server and whether it was already holding the model.
+fn serving<'slot>(
+    slot: &'slot mut Option<Served>,
+    where_it_lives: &Where<'_>,
+    window: u64,
+) -> Result<(&'slot Served, bool), Failure> {
+    let Where {
+        store,
+        llama,
+        runtime,
+        named,
+        gpu_layers,
+        context: _,
+    } = *where_it_lives;
+    let path = resolved(store, named);
+    let reused = slot
+        .as_ref()
+        .is_some_and(|held| held.model == path && held.window >= window);
+    if !reused {
+        *slot = None;
+        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
+    }
+    let engine = slot
+        .as_ref()
+        .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
+    Ok((engine, reused))
 }
 
 /// **The window the REQUEST needs, not the largest one that fits.**
@@ -796,40 +1069,26 @@ fn through_served(
     pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
-    let given = Path::new(named);
-    let path = if given.is_file() {
-        given.to_path_buf()
-    } else {
-        store.join(named.replace(':', "/"))
-    };
+    let path = resolved(store, named);
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
     let held = metadata.len();
 
     let mut slot = server.lock().map_err(|_poisoned| {
         unavailable("the served engine's slot was left poisoned by an earlier failure")
     })?;
-    // A server holding a different model is stopped rather than kept beside
-    // this one: two resident models is a decision about memory nobody has
-    // taken (D41, DEC-018), and taking it here silently would be the hidden
-    // choice §3.15 forbids.
-    let window = window_for(tokens.len(), limit, context);
-    // **A server whose window is too small for this turn is not this
-    // turn's server.** Reuse went by the model alone, so a ladder's first
-    // rung opened a 4,096-token window and every rung past it was sent to
-    // that server, which refuses a turn longer than its window — and the
-    // refusal was read as a pair of runs that did not separate. No rung
-    // deeper than 2,048 was ever measured, on any model, and the record
-    // said *not measured* for the wrong reason (F152).
-    let reused = slot
-        .as_ref()
-        .is_some_and(|held| held.model == path && held.window >= window);
-    if !reused {
-        *slot = None;
-        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
-    }
-    let engine = slot
-        .as_ref()
-        .ok_or_else(|| unavailable("the served engine was started and then was not there"))?;
+    let where_it_lives = Where {
+        store,
+        llama,
+        runtime,
+        named,
+        gpu_layers,
+        context,
+    };
+    let (engine, reused) = serving(
+        &mut slot,
+        &where_it_lives,
+        window_for(tokens.len(), limit, context),
+    )?;
 
     let completed = engine.complete(tokens, limit, draw, pinned)?;
     // Read after the turn, while the mark includes it (B-424).
@@ -898,6 +1157,12 @@ fn through_served(
             (
                 "tokens",
                 Value::Integer(i64::try_from(completed.predicted).unwrap_or(i64::MAX)),
+            ),
+            // The turn as sent, which the answer was given (§3.4): an account
+            // that said *?* here was withholding a count MCF held (A7).
+            (
+                "prompt_tokens",
+                Value::Integer(i64::try_from(tokens.len()).unwrap_or(i64::MAX)),
             ),
             ("stopped", Value::text(completed.stop.written())),
             (
@@ -1599,5 +1864,219 @@ mod marker_tests {
         assert!(ready.chars().all(|held| held == 'é'));
         assert!(held.chars().all(|c| c == 'é'));
         assert_eq!(ready.len() + held.len(), HELD_BACK * 2);
+    }
+}
+
+#[cfg(test)]
+mod tokenizer_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used, clippy::indexing_slicing)]
+
+    use super::{Received, Tokenizer, addressed_as, received};
+    use mcf_standin::tokenizer::Piece;
+    use std::path::PathBuf;
+
+    /// A model file on disk and a home of its own, gone when the test is.
+    struct OnDisk {
+        root: PathBuf,
+        model: PathBuf,
+    }
+
+    impl OnDisk {
+        fn chatml(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "mcf-tokenizer-{name}-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let _fresh = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).expect("a scratch directory");
+            let model = root.join("chatml.gguf");
+            std::fs::write(&model, crate::probes::tests::chatml()).expect("a model file");
+            Self { root, model }
+        }
+    }
+
+    impl Drop for OnDisk {
+        fn drop(&mut self) {
+            let _removed = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// The `ChatML` addressing the fixture vocabulary can carry.
+    fn chatml_addressing() -> crate::configured::Addressing {
+        crate::configured::Addressing {
+            name: "im_start…im_end as assistant".to_owned(),
+            before: vec![
+                Piece::Marker("<|im_start|>".to_owned()),
+                Piece::Text("user\n".to_owned()),
+            ],
+            after: vec![
+                Piece::Marker("<|im_end|>".to_owned()),
+                Piece::Text("\n".to_owned()),
+                Piece::Marker("<|im_start|>".to_owned()),
+                Piece::Text("assistant\n".to_owned()),
+            ],
+            probe: "addressing".to_owned(),
+            at: "2026-09-02T00:00:00Z".to_owned(),
+            build: "0.1.0 test".to_owned(),
+            conditions: "a test".to_owned(),
+        }
+    }
+
+    /// What a tokenizer reads, put back together, is what it was given —
+    /// the pieces are each token's own contribution and not a decoding of
+    /// each alone (F19). The vocabulary's own conventions show: a unigram
+    /// vocabulary puts a space in front of the first word, so that is what
+    /// the first token spells.
+    #[test]
+    fn the_pieces_of_a_reading_spell_the_text() {
+        let disk = OnDisk::chatml("pieces");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        let read = tokenizer.encode("a a", false).expect("a reading");
+        let spelled: String = read.iter().map(|held| held.piece.as_str()).collect();
+        assert_eq!(spelled, " a a", "{read:?}");
+        assert!(read.iter().all(|held| !held.piece.is_empty()), "{read:?}");
+    }
+
+    /// One byte of a character the vocabulary splits is written as a byte,
+    /// not as a replacement mark and not as nothing (F19, A1).
+    #[test]
+    fn a_byte_of_a_split_character_is_written_as_a_byte() {
+        let disk = OnDisk::chatml("bytes");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        // `é` is two bytes and the fixture has no token for it, so it goes
+        // as byte tokens.
+        let read = tokenizer.encode("é", false).expect("a reading");
+        let pieces: Vec<&str> = read.iter().map(|held| held.piece.as_str()).collect();
+        assert!(pieces.contains(&"<0xC3>"), "{pieces:?}");
+        assert!(pieces.contains(&"<0xA9>"), "{pieces:?}");
+        assert!(
+            !pieces
+                .iter()
+                .any(|piece| piece.is_empty() || piece.contains('\u{FFFD}')),
+            "{pieces:?}"
+        );
+    }
+
+    /// A marker is looked up as one token; the addressing's text is
+    /// segmented around it.
+    #[test]
+    fn an_addressed_turn_holds_each_marker_as_one_token() {
+        let disk = OnDisk::chatml("addressed");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        let read = tokenizer
+            .addressed(&[
+                Piece::Marker("<|im_start|>".to_owned()),
+                Piece::Text("a".to_owned()),
+                Piece::Marker("<|im_end|>".to_owned()),
+            ])
+            .expect("an addressed turn");
+        let pieces: Vec<&str> = read.iter().map(|held| held.piece.as_str()).collect();
+        assert!(
+            pieces
+                .iter()
+                .filter(|piece| **piece == "<|im_start|>")
+                .count()
+                == 1,
+            "{pieces:?}"
+        );
+        assert!(
+            pieces
+                .iter()
+                .filter(|piece| **piece == "<|im_end|>")
+                .count()
+                == 1,
+            "{pieces:?}"
+        );
+        assert!(pieces.contains(&" a"), "{pieces:?}");
+    }
+
+    /// A spelling the vocabulary does not hold as one token is refused,
+    /// named — not segmented into text and sent as if it opened a turn (F37).
+    #[test]
+    fn a_marker_that_is_not_a_token_is_refused_by_name() {
+        let disk = OnDisk::chatml("refused");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        let refused = tokenizer
+            .addressed(&[
+                Piece::Marker("<|start_header_id|>".to_owned()),
+                Piece::Text("a".to_owned()),
+            ])
+            .expect_err("a spelling that is not a token cannot open anything");
+        assert_eq!(
+            refused.category(),
+            mcf_core::failure::Category::ConfigInvalid,
+            "{refused}"
+        );
+        assert_eq!(
+            refused.context_value("marker"),
+            Some("<|start_header_id|>"),
+            "the refusal names the marker: {refused}"
+        );
+    }
+
+    /// With nothing on file, the prompt is received bare and every token of
+    /// it is the prompt's own.
+    #[test]
+    fn a_bare_prompt_has_nothing_before_it_but_the_beginning() {
+        let disk = OnDisk::chatml("bare");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        let Received {
+            read,
+            before,
+            under,
+        } = received(&tokenizer, &disk.root, &disk.model, "a", false).expect("a reading");
+        assert!(under.contains("no addressing is on file"), "{under}");
+        assert_eq!(read.len() - before, 1, "{read:?} before {before}");
+        let own: Vec<&str> = read[before..]
+            .iter()
+            .map(|held| held.piece.as_str())
+            .collect();
+        assert_eq!(own, vec![" a"]);
+        // The fixture declares no beginning token, and none is invented.
+        assert_eq!(before, 0, "{read:?}");
+    }
+
+    /// With an addressing on file, the prompt is received inside it, and the
+    /// count of what stands before the prompt's own tokens is the opening —
+    /// what a rank over the prompt's tokens needs to skip (§3.4).
+    #[test]
+    fn an_addressed_prompt_begins_after_its_opening() {
+        let disk = OnDisk::chatml("opening");
+        let _wrote = crate::configured::write(&disk.root, &disk.model, &chatml_addressing())
+            .expect("an addressing on file");
+        let tokenizer = Tokenizer::own(&disk.model).expect("MCF's own tokenizer");
+        let opened = received(&tokenizer, &disk.root, &disk.model, "a", false).expect("a reading");
+        assert!(opened.under.contains("im_start"), "{}", opened.under);
+        assert_eq!(opened.read[0].piece, "<|im_start|>", "{:?}", opened.read);
+        let own: Vec<&str> = opened.read[opened.before..]
+            .iter()
+            .map(|held| held.piece.as_str())
+            .collect();
+        assert_eq!(
+            own,
+            vec![" a"],
+            "{:?} before {}",
+            opened.read,
+            opened.before
+        );
+
+        // The closing pieces, asked for, follow the prompt and change nothing
+        // before it.
+        let closed = received(&tokenizer, &disk.root, &disk.model, "a", true).expect("a reading");
+        assert_eq!(closed.before, opened.before);
+        assert!(closed.read.len() > opened.read.len());
+        assert_eq!(
+            closed.read.last().map(|held| held.piece.as_str()),
+            Some("\n"),
+            "{:?}",
+            closed.read
+        );
+        assert_eq!(
+            addressed_as(&tokenizer, "a", &chatml_addressing()).expect("the turn"),
+            closed.tokens(),
+            "the generation's turn is the reading's turn"
+        );
     }
 }

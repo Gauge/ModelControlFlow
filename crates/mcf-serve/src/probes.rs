@@ -874,7 +874,7 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// What the engine did with a prompt of a stated length.
 #[derive(Debug, Clone, PartialEq, Eq)]

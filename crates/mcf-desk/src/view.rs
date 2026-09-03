@@ -2356,9 +2356,22 @@ fn report_conditions(paint: &mut Painter, at: (f32, f32), width: f32, found: &Va
     if let Some(addressed) = text("addressed_as") {
         rows.push(("addressed", addressed.to_owned(), ink.ink));
     }
+    // **Who read the prompt** (B-441): the engine that answered it, named,
+    // or why there is no count at all (A7).
+    let read_by = text("read_by").unwrap_or("not recorded");
     let tokens = integer(found, "prompt_tokens");
     if tokens > 0 {
-        rows.push(("prompt", format!("{tokens} tokens"), ink.ink));
+        rows.push((
+            "prompt",
+            format!("{tokens} tokens · read by {read_by}"),
+            ink.ink,
+        ));
+    } else if let Some(refused) = text("prompt_tokens_refused") {
+        rows.push((
+            "prompt",
+            format!("not counted · {refused} · read by {read_by}"),
+            ink.ink,
+        ));
     }
     let limit = integer(found, "token_limit");
     if limit > 0 {
@@ -3393,14 +3406,23 @@ fn tokens_table(paint: &mut Painter, area: Box, found: &Value) {
         &format!("{first_choice}/{}", ranked.len()),
         ink.ink,
     );
-    if let Some(under) = found.get("ranked_under").and_then(Value::as_text) {
+    let read = [
+        found
+            .get("ranked_under")
+            .and_then(Value::as_text)
+            .map(|under| format!("read under {under}")),
+        found
+            .get("read_by")
+            .and_then(Value::as_text)
+            .map(|by| format!("read by {by}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    if !read.is_empty() {
         for line in paint
-            .wrap(
-                &format!("read under {under}"),
-                Weight::Regular,
-                size::SMALL,
-                area.w,
-            )
+            .wrap(&read, Weight::Regular, size::SMALL, area.w)
             .iter()
             .take(3)
         {

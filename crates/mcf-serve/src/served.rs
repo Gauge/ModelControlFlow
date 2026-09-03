@@ -519,6 +519,38 @@ impl Served {
         Ok(ranked_in(&answered, wanted))
     }
 
+    /// Some text as this server's model receives it: the identifiers, and
+    /// what each one spells (B-441).
+    ///
+    /// **The tokenizer that generates is the tokenizer that reads.** The
+    /// prompt report counted and ranked a prompt through MCF's own
+    /// segmentation while the answers it compared came through this server,
+    /// so one report carried two readings of the prompt and, for a
+    /// vocabulary MCF's tokenizer does not segment, none (F158). This asks
+    /// the engine itself, which is what every generation through it is
+    /// tokenized by.
+    ///
+    /// `with_beginning` asks for the model's own convention — a beginning
+    /// marker where the file says to add one, none where it says not to —
+    /// and control tokens spelled in the text are taken as themselves, as
+    /// MCF's own tokenizer takes them.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the server answered with, where that was not a list of
+    /// tokens.
+    pub fn tokenize(&self, text: &str, with_beginning: bool) -> Result<Vec<Token>, Failure> {
+        let body = Value::map([
+            ("content", Value::text(text.to_owned())),
+            ("add_special", Value::Bool(with_beginning)),
+            ("parse_special", Value::Bool(true)),
+            ("with_pieces", Value::Bool(true)),
+        ])
+        .to_line();
+        let answered = self.request("POST", "/tokenize", Some(&body))?;
+        tokens_in(&answered)
+    }
+
     /// The smallest HTTP a request needs.
     ///
     /// `Connection: close` so the body ends at end of stream and there is no
@@ -573,6 +605,102 @@ impl Served {
             |(_head, body)| Ok(body.to_owned()),
         )
     }
+}
+
+/// One token as the server reads it: the identifier and its spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    /// The identifier.
+    pub id: usize,
+    /// What it spells. A piece that is not text on its own — one byte of a
+    /// character the vocabulary splits — is written as the engine writes a
+    /// byte token, `<0xE2>`, so that it is on the page rather than lost (A1).
+    pub piece: String,
+}
+
+impl Token {
+    /// A token by the bytes it contributes, spelled the one way every reader
+    /// of a piece spells them.
+    #[must_use]
+    pub fn from_bytes(id: usize, bytes: &[u8]) -> Self {
+        Self {
+            id,
+            piece: spelled(bytes),
+        }
+    }
+}
+
+/// Bytes as a piece on the page: text where they are text, and each byte
+/// written the way the engine writes a byte token, `<0xE2>`, where they are
+/// not — one byte of a character the vocabulary splits is on the page rather
+/// than lost or shown as a replacement mark (A1, F19).
+fn spelled(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    core::str::from_utf8(bytes).map_or_else(
+        |_not_text| {
+            bytes.iter().fold(String::new(), |mut out, byte| {
+                // The write cannot fail: the target is a `String`.
+                let _written = write!(out, "<0x{byte:02X}>");
+                out
+            })
+        },
+        str::to_owned,
+    )
+}
+
+/// The tokens in the server's answer to `/tokenize`.
+fn tokens_in(answer: &str) -> Result<Vec<Token>, Failure> {
+    let malformed = |what: &str| {
+        Failure::new(
+            Category::EngineProtocolMalformed,
+            Attribution::Machine,
+            Disposition::Aborted,
+            Subsystem::new("mcf-serve::served"),
+            what,
+        )
+        .with_context("engine_said", answer.chars().take(400).collect::<String>())
+    };
+    let value = json::parse(answer).map_err(|error| {
+        malformed("the provisioned server answered with something that is not JSON")
+            .with_context("error", error.to_string())
+    })?;
+    if let Some(said) = value.get("error") {
+        let message = said
+            .get("message")
+            .and_then(Value::as_text)
+            .unwrap_or("the engine did not say")
+            .to_owned();
+        return Err(
+            malformed("the provisioned server refused to tokenize").with_context("reason", message)
+        );
+    }
+    let listed = value
+        .get("tokens")
+        .and_then(Value::as_list)
+        .ok_or_else(|| malformed("the provisioned server's answer listed no tokens"))?;
+    listed
+        .iter()
+        .map(|held| {
+            let id = held
+                .get("id")
+                .and_then(Value::as_integer)
+                .and_then(|id| usize::try_from(id).ok())
+                .ok_or_else(|| malformed("a token in the server's answer had no identifier"))?;
+            let piece = match held.get("piece") {
+                Some(Value::Text(text)) => text.clone(),
+                Some(Value::List(bytes)) => bytes
+                    .iter()
+                    .map(|byte| {
+                        byte.as_integer()
+                            .and_then(|held| u8::try_from(held).ok())
+                            .map_or_else(|| "<?>".to_owned(), |held| spelled(&[held]))
+                    })
+                    .collect(),
+                _ => return Err(malformed("a token in the server's answer had no spelling")),
+            };
+            Ok(Token { id, piece })
+        })
+        .collect()
 }
 
 /// Where `wanted` sits in the distribution the server sent back.
@@ -888,5 +1016,61 @@ mod ranking_tests {
     fn nothing_is_read_out_of_something_that_is_not_one() {
         assert_eq!(ranked_in("not json at all", 1), (None, None));
         assert_eq!(ranked_in(r#"{"error":"context is full"}"#, 1), (None, None));
+    }
+}
+
+#[cfg(test)]
+mod tokenize_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
+
+    use super::{Token, tokens_in};
+
+    /// The server's shape, read as identifiers with their spellings.
+    #[test]
+    fn the_servers_tokens_are_read_with_their_spellings() {
+        let answer =
+            r#"{"tokens":[{"id":151644,"piece":"<|im_start|>"},{"id":872,"piece":" user"}]}"#;
+        assert_eq!(
+            tokens_in(answer).unwrap(),
+            vec![
+                Token {
+                    id: 151_644,
+                    piece: "<|im_start|>".to_owned()
+                },
+                Token {
+                    id: 872,
+                    piece: " user".to_owned()
+                },
+            ]
+        );
+    }
+
+    /// A piece that is not text on its own is written byte by byte, the way
+    /// the engine writes a byte token, and not dropped (A1).
+    #[test]
+    fn a_piece_that_is_not_text_is_written_as_bytes() {
+        let answer = r#"{"tokens":[{"id":5,"piece":[226,128]},{"id":6,"piece":[168]}]}"#;
+        let pieces: Vec<String> = tokens_in(answer)
+            .unwrap()
+            .into_iter()
+            .map(|held| held.piece)
+            .collect();
+        assert_eq!(pieces, vec!["<0xE2><0x80>".to_owned(), "<0xA8>".to_owned()]);
+    }
+
+    /// An error, a list without spellings and something that is not JSON are
+    /// each a failure with the server's words in it, never an empty prompt.
+    #[test]
+    fn what_is_not_a_token_list_is_a_failure_and_not_an_empty_prompt() {
+        for answer in [
+            "not json",
+            r#"{"error":{"message":"model is loading"}}"#,
+            r#"{"tokens":[1,2,3]}"#,
+            r#"{"tokens":[{"id":"x","piece":"a"}]}"#,
+        ] {
+            assert!(tokens_in(answer).is_err(), "{answer}");
+        }
+        assert_eq!(tokens_in(r#"{"tokens":[]}"#).unwrap(), Vec::<Token>::new());
     }
 }

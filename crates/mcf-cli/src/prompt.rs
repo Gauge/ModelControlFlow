@@ -382,9 +382,17 @@ fn conditions(body: &Value) -> Vec<String> {
     if let Some(addressed) = text("addressed_as") {
         rows.push(("addressed", addressed.to_owned()));
     }
+    // **Who read the prompt** (B-441): the engine that answered it, named,
+    // or why there is no count at all (A7).
+    let read_by = text("read_by").unwrap_or("not recorded");
     let tokens = integer(body, "prompt_tokens");
     if tokens > 0 {
-        rows.push(("prompt", format!("{tokens} tokens · mcf segment")));
+        rows.push(("prompt", format!("{tokens} tokens · read by {read_by}")));
+    } else if let Some(refused) = text("prompt_tokens_refused") {
+        rows.push((
+            "prompt",
+            format!("not counted · {refused} · read by {read_by}"),
+        ));
     }
     let limit = integer(body, "token_limit");
     if limit > 0 {
@@ -970,6 +978,9 @@ fn tokens(body: &Value) -> Vec<String> {
     if let Some(under) = body.get("ranked_under").and_then(Value::as_text) {
         conditions.push(format!("read under {under}"));
     }
+    if let Some(by) = body.get("read_by").and_then(Value::as_text) {
+        conditions.push(format!("read by {by}"));
+    }
     let mut lines = vec![head("TOKENS", &conditions)];
     let rows: Vec<Vec<String>> = surprising
         .iter()
@@ -1158,6 +1169,7 @@ mod tests {
                 "most":3,
                 "addressed_as":"one user turn, the whole prompt",
                 "expected":[{"text":" are","rank":null,"engine_said":null}],"prompt_tokens":10,"ranked_depth":60,
+                "read_by":"a test's tokenizer",
                 "expected_by_part":{"parts":[{"tokens":4,"first_choice":1,"past_depth":1},
                    {"tokens":3,"first_choice":3,"past_depth":0},{"tokens":2,"first_choice":1,"past_depth":0},
                    {"tokens":5,"first_choice":4,"past_depth":0}],"unplaced":2},
