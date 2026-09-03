@@ -4609,12 +4609,18 @@ are tokenized as such, markers parsed; the person's prompt is tokenized with
 no marker parsed, as it is everywhere else. Nothing a person typed can become
 a marker (F26), and F161 is the record of the one path where it briefly could.
 
-**What is refused rather than pretended.** A switch is asked for by rendering
-with and without it: a template that renders the same either way has no such
-switch, and the request is refused by name rather than sent to a model that
-would ignore it (A2, A7). A template that raises on a value is refused in its
-own words (A4). MCF's own engine runs no template and refuses a framed turn
-for that reason, saying which engine can.
+**What is refused rather than pretended.** Each switch is asked of the
+template on its own, by rendering the turn with it at another position of
+itself: thinking against its other position, since a model whose thinking is
+on unsaid renders *thinking on* the same as silence; a reasoning effort that
+renders as the unsaid one against a word no template names; a system turn
+against its absence. A switch that changes nothing alongside the rest of the
+turn is refused by name — as *changes nothing in this turn*, not *no such
+switch*, since a rendering cannot tell an absent switch from one the rest of
+the turn made inert (A21) — rather than sent to a model that would ignore it
+(A2, A7). A template that raises on a value is refused in its own words (A4).
+MCF's own engine runs no template and refuses a framed turn for that reason,
+saying which engine can.
 
 **What this is not.** It is not MCF adopting a chat API: the request still
 goes to the engine as identifiers MCF counted, the account still says how the

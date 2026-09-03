@@ -9623,10 +9623,19 @@ with the prompt text, while the slots are busy, at no forward pass. MCF
 sends a sentinel where the person's words go, cuts the rendering there, and
 tokenizes the two halves as the model's words and the prompt as the
 person's, so F26 holds on this path as it holds on every other. Where a
-switch is asked for, the turn is rendered once more without it: a template
-that renders the same with the switch as without it has no such switch,
-and the request is refused by name rather than sent to a model that would
-ignore it. Qwen3-VL-2B refuses `--thinking off` that way; Qwen3.8-27B
+switch is asked for, the turn is rendered once more with that switch at
+another position of itself: a switch that changes nothing alongside the
+rest of the turn is refused by name rather than sent to a model that would
+ignore it. The first cut compared every switch at once against silence, and
+GLM-4.7-Flash — thinking on unsaid — refused `--thinking on` for rendering
+the same as nothing; Qwen3.8 would have refused `--effort xhigh`, its own
+default, the same way. Each switch is now asked on its own, thinking against
+its other position, an effort that renders as the unsaid one against a word
+no template names, a system turn against its absence; and the refusal says
+*changes nothing in this turn* rather than *no such switch*, because
+Qwen3.8's effort is written nowhere once thinking is off, and a rendering
+cannot tell an absent switch from an inert one. Qwen3-VL-2B refuses
+`--thinking off` that way; Qwen3.8-27B
 under `--thinking off` answered *21 items* in sixty tokens with no thought,
 under `--thinking on --effort low` spent twenty-seven tokens inside
 `<think>` and closed it, under `--system` answered in French, and under
@@ -9647,11 +9656,23 @@ a marker pair before answering, who opened it — the turn's tail or the
 model's first token — and whether it closed, so a budget that ran out inside
 the thought is a fact on the page and not an answer of nothing (B-451).
 
+**The same switches across the other models that fit.** GLM-4.7-Flash
+reads the thinking switch and no effort, thinks for 247 tokens unsaid and
+answers in thirteen with thinking off under a French system turn; gpt-oss-20b
+reads an effort (low: 36 tokens, high: 147) and no thinking switch, and
+takes a system turn; Devstral-Small-2-24B, Qwen3-Coder-30B-A3B and
+Seed-Coder-8B read neither switch and take a system turn, each answering in
+French. gpt-oss's thought is not a marker pair — `<|channel|>analysis
+<|message|>` … `<|end|>` and then `<|start|>assistant<|channel|>final
+<|message|>` — so `before_the_answer` says nothing for it rather than
+something wrong; counting that form is B-457.
+
 **What this does not settle.** The daemon's own engine for a model does not
 start its projector, so a picture reaches the model through `mcf host` and
 not through `mcf run`; the tools probe judges JSON and would misread the
 XML form this template writes; the served path still answers whole rather
-than token by token. Each is a row.
+than token by token; a thought written as channels is not counted. Each is
+a row.
 
 ## 159 · F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)
 

@@ -167,31 +167,121 @@ fn refused(why: &str) -> Failure {
     )
 }
 
+/// A reasoning effort no template names, to ask whether one reads the
+/// switch at all when the asked value renders as the unsaid one does.
+const NO_SUCH_EFFORT: &str = "MCFNOSUCHEFFORTd41c7e";
+
+/// A switch that changed nothing, refused by name.
+///
+/// **Says what was seen, not why.** A template that renders the same with
+/// the switch as without it may have no such switch, or may have one that
+/// the rest of the turn makes inert — Qwen3.8's reasoning effort is written
+/// nowhere once thinking is off — and the rendering cannot tell those apart.
+/// Either way the person asked for something the turn does not carry, and
+/// saying *no such switch* to the second would be a diagnosis wearing an
+/// observation's clothes (A21).
+fn unread(switch: &str, turn: &Turn) -> Failure {
+    refused(&format!(
+        "the model's template renders the same with {switch} as without it, alongside the rest \
+         of what was asked, so {switch} changes nothing in this turn"
+    ))
+    .with_context("switch", switch.to_owned())
+    .with_context("asked", turn.said())
+}
+
+/// A switch's words for the account, saying where the asked position is the
+/// one the template renders unsaid — which is a fact about the template and
+/// not a choice MCF made for the person (§3.15).
+fn worded(switch: String, as_unsaid: bool) -> String {
+    if as_unsaid {
+        format!("{switch}, as the template renders it unsaid")
+    } else {
+        switch
+    }
+}
+
+/// Whether the template reads each switch asked for, with the switches'
+/// words for the account.
+///
+/// **Each switch is asked on its own, against another position of itself.**
+/// A first cut compared the rendering with every switch to the rendering
+/// with none, and refused a model whose thinking is on unsaid when a person
+/// asked for thinking on: the two renderings were the same because the
+/// switch was already there, not because it was absent. So thinking is
+/// asked against its other position; a reasoning effort that renders as the
+/// unsaid one is asked once more with a word no template names, and a
+/// template that raises on the word or renders differently reads the switch;
+/// a system turn is asked against its absence, since a template with no
+/// place for one drops it in silence.
+fn read_switches(engine: &Served, turn: &Turn, rendered: &str) -> Result<Vec<String>, Failure> {
+    let render = |other: &Turn| engine.render(other.messages(), other.switches());
+    let mut asked = Vec::new();
+    if let Some(on) = turn.thinking {
+        let flipped = Turn {
+            thinking: Some(!on),
+            ..turn.clone()
+        };
+        if render(&flipped)? == rendered {
+            return Err(unread("thinking", turn));
+        }
+        let unsaid = Turn {
+            thinking: None,
+            ..turn.clone()
+        };
+        asked.push(worded(
+            format!("thinking {}", if on { "on" } else { "off" }),
+            render(&unsaid)? == rendered,
+        ));
+    }
+    if let Some(effort) = &turn.effort {
+        let unsaid = Turn {
+            effort: None,
+            ..turn.clone()
+        };
+        let as_unsaid = render(&unsaid)? == rendered;
+        if as_unsaid {
+            let unknown = Turn {
+                effort: Some(NO_SUCH_EFFORT.to_owned()),
+                ..turn.clone()
+            };
+            match render(&unknown) {
+                Ok(other) if other == rendered => return Err(unread("a reasoning effort", turn)),
+                // The template raised on the word: it reads the switch.
+                Err(failure) if failure.category() == Category::ConfigInvalid => {}
+                Ok(_) => {}
+                Err(failure) => return Err(failure),
+            }
+        }
+        asked.push(worded(format!("reasoning effort {effort}"), as_unsaid));
+    }
+    if turn.system.is_some() {
+        let without = Turn {
+            system: None,
+            ..turn.clone()
+        };
+        if render(&without)? == rendered {
+            return Err(unread("a system turn", turn));
+        }
+        asked.push("a system turn".to_owned());
+    }
+    Ok(asked)
+}
+
 /// The turn as the engine renders it for this request.
 ///
-/// **A switch the template does not have is refused, not passed over.** The
-/// rendering with the switches is compared to the rendering without them; a
-/// template that renders the same either way has no such switch, and a
-/// person who asked for thinking off would otherwise be told they had it
-/// (A2, A7).
+/// **A switch the template does not have is refused, not passed over.** Each
+/// switch asked for is checked against the template by rendering, in
+/// [`read_switches`]; a person who asked for thinking off would otherwise be
+/// told they had it (A2, A7).
 ///
 /// # Errors
 ///
 /// The template raised on what it was given, in its own words; it rendered
-/// the prompt's place other than once; or the switches asked for changed
+/// the prompt's place other than once; or a switch asked for changed
 /// nothing.
 pub fn frame(engine: &Served, turn: &Turn) -> Result<Frame, Failure> {
     let rendered = engine.render(turn.messages(), turn.switches())?;
-    if turn.thinking.is_some() || turn.effort.is_some() {
-        let unswitched = engine.render(turn.messages(), Value::map::<&str>([]))?;
-        if unswitched == rendered {
-            return Err(refused(
-                "the model's template renders the same with these switches as without \
-                 them, so the model has no such switch",
-            )
-            .with_context("asked", turn.said()));
-        }
-    }
+    let asked = read_switches(engine, turn, &rendered)?;
     let mut places = rendered.match_indices(PLACE);
     let (Some((at, _)), None) = (places.next(), places.next()) else {
         return Err(
@@ -205,7 +295,11 @@ pub fn frame(engine: &Served, turn: &Turn) -> Result<Frame, Failure> {
             .get(at.saturating_add(PLACE.len())..)
             .unwrap_or_default()
             .to_owned(),
-        asked: turn.said(),
+        asked: if asked.is_empty() {
+            "nothing switched".to_owned()
+        } else {
+            asked.join(", ")
+        },
     })
 }
 
