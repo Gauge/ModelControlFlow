@@ -903,11 +903,30 @@ fn seeds(body: &Value) -> Vec<String> {
                     "farthest from greedy {}",
                     percent(integer(settled, "from_greedy_parts_per_million"))
                 ),
+                cut_line(settled),
                 "a fact about the pair, not a merit of the prompt".to_owned(),
             ],
         ),
         String::new(),
     ]
+}
+
+/// How each seeded draw was cut before it was taken, and whose cut it was
+/// (B-440): `top_k 20 · top_p 0.950 · min_p off · declared by the file`. A
+/// report from before the cut was stated says so rather than *off* (A7).
+fn cut_line(settled: &Value) -> String {
+    let named = |key: &str| settled.get(key).and_then(Value::as_text);
+    match (
+        named("top_k"),
+        named("top_p"),
+        named("min_p"),
+        named("truncation"),
+    ) {
+        (Some(top_k), Some(top_p), Some(min_p), Some(whose)) => {
+            format!("cut top_k {top_k} · top_p {top_p} · min_p {min_p} · {whose}")
+        }
+        _ => "cut not recorded".to_owned(),
+    }
 }
 
 /// Where the model ranked each word of the prompt, given the ones before it
@@ -1408,6 +1427,10 @@ mod tests {
                     ("distinct_answers", Value::Integer(3)),
                     ("spread_parts_per_million", Value::Integer(412_000)),
                     ("from_greedy_parts_per_million", Value::Integer(250_000)),
+                    ("top_k", Value::text("20")),
+                    ("top_p", Value::text("0.950")),
+                    ("min_p", Value::text("off")),
+                    ("truncation", Value::text("declared by the file")),
                 ]),
             );
         }
@@ -1415,11 +1438,20 @@ mod tests {
         assert!(
             text.contains(
                 "SEEDS    3 seeds at temperature 0.700 · distinct answers 3 · farthest apart \
-                 41.2% · farthest from greedy 25.0%"
+                 41.2% · farthest from greedy 25.0% · cut top_k 20 · top_p 0.950 · min_p off · \
+                 declared by the file"
             ),
             "{text}"
         );
         assert!(text.contains("control 1 · seeds 3"), "{text}");
+        // A report from before the cut was stated does not say *off* (A7).
+        if let Value::Map(fields) = &mut warm
+            && let Some(Value::Map(settled)) = fields.get_mut("settled")
+        {
+            settled.remove("top_k");
+        }
+        let text = rendered(&warm, "m").join("\n");
+        assert!(text.contains("· cut not recorded"), "{text}");
     }
 
     /// Each part alone is a table read against the control alone, with the

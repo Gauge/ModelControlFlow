@@ -222,17 +222,22 @@ fn settled_value(settled: Option<&crate::prompt::Settled>) -> Value {
     };
     let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
     let ppm = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
-    Value::map([
-        (
-            "temperature_thousandths",
-            Value::Integer(i64::from(settled.temperature.0)),
-        ),
-        ("temperature", Value::text(settled.temperature.to_string())),
-        ("seeds_asked", count(settled.asked)),
-        ("distinct_answers", count(settled.distinct)),
-        ("spread_parts_per_million", ppm(settled.spread)),
-        ("from_greedy_parts_per_million", ppm(settled.from_greedy)),
-    ])
+    Value::map(
+        [
+            (
+                "temperature_thousandths",
+                Value::Integer(i64::from(settled.temperature.0)),
+            ),
+            ("temperature", Value::text(settled.temperature.to_string())),
+            ("seeds_asked", count(settled.asked)),
+            ("distinct_answers", count(settled.distinct)),
+            ("spread_parts_per_million", ppm(settled.spread)),
+            ("from_greedy_parts_per_million", ppm(settled.from_greedy)),
+        ]
+        .into_iter()
+        .chain(settled.truncation.entries())
+        .collect::<Vec<(&str, Value)>>(),
+    )
 }
 
 /// One ablated part, as a client reads it.
@@ -2190,6 +2195,38 @@ impl Daemon {
         vocabulary.encode(text, true).ok().map(|held| held.len())
     }
 
+    /// **How the seeded draws of a prompt report are cut is decided here,
+    /// once, and stated on every one of them** (B-440). Left to the engine,
+    /// a draw above nought is cut with the file's `general.sampling.*` or
+    /// the engine's own house values, and the report never says which
+    /// (F157). The file's recommendation is what is adopted where there is
+    /// one (B60), and *off* where there is not — never the engine's own. A
+    /// file whose header cannot be read recommends nothing knowable, and
+    /// that is a refusal rather than a guess (A2).
+    fn settle_for(
+        &self,
+        named: &str,
+        temperature: mcf_core::configuration::Thousandths,
+    ) -> Result<crate::prompt::Settle> {
+        let path = crate::generation::resolved(&self.places.models, named);
+        let Some(file) = header_of(&path) else {
+            return Err(Failure::new(
+                Category::ArtifactMissing,
+                Attribution::Machine,
+                Disposition::Refused,
+                Subsystem::new("mcf-serve::daemon"),
+                "the model file's header could not be read, so what it recommends for a \
+                 seeded draw is unknown",
+            )
+            .with_context("path", path.display().to_string()));
+        };
+        let recommended = mcf_standin::recommended::read(&file);
+        Ok(crate::prompt::Settle {
+            temperature,
+            truncation: crate::prompt::Truncation::recommended(recommended.sampling()),
+        })
+    }
+
     fn prompt_report(
         &self,
         named: &str,
@@ -2204,6 +2241,18 @@ impl Daemon {
             .parent()
             .map_or_else(|| self.places.models.clone(), Path::to_path_buf);
         let picked = self.picked_engine(named);
+        let settle = match settle {
+            Some(temperature) => match self.settle_for(named, temperature) {
+                Ok(settle) => Some(settle),
+                Err(failure) => {
+                    let answer = Answer::refused(&failure);
+                    let _written = writeln!(writer, "{}", answer.to_line());
+                    let _flushed = writer.flush();
+                    return;
+                }
+            },
+            None => None,
+        };
         let mut asked = 0_usize;
         // Which engine answered is a condition of every figure below, and
         // the account of each generation names it; the report keeps the
@@ -2299,15 +2348,29 @@ impl Daemon {
         // reading that does not compare two answers, so the drift that makes
         // the ablation an ordering does not touch it (§3.8).
         let ranked = self.ranked_prompt(named, prompt, picked.clone());
-        let mut served = prompt_report_value(&report, &parts, asked, tokens, ranked);
-        // **The figures go to the record; the text does not** (A25, B-432).
-        // Every other diagnostic leaves an entry, and a report that lived
-        // only in the terminal it was printed in was a measurement nobody
-        // could find again. The entry is built from what was served, by
-        // naming each figure kept, so that what the record holds is what the
-        // caller saw and nothing the caller typed.
+        let served = prompt_report_value(&report, &parts, asked, tokens, ranked);
+        let served = self.record_prompt_report(served, named, prompt, seed, &engines);
+        let answer = Answer::served(served);
+        let _written = writeln!(writer, "{}", answer.to_line());
+        let _flushed = writer.flush();
+    }
+
+    /// **The figures go to the record; the text does not** (A25, B-432).
+    /// Every other diagnostic leaves an entry, and a report that lived only
+    /// in the terminal it was printed in was a measurement nobody could find
+    /// again. The entry is built from what was served, by naming each figure
+    /// kept, so that what the record holds is what the caller saw and
+    /// nothing the caller typed. What is served gains the record's id.
+    fn record_prompt_report(
+        &self,
+        mut served: Value,
+        named: &str,
+        prompt: &str,
+        seed: u64,
+        engines: &std::collections::BTreeSet<String>,
+    ) -> Value {
         let path = crate::generation::resolved(&self.places.models, named);
-        let entry = prompt_report_entry(&served, &path, prompt, seed, &engines);
+        let entry = prompt_report_entry(&served, &path, prompt, seed, engines);
         let recorded = self.note(EntryKind::PromptReported, Timestamp::now(), entry.clone());
         if let Ok(mut reports) = self.prompt_reports.lock() {
             let _replaced = reports.insert(path, entry);
@@ -2318,9 +2381,7 @@ impl Daemon {
                 recorded.map_or(Value::Null, |id| Value::text(id.as_str().to_owned())),
             );
         }
-        let answer = Answer::served(served);
-        let _written = writeln!(writer, "{}", answer.to_line());
-        let _flushed = writer.flush();
+        served
     }
 
     /// What MCF says to each request.

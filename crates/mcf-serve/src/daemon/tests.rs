@@ -871,3 +871,44 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         Some(&Value::text("4."))
     );
 }
+
+/// **The cut the seeds were drawn under travels with their figures**
+/// (B-440, §3.4): the served `settled` names `top_k`, `top_p` and `min_p` as
+/// the file declared them or as *off*, and whose they were — so two models'
+/// seeded readings are never compared under two cuts nobody was shown.
+#[test]
+fn a_served_settledness_carries_the_cut_it_was_drawn_under() {
+    use crate::prompt::{Settled, Stated, Truncation, Whose};
+    use mcf_core::configuration::Thousandths;
+    let settled = Settled {
+        temperature: Thousandths(700),
+        truncation: Truncation {
+            top_k: Stated::Declared(20),
+            top_p: Stated::Declared(Thousandths(950)),
+            min_p: Stated::Off,
+            whose: Whose::File,
+        },
+        asked: 3,
+        distinct: 2,
+        spread: 120_000,
+        from_greedy: 90_000,
+    };
+    let served = super::settled_value(Some(&settled));
+    assert_eq!(served.get("temperature"), Some(&Value::text("0.700")));
+    assert_eq!(served.get("top_k"), Some(&Value::text("20")));
+    assert_eq!(served.get("top_p"), Some(&Value::text("0.950")));
+    assert_eq!(served.get("min_p"), Some(&Value::text("off")));
+    assert_eq!(
+        served.get("truncation"),
+        Some(&Value::text("declared by the file"))
+    );
+    let off = super::settled_value(Some(&Settled {
+        truncation: Truncation::recommended(None),
+        ..settled
+    }));
+    assert_eq!(
+        off.get("truncation"),
+        Some(&Value::text("none declared by the file"))
+    );
+    assert_eq!(super::settled_value(None), Value::Null);
+}

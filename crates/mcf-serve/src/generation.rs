@@ -11,6 +11,7 @@
 //! reading until `done` is never left waiting, and the record gets the same
 //! account (A2, A26).
 
+use std::fmt;
 use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -27,7 +28,8 @@ use mcf_standin::tokenizer::Vocabulary;
 use crate::control::Streamed;
 use crate::served::Served;
 
-/// How one generation's sampler was told to draw: a seed and a temperature.
+/// How one generation's sampler was told to draw: a seed, a temperature, and
+/// how the distribution is cut before the draw.
 ///
 /// **Greedy is MCF's own choice, and it is named as such.** Every measurement
 /// draws at temperature 0 unless the caller states otherwise, because a
@@ -36,6 +38,13 @@ use crate::served::Served;
 /// one — so it reaches here only as something a caller stated, and it travels
 /// with the seed because the two together are what makes a sample
 /// reproducible (D19).
+///
+/// **The truncation is stated on every request** (B-440). An engine that is
+/// sent a temperature and nothing else fills in `top_k`, `top_p` and `min_p`
+/// for itself — from the file where the file recommends, and from its own
+/// house values where it does not — and a seeded draw then runs under a
+/// condition nobody stated (F157). So the three go with every request, each
+/// either what the file declared or *off*, and the account names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Draw {
     /// The seed, which is a condition of the result (D19).
@@ -43,15 +52,188 @@ pub struct Draw {
     /// The temperature, in thousandths. Nought is greedy — the limit of the
     /// distribution rather than a special case.
     pub temperature: Thousandths,
+    /// How the distribution is cut before the draw.
+    pub truncation: Truncation,
+}
+
+/// One truncation parameter: what the file declared, or off.
+///
+/// *Off* is a stated value and not an absence (A7): it is sent to the engine
+/// as the number that leaves the distribution whole, and recorded as the word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stated<T> {
+    /// The file recommends this, and it is sent as read.
+    Declared(T),
+    /// The file recommends nothing, and the engine is told to cut nothing.
+    Off,
+}
+
+impl<T: fmt::Display> Stated<T> {
+    /// The value as a client reads it: the number, or `off`.
+    fn value(self) -> Value {
+        match self {
+            Self::Declared(held) => Value::text(held.to_string()),
+            Self::Off => Value::text("off"),
+        }
+    }
+}
+
+/// How the distribution is cut before a draw above nought: the three cuts the
+/// provisioned engine applies, each as the file declared it or off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Truncation {
+    /// How many of the likeliest tokens are kept.
+    pub top_k: Stated<u32>,
+    /// The probability mass the kept set must reach.
+    pub top_p: Stated<Thousandths>,
+    /// The least probability kept, as a fraction of the likeliest token's.
+    pub min_p: Stated<Thousandths>,
+    /// Whose the cut is, or why there is none.
+    pub whose: Whose,
+}
+
+/// Where a cut came from — or, where there is none, why not: a draw with
+/// none because the file declares none is a decision, and a greedy draw
+/// with none because no cut could change it is not, and the account says
+/// which (A7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Whose {
+    /// The file's own recommendation, adopted as stated.
+    File,
+    /// The file recommends none, so none: never the engine's own.
+    NoneDeclared,
+    /// Greedy takes the likeliest token, which is the likeliest under any cut.
+    Moot,
+}
+
+impl Whose {
+    /// The words the account carries.
+    #[must_use]
+    pub const fn said(self) -> &'static str {
+        match self {
+            Self::File => "declared by the file",
+            Self::NoneDeclared => "none declared by the file",
+            Self::Moot => "moot under greedy",
+        }
+    }
+}
+
+impl Truncation {
+    /// No cut, because a greedy draw could not be changed by one.
+    pub const OFF: Self = Self {
+        top_k: Stated::Off,
+        top_p: Stated::Off,
+        min_p: Stated::Off,
+        whose: Whose::Moot,
+    };
+
+    /// What the file recommends, where it recommends anything, and off where
+    /// it does not — parameter by parameter, because a file that states a
+    /// `top_p` and no `top_k` has stated exactly that (A7).
+    #[must_use]
+    pub fn recommended(sampling: Option<&mcf_core::configuration::Sampling>) -> Self {
+        use mcf_core::attested::Attested;
+        let Some(sampling) = sampling else {
+            return Self {
+                whose: Whose::NoneDeclared,
+                ..Self::OFF
+            };
+        };
+        let fraction = |held: Attested<Thousandths>| match held {
+            Attested::Known(value) => Stated::Declared(value),
+            Attested::Unknown => Stated::Off,
+        };
+        let mut cut = Self {
+            top_k: match sampling.top_k {
+                Attested::Known(value) => Stated::Declared(value),
+                Attested::Unknown => Stated::Off,
+            },
+            top_p: fraction(sampling.top_p),
+            min_p: fraction(sampling.min_p),
+            whose: Whose::File,
+        };
+        if !cut.any_stated() {
+            cut.whose = Whose::NoneDeclared;
+        }
+        cut
+    }
+
+    /// Whether any of the three is on.
+    #[must_use]
+    pub const fn any_stated(self) -> bool {
+        !matches!(
+            (self.top_k, self.top_p, self.min_p),
+            (Stated::Off, Stated::Off, Stated::Off)
+        )
+    }
+
+    /// Whether the cut is the file's.
+    #[must_use]
+    pub const fn is_declared(self) -> bool {
+        matches!(self.whose, Whose::File)
+    }
+
+    /// `top_k` as the engine takes it: nought keeps every token.
+    #[must_use]
+    pub const fn top_k_sent(self) -> u32 {
+        match self.top_k {
+            Stated::Declared(held) => held,
+            Stated::Off => 0,
+        }
+    }
+
+    /// `top_p` as the engine takes it: one is the whole mass.
+    #[must_use]
+    pub const fn top_p_sent(self) -> Thousandths {
+        match self.top_p {
+            Stated::Declared(held) => held,
+            Stated::Off => Thousandths(1_000),
+        }
+    }
+
+    /// `min_p` as the engine takes it: nought drops nothing.
+    #[must_use]
+    pub const fn min_p_sent(self) -> Thousandths {
+        match self.min_p {
+            Stated::Declared(held) => held,
+            Stated::Off => Thousandths(0),
+        }
+    }
+
+    /// The three, as every account and the served report carry them, with
+    /// whose they are.
+    #[must_use]
+    pub fn entries(self) -> [(&'static str, Value); 4] {
+        [
+            ("top_k", self.top_k.value()),
+            ("top_p", self.top_p.value()),
+            ("min_p", self.min_p.value()),
+            ("truncation", Value::text(self.whose.said())),
+        ]
+    }
+
+    /// One line of it, for a page: `top_k 20 · top_p 0.950 · min_p off`.
+    #[must_use]
+    pub fn line(self) -> String {
+        self.entries()
+            .into_iter()
+            .take(3)
+            .map(|(name, value)| format!("{name} {}", value.as_text().unwrap_or("?")))
+            .collect::<Vec<String>>()
+            .join(" · ")
+    }
 }
 
 impl Draw {
-    /// The likeliest token every time, under this seed.
+    /// The likeliest token every time, under this seed. Nothing is cut,
+    /// because nothing needs to be: the likeliest token is the likeliest
+    /// token under any cut.
     #[must_use]
     pub const fn greedy(seed: u64) -> Self {
         Self {
             seed,
             temperature: Thousandths(0),
+            truncation: Truncation::OFF,
         }
     }
 
@@ -74,7 +256,12 @@ impl Draw {
     /// What the stand-in's sampler is told; the thousandths become a float
     /// only inside the stand-in, where floats are allowed to live.
     fn settings(self) -> Settings {
-        Settings::at_thousandths(self.temperature.0)
+        Settings::at_thousandths(
+            self.temperature.0,
+            usize::try_from(self.truncation.top_k_sent()).unwrap_or(usize::MAX),
+            self.truncation.top_p_sent().0,
+            self.truncation.min_p_sent().0,
+        )
     }
 }
 
@@ -913,41 +1100,46 @@ fn through_provisioned(
 
 /// The conditions every account carries, whether it succeeded or not.
 fn conditions(named: &str, model: Option<(&Path, u64)>, draw: Draw, limit: usize) -> Value {
-    Value::map([
-        ("model", Value::text(named)),
-        (
-            "path",
-            match model {
-                Some((path, _)) => Value::text(path.display().to_string()),
-                None => Value::Null,
-            },
-        ),
-        (
-            "bytes",
-            match model {
-                Some((_, bytes)) => Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX)),
-                None => Value::Null,
-            },
-        ),
-        (
-            "engine",
-            Value::text(mcf_core::build_identity::stand_in_engine()),
-        ),
-        ("loaded", Value::text("not_loaded")),
-        ("sampler", Value::text(draw.sampler())),
-        (
-            "temperature_thousandths",
-            Value::Integer(i64::from(draw.temperature.0)),
-        ),
-        (
-            "seed",
-            Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
-        ),
-        (
-            "limit",
-            Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
-        ),
-    ])
+    Value::map(
+        [
+            ("model", Value::text(named)),
+            (
+                "path",
+                match model {
+                    Some((path, _)) => Value::text(path.display().to_string()),
+                    None => Value::Null,
+                },
+            ),
+            (
+                "bytes",
+                match model {
+                    Some((_, bytes)) => Value::Integer(i64::try_from(bytes).unwrap_or(i64::MAX)),
+                    None => Value::Null,
+                },
+            ),
+            (
+                "engine",
+                Value::text(mcf_core::build_identity::stand_in_engine()),
+            ),
+            ("loaded", Value::text("not_loaded")),
+            ("sampler", Value::text(draw.sampler())),
+            (
+                "temperature_thousandths",
+                Value::Integer(i64::from(draw.temperature.0)),
+            ),
+            (
+                "seed",
+                Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
+            ),
+            (
+                "limit",
+                Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
+            ),
+        ]
+        .into_iter()
+        .chain(draw.truncation.entries())
+        .collect::<Vec<(&str, Value)>>(),
+    )
 }
 
 #[allow(
@@ -1238,6 +1430,93 @@ impl WithResidency for Value {
             Value::text(Length::of(pinned).as_str()),
         );
         Value::Map(fields)
+    }
+}
+
+#[cfg(test)]
+mod truncation_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use mcf_core::attested::Attested;
+    use mcf_core::configuration::{Sampling, Thousandths};
+
+    use super::{Stated, Truncation, Whose};
+
+    /// **Parameter by parameter** (A7): a file that states a `top_p` and no
+    /// `top_k` has stated exactly that, and the cut sent is that `top_p` with
+    /// the other two off — not the engine's `top_k` filled in beside it.
+    #[test]
+    fn what_the_file_declares_is_taken_and_the_rest_is_off() {
+        let sampling = Sampling {
+            top_p: Attested::Known(Thousandths(950)),
+            ..Sampling::nothing_set()
+        };
+        let cut = Truncation::recommended(Some(&sampling));
+        assert_eq!(cut.top_p, Stated::Declared(Thousandths(950)));
+        assert_eq!(cut.top_k, Stated::Off);
+        assert_eq!(cut.min_p, Stated::Off);
+        assert!(cut.is_declared());
+        assert_eq!(cut.top_k_sent(), 0);
+        assert_eq!(cut.top_p_sent(), Thousandths(950));
+        assert_eq!(cut.min_p_sent(), Thousandths(0));
+    }
+
+    /// No recommendation is off on all three, said to be the file's
+    /// silence rather than greedy's indifference, and off is what leaves
+    /// the distribution whole on the wire.
+    #[test]
+    fn no_recommendation_is_off_and_off_leaves_the_distribution_whole() {
+        let cut = Truncation::recommended(None);
+        assert!(!cut.any_stated());
+        assert!(!cut.is_declared());
+        assert_eq!(cut.whose, Whose::NoneDeclared);
+        assert_eq!(Truncation::OFF.whose, Whose::Moot);
+        assert_eq!(cut.top_k_sent(), 0);
+        assert_eq!(cut.top_p_sent(), Thousandths(1_000));
+        assert_eq!(cut.min_p_sent(), Thousandths(0));
+    }
+
+    /// The account and the page carry the three by name, with whose they
+    /// are; *off* is the word and not a number, since the number is the
+    /// engine's spelling of it.
+    #[test]
+    fn the_entries_name_the_three_and_whose_they_are() {
+        let cut = Truncation {
+            top_k: Stated::Declared(20),
+            top_p: Stated::Off,
+            min_p: Stated::Declared(Thousandths(50)),
+            whose: Whose::File,
+        };
+        let entries: Vec<(&str, String)> = cut
+            .entries()
+            .into_iter()
+            .map(|(name, value)| (name, value.as_text().unwrap_or("?").to_owned()))
+            .collect();
+        assert_eq!(
+            entries,
+            vec![
+                ("top_k", "20".to_owned()),
+                ("top_p", "off".to_owned()),
+                ("min_p", "0.050".to_owned()),
+                ("truncation", "declared by the file".to_owned()),
+            ]
+        );
+        assert_eq!(cut.line(), "top_k 20 · top_p off · min_p 0.050");
+        assert_eq!(
+            Truncation::OFF
+                .entries()
+                .get(3)
+                .and_then(|(_, value)| value.as_text()),
+            Some("moot under greedy")
+        );
+        assert_eq!(
+            Truncation::recommended(None)
+                .entries()
+                .get(3)
+                .and_then(|(_, value)| value.as_text()),
+            Some("none declared by the file")
+        );
     }
 }
 

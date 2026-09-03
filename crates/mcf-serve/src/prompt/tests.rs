@@ -21,6 +21,15 @@ fn unforced(_: &str, _: &[usize]) -> Option<Held> {
 
 /// A document taken apart on its own: no question after it, the text deciding
 /// the unit, the default cap.
+/// A caller's temperature with nothing cut — the condition the settledness
+/// tests draw under.
+fn warm() -> Settle {
+    Settle {
+        temperature: Thousandths(700),
+        truncation: Truncation::OFF,
+    }
+}
+
 fn only(text: &str) -> Taken<'_> {
     Taken {
         text,
@@ -103,7 +112,7 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
     let _report = measure(
         &only("One. Two. Three."),
         41,
-        Some(Thousandths(700)),
+        Some(warm()),
         &mut ask,
         &mut unforced,
     );
@@ -118,7 +127,8 @@ fn the_seed_does_not_move_between_a_clause_and_its_baseline() {
         (0..3)
             .map(|extra| Draw {
                 seed: 41 + extra,
-                temperature: Thousandths(700)
+                temperature: Thousandths(700),
+                truncation: Truncation::OFF,
             })
             .collect::<Vec<_>>()
     );
@@ -135,7 +145,7 @@ fn a_prompt_of_one_sentence_has_nothing_to_ablate() {
     let report = measure(
         &only("Just the one sentence."),
         41,
-        Some(Thousandths(700)),
+        Some(warm()),
         &mut ask,
         &mut unforced,
     );
@@ -173,7 +183,7 @@ fn a_prompt_that_settles_the_answer_reports_one_answer() {
     let report = measure(
         &only("One. Two."),
         41,
-        Some(Thousandths(700)),
+        Some(warm()),
         &mut ask,
         &mut unforced,
     );
@@ -200,7 +210,7 @@ fn a_prompt_that_does_not_settle_reports_how_many_answers_and_how_far_apart() {
     let report = measure(
         &only("One. Two."),
         41,
-        Some(Thousandths(700)),
+        Some(warm()),
         &mut ask,
         &mut unforced,
     );

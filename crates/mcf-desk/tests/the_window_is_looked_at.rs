@@ -1294,6 +1294,10 @@ fn a_report() -> mcf_desk::Desk {
                 ("distinct_answers", Value::Integer(2)),
                 ("spread_parts_per_million", Value::Integer(180_000)),
                 ("from_greedy_parts_per_million", Value::Integer(90_000)),
+                ("top_k", Value::text("20")),
+                ("top_p", Value::text("0.950")),
+                ("min_p", Value::text("off")),
+                ("truncation", Value::text("declared by the file")),
             ]),
         ),
         ("expected_by_part", a_grouping()),
@@ -1626,6 +1630,43 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
         before.inked(ground),
         after.inked(ground),
         "the report did not move for the wheel"
+    );
+}
+
+/// The seeds section says how each seeded draw was cut, and a report from
+/// before the cut was stated says it is not recorded rather than nothing.
+#[test]
+fn the_seeds_section_says_how_the_draws_were_cut() {
+    use mcf_record::json::Value;
+    let mut stated = a_report();
+    stated.scroll = 1000.0;
+    let mut unstated = a_report();
+    unstated.scroll = 1000.0;
+    let mut found = match &unstated.doing {
+        mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
+        _ => None,
+    }
+    .unwrap_or(Value::Null);
+    if let Value::Map(report) = &mut found
+        && let Some(Value::Map(settled)) = report.get_mut("settled")
+    {
+        for key in ["top_k", "top_p", "min_p", "truncation"] {
+            let _gone = settled.remove(key);
+        }
+    }
+    unstated.doing = mcf_desk::Doing::Reporting(mcf_desk::job::Job::already(
+        "prompt analysis".to_owned(),
+        vec![found],
+    ));
+    let ground = DAY.ground;
+    let with = drawn(&stated, DAY, "prompt-report-seeds-cut").inked(ground);
+    let without = drawn(&unstated, DAY, "prompt-report-seeds-uncut").inked(ground);
+    if with < 2 {
+        return;
+    }
+    assert_ne!(
+        with, without,
+        "the cut the seeded draws were taken under left no mark"
     );
 }
 

@@ -461,49 +461,7 @@ impl Served {
         draw: crate::generation::Draw,
         pinned: bool,
     ) -> Result<Completed, Failure> {
-        let identifiers = Value::List(
-            tokens
-                .iter()
-                .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
-                .collect(),
-        );
-        let body = Value::map([
-            ("prompt", identifiers),
-            (
-                "n_predict",
-                Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
-            ),
-            (
-                "seed",
-                Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
-            ),
-            // The engine's API takes a decimal, and this is the one place MCF
-            // writes a number that is not an integer: it is the temperature a
-            // caller stated, written as they stated it, to a request that is
-            // not a record (A1). Nought is the integer, so a greedy request
-            // is byte-for-byte what it was before there was a temperature.
-            (
-                "temperature",
-                if draw.is_greedy() {
-                    Value::Integer(0)
-                } else {
-                    Value::exact_thousandths(draw.temperature)
-                },
-            ),
-            // The identifiers as well as the text. They cost nothing to ask
-            // for and are the only form in which two engines can be compared
-            // past the point where their generations part (B-362).
-            ("return_tokens", Value::Bool(true)),
-            // Every request starts from the same state, or a trial would be
-            // measuring what the previous trial left behind (§3.12).
-            ("cache_prompt", Value::Bool(false)),
-            // The model's end of text is not an end where the length is
-            // pinned: the server keeps sampling to `n_predict` and says it
-            // stopped at the limit, which the caller reads back (B-396).
-            ("ignore_eos", Value::Bool(pinned)),
-        ])
-        .to_line();
-
+        let body = completion_body(tokens, limit, draw, pinned).to_line();
         interpret(&self.request("POST", "/completion", Some(&body))?)
     }
 
@@ -758,6 +716,130 @@ impl Drop for Served {
         let _killed = self.child.kill();
         let _waited = self.child.wait();
         let _gone = std::fs::remove_file(&self.socket);
+    }
+}
+
+/// The request one generation sends, every condition of it stated.
+fn completion_body(
+    tokens: &[usize],
+    limit: usize,
+    draw: crate::generation::Draw,
+    pinned: bool,
+) -> Value {
+    let identifiers = Value::List(
+        tokens
+            .iter()
+            .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+            .collect(),
+    );
+    Value::map([
+        ("prompt", identifiers),
+        (
+            "n_predict",
+            Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
+        ),
+        (
+            "seed",
+            Value::Integer(i64::try_from(draw.seed).unwrap_or(i64::MAX)),
+        ),
+        // The engine's API takes a decimal, and this is the one place MCF
+        // writes a number that is not an integer: it is the temperature a
+        // caller stated, written as they stated it, to a request that is
+        // not a record (A1). Nought is the integer, so a greedy request
+        // is byte-for-byte what it was before there was a temperature.
+        (
+            "temperature",
+            if draw.is_greedy() {
+                Value::Integer(0)
+            } else {
+                Value::exact_thousandths(draw.temperature)
+            },
+        ),
+        // **The cut is stated, so the server fills nothing in** (B-440,
+        // F157): left unsaid, it applies the file's `general.sampling.*`
+        // and then its own house values, and a seeded draw runs under a
+        // condition nobody named. Nought, one and nought are *off*.
+        (
+            "top_k",
+            Value::Integer(i64::from(draw.truncation.top_k_sent())),
+        ),
+        (
+            "top_p",
+            Value::exact_thousandths(draw.truncation.top_p_sent()),
+        ),
+        (
+            "min_p",
+            Value::exact_thousandths(draw.truncation.min_p_sent()),
+        ),
+        // The identifiers as well as the text. They cost nothing to ask
+        // for and are the only form in which two engines can be compared
+        // past the point where their generations part (B-362).
+        ("return_tokens", Value::Bool(true)),
+        // Every request starts from the same state, or a trial would be
+        // measuring what the previous trial left behind (§3.12).
+        ("cache_prompt", Value::Bool(false)),
+        // The model's end of text is not an end where the length is
+        // pinned: the server keeps sampling to `n_predict` and says it
+        // stopped at the limit, which the caller reads back (B-396).
+        ("ignore_eos", Value::Bool(pinned)),
+    ])
+}
+
+#[cfg(test)]
+mod request_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use mcf_core::configuration::Thousandths;
+
+    use super::completion_body;
+    use crate::generation::{Draw, Stated, Truncation, Whose};
+
+    /// **Nothing is left for the server to fill in** (B-440, F157). A draw
+    /// with nothing declared sends the three cuts as *off* — nought, one and
+    /// nought — rather than sending nothing, which the server would read as
+    /// *use the file's, then mine*.
+    #[test]
+    fn a_draw_with_nothing_declared_states_the_cut_as_off() {
+        let draw = Draw {
+            seed: 7,
+            temperature: Thousandths(700),
+            truncation: Truncation::OFF,
+        };
+        let body = completion_body(&[1, 2], 8, draw, false).to_line();
+        assert!(body.contains(r#""top_k":0"#), "{body}");
+        assert!(body.contains(r#""top_p":1.000"#), "{body}");
+        assert!(body.contains(r#""min_p":0.000"#), "{body}");
+        assert!(body.contains(r#""temperature":0.700"#), "{body}");
+    }
+
+    /// What the file declared is sent as read, and what it did not is off —
+    /// parameter by parameter.
+    #[test]
+    fn what_the_file_declared_is_sent_as_read() {
+        let draw = Draw {
+            seed: 7,
+            temperature: Thousandths(700),
+            truncation: Truncation {
+                top_k: Stated::Declared(20),
+                top_p: Stated::Declared(Thousandths(950)),
+                min_p: Stated::Off,
+                whose: Whose::File,
+            },
+        };
+        let body = completion_body(&[1], 8, draw, false).to_line();
+        assert!(body.contains(r#""top_k":20"#), "{body}");
+        assert!(body.contains(r#""top_p":0.950"#), "{body}");
+        assert!(body.contains(r#""min_p":0.000"#), "{body}");
+    }
+
+    /// A greedy draw states the cut too: the request is the same shape
+    /// whatever the temperature, so nothing is filled in either way.
+    #[test]
+    fn a_greedy_draw_states_the_cut_as_well() {
+        let body = completion_body(&[1], 8, Draw::greedy(0), false).to_line();
+        assert!(body.contains(r#""temperature":0,"#), "{body}");
+        assert!(body.contains(r#""top_k":0"#), "{body}");
     }
 }
 

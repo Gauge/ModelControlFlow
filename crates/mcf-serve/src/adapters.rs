@@ -293,6 +293,16 @@ impl ProvisionedLlama {
             })
             .arg("--seed")
             .arg(draw.seed.to_string())
+            // **Stated, so the engine fills nothing in** (B-440, F157): left
+            // unsaid, the tool reads the file's `general.sampling.*` and then
+            // its own house values, and a seeded draw runs under a cut nobody
+            // named.
+            .arg("--top-k")
+            .arg(draw.truncation.top_k_sent().to_string())
+            .arg("--top-p")
+            .arg(draw.truncation.top_p_sent().to_string())
+            .arg("--min-p")
+            .arg(draw.truncation.min_p_sent().to_string())
             .arg("--no-warmup")
             .arg("-ngl")
             .arg("0")
@@ -405,5 +415,72 @@ pub fn only_one(found: Found) -> Result<Option<ProvisionedLlama>, Failure> {
             "what_to_do",
             "remove all but one (`mcf provision --remove`)",
         )),
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used)]
+
+    use std::path::{Path, PathBuf};
+
+    use mcf_core::configuration::Thousandths;
+
+    use super::ProvisionedLlama;
+    use crate::generation::{Draw, Stated, Truncation, Whose};
+
+    fn tool() -> ProvisionedLlama {
+        ProvisionedLlama {
+            prefix: PathBuf::from("/nowhere/llama.cpp@abc"),
+            commit: "abc".to_owned(),
+            component: "llama.cpp".to_owned(),
+        }
+    }
+
+    fn arguments(draw: Draw) -> Vec<String> {
+        tool()
+            .generate(Path::new("/nowhere/model.gguf"), "hello", 8, draw, false)
+            .get_args()
+            .map(|held| held.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn after<'a>(arguments: &'a [String], flag: &str) -> Option<&'a str> {
+        arguments
+            .iter()
+            .position(|held| held == flag)
+            .and_then(|at| arguments.get(at.checked_add(1)?))
+            .map(String::as_str)
+    }
+
+    /// **The tool is told the cut, so it reads none from the file or from
+    /// itself** (B-440, F157): nought, one and nought where nothing is
+    /// declared, and the file's own numbers where it declares them.
+    #[test]
+    fn the_cut_is_on_the_command_line() {
+        let off = arguments(Draw {
+            seed: 1,
+            temperature: Thousandths(700),
+            truncation: Truncation::OFF,
+        });
+        assert_eq!(after(&off, "--top-k"), Some("0"));
+        assert_eq!(after(&off, "--top-p"), Some("1.000"));
+        assert_eq!(after(&off, "--min-p"), Some("0.000"));
+        assert_eq!(after(&off, "--temp"), Some("0.700"));
+
+        let declared = arguments(Draw {
+            seed: 1,
+            temperature: Thousandths(700),
+            truncation: Truncation {
+                top_k: Stated::Declared(20),
+                top_p: Stated::Declared(Thousandths(950)),
+                min_p: Stated::Declared(Thousandths(50)),
+                whose: Whose::File,
+            },
+        });
+        assert_eq!(after(&declared, "--top-k"), Some("20"));
+        assert_eq!(after(&declared, "--top-p"), Some("0.950"));
+        assert_eq!(after(&declared, "--min-p"), Some("0.050"));
     }
 }

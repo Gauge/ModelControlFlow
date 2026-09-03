@@ -81,7 +81,7 @@
 
 use mcf_core::configuration::Thousandths;
 
-pub use crate::generation::Draw;
+pub use crate::generation::{Draw, Stated, Truncation, Whose};
 
 /// How many seeds the settledness question is asked under, when it is asked.
 ///
@@ -447,12 +447,25 @@ pub struct Clause {
     pub held: Option<Held>,
 }
 
+/// The condition the settledness seeds are drawn under: the caller's
+/// temperature, and the cut the file recommends or none (B-440).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Settle {
+    /// The temperature the caller stated.
+    pub temperature: Thousandths,
+    /// How the distribution is cut before each draw.
+    pub truncation: Truncation,
+}
+
 /// What several seeds made of the same prompt, at a stated temperature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settled {
     /// The temperature every seed was drawn at: the caller's, never MCF's
     /// (B60), and the condition every figure below is under (§3.4).
     pub temperature: Thousandths,
+    /// How every seed's draw was cut: as the file declared, or not at all —
+    /// stated on every request so the engine filled nothing in (B-440).
+    pub truncation: Truncation,
     /// How many seeds were asked.
     pub asked: usize,
     /// How many distinct answers came back.
@@ -1024,7 +1037,7 @@ pub type Force<'a> = &'a mut dyn FnMut(&str, &[usize]) -> Option<Held>;
 pub fn measure(
     taken: &Taken<'_>,
     seed: u64,
-    settle: Option<Thousandths>,
+    settle: Option<Settle>,
     ask: Ask<'_>,
     force: Force<'_>,
 ) -> Report {
@@ -1098,8 +1111,7 @@ pub fn measure(
     let swaps = (taken.extras.has(Extra::Swaps) && all.len() > 1)
         .then(|| swaps_of(&mut bench, &all, ablated));
 
-    let settled =
-        settle.map(|temperature| settled(&prompt, seed, temperature, &baseline, bench.ask));
+    let settled = settle.map(|under| settled(&prompt, seed, under, &baseline, bench.ask));
 
     Report {
         floor,
@@ -1214,18 +1226,13 @@ pub fn swapped(parts: &[Part], at: usize) -> String {
 /// The greedy baseline is not one of the samples — it was drawn under another
 /// condition, and counting it among them would make the count a count of two
 /// things (§3.4). It is what `from_greedy` is measured from.
-fn settled(
-    prompt: &str,
-    seed: u64,
-    temperature: Thousandths,
-    baseline: &str,
-    ask: Ask<'_>,
-) -> Settled {
+fn settled(prompt: &str, seed: u64, under: Settle, baseline: &str, ask: Ask<'_>) -> Settled {
     let answers: Vec<String> = (0..SEEDS)
         .map(|extra| {
             let draw = Draw {
                 seed: seed.wrapping_add(u64::try_from(extra).unwrap_or(u64::MAX)),
-                temperature,
+                temperature: under.temperature,
+                truncation: under.truncation,
             };
             ask(prompt, draw).text.trim().to_owned()
         })
@@ -1245,7 +1252,8 @@ fn settled(
         .max()
         .unwrap_or(0);
     Settled {
-        temperature,
+        temperature: under.temperature,
+        truncation: under.truncation,
         asked: SEEDS,
         distinct: distinct.len(),
         spread,

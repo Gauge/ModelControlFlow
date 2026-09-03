@@ -78,7 +78,9 @@ const RESOLVING: PartsPerMillion = PartsPerMillion(100_000);
 /// result, not choices about quality.
 const SAMPLER: Settings = Settings::Nucleus {
     temperature: 1.0,
+    top_k: 0,
     top_p: 0.95,
+    min_p: 0.0,
 };
 
 /// How many tokens each trial generates.

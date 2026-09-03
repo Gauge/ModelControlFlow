@@ -3263,7 +3263,7 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
         .get("temperature")
         .and_then(Value::as_text)
         .unwrap_or("?");
-    section(
+    let y = section(
         paint,
         at,
         width,
@@ -3287,7 +3287,29 @@ fn seeds_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) ->
             ),
             "about the pair, not the prompt".to_owned(),
         ],
-    )
+    );
+    section(paint, (at.0, y), width, "cut", &cut_lines(settled))
+}
+
+/// How each seeded draw was cut before it was taken, and whose cut it was
+/// (B-440): `top_k 20 · top_p 0.950 · min_p off · declared by the file`. A
+/// report from before the cut was stated says so rather than *off* (A7).
+fn cut_lines(settled: &Value) -> Vec<String> {
+    let named = |key: &str| settled.get(key).and_then(Value::as_text);
+    match (
+        named("top_k"),
+        named("top_p"),
+        named("min_p"),
+        named("truncation"),
+    ) {
+        (Some(top_k), Some(top_p), Some(min_p), Some(whose)) => vec![
+            format!("top_k {top_k}"),
+            format!("top_p {top_p}"),
+            format!("min_p {min_p}"),
+            whose.to_owned(),
+        ],
+        _ => vec!["not recorded".to_owned()],
+    }
 }
 
 /// Where the model ranked each word of the prompt against what it would
@@ -3829,7 +3851,9 @@ impl Readings {
                 false,
             ),
             Ok(Some(held)) => (
-                format!("{SEEDS} at {held} · every other generation greedy"),
+                format!(
+                    "{SEEDS} at {held} · cut as the file declares, else off · every other greedy"
+                ),
                 ink.quiet,
                 true,
             ),

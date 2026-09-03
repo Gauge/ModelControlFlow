@@ -108,7 +108,9 @@ fn the_same_request_generates_the_same_tokens() {
         limit: 6,
         settings: Settings::Nucleus {
             temperature: 0.8,
+            top_k: 0,
             top_p: 0.9,
+            min_p: 0.0,
         },
         seed: 12_345,
         stop: Vec::new(),
