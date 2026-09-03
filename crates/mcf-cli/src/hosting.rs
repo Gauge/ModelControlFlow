@@ -155,6 +155,21 @@ fn explained(body: &Value, at: Option<u64>) -> String {
         };
         lines.push(format!("  {name:<20} {said}"));
         lines.push(format!("  {:<20} {}", "", text("because")));
+        // What the file carries that this setting leaves in it. A model has
+        // no other way of saying it, and the plain load is the setting a
+        // person will most often keep (B-456, A7).
+        if name == "started with"
+            && let Some(left) = body
+                .get("declares")
+                .map(mcf_serve::declared::Declared::from_value)
+                .and_then(|declared| {
+                    declared.not_started(mcf_serve::declared::Started::from_value(
+                        body.get("settings").unwrap_or(&Value::Null),
+                    ))
+                })
+        {
+            lines.push(format!("  {:<20} this file declares {left}", ""));
+        }
         // The window's cost, beside the window. A recommendation of *the
         // largest that fits* reserved 54.6 GiB for a 17.6 GB model here, and
         // nothing said so until the memory was gone (§3.15, §3.4).
@@ -255,6 +270,23 @@ fn hosting(body: &Value) -> String {
             lines.push(format!("  thinking       {}", takes.thinking_said()));
         }
         _ => lines.push("  takes          the engine did not say what it takes".to_owned()),
+    }
+    // What the engine was started with beyond the plain load, and what the
+    // file declares that it was not: a model hosted without a feature its
+    // own file carries says so, here, where a person reads it (B-456).
+    let started = settings
+        .as_ref()
+        .map(|settings| mcf_serve::declared::Started::from_value(settings))
+        .unwrap_or_default();
+    if started.asks_anything() {
+        lines.push(format!("  started        {}", started.said()));
+    }
+    if let Some(left) = body
+        .get("declares")
+        .map(mcf_serve::declared::Declared::from_value)
+        .and_then(|declared| declared.not_started(started))
+    {
+        lines.push(format!("  declares       {left}"));
     }
     let changed = body.get("changed").and_then(Value::as_list).unwrap_or(&[]);
     if changed.is_empty() {

@@ -804,6 +804,7 @@ pub fn spoken(
         pinned: false,
         turn: None,
         image: None,
+        started: crate::declared::Started::default(),
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
@@ -1248,6 +1249,7 @@ pub fn accepts(
         pinned: false,
         turn: None,
         image: None,
+        started: crate::declared::Started::default(),
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())

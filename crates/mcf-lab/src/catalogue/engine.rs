@@ -257,6 +257,8 @@ fn server_never_listens(world: &World) -> Outcome {
             4096,
             // No projector: a model that is nowhere has nothing beside it.
             None,
+            // And nothing beyond the plain load, for the same reason.
+            mcf_serve::declared::Started::default(),
         );
         match waited {
             Ok(_) => {

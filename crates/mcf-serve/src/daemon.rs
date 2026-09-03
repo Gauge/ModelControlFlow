@@ -2177,6 +2177,7 @@ impl Daemon {
                 pinned,
                 turn,
                 image,
+                started,
             } => {
                 // A generation is one request and many lines, so it has
                 // its own path: nothing about it fits in one `Answer`. Its
@@ -2196,6 +2197,7 @@ impl Daemon {
                     pinned,
                     turn.as_ref(),
                     image.as_deref().map(Path::new),
+                    started,
                     waiting,
                     writer,
                 );
@@ -2283,6 +2285,7 @@ impl Daemon {
         pinned: bool,
         turn: Option<&crate::turn::Turn>,
         picture: Option<&Path>,
+        started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
@@ -2318,6 +2321,7 @@ impl Daemon {
             pinned,
             turn,
             picture,
+            started,
             waiting,
             writer,
         );
@@ -2440,6 +2444,10 @@ impl Daemon {
             named,
             gpu_layers,
             context,
+            // Reading a turn asks nothing of the engine beyond the plain
+            // load: a draft head guesses tokens and does not change how
+            // they are spelled (B-456).
+            started: crate::declared::Started::default(),
         };
         let ranked = match crate::generation::ranks_over(
             &where_it_lives,
@@ -2548,6 +2556,10 @@ impl Daemon {
             named,
             gpu_layers,
             context,
+            // Reading a turn asks nothing of the engine beyond the plain
+            // load: a draft head guesses tokens and does not change how
+            // they are spelled (B-456).
+            started: crate::declared::Started::default(),
         };
         let ranked = crate::generation::ranks_over(
             &where_it_lives,
@@ -2603,6 +2615,7 @@ impl Daemon {
                         .parent()
                         .unwrap_or_else(|| Path::new("/tmp")),
                     named,
+                    started: crate::declared::Started::default(),
                     gpu_layers: *gpu_layers,
                     context: *context,
                 },
@@ -2687,6 +2700,7 @@ impl Daemon {
                 false,
                 None,
                 None,
+                crate::declared::Started::default(),
                 waiting,
                 &mut into,
             )
@@ -3534,6 +3548,7 @@ impl Daemon {
                 pinned,
                 None,
                 None,
+                crate::declared::Started::default(),
                 waiting,
                 &mut writer,
             )
@@ -3791,10 +3806,14 @@ impl Daemon {
     /// Nothing is started. A surface asks this to fill in a form.
     fn settings_for(&self, named: &str) -> Answer {
         match self.recommend(named) {
-            Ok((recommended, _)) => Answer::served(Value::map([
+            Ok((recommended, path)) => Answer::served(Value::map([
                 ("model", Value::text(named.to_owned())),
                 ("recommended", recommended.to_value()),
                 ("settings", recommended.to_value()),
+                // What the file declares that these settings do not start,
+                // so that a person choosing them sees what the plain load
+                // leaves in the file before they spend it (B-456).
+                ("declares", crate::declared::Declared::of(&path).to_value()),
                 // **What the chosen window will actually reserve.** The
                 // recommendation is the largest window that fits, and on a
                 // large machine that is the model's whole trained context:
@@ -3951,6 +3970,14 @@ impl Daemon {
             Err(failure) => return Answer::refused(&failure),
         };
         let settings = crate::hosting::Hosting::from_value(asked, &recommended);
+        // What the file says it has, read before anything is started: a
+        // switch it cannot honour is refused here rather than by an engine
+        // that has already loaded the weights, and what it declares goes
+        // into the answer whether it was asked for or not (B-456, A2).
+        let declared = crate::declared::Declared::of(&path);
+        if let Err(failure) = settings.started.against(&declared) {
+            return Answer::refused(&failure);
+        }
 
         // **The engine named in the settings, not whichever one is found.**
         // Looking one up by shape returned the processor build while the
@@ -4031,6 +4058,7 @@ impl Daemon {
                             Value::List(moved.iter().cloned().map(Value::text).collect()),
                         ),
                         ("takes", takes_value.clone()),
+                        ("declares", declared.to_value()),
                     ]),
                 );
                 *holding = Some(Holding {
@@ -4054,6 +4082,9 @@ impl Daemon {
                         Value::List(moved.into_iter().map(Value::text).collect()),
                     ),
                     ("takes", takes_value),
+                    // What the file declares, so that a model hosted without
+                    // a feature its own file carries says so (B-456).
+                    ("declares", declared.to_value()),
                     ("since", Value::text(at.to_string())),
                 ]))
             }

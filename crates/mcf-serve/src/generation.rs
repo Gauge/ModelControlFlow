@@ -447,6 +447,11 @@ pub(crate) fn serve_generation(
     // it, so a caller that named no switch is framed as if they had named
     // none — the template's own defaults.
     picture: Option<&Path>,
+    // What the engine is started with beyond the plain load, where the
+    // caller asked for either: the model's own draft head, a rope scaling.
+    // Nothing here is inferred from the file — a feature a file declares is
+    // reported and left alone until somebody asks for it (B-456, D43).
+    started: crate::declared::Started,
     // Who is waiting, so that the engine's request is closed when they
     // leave and its progress reaches them while they stay (D48).
     waiting: crate::served::Waiting<'_>,
@@ -467,7 +472,11 @@ pub(crate) fn serve_generation(
     let derived_budget = derived.budget.clone();
     let derived = derived.addressing;
 
-    let (chosen, gpu_layers, context) = engine_for(mcf_home, picked, engine);
+    // What the file says it has, read before anything is loaded: it decides
+    // whether a switch can be honoured at all, and it is what the account
+    // sets the run against.
+    let declared = crate::declared::Declared::of(&resolved(store, named));
+    let (chosen, gpu_layers, context) = engine_for(mcf_home, picked, engine, started, &declared);
     // **The addressed turn is tokenized by the engine that will answer it**
     // (B-441): the server's own tokenizer where the server answers, MCF's
     // where the stand-in does. A turn that cannot be built is the
@@ -479,6 +488,7 @@ pub(crate) fn serve_generation(
         gpu_layers,
         context,
         server,
+        started,
     };
     // The picture is read before anything is started: a file that is not
     // there is the caller's to fix, and loading a model to find that out
@@ -540,7 +550,7 @@ pub(crate) fn serve_generation(
                     };
                     through_served(
                         store, &llama, server, runtime, named, &sent, draw, gpu_layers, context,
-                        waiting, writer,
+                        started, &declared, waiting, writer,
                     )
                 }
                 None => {
@@ -587,8 +597,41 @@ fn text_only() -> Failure {
     )
 }
 
-/// Which engine answers, on which device, in which window.
+/// Which engine answers, on which device, in which window — and whether it
+/// can be asked for what was asked of it.
+///
+/// The switches beyond the plain load are settled here because this is
+/// before anything is started: an engine loaded and then refused would be a
+/// minute spent to say no (A2, B-456).
 fn engine_for(
+    mcf_home: &Path,
+    picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    engine: Option<&str>,
+    started: crate::declared::Started,
+    declared: &crate::declared::Declared,
+) -> (Result<Chosen, Failure>, u32, u64) {
+    let (chosen, gpu_layers, context) = chosen_engine(mcf_home, picked, engine);
+    let chosen = chosen.and_then(|chosen| match chosen {
+        Chosen::StandIn if started.asks_anything() => Err(no_extras()),
+        chosen => started.against(declared).map(|()| chosen),
+    });
+    (chosen, gpu_layers, context)
+}
+
+/// The refusal MCF's own engine gives a switch meant for the provisioned one.
+fn no_extras() -> Failure {
+    Failure::new(
+        mcf_core::failure::Category::ConfigInvalid,
+        mcf_core::failure::Attribution::User,
+        mcf_core::failure::Disposition::Refused,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        "MCF's own engine runs the weights as the file lays them out: it has no draft head to \
+         start and no scaling to set. The provisioned engine takes both",
+    )
+}
+
+/// Which engine answers, on which device, in which window.
+fn chosen_engine(
     mcf_home: &Path,
     picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
     engine: Option<&str>,
@@ -690,6 +733,9 @@ struct Place<'a> {
     gpu_layers: u32,
     context: u64,
     server: &'a std::sync::Mutex<Option<Served>>,
+    /// What the engine is started with beyond the plain load, so that the
+    /// engine that frames a turn is the engine that answers it.
+    started: crate::declared::Started,
 }
 
 impl<'a> Place<'a> {
@@ -703,6 +749,7 @@ impl<'a> Place<'a> {
                 named: self.named,
                 gpu_layers: self.gpu_layers,
                 context: self.context,
+                started: self.started,
             },
             server: self.server,
         }
@@ -1202,6 +1249,9 @@ pub(crate) struct Where<'a> {
     pub gpu_layers: u32,
     /// The largest window MCF resolved for this model.
     pub context: u64,
+    /// What the engine is started with beyond the plain load. An engine
+    /// started under one set of these is not the engine for another.
+    pub started: crate::declared::Started,
 }
 
 /// How many positions of a prompt are ranked before MCF stops.
@@ -1292,11 +1342,17 @@ fn serving<'slot>(
         named,
         gpu_layers,
         context: _,
+        started,
     } = *where_it_lives;
     let path = resolved(store, named);
+    // **And started with the same switches.** An engine holding this model
+    // with its draft head running is not the engine for a request that asked
+    // for the plain load: the tokens come from a different arrangement of
+    // the same weights, and answering one from the other would put a
+    // condition in the account that was not the condition (A6, B-456).
     let reused = slot
         .as_ref()
-        .is_some_and(|held| held.model == path && held.window >= window);
+        .is_some_and(|held| held.model == path && held.window >= window && held.started == started);
     if !reused {
         *slot = None;
         // The projector its publisher shipped beside it, where one sits
@@ -1310,6 +1366,7 @@ fn serving<'slot>(
             gpu_layers,
             window,
             projector.as_deref(),
+            started,
         )?);
     }
     let engine = slot
@@ -1360,6 +1417,8 @@ fn through_served(
     draw: Draw,
     gpu_layers: u32,
     context: u64,
+    started: crate::declared::Started,
+    declared: &crate::declared::Declared,
     waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
@@ -1387,6 +1446,7 @@ fn through_served(
         named,
         gpu_layers,
         context,
+        started,
     };
     let room = if shown.is_some() { PICTURE_ROOM } else { 0 };
     let window = window_for(tokens.len().saturating_add(room), limit, context);
@@ -1439,6 +1499,12 @@ fn through_served(
             "shown".to_owned(),
             shown.map_or(Value::Null, |shown| shown.to_value(engine)),
         );
+        // What the file says it has, and what the engine was started with.
+        // Both, always: a run of a model whose file declares a draft head
+        // nobody started is a run that left something on the disk, and the
+        // only place a person can learn that is here (B-456, A7).
+        fields.insert("declares".to_owned(), declared.to_value());
+        fields.insert("started_with".to_owned(), started.to_value());
         fields.insert(
             "identifiers_read".to_owned(),
             Value::Integer(i64::try_from(completed.evaluated).unwrap_or(i64::MAX)),

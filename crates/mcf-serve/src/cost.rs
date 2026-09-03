@@ -136,6 +136,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
         pinned: false,
         turn: None,
         image: None,
+        started: crate::declared::Started::default(),
     }
     .to_line();
     let started = clock.now();

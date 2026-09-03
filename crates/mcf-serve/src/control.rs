@@ -181,6 +181,11 @@ pub enum Request {
         /// the engine frames from the model's own template, since that is
         /// the only turn with a place for one.
         image: Option<String>,
+        /// What the engine is started with beyond the plain load, where the
+        /// caller asked for either: the model's own draft head, a scaling
+        /// for the positions. Nothing is on unless it was asked for, and a
+        /// request that says nothing is the plain load (B-456, D43).
+        started: crate::declared::Started,
     },
     /// What a hub publishes under a reference, and which of it will run here.
     ///
@@ -298,6 +303,7 @@ fn generate_line(
     pinned: bool,
     turn: Option<&crate::turn::Turn>,
     image: Option<&str>,
+    started: crate::declared::Started,
 ) -> Value {
     Value::map([
         ("ask", Value::text("generate")),
@@ -343,6 +349,7 @@ fn generate_line(
             "image",
             image.map_or(Value::Null, |path| Value::text(path.to_owned())),
         ),
+        ("started_with", started.to_value()),
     ])
 }
 
@@ -423,6 +430,7 @@ impl Request {
                 pinned,
                 turn,
                 image,
+                started,
             } => generate_line(
                 model,
                 prompt,
@@ -434,6 +442,7 @@ impl Request {
                 *pinned,
                 turn.as_ref(),
                 image.as_deref(),
+                *started,
             ),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
@@ -740,6 +749,13 @@ impl Request {
                         .get("image")
                         .and_then(Value::as_text)
                         .map(str::to_owned),
+                    // Absent means the plain load: a client that predates
+                    // the field asked for neither switch, which is what
+                    // every client that does not say is asking for.
+                    started: value
+                        .get("started_with")
+                        .map(crate::declared::Started::from_value)
+                        .unwrap_or_default(),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

@@ -55,6 +55,7 @@ pub(crate) fn run(
     engine: Option<&str>,
     turn: &mcf_serve::turn::Turn,
     image: Option<&Path>,
+    started: mcf_serve::declared::Started,
 ) -> Response {
     run_where(
         crate::serve::socket_path(),
@@ -65,6 +66,7 @@ pub(crate) fn run(
         engine,
         turn,
         image,
+        started,
     )
 }
 
@@ -92,6 +94,7 @@ pub(crate) fn run_where(
     engine: Option<&str>,
     turn: &mcf_serve::turn::Turn,
     image: Option<&Path>,
+    started: mcf_serve::declared::Started,
 ) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -137,44 +140,13 @@ pub(crate) fn run_where(
                 engine,
                 turn,
                 image,
+                started,
             },
         );
     }
-    // A picture goes through the projector the served engine loads beside
-    // the model, and MCF's own engine reads text alone: said here rather
-    // than run on the words with the picture dropped (A2, B-452).
-    if let Some(image) = image {
+    if let Some(refusal) = needs_the_daemon(engine, turn, image, started) {
         return Response {
-            text: format!(
-                "mcf: a picture ({}) goes to the provisioned engine through the daemon, and none \
-                 is listening\n  `mcf serve` starts one; without it this process runs MCF's own \
-                 engine, which reads text only",
-                image.display()
-            ),
-            served: false,
-        };
-    }
-    // A switch of the template is thrown by the engine that renders it, and
-    // MCF's own engine renders none: said here rather than run under no
-    // switch (A2, §3.15).
-    if turn.asks_anything() {
-        return Response {
-            text: format!(
-                "mcf: {} goes to the model's own template, which the provisioned engine \
-                 renders through the daemon, and none is listening\n  `mcf serve` starts one; \
-                 without it this process runs MCF's own engine, which runs no template",
-                turn.said()
-            ),
-            served: false,
-        };
-    }
-    if engine.is_some_and(|engine| engine != "stand-in") {
-        return Response {
-            text: format!(
-                "mcf: the {} engine runs through the daemon, and none is listening\n  `mcf serve` \
-                 starts one; without it this process runs MCF's own engine (D39)",
-                engine.unwrap_or_default()
-            ),
+            text: refusal,
             served: false,
         };
     }
@@ -214,6 +186,49 @@ pub(crate) fn run_where(
     }
 }
 
+/// Why this run cannot happen in this process, where it cannot.
+///
+/// **Said rather than quietly done differently.** Every one of these is a
+/// condition the provisioned engine carries and MCF's own engine has not:
+/// a picture needs a projector, a switch of the template needs a template
+/// rendered, a draft head and a scaling are the engine's own start. Running
+/// the words without them would answer a question nobody asked (A2, §3.15).
+fn needs_the_daemon(
+    engine: Option<&str>,
+    turn: &mcf_serve::turn::Turn,
+    image: Option<&Path>,
+    started: mcf_serve::declared::Started,
+) -> Option<String> {
+    let without = "`mcf serve` starts one; without it this process runs MCF's own engine";
+    if let Some(image) = image {
+        return Some(format!(
+            "mcf: a picture ({}) goes to the provisioned engine through the daemon, and none is \
+             listening\n  {without}, which reads text only",
+            image.display()
+        ));
+    }
+    if started.asks_anything() {
+        return Some(format!(
+            "mcf: {} is the provisioned engine's to start, through the daemon, and none is \
+             listening\n  {without}, which runs the weights as the file lays them out",
+            started.said()
+        ));
+    }
+    if turn.asks_anything() {
+        return Some(format!(
+            "mcf: {} goes to the model's own template, which the provisioned engine renders \
+             through the daemon, and none is listening\n  {without}, which runs no template",
+            turn.said()
+        ));
+    }
+    engine.filter(|engine| *engine != "stand-in").map(|engine| {
+        format!(
+            "mcf: the {engine} engine runs through the daemon, and none is listening\n  \
+                 {without} (D39)"
+        )
+    })
+}
+
 /// What a person asked of the run, beside the prompt: the conditions the
 /// account will name back.
 #[derive(Clone, Copy)]
@@ -224,6 +239,9 @@ struct Asked<'a> {
     turn: &'a mcf_serve::turn::Turn,
     /// A picture to show the model, where the person named one (B-452).
     image: Option<&'a Path>,
+    /// What the engine is started with beyond the plain load, where the
+    /// person asked for either (B-456).
+    started: mcf_serve::declared::Started,
 }
 
 /// The generation through the daemon: tokens printed as they arrive, the
@@ -256,6 +274,7 @@ fn served(
         engine,
         turn,
         image,
+        started,
     } = *asked;
     // The daemon reads the file, so the path it is given has to be the
     // file's whole name and not one relative to where this process sits.
@@ -300,6 +319,7 @@ fn served(
         pinned: false,
         turn: turn.asks_anything().then(|| turn.clone()),
         image: image.as_ref().map(|whole| whole.display().to_string()),
+        started,
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())
@@ -409,7 +429,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}{}{}{}{}",
+             {}{}{}{}{}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -439,6 +459,7 @@ fn served(
                 None => String::new(),
             },
             shown_line(&account),
+            beyond_the_load(&account),
             before_the_answer(&account),
             match degraded {
                 Some(mark) => format!(
@@ -492,6 +513,33 @@ fn shown_line(account: &mcf_record::json::Value) -> String {
         text(shown.get("placed")),
         text(shown.get("read_as")),
     )
+}
+
+/// What the file declares beyond what the engine was started with, and what
+/// it was started with beyond the plain load.
+///
+/// **Two lines that are usually one or none.** A model whose file carries a
+/// draft head runs perfectly well without it and only a line like this says
+/// so; a run that started one is a run under a condition that is not the
+/// ordinary one, and the two must not be told apart by their speed alone
+/// (B-456, A7, §3.15).
+fn beyond_the_load(account: &mcf_record::json::Value) -> String {
+    let under = |key: &str| {
+        account
+            .get("conditions")
+            .and_then(|conditions| conditions.get(key))
+    };
+    let started = under("started_with").map(mcf_serve::declared::Started::from_value);
+    let asked = started
+        .filter(mcf_serve::declared::Started::asks_anything)
+        .map_or_else(String::new, |started| {
+            format!("\x20 started   {}\n", started.said())
+        });
+    let left = under("declares")
+        .map(mcf_serve::declared::Declared::from_value)
+        .and_then(|declared| declared.not_started(started.unwrap_or_default()))
+        .map_or_else(String::new, |left| format!("\x20 declares  {left}\n"));
+    format!("{asked}{left}")
 }
 
 /// What the model spent before its answer, as a line, where it spent

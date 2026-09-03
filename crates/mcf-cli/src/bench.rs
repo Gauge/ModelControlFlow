@@ -1033,6 +1033,7 @@ fn generate(
         pinned: true,
         turn: None,
         image: None,
+        started: mcf_serve::declared::Started::default(),
     };
     let clock = SystemClock;
     let began = clock.now();

@@ -442,6 +442,12 @@ pub struct Served {
     /// made up itself, fresh for each engine it starts, and keeps it here.
     /// `None` for an engine hosted on a port, which places its own.
     pub media_marker: Option<String>,
+    /// What it was started with beyond the plain load: a draft head, a rope
+    /// scaling. An engine holding a model under one set of these does not
+    /// answer for another — the tokens are drawn from a different
+    /// arrangement of the same weights — so the caller compares before it
+    /// reuses one (B-456).
+    pub started: crate::declared::Started,
 }
 
 impl Served {
@@ -452,6 +458,10 @@ impl Served {
     /// `engine.spawn.not_found` if the binary is not in the prefix,
     /// `engine.spawn.refused` if it cannot be started, and
     /// `engine.hang.no_output` if it never begins listening.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one engine's start, each condition of which the account names"
+    )]
     pub fn start(
         llama: &ProvisionedLlama,
         model: &Path,
@@ -459,9 +469,10 @@ impl Served {
         gpu_layers: u32,
         context: u64,
         projector: Option<&Path>,
+        started: crate::declared::Started,
     ) -> Result<Self, Failure> {
         Self::start_within(
-            llama, model, runtime, ATTEMPTS, gpu_layers, context, projector,
+            llama, model, runtime, ATTEMPTS, gpu_layers, context, projector, started,
         )
     }
 
@@ -524,6 +535,7 @@ impl Served {
             window: settings.context,
             projector: settings.projector.as_ref().map(PathBuf::from),
             media_marker: None,
+            started: settings.started,
         };
         served
             .wait_until_answering(settings.port, ATTEMPTS)
@@ -592,6 +604,7 @@ impl Served {
         gpu_layers: u32,
         context: u64,
         projector: Option<&Path>,
+        started: crate::declared::Started,
     ) -> Result<Self, Failure> {
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
@@ -652,6 +665,13 @@ impl Served {
         if let Some(projector) = projector {
             command.arg("--mmproj").arg(projector);
         }
+        // **What a file declares is not what an engine starts** (B-456). A
+        // draft head sits in the weights and is not read in at all unless
+        // the engine is told to use it, and a rope scaling the file does not
+        // declare is nobody's to apply but the person who asked for it.
+        // Nothing here is derived from the model: these are switches, and an
+        // empty set of them is the plain load.
+        command.args(started.arguments());
         let media_marker = fresh_marker();
         command
             .env("LLAMA_MEDIA_MARKER", &media_marker)
@@ -680,6 +700,7 @@ impl Served {
             window: context,
             projector: projector.map(Path::to_path_buf),
             media_marker: Some(media_marker),
+            started,
         };
         served
             .wait_until_listening(attempts)

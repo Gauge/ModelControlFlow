@@ -28,6 +28,7 @@ fn without_a_daemon(
         engine,
         &mcf_serve::turn::Turn::default(),
         None,
+        mcf_serve::declared::Started::default(),
     )
 }
 

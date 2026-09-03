@@ -21,6 +21,7 @@ pub mod control;
 pub mod cost;
 pub mod crosscheck;
 pub mod daemon;
+pub mod declared;
 pub mod engines;
 mod generation;
 pub mod hosting;

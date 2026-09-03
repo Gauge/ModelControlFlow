@@ -1854,6 +1854,7 @@ impl Desk {
                 // The window has no way to hand a picture over yet; the
                 // socket takes one (B-452), and the window's turn is B-462.
                 image: None,
+                started: mcf_serve::declared::Started::default(),
             },
             format!("asking {}", held.name),
         ));

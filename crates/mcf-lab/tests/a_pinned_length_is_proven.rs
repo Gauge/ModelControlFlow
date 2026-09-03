@@ -71,6 +71,7 @@ fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
         pinned,
         turn: None,
         image: None,
+        started: mcf_serve::declared::Started::default(),
     };
     writeln!(connection, "{}", request.to_line()).expect("the request goes out");
     connection.flush().expect("it is sent");

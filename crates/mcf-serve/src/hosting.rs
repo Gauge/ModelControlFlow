@@ -94,6 +94,17 @@ pub struct Hosting {
     /// recommendation where no projector sits beside the model, and a choice
     /// somebody can make where one does.
     pub projector: Option<String>,
+    /// What the engine is started with beyond the plain load: the model's
+    /// own draft head, a rope scaling.
+    ///
+    /// **A file can declare more than an engine starts, and MCF starts
+    /// neither of these by itself.** A draft head is left in the file unless
+    /// it is asked for, and a rope scaling the file does not declare is a
+    /// change to how the model reads position that somebody chooses and the
+    /// account then carries. The recommendation is nothing asked for, so a
+    /// model hosted with either says so in the settings that moved (B-456,
+    /// D43, §3.15).
+    pub started: crate::declared::Started,
 }
 
 /// How a hosted model turns a prompt into text.
@@ -175,6 +186,10 @@ impl Hosting {
             port: DEFAULT_PORT,
             api_key: None,
             projector: projector.map(|path| path.display().to_string()),
+            // Never on by themselves: a draft head changes what the tokens
+            // are drawn from, and a stretched rope changes what the model
+            // makes of a position. Both are somebody's decision (D43).
+            started: crate::declared::Started::default(),
         }
     }
 
@@ -217,6 +232,7 @@ impl Hosting {
             out.push("--mmproj".to_owned());
             out.push(projector.clone());
         }
+        out.extend(self.started.arguments());
         out
     }
 
@@ -302,6 +318,15 @@ impl Hosting {
                           usually not needed",
             },
             Setting {
+                name: "started with",
+                value: self.started.said(),
+                recommended: against.started.said(),
+                because: "what the engine is started with beyond the plain load: the draft head \
+                          some publishers train into the file, which the engine leaves there \
+                          unless it is asked for it, and a scaling for positions past the \
+                          conversation the model was trained on",
+            },
+            Setting {
                 name: "projector",
                 value: projector_named(self.projector.as_deref()),
                 recommended: projector_named(against.projector.as_deref()),
@@ -354,6 +379,19 @@ impl Hosting {
             (
                 "projector",
                 self.projector.clone().map_or(Value::Null, Value::text),
+            ),
+            ("draft_head", Value::Bool(self.started.draft_head)),
+            (
+                "rope_scaling",
+                self.started
+                    .rope
+                    .map_or(Value::Null, |rope| Value::text(rope.as_str())),
+            ),
+            (
+                "rope_scale",
+                self.started
+                    .factor
+                    .map_or(Value::Null, |factor| Value::Integer(i64::from(factor))),
             ),
         ])
     }
@@ -411,6 +449,9 @@ impl Hosting {
                 Some(Value::Text(path)) if !path.is_empty() => Some(path.clone()),
                 Some(_) => None,
             },
+            // Read from the same three names the record carries, so that a
+            // hosting read back is the hosting that was written down.
+            started: crate::declared::Started::from_value(value),
         }
     }
 

@@ -170,6 +170,7 @@ fn the_new_requests_survive_the_wire() {
             pinned: true,
             turn: None,
             image: None,
+            started: crate::declared::Started::default(),
         },
         Request::Generate {
             model: "a-model.gguf".to_owned(),
@@ -182,6 +183,7 @@ fn the_new_requests_survive_the_wire() {
             pinned: false,
             turn: None,
             image: None,
+            started: crate::declared::Started::default(),
         },
         Request::PromptReport {
             model: "a-model.gguf".to_owned(),

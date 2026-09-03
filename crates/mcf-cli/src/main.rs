@@ -173,6 +173,9 @@ enum Request<'a> {
         turn: Box<mcf_serve::turn::Turn>,
         /// A picture to show the model, where the person named one (B-452).
         image: Option<&'a str>,
+        /// What the engine is started with beyond the plain load, where the
+        /// person asked for either (B-456).
+        started: mcf_serve::declared::Started,
     },
     /// Check a bundle against this machine.
     Verify {
@@ -1143,6 +1146,13 @@ fn host_options(rest: &[&str]) -> Result<Vec<(String, mcf_record::json::Value)>,
                 Value::Bool(said == Some("on")),
             ),
             "--keep-resident" => ("keep_resident".to_owned(), Value::Bool(said == Some("on"))),
+            // The engine's own start, beyond the plain load (B-456).
+            "--draft-head" => ("draft_head".to_owned(), Value::Bool(said == Some("on"))),
+            "--rope-scaling" => (
+                "rope_scaling".to_owned(),
+                Value::text(said.ok_or("--rope-scaling with no value")?),
+            ),
+            "--rope-scale" => number("rope_scale")?,
             _ => return Err("a setting mcf host does not take"),
         };
         changes.push(change);
@@ -1183,6 +1193,30 @@ fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     Ok(Request::Log { kind, last, full })
 }
 
+/// Throws one of the engine's own start switches that takes a value, or
+/// names what it needed.
+///
+/// `--draft-head` is not here: it takes no value, and a switch that reads
+/// the next argument would swallow the one after it.
+fn started_switch(
+    started: &mut mcf_serve::declared::Started,
+    switch: &str,
+    value: Option<&str>,
+) -> Option<&'static str> {
+    if switch == "--rope-scaling" {
+        match value.and_then(mcf_serve::declared::Scaling::from_word) {
+            Some(scaling) => started.rope = Some(scaling),
+            None => return Some("--rope-scaling <none|linear|yarn>"),
+        }
+        return None;
+    }
+    match value.and_then(|value| value.parse().ok()) {
+        Some(factor) => started.factor = Some(factor),
+        None => return Some("--rope-scale <n>, a whole number"),
+    }
+    None
+}
+
 /// Throws one of the template's switches as said, or names what it needed.
 fn turn_switch(
     turn: &mut mcf_serve::turn::Turn,
@@ -1217,6 +1251,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut engine = None;
     let mut turn = mcf_serve::turn::Turn::default();
     let mut image = None;
+    let mut started = mcf_serve::declared::Started::default();
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -1238,6 +1273,17 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            // The engine's own start, where the person asked for more of
+            // the file than the plain load reads (B-456).
+            "--draft-head" => started.draft_head = true,
+            "--rope-scaling" | "--rope-scale" => {
+                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs,
+                    });
+                }
+            }
             // The template's own switches, each passed through as said.
             "--thinking" | "--effort" | "--system" => {
                 if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
@@ -1289,6 +1335,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             engine,
             turn: Box::new(turn),
             image,
+            started,
         }),
         (None, _) => Ok(Request::MissingArgument {
             command: "run",
@@ -1695,7 +1742,10 @@ const COMMANDS: &str = "\
     \x20         [--effort <word>]           the model's own template, which\n\
     \x20         [--system <text>]           the engine renders; a picture\n\
     \x20         [--image <file>]            goes through the model's own\n\
-    \x20                                     projector, where it has one\n\
+    \x20         [--draft-head]              projector, where it has one.\n\
+    \x20         [--rope-scaling <kind>]     A draft head and a scaling are\n\
+    \x20         [--rope-scale <n>]          the engine's to start, never\n\
+    \x20                                     on unless they are asked for\n\
     \x20 mcf bench <model> --against <model> compare two models on an engine\n\
     \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
     \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
@@ -1764,7 +1814,10 @@ const COMMANDS: &str = "\
     \x20      [--port <n>] [--engine <name>] another program can reach it;\n\
     \x20      [--gpu-layers <n>] [--threads <n>] it prints the settings it\n\
     \x20      [--batch <n>] [--api-key <key>] chose and what they cost\n\
-    \x20      [--flash-attention]\n\
+    \x20      [--flash-attention]            — including the model's own\n\
+    \x20      [--draft-head on|off]          draft head, which a file can\n\
+    \x20      [--rope-scaling <kind>]        carry and the engine leaves\n\
+    \x20      [--rope-scale <n>]             in it unless it is asked for\n\
     \x20 mcf hosted                          what is being held, and where\n\
     \x20 mcf measure <model>                 time it at doubling context\n\
     \x20         [--deepest <n>]             depths, so the cost of a longer\n\
@@ -1884,6 +1937,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             engine,
             turn,
             image,
+            started,
         } => run::run(
             model,
             prompt,
@@ -1892,6 +1946,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             *engine,
             turn,
             image.map(std::path::Path::new),
+            *started,
         ),
         Request::Bench {
             left,

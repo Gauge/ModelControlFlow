@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 108 |
+| **Version** | 109 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 164 | [F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)](#164--f164--a-file-can-carry-more-than-the-engine-loads-a-draft-head-declared-in-the-weights-is-never-read-in-unless-the-engine-is-told-to-and-a-scaling-asked-for-with-no-factor-stretches-nothing-b-456-b-449-d43-a7-a21-315) |
 | 163 | [F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)](#163--f163--a-picture-through-the-daemons-engine-went-nowhere-the-marker-the-engine-stands-a-picture-at-is-made-up-fresh-for-each-process-and-a-turn-with-a-picture-in-it-goes-as-one-string-the-engine-parses-whole-b-452-b-449-f161-f26-a2-a4-a7-315) |
 | 162 | [F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)](#162-f162--the-daemon-answered-one-thing-at-a-time-so-a-trial-that-ran-for-hours-ran-for-nobody-status-timed-out-behind-it-the-client-gave-up-at-twenty-minutes-the-engine-went-on-to-the-end-and-every-failure-on-the-served-path-was-charged-to-the-stand-in-b-458-b-459-b-460-d48-a1-a2-a7-31) |
 | 161 | [F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)](#161-f161--the-served-path-parsed-a-persons-text-for-the-models-markers-and-the-switches-a-models-template-offers-could-not-be-reached-without-running-it-b-450-b-451-b-449-d47-d46-f26-a4-a7-315) |
@@ -9586,6 +9587,70 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 164 · F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)
+
+Seven models on this machine were read for what their files declare beyond
+the weights the engine loads. One declares a draft head — `nextn_predict_layers 1`
+on a 27B, extra layers trained to guess the next token — and two declare a
+rope scaling: yarn ×32 from a trained 4,096 on a 20B, yarn ×48 on a 24B. The
+other four declare neither, and every one of the seven declares a context
+length, which is not the same fact as a scaling that reaches it.
+
+**The draft head is not loaded at all.** The pinned engine reads those
+layers only when its speculation switch names them; unasked, `load_mtp` is
+false and the tensors stay on the disk. It does detect a draft head by
+itself — but only in a *separate* file named as a draft model or pulled
+from a repository's sidecar, never in the weights it was asked to run. So a
+model whose publisher trained a head into the file it shipped runs without
+it, correctly and more slowly, and nothing said so. MCF now says so: the
+account carries what the file declares beside what the engine was started
+with, and `mcf run`, `mcf host` and `mcf settings` each print the sentence
+where a person is looking — *a draft head of 1 layer, which the engine
+leaves in the file unless it is asked for*.
+
+**A declared scaling is a different fact, and reporting it as unstarted
+would have been wrong.** The engine reads a file's scaling type and factor
+when it loads it and uses them unless it is told otherwise, so a model whose
+file declares yarn is already running yarn: there is nothing left in the
+file. What is genuinely absent is a scaling for a file that declares none,
+and asking for one is asking for a change to how the model reads position
+that its publisher did not ship. It is offered — `--rope-scaling none|linear|yarn`
+with `--rope-scale <n>` — and refused where it would do nothing: a scaling
+with no factor from either the switch or the file stretches the positions by
+one, which is a condition in the account and no change to the model, and a
+factor with no scaling has nothing to apply itself to. Both refusals are
+made before an engine is started, since an engine loaded and then refused is
+a minute spent to say no.
+
+**Neither is ever on by itself.** MCF starting a draft head because the file
+mentions one would be MCF choosing speed on somebody's behalf and changing
+what the tokens are drawn from; MCF stretching a rope because a longer
+window was asked for would be MCF answering a question about faithfulness
+that nobody measured. The recommendation is the plain load, in the settings
+table as elsewhere, so a model held with either says so under *moved off
+what MCF recommended*. An engine already holding the model under one set of
+these is not the engine for a request under another — it is stopped and
+started again, the way a window too small for a turn is.
+
+**What ran.** The 27B answered *Blue* in two tokens under the plain load and
+the same two tokens with its draft head started, which is what speculation
+promises and not a proof of it; the engine's own command line carried
+`--spec-type draft-mtp` and the account carried `started_with`. Hosted, the
+same model reported its draft head as left in the file when it was not
+asked for and as started when it was. A model whose file declares no draft
+head refuses the switch as the artifact's shortfall rather than the asker's
+mistake, and MCF's own engine refuses both switches, since it runs the
+weights as the file lays them out. One daemon under a 40 GiB memory cap, the
+processor only, llama-server @925e1179, greedy at one seed; the timings are
+not measurements (D39).
+
+**What this does not settle.** Nobody has measured what a draft head is
+worth on this machine: `mcf bench` and `mcf measure` do not carry the
+switch, so the two conditions cannot be timed against each other yet — that
+is the row. The scaling factor is a whole number, which every file seen
+declares and a file elsewhere may not. Nothing reads what a scaling costs in
+faithfulness, which is the question a person asking for one actually has.
+
 ## 163 · F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)
 
 Qwen3-VL-2B was asked through `mcf run --image` what was in a picture — a
@@ -11421,6 +11486,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 109 — what the file carries and the engine leaves
+
+F164 added: a draft head declared in a model's own weights is never loaded
+unless the engine is told to, a declared rope scaling is followed by itself,
+and both are now read, reported and offered rather than assumed. B-456.
 
 ### Version 108 — a picture at the engine's marker
 
