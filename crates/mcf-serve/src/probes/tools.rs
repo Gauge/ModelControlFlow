@@ -95,6 +95,33 @@ pub enum Attempt {
     },
 }
 
+/// The shape a call comes in.
+///
+/// **Read off the model's own template, never chosen by MCF.** A family that
+/// writes its calls as a JSON object and one that writes them as a nested
+/// function block are both calling correctly; a reader that knew only the
+/// first would report the second as making no call, which is a statement
+/// about the reader (B-453, A21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    /// An object with `name` and `arguments`.
+    Json,
+    /// `<function=name>` with a `<parameter=key>` for each argument, which is
+    /// what several templates write inside their call markers.
+    Function,
+}
+
+impl Form {
+    /// What it is called where a person reads it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "a JSON object",
+            Self::Function => "a nested function block",
+        }
+    }
+}
+
 /// One way of telling a model about a tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Offering {
@@ -107,6 +134,9 @@ pub struct Offering {
     /// Empty means *a bare JSON object counts*, which is what a model with no
     /// call markers in its vocabulary can produce.
     pub between: Option<(String, String)>,
+    /// The shape this offering asked for. A call that came in the other one
+    /// is still a call, and is reported as one (B-453).
+    pub form: Form,
 }
 
 /// What the tool-calling probe observed.
@@ -138,6 +168,9 @@ pub struct Declared {
     pub template_mentions_tools: bool,
     /// Call markers its template names that its vocabulary also carries.
     pub markers: Vec<String>,
+    /// The shape its template writes a call in, read from the template's own
+    /// text (B-453).
+    pub form: Form,
 }
 
 impl Declared {
@@ -160,8 +193,9 @@ pub const TOOL_CALLING: Method = Method {
     name: "tool-calling",
     asks: "offers one tool with one argument and asks a question that cannot be answered \
            without it, through each way of describing a tool that this model's own file \
-           suggests, and counts the trials that produce a call which appears where one was \
-           asked for, parses as JSON, and names the tool offered",
+           suggests — including the form its own template writes a call in — and counts the \
+           trials that produce a call which appears where one was asked for, parses as that \
+           form, and names the tool offered",
     decides: "whether MCF may present this model with tools — and nothing else: what the \
               arguments say is not read, because whether they are sensible is a judgement \
               and a probe makes none (D42)",
@@ -262,9 +296,15 @@ pub fn tool_calling(
         return Probed::inconclusive(TOOL_CALLING, &because, trials, spent, conditions);
     }
 
+    // The offerings are built likeliest-first — the model's own form, then
+    // its markers, then a plain description — so a tie goes to the earlier
+    // one. `max_by_key` keeps the *last* maximum, which named a plain
+    // description as best for a model that called just as well in the form
+    // its own template writes (B-453).
     let best = well_formed
         .iter()
         .filter(|(_, count)| *count > 0)
+        .rev()
         .max_by_key(|(_, count)| *count)
         .map(|(name, _)| name.clone());
 
@@ -324,6 +364,17 @@ fn declared(file: &gguf::Model, vocabulary: &Vocabulary) -> Declared {
     Declared {
         template_mentions_tools: template.to_lowercase().contains("tool"),
         markers,
+        // **The form is read, not assumed.** A template that writes
+        // `<function=…>` and `<parameter=…>` writes its calls that way, in
+        // its instructions to the model and in how it renders a call back —
+        // and the model was trained on what its template writes. This is the
+        // template's text read as text, which is what the markers above are
+        // read from; running it is what D46 forbids and nothing here does.
+        form: if template.contains("<function=") && template.contains("<parameter=") {
+            Form::Function
+        } else {
+            Form::Json
+        },
     }
 }
 
@@ -342,7 +393,30 @@ fn offerings(declared: &Declared) -> Vec<Offering> {
     );
     let mut found = Vec::new();
 
-    if let Some((open, close)) = paired(&declared.markers) {
+    let paired = paired(&declared.markers);
+    // **The model's own form, where its template writes one.** A family
+    // trained to answer with a function block will answer with one however it
+    // is asked, so an offering that asks for a JSON object measures the
+    // asking rather than the model (B-453, F164 for the same shape of
+    // mistake in another place).
+    if declared.form == Form::Function {
+        let (open, close) = paired
+            .clone()
+            .unwrap_or_else(|| ("<tool_call>".to_owned(), "</tool_call>".to_owned()));
+        found.push(Offering {
+            name: format!("the template's own form, {open}…{close}"),
+            text: format!(
+                "You have one tool:\n{schema}\nTo use it, reply in this form and nothing \
+                 else:\n{}\n\n{}",
+                example(&open, &close),
+                OFFER.question
+            ),
+            between: Some((open, close)),
+            form: Form::Function,
+        });
+    }
+
+    if let Some((open, close)) = paired {
         found.push(Offering {
             name: format!("the file's own markers, {open}…{close}"),
             text: format!(
@@ -351,6 +425,7 @@ fn offerings(declared: &Declared) -> Vec<Offering> {
                 OFFER.question
             ),
             between: Some((open, close)),
+            form: Form::Json,
         });
     }
 
@@ -362,8 +437,20 @@ fn offerings(declared: &Declared) -> Vec<Offering> {
             OFFER.question
         ),
         between: None,
+        form: Form::Json,
     });
     found
+}
+
+/// A call in the function form, written out for the offered tool.
+///
+/// The shape the templates that use it write: the call markers around a
+/// function block, one parameter block inside it, each on its own line.
+fn example(open: &str, close: &str) -> String {
+    format!(
+        "{open}\n<function={}>\n<parameter={}>\nParis\n</parameter>\n</function>\n{close}",
+        OFFER.name, OFFER.argument
+    )
 }
 
 /// An opening and closing marker from the ones the file names.
@@ -402,25 +489,30 @@ fn read(said: &str, offering: &Offering, trial: &Trial) -> Attempt {
         Found::AsAsked(text) => (text.clone(), true),
         Found::Elsewhere(text) => (text.clone(), false),
     };
-    let parsed = match mcf_record::json::parse(&candidate) {
-        Ok(value) => value,
-        Err(error) => {
-            return Attempt::Malformed {
-                because: format!("what came out did not parse as JSON ({error}): {candidate:?}"),
-            };
-        }
-    };
-    let Some(named) = parsed
-        .get("name")
-        .and_then(mcf_record::json::Value::as_text)
-    else {
-        return Attempt::Malformed {
-            because: format!("the object has no \"name\": {candidate:?}"),
-        };
+    // **Either form is a call.** A model that wrote a function block where a
+    // JSON object was asked for has called the tool; which form it used is a
+    // fact about the model, and the offering that asked for the other one is
+    // what says so (B-453).
+    let (named, form) = match called(&candidate) {
+        Ok(called) => called,
+        Err(because) => return Attempt::Malformed { because },
     };
     if named != OFFER.name {
         return Attempt::Malformed {
             because: format!("it called {named:?}, which was not the tool offered"),
+        };
+    }
+    if form != offering.form {
+        // The tool was called, in the shape the model's own template writes
+        // rather than the shape this offering asked for. Not well formed
+        // under this offering, and emphatically a call (B-453).
+        return Attempt::Malformed {
+            because: format!(
+                "a call to {} written as {}, where this offering asked for {}: {candidate}",
+                OFFER.name,
+                form.as_str(),
+                offering.form.as_str()
+            ),
         };
     }
     if !as_asked {
@@ -463,6 +555,17 @@ enum Found {
 /// emitted a call without the wrapper has done something the probe must not
 /// record as having done nothing.
 fn between(said: &str, offering: &Offering) -> Option<Found> {
+    let call_shaped = |said: &str| {
+        first_object(said).or_else(|| {
+            let at = said.find("<function=")?;
+            let rest = said.get(at..)?;
+            let end = rest
+                .find("</function>")
+                .and_then(|end| end.checked_add("</function>".len()))
+                .unwrap_or(rest.len());
+            rest.get(..end).map(str::to_owned)
+        })
+    };
     if let Some((open, close)) = &offering.between {
         let inside = said
             .find(open.as_str())
@@ -475,11 +578,49 @@ fn between(said: &str, offering: &Offering) -> Option<Found> {
         if let Some(inner) = inside {
             return Some(Found::AsAsked(inner.trim().to_owned()));
         }
-        // The markers were not there. A bare object still counts as something
+        // The markers were not there. A bare call still counts as something
         // the model did — reported as put elsewhere, never as absent (F101).
-        return first_object(said).map(Found::Elsewhere);
+        return call_shaped(said).map(Found::Elsewhere);
     }
-    first_object(said).map(Found::AsAsked)
+    call_shaped(said).map(Found::AsAsked)
+}
+
+/// What a candidate call names, and in which form, or nothing where it is
+/// neither.
+///
+/// Mechanical, both ways: an object is parsed and its `name` read; a function
+/// block's name is what stands between `<function=` and the `>` that closes
+/// it. Nothing here reads the arguments for sense, for the reason the module
+/// gives.
+fn called(candidate: &str) -> Result<(String, Form), String> {
+    // A function block first, because a template that writes one may write a
+    // JSON object inside a parameter and the block is the outer fact.
+    if let Some(named) = named_function(candidate) {
+        return Ok((named, Form::Function));
+    }
+    if !candidate.trim_start().starts_with('{') {
+        return Err(format!(
+            "what came out is neither a JSON object nor a function block: {candidate:?}"
+        ));
+    }
+    let value = mcf_record::json::parse(candidate)
+        .map_err(|error| format!("what came out did not parse as JSON ({error}): {candidate:?}"))?;
+    let named = value
+        .get("name")
+        .and_then(mcf_record::json::Value::as_text)
+        .ok_or_else(|| format!("the object has no \"name\": {candidate:?}"))?;
+    Ok((named.to_owned(), Form::Json))
+}
+
+/// The name in a function block, where the text carries one.
+fn named_function(candidate: &str) -> Option<String> {
+    let at = candidate
+        .find("<function=")?
+        .checked_add("<function=".len())?;
+    let rest = candidate.get(at..)?;
+    let end = rest.find('>')?;
+    let named = rest.get(..end)?.trim();
+    (!named.is_empty()).then(|| named.to_owned())
 }
 
 /// The first balanced `{…}` in an answer, which is what a bare object looks

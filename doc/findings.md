@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 109 |
+| **Version** | 110 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 165 | [F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)](#165--f165--a-tool-call-written-in-the-form-the-models-own-template-uses-was-read-as-no-call-at-all-the-reader-knew-one-shape-and-the-family-that-writes-another-was-reported-as-never-calling-b-453-b-053-f161-d42-a21-318) |
 | 164 | [F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)](#164--f164--a-file-can-carry-more-than-the-engine-loads-a-draft-head-declared-in-the-weights-is-never-read-in-unless-the-engine-is-told-to-and-a-scaling-asked-for-with-no-factor-stretches-nothing-b-456-b-449-d43-a7-a21-315) |
 | 163 | [F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)](#163--f163--a-picture-through-the-daemons-engine-went-nowhere-the-marker-the-engine-stands-a-picture-at-is-made-up-fresh-for-each-process-and-a-turn-with-a-picture-in-it-goes-as-one-string-the-engine-parses-whole-b-452-b-449-f161-f26-a2-a4-a7-315) |
 | 162 | [F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)](#162-f162--the-daemon-answered-one-thing-at-a-time-so-a-trial-that-ran-for-hours-ran-for-nobody-status-timed-out-behind-it-the-client-gave-up-at-twenty-minutes-the-engine-went-on-to-the-end-and-every-failure-on-the-served-path-was-charged-to-the-stand-in-b-458-b-459-b-460-d48-a1-a2-a7-31) |
@@ -9587,6 +9588,63 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 165 · F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)
+
+The tool-calling probe asked three mechanical questions of every answer: did
+a call appear where one was asked for, does it parse as JSON, does it name
+the tool offered. Two of the seven models here write their calls in another
+shape entirely. Their templates instruct the model to reply with a function
+block —
+
+```
+<tool_call>
+<function=get_weather>
+<parameter=city>
+Paris
+</parameter>
+</function>
+</tool_call>
+```
+
+— and asked plainly, a 30B of that family produces exactly that and nothing
+else. There is not a brace in it. The probe looked for the first balanced
+`{…}`, found none, and recorded *no call*: a model that called the tool
+correctly, in the form its own publisher trained it to use, counted as one
+that ignored the tool. F161 had already seen the same shape come back
+through a hosted port, where the engine's own reader turned it into a
+structured call — so the probe and the port disagreed about the same model.
+
+**The form is read off the template, not chosen by MCF.** A template that
+writes `<function=` and `<parameter=` writes its calls that way, in the
+instructions it gives the model and in how it renders one back; that is the
+template's text read as text, which is what the call markers were already
+read from, and no more running of it than before (D46). Where the file
+writes that form, the probe now offers the tool in it — showing the model an
+example built for the tool offered — alongside the two offerings it always
+had, and the reader accepts either shape wherever it appears: an object with
+a name, or a function block naming one. A call in the shape the offering did
+not ask for is reported as a call in the other shape, never as silence. The
+offerings are ordered likeliest-first, and a tie now goes to the earlier one,
+since a model calling equally well under its own form and under a plain
+description is better described by its own.
+
+**What ran.** A 30B mixture whose template writes the function form, on one
+daemon under a 40 GiB memory cap, the processor only, llama-server @925e1179,
+greedy at one seed: five of five well formed under its own form, five of five
+under its markers with a JSON object asked for, five of five under a plain
+description — a model that writes whichever it is asked for, which the
+probe could not have said before because one of the three answers was
+unreadable to it. Asked the way its template asks, it wrote the block above
+in twenty-two tokens from eighty-nine.
+
+**What this does not settle.** The reader knows two shapes, and a third
+family will need a third: the honest fix is the engine's own parser for the
+template, which returns a structured call through the port and is not
+reachable from the probe's path. The arguments are still not read for sense,
+which is the same deliberate silence as before. And a model that calls in a
+form its template does not write is judged against the form its template
+does write, which is the reading the probe can defend.
+
 ## 164 · F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)
 
 Seven models on this machine were read for what their files declare beyond
@@ -11486,6 +11544,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 110 — a call in the family's own hand
+
+F165 added: the tool-calling probe read only JSON, so a family whose template
+writes a function block was recorded as never calling. The form is now read
+off the template and either shape is accepted. B-453.
 
 ### Version 109 — what the file carries and the engine leaves
 

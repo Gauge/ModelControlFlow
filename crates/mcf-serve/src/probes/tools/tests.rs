@@ -11,7 +11,7 @@
 // checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
-use super::{Attempt, Declared, Found, OFFER, Offering, between, paired, read};
+use super::{Attempt, Declared, Form, Found, OFFER, Offering, between, paired, read};
 use crate::probes::Trial;
 
 /// An offering that looks for a bare object.
@@ -20,6 +20,7 @@ fn plain() -> Offering {
         name: "plain".to_owned(),
         text: String::new(),
         between: None,
+        form: Form::Json,
     }
 }
 
@@ -29,6 +30,7 @@ fn marked() -> Offering {
         name: "marked".to_owned(),
         text: String::new(),
         between: Some(("<tool_call>".to_owned(), "</tool_call>".to_owned())),
+        form: Form::Json,
     }
 }
 
@@ -228,21 +230,24 @@ fn a_declaration_claims_support_by_either_route() {
     assert!(
         !Declared {
             template_mentions_tools: false,
-            markers: Vec::new()
+            markers: Vec::new(),
+            form: Form::Json,
         }
         .claims_support()
     );
     assert!(
         Declared {
             template_mentions_tools: true,
-            markers: Vec::new()
+            markers: Vec::new(),
+            form: Form::Json,
         }
         .claims_support()
     );
     assert!(
         Declared {
             template_mentions_tools: false,
-            markers: vec!["<tool_call>".to_owned()]
+            markers: vec!["<tool_call>".to_owned()],
+            form: Form::Json,
         }
         .claims_support()
     );
@@ -253,4 +258,52 @@ fn a_declaration_claims_support_by_either_route() {
 fn the_offer_is_what_the_reader_checks_against() {
     let call = format!(r#"{{"name": "{}", "arguments": {{}}}}"#, OFFER.name);
     assert_eq!(read(&call, &plain(), &finished()), Attempt::WellFormed);
+}
+
+/// A call in the form a model's own template writes is a call, and the
+/// offering that asked for the other shape says which one came.
+#[test]
+fn a_function_block_is_a_call() {
+    let block = "<tool_call>\n<function=get_weather>\n<parameter=city>\nParis\n\
+                 </parameter>\n</function>\n</tool_call>";
+    // Under an offering that asked for that form, it is well formed.
+    let mut asked = marked();
+    asked.form = Form::Function;
+    assert_eq!(read(block, &asked, &finished()), Attempt::WellFormed);
+    // Under one that asked for JSON, it is a call in the other form —
+    // never *no call*, which is what it was read as before (B-453).
+    match read(block, &marked(), &finished()) {
+        Attempt::Malformed { because } => {
+            assert!(because.contains("nested function block"), "{because}");
+        }
+        other => panic!("a call in the template's own form read as {other:?}"),
+    }
+    // And with no markers around it at all, it is still a call.
+    let bare = "I will look it up.\n<function=get_weather>\n<parameter=city>\nParis\n\
+                </parameter>\n</function>";
+    let mut plainly = plain();
+    plainly.form = Form::Function;
+    assert_eq!(read(bare, &plainly, &finished()), Attempt::WellFormed);
+}
+
+/// A function block naming another tool is refused for the name, not the form.
+#[test]
+fn a_function_block_naming_another_tool_is_malformed() {
+    let block = "<function=get_time>\n<parameter=city>\nParis\n</parameter>\n</function>";
+    let mut plainly = plain();
+    plainly.form = Form::Function;
+    match read(block, &plainly, &finished()) {
+        Attempt::Malformed { because } => assert!(because.contains("get_time"), "{because}"),
+        other => panic!("a call to another tool read as {other:?}"),
+    }
+}
+
+/// Prose is still no call, in either form.
+#[test]
+fn prose_is_no_call_whichever_form_was_asked_for() {
+    let said = "It is sunny in Paris today, about 18 degrees.";
+    assert_eq!(read(said, &plain(), &finished()), Attempt::NoCall);
+    let mut plainly = plain();
+    plainly.form = Form::Function;
+    assert_eq!(read(said, &plainly, &finished()), Attempt::NoCall);
 }

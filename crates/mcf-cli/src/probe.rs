@@ -386,6 +386,12 @@ fn tool_fields(
             "declared_support",
             mcf_record::json::Value::Bool(calling.declared.claims_support()),
         ),
+        // The form the file's template writes, so that a later reading of
+        // this entry knows which shape the trials asked for (B-453, A6).
+        (
+            "declared_form",
+            mcf_record::json::Value::text(calling.declared.form.as_str()),
+        ),
         (
             "best_offering",
             calling
@@ -1087,6 +1093,28 @@ fn counted(per: &[(String, usize)]) -> i64 {
     .unwrap_or(i64::MAX)
 }
 
+/// What the counts come to, in a sentence.
+///
+/// A model that called is verified; one whose file claimed tools and never
+/// called is a divergence rather than an error, and one that claimed none
+/// and called none is two readings agreeing (A21, B-058).
+fn tool_verdict(calling: &mcf_serve::probes::tools::Calling) -> String {
+    match &calling.best {
+        Some(best) => {
+            format!(" VERIFIED   this model emits well-formed calls, best under {best}")
+        }
+        None if calling.declared.claims_support() => " DIVERGENCE  the file claims tool support \
+             and no trial produced a well-formed call. That is a disagreement between what the \
+             artifact says and what it did, which is a finding rather than an error (A21, \
+             B-058) — and it is not proof the model cannot: MCF chose how to describe the tool, \
+             and that choice is a condition of this answer"
+            .to_owned(),
+        None => {
+            " observed   no well-formed call, and the file claimed none. The two agree.".to_owned()
+        }
+    }
+}
+
 /// The tool-calling probe, and what it found (B-053).
 ///
 /// **Asked through the addressing this run just measured**, because a model
@@ -1142,6 +1170,13 @@ fn tool_lines(
                     format!(" — its vocabulary carries {}", declared.markers.join(", "))
                 }
             ));
+            // The form its template writes, which is what the offerings
+            // were built from: a model asked for a shape its family does not
+            // use is a model asked the wrong question (B-453).
+            lines.push(format!(
+                " declared  its template writes a call as {}",
+                declared.form.as_str()
+            ));
             lines.push(" observed".to_owned());
             for (name, good) in &calling.well_formed {
                 let bad = calling
@@ -1173,23 +1208,7 @@ fn tool_lines(
                 engine,
                 tool_fields(calling),
             )));
-            match &calling.best {
-                Some(best) => lines.push(format!(
-                    " VERIFIED   this model emits well-formed calls, best under {best}"
-                )),
-                None if declared.claims_support() => lines.push(
-                    " DIVERGENCE  the file claims tool support and no trial produced a \
-                     well-formed call. That is a disagreement between what the artifact says \
-                     and what it did, which is a finding rather than an error (A21, B-058) — \
-                     and it is not proof the model cannot: MCF chose how to describe the tool, \
-                     and that choice is a condition of this answer"
-                        .to_owned(),
-                ),
-                None => lines.push(
-                    " observed   no well-formed call, and the file claimed none. The two agree."
-                        .to_owned(),
-                ),
-            }
+            lines.push(tool_verdict(calling));
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
