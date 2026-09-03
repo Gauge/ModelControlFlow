@@ -9656,6 +9656,17 @@ a marker pair before answering, who opened it — the turn's tail or the
 model's first token — and whether it closed, so a budget that ran out inside
 the thought is a fact on the page and not an answer of nothing (B-451).
 
+**The model itself, through its port.** Hosted with its projector —
+*takes: text, images and video; template: a system turn, tools, several in
+a turn, a reasoning effort and earlier reasoning kept; thinking on unless
+asked off* — Qwen3.8-27B named the red circle in three words from 88 prompt
+tokens with thinking off, and asked for the weather with one tool offered
+wrote its call in its template's XML form, which the engine's own reader
+returned as a structured call — `get_weather`, `{"city":"Paris"}`, finished
+as *tool_calls* — from 282 prompt tokens in 26. Two minutes and nine
+minutes on the processor, shared with a context probe of the same model on
+another daemon: the timings are not measurements (D39).
+
 **The same switches across the other models that fit.** GLM-4.7-Flash
 reads the thinking switch and no effort, thinks for 247 tokens unsaid and
 answers in thirteen with thinking off under a French system turn; gpt-oss-20b
