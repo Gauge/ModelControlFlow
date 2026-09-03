@@ -323,3 +323,70 @@ fn nothing_to_cross_check(_world: &World) -> Outcome {
         }
     }
 }
+
+/// The client that asked for a generation leaves before the engine answers.
+pub(super) const CLIENT_LEFT_MIDSTREAM: Scenario = Scenario {
+    id: "engine/client-left-midstream",
+    produces: Category::LabInterrupted,
+    summary: "a request whose client has gone is closed rather than run to its end for nobody, \
+              and the closing says who left",
+    run: client_left_midstream,
+};
+
+/// A request in flight whose client hangs up.
+///
+/// The observable is a client connection read to its end while the engine's
+/// answer is still owed (D26). The engine is a socket that accepts and never
+/// answers — the half of a served engine this is about is the one that takes
+/// hours — and the client is the near end of a pair whose far end has been
+/// dropped. What has to happen is that the request is closed *because the
+/// client left*, not that it times out: a request that ran on for nobody
+/// was the thing D48 was written against.
+fn client_left_midstream(world: &World) -> Outcome {
+    let socket = world.path("engine.sock");
+    let Ok(listener) = std::os::unix::net::UnixListener::bind(&socket) else {
+        return Outcome::Unexpected("the fixture engine could not listen".to_owned());
+    };
+    let Ok((near, far)) = std::os::unix::net::UnixStream::pair() else {
+        return Outcome::Unexpected("the client pair could not be made".to_owned());
+    };
+    // The client goes before the request is even made: the watcher has to
+    // notice a connection that is already at its end, which is the same
+    // reading as one that reaches its end later.
+    drop(far);
+    std::thread::scope(|scope| {
+        let engine = scope.spawn(move || {
+            // Hold the connection open and say nothing until the request is
+            // shut down from the other side, which is what closing it does.
+            if let Ok((mut connection, _)) = listener.accept() {
+                let mut sink = Vec::new();
+                let _read = std::io::Read::read_to_end(&mut connection, &mut sink);
+            }
+        });
+        let waiting = mcf_serve::served::Waiting {
+            client: Some(&near),
+            ..mcf_serve::served::Waiting::NOBODY
+        };
+        let outcome = match mcf_serve::served::asked_while(
+            &socket,
+            std::path::Path::new("a-model.gguf"),
+            "POST",
+            "/completion",
+            Some("{}"),
+            waiting,
+        ) {
+            Err(failure) if failure.category() == Category::LabInterrupted => {
+                Outcome::Produced(failure)
+            }
+            Err(failure) => Outcome::Unexpected(format!(
+                "the closed request was reported as {} rather than as the client leaving",
+                failure.category().code()
+            )),
+            Ok(_) => Outcome::Unexpected(
+                "an engine that never answered was read as answering".to_owned(),
+            ),
+        };
+        let _joined = engine.join();
+        outcome
+    })
+}

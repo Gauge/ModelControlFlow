@@ -394,8 +394,10 @@ const WATCHED: usize = 2;
 /// the machine — and this is only what MCF asks when they have not.
 const RESOLVING: PartsPerMillion = PartsPerMillion(50_000);
 
-/// How long a single generation may take before the wire is called dead.
-const PATIENCE: std::time::Duration = std::time::Duration::from_secs(600);
+/// How long the wire may be silent before it is called dead: not how long
+/// a generation may take, which is as long as it takes (D48). The daemon
+/// says how far the engine has got every ten seconds while it works.
+const PATIENCE: std::time::Duration = std::time::Duration::from_secs(3600);
 
 /// Compares two models, and says what it found.
 #[expect(
@@ -1047,7 +1049,7 @@ fn generate(
     for line in reader.lines() {
         let Ok(line) = line else { break };
         match Streamed::read(line.trim_end()) {
-            Ok(Streamed::Token { .. }) => {}
+            Ok(Streamed::Token { .. } | Streamed::Progress { .. }) => {}
             Ok(Streamed::Done(done)) => {
                 account = Some(done);
                 break;

@@ -148,7 +148,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
     // that timed a refusal would be timing the wrong thing.
     match Streamed::read(first.trim_end()).ok()? {
         Streamed::Token { .. } => {}
-        Streamed::Done(_) => return None,
+        Streamed::Progress { .. } | Streamed::Done(_) => return None,
     }
     // Drain to the end so the next trial starts on a quiet daemon.
     let mut rest = String::new();

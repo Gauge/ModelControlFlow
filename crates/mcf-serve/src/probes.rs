@@ -21,6 +21,14 @@
 
 use std::path::Path;
 
+/// How long a probe's connection may hear nothing before the daemon is
+/// called gone. Not how long a trial may take: a trial that was asked for is
+/// waited for, and the daemon says every ten seconds how far the engine has
+/// got (D48). The usable-context probe on a 27B model on a processor was
+/// reported *inconclusive* at twenty minutes by the bound this replaces,
+/// with the engine a third of the way through a turn it went on to finish.
+const SILENCE: std::time::Duration = std::time::Duration::from_secs(3600);
+
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
@@ -781,7 +789,7 @@ pub fn spoken(
     let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
         return could_not_tell("nothing is listening on the control socket".to_owned());
     };
-    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_secs(600)));
+    let _deadline = connection.set_read_timeout(Some(SILENCE));
     let request = crate::control::Request::Generate {
         // A probe's question is MCF's own constant and the answer is to that
         // question, so this is fixture data rather than the operator's (§6.8,
@@ -815,7 +823,9 @@ pub fn spoken(
             // calls it the model's output — which made every addressing look
             // like a one-token turn through the server (F39). The count comes
             // from the account, which both engines fill in the same units.
-            Ok(crate::control::Streamed::Token { .. }) => {}
+            Ok(
+                crate::control::Streamed::Token { .. } | crate::control::Streamed::Progress { .. },
+            ) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
                     return could_not_tell(format!(
@@ -1129,7 +1139,7 @@ pub fn accepts(
     let Ok(mut connection) = std::os::unix::net::UnixStream::connect(socket) else {
         return Accepted::CouldNotTell("nothing is listening on the control socket".to_owned());
     };
-    let _deadline = connection.set_read_timeout(Some(std::time::Duration::from_mins(20)));
+    let _deadline = connection.set_read_timeout(Some(SILENCE));
     let request = crate::control::Request::Generate {
         // A probe's question is MCF's own constant and the answer is to that
         // question, so this is fixture data rather than the operator's (§6.8,
@@ -1157,7 +1167,9 @@ pub fn accepts(
             return Accepted::CouldNotTell("the stream ended before its account".to_owned());
         };
         match crate::control::Streamed::read(line.trim_end()) {
-            Ok(crate::control::Streamed::Token { .. }) => {}
+            Ok(
+                crate::control::Streamed::Token { .. } | crate::control::Streamed::Progress { .. },
+            ) => {}
             Ok(crate::control::Streamed::Done(account)) => {
                 if let Some(failure) = account.get("failure") {
                     // The engine's own sentence, not the whole classified

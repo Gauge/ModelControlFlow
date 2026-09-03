@@ -47,6 +47,7 @@ pub const CATALOGUE: &[Scenario] = &[
     engine::SERVER_NEVER_LISTENS,
     engine::SERVER_ANSWER_UNREADABLE,
     engine::NOTHING_TO_CROSS_CHECK,
+    engine::CLIENT_LEFT_MIDSTREAM,
     resource::MODEL_LARGER_THAN_MEMORY,
     hub::REFERENCE_IS_NOT_ONE,
     hub::NEEDS_CREDENTIALS,

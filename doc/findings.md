@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 105 |
+| **Version** | 106 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 162 | [F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)](#162-f162--the-daemon-answered-one-thing-at-a-time-so-a-trial-that-ran-for-hours-ran-for-nobody-status-timed-out-behind-it-the-client-gave-up-at-twenty-minutes-the-engine-went-on-to-the-end-and-every-failure-on-the-served-path-was-charged-to-the-stand-in-b-458-b-459-b-460-d48-a1-a2-a7-31) |
 | 161 | [F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)](#161-f161--the-served-path-parsed-a-persons-text-for-the-models-markers-and-the-switches-a-models-template-offers-could-not-be-reached-without-running-it-b-450-b-451-b-449-d47-d46-f26-a4-a7-315) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
@@ -9584,6 +9585,67 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 162 · F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)
+The usable-context probe asked Qwen3.8-27B, on the processor, for a turn of
+262,143 identifiers. The probe's connection had a twenty-minute read bound
+and reported *inconclusive* at twenty minutes, with the engine a third of the
+way through reading the prompt; the engine finished that depth, moved to the
+next, and was still reading at 204,800 identifiers hours later, by which
+time no client had been waiting for it for most of the afternoon. Every
+request in that time — `mcf status` included — queued behind it and timed
+out, because one thread answered everything in turn. A person could not be
+told the daemon was busy, because the only thing that could tell them was
+busy (A2).
+
+**The client waits; the daemon watches.** A run that was asked for is
+waited for (D48). The clients' patience is now a bound on silence and not
+on a turn — an hour with nothing heard is a daemon that has stopped
+answering, and that is the only thing the bound is for — and the served
+engine's own reading is put on the stream every ten seconds: how far it has
+read, of how many, how many it has produced, how long it has been. The slot
+figure the pinned server publishes as `n_prompt_tokens` is what its context
+holds, which is the prompt while reading and the prompt plus what has been
+produced once answering, one behind; the prompt's length is that less what
+was produced, never less than what has been read of it. Four thousand tokens
+from Qwen3-VL-2B printed seven lines, ten seconds apart, each ending
+*30 of 30 read* (B-458).
+
+**Nothing runs for nobody.** The long requests — a generation, a
+measurement, a cross-check, a prompt report, an acquisition, a provisioning
+— are carried on threads of their own; the short ones are answered on the
+accept loop, so status answers while a generation runs and says what is
+running — *generation on Qwen3-VL-2B, 11 seconds in; the engine has read 30
+of 672 identifiers and produced 643* was the first sentence of that kind
+(B-460). Beside each carried request a watcher reads the client's
+connection for its end and looks at the daemon's stopping flag, and closes
+the engine's request when either says nobody is waiting; the pinned server
+takes a closed connection as the cancellation it is, polled once a second.
+A client killed with the engine at 644 tokens had its slot idle on the next
+look; `mcf stop` during a run answered in four milliseconds and the run's
+account said *the daemon was asked to stop while the engine was answering*
+(B-459). The account is `lab.interrupted`, attributed to the user, with the
+engine's reading at the moment it was closed. The stopping daemon waits for
+the requests it closed to land in the record before its own stop does — the
+first cut recorded *daemon stopped* and then a generation, which read as a
+daemon that ran after it had stopped (A1) — and a laboratory scenario builds
+the observable, a client connection already at its end while the engine's
+answer is owed, so the category is one MCF can produce on demand (A13).
+
+**Every failure on the served path was charged to the stand-in.** The
+account of a refused generation carried the conditions of one nobody had
+chosen: `engine: MCF's own stand-in`, `loaded: not_loaded`, whatever engine
+had actually refused. It was wrong for every served failure since the
+served path existed and became common the moment cancellations were
+accounts; a failure is now charged to the engine that was chosen, and
+whether the server had the model loaded when it refused is left unsaid
+rather than guessed (A7).
+
+**What this does not settle.** The usable-context probe still asks for the
+whole depth at once and says nothing of how long that will be; B-461 has it
+measure the rate on a short prompt and state the projection as one. The
+clients print a refusal's body as it came, which is the one place a
+person reads the record's own shape.
+
 ## 161 · F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)
 
 Qwen3.8-27B was hosted to see whether the features its publisher lists reach
@@ -11286,6 +11348,15 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 106 — a trial that ran for nobody
+
+F162 added. One thread answered every request in turn, so a trial the
+client had given up on ran on for hours with status timed out behind it;
+long requests are now carried on their own threads, watched for the client
+leaving and the daemon stopping, and the engine's reading is put on the
+stream every ten seconds. A failure on the served path was charged to the
+stand-in and is now charged to the engine that refused. B-458, B-459, B-460.
 
 ### Version 105 — a person's marker became one
 

@@ -119,6 +119,27 @@ impl Job {
                             ("at", Value::Integer(i64::try_from(at).unwrap_or(i64::MAX))),
                             ("done", Value::Bool(false)),
                         ]),
+                        Streamed::Progress {
+                            read,
+                            of,
+                            produced,
+                            seconds,
+                        } => {
+                            let figure =
+                                |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+                            Value::map([
+                                (
+                                    "progress",
+                                    Value::map([
+                                        ("read", figure(read)),
+                                        ("of", figure(of)),
+                                        ("produced", figure(produced)),
+                                        ("seconds", figure(seconds)),
+                                    ]),
+                                ),
+                                ("done", Value::Bool(false)),
+                            ])
+                        }
                         Streamed::Done(account) => {
                             Value::map([("account", account), ("done", Value::Bool(true))])
                         }

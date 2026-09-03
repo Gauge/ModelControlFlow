@@ -748,6 +748,21 @@ pub enum Streamed {
         /// The text it decodes to.
         text: String,
     },
+    /// How far the engine has got, while the client waits (D48, B-458).
+    ///
+    /// Sent every ten seconds while a turn is being read or answered, so a
+    /// client waiting an hour can see the hour being spent; never sent for a
+    /// turn that is done inside ten seconds.
+    Progress {
+        /// Identifiers of the turn the engine has read so far.
+        read: u64,
+        /// Identifiers the turn holds.
+        of: u64,
+        /// Identifiers produced so far.
+        produced: u64,
+        /// Seconds since the request reached the engine.
+        seconds: u64,
+    },
     /// The end, with the account.
     Done(Value),
 }
@@ -762,6 +777,26 @@ impl Streamed {
                 ("token", Value::text(text.clone())),
                 ("at", Value::Integer(i64::try_from(*at).unwrap_or(i64::MAX))),
             ]),
+            Self::Progress {
+                read,
+                of,
+                produced,
+                seconds,
+            } => {
+                let figure = |held: u64| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+                Value::map([
+                    ("protocol", Value::Integer(VERSION)),
+                    (
+                        "progress",
+                        Value::map([
+                            ("read", figure(*read)),
+                            ("of", figure(*of)),
+                            ("produced", figure(*produced)),
+                            ("seconds", figure(*seconds)),
+                        ]),
+                    ),
+                ])
+            }
             Self::Done(account) => Value::map([
                 ("protocol", Value::Integer(VERSION)),
                 ("done", account.clone()),
@@ -780,6 +815,21 @@ impl Streamed {
             .map_err(|error| refused("a streamed line that is not one", &error.to_string()))?;
         if let Some(done) = value.get("done") {
             return Ok(Self::Done(done.clone()));
+        }
+        if let Some(progress) = value.get("progress") {
+            let figure = |key: &str| {
+                progress
+                    .get(key)
+                    .and_then(Value::as_integer)
+                    .and_then(|figure| u64::try_from(figure).ok())
+                    .unwrap_or(0)
+            };
+            return Ok(Self::Progress {
+                read: figure("read"),
+                of: figure("of"),
+                produced: figure("produced"),
+                seconds: figure("seconds"),
+            });
         }
         match (
             value.get("token").and_then(Value::as_text),

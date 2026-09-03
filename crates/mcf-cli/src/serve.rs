@@ -337,6 +337,7 @@ pub(crate) fn status() -> Response {
         _ => lines.push("  resident: nothing — the first generation loads its model and holds it".to_owned()),
     }
     lines.extend(exposed(&status));
+    lines.extend(what_is_running(&status));
     for cannot in status
         .get("cannot")
         .and_then(Value::as_list)
@@ -366,6 +367,47 @@ pub(crate) fn status() -> Response {
         text: lines.join("\n"),
         served: true,
     }
+}
+
+/// What the daemon is carrying right now (D48, B-460).
+///
+/// A daemon in the middle of a long turn answers status rather than making
+/// the caller wait behind the turn; what it says is what it is carrying, for
+/// whom, for how long, and — where the engine is a served one — how far the
+/// engine has read. A busy daemon that said nothing about being busy would
+/// leave the operator to guess whether the run they started an hour ago is
+/// still going.
+fn what_is_running(status: &Value) -> Vec<String> {
+    let running = status
+        .get("running")
+        .and_then(Value::as_list)
+        .unwrap_or_default();
+    let mut lines = Vec::new();
+    for carried in running {
+        let what = carried.get("doing").and_then(Value::as_text).unwrap_or("?");
+        let model = carried.get("model").and_then(Value::as_text).unwrap_or("?");
+        let seconds = carried
+            .get("nanoseconds")
+            .and_then(Value::as_integer)
+            .and_then(|nanos| nanos.checked_div(1_000_000_000))
+            .unwrap_or(0);
+        let engine = match carried.get("engine") {
+            Some(engine) if engine.get("read").is_some() => {
+                let figure = |key: &str| engine.get(key).and_then(Value::as_integer).unwrap_or(0);
+                format!(
+                    "; the engine has read {} of {} identifiers and produced {}",
+                    figure("read"),
+                    figure("of"),
+                    figure("produced")
+                )
+            }
+            _ => String::new(),
+        };
+        lines.push(format!(
+            "  running: {what} on {model}, {seconds} seconds in{engine}"
+        ));
+    }
+    lines
 }
 
 /// What the daemon is holding, counted the way `mcf list` counts it.

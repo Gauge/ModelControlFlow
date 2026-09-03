@@ -361,6 +361,50 @@ impl Produced {
     }
 }
 
+/// The identifiers the engine is sent, or `None` where a prompt goes as text.
+///
+/// The caller's identifiers are never touched; a prompt is framed by the
+/// engine from the model's template where a turn was asked for, addressed
+/// as somebody derived where they did, and otherwise read plainly by the
+/// engine that will answer it (B-441, F160).
+fn wrapped_turn(
+    place: &Place<'_>,
+    prompt: &str,
+    tokens: Option<&[usize]>,
+    framed: Result<&Option<crate::turn::Frame>, &Failure>,
+    derived: Option<&crate::configured::Addressing>,
+    chosen: &Result<Chosen, Failure>,
+) -> Result<Option<Vec<usize>>, Failure> {
+    match (tokens, framed, derived, chosen) {
+        (_, Err(failure), _, _) => Err(failure.clone()),
+        (None, Ok(Some(frame)), _, Ok(Chosen::Provisioned(llama))) => {
+            framed_as(&place.engine(llama), prompt, frame).map(Some)
+        }
+        (None, _, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
+            addressed_as(&place.engine(llama), prompt, addressing).map(Some)
+        }
+        (None, _, Some(addressing), Ok(Chosen::StandIn)) => {
+            Tokenizer::own(&resolved(place.store, place.named))
+                .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
+                .map(Some)
+        }
+        // **A prompt with no addressing on file goes to the server too, read
+        // by its own tokenizer.** Before this it went to the completion tool
+        // as text (B-376's first cut, from before the engine could read for
+        // MCF), which loaded the model again for every generation — ten
+        // times in one prompt report — and handed back no identifiers, so the
+        // report's held reading was never taken and said *needs the served
+        // engine* of an engine that was serving. The bare prompt is read the
+        // way the ranking reads it, with the beginning marker and nothing
+        // else, so the answer and the reading are of one prompt (§3.4, F160).
+        (None, _, None, Ok(Chosen::Provisioned(llama))) => place
+            .engine(llama)
+            .encode(prompt, true)
+            .map(|read| Some(read.into_iter().map(|held| held.id).collect())),
+        _ => Ok(None),
+    }
+}
+
 /// Serves one generation, writing the stream, and returns the account that
 /// was sent as the terminating line.
 #[allow(
@@ -398,6 +442,9 @@ pub(crate) fn serve_generation(
     // How the caller asked the turn framed, where they asked the engine to
     // frame it from the model's own template (D47).
     turn: Option<&crate::turn::Turn>,
+    // Who is waiting, so that the engine's request is closed when they
+    // leave and its progress reaches them while they stay (D48).
+    waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -435,32 +482,14 @@ pub(crate) fn serve_generation(
         server,
     };
     let framed = framed_turn(&place, tokens, turn, &chosen);
-    let wrapped = match (tokens, framed.as_ref(), derived.as_ref(), &chosen) {
-        (_, Err(failure), _, _) => Err(failure.clone()),
-        (None, Ok(Some(frame)), _, Ok(Chosen::Provisioned(llama))) => {
-            framed_as(&place.engine(llama), prompt, frame).map(Some)
-        }
-        (None, _, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
-            addressed_as(&place.engine(llama), prompt, addressing).map(Some)
-        }
-        (None, _, Some(addressing), Ok(Chosen::StandIn)) => Tokenizer::own(&resolved(store, named))
-            .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
-            .map(Some),
-        // **A prompt with no addressing on file goes to the server too, read
-        // by its own tokenizer.** Before this it went to the completion tool
-        // as text (B-376's first cut, from before the engine could read for
-        // MCF), which loaded the model again for every generation — ten
-        // times in one prompt report — and handed back no identifiers, so the
-        // report's held reading was never taken and said *needs the served
-        // engine* of an engine that was serving. The bare prompt is read the
-        // way the ranking reads it, with the beginning marker and nothing
-        // else, so the answer and the reading are of one prompt (§3.4, F160).
-        (None, _, None, Ok(Chosen::Provisioned(llama))) => place
-            .engine(llama)
-            .encode(prompt, true)
-            .map(|read| Some(read.into_iter().map(|held| held.id).collect())),
-        _ => Ok(None),
-    };
+    let wrapped = wrapped_turn(
+        &place,
+        prompt,
+        tokens,
+        framed.as_ref(),
+        derived.as_ref(),
+        &chosen,
+    );
     let frame = framed.ok().flatten();
     let addressed = frame.as_ref().map_or_else(
         || addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok()),
@@ -471,6 +500,14 @@ pub(crate) fn serve_generation(
             ))
         },
     );
+    // Which engine a failure is charged to. An account of a served engine's
+    // refusal that named the stand-in — which is what every failure said
+    // until D48's cancellations made the misstatement common — was an
+    // account of a run that did not happen (A7).
+    let charged = match &chosen {
+        Ok(Chosen::Provisioned(llama)) => Some(served_engine_name(llama)),
+        Ok(Chosen::StandIn) | Err(_) => None,
+    };
     let produced = match (chosen, wrapped) {
         (_, Err(failure)) | (Err(failure), _) => Err(failure),
         // A turn of identifiers goes to the server, which can be given one;
@@ -484,7 +521,8 @@ pub(crate) fn serve_generation(
                     tail: frame.as_ref().map(|frame| frame.after.as_str()),
                 };
                 through_served(
-                    store, &llama, server, runtime, named, &sent, draw, gpu_layers, context, writer,
+                    store, &llama, server, runtime, named, &sent, draw, gpu_layers, context,
+                    waiting, writer,
                 )
             }
             None => through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer),
@@ -505,15 +543,7 @@ pub(crate) fn serve_generation(
     let produced = with_provenance(produced, addressed, derived_budget);
     let produced = match produced {
         Ok(produced) => produced,
-        Err(failure) => Produced {
-            account: Value::map([
-                ("tokens", Value::Integer(0)),
-                ("stopped", Value::text("refused")),
-                ("failure", mcf_record::encode::failure(&failure)),
-                ("conditions", conditions(named, None, draw, limit)),
-            ]),
-            said: None,
-        },
+        Err(failure) => refused_account(&failure, named, draw, limit, charged),
     };
     let _written = writeln!(
         writer,
@@ -1251,6 +1281,7 @@ fn through_served(
     draw: Draw,
     gpu_layers: u32,
     context: u64,
+    waiting: crate::served::Waiting<'_>,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
     let Sent {
@@ -1277,22 +1308,16 @@ fn through_served(
     let window = window_for(tokens.len(), limit, context);
     let (engine, reused) = serving(&mut slot, &where_it_lives, window)?;
 
-    let completed = engine.complete(tokens, limit, draw, pinned)?;
+    let completed = engine.complete(tokens, limit, draw, pinned, waiting)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
 
     let (before, text) = streamed(writer, engine, &path, sent, &completed)?;
 
-    let engine_name = format!(
-        "provisioned {} server @{} from {}",
-        llama.component,
-        llama.commit.get(..12).unwrap_or(&llama.commit),
-        llama.prefix.display()
-    );
     let mut conditions = conditions(named, Some((&path, held)), draw, limit);
     if let Value::Map(fields) = &mut conditions {
-        fields.insert("engine".to_owned(), Value::text(engine_name));
+        fields.insert("engine".to_owned(), Value::text(served_engine_name(llama)));
         fields.insert(
             "length".to_owned(),
             Value::text(Length::of(pinned).as_str()),
@@ -1360,6 +1385,43 @@ fn through_served(
             tokens: completed.produced,
         }),
     })
+}
+
+/// The account of a generation that did not happen: the failure, and the
+/// conditions it was asked under, charged to the engine that was chosen.
+fn refused_account(
+    failure: &Failure,
+    named: &str,
+    draw: Draw,
+    limit: usize,
+    charged: Option<String>,
+) -> Produced {
+    let mut conditions = conditions(named, None, draw, limit);
+    if let (Value::Map(fields), Some(engine)) = (&mut conditions, charged) {
+        fields.insert("engine".to_owned(), Value::text(engine));
+        // Whether the server had the model loaded when it refused was not
+        // observed here, and is not guessed.
+        fields.insert("loaded".to_owned(), Value::Null);
+    }
+    Produced {
+        account: Value::map([
+            ("tokens", Value::Integer(0)),
+            ("stopped", Value::text("refused")),
+            ("failure", mcf_record::encode::failure(failure)),
+            ("conditions", conditions),
+        ]),
+        said: None,
+    }
+}
+
+/// How a served engine is named in an account.
+fn served_engine_name(llama: &crate::adapters::ProvisionedLlama) -> String {
+    format!(
+        "provisioned {} server @{} from {}",
+        llama.component,
+        llama.commit.get(..12).unwrap_or(&llama.commit),
+        llama.prefix.display()
+    )
 }
 
 /// What the model spent before its answer, where it opened a marker of its

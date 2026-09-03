@@ -229,10 +229,14 @@ fn served(
         turn,
     } = *asked;
 
-    // Between tokens the stand-in can take a second per token on a
-    // half-billion-parameter model; between the request and the first token
-    // it loads the model. Both are bounded, and the bound is stated here.
-    let patience = std::time::Duration::from_secs(600);
+    // **A run that was asked for is waited for** (D48). The served engine
+    // says every ten seconds how far it has read, and MCF's own engine
+    // writes each token as it has it, so an hour with nothing heard at all
+    // is a daemon that has stopped answering, not a long turn — and that is
+    // the only thing this bound is for. It used to be ten minutes, which a
+    // long turn on a large model on a processor exceeds while working
+    // perfectly well.
+    let patience = std::time::Duration::from_secs(3600);
     let _deadline = connection.set_read_timeout(Some(patience));
     let _writing = connection.set_write_timeout(Some(patience));
     let mut connection = connection;
@@ -275,6 +279,19 @@ fn served(
                 produced = produced.saturating_add(1);
                 let _printed = write!(out, "{text}");
                 let _flushed = out.flush();
+            }
+            // The engine's own progress, on the other stream so the answer
+            // stays the answer (B-458).
+            Ok(Streamed::Progress {
+                read,
+                of,
+                produced: made,
+                seconds,
+            }) => {
+                eprintln!(
+                    "  … the engine has read {read} of {of} identifiers and produced {made}, \
+                     {seconds} s in"
+                );
             }
             Ok(Streamed::Done(done)) => {
                 account = Some(done);

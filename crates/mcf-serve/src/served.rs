@@ -40,6 +40,7 @@ use std::io::{Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use mcf_core::Failure;
 use mcf_core::failure::{Attribution, Category, Disposition, Subsystem};
@@ -173,6 +174,231 @@ fn ready_on(port: u16) -> bool {
     // `200` and a body that says so. A `503 Loading model` is the engine
     // answering that it is not ready, which is a different thing from up.
     said.contains("200 OK") && said.contains("\"status\":\"ok\"")
+}
+
+/// How far the engine has got with the request in flight, published for
+/// anybody asking while it runs (D48, B-460).
+///
+/// Read off the server's own slot: how many identifiers of the turn it has
+/// read, how many the turn holds, and how many it has produced. Zero before
+/// the first reading, and `seen` says whether there has been one — a zero
+/// that means *not looked yet* is not a zero that means *nothing read* (A7).
+#[derive(Debug, Default)]
+pub struct Progress {
+    /// Whether the slot has been read at all.
+    pub seen: AtomicBool,
+    /// Identifiers of the turn the engine has read so far.
+    pub read: AtomicU64,
+    /// Identifiers the turn holds.
+    pub of: AtomicU64,
+    /// Identifiers the engine has produced so far.
+    pub produced: AtomicU64,
+}
+
+impl Progress {
+    /// The reading as a value for a page.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        if !self.seen.load(Ordering::Relaxed) {
+            return Value::Null;
+        }
+        let figure = |held: &AtomicU64| {
+            Value::Integer(i64::try_from(held.load(Ordering::Relaxed)).unwrap_or(i64::MAX))
+        };
+        Value::map([
+            ("read", figure(&self.read)),
+            ("of", figure(&self.of)),
+            ("produced", figure(&self.produced)),
+        ])
+    }
+
+    fn take(&self, read: u64, of: u64, produced: u64) {
+        self.read.store(read, Ordering::Relaxed);
+        self.of.store(of, Ordering::Relaxed);
+        self.produced.store(produced, Ordering::Relaxed);
+        self.seen.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Who is waiting for the engine's answer, so that nobody waits for nothing
+/// and nothing runs for nobody (D48).
+///
+/// A request the engine takes hours over — the usable-context probe asked a
+/// 27B model for 262,143 identifiers on a processor — ran on for hours after
+/// its client had given up, with every request behind it queued and the
+/// daemon unable to say so. The three things here are the three parts of
+/// the answer: the client's connection is watched and the engine's request
+/// closed when the client goes (B-459), which the engine takes as the
+/// cancellation it is; the daemon's stop closes every request in flight the
+/// same way; and how far the engine has read is published as it goes, both
+/// to the client as lines and to the daemon for its status (B-458, B-460).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Waiting<'a> {
+    /// The connection that asked. Read to its end, the client has gone.
+    pub client: Option<&'a UnixStream>,
+    /// Where progress lines go, where the client reads a stream that has
+    /// room for them.
+    pub told: Option<&'a UnixStream>,
+    /// Raised when the daemon is stopping.
+    pub stopping: Option<&'a AtomicBool>,
+    /// Where the engine's progress is published.
+    pub progress: Option<&'a Progress>,
+}
+
+impl Waiting<'_> {
+    /// Nobody in particular: the request is waited for as long as it takes,
+    /// which is how a request MCF makes for itself is waited for.
+    pub const NOBODY: Waiting<'static> = Waiting {
+        client: None,
+        told: None,
+        stopping: None,
+        progress: None,
+    };
+
+    fn watches_anything(&self) -> bool {
+        self.client.is_some() || self.stopping.is_some() || self.progress.is_some()
+    }
+}
+
+/// Why a request in flight was closed before the engine answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Closed {
+    /// The client that asked went away.
+    ClientLeft,
+    /// The daemon was asked to stop.
+    Stopping,
+}
+
+/// How often the client's connection and the engine's slot are looked at
+/// while a request is in flight.
+const GLANCE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// How long between progress lines to a client, and before the first: a
+/// turn the engine answers inside this many seconds is never told how it is
+/// going, because it is already done.
+const TOLD_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Watches over one request in flight, from beside the thread that made it.
+///
+/// Not a timer in §6.9's sense: it lives exactly as long as the request the
+/// caller is waiting on and is the caller's own patience made concrete, and
+/// it ends when the answer arrives or the request is closed. Looks four
+/// times a second at whether the client is still there and whether the
+/// daemon is stopping, and at the engine's slot for how far it has read;
+/// tells the client every ten seconds where the engine has got to; and
+/// closes the engine's request when nobody is waiting for it any more.
+fn watched(
+    socket: &Path,
+    request: &UnixStream,
+    waiting: Waiting<'_>,
+    done: &AtomicBool,
+) -> Option<Closed> {
+    let client = waiting.client.and_then(|client| client.try_clone().ok());
+    if let Some(client) = &client {
+        let _timeout = client.set_read_timeout(Some(GLANCE));
+    }
+    let began = std::time::Instant::now();
+    let mut last_told: Option<std::time::Instant> = None;
+    let mut byte = [0_u8; 1];
+    while !done.load(Ordering::Acquire) {
+        let gone = match client.as_ref().map(|client| (&*client).read(&mut byte)) {
+            Some(Ok(0)) => true,
+            Some(Err(error)) => !matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ),
+            Some(Ok(_)) | None => {
+                if client.is_none() {
+                    std::thread::sleep(GLANCE);
+                }
+                false
+            }
+        };
+        let closed = if gone {
+            Some(Closed::ClientLeft)
+        } else if waiting
+            .stopping
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+        {
+            Some(Closed::Stopping)
+        } else {
+            None
+        };
+        if let Some(closed) = closed {
+            let _closed = request.shutdown(std::net::Shutdown::Both);
+            return Some(closed);
+        }
+        if waiting.progress.is_none() && waiting.told.is_none() {
+            continue;
+        }
+        let due = last_told.unwrap_or(began).elapsed() >= TOLD_EVERY;
+        if !due {
+            continue;
+        }
+        last_told = Some(std::time::Instant::now());
+        if let Some((read, of, produced)) = slot_progress(socket) {
+            if let Some(progress) = waiting.progress {
+                progress.take(read, of, produced);
+            }
+            if let Some(mut told) = waiting.told
+                && !done.load(Ordering::Acquire)
+            {
+                let line = crate::control::Streamed::Progress {
+                    read,
+                    of,
+                    produced,
+                    seconds: began.elapsed().as_secs(),
+                }
+                .to_line();
+                let _written = writeln!(told, "{line}").and_then(|()| told.flush());
+            }
+        }
+    }
+    None
+}
+
+/// The processing slot's reading: identifiers read, of how many, and how
+/// many produced. `None` where no slot is processing or the answer could
+/// not be read.
+fn slot_progress(socket: &Path) -> Option<(u64, u64, u64)> {
+    let answer = plain_request(socket, "GET", "/slots", None).ok()?;
+    let slots = json::parse(&answer).ok()?;
+    let Value::List(slots) = slots else {
+        return None;
+    };
+    let figure = |slot: &Value, key: &str| {
+        slot.get(key)
+            .and_then(Value::as_integer)
+            .and_then(|figure| u64::try_from(figure).ok())
+    };
+    slots
+        .iter()
+        .find(|slot| {
+            slot.get("is_processing")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .map(|slot| {
+            let produced = slot
+                .get("next_token")
+                .and_then(|next| match next {
+                    Value::List(items) => items.first(),
+                    other => Some(other),
+                })
+                .and_then(|next| figure(next, "n_decoded"))
+                .unwrap_or(0);
+            let read = figure(slot, "n_prompt_tokens_processed").unwrap_or(0);
+            // The slot's `n_prompt_tokens` is what its context holds, which
+            // is the prompt while the prompt is being read and the prompt
+            // plus what has been produced so far once it is answering (the
+            // pinned server pushes each sampled identifier onto the same
+            // list). The prompt's length is that figure less what has been
+            // produced; never less than what has been read of it, which
+            // the server counts a step behind.
+            let held = figure(slot, "n_prompt_tokens").unwrap_or(0);
+            let of = held.saturating_sub(produced).max(read);
+            (read, of, produced)
+        })
 }
 
 /// A running `llama-server`, holding one model.
@@ -504,9 +730,10 @@ impl Served {
         limit: usize,
         draw: crate::generation::Draw,
         pinned: bool,
+        waiting: Waiting<'_>,
     ) -> Result<Completed, Failure> {
         let body = completion_body(tokens, limit, draw, pinned).to_line();
-        interpret(&self.request("POST", "/completion", Some(&body))?)
+        interpret(&self.request_while("POST", "/completion", Some(&body), waiting)?)
     }
 
     /// Where the model ranked the token that actually came next, and what it
@@ -664,6 +891,25 @@ impl Served {
     /// only against a stated cost, and a general HTTP client is weight this
     /// does not need to carry.
     fn request(&self, method: &str, path: &str, body: Option<&str>) -> Result<String, Failure> {
+        self.request_while(method, path, body, Waiting::NOBODY)
+    }
+
+    /// A request somebody is waiting on, watched over while it is in flight
+    /// (D48): closed when the client leaves or the daemon stops, its
+    /// progress published as it goes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::request`], and `lab.interrupted` where the request was
+    /// closed before the engine answered — saying who left, and how far the
+    /// engine had read when it was closed.
+    fn request_while(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&str>,
+        waiting: Waiting<'_>,
+    ) -> Result<String, Failure> {
         let died = |what: &str, error: &std::io::Error| {
             Failure::new(
                 Category::EngineExitMidstream,
@@ -674,29 +920,24 @@ impl Served {
             )
             .with_context("error", error.to_string())
         };
-
-        let mut connection = UnixStream::connect(&self.socket).map_err(|error| {
-            self.with_last_words(died(
-                "the provisioned server stopped accepting connections",
-                &error,
-            ))
-        })?;
-        let body = body.unwrap_or("");
-        let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
-             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        connection
-            .write_all(request.as_bytes())
-            .and_then(|()| connection.flush())
-            .map_err(|error| died("the request could not be sent to the server", &error))?;
-
-        let mut answer = Vec::new();
-        connection.read_to_end(&mut answer).map_err(|error| {
-            self.with_last_words(died("the server's answer ended early", &error))
-        })?;
-        let answer = String::from_utf8_lossy(&answer).into_owned();
+        let answer = match exchange(&self.socket, method, path, body, waiting) {
+            Ok(answer) => answer,
+            Err(Interrupted::Closed(closed)) => {
+                return Err(closed_failure(&self.model, closed, waiting.progress));
+            }
+            Err(Interrupted::Connecting(error)) => {
+                return Err(self.with_last_words(died(
+                    "the provisioned server stopped accepting connections",
+                    &error,
+                )));
+            }
+            Err(Interrupted::Sending(error)) => {
+                return Err(died("the request could not be sent to the server", &error));
+            }
+            Err(Interrupted::Reading(error)) => {
+                return Err(self.with_last_words(died("the server's answer ended early", &error)));
+            }
+        };
         answer.split_once("\r\n\r\n").map_or_else(
             || {
                 // No head at all is a connection that closed before the
@@ -732,6 +973,162 @@ impl Served {
         }
         failure
     }
+}
+
+/// Why a request did not come back with an answer.
+enum Interrupted {
+    /// The engine's socket would not take a connection.
+    Connecting(std::io::Error),
+    /// The request could not be written.
+    Sending(std::io::Error),
+    /// The answer could not be read to its end.
+    Reading(std::io::Error),
+    /// The request was closed by the side that was waiting for it (D48).
+    Closed(Closed),
+}
+use Interrupted::{Reading, Sending};
+
+/// Asks the engine at `socket` once and reads the whole answer, watched over
+/// for whoever is waiting: the request is closed when the client leaves or
+/// the daemon stops, and the engine's progress reaches `waiting` while it
+/// runs.
+fn exchange(
+    socket: &Path,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    waiting: Waiting<'_>,
+) -> Result<String, Interrupted> {
+    let connection = UnixStream::connect(socket).map_err(Interrupted::Connecting)?;
+    let done = AtomicBool::new(false);
+    let (answer, closed) = std::thread::scope(|scope| {
+        let watcher = waiting
+            .watches_anything()
+            .then(|| scope.spawn(|| watched(socket, &connection, waiting, &done)));
+        let answer = sent_and_read(&connection, method, path, body);
+        done.store(true, Ordering::Release);
+        let closed = watcher.and_then(|watcher| watcher.join().ok().flatten());
+        (answer, closed)
+    });
+    match closed {
+        Some(closed) => Err(Interrupted::Closed(closed)),
+        None => answer,
+    }
+}
+
+/// Asks whatever listens at `socket` on behalf of `waiting`, with no server
+/// of MCF's own behind it.
+///
+/// What the laboratory uses to produce a request closed because the client
+/// that asked for it left (A13): the daemon's own path runs through the same
+/// exchange with a served engine behind the socket. `model` is named in the
+/// failure, as it is there.
+///
+/// # Errors
+///
+/// `lab.interrupted` where the request was closed before an answer came,
+/// saying who left; `engine.exit.midstream` where the wire failed.
+pub fn asked_while(
+    socket: &Path,
+    model: &Path,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    waiting: Waiting<'_>,
+) -> Result<String, Failure> {
+    let died = |what: &str, error: &std::io::Error| {
+        Failure::new(
+            Category::EngineExitMidstream,
+            Attribution::Machine,
+            Disposition::Aborted,
+            Subsystem::new("mcf-serve::served"),
+            what,
+        )
+        .with_context("error", error.to_string())
+    };
+    match exchange(socket, method, path, body, waiting) {
+        Ok(answer) => Ok(answer),
+        Err(Interrupted::Closed(closed)) => Err(closed_failure(model, closed, waiting.progress)),
+        Err(Interrupted::Connecting(error)) => {
+            Err(died("the server stopped accepting connections", &error))
+        }
+        Err(Interrupted::Sending(error)) => {
+            Err(died("the request could not be sent to the server", &error))
+        }
+        Err(Interrupted::Reading(error)) => Err(died("the server's answer ended early", &error)),
+    }
+}
+
+/// The failure a request closed before its answer is reported as: who
+/// stopped waiting, and how far the engine had got.
+fn closed_failure(model: &Path, closed: Closed, progress: Option<&Progress>) -> Failure {
+    let (what, attribution) = match closed {
+        Closed::ClientLeft => (
+            "the client that asked for this left before the engine answered, so the \
+             request was closed and the engine stopped",
+            Attribution::User,
+        ),
+        Closed::Stopping => (
+            "the daemon was asked to stop while the engine was answering, so the \
+             request was closed and the engine stopped",
+            Attribution::User,
+        ),
+    };
+    let failure = Failure::new(
+        Category::LabInterrupted,
+        attribution,
+        Disposition::Aborted,
+        Subsystem::new("mcf-serve::served"),
+        what,
+    )
+    .with_context("model", model.display().to_string());
+    match progress.map(Progress::to_value) {
+        Some(Value::Map(fields)) => {
+            let figure = |key: &str| fields.get(key).map_or_else(String::new, Value::to_line);
+            failure
+                .with_context("engine_read", figure("read"))
+                .with_context("engine_of", figure("of"))
+                .with_context("engine_produced", figure("produced"))
+        }
+        _ => failure,
+    }
+}
+
+/// Writes one request and reads the whole answer.
+fn sent_and_read(
+    mut connection: &UnixStream,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<String, Interrupted> {
+    let body = body.unwrap_or("");
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    connection
+        .write_all(request.as_bytes())
+        .and_then(|()| connection.flush())
+        .map_err(Sending)?;
+    let mut answer = Vec::new();
+    connection.read_to_end(&mut answer).map_err(Reading)?;
+    Ok(String::from_utf8_lossy(&answer).into_owned())
+}
+
+/// A request to a server by its socket alone, with nobody watching: what
+/// the watcher itself asks the slot with.
+fn plain_request(
+    socket: &Path,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<String, Interrupted> {
+    let connection = UnixStream::connect(socket).map_err(Sending)?;
+    let answer = sent_and_read(&connection, method, path, body)?;
+    Ok(answer
+        .split_once("\r\n\r\n")
+        .map_or(answer.clone(), |(_head, body)| body.to_owned()))
 }
 
 /// How much of the engine's error stream is kept: the end of it.

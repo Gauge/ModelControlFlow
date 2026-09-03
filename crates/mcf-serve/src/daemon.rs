@@ -44,6 +44,12 @@ use crate::control::{Answer, REQUEST_CEILING, Request, VERSION};
 
 const WHERE: Subsystem = Subsystem::new("mcf-serve::daemon");
 
+/// How long a stopping daemon waits for the requests it closed to finish
+/// closing before it records its stop. Each closes as soon as the engine
+/// notices its connection gone, which the pinned server polls for once a
+/// second.
+const CLOSING: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// How long the daemon waits for a client to say something.
 ///
 /// Two seconds. Long enough that a slow client on a busy machine is not cut
@@ -1445,6 +1451,53 @@ pub struct Daemon {
     /// one: MCF's engine loads into `resident`, and llama.cpp loads into its
     /// own process. Dropping this stops that process (A27).
     server: std::sync::Mutex<Option<crate::served::Served>>,
+    /// Raised when a stop was asked for: every request in flight is closed,
+    /// so that a stop is not waited on behind a generation (D48).
+    stopping: std::sync::atomic::AtomicBool,
+    /// The requests being carried on their own threads right now, so that
+    /// a status asked for while one runs can say so, with how far the
+    /// engine has got (D48, B-460).
+    running: std::sync::Mutex<std::collections::BTreeMap<u64, std::sync::Arc<Running>>>,
+    /// Numbers the requests as they arrive.
+    arrivals: std::sync::atomic::AtomicU64,
+}
+
+/// One request being carried on its own thread.
+#[derive(Debug)]
+struct Running {
+    /// What kind of request it is, in a word.
+    what: &'static str,
+    /// The model it names.
+    model: String,
+    /// When it arrived.
+    since: Timestamp,
+    /// Since when, on the monotonic clock, for how long it has run.
+    began: Instant<Monotonic>,
+    /// How far the engine has got, where the engine is the served one.
+    progress: crate::served::Progress,
+}
+
+impl Running {
+    fn to_value(&self) -> Value {
+        Value::map([
+            ("doing", Value::text(self.what)),
+            ("model", Value::text(self.model.clone())),
+            ("since", mcf_record::encode::timestamp(self.since)),
+            (
+                "nanoseconds",
+                Value::Integer(
+                    i64::try_from(
+                        SystemClock
+                            .now()
+                            .saturating_duration_since(self.began)
+                            .as_nanos(),
+                    )
+                    .unwrap_or(i64::MAX),
+                ),
+            ),
+            ("engine", self.progress.to_value()),
+        ])
+    }
 }
 
 /// What was there when the daemon started.
@@ -1543,6 +1596,9 @@ impl Daemon {
             engines: std::sync::Mutex::new(engines),
             resident: std::sync::Mutex::new(None),
             server: std::sync::Mutex::new(None),
+            stopping: std::sync::atomic::AtomicBool::new(false),
+            running: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            arrivals: std::sync::atomic::AtomicU64::new(0),
         };
         // An event, not a tick. *MCF was up between these two moments* is a
         // condition of anything measured in between (§3.4), and a daemon that
@@ -1881,20 +1937,66 @@ impl Daemon {
     /// socket is reachable only by this user (B-036), so the client that could
     /// do it is the operator's own.
     pub fn serve(&mut self) -> Stopped {
-        loop {
-            let connection = match self.listener.accept() {
-                Ok((stream, _)) => stream,
-                Err(error) => {
-                    return Stopped::Broken {
-                        failure: Box::new(unusable(
-                            "the control socket",
-                            &self.places.socket,
-                            &error,
-                        )),
-                    };
+        // **A request that takes minutes is carried on its own thread, and
+        // the socket keeps answering** (D48, B-460). One thread answered
+        // everything in turn, and a generation that ran for hours had every
+        // status behind it time out: a person could not be told that the
+        // daemon was busy, because the only thing that could tell them was
+        // busy. The short questions are answered here; the long ones are
+        // spawned; and a stop raises the flag that closes every request in
+        // flight before the threads are joined, so a stop is not waited for
+        // behind a generation either.
+        std::thread::scope(|scope| {
+            let stopped = loop {
+                let connection = match self.listener.accept() {
+                    Ok((stream, _)) => stream,
+                    Err(error) => {
+                        break Stopped::Broken {
+                            failure: Box::new(unusable(
+                                "the control socket",
+                                &self.places.socket,
+                                &error,
+                            )),
+                        };
+                    }
+                };
+                if let Some(stopped) = self.answer_one(scope, &connection) {
+                    break stopped;
                 }
             };
-            if let Some(stopped) = self.answer_one(&connection) {
+            self.stopping
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            self.let_the_carried_close();
+            self.stopped(&stopped);
+            stopped
+        })
+    }
+
+    /// Waits for the requests in flight to close, which the raised flag
+    /// makes them do, so that their accounts land in the record before the
+    /// daemon's own stop does: a record that said *stopped* and then
+    /// accounted for a generation would read as a daemon that ran after it
+    /// had stopped (A1). Bounded, because a thread that will not close is
+    /// not a reason to never record the stop.
+    fn let_the_carried_close(&self) {
+        let began = std::time::Instant::now();
+        while began.elapsed() < CLOSING {
+            let carrying = self
+                .running
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty();
+            if carrying {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    /// Says goodbye in the record, before the threads are joined.
+    fn stopped(&self, stopped: &Stopped) {
+        {
+            {
                 // **A model being held is let go in writing, before the daemon
                 // is.** The engine does stop — dropping what holds it is what
                 // stops it — but a record carrying `model_hosted` and never
@@ -1927,14 +2029,17 @@ impl Daemon {
                         ]),
                     },
                 );
-                return stopped;
             }
         }
     }
 
-    /// Reads one request, answers it, and says whether that was the last.
-    /// Answers one client, on its own connection.
-    fn answer_one(&self, connection: &UnixStream) -> Option<Stopped> {
+    /// Reads one request and answers it, or hands it to a thread of its
+    /// own; says whether it was the last.
+    fn answer_one<'scope>(
+        &'scope self,
+        scope: &'scope std::thread::Scope<'scope, '_>,
+        connection: &UnixStream,
+    ) -> Option<Stopped> {
         // A client that connects and says nothing must not hold the daemon:
         // B7 makes a hang a defined outcome, and this is the one place a
         // stranger could cause one.
@@ -1958,82 +2063,22 @@ impl Daemon {
         let answer = match read {
             Err(_) | Ok(0) => return None,
             Ok(_) => match Request::read(line.trim_end()) {
-                Ok(Request::Generate {
-                    model,
-                    prompt,
-                    limit,
-                    whose,
-                    seed,
-                    tokens,
-                    engine,
-                    pinned,
-                    turn,
-                }) => {
-                    // A generation is one request and many lines, so it has
-                    // its own path: nothing about it fits in one `Answer`.
-                    self.generate(
-                        &model,
-                        &prompt,
-                        limit,
-                        seed,
-                        tokens.as_deref(),
-                        engine.as_deref(),
-                        whose,
-                        pinned,
-                        turn.as_ref(),
-                        &mut writer,
-                    );
-                    return None;
-                }
-                Ok(Request::Measure {
-                    model,
-                    engine,
-                    deepest,
-                }) => {
-                    self.measuring(&model, engine.as_deref(), deepest, &mut writer);
-                    return None;
-                }
-                Ok(Request::CrossCheck { model }) => {
-                    self.cross_checking(&model, &mut writer);
-                    return None;
-                }
-                Ok(Request::PromptReport {
-                    model,
-                    prompt,
-                    by,
-                    most,
-                    extras,
-                    temperature,
-                    seed,
-                }) => {
-                    // Many generations and one report: a request that takes
-                    // minutes says what it is doing as it goes, for the same
-                    // reason a measurement does — a client cannot tell a long
-                    // run from a hung one (B-227).
-                    self.prompt_report(
-                        &model,
-                        &crate::prompt::Taken {
-                            text: &prompt,
-                            by,
-                            most,
-                            extras,
-                        },
-                        seed,
-                        temperature,
-                        &mut writer,
-                    );
-                    return None;
-                }
-                Ok(Request::Acquire {
-                    reference,
-                    file,
-                    from,
-                }) => {
-                    self.acquiring(&reference, &file, from.as_deref(), &mut writer);
-                    return None;
-                }
-                Ok(Request::Provision { component }) => {
-                    self.provisioning(component.as_deref(), &mut writer);
+                Ok(request) if Self::carried(&request).is_some() => {
+                    // A request that answers in many lines over minutes or
+                    // hours gets a thread, so that the socket keeps answering
+                    // (D48). The connection goes with it.
+                    let connection = connection.try_clone();
+                    match connection {
+                        Ok(connection) => {
+                            scope.spawn(move || self.carry(request, &connection));
+                        }
+                        Err(error) => {
+                            let failure =
+                                unusable("the client's connection", &self.places.socket, &error);
+                            let _written =
+                                writeln!(writer, "{}", Answer::refused(&failure).to_line());
+                        }
+                    }
                     return None;
                 }
                 Ok(request) => {
@@ -2048,6 +2093,162 @@ impl Daemon {
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
         None
+    }
+
+    /// What a request is called while it runs, and the model it names, for
+    /// the requests that are carried on their own threads; `None` for one
+    /// answered in a line.
+    fn carried(request: &Request) -> Option<(&'static str, String)> {
+        match request {
+            Request::Generate { model, .. } => Some(("generation", model.clone())),
+            Request::Measure { model, .. } => Some(("measurement", model.clone())),
+            Request::CrossCheck { model } => Some(("cross-check", model.clone())),
+            Request::PromptReport { model, .. } => Some(("prompt report", model.clone())),
+            Request::Acquire { reference, .. } => Some(("acquisition", reference.clone())),
+            Request::Provision { component } => Some((
+                "provisioning",
+                component
+                    .clone()
+                    .unwrap_or_else(|| "the engine this machine needs".to_owned()),
+            )),
+            Request::Status
+            | Request::Holding
+            | Request::Components
+            | Request::Offered { .. }
+            | Request::Settings { .. }
+            | Request::Anatomy { .. }
+            | Request::Host { .. }
+            | Request::Hosted
+            | Request::Unhost
+            | Request::Stop { .. } => None,
+        }
+    }
+
+    /// Carries one long request on the thread it was given: registers it as
+    /// running, answers it down the connection, and forgets it.
+    fn carry(&self, request: Request, connection: &UnixStream) {
+        let Some((what, model)) = Self::carried(&request) else {
+            return;
+        };
+        let number = self
+            .arrivals
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let running = std::sync::Arc::new(Running {
+            what,
+            model,
+            since: Timestamp::now(),
+            began: SystemClock.now(),
+            progress: crate::served::Progress::default(),
+        });
+        self.running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(number, std::sync::Arc::clone(&running));
+        let waiting = crate::served::Waiting {
+            client: Some(connection),
+            told: None,
+            stopping: Some(&self.stopping),
+            progress: Some(&running.progress),
+        };
+        let mut writer = connection;
+        self.carrying(request, waiting, &mut writer);
+        self.running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&number);
+    }
+
+    /// The long requests, each answered in many lines.
+    fn carrying(
+        &self,
+        request: Request,
+        waiting: crate::served::Waiting<'_>,
+        writer: &mut &UnixStream,
+    ) {
+        match request {
+            Request::Generate {
+                model,
+                prompt,
+                limit,
+                whose,
+                seed,
+                tokens,
+                engine,
+                pinned,
+                turn,
+            } => {
+                // A generation is one request and many lines, so it has
+                // its own path: nothing about it fits in one `Answer`. Its
+                // stream has room for the engine's progress (B-458).
+                let waiting = crate::served::Waiting {
+                    told: waiting.client,
+                    ..waiting
+                };
+                self.generate(
+                    &model,
+                    &prompt,
+                    limit,
+                    seed,
+                    tokens.as_deref(),
+                    engine.as_deref(),
+                    whose,
+                    pinned,
+                    turn.as_ref(),
+                    waiting,
+                    writer,
+                );
+            }
+            Request::Measure {
+                model,
+                engine,
+                deepest,
+            } => self.measuring(&model, engine.as_deref(), deepest, waiting, writer),
+            Request::CrossCheck { model } => self.cross_checking(&model, waiting, writer),
+            Request::PromptReport {
+                model,
+                prompt,
+                by,
+                most,
+                extras,
+                temperature,
+                seed,
+            } => {
+                // Many generations and one report: a request that takes
+                // minutes says what it is doing as it goes, for the same
+                // reason a measurement does — a client cannot tell a long
+                // run from a hung one (B-227).
+                self.prompt_report(
+                    &model,
+                    &crate::prompt::Taken {
+                        text: &prompt,
+                        by,
+                        most,
+                        extras,
+                    },
+                    seed,
+                    temperature,
+                    waiting,
+                    writer,
+                );
+            }
+            Request::Acquire {
+                reference,
+                file,
+                from,
+            } => self.acquiring(&reference, &file, from.as_deref(), writer),
+            Request::Provision { component } => self.provisioning(component.as_deref(), writer),
+            // Answered in a line, never carried; here so the match is total.
+            Request::Status
+            | Request::Holding
+            | Request::Components
+            | Request::Offered { .. }
+            | Request::Settings { .. }
+            | Request::Anatomy { .. }
+            | Request::Host { .. }
+            | Request::Hosted
+            | Request::Unhost
+            | Request::Stop { .. } => {}
+        }
     }
 
     /// A model answers a prompt, one line per token, then the account (B-034,
@@ -2079,6 +2280,7 @@ impl Daemon {
         whose: mcf_record::content::Whose,
         pinned: bool,
         turn: Option<&crate::turn::Turn>,
+        waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
         let at = Timestamp::now();
@@ -2112,6 +2314,7 @@ impl Daemon {
             system_memory_free(),
             pinned,
             turn,
+            waiting,
             writer,
         );
         // The account goes to the record and what the model said goes to the
@@ -2449,6 +2652,7 @@ impl Daemon {
         prompt: &str,
         draw: crate::prompt::Draw,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        waiting: crate::served::Waiting<'_>,
     ) -> Option<crate::generation::Produced> {
         let (mine, theirs) = UnixStream::pair().ok()?;
         let drain = std::thread::spawn(move || {
@@ -2478,6 +2682,7 @@ impl Daemon {
                 // ends it: a report on the prompt is not a timing.
                 false,
                 None,
+                waiting,
                 &mut into,
             )
         };
@@ -2492,6 +2697,7 @@ impl Daemon {
         taken: &crate::prompt::Taken<'_>,
         seed: u64,
         settle: Option<mcf_core::configuration::Thousandths>,
+        waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
         let picked = self.picked_engine_or_why(named);
@@ -2526,7 +2732,8 @@ impl Daemon {
         let mut baseline_account: Option<(i64, String)> = None;
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
-            let Some(produced) = self.generated_quietly(named, prompt, draw, picked.clone().ok())
+            let Some(produced) =
+                self.generated_quietly(named, prompt, draw, picked.clone().ok(), waiting)
             else {
                 return crate::prompt::Answered::default();
             };
@@ -2735,7 +2942,14 @@ impl Daemon {
     /// somebody can decide not to wait. MCF's own estimates land between
     /// 0.58× and 1.42× of what runs take, and a single number would be a
     /// promise it cannot keep.
-    fn measuring(&self, named: &str, engine: Option<&str>, deepest: u64, writer: &mut &UnixStream) {
+    fn measuring(
+        &self,
+        named: &str,
+        engine: Option<&str>,
+        deepest: u64,
+        waiting: crate::served::Waiting<'_>,
+        writer: &mut &UnixStream,
+    ) {
         let say = |writer: &mut &UnixStream, answer: &Answer| {
             let _written = writeln!(writer, "{}", answer.to_line());
             let _flushed = writer.flush();
@@ -2790,7 +3004,7 @@ impl Daemon {
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
         for depth in &ladder {
-            let (reading, engine) = self.one_depth(named, engine, *depth, picked.as_ref());
+            let (reading, engine) = self.one_depth(named, engine, *depth, picked.as_ref(), waiting);
             ran_on = ran_on.take().or(engine);
             readings.push(reading.clone());
             say(
@@ -2856,7 +3070,12 @@ impl Daemon {
     /// the sentences every surface prints. The last line is written down as
     /// it is sent (A1): until this existed the one check that answers §II
     /// was printed to a terminal and kept nowhere.
-    fn cross_checking(&self, named: &str, writer: &mut &UnixStream) {
+    fn cross_checking(
+        &self,
+        named: &str,
+        waiting: crate::served::Waiting<'_>,
+        writer: &mut &UnixStream,
+    ) {
         let say = |writer: &mut &UnixStream, answer: &Answer| {
             let _written = writeln!(writer, "{}", answer.to_line());
             let _flushed = writer.flush();
@@ -2894,10 +3113,11 @@ impl Daemon {
             ])),
         );
 
-        let (tokens, engine_ran, took) = match self.other_engines_tokens(named, &prompt_tokens) {
-            Ok(produced) => produced,
-            Err(why) => return say(writer, &Answer::refused(&could_not_compare(&path, &why))),
-        };
+        let (tokens, engine_ran, took) =
+            match self.other_engines_tokens(named, &prompt_tokens, waiting) {
+                Ok(produced) => produced,
+                Err(why) => return say(writer, &Answer::refused(&could_not_compare(&path, &why))),
+            };
         say(
             writer,
             &Answer::served(Value::map([
@@ -2963,6 +3183,7 @@ impl Daemon {
         &self,
         named: &str,
         prompt_tokens: &[usize],
+        waiting: crate::served::Waiting<'_>,
     ) -> std::result::Result<(Vec<usize>, Value, mcf_core::time::Duration<Monotonic>), String> {
         let picked = self.picked_engine(named);
         let (produced, took) = self.drained_generation(
@@ -2974,6 +3195,7 @@ impl Daemon {
             // the same prefix, and where one ends its turn is part of that.
             false,
             picked,
+            waiting,
         )?;
         let Some(said) = produced.said else {
             return Err(format!(
@@ -3064,6 +3286,7 @@ impl Daemon {
         engine: Option<&str>,
         depth: u64,
         picked: Option<&(crate::adapters::ProvisionedLlama, u32, u64)>,
+        waiting: crate::served::Waiting<'_>,
     ) -> (Value, Option<String>) {
         // Repeats, because one pair is one sample and a fall-off read off
         // single samples is a reading of the noise. The median is taken
@@ -3083,8 +3306,9 @@ impl Daemon {
         // pair where that is not so is not divided (B-396).
         let mut fell_short: Option<String> = None;
         for _ in 0..REPEATS {
-            let one = self.timed_generation(named, engine, depth, 1, picked.cloned());
-            let many = self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned());
+            let one = self.timed_generation(named, engine, depth, 1, picked.cloned(), waiting);
+            let many =
+                self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned(), waiting);
             for (run, pinned) in [(&one, 1), (&many, 1 + SETTLED)] {
                 match run {
                     Ok(timed) => {
@@ -3188,6 +3412,7 @@ impl Daemon {
         depth: u64,
         produce: u32,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        waiting: crate::served::Waiting<'_>,
     ) -> std::result::Result<Timed, String> {
         let how_many =
             usize::try_from(depth).map_err(|_| "a depth this machine cannot count".to_owned())?;
@@ -3206,6 +3431,7 @@ impl Daemon {
             usize::try_from(produce).unwrap_or(1),
             true,
             picked,
+            waiting,
         )?;
 
         let conditions = produced.account.get("conditions");
@@ -3247,6 +3473,10 @@ impl Daemon {
     /// generation path a client's request runs, rather than a second one
     /// written to be measured, which is the difference between timing MCF and
     /// timing something that resembles it (A11, A12).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one generation's conditions, and who is waiting for it"
+    )]
     fn drained_generation(
         &self,
         named: &str,
@@ -3255,6 +3485,7 @@ impl Daemon {
         produce: usize,
         pinned: bool,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        waiting: crate::served::Waiting<'_>,
     ) -> std::result::Result<
         (
             crate::generation::Produced,
@@ -3297,6 +3528,7 @@ impl Daemon {
                 system_memory_free(),
                 pinned,
                 None,
+                waiting,
                 &mut writer,
             )
         };
@@ -4081,6 +4313,19 @@ impl Daemon {
             ),
             ("engines", self.engines_as_value()),
             ("cannot", self.cannot()),
+            // What is being carried right now, so that a daemon that is
+            // busy says so rather than not answering (D48, B-460).
+            (
+                "running",
+                Value::List(
+                    self.running
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .values()
+                        .map(|running| running.to_value())
+                        .collect(),
+                ),
+            ),
         ])
     }
 
