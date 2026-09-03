@@ -441,8 +441,34 @@ pub(crate) fn serve_generation(
         (None, Some(addressing), Ok(Chosen::StandIn)) => Tokenizer::own(&resolved(store, named))
             .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
             .map(Some),
+        // **A prompt with no addressing on file goes to the server too, read
+        // by its own tokenizer.** Before this it went to the completion tool
+        // as text (B-376's first cut, from before the engine could read for
+        // MCF), which loaded the model again for every generation — ten
+        // times in one prompt report — and handed back no identifiers, so the
+        // report's held reading was never taken and said *needs the served
+        // engine* of an engine that was serving. The bare prompt is read the
+        // way the ranking reads it, with the beginning marker and nothing
+        // else, so the answer and the reading are of one prompt (§3.4, F160).
+        (None, None, Ok(Chosen::Provisioned(llama))) => {
+            let tokenizer = Tokenizer::Engine {
+                where_it_lives: Where {
+                    store,
+                    llama,
+                    runtime,
+                    named,
+                    gpu_layers,
+                    context,
+                },
+                server,
+            };
+            tokenizer
+                .encode(prompt, true)
+                .map(|read| Some(read.into_iter().map(|held| held.id).collect()))
+        }
         _ => Ok(None),
     };
+    let addressed = addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok());
     let produced = match (chosen, wrapped) {
         (_, Err(failure)) | (Err(failure), _) => Err(failure),
         // A turn of identifiers goes to the server, which can be given one;
@@ -467,7 +493,7 @@ pub(crate) fn serve_generation(
             writer,
         ),
     };
-    let produced = with_provenance(produced, derived, derived_budget, tokens.is_none());
+    let produced = with_provenance(produced, addressed, derived_budget);
     let produced = match produced {
         Ok(produced) => produced,
         Err(failure) => Produced {
@@ -489,32 +515,44 @@ pub(crate) fn serve_generation(
     produced
 }
 
+/// What the prompt went to the model as, for the account: the derived
+/// addressing's provenance where one is on file (and that it was not
+/// applied, where the caller sent its own identifiers), the bare prompt
+/// where none is; nothing where the turn was never built.
+fn addressing_label(
+    derived: Option<&crate::configured::Addressing>,
+    own_identifiers: bool,
+    built: bool,
+) -> Option<String> {
+    match derived {
+        Some(addressing) if own_identifiers => Some(format!(
+            "{} — not applied here: the caller sent its own identifiers",
+            addressing.provenance()
+        )),
+        Some(addressing) => Some(addressing.provenance()),
+        None if built && !own_identifiers => Some(BARE_PROMPT.to_owned()),
+        None => None,
+    }
+}
+
+/// What a prompt with no addressing on file went as, in words (§3.15).
+pub(crate) const BARE_PROMPT: &str = "the prompt alone: no addressing is on file for this \
+                                      model, so it went with no turn markers around it";
+
 /// The provenance travels into the account, so that a measurement taken
 /// through a derived configuration carries what set it — which is what
 /// makes *are yesterday's number and today's comparable* answerable rather
-/// than assumed (D43, §3.4). `wrapped` is whether the addressing was applied:
-/// a caller that sent its own identifiers is not overridden.
+/// than assumed (D43, §3.4).
 fn with_provenance(
     produced: Result<Produced, Failure>,
-    derived: Option<crate::configured::Addressing>,
+    addressed: Option<String>,
     derived_budget: Option<crate::configured::Budget>,
-    wrapped: bool,
 ) -> Result<Produced, Failure> {
     let produced = produced.map(|produced| Produced {
-        account: match (produced.account, derived) {
-            (Value::Map(mut fields), Some(addressing)) => {
+        account: match (produced.account, addressed) {
+            (Value::Map(mut fields), Some(addressed)) => {
                 if let Some(Value::Map(conditions)) = fields.get_mut("conditions") {
-                    conditions.insert(
-                        "addressed_as".to_owned(),
-                        Value::text(if wrapped {
-                            addressing.provenance()
-                        } else {
-                            format!(
-                                "{} — not applied here: the caller sent its own identifiers",
-                                addressing.provenance()
-                            )
-                        }),
-                    );
+                    conditions.insert("addressed_as".to_owned(), Value::text(addressed));
                 }
                 Value::Map(fields)
             }
@@ -843,9 +881,7 @@ pub(crate) fn received(
         return Ok(Received {
             read,
             before,
-            under: "the prompt alone: no addressing is on file for this model, so it went \
-                    with no turn markers around it"
-                .to_owned(),
+            under: BARE_PROMPT.to_owned(),
         });
     };
     // Pieces encode independently (a marker is looked up, text is segmented),
@@ -2078,5 +2114,25 @@ mod tokenizer_tests {
             closed.tokens(),
             "the generation's turn is the reading's turn"
         );
+    }
+
+    /// What the account says the prompt went as: the addressing on file,
+    /// that it was not applied over a caller's own identifiers, or the bare
+    /// prompt — and nothing where the turn was never built (§3.15, F160).
+    #[test]
+    fn the_account_says_what_the_prompt_went_as() {
+        use super::{BARE_PROMPT, addressing_label};
+        let on_file = chatml_addressing();
+        assert_eq!(
+            addressing_label(Some(&on_file), false, true).as_deref(),
+            Some(on_file.provenance().as_str())
+        );
+        assert!(
+            addressing_label(Some(&on_file), true, true)
+                .is_some_and(|label| label.ends_with("the caller sent its own identifiers"))
+        );
+        assert_eq!(addressing_label(None, false, true).as_deref(), Some(BARE_PROMPT));
+        assert_eq!(addressing_label(None, true, true), None);
+        assert_eq!(addressing_label(None, false, false), None);
     }
 }

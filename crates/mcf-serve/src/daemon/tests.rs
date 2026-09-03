@@ -762,7 +762,8 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         refused: None,
         under: Some("chatml".to_owned()),
     };
-    let served = super::prompt_report_value(&report, &parts, 1, Ok(9), ranked, "a test".to_owned());
+    let served =
+        super::prompt_report_value(&report, &parts, 1, Ok(9), ranked, "a test".to_owned(), None);
     let grouped = served.get("expected_by_part").cloned();
     assert_eq!(
         grouped,
@@ -774,11 +775,13 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
                         ("tokens", Value::Integer(3)),
                         ("first_choice", Value::Integer(1)),
                         ("past_depth", Value::Integer(1)),
+                    ("no_context", Value::Integer(0)),
                     ]),
                     Value::map([
                         ("tokens", Value::Integer(3)),
                         ("first_choice", Value::Integer(2)),
                         ("past_depth", Value::Integer(0)),
+                    ("no_context", Value::Integer(0)),
                     ]),
                 ]),
             ),
@@ -790,8 +793,21 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         refused: Some("no template".to_owned()),
         under: None,
     };
-    let served = super::prompt_report_value(&report, &parts, 1, Ok(9), none, "a test".to_owned());
+    let served = super::prompt_report_value(
+        &report,
+        &parts,
+        1,
+        Ok(9),
+        none,
+        "a test".to_owned(),
+        Some("no engine resolves this model: it does not fit".to_owned()),
+    );
     assert_eq!(served.get("expected_by_part"), Some(&Value::Null));
+    // A forced reading that was not taken says why, apart from a rank (A2).
+    assert_eq!(
+        served.get("held_refused").and_then(Value::as_text),
+        Some("no engine resolves this model: it does not fit")
+    );
     // Not asked is null, not an empty list (A7).
     assert_eq!(served.get("alone"), Some(&Value::Null));
     assert_eq!(served.get("alone_floor"), Some(&Value::Null));
@@ -836,7 +852,8 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         refused: None,
         under: None,
     };
-    let served = super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned());
+    let served =
+        super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned(), None);
     let alone = served.get("alone").and_then(Value::as_list).unwrap_or(&[]);
     assert_eq!(alone.len(), 2);
     assert_eq!(
@@ -911,4 +928,25 @@ fn a_served_settledness_carries_the_cut_it_was_drawn_under() {
         Some(&Value::text("none declared by the file"))
     );
     assert_eq!(super::settled_value(None), Value::Null);
+}
+
+/// A prompt report says what its generations were addressed as from their
+/// own accounts, and a prompt that went bare is said to have gone bare
+/// rather than as *one user turn* (A21, F160).
+#[test]
+fn a_prompt_report_says_what_its_generations_were_addressed_as() {
+    let none = std::collections::BTreeSet::new();
+    assert!(
+        super::addressed_as(&none).starts_with("the prompt alone: no addressing is on file"),
+        "{}",
+        super::addressed_as(&none)
+    );
+    let seen: std::collections::BTreeSet<String> =
+        ["im_start…im_end as assistant — set by the chat-template probe".to_owned()]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        super::addressed_as(&seen),
+        "im_start…im_end as assistant — set by the chat-template probe"
+    );
 }

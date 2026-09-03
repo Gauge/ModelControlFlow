@@ -12,6 +12,11 @@ const MARKER: usize = 3;
 /// the workspace check exists to hold (B-001). What the probe needs from a
 /// model is its vocabulary, which is what this carries.
 fn a_vocabulary(tokens: &[String], with_template: bool) -> Vec<u8> {
+    a_file(tokens, with_template.then_some("{{ messages }}"), None)
+}
+
+/// A model file with the given tokens, template and end-of-turn token.
+fn a_file(tokens: &[String], template: Option<&str>, ending: Option<u32>) -> Vec<u8> {
     // Every token that looks like a marker is USER_DEFINED, which is what
     // makes it tokenize as itself — a real vocabulary marks them and the
     // probe's marker check depends on it (F26, F37).
@@ -55,11 +60,13 @@ fn a_vocabulary(tokens: &[String], with_template: bool) -> Vec<u8> {
     }
     pairs.push(("tokenizer.ggml.token_type", 9, types));
 
-    if with_template {
-        let template = "{{ messages }}";
+    if let Some(template) = template {
         let mut value = length(template.len()).to_vec();
         value.extend_from_slice(template.as_bytes());
         pairs.push(("tokenizer.chat_template", 8, value));
+    }
+    if let Some(ending) = ending {
+        pairs.push(("tokenizer.ggml.eos_token_id", 4, ending.to_le_bytes().to_vec()));
     }
 
     let mut out = b"GGUF".to_vec();
@@ -645,6 +652,31 @@ fn a_role_that_is_renamed_is_not_a_candidate() {
         vec!["model".to_owned()],
         "the word the template writes out, not the word it tests for"
     );
+}
+
+/// The opener is the marker the template writes a role after, not the first
+/// marker that is not the closer: Qwen3-Coder's template says `[]` before
+/// it says `<|im_start|>`, and its vocabulary holds `[]` as a token (F160).
+#[test]
+fn the_opener_is_the_marker_a_role_follows() {
+    let template = "{%- set ns = namespace(tools=[]) %}{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}{% endfor %}";
+    let tokens = with_bytes(&["<s>", "\u{2581}a", "a", "[]", "<|im_start|>", "<|im_end|>"]);
+    let file = mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(5))).expect("a model");
+    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).expect("a vocabulary");
+    let found = super::from_template(&file, &vocabulary);
+    let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();
+    assert_eq!(names, vec!["im_start…im_end as assistant"], "{names:?}");
+    assert_eq!(
+        found[0].pieces_before[0],
+        mcf_standin::tokenizer::Piece::Marker("<|im_start|>".to_owned())
+    );
+    assert!(super::opens_a_role(template, "<|im_start|>"));
+    assert!(!super::opens_a_role(template, "[]"));
+    // A coder model's own (F160): the role is a word away from the marker on
+    // every line that writes one, and `[]` is a line away from *system*.
+    let coder = "{%- if tools is defined %}\n    {%- set tools = [] %}\n{%- endif %}\n\n{%- if system_message is defined %}\n    {{- \"<|im_start|>system\\n\" + system_message }}\n{%- else %}{{ '<|im_start|>' + message.role + '\\n' }}";
+    assert!(super::opens_a_role(coder, "<|im_start|>"));
+    assert!(!super::opens_a_role(coder, "[]"));
 }
 
 /// A template that emits the role it was given assigns nothing, and the

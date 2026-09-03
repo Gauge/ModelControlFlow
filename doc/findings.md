@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 103 |
+| **Version** | 104 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -168,6 +168,7 @@ forward as one.
 | 157 | [F157 — Three files on the machine recommend how to be sampled and MCF said they recommend nothing; and above nought the engine truncates every draw with values MCF never stated (B-440, B-281, B60, A7, §3.15, §3.4)](#157-f157-three-files-on-the-machine-recommend-how-to-be-sampled-and-mcf-said-they-recommend-nothing-and-above-nought-the-engine-truncates-every-draw-with-values-mcf-never-stated-b-440-b-281-b60-a7-315-34) |
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
+| 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9422,6 +9423,166 @@ echoing what the operator types, and they will not know why.
 piped output is a fact about where MCF was pointed, not a fault, so the refusal
 names the two commands that answer the same questions with no display attached.
 
+## 160 · F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)
+
+The prompt report was run for six models — Qwen3-VL-2B, Seed-Coder-8B,
+Qwen3-Coder-30B-A3B, GLM-4.7-Flash, gpt-oss-20b, Devstral-Small-2-24B — on
+four prompts: a one-word question by word, a build-agent instruction as one
+paragraph and as bullets, and a dungeon-master persona, all by phrase. One
+daemon, a 40 GiB memory cap, the processor only, greedy at one seed. The
+first pass was twenty-four reports; four of them were reports, and the rest
+were the same three defects wearing different clothes.
+
+**The daemon refused an engine for a model it was holding.** Qwen3-Coder's
+first report served its engine; its second, a minute later, said *no engine
+on this machine resolves this model* and read the prompt by MCF's own
+tokenizer. What had changed was the daemon's own server: 31 GiB resident
+under a 40 GiB cap leaves 9 GiB, and `resolve` asked whether an 18 GiB
+model fits in 9. It was the daemon's own copy of that model being counted
+against it. What the held server holds is free for the next question about
+the same model, since serving it again spends none of it — `engines_now`
+adds the server's resident set to what the machine has. And the refusal
+travels now: `expected_refused` says *no engine resolves this model: it does
+not fit*, `held_refused` says why the forced reading was not taken, and the
+page reads *control in: not taken · <why>* rather than *needs the served
+engine* of an engine that was serving.
+
+**A prompt nothing preceded placed nowhere.** Seed-Coder and gpt-oss have
+no addressing on file, so the prompt goes bare, with no turn markers and —
+for these vocabularies — no beginning marker. Position nought has nothing
+to be ranked against and was left out of the reading: twelve rows for
+thirteen tokens. The placement that walks the prompt piece by piece looked
+for `Answer` at the front of the text, found ` in`, and advanced nowhere;
+every piece after it was *in no word*, and the foot said *first choice
+34/34 words · 0/0 pieces* — a report with no reading at all, presented as
+every word the model's own (A7). Three states a reader must not confuse: a
+rank, a rank past the depth read, and no reading — and the last two had
+been one null. The first piece of a turn nothing preceded is now a row of
+its own, `read: false`, a `Rank::NoContext` to the placement, counted apart
+on the page (*no context 1 word · first in the prompt, nothing before it to
+rank against*); a word that is all of these is not a first choice and its
+read pieces are what the *own* column is over. After the fix Seed-Coder's
+one-word question reads *first choice 3/11 words · 5/12 pieces · past depth
+3 · no context 1*.
+
+**The answers went through a tool that loaded the model every time.** A
+bare prompt went to `llama-completion` as text (B-376's first cut, from
+before the engine could read for MCF), not to the held server: ten
+generations in a report, ten model loads, and no token identifiers back —
+so the forced reading was never taken. Seed-Coder's dungeon-master report
+took 119 s; gpt-oss's, 203 s. With the bare prompt read by the engine's own
+tokenizer, beginning marker and nothing else — the reading the ranking
+already takes, so the answer and the reading are of one prompt (§3.4) — it
+goes through the server like an addressed one. Seed-Coder's one-word report
+went from 19 s to 9 s and *control in: 1st 1 · open 3/4* appeared. Under
+the old path Devstral could not be reported at all: the daemon held
+gpt-oss's server (22 GiB) and spawned a 14 GiB completion beside it under
+the 40 GiB cap, 5.8 GiB left, and the first generation had not finished
+after eleven minutes.
+
+**The addressing line was a declaration.** *One user turn · whole prompt ·
+system turn: none, not probed* was on every report, including the ones
+where the prompt had gone bare (A21). It is now what the report's
+generations were addressed as, from their accounts — the probe's provenance
+where one is on file, *the prompt alone: no addressing is on file for this
+model, so it went with no turn markers around it · mcf probe sets one*
+where none is — and the account carries the bare case too.
+
+**Qwen3-Coder had been addressed as `[]user`.** Its reports were the
+ones that looked right, and the addressing line said *…im_end as assistant
+— set by the chat-template probe at 2026-09-01T00:05:49*: a name with an
+empty half. The probe's opener was the first marker of the template that
+was not the closer, and Qwen3-Coder's template says `[]` — Jinja's empty
+list, which that vocabulary holds as one token — before it says
+`<|im_start|>`. Every prompt to that model since had gone as `[]user\n …
+<|im_end|>\n[]assistant\n`, a turn the model was never trained on, and
+the engine tokenizer's one-token check passed it because `[]` is one token.
+The opener is now the marker the template writes a role after (B-447) —
+and it took two tries. The first looked for a role word within 48
+characters of the marker, and `[]` passed again: the line after it is
+`{%- set system_message = messages[0]['content'] %}`, and *system* is in
+*system_message*. The role must now be the first thing written after the
+marker, with nothing but `message`, `messages` or `m` allowed between —
+`<|im_start|>` + `message.role`, `<|im_start|>` + `system` — which is what
+the four vocabularies on file write and what `[]` never does. Re-probed,
+the addressing on file is *im_start…im_end as assistant* with `<|im_start|>`
+before the user turn, and Qwen3-Coder's reports changed: the one-word
+question is unchanged (*Blue*, floor 0 %, separable, 3/11 first choice),
+but the build instruction, which under `[]user` had a 0 % floor and *ls
+-la*, now has a 50 % floor and an answer of *ls* and an opened code fence
+in four tokens, not separable; and the dungeon-master persona's floor is
+59.4 % rather than 63.1 %, with one phrase under it (*Never decide for the
+players;*) rather than two. The report under the wrong addressing was the
+cleaner one. That is not a reason to prefer it: a turn the model was not
+trained on is not a condition a writer can reproduce with the model's own
+chat template, and the report says which turn it read under.
+
+**Two smaller things.** A phrase cut at every comma gave *dripping cave.*
+a row of its own with nothing a writer could do about it; a comma with
+fewer than three words on either side no longer cuts (B-446), and *The
+party steps into a cold, dripping cave.* is one part. And a `stop` asked of
+the daemon during a report waited behind it: one connection at a time is
+DEC-012's open question, but a client that hung up did not stop its report,
+and the daemon finished the generations for nobody.
+
+**An answer of nothing was shown as nothing.** Devstral-Small-2-24B, bare —
+its tekken vocabulary has a beginning marker, so it has no no-context row —
+answered the build instruction with its stop token and nothing before it:
+one token, 0 characters, and a 0 % floor, *separable*, with every phrase at
+0 % because removing anything from a prompt that produces nothing produces
+nothing. The page showed an empty answer panel and the console an empty
+line, and neither said the answer had a length of one or what had ended
+it, though the generation account had both (A7). The answer's length in
+tokens and what stopped it — its stop token, the cap, a stop word — are now
+on the answer's title in the window and on the console, *nothing written*
+stands where the text would be, and both are in the record (B-445). The
+same model bare on the one-word question said *Blue* and went on to a
+question-and-answer list of its own to the 600-token cap, floor 68.1 %; on
+the persona, 76.3 %, with 8 of 34 words its first choice and 9 past the
+depth — the same shape as the other three bare models, and the same
+reading: no impact can be read from a model no turn addresses.
+
+**What the four prompts said, across the models that could be read.**
+The one-word question, by word, 13 tokens on every vocabulary but
+Seed-Coder's 12: the two addressed models answered *Blue* at a 0 % floor,
+separable, and the same four words carried it on both — *Answer*, *one*,
+*word:* and *what* moved the answer 97–100 % when removed, *in*, *colour*,
+*is* and *the* not at all. What every model fought was the same word:
+*colour* ranked past 60 on four vocabularies and 57 on the fifth, *Answer*
+at the front past 60 on the two that addressed it and unranked on the three
+that did not; what every model would have written was *the sky*, and
+nothing else on more than three of the five. The three bare models could
+not be read for impact at all: Seed-Coder said *Blue.* and ran to the
+600-token cap in a dialogue with itself (floor 100 %), gpt-oss repeated
+*So the answer is "blue".* to the cap (89.5 %), and GLM-4.7-Flash's answer
+was its reasoning — *(Assume clear weather) At noon,* — at 97.6 %; a floor
+that high is the report saying that removing nothing moves the answer as
+much as removing anything, and that no word of the prompt can be told from
+the noise until the model is addressed. The build instruction, by phrase:
+Qwen3-VL-2B and Qwen3-Coder-30B both said *ls -la*, floor 0 %, separable,
+and agreed on the ordering — the last phrase (*Reply with only the shell
+command…*) is the whole answer at 100 %, the persona (*You are a build
+agent,*) half of it at 50 %, and the three rules in between nought; the
+*own* column said the same thing in a different way, 8/15 pieces of the
+reply phrase the model's own against 0–2 of each rule. Bulleted, the same
+instruction to Qwen3-VL-2B raised the floor to 50 % — the control
+sentence, which the paragraph form had absorbed, moved the answer when it
+was a bullet — and the rules were more the model's own as bullets, 5/9
+pieces for *- Read a file before you edit it.* against 1/8 as a clause.
+Seed-Coder said *ls* to both forms at a 0 % floor; gpt-oss's floors were
+87.0 % and 98.6 %. The
+dungeon-master persona is where the models divided: Qwen3-Coder-30B's floor
+was 63.1 % and two phrases sat under it (*You are a dungeon master,* at
+25 %, *Never decide for the players;* at 46.8 %), so the persona and the
+rule are what held the answer in place while the scene-setting sentences,
+at 88–98 %, are the ones the answer changed without; Qwen3-VL-2B's floor was
+78.3 % with *The party steps into a cold, dripping cave.* the most-moving at
+89.1 %; gpt-oss's 82.6 % with nothing under it and everything at 88–94 %,
+an answer that moved as much for a control sentence as for any phrase; and
+Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
+gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
+choice, and 8 or 9 were past the depth read on every one of them.
+
 ## 159 · F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)
 
 The report had eight sections and a person crafting a persona could act on
@@ -11023,6 +11184,14 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 104 — six models by four prompts
+
+F160 added. Twenty-four prompt reports on one daemon: the engine refused for
+a model the daemon was holding, a prompt nothing preceded placed nowhere, a
+bare prompt answered by a tool that loaded the model once a generation, an
+addressing line that was a declaration, a model addressed as `[]user` for
+two days, and an answer of nothing shown as a blank. B-445, B-446, B-447.
 
 ### Version 103 — a report printed over refusals
 

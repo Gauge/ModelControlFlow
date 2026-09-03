@@ -478,7 +478,14 @@ fn the_floor(body: &Value, unit: &str) -> String {
             rank_cell(Some(held), depth),
             open_cell(Some(held))
         ),
-        _ => " · control in: 1st — (needs the served engine)".to_owned(),
+        // Not taken, and why: a dash alone sent a reader to look for an
+        // engine that was running the whole time (A2, F160).
+        _ => format!(
+            " · control in: not taken · {}",
+            body.get("held_refused")
+                .and_then(Value::as_text)
+                .unwrap_or("needs the served engine")
+        ),
     };
     match body
         .get("floor_spread")
@@ -994,9 +1001,25 @@ fn expected(body: &Value) -> Vec<String> {
     let depth = integer(body, "ranked_depth");
     let words = by_word.get("words").and_then(Value::as_list).unwrap_or(&[]);
     let mut surprising: Vec<(i64, &Value)> = Vec::new();
-    let (mut whole, mut own, mut pieces, mut past) = (0_i64, 0_i64, 0_i64, 0_i64);
+    let (mut whole, mut own, mut pieces, mut past, mut unread, mut no_context) =
+        (0_i64, 0_i64, 0_i64, 0_i64, 0_i64, 0_i64);
     for word in words {
-        pieces = pieces.saturating_add(integer(word, "pieces"));
+        // **A word no piece fell in was not read, and is not a first
+        // choice.** Nought of nought counted as every piece the model's own,
+        // and a report whose placement had failed on every piece said
+        // *first choice 11/11 words · 0/0 pieces* (A7, F160).
+        if integer(word, "pieces") == 0 {
+            unread = unread.saturating_add(1);
+            continue;
+        }
+        // **A word nothing preceded was not ranked, and is not a first
+        // choice either.** Only its read pieces are counted (F160).
+        let read = integer(word, "pieces").saturating_sub(integer(word, "unread"));
+        if read == 0 {
+            no_context = no_context.saturating_add(1);
+            continue;
+        }
+        pieces = pieces.saturating_add(read);
         own = own.saturating_add(integer(word, "first_choice"));
         // Outside the list asked for: a bound, not an absence (A7).
         let rank = word
@@ -1006,7 +1029,7 @@ fn expected(body: &Value) -> Vec<String> {
         if rank == i64::MAX {
             past = past.saturating_add(1);
         }
-        if integer(word, "first_choice") == integer(word, "pieces") {
+        if integer(word, "first_choice") == read {
             whole = whole.saturating_add(1);
         } else {
             surprising.push((rank, word));
@@ -1051,6 +1074,15 @@ fn expected(body: &Value) -> Vec<String> {
             count_of(past, "word")
         ));
     }
+    if no_context > 0 {
+        lines.push(format!(
+            "  no context  {} · first in the prompt, nothing before it to rank against",
+            count_of(no_context, "word")
+        ));
+    }
+    if unread > 0 {
+        lines.push(format!("  in no piece  {}", count_of(unread, "word")));
+    }
     let unplaced = integer(by_word, "unplaced");
     if unplaced > 0 {
         lines.push(format!("  in no word  {}", count_of(unplaced, "piece")));
@@ -1074,7 +1106,7 @@ fn word_row(rank: i64, word: &Value, depth: i64) -> Vec<String> {
         format!(
             "{}/{}",
             integer(word, "first_choice"),
-            integer(word, "pieces")
+            integer(word, "pieces").saturating_sub(integer(word, "unread"))
         ),
         word.get("part")
             .and_then(Value::as_integer)
@@ -1147,8 +1179,14 @@ fn answer(body: &Value) -> Vec<String> {
     if limit > 0 {
         conditions.push(format!("cap {limit} tokens"));
     }
+    conditions.extend(mcf_desk::answer_marks(body));
     let mut lines = vec![head("ANSWER", &conditions)];
     let written: Vec<&str> = baseline.lines().collect();
+    // An empty answer is a figure, not a blank (A7, F160): Devstral, bare,
+    // ended a build instruction at one token that printed as nothing.
+    if baseline.trim().is_empty() {
+        lines.push(format!("  {}", mcf_desk::NOTHING_WRITTEN));
+    }
     for said in written.iter().take(12) {
         lines.push(format!("  {said}"));
     }
@@ -1283,7 +1321,18 @@ mod tests {
         }
         let text = conditions(&held).join("\n");
         assert!(
-            text.contains("control in: 1st — (needs the served engine)"),
+            text.contains("control in: not taken · needs the served engine"),
+            "{text}"
+        );
+        if let Value::Map(fields) = &mut held {
+            fields.insert(
+                "held_refused".to_owned(),
+                Value::text("no engine resolves this model: it does not fit"),
+            );
+        }
+        let text = conditions(&held).join("\n");
+        assert!(
+            text.contains("control in: not taken · no engine resolves this model: it does not fit"),
             "{text}"
         );
         assert_eq!(rank_cell(Some(&Value::Null), 60), "—");
@@ -1373,6 +1422,70 @@ mod tests {
         let text = expected(&long).join("\n");
         assert!(text.contains("  5 more · --json"), "{text}");
         assert!(text.contains("first choice  0/25 words"), "{text}");
+        // A word no piece fell in is not a first choice, and is counted as
+        // what it is (A7).
+        let mut unread = body();
+        if let Value::Map(fields) = &mut unread {
+            let words: Vec<Value> = (0..3)
+                .map(|at| {
+                    Value::map([
+                        ("text", Value::text(format!("w{at}"))),
+                        ("pieces", Value::Integer(0)),
+                        ("rank", Value::Null),
+                        ("first_choice", Value::Integer(0)),
+                        ("part", Value::Integer(1)),
+                    ])
+                })
+                .collect();
+            fields.insert(
+                "expected_by_word".to_owned(),
+                Value::map([
+                    ("words", Value::List(words)),
+                    ("unplaced", Value::Integer(12)),
+                ]),
+            );
+        }
+        let text = expected(&unread).join("\n");
+        assert!(
+            text.contains("first choice  0/3 words · 0/0 pieces"),
+            "{text}"
+        );
+        assert!(text.contains("in no piece  3 words"), "{text}");
+        assert!(text.contains("in no word  12 pieces"), "{text}");
+        assert!(!text.contains("past depth"), "{text}");
+        // A word nothing preceded was not ranked: it is counted apart, and
+        // a word partly so is scored on the pieces that were read (F160).
+        let mut first = body();
+        if let Value::Map(fields) = &mut first {
+            let word = |text: &str, pieces, first_choice, unread| {
+                Value::map([
+                    ("text", Value::text(text)),
+                    ("pieces", Value::Integer(pieces)),
+                    ("rank", Value::Null),
+                    ("first_choice", Value::Integer(first_choice)),
+                    ("unread", Value::Integer(unread)),
+                    ("part", Value::Integer(1)),
+                ])
+            };
+            fields.insert(
+                "expected_by_word".to_owned(),
+                Value::map([
+                    (
+                        "words",
+                        Value::List(vec![word("Be", 1, 0, 1), word("terse.", 3, 2, 1)]),
+                    ),
+                    ("unplaced", Value::Integer(0)),
+                ]),
+            );
+        }
+        let text = expected(&first).join("\n");
+        assert!(text.contains("no context  1 word ·"), "{text}");
+        assert!(
+            text.contains("first choice  1/2 words · 2/2 pieces"),
+            "{text}"
+        );
+        assert!(!text.contains("\"Be\""), "{text}");
+        assert!(!text.contains("in no piece"), "{text}");
     }
 
     /// The rank reading grouped by part names the part the model least
@@ -1776,5 +1889,40 @@ mod tests {
             ..Asked::default()
         };
         assert_eq!(document(&inline).as_deref(), Ok("A. B."));
+    }
+
+    /// Devstral, bare, ended a build instruction at one token that
+    /// printed as nothing, and the page showed a heading over a blank
+    /// (F160). The answer's length and what ended it are on the heading,
+    /// and an empty answer is said to be one.
+    #[test]
+    fn an_empty_answer_is_said_with_its_length_and_what_ended_it() {
+        let mut body = self::body();
+        if let Value::Map(fields) = &mut body {
+            let _was = fields.insert("baseline".to_owned(), Value::text(String::new()));
+            let _was = fields.insert("answer_tokens".to_owned(), Value::Integer(1));
+            let _was = fields.insert(
+                "answer_stopped".to_owned(),
+                Value::text("stop_token".to_owned()),
+            );
+        }
+        let page = rendered(&body, "m.gguf").join("\n");
+        assert!(
+            page.contains("ANSWER   as written · 1 token · ended at its stop token"),
+            "{page}"
+        );
+        assert!(page.contains("\n  nothing written\n"), "{page}");
+
+        let mut body = self::body();
+        if let Value::Map(fields) = &mut body {
+            let _was = fields.insert("answer_tokens".to_owned(), Value::Integer(600));
+            let _was = fields.insert("answer_stopped".to_owned(), Value::text("limit".to_owned()));
+        }
+        let page = rendered(&body, "m.gguf").join("\n");
+        assert!(
+            page.contains("ANSWER   as written · 600 tokens · ran to the cap\n  Blue."),
+            "{page}"
+        );
+        assert!(!page.contains("nothing written"), "{page}");
     }
 }

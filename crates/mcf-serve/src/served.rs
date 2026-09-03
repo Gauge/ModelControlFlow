@@ -443,6 +443,13 @@ impl Served {
         crate::adapters::peak_resident_of(self.child.id())
     }
 
+    /// The memory the server holds resident now, in bytes — what stopping
+    /// it would give back — or `None` where the kernel does not say.
+    #[must_use]
+    pub fn resident_bytes(&self) -> Option<u64> {
+        crate::adapters::resident_of(self.child.id())
+    }
+
     /// One generation from a turn of token identifiers, drawn as `draw` says.
     ///
     /// `pinned` tells the engine to run past the model's end of text to the

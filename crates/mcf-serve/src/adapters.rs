@@ -53,10 +53,26 @@ pub struct Ended {
 /// counter that costs anything, and it is read only of a child MCF started.
 #[must_use]
 pub fn peak_resident_of(pid: u32) -> Option<u64> {
+    status_bytes_of(pid, "VmHWM:")
+}
+
+/// The memory a process holds resident at this moment, in bytes (`VmRSS`
+/// in `/proc/<pid>/status`).
+///
+/// The moment's figure rather than the high-water mark: what a held server
+/// would give back if it were stopped is what it holds now, not the most it
+/// ever held. `None` where the kernel does not say (A7).
+#[must_use]
+pub fn resident_of(pid: u32) -> Option<u64> {
+    status_bytes_of(pid, "VmRSS:")
+}
+
+/// One kibibyte field of `/proc/<pid>/status`, in bytes.
+fn status_bytes_of(pid: u32, key: &str) -> Option<u64> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
-    let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
+    let line = status.lines().find(|line| line.starts_with(key))?;
     let kibibytes: u64 = line
-        .trim_start_matches("VmHWM:")
+        .trim_start_matches(key)
         .trim()
         .trim_end_matches("kB")
         .trim()

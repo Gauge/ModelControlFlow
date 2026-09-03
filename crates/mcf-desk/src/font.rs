@@ -463,7 +463,11 @@ fn font_directories() -> Vec<PathBuf> {
         [
             "/usr/share/fonts",
             "/usr/local/share/fonts",
+            // Where a Flatpak sees the host's fonts: the system's, the
+            // person's, and /usr/local's, in that order.
             "/run/host/fonts",
+            "/run/host/user-fonts",
+            "/run/host/local-fonts",
             "/System/Library/Fonts",
             "/Library/Fonts",
             "C:\\Windows\\Fonts",

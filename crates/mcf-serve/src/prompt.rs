@@ -133,7 +133,9 @@ pub enum Unit {
     /// attached to, as a sentence keeps its full stop.
     Word,
     /// A phrase: a sentence, or the part of one ended by `,`, `;` or `:`
-    /// before whitespace — *in one word*, *as a senior engineer*.
+    /// before whitespace — *in one word*, *as a senior engineer*. A cut
+    /// that would leave fewer than three words on either side is not made:
+    /// *a cold, dripping cave* is one phrase, not a phrase and a fragment.
     Phrase,
     /// A sentence: ended by `.`, `?`, `!` before whitespace, or a line break.
     Sentence,
@@ -830,7 +832,39 @@ pub fn parts_of(text: &str, by: Unit) -> Vec<Part> {
             after: String::new(),
         });
     }
-    found
+    if by == Unit::Phrase {
+        with_short_phrases_joined(found)
+    } else {
+        found
+    }
+}
+
+/// The fewest words a comma, semicolon or colon may leave on either side
+/// of its cut. *The party steps into a cold, dripping cave.* has a comma
+/// in it and is one phrase: cut there, removing *dripping cave.* leaves a
+/// prompt nobody wrote, and the reading is of that prompt, not of theirs.
+const FEWEST_WORDS_IN_A_PHRASE: usize = 3;
+
+/// Phrases cut by `,`, `;` or `:` with fewer than [`FEWEST_WORDS_IN_A_PHRASE`]
+/// words on either side, joined back to their neighbour. A sentence end
+/// always cuts.
+fn with_short_phrases_joined(found: Vec<Part>) -> Vec<Part> {
+    let words_in = |text: &str| text.split_whitespace().count();
+    let mut joined: Vec<Part> = Vec::new();
+    for part in found {
+        if let Some(last) = joined.last_mut()
+            && last.text.ends_with([',', ';', ':'])
+            && (words_in(&last.text) < FEWEST_WORDS_IN_A_PHRASE
+                || words_in(&part.text) < FEWEST_WORDS_IN_A_PHRASE)
+        {
+            last.text.push_str(&last.after);
+            last.text.push_str(&part.text);
+            last.after = part.after;
+            continue;
+        }
+        joined.push(part);
+    }
+    joined
 }
 
 /// The parts put back together as they were written.
@@ -864,6 +898,27 @@ pub struct Surprise {
     pub first_choice: usize,
     /// How many ranked past the depth read, where the rank is a bound.
     pub past_depth: usize,
+    /// How many were not ranked at all: the first piece of a turn with
+    /// nothing before it has no position to be ranked at.
+    pub no_context: usize,
+}
+
+/// Where the model put one piece of the prompt.
+///
+/// Three states a reader must not confuse: a rank, a rank past the depth
+/// read — a bound, not an absence — and no reading at all, which is the
+/// first piece of a turn nothing precedes. The last was a null rank like
+/// the second, and a prompt that went with no turn markers had its first
+/// piece counted as past the depth and every piece after it placed
+/// nowhere (A7, F160).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rank {
+    /// Where the model put it, counting from one.
+    At(usize),
+    /// Past the depth read.
+    PastDepth,
+    /// Not read: nothing preceded it to rank it against.
+    NoContext,
 }
 
 /// The rank reading grouped by part: one [`Surprise`] a part, in order, and
@@ -876,10 +931,7 @@ pub struct Surprise {
 /// part (A19, A7). Whitespace is skipped on both sides, since a separator
 /// belongs to no part.
 #[must_use]
-pub fn surprise_by_part(
-    parts: &[Part],
-    ranked: &[(String, Option<usize>)],
-) -> (Vec<Surprise>, usize) {
+pub fn surprise_by_part(parts: &[Part], ranked: &[(String, Rank)]) -> (Vec<Surprise>, usize) {
     let prompt = joined(parts);
     let mut ends = Vec::with_capacity(parts.len());
     let mut at = 0_usize;
@@ -910,9 +962,10 @@ pub fn surprise_by_part(
         if let Some(surprise) = index.and_then(|index| found.get_mut(index)) {
             surprise.tokens = surprise.tokens.saturating_add(1);
             match rank {
-                Some(1) => surprise.first_choice = surprise.first_choice.saturating_add(1),
-                Some(_) => {}
-                None => surprise.past_depth = surprise.past_depth.saturating_add(1),
+                Rank::At(1) => surprise.first_choice = surprise.first_choice.saturating_add(1),
+                Rank::At(_) => {}
+                Rank::PastDepth => surprise.past_depth = surprise.past_depth.saturating_add(1),
+                Rank::NoContext => surprise.no_context = surprise.no_context.saturating_add(1),
             }
         } else {
             nowhere = nowhere.saturating_add(1);
@@ -937,11 +990,15 @@ pub struct Expected {
     pub text: String,
     /// How many of the reading's tokens fell in it.
     pub pieces: usize,
-    /// Where the model ranked its first piece, counting from one; `None`
-    /// where that was past the depth read — a bound, not an absence.
+    /// Where the model ranked its first ranked piece, counting from one;
+    /// `None` where that was past the depth read — a bound, not an absence.
     pub rank: Option<usize>,
     /// How many of its pieces were the model's own first choice.
     pub first_choice: usize,
+    /// How many of its pieces were not ranked at all, nothing preceding
+    /// them: a word that is all of these was not read, and is not a first
+    /// choice.
+    pub unread: usize,
     /// Which part of the document — in the unit the report is by, counting
     /// from one — the word begins in. `None` for a word placed in no part.
     pub part: Option<usize>,
@@ -953,10 +1010,7 @@ pub struct Expected {
 /// The same cursor walk as [`surprise_by_part`], over the words rather than
 /// the parts; a word's part is the part it begins in.
 #[must_use]
-pub fn expected_by_word(
-    parts: &[Part],
-    ranked: &[(String, Option<usize>)],
-) -> (Vec<Expected>, usize) {
+pub fn expected_by_word(parts: &[Part], ranked: &[(String, Rank)]) -> (Vec<Expected>, usize) {
     let prompt = joined(parts);
     let words = parts_of(&prompt, Unit::Word);
     let ends_of = |held: &[Part]| {
@@ -981,6 +1035,7 @@ pub fn expected_by_word(
             pieces: 0,
             rank: None,
             first_choice: 0,
+            unread: 0,
             part: part_ends
                 .iter()
                 .position(|part_end| end.saturating_sub(word.text.len()) < *part_end)
@@ -1004,12 +1059,16 @@ pub fn expected_by_word(
         }
         let index = word_ends.iter().position(|end| cursor < *end);
         if let Some(word) = index.and_then(|index| found.get_mut(index)) {
-            if word.pieces == 0 {
-                word.rank = *rank;
+            if word.pieces == word.unread
+                && let Rank::At(at) = rank
+            {
+                word.rank = Some(*at);
             }
             word.pieces = word.pieces.saturating_add(1);
-            if *rank == Some(1) {
-                word.first_choice = word.first_choice.saturating_add(1);
+            match rank {
+                Rank::At(1) => word.first_choice = word.first_choice.saturating_add(1),
+                Rank::At(_) | Rank::PastDepth => {}
+                Rank::NoContext => word.unread = word.unread.saturating_add(1),
             }
         } else {
             nowhere = nowhere.saturating_add(1);

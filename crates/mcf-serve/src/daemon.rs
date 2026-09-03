@@ -367,8 +367,11 @@ fn prompt_report_entry(
             ]),
         ),
         ("answer_characters", characters("baseline")),
+        ("answer_tokens", kept("answer_tokens")),
+        ("answer_stopped", kept("answer_stopped")),
         ("floor_parts_per_million", kept("floor_parts_per_million")),
         ("floor_held", kept("floor_held")),
+        ("held_refused", kept("held_refused")),
         ("floors", kept("floors")),
         ("floor_spread", kept("floor_spread")),
         ("alone", reading_figures(served.get("alone"))),
@@ -379,7 +382,15 @@ fn prompt_report_entry(
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
         ("generations", kept("generations")),
-        ("expected_read", count(expected.len())),
+        (
+            "expected_read",
+            count(
+                expected
+                    .iter()
+                    .filter(|row| row.get("read").and_then(Value::as_bool) != Some(false))
+                    .count(),
+            ),
+        ),
         ("expected_first_choice", count(first_choice)),
         ("expected_by_part", kept("expected_by_part")),
         ("expected_by_word", words_counted(served)),
@@ -469,6 +480,33 @@ fn refuse_an_unending_request(writer: &mut &UnixStream) {
     let _shutdown = writer.shutdown(std::net::Shutdown::Read);
 }
 
+/// A served rank row as the placement reads it: a rank, or a null rank
+/// that is past the depth read, or a null rank the row itself says was
+/// never read — the first piece of a turn nothing preceded (F160).
+fn rank_rows(ranked: &[Value]) -> Vec<(String, crate::prompt::Rank)> {
+    use crate::prompt::Rank;
+    ranked
+        .iter()
+        .map(|row| {
+            let text = row
+                .get("text")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_owned();
+            let rank = match row
+                .get("rank")
+                .and_then(Value::as_integer)
+                .and_then(|held| usize::try_from(held).ok())
+            {
+                Some(at) => Rank::At(at),
+                None if row.get("read").and_then(Value::as_bool) == Some(false) => Rank::NoContext,
+                None => Rank::PastDepth,
+            };
+            (text, rank)
+        })
+        .collect()
+}
+
 /// The rank reading grouped by part (B-433): which part the model least
 /// expected, spending no generation. Null where no reading was taken, so
 /// that an absent reading is not served as *all expected* (A7).
@@ -476,20 +514,7 @@ fn expected_by_part_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Va
     if ranked.is_empty() {
         return Value::Null;
     }
-    let pairs: Vec<(String, Option<usize>)> = ranked
-        .iter()
-        .map(|row| {
-            (
-                row.get("text")
-                    .and_then(Value::as_text)
-                    .unwrap_or_default()
-                    .to_owned(),
-                row.get("rank")
-                    .and_then(Value::as_integer)
-                    .and_then(|held| usize::try_from(held).ok()),
-            )
-        })
-        .collect();
+    let pairs = rank_rows(ranked);
     let (found, nowhere) = crate::prompt::surprise_by_part(parts, &pairs);
     let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
     Value::map([
@@ -503,6 +528,7 @@ fn expected_by_part_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Va
                             ("tokens", count(held.tokens)),
                             ("first_choice", count(held.first_choice)),
                             ("past_depth", count(held.past_depth)),
+                            ("no_context", count(held.no_context)),
                         ])
                     })
                     .collect(),
@@ -520,20 +546,7 @@ fn expected_by_word_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Va
     if ranked.is_empty() {
         return Value::Null;
     }
-    let pairs: Vec<(String, Option<usize>)> = ranked
-        .iter()
-        .map(|row| {
-            (
-                row.get("text")
-                    .and_then(Value::as_text)
-                    .unwrap_or_default()
-                    .to_owned(),
-                row.get("rank")
-                    .and_then(Value::as_integer)
-                    .and_then(|held| usize::try_from(held).ok()),
-            )
-        })
-        .collect();
+    let pairs = rank_rows(ranked);
     let (found, nowhere) = crate::prompt::expected_by_word(parts, &pairs);
     let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
     Value::map([
@@ -548,6 +561,7 @@ fn expected_by_word_value(parts: &[crate::prompt::Part], ranked: &[Value]) -> Va
                             ("pieces", count(word.pieces)),
                             ("rank", word.rank.map_or(Value::Null, count)),
                             ("first_choice", count(word.first_choice)),
+                            ("unread", count(word.unread)),
                             ("part", word.part.map_or(Value::Null, count)),
                         ])
                     })
@@ -566,6 +580,7 @@ fn prompt_report_value(
     tokens: core::result::Result<usize, String>,
     ranked: RankedPrompt,
     read_by: String,
+    not_held: Option<String>,
 ) -> Value {
     let RankedPrompt {
         rows: ranked,
@@ -585,6 +600,10 @@ fn prompt_report_value(
         // the inert one. `forced_depth` bounds a null `first_rank`: outside
         // the sixty read is a bound, not an absence (A7).
         ("floor_held", held_value(report.floor_held)),
+        // Why the forced reading was not taken, where it was not: the first
+        // reason met, since every part's reading is the same operation and
+        // fails the same way (A2, F160).
+        ("held_refused", not_held.map_or(Value::Null, Value::text)),
         // **The floor at every position, where asked** (B-434): null where
         // one draw was taken, which a reader must not read as a spread of
         // nothing (A7).
@@ -623,10 +642,9 @@ fn prompt_report_value(
             "most",
             Value::Integer(i64::try_from(report.most).unwrap_or(i64::MAX)),
         ),
-        (
-            "addressed_as",
-            Value::text("one user turn · whole prompt · system turn: none, not probed".to_owned()),
-        ),
+        // Filled in by the caller from the generations' own accounts: what
+        // they were addressed as is theirs to say (A21, F160).
+        ("addressed_as", Value::Null),
         // **Settledness, under its condition or not at all.** The seeds are
         // drawn at a temperature the caller stated, and where none was the
         // question was not asked: `settled` is then null, which a reader
@@ -676,6 +694,20 @@ fn prompt_report_value(
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),
         ),
     ])
+}
+
+/// What a prompt report's generations were addressed as, from their own
+/// accounts: the addressing on file where one was applied, and the bare
+/// prompt said as such where none was — a report over a prompt sent with
+/// no turn markers used to say *one user turn* (A21, F160).
+fn addressed_as(seen: &std::collections::BTreeSet<String>) -> String {
+    if seen.is_empty() {
+        return format!(
+            "{} · mcf probe sets one",
+            crate::generation::BARE_PROMPT
+        );
+    }
+    seen.iter().cloned().collect::<Vec<_>>().join(" · ")
 }
 
 /// A model's header, from a bounded read of the front of the file.
@@ -1617,8 +1649,28 @@ impl Daemon {
     /// card's would cost a process launch per device, which is the expense
     /// §3.13 exists to avoid, and a card is not where a model MCF placed
     /// wrongly takes the machine down with it.
+    ///
+    /// **What the daemon's own server holds is free for this question.**
+    /// A prompt report's second run on a 30B model was told the model did
+    /// not fit, on the machine that had answered its first run a moment
+    /// before: the memory group's headroom had been taken by the server
+    /// holding that very model, and the arithmetic counted it as gone
+    /// (F160). It is not gone. A request for the model it holds reuses the
+    /// server, and a request for another stops it first (D41) — either way
+    /// what it holds resident comes back to the request, so it is added
+    /// here and nowhere else. A server another thread is generating with is
+    /// spoken for, and counts as nothing.
     fn engines_now(&self) -> Vec<(crate::engines::Engine, Vec<crate::engines::Device>)> {
-        let free = system_memory_free();
+        let held = self
+            .server
+            .try_lock()
+            .ok()
+            .and_then(|slot| {
+                slot.as_ref()
+                    .and_then(crate::served::Served::resident_bytes)
+            })
+            .unwrap_or(0);
+        let free = system_memory_free().map(|free| free.saturating_add(held));
         self.engines_held()
             .iter()
             .map(|(engine, devices)| {
@@ -2122,7 +2174,7 @@ impl Daemon {
         tokenizer: &Result<crate::generation::Tokenizer<'_>>,
         named: &str,
         prompt: &str,
-        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        picked: core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>,
     ) -> RankedPrompt {
         // **Why it is missing, where it is missing.** An empty list and a list
         // MCF could not take look the same on the page, and the first draft of
@@ -2140,8 +2192,9 @@ impl Daemon {
         // ranking was reported as *no engine resolves this model* on a machine
         // that had been running it for two minutes. Which engine serves a
         // report is one question, settled once at the top of it (F144, §3.15).
-        let Some((llama, gpu_layers, context)) = picked else {
-            return refused("no engine on this machine resolves this model");
+        let (llama, gpu_layers, context) = match picked {
+            Ok(picked) => picked,
+            Err(why) => return refused(&format!("no engine resolves this model: {why}")),
         };
         let path = crate::generation::resolved(&self.places.models, named);
         let tokenizer = match tokenizer {
@@ -2188,10 +2241,27 @@ impl Daemon {
             Ok(ranked) => ranked,
             Err(failure) => return refused(&failure.to_string()),
         };
-        let rows = ranked
-            .into_iter()
-            .enumerate()
-            .map(|(at, (rank, said))| {
+        // **The first piece of a turn nothing preceded is a row too.** With
+        // no addressing on file and a vocabulary that adds no beginning
+        // marker, the prompt's own first piece is at position nought, which
+        // has nothing to be ranked against. Leaving it out left the reading
+        // one piece short of the prompt, and the placement that walks the
+        // prompt piece by piece never found where to start: every word was
+        // *in no word* (A7, F160). It is served unread, not past the depth.
+        let unread = (before..before.max(1)).map(|position| {
+            let text = read
+                .get(position)
+                .map(|held| held.piece.clone())
+                .unwrap_or_default();
+            Value::map([
+                ("text", Value::text(text)),
+                ("rank", Value::Null),
+                ("read", Value::Bool(false)),
+                ("engine_said", Value::Null),
+            ])
+        });
+        let rows = unread
+            .chain(ranked.into_iter().enumerate().map(|(at, (rank, said))| {
                 let position = at.saturating_add(before.max(1));
                 let text = read
                     .get(position)
@@ -2205,9 +2275,10 @@ impl Daemon {
                             Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
                         }),
                     ),
+                    ("read", Value::Bool(true)),
                     ("engine_said", said.map_or(Value::Null, Value::text)),
                 ])
-            })
+            }))
             .collect();
         RankedPrompt {
             rows,
@@ -2230,26 +2301,28 @@ impl Daemon {
     /// The prompt goes as the generation sent it — addressed, with the turn
     /// closed — and the opening's own identifiers after it; at each of them
     /// the model is asked where it ranks the token that stood there. Nothing
-    /// is generated. `None` where no reading could be taken, which the report
-    /// says apart from a rank (A7).
+    /// is generated. Where no reading could be taken, the sentence saying
+    /// why: the report shows that apart from a rank, and a reading that was
+    /// not taken says so in words rather than in a dash (A2, A7).
     fn forced(
         &self,
         tokenizer: &Result<crate::generation::Tokenizer<'_>>,
         named: &str,
         prompt: &str,
         opening: &[usize],
-        picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
-    ) -> Option<crate::prompt::Held> {
-        let (llama, gpu_layers, context) = picked?;
+        picked: core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>,
+    ) -> core::result::Result<crate::prompt::Held, String> {
+        let (llama, gpu_layers, context) =
+            picked.map_err(|why| format!("no engine resolves this model: {why}"))?;
         let path = crate::generation::resolved(&self.places.models, named);
         let received = crate::generation::received(
-            tokenizer.as_ref().ok()?,
+            tokenizer.as_ref().map_err(ToString::to_string)?,
             &self.mcf_home(),
             &path,
             prompt,
             true,
         )
-        .ok()?;
+        .map_err(|failure| failure.to_string())?;
         let mut tokens = received.tokens();
         let from = tokens.len();
         tokens.extend_from_slice(opening);
@@ -2273,8 +2346,8 @@ impl Daemon {
             from,
             opening.len(),
         )
-        .ok()?;
-        Some(crate::prompt::Held {
+        .map_err(|failure| failure.to_string())?;
+        Ok(crate::prompt::Held {
             first: ranked.first().and_then(|(rank, _)| *rank),
             kept: ranked.iter().filter(|(rank, _)| *rank == Some(1)).count(),
             of: ranked.len(),
@@ -2417,7 +2490,7 @@ impl Daemon {
         settle: Option<mcf_core::configuration::Thousandths>,
         writer: &mut &UnixStream,
     ) {
-        let picked = self.picked_engine(named);
+        let picked = self.picked_engine_or_why(named);
         let settle = match settle {
             Some(temperature) => match self.settle_for(named, temperature) {
                 Ok(settle) => Some(settle),
@@ -2435,6 +2508,10 @@ impl Daemon {
         // the account of each generation names it; the report keeps the
         // names and drains the rest (§3.4).
         let mut engines = std::collections::BTreeSet::new();
+        // What the generations were addressed as, from their own accounts:
+        // the report said *one user turn* over a prompt that went bare
+        // (A21, F160).
+        let mut addressed = std::collections::BTreeSet::new();
         // **A generation that was refused refuses the report.** Before this,
         // a model name no engine resolved gave seven empty answers, and the
         // report read them as *every part removed gave the SAME answer* —
@@ -2442,24 +2519,32 @@ impl Daemon {
         // with a name that was a directory rather than a file). The first
         // refusal is kept whole and passed on as the answer.
         let mut refused: Option<Value> = None;
+        let mut baseline_account: Option<(i64, String)> = None;
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
-            let Some(produced) = self.generated_quietly(named, prompt, draw, picked.clone()) else {
+            let Some(produced) = self.generated_quietly(named, prompt, draw, picked.clone().ok())
+            else {
                 return crate::prompt::Answered::default();
             };
+            // The first ask is the prompt as written. How long its answer
+            // was and what ended it are the account's, and a page that
+            // printed an empty answer under a 600-token cap with neither
+            // left a reader to guess between a model that said nothing and
+            // a report that lost what it said (A7, F160).
+            if asked == 1 {
+                baseline_account = Some(Self::length_and_ending(&produced.account));
+            }
             if produced.said.is_none()
                 && let Some(failure) = produced.account.get("failure")
                 && refused.is_none()
             {
                 refused = Some(failure.clone());
             }
-            if let Some(engine) = produced
-                .account
-                .get("conditions")
-                .and_then(|conditions| conditions.get("engine"))
-                .and_then(Value::as_text)
-            {
-                let _seen = engines.insert(engine.to_owned());
+            if let Some(engine) = Self::condition_of(&produced.account, "engine") {
+                let _seen = engines.insert(engine);
+            }
+            if let Some(under) = Self::condition_of(&produced.account, "addressed_as") {
+                let _seen = addressed.insert(under);
             }
             produced
                 .said
@@ -2469,9 +2554,20 @@ impl Daemon {
                 })
                 .unwrap_or_default()
         };
-        let tokenizer = self.tokenizer_for(named, picked.as_ref());
-        let mut force = |prompt: &str, opening: &[usize]| {
-            self.forced(&tokenizer, named, prompt, opening, picked.clone())
+        let tokenizer = self.tokenizer_for(named, picked.as_ref().ok());
+        let mut not_held: Option<String> = None;
+        let mut force = |prompt: &str, opening: &[usize]| match self.forced(
+            &tokenizer,
+            named,
+            prompt,
+            opening,
+            picked.clone(),
+        ) {
+            Ok(held) => Some(held),
+            Err(why) => {
+                let _first = not_held.get_or_insert(why);
+                None
+            }
         };
         let report = crate::prompt::measure(taken, seed, settle, &mut ask, &mut force);
         if let Some(failure) = refused {
@@ -2500,14 +2596,50 @@ impl Daemon {
             |failure| format!("nothing: {failure}"),
             crate::generation::Tokenizer::named,
         );
-        let served = prompt_report_value(&report, &parts, asked, tokens, ranked, read_by);
+        let mut served =
+            prompt_report_value(&report, &parts, asked, tokens, ranked, read_by, not_held);
+        if let Value::Map(fields) = &mut served {
+            let _was = fields.insert(
+                "addressed_as".to_owned(),
+                Value::text(addressed_as(&addressed)),
+            );
+            if let Some((tokens, stopped)) = baseline_account {
+                let _was = fields.insert("answer_tokens".to_owned(), Value::Integer(tokens));
+                let _was = fields.insert("answer_stopped".to_owned(), Value::text(stopped));
+            }
+        }
         let served = self.record_prompt_report(served, named, prompt, seed, &engines);
         let answer = Answer::served(served);
         let _written = writeln!(writer, "{}", answer.to_line());
         let _flushed = writer.flush();
     }
 
-    /// **The figures go to the record; the text does not** (A25, B-432).
+    /// One text condition of a generation's account, where it has one.
+fn condition_of(account: &Value, key: &str) -> Option<String> {
+    account
+        .get("conditions")
+        .and_then(|conditions| conditions.get(key))
+        .and_then(Value::as_text)
+        .map(str::to_owned)
+}
+
+/// How many tokens a generation produced and what ended it, from its
+/// account; nought and *unknown* where the account has neither (A7).
+fn length_and_ending(account: &Value) -> (i64, String) {
+    (
+        account
+            .get("tokens")
+            .and_then(Value::as_integer)
+            .unwrap_or(0),
+        account
+            .get("stopped")
+            .and_then(Value::as_text)
+            .unwrap_or("unknown")
+            .to_owned(),
+    )
+}
+
+/// **The figures go to the record; the text does not** (A25, B-432).
     /// Every other diagnostic leaves an entry, and a report that lived only
     /// in the terminal it was printed in was a measurement nobody could find
     /// again. The entry is built from what was served, by naming each figure
@@ -2867,12 +2999,37 @@ impl Daemon {
     /// provisioned engine — and the generation path then falls back to its own
     /// discovery, which is what it did before there was anything to resolve.
     fn picked_engine(&self, named: &str) -> Option<(crate::adapters::ProvisionedLlama, u32, u64)> {
-        let (recommended, _) = self.recommend(named).ok()?;
+        self.picked_engine_or_why(named).ok()
+    }
+
+    /// The engine this model resolves to, or the sentence saying why none
+    /// does.
+    ///
+    /// A report that says *no engine resolves this model* and nothing else
+    /// sent a reader to a machine that had just run it; the reason — it did
+    /// not fit, the header did not say, nothing is provisioned — was found
+    /// and dropped on the way (A2, F160). It is kept here and printed where
+    /// a reading was not taken because of it.
+    fn picked_engine_or_why(
+        &self,
+        named: &str,
+    ) -> core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String> {
+        let (recommended, _) = self.recommend(named).map_err(|failure| {
+            failure
+                .context_value("wanted")
+                .map_or_else(|| failure.detail().to_owned(), str::to_owned)
+        })?;
         let (engine, _) = self
             .engines_held()
             .into_iter()
-            .find(|(engine, _)| engine.name == recommended.engine)?;
-        Some((
+            .find(|(engine, _)| engine.name == recommended.engine)
+            .ok_or_else(|| {
+                format!(
+                    "the engine this model resolves to, {}, is not provisioned",
+                    recommended.engine
+                )
+            })?;
+        Ok((
             crate::adapters::ProvisionedLlama {
                 prefix: engine.prefix.clone(),
                 commit: engine.commit.clone(),

@@ -580,7 +580,7 @@ fn an_empty_answer_has_no_opening_to_force() {
 fn the_rank_reading_is_grouped_by_part_and_a_stray_piece_is_placed_nowhere() {
     let parts = parts_of("Answer in one word.\n\nWhat colour is it?", Unit::Paragraph);
     assert_eq!(parts.len(), 2);
-    let ranked: Vec<(String, Option<usize>)> = [
+    let ranked: Vec<(String, Rank)> = [
         ("<|im_start|>", None),
         ("Answer", None),
         (" in", Some(3)),
@@ -595,7 +595,7 @@ fn the_rank_reading_is_grouped_by_part_and_a_stray_piece_is_placed_nowhere() {
         ("?", Some(1)),
     ]
     .into_iter()
-    .map(|(text, rank)| (text.to_owned(), rank))
+    .map(|(text, rank)| (text.to_owned(), rank.map_or(Rank::PastDepth, Rank::At)))
     .collect();
     let (by_part, nowhere) = surprise_by_part(&parts, &ranked);
     assert_eq!(
@@ -608,12 +608,14 @@ fn the_rank_reading_is_grouped_by_part_and_a_stray_piece_is_placed_nowhere() {
             Surprise {
                 tokens: 5,
                 first_choice: 1,
-                past_depth: 1
+                past_depth: 1,
+                no_context: 0,
             },
             Surprise {
                 tokens: 5,
                 first_choice: 3,
-                past_depth: 0
+                past_depth: 0,
+                no_context: 0,
             },
         ]
     );
@@ -933,6 +935,27 @@ fn a_sentence_is_taken_apart_by_phrase_at_its_commas() {
         without(&phrases, 0),
         "answer in one word: what is 1,000 plus a::b?"
     );
+    // A cut that leaves fewer than three words on a side is not made.
+    let short = |text: &str| {
+        parts_of(text, Unit::Phrase)
+            .into_iter()
+            .map(|part| part.text)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        short("The party steps into a cold, dripping cave. Yes, we go in; the torch is lit."),
+        vec![
+            "The party steps into a cold, dripping cave.",
+            "Yes, we go in;",
+            "the torch is lit."
+        ],
+        "a comma in a noun phrase and a one-word opener cut nothing"
+    );
+    assert_eq!(
+        short("Take red, green, blue:\nmix them."),
+        vec!["Take red, green, blue:\nmix them."],
+        "a list's commas cut nothing, and the line break the colon led to is kept as written"
+    );
     assert_eq!(Unit::for_text("Be terse, be kind."), Unit::Phrase);
 }
 
@@ -961,17 +984,19 @@ fn a_prompt_is_taken_apart_by_word_at_its_spaces() {
 /// placed in the part it begins in; a template piece falls in no word.
 #[test]
 fn the_reading_is_placed_by_word() {
-    let parts = parts_of("Be terse, be meticulous.", Unit::Phrase);
-    let ranked: Vec<(String, Option<usize>)> = vec![
-        ("<|im_start|>".to_owned(), Some(1)),
-        ("Be".to_owned(), Some(3)),
-        (" terse".to_owned(), None),
-        (",".to_owned(), Some(1)),
-        (" be".to_owned(), Some(1)),
-        (" met".to_owned(), Some(40)),
-        ("icul".to_owned(), Some(1)),
-        ("ous".to_owned(), Some(1)),
-        (".".to_owned(), Some(1)),
+    let parts = parts_of("Be very terse, be so meticulous.", Unit::Phrase);
+    let ranked: Vec<(String, Rank)> = vec![
+        ("<|im_start|>".to_owned(), Rank::At(1)),
+        ("Be".to_owned(), Rank::At(3)),
+        (" very".to_owned(), Rank::At(1)),
+        (" terse".to_owned(), Rank::PastDepth),
+        (",".to_owned(), Rank::At(1)),
+        (" be".to_owned(), Rank::At(1)),
+        (" so".to_owned(), Rank::At(2)),
+        (" met".to_owned(), Rank::At(40)),
+        ("icul".to_owned(), Rank::At(1)),
+        ("ous".to_owned(), Rank::At(1)),
+        (".".to_owned(), Rank::At(1)),
     ];
     let (words, nowhere) = expected_by_word(&parts, &ranked);
     assert_eq!(nowhere, 1, "the marker is in no word");
@@ -980,15 +1005,62 @@ fn the_reading_is_placed_by_word() {
         pieces,
         rank,
         first_choice,
+        unread: 0,
         part,
     };
     assert_eq!(
         words,
         vec![
             word("Be", 1, Some(3), 0, Some(1)),
+            word("very", 1, Some(1), 1, Some(1)),
             word("terse,", 2, None, 1, Some(1)),
             word("be", 1, Some(1), 1, Some(2)),
+            word("so", 1, Some(2), 0, Some(2)),
             word("meticulous.", 4, Some(40), 3, Some(2)),
         ]
     );
+}
+
+#[test]
+fn a_first_piece_nothing_preceded_is_unread_not_a_first_choice_and_strands_nothing() {
+    // A prompt that went with no turn markers has nothing before its first
+    // piece, so that piece was never ranked. It must still be placed — else
+    // the walk never advances and every later piece is nowhere (F160).
+    let parts = parts_of("Be terse.", Unit::Word);
+    let ranked: Vec<(String, Rank)> = vec![
+        ("Be".to_owned(), Rank::NoContext),
+        (" terse".to_owned(), Rank::At(2)),
+        (".".to_owned(), Rank::At(1)),
+    ];
+    let (words, nowhere) = expected_by_word(&parts, &ranked);
+    assert_eq!(nowhere, 0, "every piece is in a word");
+    assert_eq!(
+        words,
+        vec![
+            Expected {
+                text: "Be".to_owned(),
+                pieces: 1,
+                rank: None,
+                first_choice: 0,
+                unread: 1,
+                part: Some(1),
+            },
+            Expected {
+                text: "terse.".to_owned(),
+                pieces: 2,
+                rank: Some(2),
+                first_choice: 1,
+                unread: 0,
+                part: Some(2),
+            },
+        ]
+    );
+    let (by_part, nowhere) = surprise_by_part(&parts, &ranked);
+    assert_eq!(nowhere, 0);
+    assert_eq!(
+        by_part.iter().map(|part| part.no_context).sum::<usize>(),
+        1,
+        "the unread piece is counted, not called past the depth"
+    );
+    assert_eq!(by_part.iter().map(|part| part.past_depth).sum::<usize>(), 0);
 }

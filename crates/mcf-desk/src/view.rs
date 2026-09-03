@@ -2458,7 +2458,15 @@ fn the_floor_line(found: &Value, unit: &str) -> String {
             crate::held_mark(Some(held), depth),
             crate::open_mark(Some(held))
         ),
-        _ => " · control in: 1st — (needs the served engine)".to_owned(),
+        // Not taken, and why: a dash alone sent a reader to look for an
+        // engine that was running the whole time (A2, F160).
+        _ => format!(
+            " · control in: not taken · {}",
+            found
+                .get("held_refused")
+                .and_then(Value::as_text)
+                .unwrap_or("needs the served engine")
+        ),
     };
     match found
         .get("floor_spread")
@@ -3311,26 +3319,15 @@ fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value
     };
     let depth = integer(found, "ranked_depth");
     let words = by_word.get("words").and_then(Value::as_list).unwrap_or(&[]);
-    let mut surprising: Vec<(i64, &Value)> = Vec::new();
-    let (mut whole, mut own, mut pieces, mut past) = (0_i64, 0_i64, 0_i64, 0_i64);
-    for word in words {
-        pieces = pieces.saturating_add(integer(word, "pieces"));
-        own = own.saturating_add(integer(word, "first_choice"));
-        // Outside the list asked for: a bound, not an absence (A7).
-        let rank = word
-            .get("rank")
-            .and_then(Value::as_integer)
-            .unwrap_or(i64::MAX);
-        if rank == i64::MAX {
-            past = past.saturating_add(1);
-        }
-        if integer(word, "first_choice") == integer(word, "pieces") {
-            whole = whole.saturating_add(1);
-        } else {
-            surprising.push((rank, word));
-        }
-    }
-    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    let (surprising, tally) = tallied(words);
+    let WordTally {
+        whole,
+        own,
+        pieces,
+        past,
+        unread,
+        no_context,
+    } = tally;
     let mut y = section(paint, at, width, "expected", &expected_conditions(found));
     y = heads(paint, Box::new(at.0, y, width, 0.0), "rank", &WORD_COLUMNS);
     for (rank, word) in surprising.iter().take(MOST_WORDS) {
@@ -3368,6 +3365,27 @@ fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value
             ink.warn,
         );
     }
+    if no_context > 0 {
+        y = foot(
+            paint,
+            (at.0, y),
+            "no context",
+            &format!(
+                "{} · first in the prompt, nothing before it to rank against",
+                count_of(usize::try_from(no_context).unwrap_or(0), "word")
+            ),
+            ink.quiet,
+        );
+    }
+    if unread > 0 {
+        y = foot(
+            paint,
+            (at.0, y),
+            "in no piece",
+            &count_of(usize::try_from(unread).unwrap_or(0), "word"),
+            ink.warn,
+        );
+    }
     let unplaced = integer(by_word, "unplaced");
     if unplaced > 0 {
         y = foot(
@@ -3383,6 +3401,62 @@ fn expected_table(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value
 
 /// How many words the table shows before it says how many more there are.
 const MOST_WORDS: usize = 15;
+
+/// What the word table's foot counts.
+#[derive(Default)]
+struct WordTally {
+    /// Words the model would have written whole.
+    whole: i64,
+    /// Pieces that were the model's own first choice.
+    own: i64,
+    /// Pieces read: the unread first piece of the prompt is not among them.
+    pieces: i64,
+    /// Words whose first ranked piece was past the depth read.
+    past: i64,
+    /// Words no piece fell in.
+    unread: i64,
+    /// Words nothing preceded, so no piece of them was ranked.
+    no_context: i64,
+}
+
+/// The words the model did not write whole, least expected first, and the
+/// foot's counts.
+fn tallied(words: &[Value]) -> (Vec<(i64, &Value)>, WordTally) {
+    let mut surprising: Vec<(i64, &Value)> = Vec::new();
+    let mut tally = WordTally::default();
+    for word in words {
+        // A word no piece fell in was not read, and is not a first choice:
+        // nought of nought is not every piece the model's own (A7, F160).
+        if integer(word, "pieces") == 0 {
+            tally.unread = tally.unread.saturating_add(1);
+            continue;
+        }
+        // A word nothing preceded was not ranked either; only its read
+        // pieces are counted (F160).
+        let read = integer(word, "pieces").saturating_sub(integer(word, "unread"));
+        if read == 0 {
+            tally.no_context = tally.no_context.saturating_add(1);
+            continue;
+        }
+        tally.pieces = tally.pieces.saturating_add(read);
+        tally.own = tally.own.saturating_add(integer(word, "first_choice"));
+        // Outside the list asked for: a bound, not an absence (A7).
+        let rank = word
+            .get("rank")
+            .and_then(Value::as_integer)
+            .unwrap_or(i64::MAX);
+        if rank == i64::MAX {
+            tally.past = tally.past.saturating_add(1);
+        }
+        if integer(word, "first_choice") == read {
+            tally.whole = tally.whole.saturating_add(1);
+        } else {
+            surprising.push((rank, word));
+        }
+    }
+    surprising.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
+    (surprising, tally)
+}
 
 /// The word table's columns after the rank.
 const WORD_COLUMNS: [Column; 3] = [
@@ -3441,7 +3515,7 @@ fn word_row(paint: &mut Painter, at: (f32, f32), width: f32, held: (i64, &Value)
     let own = format!(
         "{}/{}",
         integer(word, "first_choice"),
-        integer(word, "pieces")
+        integer(word, "pieces").saturating_sub(integer(word, "unread"))
     );
     paint.say_right(at.0 + 110.0, at.1, &own, Weight::Bold, size::SMALL, ink.ink);
     // A word in no part is drawn quietly (A7).
@@ -3525,16 +3599,27 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
             ))
         }
     });
-    let (said, title) = match &chosen {
-        Some((answer, title)) => (answer.as_str(), title.clone()),
-        None => (
+    let (said, title) = if let Some((answer, title)) = &chosen {
+        (answer.as_str(), title.clone())
+    } else {
+        let mut title = vec!["answer · as written".to_owned()];
+        title.extend(crate::answer_marks(found));
+        (
             found.get("baseline").and_then(Value::as_text).unwrap_or(""),
-            "answer · as written".to_owned(),
-        ),
+            title.join(" · "),
+        )
     };
-    if said.trim().is_empty() || area.h < 40.0 {
+    if area.h < 40.0 {
         return;
     }
+    // An empty answer is said, not skipped (A7, F160): the title stays, with
+    // the token count and what ended it, over one line that says nothing
+    // was written.
+    let said = if said.trim().is_empty() {
+        crate::NOTHING_WRITTEN
+    } else {
+        said
+    };
     let title = paint.elide(&title, Weight::Regular, size::SMALL, area.w.min(820.0));
     spaced(paint, area.x, area.y, &title, ink.faint);
     let room = area.w.min(820.0);

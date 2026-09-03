@@ -211,7 +211,20 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
     else {
         return Vec::new();
     };
-    let Some(open) = markers.iter().find(|marker| **marker != close).cloned() else {
+    // **The opener is the marker the template writes a role after.** The
+    // first marker that is not the closer picked `[]` out of Qwen3-Coder's
+    // template — Jinja's empty list, which that vocabulary holds as one
+    // token — and the addressing put on file wrapped every prompt as
+    // `[]user … []assistant` with nothing on the page to say so (F160). A
+    // turn opener is followed by a role in the template's own text; a
+    // marker that is not is a marker for something else.
+    let Some(open) = markers
+        .iter()
+        .filter(|marker| **marker != close)
+        .find(|marker| opens_a_role(template, marker))
+        .or_else(|| markers.iter().find(|marker| **marker != close))
+        .cloned()
+    else {
         return Vec::new();
     };
     let (open, close) = (&open, &close);
@@ -266,6 +279,40 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
             ],
         })
         .collect()
+}
+
+/// Whether the template writes a role right after this marker, somewhere:
+/// `'<|im_start|>' + message['role']`, `"<|im_start|>system\n"`, or
+/// `<start_of_turn>` before `role`.
+///
+/// *Right after* is the first word the template writes after the marker,
+/// past quotes, operators and a newline — not a role word anywhere in the
+/// next line. Qwen3-Coder's template says `{%- set tools = [] %}` a line
+/// before `{%- if system_message is defined`, and a check that looked for
+/// *system* within forty-eight characters of `[]` found it, so the probe
+/// wrote `[]user` a second time after the first fix (F160, B-447).
+fn opens_a_role(template: &str, marker: &str) -> bool {
+    const ROLE_WORDS: [&str; 4] = ["role", "user", "system", "assistant"];
+    const ACCESSORS: [&str; 4] = ["", "message", "messages", "m"];
+    template.match_indices(marker).any(|(at, _)| {
+        let after = template
+            .get(at.saturating_add(marker.len())..)
+            .unwrap_or_default()
+            .chars()
+            .take(24)
+            .collect::<String>();
+        ROLE_WORDS.iter().any(|word| {
+            after.find(word).is_some_and(|found| {
+                let between: String = after
+                    .get(..found)
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(char::is_ascii_alphabetic)
+                    .collect();
+                ACCESSORS.contains(&between.as_str())
+            })
+        })
+    })
 }
 
 /// The shapes MCF knows without being told, for a file that says nothing.

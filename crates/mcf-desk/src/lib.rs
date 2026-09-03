@@ -580,6 +580,38 @@ pub fn open_mark(held: Option<&Value>) -> String {
     format!("{}/{}", count("kept"), count("of"))
 }
 
+/// What the answer as written amounted to: how many tokens, and what ended
+/// it — its own stop token, the cap, or what the engine said. An answer
+/// with neither under a 600-token cap left a reader to guess whether the
+/// model said nothing or the report lost it (A7, F160). Empty where the
+/// report served no account.
+///
+/// One implementation for the glass and the console (B-072).
+#[must_use]
+pub fn answer_marks(body: &Value) -> Vec<String> {
+    let mut marks = Vec::new();
+    if let Some(tokens) = body.get("answer_tokens").and_then(Value::as_integer) {
+        marks.push(if tokens == 1 {
+            "1 token".to_owned()
+        } else {
+            format!("{tokens} tokens")
+        });
+    }
+    if let Some(stopped) = body.get("answer_stopped").and_then(Value::as_text) {
+        marks.push(match stopped {
+            "stop_token" => "ended at its stop token".to_owned(),
+            "limit" => "ran to the cap".to_owned(),
+            "stop_word" => "ended at a stop word".to_owned(),
+            other => format!("ended: {other}"),
+        });
+    }
+    marks
+}
+
+/// The line that stands where an answer would, when the model wrote
+/// nothing a reader can see: said, rather than left blank (A7).
+pub const NOTHING_WRITTEN: &str = "nothing written";
+
 /// The pair a swap changed the places of, as `1&2` for the first swap:
 /// the parts counted from one, the way the removed rows count them
 /// (B-437). An ampersand rather than an arrow because the window's face is
