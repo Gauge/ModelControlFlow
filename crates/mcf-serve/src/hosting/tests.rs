@@ -4,7 +4,15 @@ use super::{DEFAULT_PORT, Hosting, LOOPBACK};
 use mcf_record::json::Value;
 
 fn on_a_card() -> Hosting {
-    Hosting::recommended("llama.cpp-cuda", "NVIDIA", true, 32_768, Some(32), true)
+    Hosting::recommended(
+        "llama.cpp-cuda",
+        "NVIDIA",
+        true,
+        32_768,
+        Some(32),
+        true,
+        None,
+    )
 }
 
 /// The recommendation puts the model on the card when it fits.
@@ -38,8 +46,15 @@ fn a_model_that_fits_on_the_card_is_put_on_the_card() {
 /// where it runs is a fact about this machine rather than a fault (A9).
 #[test]
 fn a_model_that_does_not_fit_stays_on_the_processor() {
-    let recommended =
-        Hosting::recommended("llama.cpp-cuda", "NVIDIA", true, 8_192, Some(32), false);
+    let recommended = Hosting::recommended(
+        "llama.cpp-cuda",
+        "NVIDIA",
+        true,
+        8_192,
+        Some(32),
+        false,
+        None,
+    );
     assert_eq!(recommended.gpu_layers, 0);
     assert!(!recommended.flash_attention);
 }

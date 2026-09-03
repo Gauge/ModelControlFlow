@@ -373,17 +373,54 @@ fn hosted_card(paint: &mut Painter, desk: &Desk, at: Box) -> f32 {
     // condition on this card somebody chose, and until this line it was the
     // one whose price was invisible: a model of 17.5 GB held 38.6 GB, and the
     // difference was the window (§3.15).
+    let mut y = at.y + 93.0;
     if let Some(said) = held_window_cost(desk) {
         paint.say_at(
             at.x + 14.0,
-            at.y + 93.0,
+            y,
             &said,
             Weight::Regular,
             size::SMALL,
             ink.quiet,
         );
+        y += 17.0;
     }
+    takes_row(paint, hosting, at, y, ink.quiet);
     at.bottom()
+}
+
+/// **What reaches it through the port, as the engine reported.** A model
+/// hosted with its projector takes pictures; one hosted without takes text
+/// and declines the rest without a word, so the card says which (A21,
+/// §3.15). And what its template does with tools and thinking, because
+/// those are the capabilities a caller on the port is choosing it for.
+fn takes_row(paint: &mut Painter, hosting: &crate::Hosted, at: Box, y: f32, colour: Rgb) {
+    let shown = paint.elide(
+        &takes_line(hosting),
+        Weight::Regular,
+        size::SMALL,
+        at.w - 28.0,
+    );
+    paint.say_at(at.x + 14.0, y, &shown, Weight::Regular, size::SMALL, colour);
+}
+
+/// What the engine said it takes, on one line.
+fn takes_line(hosting: &crate::Hosted) -> String {
+    let projector = hosting.projector.as_ref().map_or_else(
+        || "no projector".to_owned(),
+        |name| format!("projector {name}"),
+    );
+    hosting.takes.as_ref().map_or_else(
+        || format!("takes: the engine did not say   ·   {projector}"),
+        |takes| {
+            format!(
+                "takes {}   ·   template: {}   ·   thinking: {}",
+                takes.media(),
+                takes.template(),
+                takes.thinking_said()
+            )
+        },
+    )
 }
 
 /// What using it costs.
@@ -437,9 +474,9 @@ fn monitor(paint: &mut Painter, desk: &Desk, area: Box) -> Option<Act> {
     spaced(paint, area.x, area.y, "hosted", ink.faint);
     // Tall enough for what it will actually say.
     let tall = if held_window_cost(desk).is_some() {
-        116.0
+        133.0
     } else {
-        96.0
+        113.0
     };
     let mut y = hosted_card(paint, desk, Box::new(area.x, area.y + 20.0, wide, tall));
     cost_tiles(paint, Box::new(area.x, y + 12.0, wide, 58.0));

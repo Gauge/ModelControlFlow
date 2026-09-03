@@ -1029,6 +1029,7 @@ fn generate(
         // A timing divides by the count, so the count is pinned, and the
         // account's own count is read back below to prove it was (B-396).
         pinned: true,
+        turn: None,
     };
     let clock = SystemClock;
     let began = clock.now();

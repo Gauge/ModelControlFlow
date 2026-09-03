@@ -26,7 +26,7 @@ use mcf_standin::session::{self, Request, Stopped};
 use mcf_standin::tokenizer::Vocabulary;
 
 use crate::control::Streamed;
-use crate::served::Served;
+use crate::served::{Completed, Served};
 
 /// How one generation's sampler was told to draw: a seed, a temperature, and
 /// how the distribution is cut before the draw.
@@ -395,6 +395,9 @@ pub(crate) fn serve_generation(
     // Whether the limit is the length: a timing's request, which the engine
     // is told to run to and the account counts (B-396).
     pinned: bool,
+    // How the caller asked the turn framed, where they asked the engine to
+    // frame it from the model's own template (D47).
+    turn: Option<&crate::turn::Turn>,
     writer: &mut &UnixStream,
 ) -> Produced {
     // What somebody decided this model should be addressed as, if anybody
@@ -423,22 +426,24 @@ pub(crate) fn serve_generation(
     // (B-441): the server's own tokenizer where the server answers, MCF's
     // where the stand-in does. A turn that cannot be built is the
     // generation's failure, not a bare prompt sent instead (F158).
-    let wrapped = match (tokens, derived.as_ref(), &chosen) {
-        (None, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
-            let tokenizer = Tokenizer::Engine {
-                where_it_lives: Where {
-                    store,
-                    llama,
-                    runtime,
-                    named,
-                    gpu_layers,
-                    context,
-                },
-                server,
-            };
-            addressed_as(&tokenizer, prompt, addressing).map(Some)
+    let place = Place {
+        store,
+        runtime,
+        named,
+        gpu_layers,
+        context,
+        server,
+    };
+    let framed = framed_turn(&place, tokens, turn, &chosen);
+    let wrapped = match (tokens, framed.as_ref(), derived.as_ref(), &chosen) {
+        (_, Err(failure), _, _) => Err(failure.clone()),
+        (None, Ok(Some(frame)), _, Ok(Chosen::Provisioned(llama))) => {
+            framed_as(&place.engine(llama), prompt, frame).map(Some)
         }
-        (None, Some(addressing), Ok(Chosen::StandIn)) => Tokenizer::own(&resolved(store, named))
+        (None, _, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
+            addressed_as(&place.engine(llama), prompt, addressing).map(Some)
+        }
+        (None, _, Some(addressing), Ok(Chosen::StandIn)) => Tokenizer::own(&resolved(store, named))
             .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
             .map(Some),
         // **A prompt with no addressing on file goes to the server too, read
@@ -450,34 +455,38 @@ pub(crate) fn serve_generation(
         // engine* of an engine that was serving. The bare prompt is read the
         // way the ranking reads it, with the beginning marker and nothing
         // else, so the answer and the reading are of one prompt (§3.4, F160).
-        (None, None, Ok(Chosen::Provisioned(llama))) => {
-            let tokenizer = Tokenizer::Engine {
-                where_it_lives: Where {
-                    store,
-                    llama,
-                    runtime,
-                    named,
-                    gpu_layers,
-                    context,
-                },
-                server,
-            };
-            tokenizer
-                .encode(prompt, true)
-                .map(|read| Some(read.into_iter().map(|held| held.id).collect()))
-        }
+        (None, _, None, Ok(Chosen::Provisioned(llama))) => place
+            .engine(llama)
+            .encode(prompt, true)
+            .map(|read| Some(read.into_iter().map(|held| held.id).collect())),
         _ => Ok(None),
     };
-    let addressed = addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok());
+    let frame = framed.ok().flatten();
+    let addressed = frame.as_ref().map_or_else(
+        || addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok()),
+        |frame| {
+            Some(format!(
+                "framed by the engine from the model's own template ({})",
+                frame.asked
+            ))
+        },
+    );
     let produced = match (chosen, wrapped) {
         (_, Err(failure)) | (Err(failure), _) => Err(failure),
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
         (Ok(Chosen::Provisioned(llama)), Ok(wrapped)) => match wrapped.as_deref().or(tokens) {
-            Some(tokens) => through_served(
-                store, &llama, server, runtime, named, tokens, limit, draw, gpu_layers, context,
-                pinned, writer,
-            ),
+            Some(tokens) => {
+                let sent = Sent {
+                    tokens,
+                    limit,
+                    pinned,
+                    tail: frame.as_ref().map(|frame| frame.after.as_str()),
+                };
+                through_served(
+                    store, &llama, server, runtime, named, &sent, draw, gpu_layers, context, writer,
+                )
+            }
             None => through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer),
         },
         (Ok(Chosen::StandIn), Ok(wrapped)) => attempt(
@@ -572,6 +581,72 @@ fn with_provenance(
         },
         said: produced.said,
     })
+}
+
+/// Where a turn is built: everything the engine's tokenizer needs but the
+/// engine, which is chosen after.
+struct Place<'a> {
+    store: &'a Path,
+    runtime: &'a Path,
+    named: &'a str,
+    gpu_layers: u32,
+    context: u64,
+    server: &'a std::sync::Mutex<Option<Served>>,
+}
+
+impl<'a> Place<'a> {
+    /// The engine's tokenizer, for the build that was chosen.
+    fn engine(&self, llama: &'a crate::adapters::ProvisionedLlama) -> Tokenizer<'a> {
+        Tokenizer::Engine {
+            where_it_lives: Where {
+                store: self.store,
+                llama,
+                runtime: self.runtime,
+                named: self.named,
+                gpu_layers: self.gpu_layers,
+                context: self.context,
+            },
+            server: self.server,
+        }
+    }
+}
+
+/// **The engine frames the turn where the caller asked it to** (D47). A
+/// caller that named a switch — thinking off, an effort, a system turn — is
+/// answered from the model's own template as its engine renders it, whatever
+/// addressing is on file: they said what they wanted. MCF's own engine runs
+/// no template, so on it the request is refused rather than sent under the
+/// addressing on file as if the switch had been thrown (A2, §3.15).
+///
+/// `Ok(None)` where no frame was asked for.
+fn framed_turn(
+    place: &Place<'_>,
+    tokens: Option<&[usize]>,
+    turn: Option<&crate::turn::Turn>,
+    chosen: &Result<Chosen, Failure>,
+) -> Result<Option<crate::turn::Frame>, Failure> {
+    let refused = |why: &'static str| {
+        Failure::new(
+            mcf_core::failure::Category::ConfigInvalid,
+            mcf_core::failure::Attribution::User,
+            mcf_core::failure::Disposition::Refused,
+            mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+            why,
+        )
+    };
+    match (tokens, turn, chosen) {
+        (None, Some(turn), Ok(Chosen::Provisioned(llama))) => {
+            place.engine(llama).framed(turn).map(Some)
+        }
+        (None, Some(_), Ok(Chosen::StandIn)) => Err(refused(
+            "MCF's own engine runs no template, so it cannot frame a turn: the provisioned \
+             engine can",
+        )),
+        (Some(_), Some(_), _) => Err(refused(
+            "a turn sent as identifiers is already framed; the engine cannot frame it again",
+        )),
+        _ => Ok(None),
+    }
 }
 
 /// Which engine serves a request (B-032, §3.15).
@@ -690,6 +765,10 @@ impl Tokenizer<'_> {
     /// Text as the model receives it, with the model's own beginning
     /// convention where `with_beginning` asks for it.
     ///
+    /// A person's text: a marker spelled in it stays spelled, on either
+    /// engine (F26, F161). The model's own — a marker, a rendered turn — is
+    /// read by [`Self::own_words`].
+    ///
     /// # Errors
     ///
     /// Text the vocabulary cannot represent, or a server that did not answer.
@@ -707,7 +786,60 @@ impl Tokenizer<'_> {
                     unavailable("the served engine's slot was left poisoned by an earlier failure")
                 })?;
                 let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
-                engine.tokenize(text, with_beginning)
+                engine.tokenize(text, with_beginning, false)
+            }
+        }
+    }
+
+    /// The turn as this engine renders it from the model's own template
+    /// (D47).
+    ///
+    /// # Errors
+    ///
+    /// MCF's own engine, which runs no template; a server that did not
+    /// answer; or a template that refused the switches, in its own words.
+    pub(crate) fn framed(&self, turn: &crate::turn::Turn) -> Result<crate::turn::Frame, Failure> {
+        match self {
+            Self::Own(_) => Err(unavailable("MCF's own engine runs no template")),
+            Self::Engine {
+                where_it_lives,
+                server,
+            } => {
+                let mut slot = server.lock().map_err(|_poisoned| {
+                    unavailable("the served engine's slot was left poisoned by an earlier failure")
+                })?;
+                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                crate::turn::frame(engine, turn)
+            }
+        }
+    }
+
+    /// The model's own text as it receives it: a marker from its template,
+    /// or a turn its template rendered, with every control token in it taken
+    /// as itself.
+    ///
+    /// Only the engine reads this way. MCF's own tokenizer looks a marker up
+    /// as one token and never parses one out of text, so on it the model's
+    /// own words are the markers of [`Self::addressed`] and nothing else.
+    ///
+    /// # Errors
+    ///
+    /// A server that did not answer, or MCF's own engine, which cannot read
+    /// a rendered turn.
+    pub(crate) fn own_words(&self, text: &str, with_beginning: bool) -> Result<Vec<Read>, Failure> {
+        match self {
+            Self::Own(_) => Err(unavailable(
+                "MCF's own engine reads markers one at a time and cannot read a rendered turn",
+            )),
+            Self::Engine {
+                where_it_lives,
+                server,
+            } => {
+                let mut slot = server.lock().map_err(|_poisoned| {
+                    unavailable("the served engine's slot was left poisoned by an earlier failure")
+                })?;
+                let (engine, _reused) = serving(&mut slot, where_it_lives, SMALLEST_WINDOW)?;
+                engine.tokenize(text, with_beginning, true)
             }
         }
     }
@@ -761,7 +893,7 @@ impl Tokenizer<'_> {
                 for piece in pieces {
                     match piece {
                         Piece::Marker(marker) => {
-                            let held = self.encode(marker, false)?;
+                            let held = self.own_words(marker, false)?;
                             if held.len() != 1 {
                                 return Err(not_a_token(marker));
                             }
@@ -820,6 +952,24 @@ fn addressed_as(
         .into_iter()
         .map(|held| held.id)
         .collect())
+}
+
+/// A prompt inside the frame the engine rendered, read by the engine: the
+/// frame's two halves as the model's own words, the person's text as a
+/// person's (F26, F161).
+///
+/// # Errors
+///
+/// A server that did not answer, or text it cannot represent.
+fn framed_as(
+    tokenizer: &Tokenizer<'_>,
+    prompt: &str,
+    frame: &crate::turn::Frame,
+) -> Result<Vec<usize>, Failure> {
+    let mut read = tokenizer.own_words(&frame.before, true)?;
+    read.extend(tokenizer.encode(prompt, false)?);
+    read.extend(tokenizer.own_words(&frame.after, false)?);
+    Ok(read.into_iter().map(|held| held.id).collect())
 }
 
 /// A prompt as the model receives it, and where its own tokens begin.
@@ -1097,14 +1247,18 @@ fn through_served(
     server: &std::sync::Mutex<Option<Served>>,
     runtime: &Path,
     named: &str,
-    tokens: &[usize],
-    limit: usize,
+    sent: &Sent<'_>,
     draw: Draw,
     gpu_layers: u32,
     context: u64,
-    pinned: bool,
     writer: &mut &UnixStream,
 ) -> Result<Produced, Failure> {
+    let Sent {
+        tokens,
+        limit,
+        pinned,
+        tail: _,
+    } = *sent;
     let path = resolved(store, named);
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
     let held = metadata.len();
@@ -1120,27 +1274,15 @@ fn through_served(
         gpu_layers,
         context,
     };
-    let (engine, reused) = serving(
-        &mut slot,
-        &where_it_lives,
-        window_for(tokens.len(), limit, context),
-    )?;
+    let window = window_for(tokens.len(), limit, context);
+    let (engine, reused) = serving(&mut slot, &where_it_lives, window)?;
 
     let completed = engine.complete(tokens, limit, draw, pinned)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
 
-    // The answer arrives whole rather than token by token, so it is one chunk
-    // of the stream. Calling it several would be inventing a shape the engine
-    // did not have.
-    let line = Streamed::Token {
-        at: 0,
-        text: completed.text.clone(),
-    }
-    .to_line();
-    let _written = writeln!(writer, "{line}");
-    let _flushed = writer.flush();
+    let (before, text) = streamed(writer, engine, &path, sent, &completed)?;
 
     let engine_name = format!(
         "provisioned {} server @{} from {}",
@@ -1203,15 +1345,95 @@ fn through_served(
             ("stopped", Value::text(completed.stop.written())),
             (
                 "text_bytes",
-                Value::Integer(i64::try_from(completed.text.len()).unwrap_or(i64::MAX)),
+                Value::Integer(i64::try_from(text.len()).unwrap_or(i64::MAX)),
+            ),
+            (
+                "before_the_answer",
+                before
+                    .as_ref()
+                    .map_or(Value::Null, crate::turn::BeforeTheAnswer::to_value),
             ),
             ("conditions", conditions),
         ]),
         said: Some(Said {
-            text: completed.text,
+            text,
             tokens: completed.produced,
         }),
     })
+}
+
+/// What the model spent before its answer, where it opened a marker of its
+/// own or was put inside one by the turn (B-451). Not for a pinned run: a
+/// timing reads its count and never its text.
+fn before_the_answer(
+    engine: &Served,
+    path: &Path,
+    tail: Option<&str>,
+    produced: &[usize],
+) -> Result<Option<crate::turn::BeforeTheAnswer>, Failure> {
+    let template = crate::daemon::header_of(path)
+        .and_then(|file| {
+            file.get("tokenizer.chat_template")
+                .and_then(gguf::Value::as_text)
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    crate::turn::before_the_answer(engine, &template, tail, produced)
+}
+
+/// The answer onto the stream, with what came before it and the text that
+/// was sent.
+///
+/// The text is the model's words spelled by the engine (A4), not the
+/// server's `content`, which leaves every marker out: a `</think>` the model
+/// wrote is where its answer began, and the one path that could not see it
+/// was this one. The answer arrives whole rather than token by token, so it
+/// is one chunk of the stream — two where the model closed a marker before
+/// answering, which is a shape the model gave it. Calling it more would be
+/// inventing one the engine did not have.
+fn streamed(
+    writer: &mut &UnixStream,
+    engine: &Served,
+    path: &Path,
+    sent: &Sent<'_>,
+    completed: &Completed,
+) -> Result<(Option<crate::turn::BeforeTheAnswer>, String), Failure> {
+    let words = completed.words();
+    let before = if sent.pinned {
+        None
+    } else {
+        before_the_answer(engine, path, sent.tail, words)?
+    };
+    let chunks = match &before {
+        Some(before) => vec![
+            (0, before.text.clone()),
+            (before.tokens, before.answer.clone()),
+        ],
+        None => vec![(0, engine.detokenize(words)?)],
+    };
+    let mut text = String::new();
+    for (at, chunk) in chunks {
+        text.push_str(&chunk);
+        let line = Streamed::Token { at, text: chunk }.to_line();
+        let _written = writeln!(writer, "{line}");
+    }
+    let _flushed = writer.flush();
+    Ok((before, text))
+}
+
+/// One turn as it goes to the served engine: the identifiers, how many
+/// tokens, whether that is the length, and where the turn left the model.
+#[derive(Clone, Copy)]
+struct Sent<'a> {
+    /// The turn.
+    tokens: &'a [usize],
+    /// How many tokens to produce.
+    limit: usize,
+    /// Whether `limit` is the length rather than a ceiling (B-396).
+    pinned: bool,
+    /// The rendered frame's text after the person's words, where the engine
+    /// framed the turn: what the model was left inside of.
+    tail: Option<&'a str>,
 }
 
 /// One generation through the provisioned engine, as a supervised subprocess
@@ -2131,7 +2353,10 @@ mod tokenizer_tests {
             addressing_label(Some(&on_file), true, true)
                 .is_some_and(|label| label.ends_with("the caller sent its own identifiers"))
         );
-        assert_eq!(addressing_label(None, false, true).as_deref(), Some(BARE_PROMPT));
+        assert_eq!(
+            addressing_label(None, false, true).as_deref(),
+            Some(BARE_PROMPT)
+        );
         assert_eq!(addressing_label(None, true, true), None);
         assert_eq!(addressing_label(None, false, false), None);
     }

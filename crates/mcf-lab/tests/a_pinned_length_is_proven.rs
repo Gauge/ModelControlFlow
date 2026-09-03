@@ -69,6 +69,7 @@ fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
         engine: Some("stand-in".to_owned()),
         whose: mcf_record::content::Whose::Fixture,
         pinned,
+        turn: None,
     };
     writeln!(connection, "{}", request.to_line()).expect("the request goes out");
     connection.flush().expect("it is sent");

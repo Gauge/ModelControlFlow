@@ -968,6 +968,8 @@ fn what_is_hosted_carries_where_it_answers() {
         address: "http://127.0.0.1:8080/v1".to_owned(),
         since: "2026-08-31T00:00:00Z".to_owned(),
         context: Some(8192),
+        projector: None,
+        takes: None,
     });
     let hosting = desk.hosted.as_ref().expect("just set");
     // The screen shows the name, not the path: a path is where a file is.
@@ -1034,6 +1036,8 @@ fn an_unanswered_poll_keeps_what_was_hosted() {
         address: "http://127.0.0.1:8080/v1".to_owned(),
         since: "2026-09-01T00:00:00Z".to_owned(),
         context: Some(4096),
+        projector: None,
+        takes: None,
     });
     // Nothing answers, so nothing is learned — and nothing is forgotten.
     desk.read_hosted();

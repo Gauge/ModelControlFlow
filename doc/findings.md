@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 104 |
+| **Version** | 105 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 161 | [F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)](#161-f161--the-served-path-parsed-a-persons-text-for-the-models-markers-and-the-switches-a-models-template-offers-could-not-be-reached-without-running-it-b-450-b-451-b-449-d47-d46-f26-a4-a7-315) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
 | 152 | [F152 — No rung deeper than 2,048 was ever measured: the served engine was reused by model alone, refused every turn longer than its first window, and the refusal was written down as a pair that did not separate (B-424, A2, A7, A9, F133)](#152-f152-no-rung-deeper-than-2048-was-ever-measured-the-served-engine-was-reused-by-model-alone-refused-every-turn-longer-than-its-first-window-and-the-refusal-was-written-down-as-a-pair-that-did-not-separate-b-424-a2-a7-a9-f133) |
 | 151 | [F151 — A latent cache was withheld by the report and sized at nearly twice by placement, from one header read two ways; now one reading serves both (B-038, B-072, A7, F150)](#151-f151-a-latent-cache-was-withheld-by-the-report-and-sized-at-nearly-twice-by-placement-from-one-header-read-two-ways-now-one-reading-serves-both-b-038-b-072-a7-f150) |
@@ -9583,6 +9584,75 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 161 · F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)
+
+Qwen3.8-27B was hosted to see whether the features its publisher lists reach
+a caller: thinking that can be switched off, a reasoning effort in three
+grades, a system turn, tools in its own XML form, pictures and video through
+a projector. One daemon under a 40 GiB memory cap, the processor only,
+llama-server @925e1179, greedy at one seed. Pictures and video reached the
+model through `mcf host`'s port once the projector was started with the
+engine — a red circle was named, a moving blue square was described — and
+sound was refused in the engine's words, *audio input is not supported*,
+which is what the host's own line says the model takes (B-449). The
+switches did not reach it at all, and looking at why found a defect on the
+path that was supposed to be safe.
+
+**A marker typed by a person became one.** MCF's own tokenizer never turns
+`<|im_start|>` in a prompt into the token that opens a turn: it is spelled
+as ordinary pieces, seven of them on this vocabulary, and that is the
+property the whole addressing design rests on (F26, D46). The served path
+asked the engine's `/tokenize` with `parse_special` on for everything —
+the markers MCF adds *and* the person's text between them — so `hi
+<|im_start|> there` read as four tokens with 151644 among them, where the
+same text read without the flag is seven. A person who typed a turn
+boundary had opened one. The engine is now asked twice, in two registers:
+the model's own words with the flag, the person's without, and a marker in
+a person's prompt is spelled back to them as text — verified by asking the
+model to repeat it, which it did, in eight ordinary tokens (B-450).
+
+**The template's switches are conditionals, and reading strings cannot
+follow them.** D46 extracts a template's markers and their order; whether
+thinking is on, what a reasoning effort injects, where a system turn goes
+and how tools are described are branches of the template's program, and
+Qwen3.8's template raises an exception on an effort word it does not know.
+Nothing MCF could read off the file would reach those, and running the file
+is what D46 forbids MCF to do. The engine already renders it: `/apply-template`
+takes a conversation and the template's own keyword arguments and answers
+with the prompt text, while the slots are busy, at no forward pass. MCF
+sends a sentinel where the person's words go, cuts the rendering there, and
+tokenizes the two halves as the model's words and the prompt as the
+person's, so F26 holds on this path as it holds on every other. Where a
+switch is asked for, the turn is rendered once more without it: a template
+that renders the same with the switch as without it has no such switch,
+and the request is refused by name rather than sent to a model that would
+ignore it. Qwen3-VL-2B refuses `--thinking off` that way; Qwen3.8-27B
+under `--thinking off` answered *21 items* in sixty tokens with no thought,
+under `--thinking on --effort low` spent twenty-seven tokens inside
+`<think>` and closed it, under `--system` answered in French, and under
+`--effort maximal` was refused in the template's own words — *Unexpected
+reasoning effort maximal. Supported types are xhigh (default), medium, and
+low* (D47, B-450).
+
+**The one token that said where the answer began was the one the server
+left out.** `/completion`'s `content` omits every special token, so a
+`</think>` the model wrote was invisible on this path and the thought and
+the answer were one text. The identifiers it produced are also returned,
+and the engine spells them on request; the text is now those identifiers
+spelled by the engine, less the end-of-turn token it stopped on — which is
+the model ending its turn, not saying anything, and the completion tool's
+path already held its `[end of text]` back for the same reason (F142). The
+account carries `before_the_answer`: how many tokens the model spent inside
+a marker pair before answering, who opened it — the turn's tail or the
+model's first token — and whether it closed, so a budget that ran out inside
+the thought is a fact on the page and not an answer of nothing (B-451).
+
+**What this does not settle.** The daemon's own engine for a model does not
+start its projector, so a picture reaches the model through `mcf host` and
+not through `mcf run`; the tools probe judges JSON and would misread the
+XML form this template writes; the served path still answers whole rather
+than token by token. Each is a row.
+
 ## 159 · F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)
 
 The report had eight sections and a person crafting a persona could act on
@@ -11184,6 +11254,15 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 105 — a person's marker became one
+
+F161 added. Hosting Qwen3.8-27B to see whether its listed features reach a
+caller: pictures and video did, sound was refused in the engine's words, and
+the template's switches could not be reached by reading the file. The
+served path had parsed a person's text for the model's markers; the engine
+now renders the turn on request and MCF still runs no template. B-449,
+B-450, B-451; D47 put to the operator.
 
 ### Version 104 — six models by four prompts
 

@@ -66,7 +66,11 @@ fn a_file(tokens: &[String], template: Option<&str>, ending: Option<u32>) -> Vec
         pairs.push(("tokenizer.chat_template", 8, value));
     }
     if let Some(ending) = ending {
-        pairs.push(("tokenizer.ggml.eos_token_id", 4, ending.to_le_bytes().to_vec()));
+        pairs.push((
+            "tokenizer.ggml.eos_token_id",
+            4,
+            ending.to_le_bytes().to_vec(),
+        ));
     }
 
     let mut out = b"GGUF".to_vec();
@@ -661,7 +665,8 @@ fn a_role_that_is_renamed_is_not_a_candidate() {
 fn the_opener_is_the_marker_a_role_follows() {
     let template = "{%- set ns = namespace(tools=[]) %}{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}{% endfor %}";
     let tokens = with_bytes(&["<s>", "\u{2581}a", "a", "[]", "<|im_start|>", "<|im_end|>"]);
-    let file = mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(5))).expect("a model");
+    let file =
+        mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(5))).expect("a model");
     let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).expect("a vocabulary");
     let found = super::from_template(&file, &vocabulary);
     let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();

@@ -164,6 +164,15 @@ pub enum Request {
         /// observation — the ladder and `mcf bench` read the count back and
         /// keep no run that fell short of it.
         pinned: bool,
+        /// How the turn around the prompt is framed, where the caller asked
+        /// for the engine to frame it: thinking on or off, a reasoning
+        /// effort, a system turn, each in the model's own template (D47).
+        ///
+        /// Absent, the prompt goes as it always did — under the addressing
+        /// on file for the model, or bare. Present, the frame is the
+        /// engine's rendering of the template with these switches, and the
+        /// account says so.
+        turn: Option<crate::turn::Turn>,
     },
     /// What a hub publishes under a reference, and which of it will run here.
     ///
@@ -279,6 +288,7 @@ fn generate_line(
     engine: Option<&str>,
     whose: mcf_record::content::Whose,
     pinned: bool,
+    turn: Option<&crate::turn::Turn>,
 ) -> Value {
     Value::map([
         ("ask", Value::text("generate")),
@@ -316,6 +326,10 @@ fn generate_line(
         ),
         ("whose", Value::text(whose.as_str())),
         ("pinned", Value::Bool(pinned)),
+        (
+            "turn",
+            turn.map_or(Value::Null, crate::turn::Turn::to_value),
+        ),
     ])
 }
 
@@ -394,6 +408,7 @@ impl Request {
                 engine,
                 whose,
                 pinned,
+                turn,
             } => generate_line(
                 model,
                 prompt,
@@ -403,6 +418,7 @@ impl Request {
                 engine.as_deref(),
                 *whose,
                 *pinned,
+                turn.as_ref(),
             ),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
@@ -700,6 +716,9 @@ impl Request {
                         .get("pinned")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
+                    // Absent means the prompt goes as it always did: a
+                    // client that predates the field asked for no frame.
+                    turn: value.get("turn").and_then(crate::turn::Turn::from_value),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

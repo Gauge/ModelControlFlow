@@ -702,10 +702,7 @@ fn prompt_report_value(
 /// no turn markers used to say *one user turn* (A21, F160).
 fn addressed_as(seen: &std::collections::BTreeSet<String>) -> String {
     if seen.is_empty() {
-        return format!(
-            "{} · mcf probe sets one",
-            crate::generation::BARE_PROMPT
-        );
+        return format!("{} · mcf probe sets one", crate::generation::BARE_PROMPT);
     }
     seen.iter().cloned().collect::<Vec<_>>().join(" · ")
 }
@@ -1202,6 +1199,8 @@ struct Holding {
     /// What MCF had recommended, so that what was chosen and what was advised
     /// can both be read back (§3.15).
     recommended: crate::hosting::Hosting,
+    /// What the engine said it takes for this model, where it answered.
+    takes: Option<crate::takes::Takes>,
     /// When it started.
     since: Timestamp,
 }
@@ -1968,6 +1967,7 @@ impl Daemon {
                     tokens,
                     engine,
                     pinned,
+                    turn,
                 }) => {
                     // A generation is one request and many lines, so it has
                     // its own path: nothing about it fits in one `Answer`.
@@ -1980,6 +1980,7 @@ impl Daemon {
                         engine.as_deref(),
                         whose,
                         pinned,
+                        turn.as_ref(),
                         &mut writer,
                     );
                     return None;
@@ -2077,6 +2078,7 @@ impl Daemon {
         engine: Option<&str>,
         whose: mcf_record::content::Whose,
         pinned: bool,
+        turn: Option<&crate::turn::Turn>,
         writer: &mut &UnixStream,
     ) {
         let at = Timestamp::now();
@@ -2109,6 +2111,7 @@ impl Daemon {
             picked,
             system_memory_free(),
             pinned,
+            turn,
             writer,
         );
         // The account goes to the record and what the model said goes to the
@@ -2474,6 +2477,7 @@ impl Daemon {
                 // What the model says to a prompt, ended where the model
                 // ends it: a report on the prompt is not a timing.
                 false,
+                None,
                 &mut into,
             )
         };
@@ -2615,31 +2619,31 @@ impl Daemon {
     }
 
     /// One text condition of a generation's account, where it has one.
-fn condition_of(account: &Value, key: &str) -> Option<String> {
-    account
-        .get("conditions")
-        .and_then(|conditions| conditions.get(key))
-        .and_then(Value::as_text)
-        .map(str::to_owned)
-}
-
-/// How many tokens a generation produced and what ended it, from its
-/// account; nought and *unknown* where the account has neither (A7).
-fn length_and_ending(account: &Value) -> (i64, String) {
-    (
+    fn condition_of(account: &Value, key: &str) -> Option<String> {
         account
-            .get("tokens")
-            .and_then(Value::as_integer)
-            .unwrap_or(0),
-        account
-            .get("stopped")
+            .get("conditions")
+            .and_then(|conditions| conditions.get(key))
             .and_then(Value::as_text)
-            .unwrap_or("unknown")
-            .to_owned(),
-    )
-}
+            .map(str::to_owned)
+    }
 
-/// **The figures go to the record; the text does not** (A25, B-432).
+    /// How many tokens a generation produced and what ended it, from its
+    /// account; nought and *unknown* where the account has neither (A7).
+    fn length_and_ending(account: &Value) -> (i64, String) {
+        (
+            account
+                .get("tokens")
+                .and_then(Value::as_integer)
+                .unwrap_or(0),
+            account
+                .get("stopped")
+                .and_then(Value::as_text)
+                .unwrap_or("unknown")
+                .to_owned(),
+        )
+    }
+
+    /// **The figures go to the record; the text does not** (A25, B-432).
     /// Every other diagnostic leaves an entry, and a report that lived only
     /// in the terminal it was printed in was a measurement nobody could find
     /// again. The entry is built from what was served, by naming each figure
@@ -3292,6 +3296,7 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                 picked,
                 system_memory_free(),
                 pinned,
+                None,
                 &mut writer,
             )
         };
@@ -3682,6 +3687,11 @@ fn length_and_ending(account: &Value) -> (i64, String) {
         // guess (A6).
         let wanted = bytes.saturating_add(cache.unwrap_or(0).saturating_mul(choice.context));
         let fits = choice.device.free.is_none_or(|free| wanted <= free);
+        // The projector its publisher shipped beside it, where there is one:
+        // the recommendation is the whole model, and a model hosted without
+        // the file that lets it see is hosted at half its capability with
+        // nothing saying so (§3.15).
+        let projector = crate::projector::beside(&path);
         Ok((
             crate::hosting::Hosting::recommended(
                 &choice.engine,
@@ -3690,6 +3700,7 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                 choice.context,
                 std::thread::available_parallelism().ok().map(Into::into),
                 fits,
+                projector.as_deref(),
             ),
             path,
         ))
@@ -3751,6 +3762,15 @@ fn length_and_ending(account: &Value) -> (i64, String) {
             Ok(served) => {
                 let at = Timestamp::now();
                 let moved = settings.differs_from(&recommended);
+                // What the engine will take, asked of the engine now that it
+                // answers: which media reach the model through the port and
+                // what its template does with tools and the thinking switch.
+                // Read, not declared — a model hosted at half its capability
+                // must say so, and so must one hosted at all of it (A21).
+                let takes = crate::takes::Takes::asked_on(settings.port);
+                let takes_value = takes
+                    .as_ref()
+                    .map_or(Value::Null, crate::takes::Takes::to_value);
                 // §6.12: network exposure is an explicit act rather than a
                 // side effect, and an act nobody wrote down is
                 // indistinguishable from a side effect. This is the one thing
@@ -3772,6 +3792,7 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                             "changed",
                             Value::List(moved.iter().cloned().map(Value::text).collect()),
                         ),
+                        ("takes", takes_value.clone()),
                     ]),
                 );
                 *holding = Some(Holding {
@@ -3779,6 +3800,7 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                     model: path.clone(),
                     settings: settings.clone(),
                     recommended: recommended.clone(),
+                    takes,
                     since: at,
                 });
                 Answer::served(Value::map([
@@ -3793,6 +3815,7 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                         "changed",
                         Value::List(moved.into_iter().map(Value::text).collect()),
                     ),
+                    ("takes", takes_value),
                     ("since", Value::text(at.to_string())),
                 ]))
             }
@@ -3822,6 +3845,12 @@ fn length_and_ending(account: &Value) -> (i64, String) {
                             .map(Value::text)
                             .collect(),
                     ),
+                ),
+                (
+                    "takes",
+                    held.takes
+                        .as_ref()
+                        .map_or(Value::Null, crate::takes::Takes::to_value),
                 ),
                 ("since", Value::text(held.since.to_string())),
             ]),

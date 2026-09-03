@@ -228,8 +228,34 @@ fn hosting(body: &Value) -> String {
             )
         ),
         format!("  context        {} tokens", held("context").unwrap_or(0)),
+        format!(
+            "  projector      {}",
+            settings
+                .as_ref()
+                .and_then(|settings| settings.get("projector"))
+                .and_then(Value::as_text)
+                .map_or_else(
+                    || "none — text only".to_owned(),
+                    |path| format!(
+                        "{} (beside the model)",
+                        path.rsplit('/').next().unwrap_or(path)
+                    )
+                )
+        ),
         format!("  since          {}", text("since")),
     ];
+    // What reaches the model through the port, as the engine reported it
+    // after it came up. Absent where the engine did not answer, which is
+    // said rather than shown as nothing taken (A7).
+    match body.get("takes") {
+        Some(takes) if !matches!(takes, Value::Null) => {
+            let takes = mcf_serve::takes::Takes::from_value(takes);
+            lines.push(format!("  takes          {}", takes.media()));
+            lines.push(format!("  template       {}", takes.template()));
+            lines.push(format!("  thinking       {}", takes.thinking_said()));
+        }
+        _ => lines.push("  takes          the engine did not say what it takes".to_owned()),
+    }
     let changed = body.get("changed").and_then(Value::as_list).unwrap_or(&[]);
     if changed.is_empty() {
         lines.push("  settings       as MCF recommended".to_owned());

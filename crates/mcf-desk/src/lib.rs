@@ -113,6 +113,10 @@ pub struct Hosted {
     pub since: String,
     /// The context window it is held at, where the daemon said.
     pub context: Option<u64>,
+    /// The projector loaded beside it, by file name, where one was.
+    pub projector: Option<String>,
+    /// What the engine said it takes for this model, where it answered.
+    pub takes: Option<mcf_serve::takes::Takes>,
 }
 
 /// One component MCF can build, as this window needs it.
@@ -1474,7 +1478,9 @@ impl Desk {
                 let recommended = answer.body.get("recommended").map(|held| {
                     mcf_serve::hosting::Hosting::from_value(
                         held,
-                        &mcf_serve::hosting::Hosting::recommended("", "", false, 0, None, false),
+                        &mcf_serve::hosting::Hosting::recommended(
+                            "", "", false, 0, None, false, None,
+                        ),
                     )
                 });
                 self.settings.clone_from(&recommended);
@@ -1555,6 +1561,17 @@ impl Desk {
                             .and_then(|settings| settings.get("context"))
                             .and_then(Value::as_integer)
                             .and_then(|context| u64::try_from(context).ok()),
+                        projector: answer
+                            .body
+                            .get("settings")
+                            .and_then(|settings| settings.get("projector"))
+                            .and_then(Value::as_text)
+                            .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned()),
+                        takes: answer
+                            .body
+                            .get("takes")
+                            .filter(|takes| !matches!(takes, Value::Null))
+                            .map(mcf_serve::takes::Takes::from_value),
                     }),
                 // Served, and nothing is held: that is an answer, and it clears.
                 Ok(answer) if answer.served => None,
@@ -1833,6 +1850,7 @@ impl Desk {
                 // probe.
                 whose: mcf_record::content::Whose::User,
                 pinned: false,
+                turn: None,
             },
             format!("asking {}", held.name),
         ));

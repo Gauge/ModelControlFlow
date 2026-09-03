@@ -49,6 +49,7 @@ pub(crate) fn run(
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
+    turn: &mcf_serve::turn::Turn,
 ) -> Response {
     run_where(
         crate::serve::socket_path(),
@@ -57,6 +58,7 @@ pub(crate) fn run(
         limit,
         seed,
         engine,
+        turn,
     )
 }
 
@@ -78,6 +80,7 @@ pub(crate) fn run_where(
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
+    turn: &mcf_serve::turn::Turn,
 ) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -109,12 +112,35 @@ pub(crate) fn run_where(
     });
     if let Some((socket, connection)) = listening {
         return served(
-            connection, &socket, &path, prompt,
-            // Not `unwrap_or(TOKENS)`: the daemon may have a budget somebody
-            // derived for this model, and it can only use it if it can tell a
-            // caller who said nothing from one who said thirty-two (D43).
-            limit, seed, engine,
+            connection,
+            &socket,
+            &path,
+            prompt,
+            &Asked {
+                // Not `unwrap_or(TOKENS)`: the daemon may have a budget
+                // somebody derived for this model, and it can only use it
+                // if it can tell a caller who said nothing from one who
+                // said thirty-two (D43).
+                limit,
+                seed,
+                engine,
+                turn,
+            },
         );
+    }
+    // A switch of the template is thrown by the engine that renders it, and
+    // MCF's own engine renders none: said here rather than run under no
+    // switch (A2, §3.15).
+    if turn.asks_anything() {
+        return Response {
+            text: format!(
+                "mcf: {} goes to the model's own template, which the provisioned engine \
+                 renders through the daemon, and none is listening\n  `mcf serve` starts one; \
+                 without it this process runs MCF's own engine, which runs no template",
+                turn.said()
+            ),
+            served: false,
+        };
     }
     if engine.is_some_and(|engine| engine != "stand-in") {
         return Response {
@@ -162,6 +188,16 @@ pub(crate) fn run_where(
     }
 }
 
+/// What a person asked of the run, beside the prompt: the conditions the
+/// account will name back.
+#[derive(Clone, Copy)]
+struct Asked<'a> {
+    limit: Option<usize>,
+    seed: u64,
+    engine: Option<&'a str>,
+    turn: &'a mcf_serve::turn::Turn,
+}
+
 /// The generation through the daemon: tokens printed as they arrive, the
 /// account printed when it comes.
 ///
@@ -180,13 +216,18 @@ fn served(
     socket: &Path,
     path: &Path,
     prompt: &str,
-    limit: Option<usize>,
-    seed: u64,
-    engine: Option<&str>,
+    asked: &Asked<'_>,
 ) -> Response {
     use std::io::{BufRead as _, BufReader, Write as _};
 
     use mcf_serve::control::{Request, Streamed};
+
+    let Asked {
+        limit,
+        seed,
+        engine,
+        turn,
+    } = *asked;
 
     // Between tokens the stand-in can take a second per token on a
     // half-billion-parameter model; between the request and the first token
@@ -209,6 +250,7 @@ fn served(
         // A ceiling: a person asking a model a question wants its answer,
         // which ends where the model ends it.
         pinned: false,
+        turn: turn.asks_anything().then(|| turn.clone()),
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())
@@ -305,7 +347,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}{}{}",
+             {}{}{}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -334,6 +376,7 @@ fn served(
                 Some(why) => format!("\x20 budget    {why}\n"),
                 None => String::new(),
             },
+            before_the_answer(&account),
             match degraded {
                 Some(mark) => format!(
                     "\x20 MARKED   {mark}\n\x20 This is a behaviour answer and can never be a speed \
@@ -352,6 +395,38 @@ fn served(
         ),
         served,
     }
+}
+
+/// What the model spent before its answer, as a line, where it spent
+/// anything: how many tokens inside which marker, who opened it, and whether
+/// it closed — a turn that did not close was cut by the budget, and what is
+/// printed above is all of it and none of an answer (F106).
+fn before_the_answer(account: &mcf_record::json::Value) -> String {
+    let Some(before) = account.get("before_the_answer") else {
+        return String::new();
+    };
+    let text = |key: &str| before.get(key).and_then(mcf_record::json::Value::as_text);
+    let (Some(inside), Some(opened_by), Some(tokens)) = (
+        text("inside"),
+        text("opened_by"),
+        before
+            .get("tokens")
+            .and_then(mcf_record::json::Value::as_integer),
+    ) else {
+        return String::new();
+    };
+    let closed = before
+        .get("closed")
+        .and_then(mcf_record::json::Value::as_bool)
+        .unwrap_or(false);
+    format!(
+        "\x20 before   the answer, {tokens} token(s) inside {inside}, opened by {opened_by}; {}\n",
+        if closed {
+            "closed, and the answer followed"
+        } else {
+            "NOT closed: the budget ran out inside it, and no answer came"
+        }
+    )
 }
 
 /// What a run produced, with everything a reader needs to judge it.

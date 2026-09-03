@@ -2129,7 +2129,17 @@ fn a_daemon_killed_mid_generation_leaves_a_client_that_says_so_and_a_record_that
 /// everything MCF does around the engine — finding it, choosing it, streaming
 /// what it prints, naming it in the account, and classifying how it died —
 /// which is exactly the part that is MCF's (D26).
-fn fake_provisioned_engine(machine: &Machine, script: &str) -> PathBuf {
+/// A provisioned prefix whose `llama-server` is this test binary, told what
+/// to do.
+///
+/// **A generation goes to the server now, so the stand-in is a server.** The
+/// first version of this wrote a shell script where `llama-completion` would
+/// be, and the daemon stopped running that tool when a bare prompt moved to
+/// the served engine: the tests then failed on *this prefix has no
+/// llama-server*, which was true. A server that answers HTTP is more than a
+/// script, so the script finds the socket among the engine's arguments and
+/// starts this very test binary at [`fake_llama_server`], which does the rest.
+fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let prefix = machine
         .0
@@ -2143,10 +2153,138 @@ fn fake_provisioned_engine(machine: &Machine, script: &str) -> PathBuf {
         "{\"component\":\"llama.cpp\",\"commit\":\"fakefakefakefakefakefakefakefakefakefake\"}\n",
     )
     .expect("provenance");
-    let tool = bin.join("llama-completion");
+    let me = std::env::current_exe().expect("this test binary has a path");
+    // Asked what devices it has — which the daemon does before it starts a
+    // server — it has none, and says so the way the engine says so.
+    let script = format!(
+        "#!/bin/sh\nsock=\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --host ]; then sock=\"$2\"; fi; \
+         if [ \"$1\" = --list-devices ]; then echo 'Available devices:'; exit 0; fi; \
+         shift; done\nMCF_FAKE_LLAMA_SERVER_SOCKET=\"$sock\" MCF_FAKE_LLAMA_SERVER_DOES={does} \
+         exec \"{}\" --exact fake_llama_server --nocapture --test-threads 1\n",
+        me.display()
+    );
+    let tool = bin.join("llama-server");
     std::fs::write(&tool, script).expect("the engine written");
     std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).expect("executable");
+    // What makes a prefix an engine, to the daemon, is the completion tool a
+    // build produces beside the server; it is never run here.
+    std::fs::write(bin.join("llama-completion"), "#!/bin/sh\nexit 1\n").expect("the tool");
     prefix
+}
+
+/// What the stand-in engine says to everything.
+const STAND_IN_ANSWER: &str = "Paris is the capital.";
+
+/// The stand-in `llama-server`: this test binary, run by the script above.
+///
+/// Nothing happens unless the script's variables are set, so as a test in the
+/// ordinary run it passes by doing nothing. Started by the script, it listens
+/// on the socket the daemon named and answers what the daemon asks — health,
+/// a tokenization by bytes, and a completion — as `answers`, or dies with the
+/// request in hand and a sentence on its error stream, as `dies`.
+#[test]
+fn fake_llama_server() {
+    use std::io::{Read as _, Write as _};
+    let Ok(socket) = std::env::var("MCF_FAKE_LLAMA_SERVER_SOCKET") else {
+        return;
+    };
+    assert!(
+        !socket.is_empty(),
+        "the stand-in was started without a socket"
+    );
+    let does = std::env::var("MCF_FAKE_LLAMA_SERVER_DOES").unwrap_or_default();
+    let _gone = std::fs::remove_file(&socket);
+    let listener = std::os::unix::net::UnixListener::bind(&socket).expect("the socket binds");
+    for connection in listener.incoming() {
+        let Ok(mut connection) = connection else {
+            continue;
+        };
+        let mut raw = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        let (head, body) = loop {
+            let Ok(read) = connection.read(&mut chunk) else {
+                break (String::new(), String::new());
+            };
+            raw.extend_from_slice(chunk.get(..read).unwrap_or_default());
+            let text = String::from_utf8_lossy(&raw).into_owned();
+            if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                let length: usize = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Content-Length: "))
+                    .and_then(|held| held.trim().parse().ok())
+                    .unwrap_or(0);
+                if body.len() >= length || read == 0 {
+                    break (head.to_owned(), body.to_owned());
+                }
+            }
+            if read == 0 {
+                break (text, String::new());
+            }
+        };
+        let path = head.split_whitespace().nth(1).unwrap_or("");
+        let answer = match path {
+            "/health" => "{\"status\":\"ok\"}".to_owned(),
+            "/tokenize" => {
+                // One token a byte of the content, so that whatever was sent
+                // reads back as itself.
+                let content = body
+                    .split_once("\"content\":\"")
+                    .and_then(|(_, rest)| rest.split_once('"'))
+                    .map_or("", |(content, _)| content);
+                let tokens: Vec<String> = content
+                    .bytes()
+                    .map(|byte| format!("{{\"id\":{byte},\"piece\":\"{}\"}}", char::from(byte)))
+                    .collect();
+                format!("{{\"tokens\":[{}]}}", tokens.join(","))
+            }
+            "/completion" if does == "dies" => {
+                eprintln!("segmentation fault, or thereabouts");
+                #[allow(
+                    clippy::exit,
+                    reason = "the stand-in engine dies here, which is what it is for"
+                )]
+                std::process::exit(139);
+            }
+            "/completion" => {
+                let sent = body.matches(',').count();
+                // The answer as identifiers, a byte each, and the end-of-turn
+                // token it stopped on after them — which is what the real
+                // server lists, and what the daemon spells the text from.
+                let said: Vec<String> = STAND_IN_ANSWER
+                    .bytes()
+                    .map(|byte| byte.to_string())
+                    .chain(std::iter::once("0".to_owned()))
+                    .collect();
+                format!(
+                    "{{\"content\":\"{STAND_IN_ANSWER}\",\"tokens_predicted\":{},\
+                     \"tokens_evaluated\":{sent},\"stop_type\":\"eos\",\"tokens\":[{}]}}",
+                    said.len(),
+                    said.join(",")
+                )
+            }
+            "/detokenize" => {
+                // Each identifier is the byte it was made from; nought is the
+                // end-of-turn token and spells nothing.
+                let content: String = body
+                    .split_once("\"tokens\":[")
+                    .and_then(|(_, rest)| rest.split_once(']'))
+                    .map_or("", |(tokens, _)| tokens)
+                    .split(',')
+                    .filter_map(|token| token.trim().parse::<u8>().ok())
+                    .filter(|byte| *byte != 0)
+                    .map(char::from)
+                    .collect();
+                format!("{{\"content\":\"{content}\"}}")
+            }
+            _ => "{\"error\":{\"message\":\"the stand-in does not answer that\"}}".to_owned(),
+        };
+        let _written = write!(
+            connection,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+             Connection: close\r\n\r\n{answer}",
+            answer.len()
+        );
+    }
 }
 
 #[test]
@@ -2166,12 +2304,15 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
         .join("lab")
         .join("fixture");
     std::fs::create_dir_all(&models).expect("a store");
-    std::fs::write(models.join("a-model-that-runs.gguf"), b"not even a gguf").expect("a file");
-    // An engine that prints in two chunks and exits well.
-    fake_provisioned_engine(
-        &machine,
-        "#!/bin/sh\nprintf 'Paris'; sleep 0.05; printf ' is the capital.'\n",
-    );
+    // A file the daemon can read the header of: the server is chosen for a
+    // model MCF has resolved, and resolving reads the file.
+    std::fs::write(
+        models.join("a-model-that-runs.gguf"),
+        mcf_lab::fixture::a_model_that_runs(),
+    )
+    .expect("a file");
+    // An engine that answers and exits well.
+    fake_provisioned_engine(&machine, "answers");
 
     let mut serving = Reaped(
         machine
@@ -2190,12 +2331,19 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
 
     // With one provisioned engine present, the daemon's stated rule chooses it
     // without being asked, and the account names it (B-032).
-    let ran = machine.run(&["run", "lab/fixture:a-model-that-runs.gguf", "--prompt", "x"]);
+    // A word the fixture's vocabulary spells: the prompt is read by MCF's own
+    // tokenizer where the file is one it reads, before the engine is asked.
+    let ran = machine.run(&[
+        "run",
+        "lab/fixture:a-model-that-runs.gguf",
+        "--prompt",
+        "yes",
+    ]);
     assert!(ran.status.success(), "{}", error_text(&ran));
     let said = text(&ran);
     assert!(said.starts_with("Paris is the capital."), "{said}");
     assert!(
-        said.contains("provisioned llama.cpp @fakefakefake"),
+        said.contains("provisioned llama.cpp server @fakefakefake"),
         "{said}"
     );
     assert!(said.contains("a real engine"), "{said}");
@@ -2204,17 +2352,19 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
         "a real engine is not marked degraded: {said}"
     );
 
-    // Asking for MCF's own engine by name still gets it — the file is not a
-    // model, so it is refused, which proves the choice was honoured.
+    // Asking for MCF's own engine by name still gets it — the fixture is a
+    // model MCF's own engine runs, and the account names that engine, which
+    // proves the choice was honoured.
     let own = machine.run(&[
         "run",
         "lab/fixture:a-model-that-runs.gguf",
         "--prompt",
-        "x",
+        "yes",
         "--engine",
         "stand-in",
     ]);
-    assert!(!own.status.success());
+    assert!(own.status.success(), "{}", error_text(&own));
+    assert!(text(&own).contains("stand-in"), "{}", text(&own));
 
     let stopped = machine.run(&["stop", "--because", "done"]);
     assert!(stopped.status.success(), "{}", error_text(&stopped));
@@ -2238,11 +2388,8 @@ fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemo
         .join("lab")
         .join("fixture");
     std::fs::create_dir_all(&models).expect("a store");
-    std::fs::write(models.join("m.gguf"), b"x").expect("a file");
-    fake_provisioned_engine(
-        &machine,
-        "#!/bin/sh\nprintf 'Paris is'; echo 'segmentation fault, or thereabouts' >&2; exit 139\n",
-    );
+    std::fs::write(models.join("m.gguf"), mcf_lab::fixture::a_model_that_runs()).expect("a file");
+    fake_provisioned_engine(&machine, "dies");
 
     let mut serving = Reaped(
         machine
@@ -2259,17 +2406,14 @@ fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemo
         assert!(line.contains("mcf is up on"), "{line}");
     }
 
-    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "x"]);
-    // Unserved — an answer that ended in a death is not served — but what
-    // arrived is printed, and how it ended is said with the engine's own
-    // words (A4, B-033).
+    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "yes"]);
+    // Unserved — an answer that ended in a death is not served — and how it
+    // ended is said with the engine's own last words (A4, B-033). What the
+    // server had produced before it died is not printed: the server answers
+    // whole rather than as a stream, so a death with the request in hand is
+    // a death before any of the answer, and there is nothing to keep.
     assert!(!ran.status.success());
     let out = format!("{}{}", text(&ran), error_text(&ran));
-    assert!(
-        out.contains("Paris is"),
-        "the partial answer is kept: {out}"
-    );
-    assert!(out.contains("THE ENGINE DIED"), "{out}");
     assert!(out.contains("engine.exit.midstream"), "{out}");
     assert!(
         out.contains("segmentation fault, or thereabouts"),

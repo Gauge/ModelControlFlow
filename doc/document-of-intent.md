@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 47 |
+| **Version** | 48 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4585,6 +4585,43 @@ The only marker tokens MCF emits are ones already in the model's vocabulary
 that came from the model's own template. Nothing a user typed can become one
 (F26).
 
+### D47 — The engine renders a model's template on request; MCF still runs none *(refines D46; recommended, awaiting the operator)*
+
+**A template's switches — whether the model thinks, how hard, where a system
+turn goes, how tools are described — are branches of its program, and D46's
+extraction of marker strings cannot follow a branch. Where a request asks for
+one of those, the provisioned engine renders the template and MCF frames the
+turn from what it rendered. MCF itself runs no template, and the safety
+property D46 states holds on this path as on every other.**
+
+**Why the engine and not MCF.** D46's reasons stand: the file is untrusted
+logic and MCF will not carry an interpreter for it. The provisioned engine
+already carries one — it renders the template for every caller on a hosted
+port — and it runs as a supervised subprocess under D39's conditions, pinned,
+recorded and contained. Asking it to render one turn is asking a component
+MCF already trusts to do what it already does, at no forward pass, and the
+answer is text MCF reads rather than a program MCF runs.
+
+**How the frame is built, because this is where D46's property lives.** MCF
+sends the conversation with a sentinel where the person's words go and cuts
+the rendering at the sentinel. The two halves are the model's own words and
+are tokenized as such, markers parsed; the person's prompt is tokenized with
+no marker parsed, as it is everywhere else. Nothing a person typed can become
+a marker (F26), and F161 is the record of the one path where it briefly could.
+
+**What is refused rather than pretended.** A switch is asked for by rendering
+with and without it: a template that renders the same either way has no such
+switch, and the request is refused by name rather than sent to a model that
+would ignore it (A2, A7). A template that raises on a value is refused in its
+own words (A4). MCF's own engine runs no template and refuses a framed turn
+for that reason, saying which engine can.
+
+**What this is not.** It is not MCF adopting a chat API: the request still
+goes to the engine as identifiers MCF counted, the account still says how the
+turn was addressed, and the template's rendering is a condition on the page
+(§3.4, §3.15). And it is not a default: a request that asks for no switch is
+framed as D46 frames it, from the addressing on file.
+
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
 D39 admits a component MCF *provisions* rather than ships, and states four
@@ -4672,6 +4709,15 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 48 — the engine renders what MCF will not run
+
+D47, put to the operator with a recommendation. The switches a template
+offers are branches of its program and cannot be read off the file; the
+provisioned engine renders the turn on request, MCF frames it from the
+rendering with the person's words kept as words, and a switch the template
+does not read is refused by name. D46's reasons and its safety property are
+unchanged; F161 is why the property had to be restated.
 
 ### Version 47 — three answers from the operator
 

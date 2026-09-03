@@ -286,6 +286,14 @@ const DECLARED: &[(&str, &str)] = &[
      server that says no to everything. It is one GET to a process on this machine that MCF \
      itself started a moment earlier, and it carries nothing out (B-416, §3.7)",
     ),
+    (
+        "crates/mcf-serve/src/takes.rs",
+        "asking the same hosted engine on 127.0.0.1, once it answers, what it takes for the \
+     model it holds — which media reach it and what its template does with a switch. Two \
+     requests to a process on this machine that MCF started, about a model on this machine; \
+     what goes out is the question, and the turn it asks the engine to render holds no \
+     person's words (B-449, §3.7)",
+    ),
 ];
 
 /// Whether `mcf_serve::hosting::LOOPBACK` is in fact the loopback address.

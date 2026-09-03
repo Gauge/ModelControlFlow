@@ -112,6 +112,25 @@ pub struct Completed {
     pub produced: Vec<usize>,
 }
 
+impl Completed {
+    /// The identifiers that are the model's words: what it produced, less the
+    /// end-of-turn token where it stopped on one.
+    ///
+    /// The server lists that token among `tokens` — it was sampled — but it
+    /// is the model ending its turn, not saying anything, and the completion
+    /// tool's path holds its `[end of text]` back for the same reason (F142).
+    /// The server's `content` is not these words either: it leaves every
+    /// marker out, so a `</think>` the model wrote — the one token that says
+    /// where its answer began (B-451) — is not in it.
+    #[must_use]
+    pub fn words(&self) -> &[usize] {
+        match (&self.stop, self.produced.split_last()) {
+            (Stop::Eos, Some((_, before))) => before,
+            _ => &self.produced,
+        }
+    }
+}
+
 /// Whether a hosted engine is answering yet.
 ///
 /// One line of HTTP over a loopback socket rather than a client: what is being
@@ -165,6 +184,16 @@ fn ready_on(port: u16) -> bool {
 pub struct Served {
     child: Child,
     socket: PathBuf,
+    /// The last of what the engine wrote to its error stream, kept by a
+    /// thread as it arrives.
+    ///
+    /// **An engine that stops says why, and the sentence was being thrown
+    /// away.** A server that exits before it answers exits with a status and
+    /// a line — *unknown model architecture*, *failed to allocate*, *segmentation
+    /// fault* — and with its error stream sent to nowhere the person got the
+    /// status alone (A2, A4). The tail is bounded so a chatty engine cannot
+    /// grow it without limit; the last lines are the ones that say why.
+    last_words: std::sync::Arc<std::sync::Mutex<String>>,
     /// The model it holds. A request for a different one needs a different
     /// server, and the caller has to be able to tell.
     pub model: PathBuf,
@@ -228,8 +257,8 @@ impl Served {
             .arg(settings.port.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        let child = command.spawn().map_err(|error| {
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().map_err(|error| {
             Failure::new(
                 Category::EngineSpawnRefused,
                 Attribution::Machine,
@@ -243,14 +272,18 @@ impl Served {
         // socket field names where it *would* have been rather than a file
         // that exists. Nothing reads it for a hosted server, and leaving it
         // empty would make a path field that is sometimes a path.
+        let last_words = kept_last_words(&mut child);
         let mut served = Self {
             child,
             socket: PathBuf::from(settings.address()),
+            last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
             window: settings.context,
         };
-        served.wait_until_answering(settings.port, ATTEMPTS)?;
+        served
+            .wait_until_answering(settings.port, ATTEMPTS)
+            .map_err(|failure| served.with_last_words(failure))?;
         Ok(served)
     }
 
@@ -358,9 +391,9 @@ impl Served {
             .arg("--no-warmup")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
-        let child = command.spawn().map_err(|error| {
+        let mut child = command.spawn().map_err(|error| {
             Failure::new(
                 Category::EngineSpawnRefused,
                 Attribution::Machine,
@@ -371,14 +404,18 @@ impl Served {
             .with_context("error", error.to_string())
         })?;
 
+        let last_words = kept_last_words(&mut child);
         let mut served = Self {
             child,
             socket,
+            last_words,
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
             window: context,
         };
-        served.wait_until_listening(attempts)?;
+        served
+            .wait_until_listening(attempts)
+            .map_err(|failure| served.with_last_words(failure))?;
         Ok(served)
     }
 
@@ -538,24 +575,86 @@ impl Served {
     /// tokenized by.
     ///
     /// `with_beginning` asks for the model's own convention — a beginning
-    /// marker where the file says to add one, none where it says not to —
-    /// and control tokens spelled in the text are taken as themselves, as
-    /// MCF's own tokenizer takes them.
+    /// marker where the file says to add one, none where it says not to.
+    ///
+    /// **`as_markers` says whose text this is.** The model's own — a marker
+    /// from its template, a turn its template rendered — is read with its
+    /// control tokens taken as themselves. A person's is not: the server
+    /// reads `<|im_start|>` typed into a prompt as the token that opens a
+    /// turn when it is told to parse specials, and the first cut told it to
+    /// for every text, so on the path every prompt now takes a person could
+    /// type their way into a marker — the thing D46's safety property
+    /// exists to prevent and MCF's own tokenizer refuses (F26, F161).
     ///
     /// # Errors
     ///
     /// Whatever the server answered with, where that was not a list of
     /// tokens.
-    pub fn tokenize(&self, text: &str, with_beginning: bool) -> Result<Vec<Token>, Failure> {
+    pub fn tokenize(
+        &self,
+        text: &str,
+        with_beginning: bool,
+        as_markers: bool,
+    ) -> Result<Vec<Token>, Failure> {
         let body = Value::map([
             ("content", Value::text(text.to_owned())),
             ("add_special", Value::Bool(with_beginning)),
-            ("parse_special", Value::Bool(true)),
+            ("parse_special", Value::Bool(as_markers)),
             ("with_pieces", Value::Bool(true)),
         ])
         .to_line();
         let answered = self.request("POST", "/tokenize", Some(&body))?;
         tokens_in(&answered)
+    }
+
+    /// Identifiers as text, spelled by the engine — markers included, since
+    /// what is asked is what these tokens *are* and a marker left out would
+    /// make a turn that closed its thinking look like one that never opened
+    /// it (A1).
+    ///
+    /// # Errors
+    ///
+    /// Whatever the server answered with, where that was not text.
+    pub fn detokenize(&self, tokens: &[usize]) -> Result<String, Failure> {
+        let identifiers = Value::List(
+            tokens
+                .iter()
+                .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                .collect(),
+        );
+        let body = Value::map([("tokens", identifiers)]).to_line();
+        let answered = self.request("POST", "/detokenize", Some(&body))?;
+        text_in(
+            &answered,
+            "content",
+            "the provisioned server's answer spelled no text",
+        )
+    }
+
+    /// A conversation as the model's own template renders it, rendered by
+    /// the engine (D47).
+    ///
+    /// MCF runs no template (D46); the engine runs this one for every chat
+    /// turn it serves, and here it is asked to say what it would send. The
+    /// switches — thinking on or off, how hard to reason — are the
+    /// template's own words, passed through as the caller named them, and a
+    /// template that does not know a switch renders without it, which the
+    /// caller tells by comparing (A4).
+    ///
+    /// # Errors
+    ///
+    /// Whatever the server answered with, where that was not a rendering —
+    /// a template that raised on the switches it was given says so in its
+    /// own words.
+    pub fn render(&self, messages: Value, switches: Value) -> Result<String, Failure> {
+        let body =
+            Value::map([("messages", messages), ("chat_template_kwargs", switches)]).to_line();
+        let answered = self.request("POST", "/apply-template", Some(&body))?;
+        text_in(
+            &answered,
+            "prompt",
+            "the provisioned server's answer rendered no prompt",
+        )
     }
 
     /// The smallest HTTP a request needs.
@@ -577,10 +676,10 @@ impl Served {
         };
 
         let mut connection = UnixStream::connect(&self.socket).map_err(|error| {
-            died(
+            self.with_last_words(died(
                 "the provisioned server stopped accepting connections",
                 &error,
-            )
+            ))
         })?;
         let body = body.unwrap_or("");
         let request = format!(
@@ -594,24 +693,84 @@ impl Served {
             .map_err(|error| died("the request could not be sent to the server", &error))?;
 
         let mut answer = Vec::new();
-        connection
-            .read_to_end(&mut answer)
-            .map_err(|error| died("the server's answer ended early", &error))?;
+        connection.read_to_end(&mut answer).map_err(|error| {
+            self.with_last_words(died("the server's answer ended early", &error))
+        })?;
         let answer = String::from_utf8_lossy(&answer).into_owned();
         answer.split_once("\r\n\r\n").map_or_else(
             || {
-                Err(Failure::new(
-                    Category::EngineProtocolMalformed,
-                    Attribution::Machine,
-                    Disposition::Aborted,
-                    Subsystem::new("mcf-serve::served"),
-                    "the provisioned server's answer had no body",
-                )
-                .with_context("engine_said", answer.chars().take(400).collect::<String>()))
+                // No head at all is a connection that closed before the
+                // server wrote: an engine that died with the request in hand,
+                // and its last words are the account of that (A4).
+                Err(self.with_last_words(
+                    Failure::new(
+                        Category::EngineExitMidstream,
+                        Attribution::Machine,
+                        Disposition::Aborted,
+                        Subsystem::new("mcf-serve::served"),
+                        "the provisioned server's answer had no body",
+                    )
+                    .with_context("engine_said", answer.chars().take(400).collect::<String>()),
+                ))
             },
             |(_head, body)| Ok(body.to_owned()),
         )
     }
+
+    /// A failure with the engine's own last words on it, where it wrote any.
+    ///
+    /// Given a moment to arrive: the stream is read by another thread, and an
+    /// engine that has just died may not have been read yet.
+    fn with_last_words(&self, failure: Failure) -> Failure {
+        for _ in 0..20 {
+            if let Ok(held) = self.last_words.lock()
+                && !held.trim().is_empty()
+            {
+                return failure.with_context("engine_last_words", held.trim().to_owned());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        failure
+    }
+}
+
+/// How much of the engine's error stream is kept: the end of it.
+const LAST_WORDS: usize = 4096;
+
+/// Keeps the tail of a child's error stream as it is written.
+///
+/// The thread ends when the stream does, which is when the engine does; it
+/// holds no reference to the server, so a server dropped mid-read is not
+/// kept alive by it.
+fn kept_last_words(child: &mut Child) -> std::sync::Arc<std::sync::Mutex<String>> {
+    let kept = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    if let Some(mut stream) = child.stderr.take() {
+        let into = std::sync::Arc::clone(&kept);
+        let _reader = std::thread::Builder::new()
+            .name("engine-last-words".to_owned())
+            .spawn(move || {
+                let mut held = [0_u8; 1024];
+                while let Ok(read) = stream.read(&mut held) {
+                    if read == 0 {
+                        break;
+                    }
+                    let Ok(mut kept) = into.lock() else {
+                        break;
+                    };
+                    kept.push_str(&String::from_utf8_lossy(
+                        held.get(..read).unwrap_or_default(),
+                    ));
+                    if kept.len() > LAST_WORDS {
+                        let cut = kept.len().saturating_sub(LAST_WORDS);
+                        let at = (cut..kept.len())
+                            .find(|at| kept.is_char_boundary(*at))
+                            .unwrap_or(kept.len());
+                        kept.drain(..at);
+                    }
+                }
+            });
+    }
+    kept
 }
 
 /// One token as the server reads it: the identifier and its spelling.
@@ -653,6 +812,45 @@ fn spelled(bytes: &[u8]) -> String {
         },
         str::to_owned,
     )
+}
+
+/// One text field of an answer, or why not: the engine's refusal in its own
+/// words where it refused, and a malformed answer where it did not say.
+fn text_in(answer: &str, field: &str, missing: &str) -> Result<String, Failure> {
+    let malformed = |what: &str| {
+        Failure::new(
+            Category::EngineProtocolMalformed,
+            Attribution::Machine,
+            Disposition::Aborted,
+            Subsystem::new("mcf-serve::served"),
+            what,
+        )
+        .with_context("engine_said", answer.chars().take(400).collect::<String>())
+    };
+    let value = json::parse(answer).map_err(|error| {
+        malformed("the provisioned server answered with something that is not JSON")
+            .with_context("error", error.to_string())
+    })?;
+    if let Some(said) = value.get("error") {
+        let message = said
+            .get("message")
+            .and_then(Value::as_text)
+            .unwrap_or("the engine did not say")
+            .to_owned();
+        return Err(Failure::new(
+            Category::ConfigInvalid,
+            Attribution::User,
+            Disposition::Refused,
+            Subsystem::new("mcf-serve::served"),
+            "the provisioned server refused the request, in its own words",
+        )
+        .with_context("reason", message));
+    }
+    value
+        .get(field)
+        .and_then(Value::as_text)
+        .map(str::to_owned)
+        .ok_or_else(|| malformed(missing))
 }
 
 /// The tokens in the server's answer to `/tokenize`.

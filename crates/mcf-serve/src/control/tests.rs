@@ -168,6 +168,7 @@ fn the_new_requests_survive_the_wire() {
             engine: None,
             whose: mcf_record::content::Whose::Fixture,
             pinned: true,
+            turn: None,
         },
         Request::Generate {
             model: "a-model.gguf".to_owned(),
@@ -178,6 +179,7 @@ fn the_new_requests_survive_the_wire() {
             engine: Some("stand-in".to_owned()),
             whose: mcf_record::content::Whose::User,
             pinned: false,
+            turn: None,
         },
         Request::PromptReport {
             model: "a-model.gguf".to_owned(),

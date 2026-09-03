@@ -84,6 +84,16 @@ pub struct Hosting {
     /// `None` is no key, which on the loopback address is the ordinary case
     /// and is stated rather than assumed.
     pub api_key: Option<String>,
+    /// The projector loaded beside the model, where it has one.
+    ///
+    /// **Half of a multimodal model travels as a second file, and a host that
+    /// leaves it on disk hosts half the model.** The publisher's `mmproj`
+    /// beside the weights is what lets a picture, a video or a sound reach a
+    /// model that was trained to take them; without it the engine answers
+    /// text and quietly declines the rest. `None` is text only — the
+    /// recommendation where no projector sits beside the model, and a choice
+    /// somebody can make where one does.
+    pub projector: Option<String>,
 }
 
 /// How a hosted model turns a prompt into text.
@@ -91,6 +101,20 @@ pub struct Hosting {
 /// Separate from [`Hosting`] because these can change per request and those
 /// cannot: a context size is chosen when the model is loaded, and a
 /// temperature is chosen when somebody asks a question.
+/// A projector as a setting names it: the file, not the whole path.
+fn projector_named(projector: Option<&str>) -> String {
+    projector.map_or_else(
+        || "none — text only".to_owned(),
+        |path| {
+            path.rsplit('/')
+                .next()
+                .filter(|name| !name.is_empty())
+                .unwrap_or(path)
+                .to_owned()
+        },
+    )
+}
+
 /// What one setting is, for a surface that lists them all.
 #[derive(Debug, Clone)]
 pub struct Setting {
@@ -123,6 +147,7 @@ impl Hosting {
         context: u64,
         cores: Option<usize>,
         fits_on_the_card: bool,
+        projector: Option<&std::path::Path>,
     ) -> Self {
         Self {
             context,
@@ -149,6 +174,7 @@ impl Hosting {
             keep_resident: false,
             port: DEFAULT_PORT,
             api_key: None,
+            projector: projector.map(|path| path.display().to_string()),
         }
     }
 
@@ -186,6 +212,10 @@ impl Hosting {
         if let Some(key) = &self.api_key {
             out.push("--api-key".to_owned());
             out.push(key.clone());
+        }
+        if let Some(projector) = &self.projector {
+            out.push("--mmproj".to_owned());
+            out.push(projector.clone());
         }
         out
     }
@@ -271,6 +301,14 @@ impl Hosting {
                 because: "a key callers must present. On this computer's own address, \
                           usually not needed",
             },
+            Setting {
+                name: "projector",
+                value: projector_named(self.projector.as_deref()),
+                recommended: projector_named(against.projector.as_deref()),
+                because: "the encoder that turns a picture, a video or a sound into what the \
+                          model reads. Its publisher ships it as a second file beside the \
+                          weights; without it the model takes text only",
+            },
         ]
     }
 
@@ -313,6 +351,10 @@ impl Hosting {
             // condition of the hosting; what it is is a secret, and a record
             // is a thing MCF publishes (A25, §3.20).
             ("api_key_set", Value::Bool(self.api_key.is_some())),
+            (
+                "projector",
+                self.projector.clone().map_or(Value::Null, Value::text),
+            ),
         ])
     }
 
@@ -361,6 +403,14 @@ impl Hosting {
                 .get("api_key")
                 .and_then(Value::as_text)
                 .map(str::to_owned),
+            // Three states, told apart: unmentioned keeps the projector MCF
+            // found, a path names one, and an explicit null or empty name is
+            // *text only* asked for — which is a choice, not an omission.
+            projector: match value.get("projector") {
+                None => recommended.projector.clone(),
+                Some(Value::Text(path)) if !path.is_empty() => Some(path.clone()),
+                Some(_) => None,
+            },
         }
     }
 

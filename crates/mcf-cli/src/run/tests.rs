@@ -19,7 +19,15 @@ fn without_a_daemon(
     seed: u64,
     engine: Option<&str>,
 ) -> crate::Response {
-    run_where(None, model, prompt, limit, seed, engine)
+    run_where(
+        None,
+        model,
+        prompt,
+        limit,
+        seed,
+        engine,
+        &mcf_serve::turn::Turn::default(),
+    )
 }
 
 /// A path is a model, and so is something under the store — both spellings,

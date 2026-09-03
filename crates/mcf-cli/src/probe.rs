@@ -771,75 +771,6 @@ fn as_count(held: usize) -> i64 {
     i64::try_from(held).unwrap_or(-1)
 }
 
-/// Whether this file says it is a vision projector.
-///
-/// **Read, not assumed from the name.** A projector declares `clip.*` — a
-/// vision encoder, a projector type, the geometry of the patches it makes —
-/// and that declaration is what makes it one. `mmproj` is a convention every
-/// publisher happens to follow, and a convention is a thing that holds until
-/// it does not; a file MCF believed because of its name would be a file MCF
-/// had not read (A21).
-///
-/// From a bounded read of the front, because the directory sits there and a
-/// projector is a gigabyte nobody needs in memory to answer this.
-fn declares_a_vision_encoder(path: &std::path::Path) -> bool {
-    use std::io::Read as _;
-    let held = std::fs::metadata(path).map_or(0, |meta| meta.len());
-    for cap in [4_u64 << 20, 64 << 20] {
-        let take = cap.min(held);
-        let mut prefix = Vec::new();
-        if std::fs::File::open(path)
-            .and_then(|handle| handle.take(take).read_to_end(&mut prefix))
-            .is_err()
-        {
-            return false;
-        }
-        if let Ok(file) = mcf_standin::gguf::parse(&prefix) {
-            return file.get("clip.has_vision_encoder").is_some()
-                || file.get("clip.projector_type").is_some();
-        }
-        if take >= held {
-            return false;
-        }
-    }
-    false
-}
-
-/// The projector that belongs to this model, where its repository published one.
-///
-/// **Beside it, which is where hubs put it and not where MCF wants it.** A
-/// projector is half of a multimodal artifact and travels as a separate file,
-/// so a model acquired without it is a model that cannot be shown a picture —
-/// through no fault of its own. MCF looks in the directory the weights landed
-/// in, which is where `mcf pull` of the same repository would have put it.
-///
-/// The name narrows and the declaration decides: every publisher calls it
-/// `mmproj`, so that is a cheap way to avoid reading the front of every model
-/// in the directory — but what admits a file is `clip.*`, read out of it.
-fn projector_beside(model: &std::path::Path) -> Option<std::path::PathBuf> {
-    let directory = model.parent()?;
-    let mut candidates: Vec<std::path::PathBuf> = std::fs::read_dir(directory)
-        .ok()?
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            let is_gguf = path
-                .extension()
-                .and_then(|held| held.to_str())
-                .is_some_and(|held| held.eq_ignore_ascii_case("gguf"));
-            let is_named_like_one = path
-                .file_stem()
-                .and_then(|held| held.to_str())
-                .is_some_and(|held| held.to_ascii_lowercase().starts_with("mmproj"));
-            is_gguf && is_named_like_one && path != model
-        })
-        .collect();
-    candidates.sort();
-    candidates
-        .into_iter()
-        .find(|path| declares_a_vision_encoder(path))
-}
-
 /// Whether an image reaches this model at all (B-057, B-320).
 ///
 /// **Through the provisioned tool that takes one.** MCF's own engine implements
@@ -855,7 +786,7 @@ fn vision_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
             .into_iter()
             .find_map(|engine| engine.tool("llama-mtmd-cli").map(|at| (engine.commit, at)))
     });
-    let projector = projector_beside(path);
+    let projector = mcf_serve::projector::beside(path);
 
     let Some((commit, binary)) = tool else {
         return vision_result_lines(path, &mcf_serve::probes::vision::without_a_tool(path));

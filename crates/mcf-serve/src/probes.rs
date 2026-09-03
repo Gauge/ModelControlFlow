@@ -794,6 +794,7 @@ pub fn spoken(
         tokens: tokens.map(<[usize]>::to_vec),
         engine: engine.map(str::to_owned),
         pinned: false,
+        turn: None,
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
@@ -1141,6 +1142,7 @@ pub fn accepts(
         tokens: Some(vec![filler; length]),
         engine: engine.map(str::to_owned),
         pinned: false,
+        turn: None,
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())

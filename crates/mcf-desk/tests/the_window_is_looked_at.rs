@@ -1046,6 +1046,7 @@ fn the_price_of_a_window_is_shown_where_it_is_chosen() {
         32_768,
         Some(8),
         true,
+        None,
     );
     let mut priced = four_models();
     priced.chosen = Some(0);
@@ -1081,6 +1082,8 @@ fn the_monitor_says_what_the_held_window_costs() {
         address: "http://127.0.0.1:17817".to_owned(),
         since: "a moment ago".to_owned(),
         context: Some(32_768),
+        projector: None,
+        takes: None,
     });
     // The same window, held under a model this list does not carry: the
     // address and the context still show, the price cannot.
@@ -1091,6 +1094,8 @@ fn the_monitor_says_what_the_held_window_costs() {
         address: "http://127.0.0.1:17817".to_owned(),
         since: "a moment ago".to_owned(),
         context: Some(32_768),
+        projector: None,
+        takes: None,
     });
 
     let ground = DAY.ground;
