@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Intent — the spirit of the rules |
-| **Version** | 48 |
+| **Version** | 49 |
 | **Status** | Living |
 | **Authority** | Source. Every other document in `doc/` derives from this one and is corrected when it changes, never the reverse. |
 | **Derives** | [rules.md](rules.md) · [roadmap.md](roadmap.md) · [backlog.md](backlog.md) · [mockup/](mockup/) |
@@ -4585,7 +4585,7 @@ The only marker tokens MCF emits are ones already in the model's vocabulary
 that came from the model's own template. Nothing a user typed can become one
 (F26).
 
-### D47 — The engine renders a model's template on request; MCF still runs none *(refines D46; recommended, awaiting the operator)*
+### D47 — The engine renders a model's template on request; MCF still runs none *(refines D46; on the operator's instruction)*
 
 **A template's switches — whether the model thinks, how hard, where a system
 turn goes, how tools are described — are branches of its program, and D46's
@@ -4627,6 +4627,60 @@ goes to the engine as identifiers MCF counted, the account still says how the
 turn was addressed, and the template's rendering is a condition on the page
 (§3.4, §3.15). And it is not a default: a request that asks for no switch is
 framed as D46 frames it, from the addressing on file.
+
+**Why not MCF's own interpreter, which was the operator's question.** A
+rendering is right when it matches what the model was trained and tested
+against, and a template's authors test it against two interpreters: the
+reference one and the one the provisioned engine carries. A third is measured
+against those two and never the other way round, so MCF's own could at best
+equal the engine's. Its failure modes are the wrong way round for MCF: a
+construct it does not carry is refused by name, which is the good failure, but
+a construct it carries with slightly different semantics — which whitespace
+`trim` strips, the key order of `tojson`, the truth of an empty mapping —
+renders a slightly wrong turn that the model answers anyway, and nothing on
+the page can see it. And the reason D46 gave for not running the file's
+program holds in the other direction too: logic from the internet is safer in
+a supervised subprocess MCF can kill than in MCF's own process, where one
+unbounded loop hangs the daemon. Every check MCF would write for its own
+interpreter would use the engine's rendering as the oracle, at which point the
+interpreter is the redundant part. The reader that *is* MCF's — the markers
+and their order, read off the file with nothing evaluated, and each switch
+confirmed by difference — is kept, and it trusts neither side.
+
+### D48 — A trial the engine will take hours over is projected, said, and waited for *(on the operator's instruction)*
+
+**When a probe or a run would take longer than a person expects to wait, MCF
+measures how fast the engine reads on this machine first, says what the whole
+trial is projected to cost as a projection and not a figure (A19, §3.4),
+and then does it. Nothing MCF asked an engine for is abandoned: the client
+waits for the answer it asked for and shows the engine's own progress while
+it does, the daemon cancels a generation whose client has gone rather than
+carrying it on for nobody, and the daemon answers a question about its state
+while a generation runs.**
+
+**What happened, which is why this is written down.** The usable-context probe
+asks a model for the length its file declares first, which on a 27B model on
+a processor is 262,143 identifiers and a matter of hours. The client's read
+timeout gave up after twenty minutes and reported the trial *inconclusive*;
+the daemon carried the generation on with nobody listening; every probe queued
+behind it timed out to the same word; and `mcf status` could not answer at all
+while it ran. Four defects with one root: MCF had chosen a patience for the
+person and not said so (§3.15), and the components had no way of telling each
+other that one of them had left.
+
+**The order of the three things.** Projection before spending, because a
+person who is told *this will take about six hours* can say no, and one who
+finds out after twenty minutes cannot. Waiting rather than a ceiling, because
+a ceiling is a hidden choice and a trial that was asked for is owed its
+answer; a person who wants a shorter trial asks for one. Cancelling on
+departure, because a generation nobody will read is a machine kept busy for
+no page, and the record must say the run was cancelled and by what, not that
+it failed.
+
+**What the projection is.** A rate measured on this machine on this model
+over a short prompt, multiplied out, and shown with both factors and the
+word *projected*. It is a condition on the page, not an observation of the
+trial (A21), and the trial's own figure replaces it when the trial is done.
 
 ### 7.53 What a controlled environment is, and how much of somebody else's installer MCF is prepared to run — **opened by D39**
 
@@ -4715,6 +4769,17 @@ Answered, and their substance moved to §2.1 per §8. The numbers stay citable.
 The only historical record in this document. Every clause above states the
 present position; this section states how it came to be held, because §8
 requires that the *reasoning* behind each change survive it.
+
+### Version 49 — two answers from the operator, one of them a question first
+
+D47 agreed, after the operator asked whether MCF's own interpreter would be
+the more reliable piece; the answer — that a third interpreter is measured
+against the two the templates are written for, that its wrong-semantics
+failure is the silent kind, and that the file's logic is safer in a
+subprocess than in MCF's process — is now in the decision. D48 written on the
+operator's instruction from the probe that ran for hours with nobody
+listening: a long trial is projected and said before it is spent, waited for
+rather than capped, and cancelled when its client leaves.
 
 ### Version 48 — the engine renders what MCF will not run
 
