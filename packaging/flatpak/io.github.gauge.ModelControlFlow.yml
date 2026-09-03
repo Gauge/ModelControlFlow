@@ -1,0 +1,151 @@
+# The Flatpak (B-448, DEC-032 still open).
+#
+# One artifact a person installs on another machine and runs: the window, the
+# console, the daemon, MCF's own engine, and the reference engine built beside
+# them — nothing fetched at run time, nothing resolved at build time that is not
+# pinned here. Every module below names the commit or the checksum it builds
+# from, and the toolchain is the one `rust-toolchain.toml` pins rather than
+# whatever the SDK carries this month, because the compiler is a condition of
+# every figure the binary produces (§3.12, §3.4).
+#
+# What it does not do: provision engines into a container (D39) — there is no
+# podman inside a sandbox — so the engines it can hold are the ones built here.
+# `packaging/flatpak/README.md` says how to build it and what to expect.
+app-id: io.github.gauge.ModelControlFlow
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: mcf-flatpak-launch
+finish-args:
+  # A window, on either display server, drawn through the card where there is one.
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Models are pulled over the network; the endpoint is served on it.
+  - --share=network
+  # The host's fonts arrive on their own, under /run/host/{fonts,user-fonts,
+  # local-fonts}, which the window's rasteriser searches (font.rs).
+# Build-only material: the pinned toolchain and the static window library.
+cleanup:
+  - /lib/mcf-build
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+modules:
+  # **The toolchain, pinned.** The same 1.98.0 `rust-toolchain.toml` names,
+  # from the standalone installer rather than the SDK's rust extension, whose
+  # version moves with the SDK branch. Installed under /app only to build, and
+  # removed by `cleanup` before the bundle is made.
+  - name: rust-toolchain
+    buildsystem: simple
+    # Left as installed: the builder's stripping of everything under /app/lib
+    # left `libLLVM.so` with no loadable segments, and `rustc` would not start.
+    build-options:
+      no-debuginfo: true
+      strip: false
+    sources:
+      - type: archive
+        url: https://static.rust-lang.org/dist/rust-1.98.0-x86_64-unknown-linux-gnu.tar.xz
+        sha256: ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f
+        only-arches: [x86_64]
+    build-commands:
+      - ./install.sh --prefix=/app/lib/mcf-build/rust --disable-ldconfig
+        --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
+
+  # **The window library, static, at the commit MCF provisions** (component.rs,
+  # SDL3). The same configure flags; `mcf-desk`'s build script finds it by the
+  # same shape it finds a provisioned one, under `MCF_DATA_HOME/provisioned`.
+  - name: SDL3
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/libsdl-org/SDL.git
+        commit: 147a8ee32dbf9ac02f3794964490687b6bbda1bc
+    build-commands:
+      - cmake -S . -B build -G Ninja
+        -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DSDL_HIDAPI=OFF -DSDL_HIDAPI_JOYSTICK=OFF
+        -DSDL_VULKAN=OFF -DSDL_RENDER_VULKAN=OFF -DSDL_OPENVR=OFF -DSDL_TESTS=OFF
+        -DSDL_EXAMPLES=OFF -DSDL_AUDIO=OFF -DSDL_CAMERA=OFF -DSDL_HAPTIC=OFF
+        -DSDL_JOYSTICK=OFF -DSDL_SENSOR=OFF -DSDL_POWER=OFF
+      - cmake --build build --target SDL3-static -j "$FLATPAK_BUILDER_N_JOBS"
+      - install -Dm644 build/libSDL3.a
+        /app/lib/mcf-build/provisioned/SDL3@147a8ee32dbf/build/libSDL3.a
+
+  # **The reference engine, at the commit MCF provisions** (component.rs,
+  # llama.cpp), with the same configure flags — portable rather than tuned,
+  # self-contained — laid out as a provisioned prefix so the daemon finds it by
+  # shape (engines.rs `discover`). The launcher links it into the sandbox's
+  # data home on first run. Its provenance names the SDK as the image, since
+  # that is what built it; the SDK's exact commit is in /app/manifest.json,
+  # which flatpak-builder writes.
+  - name: llama.cpp
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/ggml-org/llama.cpp.git
+        commit: 925e1179947ea0c0ebfb0032df18af3a729822be
+    build-commands:
+      - cmake -S . -B build -G Ninja
+        -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+        -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=ON
+      - cmake --build build -j "$FLATPAK_BUILDER_N_JOBS"
+        --target llama-tokenize llama-completion llama-embedding llama-server llama-mtmd-cli
+      - |
+        prefix=/app/share/mcf/provisioned/llama.cpp@925e1179947e
+        install -d "$prefix/build/bin"
+        for tool in llama-tokenize llama-completion llama-embedding llama-server llama-mtmd-cli; do
+          install -Dm755 "build/bin/$tool" "$prefix/build/bin/$tool"
+        done
+        echo 925e1179947ea0c0ebfb0032df18af3a729822be > "$prefix/commit.txt"
+        printf '%s\n' \
+          '{"component":"llama.cpp","commit":"925e1179947ea0c0ebfb0032df18af3a729822be",' \
+          '"source":"https://github.com/ggml-org/llama.cpp.git",' \
+          '"image":"org.freedesktop.Sdk//24.08 (the Flatpak SDK; its commit is sdk-commit in /app/manifest.json)",' \
+          '"image_digest":"see /app/manifest.json",' \
+          '"packages":["the SDK as shipped: gcc, cmake, ninja, git"],' \
+          '"prefix":"'"$prefix"'",' \
+          '"role":"the reference implementation MCF'"'"'s own engine is checked against (B-368), built inside the Flatpak rather than provisioned into a container (D39)",' \
+          '"targets":["llama-tokenize","llama-completion","llama-embedding","llama-server","llama-mtmd-cli"]}' \
+          | tr -d '\n' > "$prefix/mcf-provenance.json"
+        echo >> "$prefix/mcf-provenance.json"
+
+  # **MCF itself**, built offline from the vendored tree the repository carries
+  # (`.cargo/config.toml`, B-322), by the toolchain above.
+  - name: mcf
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/mcf/cargo-home
+        MCF_DATA_HOME: /app/lib/mcf-build
+      append-path: /app/lib/mcf-build/rust/bin
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - site/target
+          - .git
+          - dist
+          - .flatpak-builder-state
+          - .mcf-tiers
+    build-commands:
+      - cargo --version && rustc --version
+      - cargo build --release --offline --locked -p mcf-cli -p mcf-helper
+      - install -Dm755 target/release/mcf /app/bin/mcf
+      - install -Dm755 target/release/mcf-helper /app/bin/mcf-helper
+      - install -Dm755 packaging/flatpak/mcf-flatpak-launch /app/bin/mcf-flatpak-launch
+      - install -Dm644 packaging/flatpak/io.github.gauge.ModelControlFlow.desktop
+        /app/share/applications/io.github.gauge.ModelControlFlow.desktop
+      - install -Dm644 packaging/flatpak/io.github.gauge.ModelControlFlow.metainfo.xml
+        /app/share/metainfo/io.github.gauge.ModelControlFlow.metainfo.xml
+      - install -Dm644 packaging/flatpak/io.github.gauge.ModelControlFlow.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.gauge.ModelControlFlow.svg
+      - install -Dm644 LICENSE /app/share/licenses/io.github.gauge.ModelControlFlow/LICENSE
+      # The window must have been built with the library, not without it:
+      # `mcf desk` without SDL is a refusal in words, which is right on a
+      # developer's machine and wrong in an artifact whose point is the window.
+      - /app/bin/mcf desk --help 2>&1 | head -3 || true
+      - '! /app/bin/mcf desk 2>&1 </dev/null | grep -q "window library is not installed"'

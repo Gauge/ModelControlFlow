@@ -8,3 +8,8 @@
 # not run anything, and should say so rather than inheriting somebody else's
 # result.
 /.mcf-tiers
+
+# The Flatpak bundle and the builder's state (B-448): `scripts/flatpak.sh`
+# writes both, from the manifest and the tree, and neither is source.
+/dist
+/.flatpak-builder-state

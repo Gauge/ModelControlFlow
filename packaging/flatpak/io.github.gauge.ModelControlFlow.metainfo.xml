@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.gauge.ModelControlFlow</id>
+  <name>ModelControlFlow</name>
+  <summary>Measure open-weights models on this machine</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="io.github.gauge">
+    <name>Gauge</name>
+  </developer>
+  <description>
+    <p>
+      MCF acquires models with their provenance intact, serves them as a local
+      endpoint, puts them on a bench of diagnostic laboratories, measures what
+      they cost and what they are worth on this hardware, and writes every
+      result to an append-only record. Evidence leaves the machine only when
+      you send it.
+    </p>
+    <p>
+      This build carries the window, the console, the daemon, MCF's own engine
+      and the reference engine, built from pinned sources. It provisions no
+      engine of its own into a container.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.gauge.ModelControlFlow.desktop</launchable>
+  <url type="homepage">https://github.com/Gauge/ModelControlFlow</url>
+  <url type="bugtracker">https://github.com/Gauge/ModelControlFlow/issues</url>
+  <url type="vcs-browser">https://github.com/Gauge/ModelControlFlow</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0-m0" date="2026-09-03">
+      <description>
+        <p>First packaged build, for installing on other machines to try. Not published.</p>
+      </description>
+    </release>
+  </releases>
+  <requires>
+    <display_length compare="ge">880</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+</component>

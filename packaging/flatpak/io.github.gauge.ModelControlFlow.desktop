@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ModelControlFlow
+GenericName=Local model bench
+Comment=Acquire, serve and measure open-weights models on this machine
+Exec=mcf-flatpak-launch desk
+Icon=io.github.gauge.ModelControlFlow
+Terminal=false
+Categories=Development;
+Keywords=llm;gguf;llama;model;benchmark;
+StartupNotify=false

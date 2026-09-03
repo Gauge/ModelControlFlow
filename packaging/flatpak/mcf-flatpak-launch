@@ -1,0 +1,34 @@
+#!/bin/sh
+# The Flatpak's entry: puts the engines built into /app where MCF looks for a
+# provisioned one — the sandbox's data home — and runs `mcf` with whatever it
+# was given. `mcf desk` with nothing, which is what the desktop entry asks.
+#
+# A link rather than a copy: the prefix is read-only and 50 MB, and MCF reads
+# a provisioned prefix by shape (engines.rs). Only where nothing is there
+# yet, so a prefix the person removed on purpose stays removed until the next
+# version of this Flatpak lands with a different commit.
+#
+# The control socket goes under the one directory Flatpak shares between
+# instances of the same application, so the daemon one `flatpak run` started
+# is the daemon the next one finds — otherwise every command would start a
+# daemon of its own and see none of the others. A consequence to know: a
+# `flatpak run` that started the daemon does not return until the daemon
+# stops, because the sandbox lives as long as anything in it does; `mcf stop`
+# from another terminal ends both.
+set -eu
+data="${XDG_DATA_HOME:-$HOME/.local/share}/mcf/provisioned"
+mkdir -p "$data"
+for built in /app/share/mcf/provisioned/*; do
+    [ -d "$built" ] || continue
+    name=$(basename "$built")
+    [ -e "$data/$name" ] || ln -s "$built" "$data/$name"
+done
+if [ -n "${FLATPAK_ID:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    shared="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
+    mkdir -p "$shared"
+    export XDG_RUNTIME_DIR="$shared"
+fi
+if [ "$#" -eq 0 ]; then
+    set -- desk
+fi
+exec /app/bin/mcf "$@"
