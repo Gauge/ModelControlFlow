@@ -955,6 +955,10 @@ pub enum Accepted {
 pub struct Context {
     /// What the file says.
     pub declared: usize,
+    /// The longest prompt that was on the table: one under the declared
+    /// length, or less where the caller asked for less (B-461). Where this
+    /// is under the declaration, the file's claim itself was not asked.
+    pub ceiling: usize,
     /// The longest prompt accepted whole, with one token left to generate.
     pub accepted: usize,
     /// What the engine said where it refused, kept because a refusal for an
@@ -993,6 +997,7 @@ pub const USABLE_CONTEXT: Method = Method {
 pub fn usable_context(
     model: &Path,
     declared: usize,
+    up_to: Option<usize>,
     engine: &str,
     ask: &mut dyn FnMut(usize) -> Accepted,
 ) -> Probed<Context> {
@@ -1052,14 +1057,15 @@ pub fn usable_context(
         }
     };
 
-    // The claim itself, first.
-    let full = declared.saturating_sub(1);
+    // The claim itself, first — or as far as the caller asked (B-461).
+    let full = ceiling_of(declared, up_to);
     match attempt(full, &mut trials, &mut spent, &mut because) {
         Some(true) => {
             return Probed {
                 method: USABLE_CONTEXT,
                 outcome: Outcome::Observed(Context {
                     declared,
+                    ceiling: full,
                     accepted: full,
                     because: None,
                 }),
@@ -1111,12 +1117,99 @@ pub fn usable_context(
         method: USABLE_CONTEXT,
         outcome: Outcome::Observed(Context {
             declared,
+            ceiling: full,
             accepted: works,
             because,
         }),
         trials,
         tokens: spent,
         conditions,
+    }
+}
+
+/// The longest prompt the probe asks for: one under the declared length,
+/// because the context is the whole budget and one token is the answer; or
+/// what the caller asked for, where that is less.
+#[must_use]
+pub fn ceiling_of(declared: usize, up_to: Option<usize>) -> usize {
+    let full = declared.saturating_sub(1);
+    up_to.map_or(full, |asked| asked.min(full))
+}
+
+/// What a trial of the ceiling is projected to take, from a short prompt
+/// timed first (B-461, D48).
+///
+/// Said *before* the trial, because the person who is about to wait six
+/// hours is owed the six hours in advance: a twenty-minute patience nobody
+/// chose used to turn that trial into *inconclusive*, and a client that
+/// waits as long as it takes has to say how long that is. A projection is
+/// named as one and both its factors are on the page, so that the sentence
+/// reads as arithmetic and never as a measurement (A20, A21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Projection {
+    /// How many identifiers the short prompt had.
+    pub sample: usize,
+    /// How long the engine took over it, in nanoseconds.
+    pub nanos: u64,
+    /// How many identifiers the trial will ask for.
+    pub target: usize,
+}
+
+impl Projection {
+    /// The trial's projected length in nanoseconds, at the sample's rate.
+    /// `None` where the sample was empty or the arithmetic does not fit.
+    #[must_use]
+    pub fn nanos_at_the_rate(&self) -> Option<u64> {
+        let sample = u128::try_from(self.sample).ok()?;
+        if sample == 0 {
+            return None;
+        }
+        let target = u128::try_from(self.target).ok()?;
+        let nanos = u128::from(self.nanos);
+        target
+            .checked_mul(nanos)?
+            .checked_div(sample)
+            .and_then(|projected| u64::try_from(projected).ok())
+    }
+
+    /// The sentence a person is told before the trial. Reading slows as the
+    /// prompt deepens, so the rate over a short prompt puts a floor under
+    /// the trial rather than a figure on it, and the sentence says so.
+    #[must_use]
+    pub fn sentence(&self) -> String {
+        let sample_seconds = spelled_seconds(self.nanos);
+        match self.nanos_at_the_rate() {
+            Some(projected) => format!(
+                "projected: {} identifiers took {} to read, so the trial of {} is at least {} at \
+                 that rate — a projection from the short prompt, not a measurement, and reading \
+                 slows as the prompt deepens",
+                self.sample,
+                sample_seconds,
+                self.target,
+                spelled_seconds(projected)
+            ),
+            None => format!(
+                "projected: {} identifiers took {} to read; the trial of {} is too long to put a \
+                 figure on from that",
+                self.sample, sample_seconds, self.target
+            ),
+        }
+    }
+}
+
+/// A span in whole seconds, minutes or hours, for a sentence about how long
+/// something is going to take: nobody plans around tenths.
+fn spelled_seconds(nanos: u64) -> String {
+    const SECOND: u64 = 1_000_000_000;
+    let seconds = nanos.checked_div(SECOND).unwrap_or(0);
+    let minutes = seconds.checked_div(60).unwrap_or(0);
+    let hours = minutes.checked_div(60).unwrap_or(0);
+    if hours > 0 {
+        format!("{hours} h {} min", minutes.checked_rem(60).unwrap_or(0))
+    } else if minutes > 0 {
+        format!("{minutes} min {} s", seconds.checked_rem(60).unwrap_or(0))
+    } else {
+        format!("{seconds} s")
     }
 }
 

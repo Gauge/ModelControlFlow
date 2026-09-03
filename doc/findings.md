@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 106 |
+| **Version** | 107 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -9640,11 +9640,19 @@ accounts; a failure is now charged to the engine that was chosen, and
 whether the server had the model loaded when it refused is left unsaid
 rather than guessed (A7).
 
-**What this does not settle.** The usable-context probe still asks for the
-whole depth at once and says nothing of how long that will be; B-461 has it
-measure the rate on a short prompt and state the projection as one. The
-clients print a refusal's body as it came, which is the one place a
-person reads the record's own shape.
+**The hours are said before they are spent.** The usable-context probe
+times the engine over a prompt of 512 identifiers before it asks for the
+ceiling, and says what the ceiling is projected to take at that rate — on
+the error stream at once, and again in the report — with both factors and
+the word *projected*, and that reading slows as the prompt deepens, so the
+figure is a floor. `--up-to <tokens>` asks for less than the file declares;
+the report then says the claim itself was not asked and settles nothing
+about it, and the record carries what was asked up to. Qwen3-VL-2B: *512
+identifiers took 1 s to read, so the trial of 8192 is at least 25 s at
+that rate*, and 8192 were taken whole (B-461).
+
+**What this does not settle.** The clients print a refusal's body as it
+came, which is the one place a person reads the record's own shape.
 
 ## 161 · F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)
 
@@ -11348,6 +11356,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 107 — the hours are said first
+
+F162 amended: the usable-context probe times a short prompt and states the
+trial's projected length before spending it, and `--up-to` asks for less
+than the file declares. B-461.
 
 ### Version 106 — a trial that ran for nobody
 

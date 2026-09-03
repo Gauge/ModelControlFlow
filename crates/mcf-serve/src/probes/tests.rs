@@ -384,6 +384,7 @@ fn a_context_that_holds_is_one_question() {
     let probed = usable_context(
         std::path::Path::new("/fixture"),
         8192,
+        None,
         "test",
         &mut |length| {
             asked.push(length);
@@ -398,6 +399,7 @@ fn a_context_that_holds_is_one_question() {
         observed,
         &Context {
             declared: 8192,
+            ceiling: 8191,
             accepted: 8191,
             because: None,
         }
@@ -409,6 +411,69 @@ fn a_context_that_holds_is_one_question() {
     );
 }
 
+/// A caller who asked for less than the file declares is asked exactly
+/// that, and the report keeps the ceiling apart from the claim: a trial
+/// that stopped where it was told to has not tested the declaration
+/// (B-461).
+#[test]
+fn asking_for_less_asks_for_exactly_that() {
+    let mut asked = Vec::new();
+    let probed = usable_context(
+        std::path::Path::new("/fixture"),
+        262_144,
+        Some(4096),
+        "test",
+        &mut |length| {
+            asked.push(length);
+            Accepted::Read(length)
+        },
+    );
+    let observed = probed
+        .outcome
+        .observed()
+        .expect("the engine took the ceiling");
+    assert_eq!(observed.declared, 262_144, "the claim is still the claim");
+    assert_eq!(observed.ceiling, 4096, "the ceiling is what was asked for");
+    assert_eq!(observed.accepted, 4096);
+    assert_eq!(
+        asked,
+        vec![1, 4096],
+        "the instrument, then the ceiling, and never the claim"
+    );
+}
+
+/// A ceiling above the declaration is the declaration: the caller cannot
+/// ask for more than the file has.
+#[test]
+fn a_ceiling_above_the_claim_is_the_claim() {
+    assert_eq!(super::ceiling_of(8192, Some(1_000_000)), 8191);
+    assert_eq!(super::ceiling_of(8192, Some(100)), 100);
+    assert_eq!(super::ceiling_of(8192, None), 8191);
+}
+
+/// The projection is arithmetic on two stated figures, says it is a
+/// projection, and puts a floor rather than a figure on the trial.
+#[test]
+fn a_projection_says_it_is_one() {
+    let projection = super::Projection {
+        sample: 512,
+        nanos: 4_000_000_000,
+        target: 262_143,
+    };
+    assert_eq!(projection.nanos_at_the_rate(), Some(2_047_992_187_500));
+    let sentence = projection.sentence();
+    assert!(sentence.starts_with("projected:"), "{sentence}");
+    assert!(sentence.contains("512 identifiers took 4 s"), "{sentence}");
+    assert!(sentence.contains("at least 34 min 7 s"), "{sentence}");
+    assert!(sentence.contains("not a measurement"), "{sentence}");
+    let empty = super::Projection {
+        sample: 0,
+        nanos: 1,
+        target: 10,
+    };
+    assert_eq!(empty.nanos_at_the_rate(), None, "no rate from no sample");
+}
+
 /// Where the claim does not hold, the boundary is found exactly.
 #[test]
 fn the_boundary_is_found_where_it_is() {
@@ -416,6 +481,7 @@ fn the_boundary_is_found_where_it_is() {
     let probed = usable_context(
         std::path::Path::new("/fixture"),
         8192,
+        None,
         "test",
         &mut |length| {
             if length <= ceiling {
@@ -450,6 +516,7 @@ fn silent_truncation_is_caught_and_named() {
     let probed = usable_context(
         std::path::Path::new("/fixture"),
         8192,
+        None,
         "test",
         &mut |length| Accepted::Read(length.min(1000)),
     );
@@ -478,6 +545,7 @@ fn an_engine_that_cannot_say_leaves_it_unknown() {
     let probed = usable_context(
         std::path::Path::new("/fixture"),
         8192,
+        None,
         "test",
         &mut |length| {
             asked.push(length);

@@ -132,7 +132,12 @@ fn whichever_is_here() -> &'static str {
     clippy::too_many_lines,
     reason = "one command, written as what it does in order: resolve, probe, report, apply"
 )]
-pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
+pub(crate) fn run(
+    model: &str,
+    engine: Option<&str>,
+    apply: bool,
+    up_to: Option<usize>,
+) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
         Ok(None) => {
@@ -250,7 +255,7 @@ pub(crate) fn run(model: &str, engine: Option<&str>, apply: bool) -> Response {
     }
     lines.push(String::new());
 
-    lines.extend(context_lines(&socket, &path, &bytes, &engine, asked));
+    lines.extend(context_lines(&socket, &path, &bytes, &engine, asked, up_to));
     lines.extend(stopping_lines(
         &socket, &path, &bytes, &engine, asked, apply,
     ));
@@ -1639,6 +1644,7 @@ fn context_lines(
     bytes: &[u8],
     engine: &str,
     asked: &str,
+    up_to: Option<usize>,
 ) -> Vec<String> {
     let Ok(file) = mcf_serve::probes::gguf_of(bytes) else {
         return Vec::new();
@@ -1652,7 +1658,18 @@ fn context_lines(
 
     let mut ask =
         |length: usize| mcf_serve::probes::accepts(socket, path, filler, length, Some(asked));
-    let probed = probes::usable_context(path, declared, engine, &mut ask);
+    // Told before it is spent (B-461): the trial of the ceiling can take
+    // hours on a processor, and the person waiting is owed the hours in
+    // advance. The rate is read over a short prompt and the projection goes
+    // to the error stream now, where the report goes to the output at the
+    // end; it is repeated in the report so that the page carries it too.
+    let ceiling = mcf_serve::probes::ceiling_of(declared, up_to);
+    let projection = projected(ceiling, &mut ask);
+    let projected_from = projection.as_ref().map(|_sentence| RATE_SAMPLE);
+    if let Some(sentence) = &projection {
+        eprintln!("  {sentence}");
+    }
+    let probed = probes::usable_context(path, declared, up_to, engine, &mut ask);
 
     let mut lines = vec![
         format!("  {}", probed.method.name),
@@ -1660,9 +1677,19 @@ fn context_lines(
         format!(" decides  {}", probed.method.decides),
         String::new(),
     ];
+    if let Some(sentence) = projection {
+        lines.push(format!(" {sentence}"));
+        lines.push(String::new());
+    }
     match &probed.outcome {
         Outcome::Observed(context) => {
             lines.push(format!(" declared {} token(s)", context.declared));
+            if context.ceiling.saturating_add(1) < context.declared {
+                lines.push(format!(
+                    " asked up to {} token(s), as --up-to said: the file's claim itself was not asked",
+                    context.ceiling
+                ));
+            }
             lines.push(format!(
                 " accepted {} token(s) of prompt, with one left to generate",
                 context.accepted
@@ -1685,6 +1712,11 @@ fn context_lines(
                     " agrees the file's claim holds: every token it declares but one is taken as prompt, and the one left over is the answer"
                         .to_owned(),
                 );
+            } else if context.accepted == context.ceiling {
+                lines.push(format!(
+                    " agrees as far as it was asked: {} tokens were taken whole. The {} the file declares were not asked for, and this run settles nothing about them",
+                    context.accepted, context.declared
+                ));
             } else {
                 lines.push(format!(
                     " DIVERGENCE the file declares {} tokens and this engine on this machine takes {}. A prompt planned against the declaration would be refused, or worse, quietly shortened — which is a measurement of a different prompt (§3.8, A21)",
@@ -1712,9 +1744,48 @@ fn context_lines(
         "  {} trial(s), {} token(s) spent",
         probed.trials, probed.tokens
     ));
+    if projected_from.is_some() {
+        lines.push(format!(
+            "  and 1 trial of {RATE_SAMPLE} token(s) to time the reading, not counted above"
+        ));
+    }
     lines.push(format!("  under: {}", probed.conditions));
     lines.push(String::new());
     lines
+}
+
+/// How many identifiers the rate is read over. Long enough that the engine
+/// is reading a prompt rather than starting up, short enough to cost
+/// seconds on a processor.
+const RATE_SAMPLE: usize = 512;
+
+/// The projection's sentence, from a short prompt timed first; `None` where
+/// the engine could not be timed reading it, or the ceiling is no longer
+/// than the sample — a trial of seconds needs no forecast.
+fn projected(
+    ceiling: usize,
+    ask: &mut dyn FnMut(usize) -> mcf_serve::probes::Accepted,
+) -> Option<String> {
+    use mcf_core::time::{Clock as _, SystemClock};
+    use mcf_serve::probes::Accepted;
+    if ceiling <= RATE_SAMPLE {
+        return None;
+    }
+    let clock = SystemClock;
+    let began = clock.now();
+    let read = match ask(RATE_SAMPLE) {
+        Accepted::Read(read) if read == RATE_SAMPLE => read,
+        Accepted::Read(_) | Accepted::Refused(_) | Accepted::CouldNotTell(_) => return None,
+    };
+    let nanos = clock.now().saturating_duration_since(began).as_nanos();
+    Some(
+        mcf_serve::probes::Projection {
+            sample: read,
+            nanos,
+            target: ceiling,
+        }
+        .sentence(),
+    )
 }
 
 fn observed(addressed: &Addressed) -> Vec<String> {

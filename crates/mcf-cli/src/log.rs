@@ -674,6 +674,12 @@ pub(crate) fn record_probed_context(
             "accepted_tokens",
             Value::Integer(as_integer(context.accepted)),
         ),
+        // The longest length that was asked for, so that a run capped by
+        // --up-to reads back as a run that did not test the claim (B-461).
+        (
+            "asked_up_to_tokens",
+            Value::Integer(as_integer(context.ceiling)),
+        ),
     ];
     if let Some(because) = &context.because {
         body.push(("because", Value::text(because.clone())));

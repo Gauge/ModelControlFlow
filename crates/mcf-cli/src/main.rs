@@ -331,6 +331,9 @@ enum Request<'a> {
         engine: Option<&'a str>,
         /// Whether to apply what was observed, which is an act (D43).
         apply: bool,
+        /// The longest prompt the usable-context probe may ask for, where
+        /// the caller wants less than the file declares (B-461).
+        up_to: Option<usize>,
     },
     /// Ask an embedding model for a vector.
     Embed {
@@ -580,43 +583,17 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
             command: "eval",
             needs: "<model>",
         },
-        ["probe", model] => Request::Probe {
-            model,
-            engine: None,
-            apply: false,
-        },
-        // The act D43 requires. It is a flag rather than a default because
-        // that is the whole of the decision: MCF may learn better, and what it
-        // does with that is say so until somebody asks for the change.
-        ["probe", model, "--apply"] => Request::Probe {
-            model,
-            engine: None,
-            apply: true,
-        },
-        ["probe", model, "--engine", engine, "--apply"] => Request::Probe {
-            model,
-            engine: Some(engine),
-            apply: true,
-        },
-        // Naming the engine is the point rather than a convenience: a probe
-        // result belongs to the engine it was taken through (D42), and until
-        // the two are shown to agree, which one answered is part of the
-        // result (B-376).
-        ["probe", model, "--engine", engine] => Request::Probe {
-            model,
-            engine: Some(engine),
-            apply: false,
-        },
         ["probe"] => Request::MissingArgument {
             command: "probe",
             needs: "<model>",
         },
-        ["probe", _, argument, ..] if argument != &"--engine" && argument != &"--apply" => {
-            Request::UnexpectedArgument {
+        ["probe", model, rest @ ..] => match probe_options(model, rest) {
+            Ok(request) => request,
+            Err(argument) => Request::UnexpectedArgument {
                 command: "probe",
                 argument,
-            }
-        }
+            },
+        },
         ["provision", "--list"] => Request::ProvisionList { into: None },
         ["provision", "--list", "--into", into] => Request::ProvisionList { into: Some(into) },
         ["provision", "--remove", name] => Request::ProvisionRemove {
@@ -847,6 +824,62 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         model,
         deepest,
         engine,
+    })
+}
+
+/// The flags `mcf probe <model>` takes, in any order.
+///
+/// `--apply` is the act D43 requires, a flag rather than a default because
+/// that is the whole of the decision: MCF may learn better, and what it does
+/// with that is say so until somebody asks for the change. `--engine` names
+/// the engine because a probe result belongs to the engine it was taken
+/// through (D42), and until the two are shown to agree, which one answered
+/// is part of the result (B-376). `--up-to` caps the usable-context probe's
+/// question below the file's declared length: a trial the file's claim
+/// would make six hours long can be asked for less, and the report says the
+/// claim itself was not asked (B-461).
+fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
+    let mut engine = None;
+    let mut apply = false;
+    let mut up_to = None;
+    let mut rest = arguments.iter();
+    while let Some(argument) = rest.next() {
+        match *argument {
+            "--apply" => apply = true,
+            "--engine" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "probe --engine",
+                        needs: "an engine's name",
+                    });
+                };
+                engine = Some(*value);
+            }
+            "--up-to" => {
+                let Some(value) = rest.next() else {
+                    return Ok(Request::MissingArgument {
+                        command: "probe --up-to",
+                        needs: "a number of identifiers, 2 or more",
+                    });
+                };
+                up_to = match value.parse::<usize>() {
+                    Ok(tokens) if tokens >= 2 => Some(tokens),
+                    _ => {
+                        return Ok(Request::UnexpectedArgument {
+                            command: "probe --up-to (wants a number of identifiers, 2 or more)",
+                            argument: value,
+                        });
+                    }
+                };
+            }
+            other => return Err(other),
+        }
+    }
+    Ok(Request::Probe {
+        model,
+        engine,
+        apply,
+        up_to,
     })
 }
 
@@ -1673,9 +1706,11 @@ const COMMANDS: &str = "\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
-    \x20                                       ask a model to do the thing, and\n\
+    \x20           [--up-to <tokens>]        ask a model to do the thing, and\n\
     \x20                                     report what it did — configuring\n\
-    \x20                                     nothing (§X, D42)\n\
+    \x20                                     nothing (§X, D42); the context\n\
+    \x20                                     trial is projected before it is\n\
+    \x20                                     spent, and --up-to asks for less\n\
     \x20 mcf provision [<component>]         build a pinned component in a\n\
     \x20     [--list] [--remove <c>          container, everything recorded,\n\
     \x20      --because <why>] [--into <dir>] removable without residue; unnamed,\n\
@@ -1897,7 +1932,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             model,
             engine,
             apply,
-        } => probe::run(model, *engine, *apply),
+            up_to,
+        } => probe::run(model, *engine, *apply, *up_to),
         Request::Provision { name, into } => provision::run(*name, *into),
         Request::ProvisionList { into } => provision::list(*into),
         Request::ProvisionRemove {
