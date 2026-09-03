@@ -70,6 +70,7 @@ fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
         whose: mcf_record::content::Whose::Fixture,
         pinned,
         turn: None,
+        image: None,
     };
     writeln!(connection, "{}", request.to_line()).expect("the request goes out");
     connection.flush().expect("it is sent");

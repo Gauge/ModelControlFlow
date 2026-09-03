@@ -1851,6 +1851,9 @@ impl Desk {
                 whose: mcf_record::content::Whose::User,
                 pinned: false,
                 turn: None,
+                // The window has no way to hand a picture over yet; the
+                // socket takes one (B-452), and the window's turn is B-462.
+                image: None,
             },
             format!("asking {}", held.name),
         ));

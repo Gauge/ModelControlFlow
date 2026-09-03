@@ -43,6 +43,10 @@ use crate::models;
 pub(crate) const TOKENS: usize = 32;
 
 /// Runs a model and prints what it said.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "what a person asked, each of which the account names back"
+)]
 pub(crate) fn run(
     model: &str,
     prompt: &str,
@@ -50,6 +54,7 @@ pub(crate) fn run(
     seed: u64,
     engine: Option<&str>,
     turn: &mcf_serve::turn::Turn,
+    image: Option<&Path>,
 ) -> Response {
     run_where(
         crate::serve::socket_path(),
@@ -59,6 +64,7 @@ pub(crate) fn run(
         seed,
         engine,
         turn,
+        image,
     )
 }
 
@@ -73,6 +79,10 @@ pub(crate) fn run(
 ///
 /// `None` means *no daemon*, which is both what a machine with no runtime
 /// directory gives and what a test wants to say.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "what a person asked, each of which the account names back"
+)]
 pub(crate) fn run_where(
     socket: Option<std::path::PathBuf>,
     model: &str,
@@ -81,6 +91,7 @@ pub(crate) fn run_where(
     seed: u64,
     engine: Option<&str>,
     turn: &mcf_serve::turn::Turn,
+    image: Option<&Path>,
 ) -> Response {
     let path = match resolve(model) {
         Ok(Some(path)) => path,
@@ -125,8 +136,23 @@ pub(crate) fn run_where(
                 seed,
                 engine,
                 turn,
+                image,
             },
         );
+    }
+    // A picture goes through the projector the served engine loads beside
+    // the model, and MCF's own engine reads text alone: said here rather
+    // than run on the words with the picture dropped (A2, B-452).
+    if let Some(image) = image {
+        return Response {
+            text: format!(
+                "mcf: a picture ({}) goes to the provisioned engine through the daemon, and none \
+                 is listening\n  `mcf serve` starts one; without it this process runs MCF's own \
+                 engine, which reads text only",
+                image.display()
+            ),
+            served: false,
+        };
     }
     // A switch of the template is thrown by the engine that renders it, and
     // MCF's own engine renders none: said here rather than run under no
@@ -196,6 +222,8 @@ struct Asked<'a> {
     seed: u64,
     engine: Option<&'a str>,
     turn: &'a mcf_serve::turn::Turn,
+    /// A picture to show the model, where the person named one (B-452).
+    image: Option<&'a Path>,
 }
 
 /// The generation through the daemon: tokens printed as they arrive, the
@@ -227,7 +255,23 @@ fn served(
         seed,
         engine,
         turn,
+        image,
     } = *asked;
+    // The daemon reads the file, so the path it is given has to be the
+    // file's whole name and not one relative to where this process sits.
+    let image = match image.map(|image| image.canonicalize().map_err(|error| (image, error))) {
+        Some(Err((image, error))) => {
+            return Response {
+                text: format!(
+                    "mcf: the picture at {} could not be found\n  {error}",
+                    image.display()
+                ),
+                served: false,
+            };
+        }
+        Some(Ok(whole)) => Some(whole),
+        None => None,
+    };
 
     // **A run that was asked for is waited for** (D48). The served engine
     // says every ten seconds how far it has read, and MCF's own engine
@@ -255,6 +299,7 @@ fn served(
         // which ends where the model ends it.
         pinned: false,
         turn: turn.asks_anything().then(|| turn.clone()),
+        image: image.as_ref().map(|whole| whole.display().to_string()),
     };
     if let Err(error) =
         writeln!(connection, "{}", request.to_line()).and_then(|()| connection.flush())
@@ -364,7 +409,7 @@ fn served(
              \x20 sampler  {}, seed {}\n\
              \x20 engine   {}\n\
              \x20 served   by the daemon at {}, model loaded {}\n\
-             {}{}{}{}{}",
+             {}{}{}{}{}{}",
             condition("path"),
             get("prompt_tokens"),
             get("tokens"),
@@ -393,6 +438,7 @@ fn served(
                 Some(why) => format!("\x20 budget    {why}\n"),
                 None => String::new(),
             },
+            shown_line(&account),
             before_the_answer(&account),
             match degraded {
                 Some(mark) => format!(
@@ -412,6 +458,40 @@ fn served(
         ),
         served,
     }
+}
+
+/// The picture the model was shown, as a line, where one was: the file and
+/// its size, the projector that read it, and that the turn went as text
+/// with every marker read as one — the one condition of a picture a person
+/// would not guess (B-452).
+fn shown_line(account: &mcf_record::json::Value) -> String {
+    let Some(shown) = account
+        .get("conditions")
+        .and_then(|conditions| conditions.get("shown"))
+        .filter(|shown| !matches!(shown, mcf_record::json::Value::Null))
+    else {
+        return String::new();
+    };
+    let text = |value: Option<&mcf_record::json::Value>| {
+        value
+            .and_then(mcf_record::json::Value::as_text)
+            .unwrap_or("?")
+            .to_owned()
+    };
+    let picture = shown.get("picture");
+    let bytes = picture
+        .and_then(|picture| picture.get("bytes"))
+        .and_then(mcf_record::json::Value::as_integer)
+        .unwrap_or(0);
+    let projector = text(shown.get("projector"));
+    let projector = projector.rsplit('/').next().unwrap_or("?").to_owned();
+    format!(
+        "\x20 shown     {} ({bytes} bytes) through {projector}, placed {};\n\
+         \x20           the turn went as {}\n",
+        text(picture.and_then(|picture| picture.get("path"))),
+        text(shown.get("placed")),
+        text(shown.get("read_as")),
+    )
 }
 
 /// What the model spent before its answer, as a line, where it spent

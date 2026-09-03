@@ -442,6 +442,11 @@ pub(crate) fn serve_generation(
     // How the caller asked the turn framed, where they asked the engine to
     // frame it from the model's own template (D47).
     turn: Option<&crate::turn::Turn>,
+    // A picture to show the model, where the caller sent one (B-452). It
+    // goes inside a turn the engine frames, the only turn with a place for
+    // it, so a caller that named no switch is framed as if they had named
+    // none — the template's own defaults.
+    picture: Option<&Path>,
     // Who is waiting, so that the engine's request is closed when they
     // leave and its progress reaches them while they stay (D48).
     waiting: crate::served::Waiting<'_>,
@@ -462,13 +467,7 @@ pub(crate) fn serve_generation(
     let derived_budget = derived.budget.clone();
     let derived = derived.addressing;
 
-    let (chosen, gpu_layers, context) = match (picked, engine) {
-        // A caller that asked for MCF's own engine gets it, whatever was
-        // resolved: naming the engine is the point of the argument (§3.15).
-        (_, Some("stand-in")) => (Ok(Chosen::StandIn), 0, 0),
-        (Some((llama, layers, window)), _) => (Ok(Chosen::Provisioned(llama)), layers, window),
-        (None, asked) => (choose_engine(mcf_home, asked), 0, 0),
-    };
+    let (chosen, gpu_layers, context) = engine_for(mcf_home, picked, engine);
     // **The addressed turn is tokenized by the engine that will answer it**
     // (B-441): the server's own tokenizer where the server answers, MCF's
     // where the stand-in does. A turn that cannot be built is the
@@ -481,6 +480,15 @@ pub(crate) fn serve_generation(
         context,
         server,
     };
+    // The picture is read before anything is started: a file that is not
+    // there is the caller's to fix, and loading a model to find that out
+    // would be a minute spent on nothing.
+    let picture = picture.map(Picture::read).transpose();
+    let shown_turn = crate::turn::Turn::default();
+    let turn = match (turn, &picture) {
+        (None, Ok(Some(_))) => Some(&shown_turn),
+        (turn, _) => turn,
+    };
     let framed = framed_turn(&place, tokens, turn, &chosen);
     let wrapped = wrapped_turn(
         &place,
@@ -491,14 +499,17 @@ pub(crate) fn serve_generation(
         &chosen,
     );
     let frame = framed.ok().flatten();
+    let shown = match (&picture, &frame) {
+        (Ok(Some(picture)), Some(frame)) => Some(Shown {
+            frame,
+            prompt,
+            picture,
+        }),
+        _ => None,
+    };
     let addressed = frame.as_ref().map_or_else(
         || addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok()),
-        |frame| {
-            Some(format!(
-                "framed by the engine from the model's own template ({})",
-                frame.asked
-            ))
-        },
+        |frame| Some(framed_label(frame, shown.is_some())),
     );
     // Which engine a failure is charged to. An account of a served engine's
     // refusal that named the stand-in — which is what every failure said
@@ -508,26 +519,36 @@ pub(crate) fn serve_generation(
         Ok(Chosen::Provisioned(llama)) => Some(served_engine_name(llama)),
         Ok(Chosen::StandIn) | Err(_) => None,
     };
-    let produced = match (chosen, wrapped) {
-        (_, Err(failure)) | (Err(failure), _) => Err(failure),
+    let produced = match (chosen, wrapped, &picture) {
+        // MCF's own engine reads text and nothing else; a picture sent to
+        // it is refused rather than dropped on the way (A2), and refused
+        // for that reason, before the frame the picture forced is missed.
+        (Ok(Chosen::StandIn), _, Ok(Some(_))) => Err(text_only()),
+        (_, Err(failure), _) | (Err(failure), _, _) => Err(failure),
+        (_, _, Err(failure)) => Err(failure.clone()),
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
-        (Ok(Chosen::Provisioned(llama)), Ok(wrapped)) => match wrapped.as_deref().or(tokens) {
-            Some(tokens) => {
-                let sent = Sent {
-                    tokens,
-                    limit,
-                    pinned,
-                    tail: frame.as_ref().map(|frame| frame.after.as_str()),
-                };
-                through_served(
-                    store, &llama, server, runtime, named, &sent, draw, gpu_layers, context,
-                    waiting, writer,
-                )
+        (Ok(Chosen::Provisioned(llama)), Ok(wrapped), Ok(_)) => {
+            match wrapped.as_deref().or(tokens) {
+                Some(tokens) => {
+                    let sent = Sent {
+                        tokens,
+                        limit,
+                        pinned,
+                        tail: frame.as_ref().map(|frame| frame.after.as_str()),
+                        shown,
+                    };
+                    through_served(
+                        store, &llama, server, runtime, named, &sent, draw, gpu_layers, context,
+                        waiting, writer,
+                    )
+                }
+                None => {
+                    through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer)
+                }
             }
-            None => through_provisioned(store, &llama, named, prompt, limit, draw, pinned, writer),
-        },
-        (Ok(Chosen::StandIn), Ok(wrapped)) => attempt(
+        }
+        (Ok(Chosen::StandIn), Ok(wrapped), Ok(None)) => attempt(
             store,
             resident,
             named,
@@ -552,6 +573,53 @@ pub(crate) fn serve_generation(
     );
     let _flushed = writer.flush();
     produced
+}
+
+/// The refusal MCF's own engine gives a picture.
+fn text_only() -> Failure {
+    Failure::new(
+        mcf_core::failure::Category::ConfigInvalid,
+        mcf_core::failure::Attribution::User,
+        mcf_core::failure::Disposition::Refused,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        "MCF's own engine reads text only, so it cannot be shown a picture: the provisioned \
+         engine can, where the model has a projector beside it",
+    )
+}
+
+/// Which engine answers, on which device, in which window.
+fn engine_for(
+    mcf_home: &Path,
+    picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+    engine: Option<&str>,
+) -> (Result<Chosen, Failure>, u32, u64) {
+    match (picked, engine) {
+        // A caller that asked for MCF's own engine gets it, whatever was
+        // resolved: naming the engine is the point of the argument (§3.15).
+        (_, Some("stand-in")) => (Ok(Chosen::StandIn), 0, 0),
+        (Some((llama, layers, window)), _) => (Ok(Chosen::Provisioned(llama)), layers, window),
+        (None, asked) => (choose_engine(mcf_home, asked), 0, 0),
+    }
+}
+
+/// The turn as text with the picture's place in it: the frame's two halves
+/// around the engine's marker and then the words, which is where the chat
+/// path of the same engine puts a picture sent before its text (B-452).
+fn shown_as(frame: &crate::turn::Frame, marker: &str, prompt: &str) -> String {
+    format!("{}{marker}{prompt}{}", frame.before, frame.after)
+}
+
+/// The account's word for a turn the engine framed.
+fn framed_label(frame: &crate::turn::Frame, shown: bool) -> String {
+    format!(
+        "framed by the engine from the model's own template ({}){}",
+        frame.asked,
+        if shown {
+            ", with a picture before the words"
+        } else {
+            ""
+        }
+    )
 }
 
 /// What the prompt went to the model as, for the account: the derived
@@ -1231,7 +1299,18 @@ fn serving<'slot>(
         .is_some_and(|held| held.model == path && held.window >= window);
     if !reused {
         *slot = None;
-        *slot = Some(Served::start(llama, &path, runtime, gpu_layers, window)?);
+        // The projector its publisher shipped beside it, where one sits
+        // there: hosted whole, so that a picture through the socket reaches
+        // the same model a caller on the port sees (B-449, B-452).
+        let projector = crate::projector::beside(&path);
+        *slot = Some(Served::start(
+            llama,
+            &path,
+            runtime,
+            gpu_layers,
+            window,
+            projector.as_deref(),
+        )?);
     }
     let engine = slot
         .as_ref()
@@ -1289,10 +1368,14 @@ fn through_served(
         limit,
         pinned,
         tail: _,
+        shown,
     } = *sent;
     let path = resolved(store, named);
     let metadata = std::fs::metadata(&path).map_err(|error| missing(named, &path, &error))?;
     let held = metadata.len();
+    if shown.is_some() {
+        projector_present(&path)?;
+    }
 
     let mut slot = server.lock().map_err(|_poisoned| {
         unavailable("the served engine's slot was left poisoned by an earlier failure")
@@ -1305,10 +1388,19 @@ fn through_served(
         gpu_layers,
         context,
     };
-    let window = window_for(tokens.len(), limit, context);
+    let room = if shown.is_some() { PICTURE_ROOM } else { 0 };
+    let window = window_for(tokens.len().saturating_add(room), limit, context);
     let (engine, reused) = serving(&mut slot, &where_it_lives, window)?;
 
-    let completed = engine.complete(tokens, limit, draw, pinned, waiting)?;
+    let text = shown.map(|shown| shown.placed_by(engine)).transpose()?;
+    let prompt = match (shown, &text) {
+        (Some(shown), Some(text)) => crate::served::Prompt::Shown {
+            text,
+            picture: &shown.picture.bytes,
+        },
+        _ => crate::served::Prompt::Identifiers(tokens),
+    };
+    let completed = engine.complete(prompt, limit, draw, pinned, waiting)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
@@ -1332,10 +1424,20 @@ fn through_served(
         );
         // What MCF sent against what the engine read. They agreeing is the
         // check that the turn arrived as itself (D46); them differing is a
-        // finding, and either way it is recorded rather than assumed.
+        // finding, and either way it is recorded rather than assumed. A turn
+        // with a picture went as text, so nothing was sent as identifiers
+        // and the field says so rather than counting the words (A7).
         fields.insert(
             "identifiers_sent".to_owned(),
-            Value::Integer(i64::try_from(tokens.len()).unwrap_or(i64::MAX)),
+            if shown.is_some() {
+                Value::Null
+            } else {
+                Value::Integer(i64::try_from(tokens.len()).unwrap_or(i64::MAX))
+            },
+        );
+        fields.insert(
+            "shown".to_owned(),
+            shown.map_or(Value::Null, |shown| shown.to_value(engine)),
         );
         fields.insert(
             "identifiers_read".to_owned(),
@@ -1354,18 +1456,59 @@ fn through_served(
             }),
         );
     }
+    let prompt_tokens = if shown.is_some() {
+        completed.evaluated
+    } else {
+        tokens.len()
+    };
+    Ok(served_account(
+        conditions,
+        &completed,
+        prompt_tokens,
+        before.as_ref(),
+        text,
+    ))
+}
 
-    Ok(Produced {
+/// A picture needs the projector, and whether the model has one is known
+/// before anything is loaded: a refusal here costs nobody a minute.
+fn projector_present(path: &Path) -> Result<(), Failure> {
+    if crate::projector::beside(path).is_some() {
+        return Ok(());
+    }
+    Err(Failure::new(
+        mcf_core::failure::Category::ConfigUnsatisfiable,
+        mcf_core::failure::Attribution::Artifact,
+        mcf_core::failure::Disposition::Refused,
+        mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+        "no projector sits beside this model, so a picture cannot reach it: the engine would \
+         read the words alone. A publisher that shipped one puts it in the model's own \
+         repository, and pulling that puts it beside the model",
+    )
+    .with_context("model", path.display().to_string()))
+}
+
+/// The account of a served turn, from its conditions and what came back.
+fn served_account(
+    conditions: Value,
+    completed: &Completed,
+    prompt_tokens: usize,
+    before: Option<&crate::turn::BeforeTheAnswer>,
+    text: String,
+) -> Produced {
+    Produced {
         account: Value::map([
             (
                 "tokens",
                 Value::Integer(i64::try_from(completed.predicted).unwrap_or(i64::MAX)),
             ),
             // The turn as sent, which the answer was given (§3.4): an account
-            // that said *?* here was withholding a count MCF held (A7).
+            // that said *?* here was withholding a count MCF held (A7). With
+            // a picture the engine's own count, since the picture's tokens
+            // are in it and only the engine made them.
             (
                 "prompt_tokens",
-                Value::Integer(i64::try_from(tokens.len()).unwrap_or(i64::MAX)),
+                Value::Integer(i64::try_from(prompt_tokens).unwrap_or(i64::MAX)),
             ),
             ("stopped", Value::text(completed.stop.written())),
             (
@@ -1374,17 +1517,15 @@ fn through_served(
             ),
             (
                 "before_the_answer",
-                before
-                    .as_ref()
-                    .map_or(Value::Null, crate::turn::BeforeTheAnswer::to_value),
+                before.map_or(Value::Null, crate::turn::BeforeTheAnswer::to_value),
             ),
             ("conditions", conditions),
         ]),
         said: Some(Said {
             text,
-            tokens: completed.produced,
+            tokens: completed.produced.clone(),
         }),
-    })
+    }
 }
 
 /// The account of a generation that did not happen: the failure, and the
@@ -1496,7 +1637,134 @@ struct Sent<'a> {
     /// The rendered frame's text after the person's words, where the engine
     /// framed the turn: what the model was left inside of.
     tail: Option<&'a str>,
+    /// The picture and the turn as text around it, where one was shown
+    /// (B-452). The identifiers above are then the words alone, counted
+    /// for the window and not sent: the turn goes as text.
+    shown: Option<Shown<'a>>,
 }
+
+/// A picture inside its turn, as the engine is given it.
+///
+/// The frame and the words apart, not the text they make: where the
+/// picture goes is a marker only the engine that answers knows, and that
+/// engine is started after this is built.
+#[derive(Clone, Copy)]
+struct Shown<'a> {
+    /// The turn the engine rendered around the words.
+    frame: &'a crate::turn::Frame,
+    /// The person's words.
+    prompt: &'a str,
+    /// The picture.
+    picture: &'a Picture,
+}
+
+impl Shown<'_> {
+    /// The text this turn goes as, with the picture at the marker only the
+    /// engine that answers knows.
+    fn placed_by(self, engine: &Served) -> Result<String, Failure> {
+        let marker = engine.media_marker.as_deref().ok_or_else(|| {
+            unavailable(
+                "the served engine has no marker to stand a picture at, so a picture cannot be \
+                 placed in its text",
+            )
+        })?;
+        Ok(shown_as(self.frame, marker, self.prompt))
+    }
+
+    /// The record's account: the picture, the projector that read it, and
+    /// how the turn was read — as text, with every marker in it a marker,
+    /// which is the engine's condition for a picture (F26, F161).
+    fn to_value(self, engine: &Served) -> Value {
+        Value::map([
+            ("picture", self.picture.to_value()),
+            (
+                "projector",
+                engine.projector.as_ref().map_or(Value::Null, |projector| {
+                    Value::text(projector.display().to_string())
+                }),
+            ),
+            (
+                "placed",
+                Value::text("before the words, at the engine's marker"),
+            ),
+            (
+                "read_as",
+                Value::text(
+                    "text: the frame and the words in one string, every marker in it read as \
+                     one, since the engine gives a picture no other door",
+                ),
+            ),
+        ])
+    }
+}
+
+/// A picture a caller sent, read from where they said it was.
+pub(crate) struct Picture {
+    /// Where it was.
+    path: std::path::PathBuf,
+    /// What it held.
+    bytes: Vec<u8>,
+}
+
+impl Picture {
+    /// Reads the file the caller named.
+    ///
+    /// # Errors
+    ///
+    /// A file that could not be read, or one that held nothing — an empty
+    /// picture is a mistake and not a picture.
+    pub(crate) fn read(path: &Path) -> Result<Self, Failure> {
+        let refused = |why: &'static str, detail: String| {
+            Failure::new(
+                mcf_core::failure::Category::ArtifactUnreadable,
+                mcf_core::failure::Attribution::User,
+                mcf_core::failure::Disposition::Refused,
+                mcf_core::failure::Subsystem::new("mcf-serve::generation"),
+                why,
+            )
+            .with_context("path", path.display().to_string())
+            .with_context("detail", detail)
+        };
+        let bytes = std::fs::read(path)
+            .map_err(|error| refused("the picture could not be read", error.to_string()))?;
+        if bytes.is_empty() {
+            return Err(refused(
+                "the picture is an empty file",
+                "0 bytes".to_owned(),
+            ));
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+            bytes,
+        })
+    }
+
+    /// The record's account of it: where it was and what it was, so a
+    /// reader can tell whether the picture they hold is the one shown.
+    fn to_value(&self) -> Value {
+        Value::map([
+            ("path", Value::text(self.path.display().to_string())),
+            (
+                "bytes",
+                Value::Integer(i64::try_from(self.bytes.len()).unwrap_or(i64::MAX)),
+            ),
+            (
+                "sha256",
+                Value::text(mcf_core::digest::sha256(&self.bytes).hex()),
+            ),
+        ])
+    }
+}
+
+/// How many tokens of window are kept for a picture beyond the words.
+///
+/// **A stated allowance, because the count is the engine's to make.** A
+/// picture becomes as many tokens as the projector's geometry makes of it,
+/// and the engine says how many only once it has read the turn. The window
+/// is sized before that, so the words are counted and this much is added
+/// for the picture; a picture that needs more is refused by the engine in
+/// its own words, and the account carries the window it ran in (§3.4).
+const PICTURE_ROOM: usize = 4096;
 
 /// One generation through the provisioned engine, as a supervised subprocess
 /// (B-032, B-033). Text arrives in chunks rather than tokens — the completion

@@ -27,6 +27,7 @@ fn without_a_daemon(
         seed,
         engine,
         &mcf_serve::turn::Turn::default(),
+        None,
     )
 }
 

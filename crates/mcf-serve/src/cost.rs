@@ -135,6 +135,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
         engine: Some("stand-in".to_owned()),
         pinned: false,
         turn: None,
+        image: None,
     }
     .to_line();
     let started = clock.now();

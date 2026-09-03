@@ -173,6 +173,14 @@ pub enum Request {
         /// engine's rendering of the template with these switches, and the
         /// account says so.
         turn: Option<crate::turn::Turn>,
+        /// A picture to show the model, as a path the daemon reads (B-452).
+        ///
+        /// A path and not the bytes: the client and the daemon share a
+        /// machine and a user, and the record names the file rather than
+        /// keeping a picture inside a line of it. A picture goes in a turn
+        /// the engine frames from the model's own template, since that is
+        /// the only turn with a place for one.
+        image: Option<String>,
     },
     /// What a hub publishes under a reference, and which of it will run here.
     ///
@@ -289,6 +297,7 @@ fn generate_line(
     whose: mcf_record::content::Whose,
     pinned: bool,
     turn: Option<&crate::turn::Turn>,
+    image: Option<&str>,
 ) -> Value {
     Value::map([
         ("ask", Value::text("generate")),
@@ -329,6 +338,10 @@ fn generate_line(
         (
             "turn",
             turn.map_or(Value::Null, crate::turn::Turn::to_value),
+        ),
+        (
+            "image",
+            image.map_or(Value::Null, |path| Value::text(path.to_owned())),
         ),
     ])
 }
@@ -409,6 +422,7 @@ impl Request {
                 whose,
                 pinned,
                 turn,
+                image,
             } => generate_line(
                 model,
                 prompt,
@@ -419,6 +433,7 @@ impl Request {
                 *whose,
                 *pinned,
                 turn.as_ref(),
+                image.as_deref(),
             ),
             Self::Offered { reference, from } => Value::map([
                 ("ask", Value::text("offered")),
@@ -719,6 +734,12 @@ impl Request {
                     // Absent means the prompt goes as it always did: a
                     // client that predates the field asked for no frame.
                     turn: value.get("turn").and_then(crate::turn::Turn::from_value),
+                    // Absent means nothing shown: a client that predates the
+                    // field asked with words alone.
+                    image: value
+                        .get("image")
+                        .and_then(Value::as_text)
+                        .map(str::to_owned),
                 })
             }
             Some(other) => Err(refused("a request MCF does not have", other)),

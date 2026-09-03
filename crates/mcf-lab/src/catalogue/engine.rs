@@ -255,6 +255,8 @@ fn server_never_listens(world: &World) -> Outcome {
             // and a scenario that asked for the whole trained context would be
             // waiting on an allocation rather than on the thing it observes.
             4096,
+            // No projector: a model that is nowhere has nothing beside it.
+            None,
         );
         match waited {
             Ok(_) => {

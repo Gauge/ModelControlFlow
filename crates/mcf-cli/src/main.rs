@@ -171,6 +171,8 @@ enum Request<'a> {
         /// frame it from the model's own template (D47). Boxed for the
         /// size of the request, not for any sharing.
         turn: Box<mcf_serve::turn::Turn>,
+        /// A picture to show the model, where the person named one (B-452).
+        image: Option<&'a str>,
     },
     /// Check a bundle against this machine.
     Verify {
@@ -1181,6 +1183,27 @@ fn log_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     Ok(Request::Log { kind, last, full })
 }
 
+/// Throws one of the template's switches as said, or names what it needed.
+fn turn_switch(
+    turn: &mut mcf_serve::turn::Turn,
+    switch: &str,
+    value: Option<&str>,
+) -> Option<&'static str> {
+    match (switch, value) {
+        ("--thinking", Some("on")) => turn.thinking = Some(true),
+        ("--thinking", Some("off")) => turn.thinking = Some(false),
+        ("--thinking", _) => return Some("--thinking <on|off>"),
+        ("--effort", Some(effort)) => turn.effort = Some(effort.to_owned()),
+        ("--effort", None) => {
+            return Some("--effort <word>, in the model's own vocabulary (low, medium, high…)");
+        }
+        ("--system", Some(system)) => turn.system = Some(system.to_owned()),
+        (_, None) => return Some("--system <text>"),
+        (_, Some(_)) => {}
+    }
+    None
+}
+
 /// Reads `run`'s own arguments.
 ///
 /// Total: an option it does not have is named back rather than ignored, and a
@@ -1193,6 +1216,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut seed = 0_u64;
     let mut engine = None;
     let mut turn = mcf_serve::turn::Turn::default();
+    let mut image = None;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -1205,35 +1229,24 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            "--image" => match rest.next() {
+                Some(file) => image = Some(*file),
+                None => {
+                    return Ok(Request::MissingArgument {
+                        command: "run",
+                        needs: "--image <file>",
+                    });
+                }
+            },
             // The template's own switches, each passed through as said.
-            "--thinking" => match rest.next() {
-                Some(&"on") => turn.thinking = Some(true),
-                Some(&"off") => turn.thinking = Some(false),
-                _ => {
+            "--thinking" | "--effort" | "--system" => {
+                if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
                     return Ok(Request::MissingArgument {
                         command: "run",
-                        needs: "--thinking <on|off>",
+                        needs,
                     });
                 }
-            },
-            "--effort" => match rest.next() {
-                Some(effort) => turn.effort = Some((*effort).to_owned()),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--effort <word>, in the model's own vocabulary (low, medium, high…)",
-                    });
-                }
-            },
-            "--system" => match rest.next() {
-                Some(system) => turn.system = Some((*system).to_owned()),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "run",
-                        needs: "--system <text>",
-                    });
-                }
-            },
+            }
             "--limit" => match rest.next().and_then(|value| value.parse().ok()) {
                 Some(tokens) => limit = Some(tokens),
                 None => {
@@ -1275,6 +1288,7 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
             seed,
             engine,
             turn: Box::new(turn),
+            image,
         }),
         (None, _) => Ok(Request::MissingArgument {
             command: "run",
@@ -1679,7 +1693,9 @@ const COMMANDS: &str = "\
     \x20         [--limit <n>] [--seed <n>]  behaviour answer, never a speed\n\
     \x20         [--thinking on|off]         (D31, B65). The switches go to\n\
     \x20         [--effort <word>]           the model's own template, which\n\
-    \x20         [--system <text>]           the engine renders\n\
+    \x20         [--system <text>]           the engine renders; a picture\n\
+    \x20         [--image <file>]            goes through the model's own\n\
+    \x20                                     projector, where it has one\n\
     \x20 mcf bench <model> --against <model> compare two models on an engine\n\
     \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
     \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
@@ -1867,7 +1883,16 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             seed,
             engine,
             turn,
-        } => run::run(model, prompt, *limit, *seed, *engine, turn),
+            image,
+        } => run::run(
+            model,
+            prompt,
+            *limit,
+            *seed,
+            *engine,
+            turn,
+            image.map(std::path::Path::new),
+        ),
         Request::Bench {
             left,
             right,

@@ -2176,6 +2176,7 @@ impl Daemon {
                 engine,
                 pinned,
                 turn,
+                image,
             } => {
                 // A generation is one request and many lines, so it has
                 // its own path: nothing about it fits in one `Answer`. Its
@@ -2194,6 +2195,7 @@ impl Daemon {
                     whose,
                     pinned,
                     turn.as_ref(),
+                    image.as_deref().map(Path::new),
                     waiting,
                     writer,
                 );
@@ -2280,6 +2282,7 @@ impl Daemon {
         whose: mcf_record::content::Whose,
         pinned: bool,
         turn: Option<&crate::turn::Turn>,
+        picture: Option<&Path>,
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
@@ -2314,6 +2317,7 @@ impl Daemon {
             system_memory_free(),
             pinned,
             turn,
+            picture,
             waiting,
             writer,
         );
@@ -2681,6 +2685,7 @@ impl Daemon {
                 // What the model says to a prompt, ended where the model
                 // ends it: a report on the prompt is not a timing.
                 false,
+                None,
                 None,
                 waiting,
                 &mut into,
@@ -3527,6 +3532,7 @@ impl Daemon {
                 picked,
                 system_memory_free(),
                 pinned,
+                None,
                 None,
                 waiting,
                 &mut writer,

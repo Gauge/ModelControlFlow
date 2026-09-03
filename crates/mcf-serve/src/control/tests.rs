@@ -169,6 +169,7 @@ fn the_new_requests_survive_the_wire() {
             whose: mcf_record::content::Whose::Fixture,
             pinned: true,
             turn: None,
+            image: None,
         },
         Request::Generate {
             model: "a-model.gguf".to_owned(),
@@ -180,6 +181,7 @@ fn the_new_requests_survive_the_wire() {
             whose: mcf_record::content::Whose::User,
             pinned: false,
             turn: None,
+            image: None,
         },
         Request::PromptReport {
             model: "a-model.gguf".to_owned(),

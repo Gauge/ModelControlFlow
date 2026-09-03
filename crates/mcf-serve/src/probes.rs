@@ -803,6 +803,7 @@ pub fn spoken(
         engine: engine.map(str::to_owned),
         pinned: false,
         turn: None,
+        image: None,
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())
@@ -1246,6 +1247,7 @@ pub fn accepts(
         engine: engine.map(str::to_owned),
         pinned: false,
         turn: None,
+        image: None,
     };
     if writeln!(connection, "{}", request.to_line())
         .and_then(|()| connection.flush())

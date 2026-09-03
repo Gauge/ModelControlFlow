@@ -1032,6 +1032,7 @@ fn generate(
         // account's own count is read back below to prove it was (B-396).
         pinned: true,
         turn: None,
+        image: None,
     };
     let clock = SystemClock;
     let began = clock.now();

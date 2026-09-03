@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 107 |
+| **Version** | 108 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 163 | [F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)](#163--f163--a-picture-through-the-daemons-engine-went-nowhere-the-marker-the-engine-stands-a-picture-at-is-made-up-fresh-for-each-process-and-a-turn-with-a-picture-in-it-goes-as-one-string-the-engine-parses-whole-b-452-b-449-f161-f26-a2-a4-a7-315) |
 | 162 | [F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)](#162-f162--the-daemon-answered-one-thing-at-a-time-so-a-trial-that-ran-for-hours-ran-for-nobody-status-timed-out-behind-it-the-client-gave-up-at-twenty-minutes-the-engine-went-on-to-the-end-and-every-failure-on-the-served-path-was-charged-to-the-stand-in-b-458-b-459-b-460-d48-a1-a2-a7-31) |
 | 161 | [F161 — The served path parsed a person's text for the model's markers, and the switches a model's template offers could not be reached without running it (B-450, B-451, B-449, D47, D46, F26, A4, A7, §3.15)](#161-f161--the-served-path-parsed-a-persons-text-for-the-models-markers-and-the-switches-a-models-template-offers-could-not-be-reached-without-running-it-b-450-b-451-b-449-d47-d46-f26-a4-a7-315) |
 | 153 | [F153 — The console's buttons could not be reached: Tab sits below the printable range, the arm that named it was dead, and the tests handed the screen a key the decoder never produced (B-404, B-401, A22, F130, F131)](#153-f153-the-consoles-buttons-could-not-be-reached-tab-sits-below-the-printable-range-the-arm-that-named-it-was-dead-and-the-tests-handed-the-screen-a-key-the-decoder-never-produced-b-404-b-401-a22-f130-f131) |
@@ -9585,6 +9586,72 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 163 · F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)
+
+Qwen3-VL-2B was asked through `mcf run --image` what was in a picture — a
+red circle on white, 442 bytes — with its projector found beside it and
+started with the daemon's engine, which reported *vision* among what it
+takes. One daemon under a 40 GiB memory cap, the processor only,
+llama-server @925e1179, greedy at one seed. The engine answered the first
+request with a status line, *Failed to tokenize prompt*, and the refusal
+MCF printed carried that line and nothing else; the reason was on the
+engine's error stream — *number of media markers in text (0) does not match
+number of bitmaps (1)* — where nobody was reading it (A4).
+
+**The marker is the engine's, and it makes a new one for every process.**
+The library the engine wraps names a default marker, and MCF wrote it into
+the text where the picture goes. The server does not use it: unless told
+one in its environment it invents a marker with a random suffix when it
+starts and builds its projector around that, so that no text a person typed
+can stand where a picture goes. A caller through the chat port never sees
+this — the server places its own marker — and a caller through the
+completion door, which is the only door that takes a picture beside a
+prompt, has to know it. MCF now makes one up itself, sixteen hex digits from
+the standard library's random keys, fresh for each engine it starts, tells
+the engine on its way up, and keeps it for the engine's life; a hosted port
+keeps the engine's own. The account says the picture was placed *at the
+engine's marker* and not which, since a marker printed is a marker guessed.
+The refusal that started this now carries the engine's last words as well
+as its status line, as a refusal from an engine that died already did.
+
+**A picture makes the turn one string.** F161 split the served path into
+two registers — the model's own words parsed for markers, the person's
+never — and the completion door with a picture takes text, not
+identifiers, and parses every marker in it. There is no third form: the
+turn goes as the frame the engine rendered, the marker, and the person's
+words in one string, every marker in it read as one, and the property F26
+rests on does not hold for a turn with a picture in it. That is written on
+the page rather than assumed away: the account's `shown.read_as` says so
+in words, `identifiers_sent` is null for the turn — nothing was sent as
+identifiers, so counting the words would be a number for a thing that did
+not happen (A7) — and `prompt_tokens` is what the engine says it read, the
+picture's tokens included. A picture forces an engine-framed turn, since
+the marker has to sit inside the model's own template where a picture
+goes; an engine that has no template to frame with — MCF's own — refuses
+the picture in those words before it misses the frame. The window is sized
+with four thousand tokens of room beyond the words, for what the projector
+makes of a picture, which the engine does not say ahead of reading it.
+
+**The model saw it.** *The picture shows a red circle*, eight tokens from
+forty the engine read, with nothing switched: the frame, the marker, the
+question. Without the picture the same model on the same engine read
+eighteen for a turn with an empty system turn and answered as itself. Each
+way a picture cannot reach a model is refused before the engine is asked,
+attributed to what is at fault: a model with no projector beside it is
+*coherent and impossible on this machine* and the artifact's — a
+publisher that shipped one puts it in the model's own repository — an
+empty or unreadable file is the person's, MCF's own engine is text only
+and says so, and a `run` with no daemon listening says a picture goes
+through the daemon and which command starts one. The timings are not
+measurements (D39).
+
+**What this does not settle.** The window's `ask` sends no picture and
+none of the turn's switches; the room left for a picture is a constant
+rather than what this projector makes of this picture at this size; a
+turn with a picture in it cannot be told from one where a person typed a
+marker, because on that path there is no telling them apart. Each is a
+row.
+
 ## 162 · F162 — The daemon answered one thing at a time, so a trial that ran for hours ran for nobody: status timed out behind it, the client gave up at twenty minutes, the engine went on to the end; and every failure on the served path was charged to the stand-in (B-458, B-459, B-460, D48, A1, A2, A7, §3.1)
 The usable-context probe asked Qwen3.8-27B, on the processor, for a turn of
 262,143 identifiers. The probe's connection had a twenty-minute read bound
@@ -9748,12 +9815,10 @@ French. gpt-oss's thought is not a marker pair — `<|channel|>analysis
 <|message|>` — so `before_the_answer` says nothing for it rather than
 something wrong; counting that form is B-457.
 
-**What this does not settle.** The daemon's own engine for a model does not
-start its projector, so a picture reaches the model through `mcf host` and
-not through `mcf run`; the tools probe judges JSON and would misread the
-XML form this template writes; the served path still answers whole rather
-than token by token; a thought written as channels is not counted. Each is
-a row.
+**What this does not settle.** The tools probe judges JSON and would
+misread the XML form this template writes; the served path still answers
+whole rather than token by token; a thought written as channels is not
+counted. Each is a row. A picture through `mcf run` is F163.
 
 ## 159 · F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)
 
@@ -11356,6 +11421,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 108 — a picture at the engine's marker
+
+F163 added: the served engine invents a media marker per process unless told
+one, so MCF tells it one it made up; a turn with a picture goes as one
+string and the account says so. B-452.
 
 ### Version 107 — the hours are said first
 

@@ -429,6 +429,19 @@ pub struct Served {
     /// needs a larger one needs a different server: this one refuses a turn
     /// longer than its window, and a refusal is not a reading (F152).
     pub window: u64,
+    /// The projector it was started with, where the model has one beside
+    /// it: what lets a picture reach the model. `None` is text only, and a
+    /// picture sent to it is refused before the engine is asked (B-452).
+    pub projector: Option<PathBuf>,
+    /// Where a picture goes in the text this engine reads.
+    ///
+    /// **The engine's marker, and this engine's alone.** The pinned server
+    /// makes one up at random for each process unless it is told one, so
+    /// that no text a person typed can stand where a picture goes; MCF has
+    /// to know the marker to place a picture, so it tells the engine one it
+    /// made up itself, fresh for each engine it starts, and keeps it here.
+    /// `None` for an engine hosted on a port, which places its own.
+    pub media_marker: Option<String>,
 }
 
 impl Served {
@@ -445,8 +458,11 @@ impl Served {
         runtime: &Path,
         gpu_layers: u32,
         context: u64,
+        projector: Option<&Path>,
     ) -> Result<Self, Failure> {
-        Self::start_within(llama, model, runtime, ATTEMPTS, gpu_layers, context)
+        Self::start_within(
+            llama, model, runtime, ATTEMPTS, gpu_layers, context, projector,
+        )
     }
 
     /// Starts a server under settings somebody chose, listening on a port.
@@ -506,6 +522,8 @@ impl Served {
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
             window: settings.context,
+            projector: settings.projector.as_ref().map(PathBuf::from),
+            media_marker: None,
         };
         served
             .wait_until_answering(settings.port, ATTEMPTS)
@@ -555,6 +573,17 @@ impl Served {
     /// # Errors
     ///
     /// As [`Served::start`].
+    ///
+    /// `projector` is the model's own, found beside it by [`crate::projector`]
+    /// where the caller looked: the engine loads it with the model, so that
+    /// a picture in a request reaches the model instead of being refused as
+    /// something a text-only engine cannot take. It costs memory the model's
+    /// own file does not declare, which the peak the account carries
+    /// measures rather than assumes (B-452).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one engine's start, each condition of which the account names"
+    )]
     pub fn start_within(
         llama: &ProvisionedLlama,
         model: &Path,
@@ -562,6 +591,7 @@ impl Served {
         attempts: usize,
         gpu_layers: u32,
         context: u64,
+        projector: Option<&Path>,
     ) -> Result<Self, Failure> {
         let binary = llama.prefix.join("build").join("bin").join("llama-server");
         if !binary.exists() {
@@ -614,7 +644,17 @@ impl Served {
             .arg("-ngl")
             .arg(gpu_layers.to_string())
             .arg("--no-webui")
-            .arg("--no-warmup")
+            .arg("--no-warmup");
+        // **The projector goes in with the model, or a picture has nowhere
+        // to go** (B-452). `mcf host` started it and the daemon's own engine
+        // did not, so the same model took a picture on the port and reported
+        // *vision: false* on the socket — two answers to one question.
+        if let Some(projector) = projector {
+            command.arg("--mmproj").arg(projector);
+        }
+        let media_marker = fresh_marker();
+        command
+            .env("LLAMA_MEDIA_MARKER", &media_marker)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
@@ -638,6 +678,8 @@ impl Served {
             model: model.to_path_buf(),
             commit: llama.commit.clone(),
             window: context,
+            projector: projector.map(Path::to_path_buf),
+            media_marker: Some(media_marker),
         };
         served
             .wait_until_listening(attempts)
@@ -726,14 +768,19 @@ impl Served {
     /// `engine.exit.midstream` if the connection ends before one arrives.
     pub fn complete(
         &self,
-        tokens: &[usize],
+        prompt: Prompt<'_>,
         limit: usize,
         draw: crate::generation::Draw,
         pinned: bool,
         waiting: Waiting<'_>,
     ) -> Result<Completed, Failure> {
-        let body = completion_body(tokens, limit, draw, pinned).to_line();
+        let body = completion_body(prompt, limit, draw, pinned).to_line();
+        // A refusal comes back with the server's one line for it; the reason
+        // is on the engine's error stream, where it wrote one, and goes on
+        // the refusal too, so that a person reads why and not only that
+        // (A4, B-452).
         interpret(&self.request_while("POST", "/completion", Some(&body), waiting)?)
+            .map_err(|failure| self.with_last_words(failure))
     }
 
     /// Where the model ranked the token that actually came next, and what it
@@ -1450,20 +1497,94 @@ impl Drop for Served {
 }
 
 /// The request one generation sends, every condition of it stated.
+/// A marker no text a person typed can contain, for one engine's life.
+///
+/// The engine stands a picture where it finds the marker and wraps what the
+/// projector makes of it in the markers the model was trained to see around
+/// one; a marker anybody could guess would let a prompt stand a picture's
+/// place where no picture is (B-452). Sixteen hex digits from the standard
+/// library's own random keys, which are seeded from the operating system.
+fn fresh_marker() -> String {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u32(std::process::id());
+    format!("<__media_{:016x}__>", hasher.finish())
+}
+
+/// What a completion is asked from.
+#[derive(Debug, Clone, Copy)]
+pub enum Prompt<'a> {
+    /// A turn of token identifiers, sent as themselves.
+    Identifiers(&'a [usize]),
+    /// A turn of text with a picture in it, at the engine's
+    /// [`Served::media_marker`].
+    ///
+    /// **Text, because the engine gives a picture no other door.** A prompt
+    /// carrying a picture is a string the engine reads with every marker in
+    /// it taken as a marker — the template's and the person's alike. That
+    /// is the engine's condition and not a choice of MCF's, and the account
+    /// says the turn was read that way (F26, F161).
+    Shown {
+        /// The rendered turn, with the marker where the picture goes.
+        text: &'a str,
+        /// The picture's bytes, as the file held them.
+        picture: &'a [u8],
+    },
+}
+
+/// Bytes as the engine takes a picture: the sixty-four-character alphabet
+/// with `=` padding, and no line breaks.
+#[must_use]
+pub fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let letter = |six: u32| {
+        ALPHABET
+            .get(usize::try_from(six & 0x3f).unwrap_or(0))
+            .copied()
+            .unwrap_or(b'A') as char
+    };
+    let mut out = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
+    for chunk in bytes.chunks(3) {
+        let mut held = [0_u8; 3];
+        for (slot, byte) in held.iter_mut().zip(chunk) {
+            *slot = *byte;
+        }
+        let packed = (u32::from(held[0]) << 16) | (u32::from(held[1]) << 8) | u32::from(held[2]);
+        out.push(letter(packed >> 18));
+        out.push(letter(packed >> 12));
+        out.push(if chunk.len() > 1 {
+            letter(packed >> 6)
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 { letter(packed) } else { '=' });
+    }
+    out
+}
+
 fn completion_body(
-    tokens: &[usize],
+    prompt: Prompt<'_>,
     limit: usize,
     draw: crate::generation::Draw,
     pinned: bool,
 ) -> Value {
-    let identifiers = Value::List(
-        tokens
-            .iter()
-            .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
-            .collect(),
-    );
+    let prompt = match prompt {
+        Prompt::Identifiers(tokens) => Value::List(
+            tokens
+                .iter()
+                .map(|token| Value::Integer(i64::try_from(*token).unwrap_or(i64::MAX)))
+                .collect(),
+        ),
+        Prompt::Shown { text, picture } => Value::map([
+            ("prompt_string", Value::text(text.to_owned())),
+            (
+                "multimodal_data",
+                Value::List(vec![Value::text(base64(picture))]),
+            ),
+        ]),
+    };
     Value::map([
-        ("prompt", identifiers),
+        ("prompt", prompt),
         (
             "n_predict",
             Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
@@ -1522,8 +1643,55 @@ mod request_tests {
 
     use mcf_core::configuration::Thousandths;
 
-    use super::completion_body;
+    use super::{Prompt, base64, completion_body};
     use crate::generation::{Draw, Stated, Truncation, Whose};
+
+    /// Two engines never share a marker, and a marker is a thing a prompt
+    /// would have to guess.
+    #[test]
+    fn a_marker_is_fresh_for_each_engine() {
+        let one = super::fresh_marker();
+        let two = super::fresh_marker();
+        assert_ne!(one, two);
+        assert!(
+            one.starts_with("<__media_") && one.ends_with("__>"),
+            "{one}"
+        );
+        assert_eq!(one.len(), "<__media_".len() + 16 + "__>".len());
+    }
+
+    /// The alphabet and the padding, against the reference values.
+    #[test]
+    fn bytes_are_written_in_the_engines_alphabet() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64(&[0xff, 0xef, 0xbf]), "/++/");
+    }
+
+    /// A picture goes as text with the marker and the bytes beside it, in
+    /// the shape the engine reads (B-452).
+    #[test]
+    fn a_picture_goes_as_text_with_its_bytes_beside_it() {
+        let body = completion_body(
+            Prompt::Shown {
+                text: "look: <__media__>what is it",
+                picture: b"foo",
+            },
+            8,
+            Draw::greedy(0),
+            false,
+        )
+        .to_line();
+        assert!(
+            body.contains(
+                r#""prompt":{"multimodal_data":["Zm9v"],"prompt_string":"look: <__media__>what is it"}"#
+            ),
+            "{body}"
+        );
+    }
 
     /// **Nothing is left for the server to fill in** (B-440, F157). A draw
     /// with nothing declared sends the three cuts as *off* — nought, one and
@@ -1536,7 +1704,7 @@ mod request_tests {
             temperature: Thousandths(700),
             truncation: Truncation::OFF,
         };
-        let body = completion_body(&[1, 2], 8, draw, false).to_line();
+        let body = completion_body(Prompt::Identifiers(&[1, 2]), 8, draw, false).to_line();
         assert!(body.contains(r#""top_k":0"#), "{body}");
         assert!(body.contains(r#""top_p":1.000"#), "{body}");
         assert!(body.contains(r#""min_p":0.000"#), "{body}");
@@ -1557,7 +1725,7 @@ mod request_tests {
                 whose: Whose::File,
             },
         };
-        let body = completion_body(&[1], 8, draw, false).to_line();
+        let body = completion_body(Prompt::Identifiers(&[1]), 8, draw, false).to_line();
         assert!(body.contains(r#""top_k":20"#), "{body}");
         assert!(body.contains(r#""top_p":0.950"#), "{body}");
         assert!(body.contains(r#""min_p":0.000"#), "{body}");
@@ -1567,7 +1735,7 @@ mod request_tests {
     /// whatever the temperature, so nothing is filled in either way.
     #[test]
     fn a_greedy_draw_states_the_cut_as_well() {
-        let body = completion_body(&[1], 8, Draw::greedy(0), false).to_line();
+        let body = completion_body(Prompt::Identifiers(&[1]), 8, Draw::greedy(0), false).to_line();
         assert!(body.contains(r#""temperature":0,"#), "{body}");
         assert!(body.contains(r#""top_k":0"#), "{body}");
     }
