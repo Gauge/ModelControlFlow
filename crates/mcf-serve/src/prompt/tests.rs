@@ -261,6 +261,27 @@ fn how_much_moved_is_counted_in_words() {
     assert_eq!(moved_by("hello world", "hallo world"), 500_000);
 }
 
+/// The punctuation at a word's edges is not the word.
+///
+/// F170: five forms of one prompt answered `Nile` against `Nile.` and every
+/// one moved 100%, a full stop read as a different river.
+#[test]
+fn a_full_stop_is_not_a_different_river() {
+    assert_eq!(moved_by("Nile.", "Nile"), 0);
+    assert_eq!(moved_by("\"Yes,\" she said.", "Yes she said"), 0);
+    // A word that is only punctuation is not a word: the same three words.
+    assert_eq!(moved_by("one two ... three", "one two three"), 0);
+    // What is inside a word stays.
+    assert_eq!(moved_by("L'Indus.", "LIndus"), 1_000_000);
+    assert_eq!(moved_by("x.y", "xy"), 1_000_000);
+    // An operator is not sentence punctuation: a word of three changed.
+    assert_eq!(moved_by("a + b", "a - b"), 333_333);
+    // Nothing but punctuation is nothing said.
+    assert_eq!(moved_by("...", ""), 0);
+    // A different river still moves the whole of a one-word answer.
+    assert_eq!(moved_by("Nile.", "L'Indus."), 1_000_000);
+}
+
 /// A sentence that steered the answer is told from one that only perturbed it.
 #[test]
 fn a_sentence_that_steered_the_answer_is_told_from_one_that_perturbed_it() {

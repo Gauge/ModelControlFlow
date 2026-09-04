@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 115 |
+| **Version** | 116 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -9637,7 +9637,14 @@ says three of four pieces were held, which is the corrective a reader has
 to apply by hand. The figure is not wrong under its own definition and it
 is the definition the impact table has always used, so the two tables stay
 comparable; but a writer glancing at five bars at full height would read
-five different rivers, and there was one. B-464 is that row.
+five different rivers, and there was one. B-464 is that row, and under it
+the punctuation at a word's edges is set aside before the words are
+compared — `Nile` and `Nile.` are one word, `a + b` and `a - b` are not,
+and a word that is only punctuation is not a word. The same prompt on the
+same model then reads one line, bullets, headings and tags at 0.0%, the
+numbered list alone at 100.0%, and the impact table's two paragraphs where
+they were: one river, one bar. Both tables and the seeds' spread take the
+same measure, and the impact head says what it is.
 
 **What this does not settle.** Whether a larger model reads a list as this
 one does; six generations on a 27B are six minutes, and nobody has run it
@@ -11816,6 +11823,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 116 — one river, one bar
+
+F170 extended: the word measure sets the punctuation at a word's edges
+aside, so a dropped full stop is not a moved answer; the forms re-read on
+the same model. B-464.
 
 ### Version 115 — the same parts, dressed six ways
 

@@ -1351,10 +1351,17 @@ pub fn without(parts: &[Part], at: usize) -> String {
 /// compared is what the model said, and a difference of one letter inside a
 /// word is not a different word. Nought means the two are the same run of
 /// words; a million means nothing survived.
+///
+/// The punctuation at a word's edges is set aside before the words are
+/// compared (B-464): `Nile` and `Nile.` are one word, and on a one-word
+/// answer the alternative was a full stop read as the whole answer moving.
+/// A word that is nothing but punctuation is not a word. What is inside a
+/// word stays — `L'Indus`, `don't`, `x.y` — and so does anything that is
+/// not sentence punctuation, so `a + b` against `a - b` is a word of three.
 #[must_use]
 pub fn moved_by(one: &str, other: &str) -> u64 {
-    let a: Vec<&str> = one.split_whitespace().collect();
-    let b: Vec<&str> = other.split_whitespace().collect();
+    let a = words_of(one);
+    let b = words_of(other);
     let longest = a.len().max(b.len());
     if longest == 0 {
         return 0;
@@ -1385,6 +1392,46 @@ pub fn moved_by(one: &str, other: &str) -> u64 {
         .unwrap_or(0)
         .saturating_mul(1_000_000)
         .wrapping_div(u64::try_from(longest).unwrap_or(1).max(1))
+}
+
+/// The words of an answer with the sentence punctuation at their edges set
+/// aside, and no word that was only punctuation.
+fn words_of(text: &str) -> Vec<&str> {
+    text.split_whitespace()
+        .map(|word| word.trim_matches(is_sentence_punctuation))
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// The marks a sentence is punctuated with, and the quotes and brackets that
+/// close around a word: what a model puts at the edge of a word without
+/// changing which word it is.
+fn is_sentence_punctuation(c: char) -> bool {
+    matches!(
+        c,
+        '.' | ','
+            | ';'
+            | ':'
+            | '!'
+            | '?'
+            | '"'
+            | '\''
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '«'
+            | '»'
+            | '“'
+            | '”'
+            | '‘'
+            | '’'
+            | '…'
+            | '*'
+            | '`'
+    )
 }
 
 /// What the model said to one question: the text, and the identifiers it

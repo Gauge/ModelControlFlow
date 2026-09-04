@@ -2832,6 +2832,7 @@ fn removed_table(
         "impact",
         &[
             format!("answer moved without each {unit}"),
+            "moved = words changed, punctuation aside".to_owned(),
             "seed held".to_owned(),
             "ordering, not relevance".to_owned(),
             "own = pieces the model would have written".to_owned(),

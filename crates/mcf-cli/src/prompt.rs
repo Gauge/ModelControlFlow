@@ -544,6 +544,7 @@ fn removed(body: &Value) -> Vec<String> {
         "IMPACT",
         &[
             format!("answer moved without each {unit}"),
+            "moved = words changed, punctuation aside".to_owned(),
             "seed held".to_owned(),
             "an ordering, not relevance".to_owned(),
             "own = pieces the model would have written".to_owned(),
