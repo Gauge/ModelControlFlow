@@ -4,7 +4,7 @@
 //! answer and the sentence a person reads — which is where this surface can
 //! actually be wrong about a measurement, and the one place it must not be.
 
-use super::{ACTIONS, Desk, Model, Page, component_from, model_from};
+use super::{ACTIONS, Caret, Desk, Model, Page, component_from, model_from};
 use mcf_record::json::Value;
 
 /// Every action reaches a control-plane request or asks MCF nothing (A22).
@@ -1310,4 +1310,51 @@ fn an_anatomy_answer_is_read_as_the_daemon_wrote_it() {
         Some("</s>")
     );
     assert!(said.vocabulary.template.is_err());
+}
+
+/// The window asks the same turn `mcf run` asks: what is typed reaches the
+/// request, and what is left alone is left alone (B-462, D43).
+#[test]
+fn the_window_asks_the_turn_it_was_given() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
+    assert_eq!(desk.asked_turn(), None, "nothing typed asks for nothing");
+    desk.page = Page::Hosting;
+    desk.caret = Caret::System;
+    desk.typing().push_str("Be terse.");
+    desk.caret = Caret::Effort;
+    desk.typing().push_str("low");
+    desk.cycle_thinking();
+    let asked = desk.asked_turn().expect("a turn was asked for");
+    assert_eq!(asked.system.as_deref(), Some("Be terse."));
+    assert_eq!(asked.effort.as_deref(), Some("low"));
+    assert_eq!(asked.thinking, Some(true));
+    // And the field that is not the ask screen's own is untouched by it.
+    assert!(desk.typed.is_empty(), "the question is still empty");
+}
+
+/// Thinking has three positions and unsaid is one of them (D43).
+#[test]
+fn thinking_rounds_through_unsaid() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
+    assert_eq!(desk.thinking, None);
+    desk.cycle_thinking();
+    assert_eq!(desk.thinking, Some(true));
+    desk.cycle_thinking();
+    assert_eq!(desk.thinking, Some(false));
+    desk.cycle_thinking();
+    assert_eq!(desk.thinking, None, "back to what the template does itself");
+}
+
+/// A caret left on the ask screen's own field does not swallow what is
+/// typed into another screen's.
+#[test]
+fn a_stale_caret_does_not_take_another_screens_typing() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/tmp/mcf-not-here.sock"));
+    desk.page = Page::Hosting;
+    desk.caret = Caret::Picture;
+    desk.typing().push_str("/tmp/a.png");
+    desk.page = Page::Prompt;
+    desk.typing().push_str("a document");
+    assert_eq!(desk.picture, "/tmp/a.png");
+    assert_eq!(desk.typed, "a document");
 }

@@ -2099,3 +2099,39 @@ fn a_long_prompt_is_drawn_as_lines_and_the_tail_is_what_shows() {
         "forty lines put no more on the glass than one: {many} against {one}"
     );
 }
+
+/// The ask screen carries the turn a question will be sent under, and says
+/// what a picture was when one was shown (A22, B-462).
+///
+/// Two screens: one with nothing switched, one with a system turn, an
+/// effort, thinking and a picture. The second says more, because every one
+/// of those is a condition of the answer and §3.15 will not have a
+/// condition that is invisible.
+#[test]
+fn the_ask_screen_carries_the_turn_and_the_picture() {
+    let mut plain = four_models();
+    plain.chosen = Some(0);
+    plain.page = Page::Hosting;
+    let mut asked = four_models();
+    asked.chosen = Some(0);
+    asked.page = Page::Hosting;
+    asked.system = "You are careful.".to_owned();
+    asked.effort = "low".to_owned();
+    asked.thinking = Some(false);
+    asked.picture = "/home/a/pictures/circle.png".to_owned();
+
+    let bare = drawn(&plain, DAY, "ask-plain");
+    let full = drawn(&asked, DAY, "ask-asked");
+    assert!(
+        bare.inked(DAY.ground) > 0,
+        "the ask screen drew nothing at all"
+    );
+    // **A condition that changes the answer changes the screen.** The two
+    // differ in nothing but the turn and the picture, so a screen that drew
+    // them the same would be sending a condition it never showed (§3.15,
+    // A22, B-462).
+    assert!(
+        full.pixels != bare.pixels,
+        "the turn a question goes under is not on the screen that asks it"
+    );
+}

@@ -2021,6 +2021,92 @@ fn published(paint: &mut Painter, mouse: &Mouse, area: Box, found: &Value) -> Op
     act
 }
 
+/// The turn a question is asked inside, and the picture shown with it: a
+/// system turn, thinking, an effort, a file (B-462).
+///
+/// Every one of them is *what was said*, and empty is nothing said rather
+/// than a default said out loud (D43, §3.15). Returns what was pressed and
+/// where the row ends.
+fn the_turn(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> (Option<Act>, f32) {
+    let ink = paint.ink;
+    let mut act = None;
+    let mut y = area.y;
+    let label_at = area.x;
+    let field_at = area.x + 74.0;
+    let width = (area.w - 74.0).max(120.0);
+
+    ui::label(paint, label_at, y + 9.0, "system");
+    let system = Box::new(field_at, y, width, 28.0);
+    if ui::field(
+        paint,
+        mouse,
+        system,
+        &desk.system,
+        "none — the template's own",
+        desk.caret == Caret::System,
+    ) {
+        act = Some(Act::Focus(Caret::System));
+    }
+    y += 36.0;
+
+    ui::label(paint, label_at, y + 9.0, "picture");
+    let picture = Box::new(field_at, y, width, 28.0);
+    if ui::field(
+        paint,
+        mouse,
+        picture,
+        &desk.picture,
+        "none — a path to a file the model can be shown",
+        desk.caret == Caret::Picture,
+    ) {
+        act = Some(Act::Focus(Caret::Picture));
+    }
+    y += 36.0;
+
+    ui::label(paint, label_at, y + 9.0, "thinking");
+    let said = match desk.thinking {
+        None => "unsaid",
+        Some(true) => "on",
+        Some(false) => "off",
+    };
+    // Outlined rather than text alone: a control a person cannot see is a
+    // control they do not have (§3.15).
+    let (pressed, switch) = ui::fitted(paint, mouse, (field_at, y - 2.0), said, Kind::Ordinary);
+    if pressed {
+        act = Some(Act::CycleThinking);
+    }
+    let effort_at = switch.right() + 16.0;
+    ui::label(paint, effort_at, y + 9.0, "effort");
+    let effort = Box::new(
+        effort_at + 52.0,
+        y,
+        (area.right() - effort_at - 52.0).max(90.0),
+        28.0,
+    );
+    if ui::field(
+        paint,
+        mouse,
+        effort,
+        &desk.effort,
+        "none — its own word",
+        desk.caret == Caret::Effort,
+    ) {
+        act = Some(Act::Focus(Caret::Effort));
+    }
+    y += 34.0;
+    // A switch a template does not read is refused by the daemon in its own
+    // words, and that refusal is what the panel below shows (A2, A4).
+    paint.say_at(
+        area.x,
+        y,
+        "unsaid is not off: what is left alone is the template's own",
+        Weight::Regular,
+        size::SMALL,
+        ink.faint,
+    );
+    (act, y + 18.0)
+}
+
 /// What a download is doing, in one line.
 fn downloading_line(job: &crate::job::Job) -> String {
     let Some(latest) = job.latest() else {
@@ -2077,7 +2163,16 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
 
     let mut act = None;
     let field = Box::new(area.x, y, (area.w - 120.0).min(640.0), 32.0);
-    let _clicked = ui::field(paint, mouse, field, &desk.typed, "Ask it something", true);
+    if ui::field(
+        paint,
+        mouse,
+        field,
+        &desk.typed,
+        "Ask it something",
+        desk.caret == Caret::Document,
+    ) {
+        act = Some(Act::Focus(Caret::Document));
+    }
     let (asked, _) = ui::fitted(
         paint,
         mouse,
@@ -2091,7 +2186,13 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
     {
         act = Some(Act::Ask { at });
     }
-    y += 50.0;
+    y += 42.0;
+    // What the question is asked inside, and what goes with it: the same
+    // switches `mcf run` takes, so what a person can ask at the prompt they
+    // can ask here (A22, B-462).
+    let (turn_act, after) = the_turn(paint, desk, mouse, Box::new(area.x, y, field.w, 0.0));
+    act = act.or(turn_act);
+    y = after + 10.0;
 
     if let Doing::Answering(job) = &desk.doing
         && let Some(why) = &job.refused
@@ -2119,6 +2220,23 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
         }
         return act;
     }
+    what_it_said(paint, desk, Box::new(area.x, y, area.w, area.bottom() - y));
+    act
+}
+
+/// What the model said, under the conditions it said it.
+///
+/// The conditions go above the words rather than under them, because a
+/// reader meeting the words first has read them under conditions they were
+/// not told (§3.15, A6, B-452).
+fn what_it_said(paint: &mut Painter, desk: &Desk, area: Box) {
+    let ink = paint.ink;
+    let mut y = area.y;
+    for said in what_it_ran_under(desk) {
+        let shown = paint.elide(&said, Weight::Regular, size::SMALL, area.w.min(640.0));
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::SMALL, ink.quiet);
+        y += 16.0;
+    }
     let panel = Box::new(area.x, y, area.w.min(640.0), (area.bottom() - y).max(60.0));
     ui::card(paint, panel, false);
     let lines = paint.wrap(&desk.said, Weight::Regular, size::BODY, panel.w - 32.0);
@@ -2137,7 +2255,56 @@ fn hosting(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Option
             break;
         }
     }
-    act
+}
+
+/// The conditions of the answer on the screen, from the account the daemon
+/// ended the stream with: how the turn was addressed, and the picture where
+/// one was shown (B-462, B-452).
+fn what_it_ran_under(desk: &Desk) -> Vec<String> {
+    let Doing::Answering(job) = &desk.doing else {
+        return Vec::new();
+    };
+    // The line the daemon ends a generation with carries the account; the
+    // ones before it carry the tokens.
+    let Some(account) = job
+        .answers
+        .iter()
+        .rev()
+        .find_map(|body| match body.get("done") {
+            Some(held @ Value::Map(_)) => Some(held),
+            _ => None,
+        })
+    else {
+        return Vec::new();
+    };
+    let under = |key: &str| {
+        account
+            .get("conditions")
+            .and_then(|conditions| conditions.get(key))
+    };
+    let mut said = Vec::new();
+    if let Some(addressed) = under("addressed_as").and_then(Value::as_text) {
+        said.push(format!("addressed {addressed}"));
+    }
+    if let Some(shown) = under("shown").filter(|shown| !matches!(shown, Value::Null)) {
+        let path = shown
+            .get("picture")
+            .and_then(|picture| picture.get("path"))
+            .and_then(Value::as_text)
+            .unwrap_or("a picture");
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let bytes = shown
+            .get("picture")
+            .and_then(|picture| picture.get("bytes"))
+            .and_then(Value::as_integer)
+            .unwrap_or(0);
+        let placed = shown
+            .get("placed")
+            .and_then(Value::as_text)
+            .unwrap_or("in the turn");
+        said.push(format!("shown {name} ({bytes} bytes), placed {placed}"));
+    }
+    said
 }
 
 /// How MCF is set up, which is nothing yet — and the console says so in these

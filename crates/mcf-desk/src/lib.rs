@@ -174,6 +174,12 @@ pub enum Caret {
     Document,
     /// The temperature the settledness seeds are drawn at (B-431).
     Temperature,
+    /// The system turn a question is asked inside (B-462).
+    System,
+    /// How hard to reason, in the template's own word (B-462).
+    Effort,
+    /// The picture to show the model (B-462, B-452).
+    Picture,
 }
 
 /// Which screen is showing.
@@ -791,6 +797,9 @@ pub enum Shown {
 pub enum Act {
     /// Show another screen.
     Go(Page),
+    /// Thinking on, off, or unsaid: the next position of the switch a
+    /// question is asked under (B-462).
+    CycleThinking,
     /// Ask a hub what it publishes under what has been typed.
     LookUp,
     /// Fetch one published file.
@@ -965,6 +974,18 @@ pub struct Desk {
     /// The temperature to draw the settledness seeds at, as typed; empty
     /// asks the question nothing, and the page says so (B-431).
     pub temperature: String,
+    /// The system turn a question is asked inside, as typed; empty asks for
+    /// none, which is not the same as an empty one (B-462, D43).
+    pub system: String,
+    /// How hard to reason, in the model's template's own vocabulary, as
+    /// typed; empty asks for nothing (B-462).
+    pub effort: String,
+    /// Thinking on, off, or unsaid — three states, and unsaid is what the
+    /// template does of its own accord (B-462, D43).
+    pub thinking: Option<bool>,
+    /// The picture to show the model, as a path typed; empty shows none
+    /// (B-462, B-452).
+    pub picture: String,
     /// Which field on the prompt screen typing goes into.
     pub caret: Caret,
     /// How many parts to remove at most, where the person chose; `None` is
@@ -1058,6 +1079,10 @@ impl Desk {
             typed: String::new(),
             temperature: String::new(),
             caret: Caret::Document,
+            system: String::new(),
+            effort: String::new(),
+            thinking: None,
+            picture: String::new(),
             most: None,
             by: None,
             extras: mcf_serve::prompt::Extras::NONE,
@@ -1156,6 +1181,12 @@ impl Desk {
     pub fn typing(&mut self) -> &mut String {
         match (self.page, self.caret) {
             (Page::Prompt, Caret::Temperature) => &mut self.temperature,
+            // The ask screen's own fields, and only there: a caret left
+            // pointing at one of them by a screen that has them must not
+            // swallow what is typed into a screen that does not.
+            (Page::Hosting, Caret::System) => &mut self.system,
+            (Page::Hosting, Caret::Effort) => &mut self.effort,
+            (Page::Hosting, Caret::Picture) => &mut self.picture,
             _ => &mut self.typed,
         }
     }
@@ -1165,6 +1196,9 @@ impl Desk {
     pub fn being_typed(&self) -> &str {
         match (self.page, self.caret) {
             (Page::Prompt, Caret::Temperature) => &self.temperature,
+            (Page::Hosting, Caret::System) => &self.system,
+            (Page::Hosting, Caret::Effort) => &self.effort,
+            (Page::Hosting, Caret::Picture) => &self.picture,
             _ => &self.typed,
         }
     }
@@ -1449,6 +1483,7 @@ impl Desk {
             }
             Act::ReportPrompt => self.report_prompt(),
             Act::Focus(caret) => self.caret = caret,
+            Act::CycleThinking => self.cycle_thinking(),
             Act::MostParts(most) => self.most = Some(most.max(1)),
             Act::TakeApartBy(by) => self.by = by,
             Act::Extra(extra, asked) => self.extras = self.extras.with(extra, asked),
@@ -1828,6 +1863,34 @@ impl Desk {
         ));
     }
 
+    /// What the window asks of the model's own template, where anything was
+    /// asked: `None` is nothing switched, which is not the same as every
+    /// switch at its default position said out loud (D43, §3.15).
+    #[must_use]
+    pub fn asked_turn(&self) -> Option<mcf_serve::turn::Turn> {
+        let word = |held: &str| {
+            Some(held.trim())
+                .filter(|typed| !typed.is_empty())
+                .map(str::to_owned)
+        };
+        let turn = mcf_serve::turn::Turn {
+            thinking: self.thinking,
+            effort: word(&self.effort),
+            system: word(&self.system),
+        };
+        turn.asks_anything().then_some(turn)
+    }
+
+    /// Thinking on, off, or unsaid, in that round: three positions, because
+    /// *unsaid* is a position and not the absence of one (D43).
+    pub fn cycle_thinking(&mut self) {
+        self.thinking = match self.thinking {
+            None => Some(true),
+            Some(true) => Some(false),
+            Some(false) => None,
+        };
+    }
+
     /// Asks the chosen model what has been typed.
     pub fn ask(&mut self, at: usize) {
         let Some(held) = self.models.get(at) else {
@@ -1838,6 +1901,10 @@ impl Desk {
             return;
         }
         self.said.clear();
+        let turn = self.asked_turn();
+        let picture = Some(self.picture.trim())
+            .filter(|typed| !typed.is_empty())
+            .map(str::to_owned);
         self.doing = Doing::Answering(job::Job::start(
             self.socket.clone(),
             Request::Generate {
@@ -1853,10 +1920,15 @@ impl Desk {
                 // probe.
                 whose: mcf_record::content::Whose::User,
                 pinned: false,
-                turn: None,
-                // The window has no way to hand a picture over yet; the
-                // socket takes one (B-452), and the window's turn is B-462.
-                image: None,
+                // The template's own switches, as `mcf run` sends them: a
+                // question asked inside a system turn is a question asked
+                // where it will live, and nothing is switched unless
+                // somebody switched it (B-462, D43, D47).
+                turn: turn.clone(),
+                // A picture, where a path was typed. The daemon reads the
+                // file and refuses in its own words where it cannot, which
+                // is what the panel shows (B-452, A2).
+                image: picture,
                 started: mcf_serve::declared::Started::default(),
             },
             format!("asking {}", held.name),
