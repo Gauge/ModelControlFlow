@@ -36,7 +36,10 @@ fn marked() -> Offering {
 
 /// A turn that ended at the model's own stop token.
 fn finished() -> Trial {
-    Trial::Stopped { after: 12 }
+    Trial::Stopped {
+        after: 12,
+        before: None,
+    }
 }
 
 /// The call every model that works emits, in both shapes.

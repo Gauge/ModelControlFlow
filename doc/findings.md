@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 119 |
+| **Version** | 120 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 173 | [F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)](#173--f173--a-budget-measured-on-a-probes-question-bounds-that-question-and-no-other-glm-47-flashs-stop-conditions-budget-of-247-was-244-tokens-of-thought-about-a-rivers-name-the-thinking-probe-raised-it-to-279-and-a-two-sentence-question-thought-for-297-b-466-f172-f106-b-451-a7-d42) |
 | 172 | [F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)](#172--f172--an-applied-addressing-that-ends-inside-the-thinking-is-read-as-one-mcf-run-on-glm-47-flash-went-from-400-tokens-of-loop-cut-by-the-budget-raw-to-nile-after-205-tokens-of-thought-counted-apart-and-the-budget-the-probe-applied-is-the-thoughts-size-b-465-b-466-f171-b-451-a7-34) |
 | 171 | [F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)](#171--f171--the-probes-read-with-the-engine-that-answers-on-a-tekken-and-a-glm4-vocabulary-every-probe-ran-through-the-provisioned-server-and-glms-template-had-to-be-read-by-its-roles-before-the-chat-template-probe-had-anything-to-try-b-442-b-441-f158-f37-a7-34) |
 | 170 | [F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)](#170--f170--five-forms-of-one-prompt-five-answers-a-full-stop-apart-the-form-the-words-wear-moved-a-two-billion-model-less-than-a-numbered-list-did-and-the-word-figure-could-not-tell-a-dropped-full-stop-from-a-different-river-b-444-b-443-f159-a7-a19-315) |
@@ -9595,6 +9596,74 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 173 · F173 — A budget measured on a probe's question bounds that question and no other: GLM-4.7-Flash's stop-conditions budget of 247 was 244 tokens of thought about a river's name, the thinking probe raised it to 279, and a two-sentence question thought for 297 (B-466, F172, F106, B-451, A7, D42)
+
+F172 left GLM-4.7-Flash with an applied budget of 247 tokens and the
+observation that on this model a budget of that size is a budget for the
+thought. B-466 asked that the applied budget allow for what the thinking
+probe measured, and that the page say what the number was set against.
+Both are done, and the run that checked them says the thing the row was
+really about: a budget measured on any probe's question is a budget for
+that question, and on a model that thinks it bounds no other.
+
+**What the stop-conditions probe's own turns were made of.** The turn a
+probe counts ends at the model's stop token, and the engine's account says
+how much of it was spent inside a marker before the answer, where the
+marker closed. The stop-conditions probe now keeps the largest such share
+across its turns, and the page says it: *ended its own turn in 5 of 5
+trials, the longest running 247 token(s), and up to 244 of a turn spent
+thinking before the answer*. Two hundred and forty-four of two hundred and
+forty-seven: the budget F172 called *the thought's size* was the thought's
+size to within three tokens, on a question whose answer is one word. The
+applied budget carries the share — *247 tokens, of which up to 244 were
+spent thinking before the answer — set by the stop-conditions probe* — and
+`mcf run` prints that line, so that nobody reads 247 as the length of an
+answer.
+
+**What the thinking probe measured, in the engine's count.** Its verdict
+counted words inside the marker, which is what a text has; a budget is in
+tokens, and the engine that counted the turn had the number. The probe now
+keeps the longest turn that finished, thought and answer together, in the
+engine's count, with the share before the answer: *the longest turn that
+finished ran 279 token(s), and up to 242 of a turn spent thinking before
+the answer*. Under `--apply` it compares that with what is on file — 247,
+the stop-conditions probe's — and where its turn is longer, raises the
+budget to it under its own provenance: *APPLIED 279 tokens, of which up to
+242 were spent thinking before the answer — set by the thinking probe at
+2026-09-04T23:00:50*, and *the budget of 247 the stop-conditions probe set
+was shorter than a turn that thinks before it answers*. A budget that
+covers the probe's longest turn is applied because it was measured; a
+margin on top would be a number MCF invented (§3.15), and none was added.
+
+**What ran after, and what it settles.** `mcf run` with *Why does ice float
+on water? Answer in two sentences.*, under the addressing and the raised
+budget: 279 tokens, `stopped: limit`, *before the answer, 279 token(s)
+inside `<think>`, opened by the turn; NOT closed: the budget ran out inside
+it, and no answer came — a thought is the size of its question, and
+--limit allows more*. The same question with `--limit 800`: 334 tokens,
+`stopped: stop_token`, *297 token(s) inside `<think>` … closed, and the
+answer followed*, and the answer was two sentences about a lattice that
+expands. The two-sentence question thought for 297 where the probe's
+reason-and-a-number question thought for 242 and the river's-name question
+for 244; the raise from 247 to 279 was the measurement and not a fix, and
+eighteen tokens short is the same fact as a hundred short. No probe on five
+fixed questions bounds the thought a sixth will take, and a probe that
+claimed to would be writing the default D42 says a probe never writes. So
+the page says as much where it applies the raise — *it is the longest turn
+seen on this probe's question and bounds no other* — and the run's line
+says where more comes from. B-466 is done on those terms: the budget
+states what it was set against, the thinking probe's measure is applied
+where it is longer, and the account of a turn that ran out inside its
+thought says why and what to do.
+
+**What is on file for this model now.** Addressing `user…assistant,
+thinking open`, set by the chat-template probe at 2026-09-04T22:53:58;
+budget 279 tokens with `before: 242`, set by the thinking probe at
+2026-09-04T23:00:50, both through the provisioned llama.cpp server
+@925e1179 on the processor. A budget written before this build has no
+`before` field and reads back without one; the provenance then says the
+number alone, which is what was known when it was written.
+
 ## 172 · F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)
 
 F171 gave GLM-4.7-Flash an addressing on file, `user…assistant, thinking
@@ -11977,6 +12046,14 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 120 — the size of its question
+
+F173: the stop-conditions and thinking probes keep how much of a turn was
+thought, the applied budget says what it was set against, and the thinking
+probe raises a budget shorter than its longest turn; on GLM-4.7-Flash 247
+was 244 of thought, the raise to 279 was measured, and a two-sentence
+question thought for 297 (B-466).
 
 ### Version 119 — left where the addressing ends
 

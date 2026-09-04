@@ -243,6 +243,12 @@ pub fn since(addressing: &Addressing, engine_now: &str, build_now: &str) -> Sinc
 pub struct Budget {
     /// The budget itself.
     pub tokens: usize,
+    /// How much of the turn that set it was spent before the answer began,
+    /// where the probe could say. A budget on a model that thinks is mostly
+    /// thought, and a reader told the number alone reads it as the answer's
+    /// size (F172); the share is kept so that the provenance can say what
+    /// the number was set against.
+    pub before: Option<usize>,
     /// Which probe found it.
     pub probe: String,
     /// When it was applied.
@@ -257,7 +263,7 @@ impl Budget {
     /// The record's shape.
     #[must_use]
     pub fn to_value(&self) -> Value {
-        Value::map([
+        let mut value = Value::map([
             (
                 "tokens",
                 Value::Integer(i64::try_from(self.tokens).unwrap_or(i64::MAX)),
@@ -266,7 +272,17 @@ impl Budget {
             ("at", Value::text(self.at.clone())),
             ("build", Value::text(self.build.clone())),
             ("conditions", Value::text(self.conditions.clone())),
-        ])
+        ]);
+        // Present only where it was measured: a `null` here would read as
+        // *nothing before the answer*, which is a different claim from *the
+        // probe did not say* (A7).
+        if let (Some(before), Value::Map(map)) = (self.before, &mut value) {
+            map.insert(
+                "before".to_owned(),
+                Value::Integer(i64::try_from(before).unwrap_or(i64::MAX)),
+            );
+        }
+        value
     }
 
     /// Reads one back, provenance and all or not at all.
@@ -278,6 +294,10 @@ impl Budget {
                 .get("tokens")
                 .and_then(Value::as_integer)
                 .and_then(|found| usize::try_from(found).ok())?,
+            before: value
+                .get("before")
+                .and_then(Value::as_integer)
+                .and_then(|found| usize::try_from(found).ok()),
             probe: text("probe")?,
             at: text("at")?,
             build: text("build")?,
@@ -289,8 +309,13 @@ impl Budget {
     #[must_use]
     pub fn provenance(&self) -> String {
         format!(
-            "{} tokens — set by the {} probe at {}, through {}",
+            "{} tokens{} — set by the {} probe at {}, through {}",
             self.tokens,
+            match self.before {
+                Some(before) =>
+                    format!(", of which up to {before} were spent thinking before the answer"),
+                None => String::new(),
+            },
             self.probe,
             self.at.split('.').next().unwrap_or(&self.at),
             self.conditions

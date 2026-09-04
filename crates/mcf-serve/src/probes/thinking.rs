@@ -242,6 +242,15 @@ pub struct Spends {
     /// The longest rather than the mean: a budget has to cover the worst turn
     /// seen, and an average budget is one that truncates half the turns (A4).
     pub longest_inside: usize,
+    /// The longest whole turn that ended at the model's own stop token, in
+    /// tokens as the engine counted them — thought and answer together. It
+    /// is what a budget has to cover on a question that asks for a reason,
+    /// where the stop-conditions probe measures turns on questions that ask
+    /// for a name (F172); nought where no turn ended.
+    pub longest_turn: usize,
+    /// How much of that longest turn was spent before its answer, where the
+    /// engine's account said the marker closed.
+    pub before_in_longest: Option<usize>,
     /// The budget each trial was given, which is what any of this is relative
     /// to.
     pub budget: usize,
@@ -257,6 +266,32 @@ pub const THINKING: Method = Method {
               what happened inside the marker was reasoning, which is a judgement a graded \
               task makes",
 };
+
+/// Why a file with no pair to measure is inconclusive, said with how many
+/// markers it holds that could not be paired.
+///
+/// **It says how many it could not pair.** Withholding that here was the
+/// defect this whole `unpairable` list exists to prevent, kept in the one
+/// place it matters most: a file whose markers are all unpairable reads as a
+/// file with no markers, and a reader concludes the model spends nothing
+/// before its answer when MCF simply could not look. A channel-format family
+/// lands exactly here (A7).
+fn nothing_to_be_inside(could_not_pair: &[String]) -> String {
+    if could_not_pair.is_empty() {
+        "this file holds no marker of any kind that a turn could be inside. A turn here \
+         begins its answer at its first token, and that is a fact about the file rather \
+         than about this model's habits (A7)"
+            .to_owned()
+    } else {
+        format!(
+            "this file holds no marker MCF could pair — but {} that it could not, {} among \
+             them. A turn inside one of those is a turn this probe does not measure, so \
+             what is reported here is MCF's reach and not this model's habits (A7, A21)",
+            could_not_pair.len(),
+            could_not_pair.first().map_or("", String::as_str)
+        )
+    }
+}
 
 /// Runs the thinking probe.
 ///
@@ -297,26 +332,7 @@ pub fn thinking(
     let available = pairs(&file, &tokens);
     let could_not_pair = unpairable(&file, &tokens);
     if available.is_empty() {
-        // **And it says how many it could not pair.** Withholding that here
-        // was the defect this whole `unpairable` list exists to prevent, kept
-        // in the one place it matters most: a file whose markers are all
-        // unpairable reads as a file with no markers, and a reader concludes
-        // the model spends nothing before its answer when MCF simply could not
-        // look. A channel-format family lands exactly here (A7).
-        let because = if could_not_pair.is_empty() {
-            "this file holds no marker of any kind that a turn could be inside. A turn here \
-             begins its answer at its first token, and that is a fact about the file rather \
-             than about this model's habits (A7)"
-                .to_owned()
-        } else {
-            format!(
-                "this file holds no marker MCF could pair — but {} that it could not, {} among \
-                 them. A turn inside one of those is a turn this probe does not measure, so \
-                 what is reported here is MCF's reach and not this model's habits (A7, A21)",
-                could_not_pair.len(),
-                could_not_pair.first().map_or("", String::as_str)
-            )
-        };
+        let because = nothing_to_be_inside(&could_not_pair);
         return Probed::inconclusive(THINKING, &because, 0, 0, conditions);
     }
 
@@ -324,12 +340,18 @@ pub fn thinking(
     let mut opened = 0_usize;
     let mut closed = 0_usize;
     let mut longest_inside = 0_usize;
+    let mut longest_turn = 0_usize;
+    let mut before_in_longest: Option<usize> = None;
     let mut spent = 0_usize;
 
     for _ in 0..trials {
         let (trial, said) = ask(budget);
-        if let Trial::Stopped { after } = trial {
+        if let Trial::Stopped { after, before } = trial {
             spent = spent.saturating_add(after);
+            if after > longest_turn {
+                longest_turn = after;
+                before_in_longest = before;
+            }
         } else {
             spent = spent.saturating_add(budget);
         }
@@ -381,6 +403,8 @@ pub fn thinking(
             closed,
             trials,
             longest_inside,
+            longest_turn,
+            before_in_longest,
             budget,
         }),
         trials,

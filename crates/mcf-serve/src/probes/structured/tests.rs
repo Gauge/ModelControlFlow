@@ -21,7 +21,10 @@ use crate::probes::Trial;
 
 /// A turn that ended at the model's own stop token.
 fn finished() -> Trial {
-    Trial::Stopped { after: 24 }
+    Trial::Stopped {
+        after: 24,
+        before: None,
+    }
 }
 
 /// The answer a model that works produces, bare and wrapped in prose.
@@ -183,7 +186,13 @@ fn a_turn_the_budget_cut_short_is_not_no_object() {
         Attempt::Unfinished
     );
     assert_eq!(
-        read("Sure! Here is the ", &Trial::Stopped { after: 5 }),
+        read(
+            "Sure! Here is the ",
+            &Trial::Stopped {
+                after: 5,
+                before: None
+            }
+        ),
         Attempt::NoObject
     );
     // And an object that arrived counts however the turn ended: the shape is

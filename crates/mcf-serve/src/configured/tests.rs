@@ -204,3 +204,45 @@ fn another_build_of_the_same_engine_has_moved() {
     assert_eq!(moved.len(), 1);
     assert_eq!(moved[0].what, "engine");
 }
+
+/// A budget keeps what share of its turn was thought, and says so — or says
+/// nothing where the probe could not tell.
+///
+/// The number alone reads as the answer's size; on a model that thinks it is
+/// the thought's (F172). A budget read back without the share would carry a
+/// provenance that no longer says what the number was set against.
+#[test]
+fn a_budget_says_what_it_was_set_against() {
+    let measured = super::Budget {
+        tokens: 247,
+        before: Some(205),
+        probe: "stop-conditions".to_owned(),
+        at: "2026-09-04T21:26:00Z".to_owned(),
+        build: "0.1.0-m0".to_owned(),
+        conditions: "engine: provisioned".to_owned(),
+    };
+    let read_back =
+        super::Budget::from_value(&measured.to_value()).expect("it survives the round trip");
+    assert_eq!(read_back, measured);
+    let said = measured.provenance();
+    assert!(
+        said.starts_with("247 tokens, of which up to 205 were spent thinking before the answer"),
+        "{said}"
+    );
+
+    let unmeasured = super::Budget {
+        before: None,
+        ..measured
+    };
+    let value = unmeasured.to_value();
+    assert!(
+        value.get("before").is_none(),
+        "absent rather than null: nothing was measured, which is not nought"
+    );
+    assert_eq!(
+        super::Budget::from_value(&value),
+        Some(unmeasured.clone()),
+        "and it is read without one"
+    );
+    assert!(unmeasured.provenance().starts_with("247 tokens — set by"));
+}

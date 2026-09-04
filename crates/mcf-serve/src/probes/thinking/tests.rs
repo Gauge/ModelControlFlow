@@ -101,7 +101,10 @@ fn the_budget_is_set_by_the_longest_turn_not_the_mean() {
     .into_iter();
     let mut ask = move |_: usize| {
         (
-            Trial::Stopped { after: 10 },
+            Trial::Stopped {
+                after: 10,
+                before: None,
+            },
             said.next().unwrap_or_default(),
         )
     };
@@ -290,6 +293,51 @@ fn an_addressing_that_closes_the_thinking_is_asked_with_it_opened() {
     assert!(!super::under(&closed, &[]).changed);
 }
 
+/// The longest whole turn is kept in the engine's own count, with how much of
+/// it came before the answer.
+///
+/// A budget set from questions that ask for a name is the size of a thought
+/// about a name; the turn this probe asks for is the one a budget has to cover
+/// (F172), and the number is the engine's, not one MCF invented from words.
+#[test]
+fn the_longest_whole_turn_is_kept_in_tokens() {
+    let mut turns = vec![
+        (
+            Trial::Stopped {
+                after: 40,
+                before: Some(30),
+            },
+            "<think>a b</think>done".to_owned(),
+        ),
+        (
+            Trial::Stopped {
+                after: 90,
+                before: Some(80),
+            },
+            "<think>a b c</think>done".to_owned(),
+        ),
+        (Trial::RanOut, "<think>a b c d".to_owned()),
+    ]
+    .into_iter();
+    let probed = thinking(
+        std::path::Path::new("/nowhere.gguf"),
+        &thinking_model(),
+        3,
+        100,
+        "a test",
+        None,
+        &mut |_| turns.next().unwrap_or((Trial::RanOut, String::new())),
+    );
+    let Outcome::Observed(spends) = &probed.outcome else {
+        panic!("observed: {probed:?}");
+    };
+    assert_eq!(
+        spends.longest_turn, 90,
+        "the turn that ran out is not a turn"
+    );
+    assert_eq!(spends.before_in_longest, Some(80));
+}
+
 /// A marker the turn opened is counted as opened, and what came back up to
 /// its closer is the inside — the model wrote no opener of its own, and the
 /// probe does not wait for one (F171).
@@ -298,7 +346,10 @@ fn a_marker_the_turn_opened_is_measured_from_the_first_token() {
     let bytes = crate::probes::tests::with_markers(&["<think>", "</think>"]);
     let mut turns = vec![
         (
-            Trial::Stopped { after: 9 },
+            Trial::Stopped {
+                after: 9,
+                before: None,
+            },
             "three times seven</think> 21".to_owned(),
         ),
         (Trial::RanOut, "three times seven is".to_owned()),

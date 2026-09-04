@@ -162,7 +162,10 @@ fn an_unreadable_model_is_inconclusive() {
         3,
         8,
         "test",
-        &mut |_identifiers, _budget| Trial::Stopped { after: 4 },
+        &mut |_identifiers, _budget| Trial::Stopped {
+            after: 4,
+            before: None,
+        },
     );
     assert!(probed.outcome.is_inconclusive());
     assert_eq!(probed.trials, 0);
@@ -224,7 +227,10 @@ fn what_stopped_is_reported_with_what_it_cost() {
         3,
         5,
         "test",
-        &mut |_identifiers, _budget| Trial::Stopped { after: 4 },
+        &mut |_identifiers, _budget| Trial::Stopped {
+            after: 4,
+            before: None,
+        },
     );
     let observed = probed
         .outcome
@@ -250,7 +256,10 @@ fn the_addressing_the_model_stops_under_is_the_one_reported() {
         // The marker's presence is how the test tells the addressings apart.
         &mut |pieces, _budget| {
             if wrapped(pieces) {
-                Trial::Stopped { after: 4 }
+                Trial::Stopped {
+                    after: 4,
+                    before: None,
+                }
             } else {
                 Trial::RanOut
             }
@@ -277,7 +286,10 @@ fn the_addressing_the_model_stops_under_is_the_one_reported() {
             if wrapped(pieces) {
                 Trial::RanOut
             } else {
-                Trial::Stopped { after: 4 }
+                Trial::Stopped {
+                    after: 4,
+                    before: None,
+                }
             }
         },
     );
@@ -328,7 +340,10 @@ fn ending_a_turn_having_said_nothing_is_not_ending_a_turn() {
             if wrapped(pieces) {
                 Trial::RanOut
             } else {
-                Trial::Stopped { after: 0 }
+                Trial::Stopped {
+                    after: 0,
+                    before: None,
+                }
             }
         },
     );
@@ -355,9 +370,15 @@ fn speaking_then_stopping_is_what_counts() {
         "test",
         &mut |pieces, _budget| {
             if wrapped(pieces) {
-                Trial::Stopped { after: 9 }
+                Trial::Stopped {
+                    after: 9,
+                    before: None,
+                }
             } else {
-                Trial::Stopped { after: 0 }
+                Trial::Stopped {
+                    after: 0,
+                    before: None,
+                }
             }
         },
     );
@@ -640,7 +661,10 @@ fn a_model_that_stops_is_reported_by_its_longest_turn() {
         &mut |_question, budget| {
             budgets.push(budget);
             if budget >= 128 {
-                Trial::Stopped { after: 100 }
+                Trial::Stopped {
+                    after: 100,
+                    before: None,
+                }
             } else {
                 Trial::RanOut
             }
@@ -651,6 +675,7 @@ fn a_model_that_stops_is_reported_by_its_longest_turn() {
         observed,
         &Stopping {
             longest: 100,
+            before: None,
             stopped: 2,
             of: 2,
             ceiling: 128,
@@ -661,6 +686,47 @@ fn a_model_that_stops_is_reported_by_its_longest_turn() {
         budgets,
         vec![32, 64, 128, 32, 64, 128],
         "it doubles from the floor for each trial rather than starting large (B49)"
+    );
+}
+
+/// A model that thinks is reported by how much of its longest turn was thought.
+///
+/// The budget the probe sets is the longest turn, and on a model whose turn is
+/// mostly thinking that number is the thought's size; a reader told only the
+/// number reads it as the answer's (F172). The share the engine counted
+/// travels beside it, the largest seen across the turns that closed.
+#[test]
+fn a_turn_that_thinks_is_reported_by_its_share_before_the_answer() {
+    let mut turns = [
+        Trial::Stopped {
+            after: 40,
+            before: Some(30),
+        },
+        Trial::Stopped {
+            after: 60,
+            before: None,
+        },
+        Trial::Stopped {
+            after: 50,
+            before: Some(45),
+        },
+    ]
+    .into_iter();
+    let probed = stop_conditions(
+        std::path::Path::new("/fixture"),
+        3,
+        64,
+        64,
+        32,
+        "test",
+        &mut |_question, _budget| turns.next().unwrap_or(Trial::RanOut),
+    );
+    let observed = probed.outcome.observed().expect("all three ended");
+    assert_eq!(observed.longest, 60);
+    assert_eq!(
+        observed.before,
+        Some(45),
+        "the most any turn spent before its answer, whichever turn that was"
     );
 }
 

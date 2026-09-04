@@ -570,7 +570,11 @@ fn before_the_answer(account: &mcf_record::json::Value) -> String {
         if closed {
             "closed, and the answer followed"
         } else {
-            "NOT closed: the budget ran out inside it, and no answer came"
+            // A way out travels with the fact: a thought is the size of its
+            // question, and a budget measured on a probe's questions bounds
+            // theirs and not this one's (F173).
+            "NOT closed: the budget ran out inside it, and no answer came — a thought is the \
+             size of its question, and --limit allows more"
         }
     )
 }

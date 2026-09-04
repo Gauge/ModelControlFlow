@@ -292,6 +292,7 @@ pub(crate) fn run(
             .outcome
             .observed()
             .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
+        apply,
     ));
     lines.extend(language_lines(&socket, &path, &engine, asked));
     lines.extend(embedding_lines(&path, &bytes));
@@ -486,6 +487,14 @@ fn stopping_fields(
             mcf_record::json::Value::Integer(i64::try_from(stopping.longest).unwrap_or(i64::MAX)),
         ),
         (
+            "before_the_answer_tokens",
+            stopping
+                .before
+                .map_or(mcf_record::json::Value::Null, |before| {
+                    mcf_record::json::Value::Integer(i64::try_from(before).unwrap_or(i64::MAX))
+                }),
+        ),
+        (
             "default_budget",
             mcf_record::json::Value::Integer(
                 i64::try_from(stopping.default_budget).unwrap_or(i64::MAX),
@@ -629,6 +638,10 @@ fn language_fields(
 }
 
 /// How much of a turn happens before the answer does (B-421).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one argument per thing the section is about: where, what, through which engine, under which addressing, and whether to act"
+)]
 fn thinking_lines(
     socket: &std::path::Path,
     path: &std::path::Path,
@@ -636,6 +649,7 @@ fn thinking_lines(
     engine: &str,
     asked: &str,
     addressing: Option<&mcf_serve::probes::Addressing>,
+    apply: bool,
 ) -> Vec<String> {
     // Through the addressing this run just measured: a turn put to a model the
     // way it was NOT trained is a turn that says nothing about where its
@@ -686,33 +700,7 @@ fn thinking_lines(
     match &probed.outcome {
         Outcome::Observed(spends) => {
             lines.extend(thinking_under(under.as_ref()));
-            lines.push(format!(
-                " markers  this file holds {} it could be inside{}",
-                spends.available.len(),
-                match spends.available.first() {
-                    Some(first) => format!(", the first of them {first}"),
-                    None => String::new(),
-                }
-            ));
-            // What could not be paired is said, so that *nothing was found* is
-            // never read as *nothing was there* (A7).
-            if !spends.unpairable.is_empty() {
-                lines.push(format!(
-                    "          and {} it could not pair, whose insides are not measured here{}",
-                    spends.unpairable.len(),
-                    match spends.unpairable.first() {
-                        Some(first) => format!(" — {first} among them"),
-                        None => String::new(),
-                    }
-                ));
-            }
-            match &spends.used {
-                Some(marker) => lines.push(format!(
-                    " {marker} opened in {} of {} turn(s), closed in {}",
-                    spends.opened, spends.trials, spends.closed
-                )),
-                None => lines.push(format!(" none of them opened in {} turn(s)", spends.trials)),
-            }
+            lines.extend(thinking_observed(spends));
             // From the observation, before either verdict (A9, F106).
             let mut fields = thinking_fields(spends);
             fields.push((
@@ -729,6 +717,10 @@ fn thinking_lines(
             )));
             lines.push(String::new());
             lines.push(thinking_verdict(spends));
+            if apply {
+                lines.push(String::new());
+                lines.extend(raise_budget(path, &probed, spends, engine));
+            }
         }
         Outcome::Inconclusive { because } => {
             lines.push(format!(" INCONCLUSIVE — {because}"));
@@ -788,6 +780,48 @@ fn thinking_under(under: Option<&mcf_serve::probes::thinking::Under>) -> Vec<Str
     lines
 }
 
+/// The observation itself, before anything is said about what it means.
+fn thinking_observed(spends: &mcf_serve::probes::thinking::Spends) -> Vec<String> {
+    let mut lines = vec![format!(
+        " markers  this file holds {} it could be inside{}",
+        spends.available.len(),
+        match spends.available.first() {
+            Some(first) => format!(", the first of them {first}"),
+            None => String::new(),
+        }
+    )];
+    // What could not be paired is said, so that *nothing was found* is
+    // never read as *nothing was there* (A7).
+    if !spends.unpairable.is_empty() {
+        lines.push(format!(
+            "          and {} it could not pair, whose insides are not measured here{}",
+            spends.unpairable.len(),
+            match spends.unpairable.first() {
+                Some(first) => format!(" — {first} among them"),
+                None => String::new(),
+            }
+        ));
+    }
+    match &spends.used {
+        Some(marker) => lines.push(format!(
+            " {marker} opened in {} of {} turn(s), closed in {}",
+            spends.opened, spends.trials, spends.closed
+        )),
+        None => lines.push(format!(" none of them opened in {} turn(s)", spends.trials)),
+    }
+    // In the engine's count rather than in words, because it is the number a
+    // budget is in: what the longest turn that finished ran to, thought and
+    // answer together, on a question that asks for a reason (F172).
+    if spends.longest_turn > 0 {
+        lines.push(format!(
+            " the longest turn that finished ran {} token(s){}",
+            spends.longest_turn,
+            before_the_answer(spends.before_in_longest)
+        ));
+    }
+    lines
+}
+
 /// What the observation means, said after it is recorded (A9).
 fn thinking_verdict(spends: &mcf_serve::probes::thinking::Spends) -> String {
     let still_going = spends.opened.saturating_sub(spends.closed);
@@ -838,6 +872,18 @@ fn thinking_fields(
         (
             "longest_inside_words",
             mcf_record::json::Value::Integer(as_count(spends.longest_inside)),
+        ),
+        (
+            "longest_turn_tokens",
+            mcf_record::json::Value::Integer(as_count(spends.longest_turn)),
+        ),
+        (
+            "before_the_answer_tokens",
+            spends
+                .before_in_longest
+                .map_or(mcf_record::json::Value::Null, |before| {
+                    mcf_record::json::Value::Integer(as_count(before))
+                }),
         ),
         (
             "budget",
@@ -1628,8 +1674,11 @@ fn stopping_lines(
     match &probed.outcome {
         Outcome::Observed(stopping) => {
             lines.push(format!(
-                " ended its own turn in {} of {} trials, the longest running {} token(s)",
-                stopping.stopped, stopping.of, stopping.longest
+                " ended its own turn in {} of {} trials, the longest running {} token(s){}",
+                stopping.stopped,
+                stopping.of,
+                stopping.longest,
+                before_the_answer(stopping.before)
             ));
             // Recorded from the observation, before anything is said about
             // what it means: a record written out of the verdict branch is a
@@ -1702,6 +1751,7 @@ fn apply_budget(
     };
     let budget = mcf_serve::configured::Budget {
         tokens: stopping.longest,
+        before: stopping.before,
         probe: probed.method.name.to_owned(),
         at: mcf_core::time::Timestamp::now().to_string(),
         build: mcf_core::build_identity::BuildIdentity::current().to_string(),
@@ -1713,6 +1763,78 @@ fn apply_budget(
             format!("  APPLIED  {}", budget.provenance()),
             " `mcf run` allows this model that many tokens unless --limit says otherwise, and the account says where the number came from"
                 .to_owned(),
+        ],
+    }
+}
+
+/// The share of a turn that came before its answer, for a page line.
+fn before_the_answer(before: Option<usize>) -> String {
+    match before {
+        Some(before) => format!(", and up to {before} of a turn spent thinking before the answer"),
+        None => String::new(),
+    }
+}
+
+/// The act, for a budget the thinking probe found wanting (B-466).
+///
+/// The stop-conditions probe asks for a river's name and sets the budget to
+/// the longest turn that answered; on a model that thinks, that turn is
+/// mostly thought about a river's name, and the budget runs out inside the
+/// marker on the first question that asks for a reason (F172). The thinking
+/// probe asks for one. Where its longest finished turn is longer than what
+/// is on file — or than MCF's default, where nothing is — the budget is
+/// raised to it, under this probe's own provenance: the value is measured
+/// here, and it says so.
+fn raise_budget(
+    path: &std::path::Path,
+    probed: &mcf_core::probe::Probed<mcf_serve::probes::thinking::Spends>,
+    spends: &mcf_serve::probes::thinking::Spends,
+    engine: &str,
+) -> Vec<String> {
+    let Some(home) = crate::models::default_root()
+        .and_then(|models| models.parent().map(std::path::Path::to_path_buf))
+    else {
+        return vec!["  NOT APPLIED — there is nowhere to write it".to_owned()];
+    };
+    let on_file = mcf_serve::configured::read_derived(&home, path).budget;
+    let covers = on_file
+        .as_ref()
+        .map_or(crate::run::TOKENS, |held| held.tokens);
+    if spends.longest_turn == 0 {
+        return vec![
+            "  NOT APPLIED — no turn here ended at the model's own stop token, so there is no turn to set a budget to"
+                .to_owned(),
+        ];
+    }
+    if spends.longest_turn <= covers {
+        return vec![format!(
+            "  NOT RAISED — the budget of {covers} {} covers the longest turn that thought here, {}",
+            match on_file {
+                Some(held) => format!("the {} probe set", held.probe),
+                None => "MCF allows unless told otherwise".to_owned(),
+            },
+            spends.longest_turn
+        )];
+    }
+    let budget = mcf_serve::configured::Budget {
+        tokens: spends.longest_turn,
+        before: spends.before_in_longest,
+        probe: probed.method.name.to_owned(),
+        at: mcf_core::time::Timestamp::now().to_string(),
+        build: mcf_core::build_identity::BuildIdentity::current().to_string(),
+        conditions: engine.to_owned(),
+    };
+    match mcf_serve::configured::write_budget(&home, path, &budget) {
+        Err(failure) => vec![format!("  NOT APPLIED — {failure}")],
+        Ok(_written) => vec![
+            format!("  APPLIED  {}", budget.provenance()),
+            format!(
+                " the budget of {covers} {} was shorter than a turn that thinks before it answers; `mcf run` allows this model the longer one unless --limit says otherwise. It is the longest turn seen on this probe's question and bounds no other: a thought is the size of its question, and one that takes more will run out inside the marker all the same",
+                match on_file {
+                    Some(held) => format!("the {} probe set", held.probe),
+                    None => "MCF allows unless told otherwise".to_owned(),
+                }
+            ),
         ],
     }
 }

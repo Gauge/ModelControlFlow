@@ -571,12 +571,12 @@ pub fn chat_template(
                 // turn having said nothing is a refusal to speak, and the
                 // whole of F38 is that the two are opposite observations
                 // wearing the same stop token.
-                Trial::Stopped { after: 0 } => {
+                Trial::Stopped { after: 0, .. } => {
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
                     said_nothing = said_nothing.saturating_add(1);
                 }
-                Trial::Stopped { after } => {
+                Trial::Stopped { after, .. } => {
                     ran = ran.saturating_add(1);
                     spent = spent.saturating_add(budget);
                     ended = ended.saturating_add(1);
@@ -782,6 +782,13 @@ pub enum Trial {
     Stopped {
         /// How many tokens the model produced before its stop token.
         after: usize,
+        /// How many of those it spent inside a marker before its answer
+        /// began, where the account says the marker was closed. A budget set
+        /// from `after` alone on a model that thinks is a budget set to the
+        /// size of the thought, and it runs out inside the marker on the
+        /// first longer question (F172); the share travels so that whoever
+        /// sets the budget can say what it was set against.
+        before: Option<usize>,
     },
     /// It ended because the budget ran out.
     RanOut,
@@ -936,11 +943,27 @@ pub fn spoken(
                     .and_then(mcf_record::json::Value::as_text)
                     .is_none_or(|text| text.trim().is_empty());
                 let said = if wordless { 0 } else { counted };
+                let before = account.get("before_the_answer");
+                let closed = before
+                    .and_then(|before| before.get("closed"))
+                    .and_then(mcf_record::json::Value::as_bool)
+                    .unwrap_or(false);
+                // Measured by the engine that counted the turn, and only where
+                // the marker closed: a count of a thought still open when the
+                // turn ended is the budget's size, not the thought's.
+                let inside = before
+                    .filter(|_| closed)
+                    .and_then(|before| before.get("tokens"))
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|found| usize::try_from(found).ok());
                 let ended = match account
                     .get("stopped")
                     .and_then(mcf_record::json::Value::as_text)
                 {
-                    Some("stop_token") => Trial::Stopped { after: said },
+                    Some("stop_token") => Trial::Stopped {
+                        after: said,
+                        before: inside,
+                    },
                     Some("limit") => Trial::RanOut,
                     Some(other) => Trial::CouldNotTell(format!(
                         "this engine does not say why generation ended (it said {other:?}), so \
@@ -948,11 +971,6 @@ pub fn spoken(
                     )),
                     None => Trial::CouldNotTell("the account did not say how it ended".to_owned()),
                 };
-                let before = account.get("before_the_answer");
-                let closed = before
-                    .and_then(|before| before.get("closed"))
-                    .and_then(mcf_record::json::Value::as_bool)
-                    .unwrap_or(false);
                 return Spoken {
                     trial: ended,
                     text: account
@@ -1508,6 +1526,11 @@ pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
 pub struct Stopping {
     /// The longest turn that ended at the model's own stop token.
     pub longest: usize,
+    /// The most any of those turns spent inside a marker before its answer,
+    /// where the engine's account said so. On a model that thinks the
+    /// longest turn is mostly this, and a budget read as *the answer's size*
+    /// would be read wrongly (F172).
+    pub before: Option<usize>,
     /// How many trials ended that way.
     pub stopped: usize,
     /// How many were asked.
@@ -1555,6 +1578,7 @@ pub fn stop_conditions(
     let mut spent = 0_usize;
     let mut ran = 0_usize;
     let mut longest = 0_usize;
+    let mut before: Option<usize> = None;
     let mut stopped = 0_usize;
     let mut reached = from;
 
@@ -1569,9 +1593,13 @@ pub fn stop_conditions(
             spent = spent.saturating_add(budget);
             reached = reached.max(budget);
             match generate(question, budget) {
-                Trial::Stopped { after } => {
+                Trial::Stopped {
+                    after,
+                    before: inside,
+                } => {
                     stopped = stopped.saturating_add(1);
                     longest = longest.max(after);
+                    before = before.max(inside);
                     break;
                 }
                 Trial::RanOut if budget >= ceiling => break,
@@ -1609,6 +1637,7 @@ pub fn stop_conditions(
         method: STOP_CONDITIONS,
         outcome: Outcome::Observed(Stopping {
             longest,
+            before,
             stopped,
             of: trials,
             ceiling: reached,
