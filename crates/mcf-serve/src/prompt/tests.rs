@@ -911,19 +911,11 @@ fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
     assert_eq!(report.swaps, None);
 }
 
-/// The same parts in each form keep every word and change only the
-/// dress; a form the prompt is written in already, and a list of one
-/// part, are said as not rendered and cost nothing; not asked for, the
-/// reading is absent (B-444, A7).
+/// The same parts in each form keep every word and change only the dress
+/// (B-444): what moves under a form is the form.
 #[test]
-fn the_parts_are_dressed_in_each_form_and_a_form_already_worn_is_not_asked() {
-    let taken = Taken {
-        text: "Be terse.\n\nAnswer in\nFrench.",
-        by: Some(Unit::Paragraph),
-        most: None,
-        extras: Extras::NONE.with(Extra::Forms, true),
-    };
-    let parts = taken.parts();
+fn each_form_keeps_every_word_and_changes_only_the_dress() {
+    let parts = parts_of("Be terse.\n\nAnswer in\nFrench.", Unit::Paragraph);
     assert_eq!(
         Form::OneLine.render(&parts).as_deref(),
         Some("Be terse. Answer in French.")
@@ -953,7 +945,19 @@ fn the_parts_are_dressed_in_each_form_and_a_form_already_worn_is_not_asked() {
     assert_eq!(Extra::Forms.generations(1, 1), 2);
     assert!(Extra::Forms.at_most());
     assert!(!Extra::Swaps.at_most());
+}
 
+/// Each form is asked once; a form the prompt is written in already, and
+/// a list of one part, are said as not rendered and cost nothing; not
+/// asked for, the reading is absent (B-444, A7).
+#[test]
+fn a_form_already_worn_is_not_asked_and_one_part_is_nothing_to_list() {
+    let taken = Taken {
+        text: "Be terse.\n\nAnswer in\nFrench.",
+        by: Some(Unit::Paragraph),
+        most: None,
+        extras: Extras::NONE.with(Extra::Forms, true),
+    };
     let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     let mut ask = |prompt: &str, _: Draw| {
         asked.borrow_mut().push(prompt.to_owned());

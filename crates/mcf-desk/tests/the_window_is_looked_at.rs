@@ -1578,12 +1578,12 @@ fn pressing_a_sentence_alone_shows_the_answer_to_it_alone() {
         "no sentence alone in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1210.0;
+    desk.scroll = 1400.0;
     let mut alone = a_report();
-    alone.scroll = 1210.0;
+    alone.scroll = 1400.0;
     alone.shown = Some(mcf_desk::Shown::Alone(1));
     let mut without = a_report();
-    without.scroll = 1210.0;
+    without.scroll = 1400.0;
     without.shown = Some(mcf_desk::Shown::Without(1));
     let ground = DAY.ground;
     let to_alone = drawn(&alone, DAY, "answer-alone").inked(ground);
@@ -1636,9 +1636,9 @@ fn pressing_a_prefix_shows_the_answer_to_that_much_of_the_prompt() {
         "no prefix in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1210.0;
+    desk.scroll = 1400.0;
     let mut prefix = a_report();
-    prefix.scroll = 1210.0;
+    prefix.scroll = 1400.0;
     prefix.shown = Some(mcf_desk::Shown::Prefix(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1680,9 +1680,9 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         "no swap in the report could be pressed"
     );
     // The answer has a page of its own under the tables.
-    desk.scroll = 1210.0;
+    desk.scroll = 1400.0;
     let mut swap = a_report();
-    swap.scroll = 1210.0;
+    swap.scroll = 1400.0;
     swap.shown = Some(mcf_desk::Shown::Swap(1));
     let ground = DAY.ground;
     assert_ne!(
@@ -1798,9 +1798,9 @@ fn the_report_scrolls_under_the_controls_and_not_over_them() {
 fn the_seeds_section_says_how_the_draws_were_cut() {
     use mcf_record::json::Value;
     let mut stated = a_report();
-    stated.scroll = 1180.0;
+    stated.scroll = 1400.0;
     let mut unstated = a_report();
-    unstated.scroll = 1180.0;
+    unstated.scroll = 1400.0;
     let mut found = match &unstated.doing {
         mcf_desk::Doing::Reporting(job) => job.answers.first().cloned(),
         _ => None,
@@ -2064,7 +2064,7 @@ fn the_prompt_is_one_field_and_the_unit_and_the_cap_are_choices_on_the_page() {
     // empty asks nothing, a decimal is the condition, and what is not a
     // temperature holds Analyse rather than being dropped (B-431, §3.15).
     assert_eq!(desk.settle(), Ok(None));
-    let lower = (520.0, 580.0);
+    let lower = (520.0, 620.0);
     assert!(
         act_within(
             &desk,
@@ -2110,7 +2110,7 @@ fn the_floor_at_every_position_is_a_choice_that_says_its_cost_and_its_spread() {
         .join("\n\n");
     // The rows of the readings table under the removed row; a sweep of the
     // whole window is thousands of renders.
-    let controls = (420.0, 540.0);
+    let controls = (420.0, 580.0);
     for extra in Extra::ALL {
         assert!(!desk.taken().extras.has(extra), "{extra:?} unless asked");
         assert!(

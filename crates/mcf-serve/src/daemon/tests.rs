@@ -510,6 +510,45 @@ fn a_reading(moved: i64, answer: &str) -> Value {
     ])
 }
 
+/// Two forms as served: one read, one not rendered (B-444).
+fn a_served_forms() -> Value {
+    Value::List(vec![
+        Value::map([
+            ("form", Value::text("bullets")),
+            ("moved_parts_per_million", Value::Integer(410_000)),
+            ("held", Value::Null),
+            ("answer", Value::text("Here is a list")),
+        ]),
+        Value::map([
+            ("form", Value::text("one line")),
+            (
+                "not_rendered",
+                Value::text("the prompt is written this way"),
+            ),
+        ]),
+    ])
+}
+
+/// Two clauses as served: one that moved nothing, one that moved most.
+fn a_served_clauses() -> Value {
+    Value::List(vec![
+        Value::map([
+            ("text", Value::text("You are a careful assistant.")),
+            ("changed", Value::Bool(false)),
+            ("moved_parts_per_million", Value::Integer(0)),
+            ("without", Value::text("def slugify(title): pass")),
+            ("held", Value::map([("first_rank", Value::Integer(1))])),
+        ]),
+        Value::map([
+            ("text", Value::text("Reply with only the function.")),
+            ("changed", Value::Bool(true)),
+            ("moved_parts_per_million", Value::Integer(900_000)),
+            ("without", Value::text("Here is a function that ...")),
+            ("held", Value::Null),
+        ]),
+    ])
+}
+
 fn a_served_report() -> Value {
     Value::map([
         ("baseline", Value::text("def slugify(title): pass")),
@@ -544,45 +583,10 @@ fn a_served_report() -> Value {
             "swaps",
             Value::List(vec![a_reading(90_000, "Here is a careful function")]),
         ),
-        (
-            "forms",
-            Value::List(vec![
-                Value::map([
-                    ("form", Value::text("bullets")),
-                    ("moved_parts_per_million", Value::Integer(410_000)),
-                    ("held", Value::Null),
-                    ("answer", Value::text("Here is a list")),
-                ]),
-                Value::map([
-                    ("form", Value::text("one line")),
-                    (
-                        "not_rendered",
-                        Value::text("the prompt is written this way"),
-                    ),
-                ]),
-            ]),
-        ),
+        ("forms", a_served_forms()),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
-        (
-            "clauses",
-            Value::List(vec![
-                Value::map([
-                    ("text", Value::text("You are a careful assistant.")),
-                    ("changed", Value::Bool(false)),
-                    ("moved_parts_per_million", Value::Integer(0)),
-                    ("without", Value::text("def slugify(title): pass")),
-                    ("held", Value::map([("first_rank", Value::Integer(1))])),
-                ]),
-                Value::map([
-                    ("text", Value::text("Reply with only the function.")),
-                    ("changed", Value::Bool(true)),
-                    ("moved_parts_per_million", Value::Integer(900_000)),
-                    ("without", Value::text("Here is a function that ...")),
-                    ("held", Value::Null),
-                ]),
-            ]),
-        ),
+        ("clauses", a_served_clauses()),
         ("clauses_over_the_cap", Value::Integer(3)),
         ("unit", Value::text("sentence")),
         ("unit_chosen_by", Value::text("the text")),
@@ -715,20 +719,6 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     assert_eq!(first_moved("alone"), Some(Value::Integer(310_000)));
     assert_eq!(first_moved("prefixes"), Some(Value::Integer(640_000)));
     assert_eq!(first_moved("swaps"), Some(Value::Integer(90_000)));
-    // A form travels as its name and figures, or its name and why it was
-    // not rendered; the answer stays behind (B-444, A25, A7).
-    assert_eq!(first_moved("forms"), Some(Value::Integer(410_000)));
-    let form = |at_form: usize, key: &str| {
-        at(&["forms"])
-            .and_then(|held| held.as_list().and_then(|forms| forms.get(at_form)).cloned())
-            .and_then(|held| held.get(key).cloned())
-    };
-    assert_eq!(form(0, "form"), Some(Value::text("bullets")));
-    assert_eq!(form(0, "answer"), None);
-    assert_eq!(
-        form(1, "not_rendered"),
-        Some(Value::text("the prompt is written this way"))
-    );
     assert_eq!(
         at(&["alone_floor", "moved_parts_per_million"]),
         Some(Value::Integer(980_000))
@@ -744,6 +734,42 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
             .and_then(|held| held.get("past_depth").cloned()),
         Some(Value::Integer(1))
     );
+}
+
+/// A form travels as its name and figures, or its name and why it was not
+/// rendered; the answer stays behind (B-444, A25, A7).
+#[test]
+fn a_form_travels_as_its_figures_or_as_why_it_was_not_rendered() {
+    let served = a_served_report();
+    let entry = super::prompt_report_entry(
+        &served,
+        std::path::Path::new("/models/a.gguf"),
+        "You are a careful assistant. Reply with only the function.",
+        41,
+        &std::iter::once("mcf-standin".to_owned()).collect(),
+    );
+    let form = |at_form: usize, key: &str| {
+        entry
+            .get("forms")
+            .and_then(|held| held.as_list().and_then(|forms| forms.get(at_form)))
+            .and_then(|held| held.get(key).cloned())
+    };
+    assert_eq!(form(0, "form"), Some(Value::text("bullets")));
+    assert_eq!(
+        form(0, "moved_parts_per_million"),
+        Some(Value::Integer(410_000))
+    );
+    assert_eq!(form(0, "answer"), None);
+    assert_eq!(form(1, "form"), Some(Value::text("one line")));
+    assert_eq!(
+        form(1, "not_rendered"),
+        Some(Value::text("the prompt is written this way"))
+    );
+    // Every key is written, null where the form had nothing for it, so a
+    // reader of the record finds the same shape on every row.
+    assert_eq!(form(1, "moved_parts_per_million"), Some(Value::Null));
+    assert_eq!(form(0, "not_rendered"), Some(Value::Null));
+    assert!(!entry.to_line().contains("Here is a list"));
 }
 
 /// The served report groups the rank reading by part, and serves null for
@@ -849,10 +875,9 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
     assert_eq!(served.get("prefixes"), Some(&Value::Null));
 }
 
-/// A report that asked each part alone serves each answer beside its figure,
-/// and the control alone with them (B-435).
-#[test]
-fn a_served_report_carries_each_part_alone_with_its_answer() {
+/// A report with every extra taken, served: two parts, each alone, the
+/// control alone, one prefix, one swap, one form read and one not rendered.
+fn a_report_with_every_extra_served() -> Value {
     use crate::prompt::{Reading, Report, Taken, Unit};
     let taken = Taken {
         text: "Be terse.\n\nWhat is 2 + 2?",
@@ -900,8 +925,14 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         refused: None,
         under: None,
     };
-    let served =
-        super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned(), None);
+    super::prompt_report_value(&report, &parts, 6, Ok(9), none, "a test".to_owned(), None)
+}
+
+/// A report that asked each part alone serves each answer beside its figure,
+/// and the control alone with them (B-435).
+#[test]
+fn a_served_report_carries_each_part_alone_with_its_answer() {
+    let served = a_report_with_every_extra_served();
     let alone = served.get("alone").and_then(Value::as_list).unwrap_or(&[]);
     assert_eq!(alone.len(), 2);
     assert_eq!(
@@ -935,8 +966,15 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         swaps.first().and_then(|held| held.get("answer")),
         Some(&Value::text("4."))
     );
-    // And the parts in each form: a form read carries its name and its
-    // reading, a form not rendered carries its name and why (B-444, A7).
+}
+
+/// **The parts in each form are served as what each form came to**
+/// (B-444, A7): a form read carries its name and its reading, a form not
+/// rendered carries its name and why, and neither borrows the other's
+/// fields.
+#[test]
+fn a_served_report_carries_each_form_read_or_why_it_was_not() {
+    let served = a_report_with_every_extra_served();
     let forms = served.get("forms").and_then(Value::as_list).unwrap_or(&[]);
     assert_eq!(forms.len(), 2);
     assert_eq!(
