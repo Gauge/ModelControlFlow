@@ -911,6 +911,135 @@ fn neighbours_are_swapped_in_turn_with_the_breaks_left_where_they_were() {
     assert_eq!(report.swaps, None);
 }
 
+/// The same parts in each form keep every word and change only the
+/// dress; a form the prompt is written in already, and a list of one
+/// part, are said as not rendered and cost nothing; not asked for, the
+/// reading is absent (B-444, A7).
+#[test]
+fn the_parts_are_dressed_in_each_form_and_a_form_already_worn_is_not_asked() {
+    let taken = Taken {
+        text: "Be terse.\n\nAnswer in\nFrench.",
+        by: Some(Unit::Paragraph),
+        most: None,
+        extras: Extras::NONE.with(Extra::Forms, true),
+    };
+    let parts = taken.parts();
+    assert_eq!(
+        Form::OneLine.render(&parts).as_deref(),
+        Some("Be terse. Answer in French.")
+    );
+    assert_eq!(
+        Form::Bullets.render(&parts).as_deref(),
+        Some("- Be terse.\n- Answer in French.")
+    );
+    assert_eq!(
+        Form::Numbered.render(&parts).as_deref(),
+        Some("1. Be terse.\n2. Answer in French.")
+    );
+    assert_eq!(
+        Form::Headings.render(&parts).as_deref(),
+        Some("## 1\n\nBe terse.\n\n## 2\n\nAnswer in French.")
+    );
+    assert_eq!(
+        Form::Tags.render(&parts).as_deref(),
+        Some("<instruction>Be terse.</instruction>\n<instruction>Answer in French.</instruction>")
+    );
+    assert_eq!(
+        Form::Capitals.render(&parts).as_deref(),
+        Some("BE TERSE.\n\nANSWER IN\nFRENCH."),
+        "capitals keep the document as written"
+    );
+    assert_eq!(Extra::Forms.generations(2, 2), 6);
+    assert_eq!(Extra::Forms.generations(1, 1), 2);
+    assert!(Extra::Forms.at_most());
+    assert!(!Extra::Swaps.at_most());
+
+    let asked: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let mut ask = |prompt: &str, _: Draw| {
+        asked.borrow_mut().push(prompt.to_owned());
+        if prompt.starts_with("- ") {
+            said("oui")
+        } else {
+            said("yes")
+        }
+    };
+    let report = measure(&taken, 41, None, &mut ask, &mut unforced);
+    let forms = report.forms.clone().expect("asked for, so present");
+    assert_eq!(forms.len(), 6);
+    assert!(
+        forms
+            .iter()
+            .all(|formed| matches!(formed.outcome, Rendering::Read(_))),
+        "a two-line prompt is in none of the forms: {forms:?}"
+    );
+    let bullets = forms
+        .iter()
+        .find(|formed| formed.form == Form::Bullets)
+        .and_then(|formed| match &formed.outcome {
+            Rendering::Read(read) => Some(read),
+            Rendering::NotRendered(_) => None,
+        })
+        .expect("the bullets were read");
+    assert!(bullets.moved > 0, "the list moved the answer");
+    assert_eq!(bullets.answer, "oui");
+    // One for the baseline, two removals, one control, six forms.
+    assert_eq!(asked.borrow().len(), 10);
+
+    // A prompt already on one line is not asked on one line, and a prompt
+    // of one part cannot be listed: each says so, and neither costs a
+    // generation.
+    let one_line = Taken {
+        text: "Be terse. Answer in French.",
+        by: Some(Unit::Sentence),
+        ..taken
+    };
+    asked.borrow_mut().clear();
+    let report = measure(&one_line, 41, None, &mut ask, &mut unforced);
+    let forms = report.forms.clone().expect("asked for");
+    assert_eq!(
+        forms.first().map(|formed| &formed.outcome),
+        Some(&Rendering::NotRendered(AS_WRITTEN))
+    );
+    assert_eq!(asked.borrow().len(), 9, "five forms, not six");
+
+    let one_part = Taken {
+        text: "Be terse.",
+        ..taken
+    };
+    asked.borrow_mut().clear();
+    let report = measure(&one_part, 41, None, &mut ask, &mut unforced);
+    let forms = report.forms.clone().expect("asked for");
+    let not_rendered: Vec<&str> = forms
+        .iter()
+        .filter_map(|formed| match formed.outcome {
+            Rendering::NotRendered(why) => Some(why),
+            Rendering::Read(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        not_rendered,
+        vec![AS_WRITTEN, ONE_PART, ONE_PART, ONE_PART, ONE_PART],
+        "{forms:?}"
+    );
+    assert!(
+        matches!(
+            forms.last().map(|formed| &formed.outcome),
+            Some(Rendering::Read(_))
+        ),
+        "capitals dress a whole of one part"
+    );
+    // The baseline, the control and capitals: one part is nothing to
+    // remove.
+    assert_eq!(asked.borrow().len(), 3);
+
+    let not_asked = Taken {
+        extras: Extras::NONE,
+        ..taken
+    };
+    let report = measure(&not_asked, 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.forms, None);
+}
+
 /// A phrase is the part of a sentence a comma, semicolon or colon ends —
 /// the unit an instruction is written in — and its punctuation stays with
 /// it, as a sentence keeps its full stop.

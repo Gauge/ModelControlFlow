@@ -468,6 +468,17 @@ fn what_the_generations_were(body: &Value) -> String {
     if let Some(swaps) = list("swaps") {
         spent.push(format!("swaps {swaps}"));
     }
+    // The forms rendered, not the forms: one the prompt is already in
+    // cost nothing (B-444).
+    if let Some(forms) = body.get("forms").and_then(Value::as_list) {
+        spent.push(format!(
+            "forms {}",
+            forms
+                .iter()
+                .filter(|formed| formed.get("not_rendered").is_none())
+                .count()
+        ));
+    }
     if let Some(settled) = body
         .get("settled")
         .filter(|held| matches!(held, Value::Map(_)))
@@ -908,19 +919,111 @@ fn swaps(body: &Value) -> Vec<String> {
     lines
 }
 
+/// The same parts in each form (B-444): a row a form read, how far its
+/// answer sat from the answer as written, and how many forms moved it
+/// past the floor — the forms this model reads as forms. A form not
+/// rendered is a line under the table saying why, never a row at nought
+/// (A7).
+fn forms(body: &Value) -> Vec<String> {
+    let depth = integer(body, "forced_depth");
+    let floor = integer(body, "floor_parts_per_million");
+    let Some(forms) = body.get("forms").and_then(Value::as_list) else {
+        return Vec::new();
+    };
+    let mut lines = vec![head(
+        "FORMS",
+        &[
+            "the same parts, dressed another way".to_owned(),
+            "vs the answer as written".to_owned(),
+            "high = the form carries it".to_owned(),
+        ],
+    )];
+    let read: Vec<&Value> = forms
+        .iter()
+        .filter(|formed| formed.get("not_rendered").is_none())
+        .collect();
+    let rows: Vec<Vec<String>> = read
+        .iter()
+        .flat_map(|formed| {
+            let mut rows = vec![vec![
+                form_name(formed),
+                percent(moved_of(formed)),
+                bar(moved_of(formed)),
+                rank_cell(formed.get("held"), depth),
+                open_cell(formed.get("held")),
+            ]];
+            rows.extend(answer_row(formed, "answer"));
+            rows
+        })
+        .collect();
+    if !rows.is_empty() {
+        lines.extend(table(
+            &[
+                text("form"),
+                figure("moved"),
+                text(""),
+                figure("1st"),
+                figure("open"),
+            ],
+            &rows,
+        ));
+    }
+    for formed in forms
+        .iter()
+        .filter(|formed| formed.get("not_rendered").is_some())
+    {
+        lines.push(format!(
+            "  {:<10} not rendered · {}",
+            form_name(formed),
+            formed
+                .get("not_rendered")
+                .and_then(Value::as_text)
+                .unwrap_or("")
+        ));
+    }
+    lines.push(format!(
+        "  past floor {}  {} of {} · form read, not words",
+        percent(floor),
+        read.iter()
+            .filter(|formed| moved_of(formed) > floor)
+            .count(),
+        read.len()
+    ));
+    lines.push(String::new());
+    lines
+}
+
+/// The form a served row names.
+fn form_name(formed: &Value) -> String {
+    formed
+        .get("form")
+        .and_then(Value::as_text)
+        .unwrap_or("")
+        .to_owned()
+}
+
 /// A reading that was not asked for, said as not asked with the flag that
-/// asks it and what it would cost (A7).
+/// asks it and what it would cost (A7). The forms' cost is a ceiling, and
+/// says so: a form the prompt is already in is not asked (B-444).
 fn not_asked(extra: mcf_serve::prompt::Extra, body: &Value) -> Vec<String> {
     let removed = clauses_of(body).len();
     let parts =
         removed.saturating_add(usize::try_from(integer(body, "clauses_over_the_cap")).unwrap_or(0));
+    let asks = if extra.at_most() {
+        format!(
+            "{} — at most: a form the prompt is already in is not asked",
+            extra.asks()
+        )
+    } else {
+        extra.asks().to_owned()
+    };
     vec![
         format!("--{}", extra.name()),
         count_of(
             i64::try_from(extra.generations(parts, removed)).unwrap_or(0),
             "generation",
         ),
-        extra.asks().to_owned(),
+        asks,
     ]
 }
 
@@ -937,6 +1040,9 @@ fn more(body: &Value) -> Vec<String> {
     }
     if body.get("swaps").and_then(Value::as_list).is_none() {
         rows.push(not_asked(mcf_serve::prompt::Extra::Swaps, body));
+    }
+    if body.get("forms").and_then(Value::as_list).is_none() {
+        rows.push(not_asked(mcf_serve::prompt::Extra::Forms, body));
     }
     if !matches!(body.get("settled"), Some(Value::Map(_))) {
         rows.push(vec![
@@ -1274,6 +1380,7 @@ fn rendered(body: &Value, named: &str) -> Vec<String> {
     lines.extend(alone(body));
     lines.extend(prefixes(body));
     lines.extend(swaps(body));
+    lines.extend(forms(body));
     lines.extend(seeds(body));
     lines.extend(more(body));
     lines.extend(answer(body));
@@ -1889,6 +1996,65 @@ mod tests {
         assert!(text.contains("→ \"It's blue.\""), "{text}");
         assert!(
             text.contains("past floor 0.0%  1 of 2 · order read, not words"),
+            "{text}"
+        );
+    }
+
+    /// The forms are a row a form read, with how many moved the answer
+    /// past the floor; a form not rendered is a line saying why; where
+    /// the forms were not asked the report says so with the flag and a
+    /// cost that is a ceiling (A7, B-444).
+    #[test]
+    fn the_forms_say_which_dress_the_model_reads_or_that_they_were_not_asked() {
+        let text = rendered(&body(), "m").join("\n");
+        assert!(
+            text.contains("--forms            6 generations  the same parts"),
+            "{text}"
+        );
+        assert!(text.contains("at most: a form the prompt"), "{text}");
+        let read = |form: &str, moved: i64, answer: &str| {
+            Value::map([
+                ("form", Value::text(form.to_owned())),
+                ("moved_parts_per_million", Value::Integer(moved)),
+                ("held", Value::Null),
+                ("answer", Value::text(answer.to_owned())),
+            ])
+        };
+        let mut asked = body();
+        if let Value::Map(fields) = &mut asked {
+            fields.insert(
+                "forms".to_owned(),
+                Value::List(vec![
+                    Value::map([
+                        ("form", Value::text("one line")),
+                        (
+                            "not_rendered",
+                            Value::text("the prompt is written this way"),
+                        ),
+                    ]),
+                    read("bullets", 0, "Blue."),
+                    read("capitals", 350_000, "BLUE."),
+                ]),
+            );
+        }
+        let text = rendered(&asked, "m").join("\n");
+        assert!(text.contains("control 1 · forms 2"), "{text}");
+        assert!(text.contains("FORMS"), "{text}");
+        assert!(
+            text.contains("bullets    0.0%  ··········    —  —"),
+            "{text}"
+        );
+        assert!(
+            text.contains("capitals  35.0%  ###·······    —  —"),
+            "{text}"
+        );
+        assert!(text.contains("→ \"BLUE.\""), "{text}");
+        assert!(
+            text.contains("one line   not rendered · the prompt is written this way"),
+            "{text}"
+        );
+        assert!(
+            text.contains("past floor 0.0%  1 of 2 · form read, not words"),
             "{text}"
         );
     }

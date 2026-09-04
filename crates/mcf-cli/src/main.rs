@@ -1015,7 +1015,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
             },
             "--json" => as_json = true,
             // Every further reading is a flag of its own name: --floors,
-            // --alone, --prefixes, --swaps (B-072).
+            // --alone, --prefixes, --swaps, --forms (B-072).
             other => match other
                 .strip_prefix("--")
                 .and_then(mcf_serve::prompt::Extra::named)
@@ -1834,17 +1834,20 @@ const COMMANDS: &str = "\
     \x20       [--json]                      relevance. A\n\
     \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
     \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
-    \x20       [--swaps] [--system <text>]   at t to see whether it settles;\n\
-    \x20       [--thinking on|off]           --system, --thinking and --effort\n\
-    \x20       [--effort <word>]             read the prompt inside the turn\n\
-    \x20                                     it will be used in;\n\
+    \x20       [--swaps] [--forms]           at t to see whether it settles;\n\
+    \x20       [--system <text>]             --system, --thinking and --effort\n\
+    \x20       [--thinking on|off]           read the prompt inside the turn\n\
+    \x20       [--effort <word>]             it will be used in;\n\
     \x20                                     --floors puts the control at\n\
     \x20                                     every position, one each;\n\
     \x20                                     --alone asks each part as the\n\
     \x20                                     whole prompt in turn; --prefixes\n\
     \x20                                     grows the prompt a part at a time;\n\
     \x20                                     --swaps changes each pair of\n\
-    \x20                                     neighbours' places\n\
+    \x20                                     neighbours' places; --forms asks\n\
+    \x20                                     the same parts as one line,\n\
+    \x20                                     bullets, a numbered list, under\n\
+    \x20                                     headings, in tags and in capitals\n\
     \x20 mcf cross-check <model>              read one engine's tokens with the\n\
     \x20                                       other, and say whether they agree\n\
     \x20 mcf probe <model> [--engine <name>] [--apply]\n\
@@ -2541,7 +2544,8 @@ mod tests {
                 .with(mcf_serve::prompt::Extra::Floors, true)
                 .with(mcf_serve::prompt::Extra::Alone, true)
                 .with(mcf_serve::prompt::Extra::Prefixes, true)
-                .with(mcf_serve::prompt::Extra::Swaps, true),
+                .with(mcf_serve::prompt::Extra::Swaps, true)
+                .with(mcf_serve::prompt::Extra::Forms, true),
             turn: Box::new(mcf_serve::turn::Turn::default()),
             as_json: true,
         };
@@ -2561,6 +2565,7 @@ mod tests {
                 "--alone",
                 "--prefixes",
                 "--swaps",
+                "--forms",
                 "--json"
             ]),
             whole
@@ -2570,6 +2575,7 @@ mod tests {
                 "prompt",
                 "m",
                 "--json",
+                "--forms",
                 "--swaps",
                 "--prefixes",
                 "--alone",

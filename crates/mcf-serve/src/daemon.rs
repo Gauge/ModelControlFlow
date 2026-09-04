@@ -151,6 +151,59 @@ fn readings_value(readings: Option<&[crate::prompt::Reading]>) -> Value {
     })
 }
 
+/// The same parts in each form, as a client reads them: a form's name and
+/// its reading, or the form and why it was not rendered (B-444). Null
+/// where the forms were not asked, which is not *no form moved it* (A7).
+fn forms_value(forms: Option<&[crate::prompt::Formed]>) -> Value {
+    forms.map_or(Value::Null, |forms| {
+        Value::List(
+            forms
+                .iter()
+                .map(|formed| {
+                    let mut fields = vec![(
+                        "form".to_owned(),
+                        Value::text(formed.form.name().to_owned()),
+                    )];
+                    match &formed.outcome {
+                        crate::prompt::Rendering::Read(read) => {
+                            if let Value::Map(reading) = reading_value(Some(read)) {
+                                fields.extend(reading);
+                            }
+                        }
+                        crate::prompt::Rendering::NotRendered(why) => {
+                            fields
+                                .push(("not_rendered".to_owned(), Value::text((*why).to_owned())));
+                        }
+                    }
+                    Value::map(fields)
+                })
+                .collect(),
+        )
+    })
+}
+
+/// A served form's name and figures and none of its text, for the record
+/// (A25): a form not rendered keeps why (A7). Null stays null.
+fn forms_figures(served: Option<&Value>) -> Value {
+    let Some(Value::List(forms)) = served else {
+        return Value::Null;
+    };
+    Value::List(
+        forms
+            .iter()
+            .map(|formed| {
+                let kept = |key: &str| formed.get(key).cloned().unwrap_or(Value::Null);
+                Value::map([
+                    ("form", kept("form")),
+                    ("not_rendered", kept("not_rendered")),
+                    ("moved_parts_per_million", kept("moved_parts_per_million")),
+                    ("held", kept("held")),
+                ])
+            })
+            .collect(),
+    )
+}
+
 /// A served reading's figures and none of its text, for the record (A25):
 /// null stays null.
 fn reading_figures(served: Option<&Value>) -> Value {
@@ -397,6 +450,7 @@ fn prompt_report_entry(
         ("alone_floor", reading_figures(served.get("alone_floor"))),
         ("prefixes", reading_figures(served.get("prefixes"))),
         ("swaps", reading_figures(served.get("swaps"))),
+        ("forms", forms_figures(served.get("forms"))),
         ("clauses", Value::List(clauses)),
         ("clauses_over_the_cap", kept("clauses_over_the_cap")),
         ("settled", kept("settled")),
@@ -640,6 +694,8 @@ fn prompt_report_value(
         ("prefixes", readings_value(report.prefixes.as_deref())),
         // **Neighbouring parts swapped, where asked** (B-437).
         ("swaps", readings_value(report.swaps.as_deref())),
+        // **The same parts in each form, where asked** (B-444).
+        ("forms", forms_value(report.forms.as_deref())),
         (
             "forced_depth",
             Value::Integer(i64::try_from(crate::generation::HOW_DEEP).unwrap_or(i64::MAX)),

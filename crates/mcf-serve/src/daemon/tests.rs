@@ -544,6 +544,24 @@ fn a_served_report() -> Value {
             "swaps",
             Value::List(vec![a_reading(90_000, "Here is a careful function")]),
         ),
+        (
+            "forms",
+            Value::List(vec![
+                Value::map([
+                    ("form", Value::text("bullets")),
+                    ("moved_parts_per_million", Value::Integer(410_000)),
+                    ("held", Value::Null),
+                    ("answer", Value::text("Here is a list")),
+                ]),
+                Value::map([
+                    ("form", Value::text("one line")),
+                    (
+                        "not_rendered",
+                        Value::text("the prompt is written this way"),
+                    ),
+                ]),
+            ]),
+        ),
         ("forced_depth", Value::Integer(60)),
         ("ranked_under", Value::text("chatml")),
         (
@@ -697,6 +715,20 @@ fn a_prompt_report_entry_holds_figures_and_no_text() {
     assert_eq!(first_moved("alone"), Some(Value::Integer(310_000)));
     assert_eq!(first_moved("prefixes"), Some(Value::Integer(640_000)));
     assert_eq!(first_moved("swaps"), Some(Value::Integer(90_000)));
+    // A form travels as its name and figures, or its name and why it was
+    // not rendered; the answer stays behind (B-444, A25, A7).
+    assert_eq!(first_moved("forms"), Some(Value::Integer(410_000)));
+    let form = |at_form: usize, key: &str| {
+        at(&["forms"])
+            .and_then(|held| held.as_list().and_then(|forms| forms.get(at_form)).cloned())
+            .and_then(|held| held.get(key).cloned())
+    };
+    assert_eq!(form(0, "form"), Some(Value::text("bullets")));
+    assert_eq!(form(0, "answer"), None);
+    assert_eq!(
+        form(1, "not_rendered"),
+        Some(Value::text("the prompt is written this way"))
+    );
     assert_eq!(
         at(&["alone_floor", "moved_parts_per_million"]),
         Some(Value::Integer(980_000))
@@ -737,6 +769,7 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
         alone_floor: None,
         prefixes: None,
         swaps: None,
+        forms: None,
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -844,6 +877,16 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
         alone_floor: Some(read(1_000_000, "Hello!")),
         prefixes: Some(vec![read(750_000, "Sure.")]),
         swaps: Some(vec![read(125_000, "4.")]),
+        forms: Some(vec![
+            crate::prompt::Formed {
+                form: crate::prompt::Form::Bullets,
+                outcome: crate::prompt::Rendering::Read(read(250_000, "Four.")),
+            },
+            crate::prompt::Formed {
+                form: crate::prompt::Form::OneLine,
+                outcome: crate::prompt::Rendering::NotRendered(crate::prompt::AS_WRITTEN),
+            },
+        ]),
         baseline: "4".to_owned(),
         clauses: Vec::new(),
         clauses_over_the_cap: 0,
@@ -891,6 +934,32 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
     assert_eq!(
         swaps.first().and_then(|held| held.get("answer")),
         Some(&Value::text("4."))
+    );
+    // And the parts in each form: a form read carries its name and its
+    // reading, a form not rendered carries its name and why (B-444, A7).
+    let forms = served.get("forms").and_then(Value::as_list).unwrap_or(&[]);
+    assert_eq!(forms.len(), 2);
+    assert_eq!(
+        forms.first().and_then(|held| held.get("form")),
+        Some(&Value::text("bullets"))
+    );
+    assert_eq!(
+        forms.first().and_then(|held| held.get("answer")),
+        Some(&Value::text("Four."))
+    );
+    assert_eq!(
+        forms.first().and_then(|held| held.get("not_rendered")),
+        None
+    );
+    assert_eq!(
+        forms.get(1).and_then(|held| held.get("not_rendered")),
+        Some(&Value::text(crate::prompt::AS_WRITTEN))
+    );
+    assert_eq!(
+        forms
+            .get(1)
+            .and_then(|held| held.get("moved_parts_per_million")),
+        None
     );
 }
 

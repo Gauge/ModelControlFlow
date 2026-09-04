@@ -786,6 +786,9 @@ pub enum Shown {
     /// The answer with this part and the one after it in each other's
     /// places (B-437).
     Swap(usize),
+    /// The answer to the parts in this form, counted among the forms as
+    /// served (B-444).
+    Form(usize),
 }
 
 /// One thing a screen asks the window to do.
@@ -843,6 +846,9 @@ pub enum Act {
     /// Show the answer with this part and the next swapped, where the
     /// swaps were asked (B-437).
     ShowSwap(usize),
+    /// Show the answer to the parts in one form, where the forms were
+    /// asked (B-444).
+    ShowForm(usize),
     /// Close whatever dropdown is open, choosing nothing.
     Shut,
     /// Set the context window to one of the offered powers of two.
@@ -1469,6 +1475,7 @@ impl Desk {
             Act::ShowAlone(at) => self.show(Shown::Alone(at)),
             Act::ShowPrefix(at) => self.show(Shown::Prefix(at)),
             Act::ShowSwap(at) => self.show(Shown::Swap(at)),
+            Act::ShowForm(at) => self.show(Shown::Form(at)),
             Act::Ask { at } => self.ask(at),
             Act::Choose(at) => {
                 self.chosen = Some(at);

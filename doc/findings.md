@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 114 |
+| **Version** | 115 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 170 | [F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)](#170--f170--five-forms-of-one-prompt-five-answers-a-full-stop-apart-the-form-the-words-wear-moved-a-two-billion-model-less-than-a-numbered-list-did-and-the-word-figure-could-not-tell-a-dropped-full-stop-from-a-different-river-b-444-b-443-f159-a7-a19-315) |
 | 168 | [F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)](#168--f168--a-thought-written-as-channels-was-not-a-marker-pair-so-the-one-family-that-shows-its-reasoning-effort-in-the-account-showed-nothing-at-all-b-457-b-451-b-455-d47-a7) |
 | 167 | [F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)](#167--f167--the-prompt-report-read-every-persona-bare-the-turn-it-will-be-used-in-was-not-applied-so-what-a-system-turn-does-to-the-answer-and-what-a-thought-costs-were-both-invisible-b-455-b-451-b-443-d43-d47-34) |
 | 166 | [F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)](#166--f166--the-served-path-answered-whole-so-a-ten-minute-thought-was-ten-minutes-of-nothing-and-an-engine-that-died-in-the-ninth-left-no-trace-of-what-it-had-written-b-454-b-451-f142-d48-a2-a4) |
@@ -9592,6 +9593,59 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 170 · F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)
+
+A persona is written once and read as it is written, and until now the
+report could only take parts away from it, never dress the same parts
+differently. A writer's actual question is often not *which words* but
+*which shape*: does this model do what a bulleted list says, or what a
+paragraph says, or does it not care. The report now asks the same parts six
+ways — one line, bullets, a numbered list, under headings, in tags, in
+capitals — each once, greedy at the held seed, and reads each answer against
+the answer as written by the same word measure the impact table uses.
+
+**What a two-billion model did with three paragraphs.** `Answer in French.`
+/ `Be terse.` / `Name one river.` on Qwen3-VL-2B-Instruct through
+llama-server @925e1179, greedy, seed held, eleven generations:
+
+- as written: `Nile.`
+- one line, bullets, headings, tags: `Nile` — the full stop gone, first
+  piece rank 1, three of four pieces held
+- numbered list: `L'Indus.` — the one form under which the model answered
+  in French, first piece rank 4
+- capitals: `Nile.` — the same answer to the letter
+
+So the form this model reads is the numbered list, and only that one; every
+other shape of the same three instructions left `Answer in French` where the
+paragraphs had left it, unread. That is the sentence the writer wanted, and
+it is a sentence about *this* model on *this* prompt, not a property of
+numbered lists.
+
+**A form the prompt already wears is not asked.** A one-line prompt is
+already one line, so the one-line form is said as `not rendered · the prompt
+is written this way` rather than paid for and drawn as a zero. A prompt of
+one part has nothing to list, so the four list forms are said as `one part
+is nothing to list`; capitals alone are read, and the generations line says
+`forms 1`. The choice screen's cost is the exact count once the text is in
+hand, and the console's flag table says *at most* six, since the console has
+not read the file when it prints the price.
+
+**What the word figure cannot tell.** `Nile` against `Nile.` moved 100.0%:
+the measure is by whitespace-separated words, one word differs, and on a
+one-word answer one word is the whole of it. The `open` column beside it
+says three of four pieces were held, which is the corrective a reader has
+to apply by hand. The figure is not wrong under its own definition and it
+is the definition the impact table has always used, so the two tables stay
+comparable; but a writer glancing at five bars at full height would read
+five different rivers, and there was one. B-464 is that row.
+
+**What this does not settle.** Whether a larger model reads a list as this
+one does; six generations on a 27B are six minutes, and nobody has run it
+yet. And a form is a rendering of the *parts*, so it is only as good as the
+cut: by phrase, `Answer in French` and `Be terse` become bullets of two
+words each, which is a list a person would not write. The unit buttons are
+the writer's, and the report says which unit the forms were built from.
+
 ## 169 · F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)
 
 A draft head can be started (F164) and its whole point is speed, and the two
@@ -11762,6 +11816,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 115 — the same parts, dressed six ways
+
+F170 added: the prompt report renders the parts as one line, bullets, a
+numbered list, headings, tags and capitals and reads each against the answer
+as written; a form the prompt is already in is not asked. B-444, B-464.
 
 ### Version 114 — the cost of a switch, measured
 

@@ -2460,6 +2460,14 @@ fn prompt_report(
         found,
     );
     act = pressed.or(act);
+    let (after, pressed) = forms_table(
+        paint,
+        desk,
+        mouse,
+        Box::new(area.x, after, wide, 0.0),
+        found,
+    );
+    act = pressed.or(act);
     y = seeds_line(paint, (area.x, after), wide, found);
     y = more_line(paint, (area.x, y), wide, found);
     // The page scrolls, so the answer has a page of its own below the rest.
@@ -2641,6 +2649,9 @@ fn what_the_generations_were(found: &Value) -> String {
     }
     if let Some(swaps) = list("swaps") {
         spent.push(format!("swaps {swaps}"));
+    }
+    if let Some(forms) = found.get("forms").and_then(Value::as_list) {
+        spent.push(format!("forms {}", rendered_forms(forms).len()));
     }
     if let Some(settled) = found
         .get("settled")
@@ -3114,8 +3125,9 @@ fn not_asked(extra: mcf_serve::prompt::Extra, found: &Value) -> String {
     let parts = removed
         .saturating_add(usize::try_from(integer(found, "clauses_over_the_cap")).unwrap_or(0));
     format!(
-        "{} {}",
+        "{} {}{}",
         extra.name(),
+        if extra.at_most() { "up to " } else { "" },
         count_of(extra.generations(parts, removed), "generation")
     )
 }
@@ -3133,6 +3145,9 @@ fn more_line(paint: &mut Painter, at: (f32, f32), width: f32, found: &Value) -> 
     }
     if found.get("swaps").and_then(Value::as_list).is_none() {
         conditions.push(not_asked(mcf_serve::prompt::Extra::Swaps, found));
+    }
+    if found.get("forms").and_then(Value::as_list).is_none() {
+        conditions.push(not_asked(mcf_serve::prompt::Extra::Forms, found));
     }
     if !matches!(found.get("settled"), Some(Value::Map(_))) {
         conditions.push("temperature 3 generations · at 0 the seed changes nothing".to_owned());
@@ -3439,6 +3454,132 @@ fn swaps_table(
         ink.ink,
     );
     (y + 8.0, act)
+}
+
+/// The forms that were read: the served rows without a *not rendered*.
+fn rendered_forms(forms: &[Value]) -> Vec<&Value> {
+    forms
+        .iter()
+        .filter(|formed| formed.get("not_rendered").is_none())
+        .collect()
+}
+
+/// The same parts in each form (B-444): a row a form read, and how many
+/// of them moved the answer past the floor. A form not rendered is a line
+/// under the table saying why (A7). Each row shows its answer.
+fn forms_table(
+    paint: &mut Painter,
+    desk: &Desk,
+    mouse: &Mouse,
+    area: Box,
+    found: &Value,
+) -> (f32, Option<Act>) {
+    let ink = paint.ink;
+    let depth = integer(found, "forced_depth");
+    let floor = integer(found, "floor_parts_per_million");
+    let Some(forms) = found.get("forms").and_then(Value::as_list) else {
+        return (area.y, None);
+    };
+    let mut y = section(
+        paint,
+        (area.x, area.y),
+        area.w,
+        "forms",
+        &[
+            "the same parts, dressed another way".to_owned(),
+            "vs as written".to_owned(),
+            "high = the form carries it".to_owned(),
+            "row → answer".to_owned(),
+        ],
+    );
+    let read = rendered_forms(forms);
+    let rows: Vec<ReadingRow> = forms
+        .iter()
+        .enumerate()
+        .filter(|(_, formed)| formed.get("not_rendered").is_none())
+        .map(|(at, formed)| ReadingRow {
+            first: form_name(formed),
+            moved: moved_of(formed),
+            loud: moved_of(formed) > floor,
+            cells: held_cells(formed, depth),
+            text: String::new(),
+            act: Some(Act::ShowForm(at)),
+            chosen: desk.shown == Some(crate::Shown::Form(at)),
+        })
+        .collect();
+    let mut act = None;
+    if !rows.is_empty() {
+        let columns = [
+            Column {
+                head: "moved",
+                at: MOVED_AT + 24.0,
+                right: true,
+            },
+            Column {
+                head: "",
+                at: MOVED_AT + 36.0 + BAR_WIDTH,
+                right: true,
+            },
+            Column {
+                head: "1st",
+                at: 324.0,
+                right: true,
+            },
+            Column {
+                head: "open",
+                at: 378.0,
+                right: true,
+            },
+        ];
+        let (after, pressed) = reading_table(
+            paint,
+            mouse,
+            Box::new(area.x, y, area.w, 0.0),
+            "form",
+            &columns,
+            &rows,
+        );
+        y = after;
+        act = pressed;
+    }
+    for formed in forms
+        .iter()
+        .filter(|formed| formed.get("not_rendered").is_some())
+    {
+        y = foot(
+            paint,
+            (area.x, y + 4.0),
+            &format!("{} not rendered", form_name(formed)),
+            formed
+                .get("not_rendered")
+                .and_then(Value::as_text)
+                .unwrap_or(""),
+            ink.quiet,
+        );
+    }
+    let y = foot(
+        paint,
+        (area.x, y + 4.0),
+        &format!("past floor {}", as_percent(floor)),
+        &format!(
+            "{} of {} · form read, not words",
+            read.iter()
+                .filter(|formed| moved_of(formed) > floor)
+                .count(),
+            read.len()
+        ),
+        ink.ink,
+    );
+    (y + 8.0, act)
+}
+
+/// The form a served row names.
+fn form_name(formed: &Value) -> String {
+    formed
+        .get("form")
+        .and_then(Value::as_text)
+        .unwrap_or("")
+        .to_owned()
 }
 
 /// Whether several seeds gave several answers, under the temperature it
@@ -3801,6 +3942,11 @@ fn the_answer(paint: &mut Painter, desk: &Desk, area: Box, found: &Value) {
                 answer.to_owned(),
                 format!("answer · {}", crate::pair_mark(at)),
             ))
+        }
+        crate::Shown::Form(at) => {
+            let read = found.get("forms").and_then(Value::as_list)?.get(at)?;
+            let answer = read.get("answer").and_then(Value::as_text)?;
+            Some((answer.to_owned(), format!("answer · {}", form_name(read))))
         }
     });
     let (said, title) = if let Some((answer, title)) = &chosen {
@@ -4173,6 +4319,15 @@ impl Readings {
                     "swaps",
                     "each part and the next in each other's places · words kept".to_owned(),
                     extra.generations(parts, removed),
+                ),
+                // Counted from the text rather than forecast from the
+                // count of parts: a form the prompt is already in is not
+                // asked, and the page has the text (B-444).
+                Extra::Forms => (
+                    "forms",
+                    "one line · bullets · numbered · headings · tags · capitals · words kept"
+                        .to_owned(),
+                    mcf_serve::prompt::forms_asked(&taken.parts()),
                 ),
             };
             let quiet = paint.ink.quiet;

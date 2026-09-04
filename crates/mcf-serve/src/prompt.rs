@@ -235,11 +235,23 @@ pub enum Extra {
     /// the answer is carried by what the parts say or by where they sit
     /// (B-437). A generation a swap.
     Swaps,
+    /// The same parts in another form: on one line, as bullets, as a
+    /// numbered list, under headings, in tags and in capitals — the words
+    /// kept and only their dress changed, to say whether the model follows
+    /// the formatting or the words (B-444). A generation a form, less any
+    /// the prompt is already in.
+    Forms,
 }
 
 impl Extra {
     /// Every reading there is, in the order they are asked and reported.
-    pub const ALL: [Self; 4] = [Self::Floors, Self::Alone, Self::Prefixes, Self::Swaps];
+    pub const ALL: [Self; 5] = [
+        Self::Floors,
+        Self::Alone,
+        Self::Prefixes,
+        Self::Swaps,
+        Self::Forms,
+    ];
 
     /// The name a flag and the wire use.
     #[must_use]
@@ -249,6 +261,7 @@ impl Extra {
             Self::Alone => "alone",
             Self::Prefixes => "prefixes",
             Self::Swaps => "swaps",
+            Self::Forms => "forms",
         }
     }
 
@@ -273,7 +286,26 @@ impl Extra {
             // pair, likewise: the part removed and the one after it change
             // places, and the last part has nothing after it.
             Self::Prefixes | Self::Swaps => strict_prefixes(parts, removed),
+            // One a form, and this is the most: a form the prompt is
+            // already in is not asked, and the page says which. One part
+            // is nothing to list, so only the two forms of a whole are
+            // left to it.
+            Self::Forms => {
+                if parts > 1 {
+                    Form::ALL.len()
+                } else {
+                    Form::OF_A_WHOLE
+                }
+            }
         }
+    }
+
+    /// Whether the count is a ceiling rather than the bill: a form the
+    /// prompt is already written in costs nothing, so the forecast for the
+    /// forms is *at most* (B-444).
+    #[must_use]
+    pub const fn at_most(self) -> bool {
+        matches!(self, Self::Forms)
     }
 
     /// What the reading is, for a button or a line: what it asks, in a
@@ -297,6 +329,10 @@ impl Extra {
                 "each part swapped with the one after it, to say whether the answer follows \
                  what the parts say or where they sit"
             }
+            Self::Forms => {
+                "the same parts on one line, as bullets, numbered, under headings, in tags \
+                 and in capitals, to say whether the model follows the form or the words"
+            }
         }
     }
 
@@ -308,6 +344,7 @@ impl Extra {
             Self::Alone => "each part alone",
             Self::Prefixes => "prompt grown from the front",
             Self::Swaps => "neighbours swapped",
+            Self::Forms => "the same words in six forms",
         }
     }
 
@@ -320,6 +357,7 @@ impl Extra {
             Self::Alone => "for each part alone and the control alone",
             Self::Prefixes => "for the prompt grown a part at a time, short of the whole",
             Self::Swaps => "for each part swapped with the one after it",
+            Self::Forms => "for the parts in each form the prompt is not already in",
         }
     }
 
@@ -329,6 +367,7 @@ impl Extra {
             Self::Alone => 2,
             Self::Prefixes => 4,
             Self::Swaps => 8,
+            Self::Forms => 16,
         }
     }
 }
@@ -551,6 +590,148 @@ pub struct Reading {
     pub thought: Option<usize>,
 }
 
+/// A form the same parts can be written in: the words kept, their dress
+/// changed (B-444).
+///
+/// A writer choosing between a paragraph and a list wants to know whether
+/// this model reads the list *as* a list. Every form here keeps every word
+/// of every part and changes only what is around them, so what moves under
+/// a form is the form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    /// Every part on one line, one space between them, no line breaks.
+    OneLine,
+    /// A bullet a part: `- part`.
+    Bullets,
+    /// A numbered item a part: `1. part`.
+    Numbered,
+    /// A numbered heading over each part: `## 1`, then the part.
+    Headings,
+    /// Each part inside an `<instruction>` tag, one a line.
+    Tags,
+    /// The prompt as written, every letter a capital.
+    Capitals,
+}
+
+impl Form {
+    /// Every form, in the order they are read and reported.
+    pub const ALL: [Self; 6] = [
+        Self::OneLine,
+        Self::Bullets,
+        Self::Numbered,
+        Self::Headings,
+        Self::Tags,
+        Self::Capitals,
+    ];
+
+    /// How many of the forms a document of one part can still take: one
+    /// line and capitals, which dress the whole rather than list its parts.
+    pub const OF_A_WHOLE: usize = 2;
+
+    /// The name on the wire and in a report.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::OneLine => "one line",
+            Self::Bullets => "bullets",
+            Self::Numbered => "numbered",
+            Self::Headings => "headings",
+            Self::Tags => "tags",
+            Self::Capitals => "capitals",
+        }
+    }
+
+    /// The form a name means, or `None` where it names nothing.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|form| form.name() == name)
+    }
+
+    /// Whether the form lists the parts, which takes two of them, or
+    /// dresses the whole, which takes one.
+    #[must_use]
+    pub const fn lists(self) -> bool {
+        !matches!(self, Self::OneLine | Self::Capitals)
+    }
+
+    /// The parts in this form, or `None` where they cannot be put in it:
+    /// one part is nothing to list.
+    ///
+    /// A part's own line breaks are folded to spaces in every form but
+    /// capitals, because a bullet with a paragraph break inside it is not a
+    /// bullet; capitals keep the document as written, because the case is
+    /// all that form changes.
+    #[must_use]
+    pub fn render(self, parts: &[Part]) -> Option<String> {
+        if parts.is_empty() || (self.lists() && parts.len() < 2) {
+            return None;
+        }
+        let flat = |part: &Part| part.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let listed = |dressed: &dyn Fn(usize, String) -> String, between: &str| {
+            parts
+                .iter()
+                .enumerate()
+                .map(|(at, part)| dressed(at.saturating_add(1), flat(part)))
+                .collect::<Vec<_>>()
+                .join(between)
+        };
+        Some(match self {
+            Self::OneLine => parts.iter().map(flat).collect::<Vec<_>>().join(" "),
+            Self::Bullets => listed(&|_, text| format!("- {text}"), "\n"),
+            Self::Numbered => listed(&|number, text| format!("{number}. {text}"), "\n"),
+            Self::Headings => listed(&|number, text| format!("## {number}\n\n{text}"), "\n\n"),
+            Self::Tags => listed(
+                &|_, text| format!("<instruction>{text}</instruction>"),
+                "\n",
+            ),
+            Self::Capitals => joined(parts).to_uppercase(),
+        })
+    }
+}
+
+/// How many of the forms these parts would be asked in: every form they
+/// can be put in that is not the prompt as written. The bill, where the
+/// text is in hand; [`Extra::generations`] is the ceiling where it is not.
+#[must_use]
+pub fn forms_asked(parts: &[Part]) -> usize {
+    let written = joined(parts);
+    Form::ALL
+        .into_iter()
+        .filter(|form| {
+            form.render(parts)
+                .is_some_and(|rendered| rendered != written)
+        })
+        .count()
+}
+
+/// What one form did: read against the answer as written, or not rendered
+/// and why not — never drawn as the same answer (A7, B-444).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Formed {
+    /// The form.
+    pub form: Form,
+    /// The reading, or why none was taken.
+    pub outcome: Rendering,
+}
+
+/// Whether a form was read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rendering {
+    /// The parts in this form were asked, and the answer read against the
+    /// answer as written.
+    Read(Reading),
+    /// No generation was spent: the parts cannot be put in this form, or
+    /// the prompt is written in it already.
+    NotRendered(&'static str),
+}
+
+/// Why a form was not rendered: the prompt is in it as written, and asking
+/// it again would draw the baseline a second time.
+pub const AS_WRITTEN: &str = "the prompt is written this way";
+
+/// Why a listing form was not rendered: there is one part.
+pub const ONE_PART: &str = "one part is nothing to list";
+
 /// What every variant is read against: the answer as written and its
 /// opening, the seed held still, and the two ways of asking. One place
 /// that asks and compares, so every figure in a report is the same
@@ -627,6 +808,10 @@ pub struct Report {
     /// it, not their words alone. Capped at `most` swaps. `None` where not
     /// asked (A7).
     pub swaps: Option<Vec<Reading>>,
+    /// The same parts in each form, where asked (B-444): the words kept
+    /// and the dress changed, so what moves is the form. `None` where not
+    /// asked (A7).
+    pub forms: Option<Vec<Formed>>,
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
@@ -1322,6 +1507,10 @@ pub fn measure(
         .then(|| prefixes_of(&mut bench, &all, ablated));
     let swaps = (taken.extras.has(Extra::Swaps) && all.len() > 1)
         .then(|| swaps_of(&mut bench, &all, ablated));
+    let forms = taken
+        .extras
+        .has(Extra::Forms)
+        .then(|| forms_of(&mut bench, &all, &prompt));
 
     let settled = settle.map(|under| settled(&prompt, seed, under, &baseline, bench.ask));
 
@@ -1334,6 +1523,7 @@ pub fn measure(
         alone_floor,
         prefixes,
         swaps,
+        forms,
         baseline,
         baseline_thought,
         clauses,
@@ -1433,6 +1623,29 @@ pub fn swapped(parts: &[Part], at: usize) -> String {
         }
     }
     joined(&all)
+}
+
+/// The same parts in each form (B-444).
+///
+/// Removing, growing and swapping all keep the prompt's dress and change
+/// its words or their places. This keeps every word in its place and
+/// changes the dress alone, so what moves is the form: a list that moves
+/// the answer past the floor is a model that reads lists as lists. A form
+/// the prompt is written in already is not asked — the answer would be the
+/// baseline, drawn twice — and one part is not a list; each is said as not
+/// rendered rather than drawn as no movement (A7).
+fn forms_of(bench: &mut Bench<'_, '_>, all: &[Part], written: &str) -> Vec<Formed> {
+    Form::ALL
+        .into_iter()
+        .map(|form| Formed {
+            form,
+            outcome: match form.render(all) {
+                None => Rendering::NotRendered(ONE_PART),
+                Some(rendered) if rendered == written => Rendering::NotRendered(AS_WRITTEN),
+                Some(rendered) => Rendering::Read(bench.read(&rendered)),
+            },
+        })
+        .collect()
 }
 
 /// The settledness question: the same prompt, `SEEDS` seeds, one temperature.

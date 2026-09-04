@@ -1235,6 +1235,50 @@ fn grown_and_swapped() -> (mcf_record::json::Value, mcf_record::json::Value) {
     (prefixes, swaps)
 }
 
+/// The four sentences of `a_report` in each form: five read, and the one
+/// the prompt is written in already said as not rendered (B-444).
+fn in_forms() -> mcf_record::json::Value {
+    use mcf_record::json::Value;
+    let formed = |form: &str, moved: i64, answer: &str| {
+        Value::map([
+            ("form", Value::text(form.to_owned())),
+            ("moved_parts_per_million", Value::Integer(moved)),
+            ("held", Value::Null),
+            ("answer", Value::text(answer.to_owned())),
+        ])
+    };
+    Value::List(vec![
+        Value::map([
+            ("form", Value::text("one line")),
+            (
+                "not_rendered",
+                Value::text("the prompt is written this way"),
+            ),
+        ]),
+        formed(
+            "bullets",
+            80_000,
+            "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+        ),
+        formed(
+            "numbered",
+            90_000,
+            "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+        ),
+        formed(
+            "headings",
+            460_000,
+            "## slugify\n\ndef slugify(title):\n    return title.replace(\" \", \"-\")",
+        ),
+        formed(
+            "tags",
+            30_000,
+            "def slugify(title):\n    return title.lower().replace(\" \", \"-\")",
+        ),
+        formed("capitals", 720_000, "DEF SLUGIFY(TITLE): RETURN TITLE"),
+    ])
+}
+
 /// The four sentences of `a_report` asked alone, and the control alone.
 fn each_alone() -> (mcf_record::json::Value, mcf_record::json::Value) {
     use mcf_record::json::Value;
@@ -1342,6 +1386,7 @@ fn a_report() -> mcf_desk::Desk {
         ("alone_floor", each_alone().1),
         ("prefixes", grown_and_swapped().0),
         ("swaps", grown_and_swapped().1),
+        ("forms", in_forms()),
         ("clauses_over_the_cap", Value::Integer(2)),
         ("generations", Value::Integer(17)),
         ("prompt_tokens", Value::Integer(31)),
@@ -1661,6 +1706,53 @@ fn pressing_a_swap_shows_the_answer_with_the_pair_the_other_way_round() {
         drawn(&desk, DAY, "prompt-report-swaps").inked(ground),
         drawn(&unasked, DAY, "prompt-report-no-swaps").inked(ground),
         "the report reads the same with the neighbours swapped and without them"
+    );
+}
+
+/// The forms are a row a form read, a line for the one not rendered, and
+/// pressing a row shows the answer to the parts in that form (B-444).
+#[test]
+fn pressing_a_form_shows_the_answer_to_the_parts_in_that_form() {
+    use mcf_record::json::Value;
+    // The rows sit under the swaps, past the window's foot: the page is
+    // scrolled to them, which is how a reader reaches them too.
+    let mut desk = a_report();
+    desk.scroll = 1250.0;
+    let rows = (400.0, 700.0);
+    assert!(
+        act_within(&desk, &mcf_desk::Act::ShowForm(3), rows),
+        "no form in the report could be pressed"
+    );
+    assert!(
+        !act_within(&desk, &mcf_desk::Act::ShowForm(0), rows),
+        "a form not rendered was offered as an answer"
+    );
+    let mut form = a_report();
+    form.scroll = 1400.0;
+    form.shown = Some(mcf_desk::Shown::Form(3));
+    desk.scroll = 1400.0;
+    let ground = DAY.ground;
+    assert_ne!(
+        drawn(&desk, DAY, "answer-as-written-formed").inked(ground),
+        drawn(&form, DAY, "answer-form").inked(ground),
+        "the answer to a form drew as the answer as written"
+    );
+    let mut unasked = a_report();
+    unasked.scroll = 1250.0;
+    if let mcf_desk::Doing::Reporting(job) = &mut unasked.doing
+        && let Some(Value::Map(fields)) = job.answers.first_mut()
+    {
+        let _taken = fields.remove("forms");
+    }
+    assert!(
+        !act_within(&unasked, &mcf_desk::Act::ShowForm(3), rows),
+        "a form is offered where none was read"
+    );
+    desk.scroll = 1250.0;
+    assert_ne!(
+        drawn(&desk, DAY, "prompt-report-forms").inked(ground),
+        drawn(&unasked, DAY, "prompt-report-no-forms").inked(ground),
+        "the report reads the same with the forms and without them"
     );
 }
 
