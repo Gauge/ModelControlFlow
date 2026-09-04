@@ -220,6 +220,9 @@ enum Request<'a> {
         /// many they have. What MCF owes in return is a proposal naming what
         /// fits and what does not, rather than a quietly smaller run (§3.1).
         within: Option<u64>,
+        /// What the engine is started with beyond the plain load, the same
+        /// for both arms (B-463).
+        started: mcf_serve::declared::Started,
     },
     /// Write what a maintainer would need to read this machine's hardware.
     Support {
@@ -301,6 +304,8 @@ enum Request<'a> {
         deepest: u64,
         /// Which engine to ask through, if the caller named one.
         engine: Option<&'a str>,
+        /// What the engine is started with beyond the plain load (B-463).
+        started: mcf_serve::declared::Started,
     },
     /// What a prompt does to a model: which of its parts reach the answer.
     PromptReport {
@@ -797,6 +802,7 @@ fn parse<'a>(arguments: &[&'a str]) -> Request<'a> {
 fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut deepest = 8192;
     let mut engine = None;
+    let mut started = mcf_serve::declared::Started::default();
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -826,6 +832,19 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
                 };
                 engine = Some(*value);
             }
+            // What the engine is started with beyond the plain load: a
+            // timing under one of these is a timing of that condition, and
+            // the two conditions are only comparable if each says which it
+            // was (B-463, B-456).
+            "--draft-head" => started.draft_head = true,
+            "--rope-scaling" | "--rope-scale" => {
+                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
+                    return Ok(Request::MissingArgument {
+                        command: "measure",
+                        needs,
+                    });
+                }
+            }
             other => return Err(other),
         }
     }
@@ -833,6 +852,7 @@ fn measure_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<
         model,
         deepest,
         engine,
+        started,
     })
 }
 
@@ -913,6 +933,11 @@ fn one_document<'a>(prompt: Option<&'a str>, file: Option<&'a str>) -> Option<Re
     }
 }
 
+/// A switch that needed a value it did not get.
+const fn needs_for<'a>(command: &'static str, needs: &'static str) -> Request<'a> {
+    Request::MissingArgument { command, needs }
+}
+
 fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut prompt = None;
     let mut file = None;
@@ -924,16 +949,15 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     let mut as_json = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
+        // The value a switch takes, or what it needed: the name rather than
+        // the whole request, which is a large thing to carry as an error.
         let value = |needs: &'static str, rest: &mut std::slice::Iter<'_, &'a str>| {
-            rest.next().copied().ok_or(Request::MissingArgument {
-                command: "prompt",
-                needs,
-            })
+            rest.next().copied().ok_or(needs)
         };
         match *argument {
             "--prompt" => match value("--prompt <text>", &mut rest) {
                 Ok(text) => prompt = Some(text),
-                Err(missing) => return Ok(missing),
+                Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             // The template's own switches, as `mcf run` takes them: what is
             // read is the prompt inside the turn it will be used in (B-455).
@@ -947,7 +971,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
             }
             "--file" => match value("--file <path>, or - for the standard input", &mut rest) {
                 Ok(path) => file = Some(path),
-                Err(missing) => return Ok(missing),
+                Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             "--by" => match value("--by word, phrase, sentence or paragraph", &mut rest) {
                 Ok(word) => match mcf_serve::prompt::Unit::named(word) {
@@ -959,7 +983,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                         });
                     }
                 },
-                Err(missing) => return Ok(missing),
+                Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             "--most" => match value("--most <n>, how many parts to remove at most", &mut rest) {
                 Ok(count) => match count.parse::<usize>() {
@@ -971,7 +995,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                         });
                     }
                 },
-                Err(missing) => return Ok(missing),
+                Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             "--temperature" => match value(
                 "--temperature <decimal>, to draw the seeds at, above 0",
@@ -987,7 +1011,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                         });
                     }
                 },
-                Err(missing) => return Ok(missing),
+                Err(needs) => return Ok(needs_for("prompt", needs)),
             },
             "--json" => as_json = true,
             // Every further reading is a flag of its own name: --floors,
@@ -1375,6 +1399,24 @@ fn run_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
 /// `--resolving` is a percentage to one decimal place, read into parts per
 /// million, because *how much is a difference* is the caller's question and
 /// this is where they answer it (F55).
+/// What a benchmark is allowed to spend, and what difference it is asked to
+/// resolve: both are numbers with their own shapes, read in one place.
+fn bench_budget(
+    switch: &str,
+    value: Option<&str>,
+) -> Result<(Option<u64>, Option<u64>), &'static str> {
+    if switch == "--within" {
+        let seconds = value
+            .and_then(|value| value.parse().ok())
+            .ok_or("--within <seconds>, a number")?;
+        return Ok((Some(seconds), None));
+    }
+    let held = value
+        .and_then(per_cent)
+        .ok_or("--resolving <per-cent>, such as 5 or 2.5")?;
+    Ok((None, Some(held)))
+}
+
 fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut left = None;
     let mut right = None;
@@ -1385,6 +1427,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut resolving = None;
     let mut cold = false;
     let mut within = None;
+    let mut started = mcf_serve::declared::Started::default();
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
         match *argument {
@@ -1415,6 +1458,17 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                     });
                 }
             },
+            // Held the same across both arms: a comparison under a draft
+            // head is a comparison of two models each with one (B-463).
+            "--draft-head" => started.draft_head = true,
+            "--rope-scaling" | "--rope-scale" => {
+                if let Some(needs) = started_switch(&mut started, argument, rest.next().copied()) {
+                    return Ok(Request::MissingArgument {
+                        command: "bench",
+                        needs,
+                    });
+                }
+            }
             "--engine" => match rest.next() {
                 Some(named) => engine = Some(*named),
                 None => {
@@ -1434,23 +1488,12 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
                 }
             },
             "--cold" => cold = true,
-            "--within" => match rest.next().and_then(|value| value.parse().ok()) {
-                Some(seconds) => within = Some(seconds),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--within <seconds>, a number",
-                    });
+            "--within" | "--resolving" => match bench_budget(argument, rest.next().copied()) {
+                Ok((seconds, held)) => {
+                    within = seconds.or(within);
+                    resolving = held.or(resolving);
                 }
-            },
-            "--resolving" => match rest.next().and_then(|value| per_cent(value)) {
-                Some(held) => resolving = Some(held),
-                None => {
-                    return Ok(Request::MissingArgument {
-                        command: "bench",
-                        needs: "--resolving <per-cent>, such as 5 or 2.5",
-                    });
-                }
+                Err(needs) => return Ok(needs_for("bench", needs)),
             },
             other if other.starts_with("--") => return Err(other),
             other if left.is_none() => left = Some(other),
@@ -1468,6 +1511,7 @@ fn bench_options<'a>(arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
         resolving,
         cold,
         within,
+        started,
     }))
 }
 
@@ -1482,6 +1526,8 @@ struct Asked<'a> {
     resolving: Option<u64>,
     cold: bool,
     within: Option<u64>,
+    /// What the engine is started with beyond the plain load (B-463).
+    started: mcf_serve::declared::Started,
 }
 
 /// A benchmark request, or the first thing missing from one.
@@ -1500,6 +1546,7 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
         resolving,
         cold,
         within,
+        started,
     } = asked;
     match (left, right) {
         (Some(left), Some(right)) => Request::Bench {
@@ -1519,6 +1566,7 @@ fn assembled<'a>(asked: &Asked<'a>) -> Request<'a> {
             resolving,
             cold,
             within,
+            started,
         },
         (None, _) => Request::MissingArgument {
             command: "bench",
@@ -1771,7 +1819,10 @@ const COMMANDS: &str = "\
     \x20 mcf bench <model> --against <model> compare two models on an engine\n\
     \x20       --prompt <text> [--limit <n>]  that can be timed. No pass\n\
     \x20       [--seed <n>] [--resolving <%>] condition: every verdict is\n\
-    \x20       [--engine <name>] [--cold]     something the machine said (A18)\n\
+    \x20       [--engine <name>] [--cold]     something the machine said (A18).\n\
+    \x20       [--draft-head]                 A draft head or a scaling is\n\
+    \x20       [--rope-scaling <kind>]        held the same across both arms\n\
+    \x20       [--rope-scale <n>]             and named in the report\n\
     \x20 mcf eval <model>                    ask a model to do the work and\n\
     \x20                                     check what it did: each answer run\n\
     \x20                                     in a container, four outcomes and\n\
@@ -1847,7 +1898,9 @@ const COMMANDS: &str = "\
     \x20 mcf measure <model>                 time it at doubling context\n\
     \x20         [--deepest <n>]             depths, so the cost of a longer\n\
     \x20         [--engine <name>]           conversation is measured rather\n\
-    \x20                                     than assumed\n\
+    \x20         [--draft-head]              than assumed. A draft head or a\n\
+    \x20         [--rope-scaling <kind>]     scaling is timed by running it\n\
+    \x20         [--rope-scale <n>]          twice: each run says which it was\n\
     \x20 mcf settings <model>                every setting a model would run\n\
     \x20              [--context <n>]        under, and where each came from;\n\
     \x20                                     with a context, what that window\n\
@@ -1983,6 +2036,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             resolving,
             cold,
             within,
+            started,
         } => bench::bench(
             left,
             right,
@@ -1995,6 +2049,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             within.map(|seconds| {
                 mcf_core::time::Duration::from_nanos(seconds.saturating_mul(1_000_000_000))
             }),
+            *started,
         ),
         Request::Verify { bundle } => verify::run(bundle),
         Request::Bundle { id, into } => bundle::run(id, *into),
@@ -2010,7 +2065,8 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             model,
             deepest,
             engine,
-        } => measure::run(model, *deepest, *engine),
+            started,
+        } => measure::run(model, *deepest, *engine, *started),
         Request::PromptReport {
             model,
             prompt,
@@ -2435,6 +2491,7 @@ mod tests {
             model: "m",
             deepest: 1024,
             engine: Some("e"),
+            started: mcf_serve::declared::Started::default(),
         };
         assert_eq!(
             parse(&["measure", "m", "--engine", "e", "--deepest", "1024"]),

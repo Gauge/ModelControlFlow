@@ -21,7 +21,12 @@ use mcf_serve::control::{Answer, Request};
 use crate::Response;
 
 /// Times a model at doubling depths and prints what came back.
-pub(crate) fn run(model: &str, deepest: u64, engine: Option<&str>) -> Response {
+pub(crate) fn run(
+    model: &str,
+    deepest: u64,
+    engine: Option<&str>,
+    started: mcf_serve::declared::Started,
+) -> Response {
     let Some(socket) = crate::serve::socket_path() else {
         return Response {
             text: "mcf: MCF has nowhere to put a control socket on this machine\n  \
@@ -51,6 +56,7 @@ pub(crate) fn run(model: &str, deepest: u64, engine: Option<&str>) -> Response {
         model: model.to_owned(),
         engine: engine.map(str::to_owned),
         deepest,
+        started,
     }
     .to_line();
     if let Err(error) = writeln!(connection, "{line}").and_then(|()| connection.flush()) {
@@ -144,6 +150,16 @@ fn said(body: &Value) -> Vec<String> {
     }
 
     if matches!(body.get("done"), Some(Value::Bool(true))) {
+        return under_what(body);
+    }
+    Vec::new()
+}
+
+/// The conditions the measurement was taken under, which is the half of it
+/// that makes the figures usable (§3.4, A6).
+fn under_what(body: &Value) -> Vec<String> {
+    let number = |held: &Value, key: &str| held.get(key).and_then(Value::as_integer);
+    {
         let Some(conditions) = body.get("conditions") else {
             return vec![String::new(), "measured".to_owned()];
         };
@@ -173,6 +189,18 @@ fn said(body: &Value) -> Vec<String> {
                     .and_then(Value::as_text)
                     .unwrap_or("?")
             ),
+            // What the engine was started with beyond the plain load: two
+            // runs are only comparable if each says which it was, and this
+            // is the line that makes a switch's cost a measurement rather
+            // than a claim (A6, B-463).
+            format!(
+                "  started with  {}",
+                conditions
+                    .get("started_with")
+                    .map(mcf_serve::declared::Started::from_value)
+                    .unwrap_or_default()
+                    .said()
+            ),
         ];
         out.extend(read_off_the_rungs(body));
         // B65 and D31: a timing taken from MCF's own reference implementation
@@ -187,9 +215,8 @@ fn said(body: &Value) -> Vec<String> {
                     .to_owned(),
             );
         }
-        return out;
+        out
     }
-    Vec::new()
 }
 
 /// The figures the run reads off its rungs and derives on the daemon's side,

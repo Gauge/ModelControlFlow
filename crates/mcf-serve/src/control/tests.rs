@@ -140,11 +140,13 @@ fn the_new_requests_survive_the_wire() {
             from: None,
         },
         Request::Measure {
+            started: crate::declared::Started::default(),
             model: "a-model.gguf".to_owned(),
             engine: None,
             deepest: 8192,
         },
         Request::Measure {
+            started: crate::declared::Started::default(),
             model: "a-model.gguf".to_owned(),
             engine: Some("stand-in".to_owned()),
             deepest: 512,

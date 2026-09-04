@@ -233,6 +233,11 @@ pub enum Request {
         /// against, so a run that skipped them would be a run whose deepest
         /// number meant nothing.
         deepest: u64,
+        /// What the engine is started with beyond the plain load, where the
+        /// caller asked for either. A timing under one of them is a timing
+        /// of that condition and not of the plain load, so it travels with
+        /// the request and is named in what comes back (B-463, B-456).
+        started: crate::declared::Started,
     },
     /// Read what the provisioned engine produces from one model with MCF's
     /// own engine, and say whether the two agree (B-362, B-424).
@@ -490,6 +495,7 @@ impl Request {
                 model,
                 engine,
                 deepest,
+                started,
             } => Value::map([
                 ("ask", Value::text("measure")),
                 ("model", Value::text(model.clone())),
@@ -498,6 +504,7 @@ impl Request {
                     "deepest",
                     Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
                 ),
+                ("started_with", started.to_value()),
             ]),
         };
         let Value::Map(mut fields) = body else {
@@ -618,6 +625,12 @@ impl Request {
                     .and_then(Value::as_integer)
                     .and_then(|deepest| u64::try_from(deepest).ok())
                     .ok_or_else(|| refused("a measurement naming no depth", line))?,
+                // Absent is the plain load, which is what a client that
+                // predates the field asked for.
+                started: value
+                    .get("started_with")
+                    .map(crate::declared::Started::from_value)
+                    .unwrap_or_default(),
             }),
             Some("holding") => Ok(Self::Holding),
             Some("components") => Ok(Self::Components),

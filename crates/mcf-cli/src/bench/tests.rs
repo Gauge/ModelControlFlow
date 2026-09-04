@@ -13,7 +13,17 @@ const NOWHERE: &str = "/nonexistent/mcf-bench-test/model.gguf";
 #[test]
 fn without_a_daemon_it_refuses_rather_than_reporting() {
     let response = bench_where(
-        None, NOWHERE, NOWHERE, "hello", None, 0, None, None, false, None,
+        None,
+        NOWHERE,
+        NOWHERE,
+        "hello",
+        None,
+        0,
+        None,
+        None,
+        false,
+        None,
+        mcf_serve::declared::Started::default(),
     );
     assert!(!response.served);
     assert!(
@@ -31,7 +41,17 @@ fn a_missing_daemon_is_named() {
     let _written = std::fs::write(&scratch, b"not a model, and never read");
     let named = scratch.display().to_string();
     let response = bench_where(
-        None, &named, &named, "hello", None, 0, None, None, false, None,
+        None,
+        &named,
+        &named,
+        "hello",
+        None,
+        0,
+        None,
+        None,
+        false,
+        None,
+        mcf_serve::declared::Started::default(),
     );
     let _removed = std::fs::remove_file(&scratch);
     assert!(!response.served);
@@ -201,6 +221,7 @@ fn rendering_of_a_run_that_could_not_decide() -> String {
         },
         Some(&snapshot),
         Some(&Err("nor the snapshot".to_owned())),
+        mcf_serve::declared::Started::default(),
     )
 }
 

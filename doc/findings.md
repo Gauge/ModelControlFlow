@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 113 |
+| **Version** | 114 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
 | 168 | [F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)](#168--f168--a-thought-written-as-channels-was-not-a-marker-pair-so-the-one-family-that-shows-its-reasoning-effort-in-the-account-showed-nothing-at-all-b-457-b-451-b-455-d47-a7) |
 | 167 | [F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)](#167--f167--the-prompt-report-read-every-persona-bare-the-turn-it-will-be-used-in-was-not-applied-so-what-a-system-turn-does-to-the-answer-and-what-a-thought-costs-were-both-invisible-b-455-b-451-b-443-d43-d47-34) |
 | 166 | [F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)](#166--f166--the-served-path-answered-whole-so-a-ten-minute-thought-was-ten-minutes-of-nothing-and-an-engine-that-died-in-the-ninth-left-no-trace-of-what-it-had-written-b-454-b-451-f142-d48-a2-a4) |
@@ -9591,6 +9592,50 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 169 · F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)
+
+A draft head can be started (F164) and its whole point is speed, and the two
+surfaces that time anything — the benchmark and the depth ladder — could not
+start one. So a person could turn it on in a behaviour answer, which never
+carries a speed, and had no way at all to find out what it cost. A switch
+whose only purpose is a timing, and no timing.
+
+**Both surfaces carry the switches now.** `mcf measure` starts the engine
+under them and names them in what it prints and in what it records; `mcf
+bench` holds them the same across both arms and says so in the report. A
+file that cannot honour one is refused before the ladder is climbed rather
+than at a rung of it, which on a 17.6 GB model is the difference between a
+refusal and a quarter of an hour.
+
+**And then the measurement, twice.** The 27B that declares a draft head, at
+512 tokens deep on the processor, three samples a depth, two runs a sample,
+llama-server @925e1179, greedy at one seed, under a 40 GiB memory cap:
+
+- the plain load, 207.524 ms a token, spread 85.523
+- the draft head started, 258.006 ms a token, spread 50.728
+
+Each run says which it was, on the page and in the record, which is what
+makes the pair a pair. MCF draws no verdict from it and the surfaces do not
+either: three samples at one depth with spreads that overlap this much
+establish nothing about which is faster, and saying otherwise from two runs
+would be the claim this row exists to replace (A18, D39).
+
+**What the ladder times is the ladder's own prompt.** It pins a run of one
+token against a run of seventeen over a prompt of one identifier repeated,
+so that loading and prefill cancel. A draft head pays off when its guesses
+are *accepted*, and what is accepted depends on the text — so this pair says
+what the switch costs on that prompt, and not what it is worth on a
+person's. That is a property of the method and it is stated rather than
+worked around.
+
+**What this does not settle.** Whether a draft head is worth having on any
+real text; whether it is worth having on a graphics card, where the target
+model's decode is memory-bound and the arithmetic is nearly free; and what a
+rope scaling costs, which nobody has run at all. The benchmark holds the
+switches the same across both arms, so it compares two models under one
+condition rather than one model under two — the two-condition comparison is
+two runs of `mcf measure`, read side by side by a person.
+
 ## 168 · F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)
 
 What a model spends before its answer begins is counted by finding the
@@ -11717,6 +11762,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 114 — the cost of a switch, measured
+
+F169 added: `mcf bench` and `mcf measure` start the engine under its own
+switches and name them, and the draft head was timed against the plain load
+on the model that declares one. B-463.
 
 ### Version 113 — a thought that names its channel
 

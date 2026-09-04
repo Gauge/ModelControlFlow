@@ -430,6 +430,10 @@ impl Console {
             job: job::Job::start(
                 self.socket.clone(),
                 Request::Measure {
+                    // The plain load: the console times what the model does
+                    // as its file lays it out, and a switch is asked for at
+                    // the prompt (B-463).
+                    started: mcf_serve::declared::Started::default(),
                     model: held.path.clone(),
                     engine: None,
                     deepest,

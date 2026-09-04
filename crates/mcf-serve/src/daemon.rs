@@ -847,6 +847,10 @@ fn acquired(file: &str, done: &mcf_hub::acquisition::Done) -> Answer {
 /// can use or reproduce, and the engine that *ran* is the condition that
 /// matters most — a timing taken from MCF's own stand-in measures the
 /// stand-in, which is written to be read rather than to be fast (A6, B65, D31).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one measurement's conditions, each of which it writes down"
+)]
 fn measured(
     named: &str,
     path: &Path,
@@ -855,6 +859,7 @@ fn measured(
     ran_on: Option<&str>,
     readings: Vec<Value>,
     planned: &crate::ladder::Planned,
+    started: crate::declared::Started,
 ) -> Answer {
     // Two measurements the run took and used to throw away: what reading a
     // token of prompt costs, and the time to a first token (A7).
@@ -896,6 +901,11 @@ fn measured(
                     "is_the_stand_in",
                     Value::Bool(ran_on.is_some_and(is_the_stand_in)),
                 ),
+                // What the engine was started with beyond the plain load: a
+                // timing under a draft head is a timing of that condition,
+                // and two runs are only comparable if each says which it was
+                // (A6, B-463).
+                ("started_with", started.to_value()),
                 ("repeats", Value::Integer(i64::from(REPEATS))),
                 (
                     "tokens_per_reading",
@@ -2227,7 +2237,8 @@ impl Daemon {
                 model,
                 engine,
                 deepest,
-            } => self.measuring(&model, engine.as_deref(), deepest, waiting, writer),
+                started,
+            } => self.measuring(&model, engine.as_deref(), deepest, started, waiting, writer),
             Request::CrossCheck { model } => self.cross_checking(&model, waiting, writer),
             Request::PromptReport {
                 model,
@@ -3028,11 +3039,16 @@ impl Daemon {
     /// somebody can decide not to wait. MCF's own estimates land between
     /// 0.58× and 1.42× of what runs take, and a single number would be a
     /// promise it cannot keep.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one measurement's conditions, each named in what it writes"
+    )]
     fn measuring(
         &self,
         named: &str,
         engine: Option<&str>,
         deepest: u64,
+        started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
@@ -3053,6 +3069,12 @@ impl Daemon {
         }
         let path = crate::generation::resolved(&self.places.models, named);
         let held = std::fs::metadata(&path).map(|about| about.len()).ok();
+        // A switch this file cannot honour is refused before the ladder is
+        // climbed rather than once a rung of it: an hour spent to say no is
+        // an hour (A2, B-463).
+        if let Err(failure) = started.against(&crate::declared::Declared::of(&path)) {
+            return say(writer, &Answer::refused(&failure));
+        }
 
         // Before anything runs. The estimate is arithmetic over the ladder and
         // the model's size, and it is a range because it is an estimate (A6).
@@ -3090,7 +3112,8 @@ impl Daemon {
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
         for depth in &ladder {
-            let (reading, engine) = self.one_depth(named, engine, *depth, picked.as_ref(), waiting);
+            let (reading, engine) =
+                self.one_depth(named, engine, *depth, picked.as_ref(), started, waiting);
             ran_on = ran_on.take().or(engine);
             readings.push(reading.clone());
             say(
@@ -3119,6 +3142,7 @@ impl Daemon {
             ran_on.as_deref(),
             readings,
             &planned,
+            started,
         );
         // Written down as it is sent, the way a generation's account is. A
         // measurement nobody can find later is the same as one not taken
@@ -3281,6 +3305,10 @@ impl Daemon {
             // the same prefix, and where one ends its turn is part of that.
             false,
             picked,
+            // The plain load: a cross-check reads what two engines spell,
+            // and a draft head changes which tokens are drawn rather than
+            // how they are spelled (B-463).
+            crate::declared::Started::default(),
             waiting,
         )?;
         let Some(said) = produced.said else {
@@ -3366,12 +3394,17 @@ impl Daemon {
     }
 
     /// One rung of the ladder: the repeats, the median, and what ran them.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one rung's conditions, each named in what it writes"
+    )]
     fn one_depth(
         &self,
         named: &str,
         engine: Option<&str>,
         depth: u64,
         picked: Option<&(crate::adapters::ProvisionedLlama, u32, u64)>,
+        started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
     ) -> (Value, Option<String>) {
         // Repeats, because one pair is one sample and a fall-off read off
@@ -3392,9 +3425,17 @@ impl Daemon {
         // pair where that is not so is not divided (B-396).
         let mut fell_short: Option<String> = None;
         for _ in 0..REPEATS {
-            let one = self.timed_generation(named, engine, depth, 1, picked.cloned(), waiting);
-            let many =
-                self.timed_generation(named, engine, depth, 1 + SETTLED, picked.cloned(), waiting);
+            let one =
+                self.timed_generation(named, engine, depth, 1, picked.cloned(), started, waiting);
+            let many = self.timed_generation(
+                named,
+                engine,
+                depth,
+                1 + SETTLED,
+                picked.cloned(),
+                started,
+                waiting,
+            );
             for (run, pinned) in [(&one, 1), (&many, 1 + SETTLED)] {
                 match run {
                     Ok(timed) => {
@@ -3491,6 +3532,10 @@ impl Daemon {
     /// The prompt is a run of identifiers rather than text: what is being
     /// measured is depth, and depth is a count of tokens. Sending text would
     /// make the reading depend on how the text happened to segment.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one timing's conditions, each named in what it writes"
+    )]
     fn timed_generation(
         &self,
         named: &str,
@@ -3498,6 +3543,7 @@ impl Daemon {
         depth: u64,
         produce: u32,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
     ) -> std::result::Result<Timed, String> {
         let how_many =
@@ -3517,6 +3563,7 @@ impl Daemon {
             usize::try_from(produce).unwrap_or(1),
             true,
             picked,
+            started,
             waiting,
         )?;
 
@@ -3563,6 +3610,10 @@ impl Daemon {
         clippy::too_many_arguments,
         reason = "one generation's conditions, and who is waiting for it"
     )]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one generation's conditions, each named in its account"
+    )]
     fn drained_generation(
         &self,
         named: &str,
@@ -3571,6 +3622,7 @@ impl Daemon {
         produce: usize,
         pinned: bool,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
     ) -> std::result::Result<
         (
@@ -3592,7 +3644,7 @@ impl Daemon {
         });
 
         let clock = SystemClock;
-        let started = clock.now();
+        let began = clock.now();
         let produced = {
             let mut writer = &mine;
             crate::generation::serve_generation(
@@ -3615,12 +3667,12 @@ impl Daemon {
                 pinned,
                 None,
                 None,
-                crate::declared::Started::default(),
+                started,
                 waiting,
                 &mut writer,
             )
         };
-        let took = clock.now().saturating_duration_since(started);
+        let took = clock.now().saturating_duration_since(began);
         drop(mine);
         let _joined = drain.join();
         Ok((produced, took))

@@ -415,6 +415,7 @@ pub(crate) fn bench(
     resolving: Option<PartsPerMillion>,
     cold: bool,
     within: Option<Duration<Monotonic>>,
+    started: mcf_serve::declared::Started,
 ) -> Response {
     bench_where(
         crate::serve::socket_path(),
@@ -427,6 +428,7 @@ pub(crate) fn bench(
         resolving,
         cold,
         within,
+        started,
     )
 }
 
@@ -436,6 +438,17 @@ pub(crate) fn bench(
 /// middle, for the reason `run_where` gives: a suite whose answer depends on
 /// whether a daemon happens to be running is a suite that reports on the
 /// machine (F46, §3.12).
+/// A benchmark needs the daemon: this process cannot time an engine it did
+/// not start, and MCF's own engine is not one that can be timed (B65, D31).
+fn no_daemon() -> Response {
+    Response {
+        text: "mcf: a benchmark runs through the daemon, and none is listening\n  `mcf serve` \
+               starts one"
+            .to_owned(),
+        served: false,
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "every one is a condition of the measurement, and a struct of them \
@@ -452,6 +465,7 @@ pub(crate) fn bench_where(
     resolving: Option<PartsPerMillion>,
     cold: bool,
     within: Option<Duration<Monotonic>>,
+    started: mcf_serve::declared::Started,
 ) -> Response {
     let resolving = resolving.unwrap_or(RESOLVING);
     let (discipline, method, limit) = asked_for(prompt, limit, seed, engine, resolving, cold);
@@ -466,12 +480,7 @@ pub(crate) fn bench_where(
     };
 
     let Some(socket) = socket.filter(|socket| UnixStream::connect(socket).is_ok()) else {
-        return Response {
-            text: "mcf: a benchmark runs through the daemon, and none is listening\n  `mcf serve` \
-                   starts one"
-                .to_owned(),
-            served: false,
-        };
+        return no_daemon();
     };
 
     let (left_identifiers, right_identifiers) = vocabularies(&left_path, &right_path, prompt, cold);
@@ -486,6 +495,7 @@ pub(crate) fn bench_where(
         prompt,
         seed,
         engine,
+        started,
     ) {
         return Response {
             text,
@@ -525,6 +535,7 @@ pub(crate) fn bench_where(
             engine,
             resolving,
             ceiling: planned.work.trials,
+            started,
         },
     );
     // A4: a run that was interrupted before it had two pairs has no comparison
@@ -576,6 +587,7 @@ pub(crate) fn bench_where(
             &planned,
             competing.as_ref(),
             competing_written.as_ref(),
+            started,
         ),
         served: true,
     }
@@ -622,6 +634,9 @@ struct Asked<'a> {
     /// The most pairs this run will take — the declared ceiling, or the
     /// smaller number a time budget proposed (B-226).
     ceiling: usize,
+    /// What the engine is started with beyond the plain load, the same for
+    /// both arms (B-463).
+    started: mcf_serve::declared::Started,
 }
 
 /// Runs the pairs until the comparison decides or the ceiling is reached.
@@ -674,6 +689,7 @@ fn interleave(
                 asked.limit,
                 asked.seed,
                 asked.engine,
+                asked.started,
             ) {
                 Ok(held) => Some(held),
                 Err(text) => {
@@ -749,9 +765,10 @@ fn timeable(
     prompt: &str,
     seed: u64,
     engine: Option<&str>,
+    started: mcf_serve::declared::Started,
 ) -> Result<(), String> {
     for (path, identifiers) in arms {
-        let named = engine_of(socket, path, prompt, identifiers, seed, engine)?;
+        let named = engine_of(socket, path, prompt, identifiers, seed, engine, started)?;
         if is_a_stand_in(&named) {
             return Err(format!(
                 "mcf: {} would run on {named}, and a stand-in's answer can never be a speed \
@@ -900,8 +917,19 @@ fn engine_of(
     identifiers: Option<&Vec<usize>>,
     seed: u64,
     engine: Option<&str>,
+    started: mcf_serve::declared::Started,
 ) -> Result<String, String> {
-    let account = generate(socket, path, prompt, identifiers, Some(1), seed, engine)?.1;
+    let account = generate(
+        socket,
+        path,
+        prompt,
+        identifiers,
+        Some(1),
+        seed,
+        engine,
+        started,
+    )?
+    .1;
     Ok(account
         .get("conditions")
         .and_then(|conditions| conditions.get("engine"))
@@ -920,6 +948,10 @@ fn is_a_stand_in(named: &str) -> bool {
 }
 
 /// One generation, timed.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one trial's conditions, each named in its account"
+)]
 fn timed(
     socket: &Path,
     path: &Path,
@@ -928,8 +960,18 @@ fn timed(
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
+    started: mcf_serve::declared::Started,
 ) -> Result<(Duration<Monotonic>, Warmth), String> {
-    let (took, account) = generate(socket, path, prompt, identifiers, limit, seed, engine)?;
+    let (took, account) = generate(
+        socket,
+        path,
+        prompt,
+        identifiers,
+        limit,
+        seed,
+        engine,
+        started,
+    )?;
     // The pin, proven: the request said how many tokens, and the account
     // says how many there were. A trial that produced fewer is not a trial
     // under this discipline — its duration is a duration of something else,
@@ -993,6 +1035,10 @@ fn held_the_pin(account: &Value, pinned: usize) -> Result<(), String> {
 /// tokens alone — what an operator waits for is the request, and a figure that
 /// excluded the parts MCF chose not to count would be a figure about a
 /// subset nobody named (§3.4).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one trial's conditions, each named in its account"
+)]
 fn generate(
     socket: &Path,
     path: &Path,
@@ -1001,6 +1047,7 @@ fn generate(
     limit: Option<usize>,
     seed: u64,
     engine: Option<&str>,
+    started: mcf_serve::declared::Started,
 ) -> Result<(Duration<Monotonic>, Value), String> {
     let mut connection = UnixStream::connect(socket).map_err(|error| {
         format!(
@@ -1033,7 +1080,10 @@ fn generate(
         pinned: true,
         turn: None,
         image: None,
-        started: mcf_serve::declared::Started::default(),
+        // What the engine is started with beyond the plain load, held the
+        // same across both arms: a timing under a draft head is a timing of
+        // that condition, and the two arms must be under one (A6, B-463).
+        started,
     };
     let clock = SystemClock;
     let began = clock.now();
@@ -1189,6 +1239,11 @@ fn rules_of_thumb(finding: &mcf_bench::compare::Finding, planned: &Planned) -> V
 }
 
 /// What the operator reads.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every one is a condition of the comparison, and the report's job is \
+              to say all of them (§3.4)"
+)]
 fn report(
     finding: &mcf_bench::compare::Finding,
     held: &Comparison<Monotonic>,
@@ -1197,6 +1252,7 @@ fn report(
     planned: &Planned,
     competing: Option<&mcf_core::hardware::Snapshot>,
     competing_written: Option<&Result<PathBuf, String>>,
+    started: mcf_serve::declared::Started,
 ) -> String {
     let (left_first, right_first) = held.order_balance();
     let mut lines = vec![
@@ -1213,6 +1269,11 @@ fn report(
             held.pairs().len()
         ),
         format!("  order    {left_first} left-first, {right_first} right-first"),
+        // What both engines were started with beyond the plain load: a
+        // comparison under a draft head is a comparison of that condition,
+        // and two runs are only comparable if each says which it was (A6,
+        // B-463).
+        format!("  started  {}", started.said()),
     ];
     // Everything that stops this travelling, all of it (A1): a run can be
     // outside the band *and* fail to establish its size, and a reader told
