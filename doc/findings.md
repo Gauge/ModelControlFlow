@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 118 |
+| **Version** | 119 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 172 | [F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)](#172--f172--an-applied-addressing-that-ends-inside-the-thinking-is-read-as-one-mcf-run-on-glm-47-flash-went-from-400-tokens-of-loop-cut-by-the-budget-raw-to-nile-after-205-tokens-of-thought-counted-apart-and-the-budget-the-probe-applied-is-the-thoughts-size-b-465-b-466-f171-b-451-a7-34) |
 | 171 | [F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)](#171--f171--the-probes-read-with-the-engine-that-answers-on-a-tekken-and-a-glm4-vocabulary-every-probe-ran-through-the-provisioned-server-and-glms-template-had-to-be-read-by-its-roles-before-the-chat-template-probe-had-anything-to-try-b-442-b-441-f158-f37-a7-34) |
 | 170 | [F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)](#170--f170--five-forms-of-one-prompt-five-answers-a-full-stop-apart-the-form-the-words-wear-moved-a-two-billion-model-less-than-a-numbered-list-did-and-the-word-figure-could-not-tell-a-dropped-full-stop-from-a-different-river-b-444-b-443-f159-a7-a19-315) |
 | 168 | [F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)](#168--f168--a-thought-written-as-channels-was-not-a-marker-pair-so-the-one-family-that-shows-its-reasoning-effort-in-the-account-showed-nothing-at-all-b-457-b-451-b-455-d47-a7) |
@@ -9594,6 +9595,61 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 172 · F172 — An applied addressing that ends inside the thinking is read as one: `mcf run` on GLM-4.7-Flash went from 400 tokens of loop cut by the budget, raw, to `Nile` after 205 tokens of thought counted apart, and the budget the probe applied is the thought's size (B-465, B-466, F171, B-451, A7, §3.4)
+
+F171 gave GLM-4.7-Flash an addressing on file, `user…assistant, thinking
+open`, and B-442's last cut taught the daemon what a turn of *pieces* left
+the model inside of. A prompt sent as *text* under an addressing somebody
+had applied was still read as if it began with the answer: the account's
+tail was the engine's frame or the caller's own trailing markers, and an
+applied addressing was neither. Applying the probe's finding — the act D43
+records — would then have made `mcf run` count 205 tokens of thought as
+the answer and shown no *before the answer* line, on the one model whose
+addressing ends inside its thinking. Now the applied addressing's trailing
+markers are the tail on the text path, the frame's first and the caller's
+own second, and a turn the caller segmented themselves takes nothing from
+what was applied.
+
+**What ran, GLM-4.7-Flash through the provisioned llama.cpp server
+@925e1179 on the processor.** Before anything was applied, `mcf run` with
+*Which river is longer, the Nile or the Amazon? Answer in one word.* went
+raw — *no addressing is on file for this model, so it went with no turn
+markers around it* — and the model wrote *Amazon. The Nile is the longest
+river in Africa …* and then the same two sentences over and over until the
+400-token limit cut it: `stopped: limit`, no turn ended. Then `mcf probe
+--apply --up-to 1024`: chat-template `user…assistant, thinking open` 5 of
+5, **applied**; stop-conditions ended 5 of 5 trials with the longest at 247
+tokens, **applied** as the budget; tools 5 of 5 and 5 of 5; shapes 15 of
+15; `<think>` opened by the turn 5 of 5, closed 5 of 5. Then the same
+question again, nothing else changed: 208 tokens, `stopped: stop_token`,
+the account reading *addressed user…assistant, thinking open — set by the
+chat-template probe at 2026-09-04T21:24:24*, *budget 247 tokens — set by the
+stop-conditions probe*, and *before the answer, 205 token(s) inside
+`<think>`, opened by the turn; closed, and the answer followed*. The answer
+was `Nile`. Same model, same engine, same words; the difference between a
+loop the budget cut and a one-word answer the model ended is the four
+markers around the words, which is what an addressing is.
+
+**What the probe's own page said about `mcf run`, and says now.** The
+chat-template probe's agreement line ended *`mcf run` sends raw text
+today*, written before an addressing could be applied and before a switch
+could ask the engine to frame the turn (B-450). Both are true now and the
+sentence was not: it reads *which is what MCF would address it as once
+somebody applies it; until then `mcf run` sends the words raw, or framed
+by the engine where a switch asks it to*.
+
+**What this does not settle, and B-466 is for.** The budget the
+stop-conditions probe applied is the longest turn it saw ending over five
+short questions, 247 tokens; the thinking probe's five turns on this model
+spent 1,395 tokens between them, 279 each on average, and the run above
+spent 205 inside `<think>` before one word of answer. A budget of 247 on a
+model that thinks for 200 is a budget for the thought, and the first
+question longer than a river's name will run out inside it — which B-451
+made a fact on the page (*NOT closed: the budget ran out inside it, and no
+answer came*) rather than an answer of nothing, but a fact the probe that
+set the budget had the numbers to avoid. That the applied budget should
+allow for what the thinking probe measured is B-466, open.
+
 ## 171 · F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)
 
 Until B-442, a probe built its turn with MCF's own tokenizer: it read the
@@ -11921,6 +11977,14 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 119 — left where the addressing ends
+
+F172: an applied addressing's trailing markers are what a text prompt
+leaves the model inside of, so `mcf run` under `user…assistant, thinking
+open` counts the thought apart; GLM-4.7-Flash raw looped to the limit and
+applied answered `Nile` after 205 tokens of thought (B-465). The applied
+budget is the thought's size, B-466.
 
 ### Version 118 — the answer, apart from the thought
 

@@ -428,16 +428,41 @@ impl<'a> Given<'a> {
         let Self::Pieces(pieces) = self else {
             return None;
         };
-        let markers: Vec<&str> = pieces
-            .iter()
-            .rev()
-            .map_while(|piece| match piece {
-                mcf_standin::tokenizer::Piece::Marker(marker) => Some(marker.as_str()),
-                mcf_standin::tokenizer::Piece::Text(_) => None,
-            })
-            .collect();
-        (!markers.is_empty()).then(|| markers.into_iter().rev().collect())
+        trailing_markers_of(pieces)
     }
+}
+
+/// The markers a turn of pieces ends in, as one string, or `None` where it
+/// ends in text or holds nothing.
+fn trailing_markers_of(pieces: &[mcf_standin::tokenizer::Piece]) -> Option<String> {
+    let markers: Vec<&str> = pieces
+        .iter()
+        .rev()
+        .map_while(|piece| match piece {
+            mcf_standin::tokenizer::Piece::Marker(marker) => Some(marker.as_str()),
+            mcf_standin::tokenizer::Piece::Text(_) => None,
+        })
+        .collect();
+    (!markers.is_empty()).then(|| markers.into_iter().rev().collect())
+}
+
+/// What a text prompt was left inside of: the frame's tail where the engine
+/// framed the turn, the caller's own trailing markers where they built it,
+/// and the applied addressing's where somebody applied one and the prompt
+/// went as text under it. An addressing applied from a probe that measured
+/// `<|assistant|><think>` best has put the model inside the thinking as
+/// surely as the probe did, and the account reads the turn the same way on
+/// both paths (B-465).
+fn tail_of<'a>(
+    frame: Option<&'a crate::turn::Frame>,
+    trailing: Option<&'a str>,
+    given: Given<'_>,
+    derived: Option<&'a String>,
+) -> Option<&'a str> {
+    frame
+        .map(|frame| frame.after.as_str())
+        .or(trailing)
+        .or_else(|| matches!(given, Given::Text).then_some(derived?.as_str()))
 }
 
 /// What somebody derived for this model, and the limit in force: the
@@ -634,10 +659,10 @@ pub(crate) fn serve_generation(
     // What the model was left inside of: the frame's tail where the engine
     // framed the turn, the caller's own trailing markers where they built it.
     let trailing = given.trailing_markers();
-    let tail = frame
+    let applied = derived
         .as_ref()
-        .map(|frame| frame.after.as_str())
-        .or(trailing.as_deref());
+        .and_then(|addressing| trailing_markers_of(&addressing.after));
+    let tail = tail_of(frame.as_ref(), trailing.as_deref(), given, applied.as_ref());
     let produced = match (chosen, wrapped, &picture) {
         // MCF's own engine reads text and nothing else; a picture sent to
         // it is refused rather than dropped on the way (A2), and refused
@@ -3134,5 +3159,50 @@ mod tokenizer_tests {
             unclosed.on_the_wire().get("before_the_answer"),
             Some(&Value::Null)
         );
+    }
+
+    /// A text prompt under an applied addressing is left where that
+    /// addressing ends; the engine's frame comes first, a caller's own pieces
+    /// next, and a turn the caller segmented themselves takes nothing from
+    /// what was applied.
+    #[test]
+    fn what_an_applied_addressing_leaves_the_model_inside_of() {
+        use super::{Given, tail_of, trailing_markers_of};
+        use mcf_standin::tokenizer::Piece;
+        let applied = [
+            Piece::Marker("<|assistant|>".to_owned()),
+            Piece::Marker("<think>".to_owned()),
+        ];
+        let after = trailing_markers_of(&applied);
+        assert_eq!(after.as_deref(), Some("<|assistant|><think>"));
+        assert_eq!(
+            tail_of(None, None, Given::Text, after.as_ref()),
+            Some("<|assistant|><think>")
+        );
+        let frame = crate::turn::Frame {
+            before: "<|user|>".to_owned(),
+            after: "<|assistant|></think>".to_owned(),
+            asked: "thinking off".to_owned(),
+        };
+        assert_eq!(
+            tail_of(Some(&frame), None, Given::Text, after.as_ref()),
+            Some("<|assistant|></think>")
+        );
+        assert_eq!(
+            tail_of(
+                None,
+                Some("<|assistant|>"),
+                Given::Pieces(&applied),
+                after.as_ref()
+            ),
+            Some("<|assistant|>")
+        );
+        assert_eq!(
+            tail_of(None, None, Given::Identifiers(&[1]), after.as_ref()),
+            None
+        );
+        assert_eq!(tail_of(None, None, Given::Text, None), None);
+        let text_last = [Piece::Text("assistant\n".to_owned())];
+        assert_eq!(trailing_markers_of(&text_last), None);
     }
 }

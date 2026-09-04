@@ -1937,7 +1937,8 @@ fn observed(addressed: &Addressed) -> Vec<String> {
         ),
         (true, false) => format!(
             " agrees the file declares a chat template and the model ends its turns under \
-             {}, which is what MCF would address it as — `mcf run` sends raw text today (§3.8)",
+             {}, which is what MCF would address it as once somebody applies it; until then \
+             `mcf run` sends the words raw, or framed by the engine where a switch asks it to",
             addressed.best
         ),
         (false, false) => format!(
