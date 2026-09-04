@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 116 |
+| **Version** | 117 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 171 | [F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)](#171--f171--the-probes-read-with-the-engine-that-answers-on-a-tekken-and-a-glm4-vocabulary-every-probe-ran-through-the-provisioned-server-and-glms-template-had-to-be-read-by-its-roles-before-the-chat-template-probe-had-anything-to-try-b-442-b-441-f158-f37-a7-34) |
 | 170 | [F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)](#170--f170--five-forms-of-one-prompt-five-answers-a-full-stop-apart-the-form-the-words-wear-moved-a-two-billion-model-less-than-a-numbered-list-did-and-the-word-figure-could-not-tell-a-dropped-full-stop-from-a-different-river-b-444-b-443-f159-a7-a19-315) |
 | 168 | [F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)](#168--f168--a-thought-written-as-channels-was-not-a-marker-pair-so-the-one-family-that-shows-its-reasoning-effort-in-the-account-showed-nothing-at-all-b-457-b-451-b-455-d47-a7) |
 | 167 | [F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)](#167--f167--the-prompt-report-read-every-persona-bare-the-turn-it-will-be-used-in-was-not-applied-so-what-a-system-turn-does-to-the-answer-and-what-a-thought-costs-were-both-invisible-b-455-b-451-b-443-d43-d47-34) |
@@ -9593,6 +9594,84 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 171 · F171 — The probes read with the engine that answers: on a tekken and a glm4 vocabulary every probe ran through the provisioned server, and GLM's template had to be read by its roles before the chat-template probe had anything to try (B-442, B-441, F158, F37, A7, §3.4)
+
+Until B-442, a probe built its turn with MCF's own tokenizer: it read the
+file's vocabulary, wrapped the question in the markers it found, and sent
+identifiers. On a file whose pre-tokenizer MCF has not transcribed — tekken
+on Devstral-Small-2-24B, glm4 on GLM-4.7-Flash — that read is refused, and
+so was every probe that needed it, on a model the provisioned server reads
+without complaint. F158 found the same split on the prompt report and B-441
+gave the report one chosen tokenizer; this is the probes given the same.
+A probe now sends its turn as pieces — markers and text — and the engine
+that answers reads them with its own tokenizer, as `mcf measure` already
+sent identifiers and `mcf run` already sent text. Which markers the file
+*holds* is a fact about the file and is still read from it, whatever
+segments the text.
+
+**What ran on GLM-4.7-Flash, through the provisioned llama.cpp server @925e1179,
+on the processor, `--up-to 1024`.** Usable-context accepted 1024 tokens of
+prompt whole. Stop-conditions: the turn ended in 2 of 5 trials, the longest
+running 442 tokens, 25 trials. Tool-calling: 5 of 5 well formed under the
+file's own `<tool_call>…</tool_call>`, 5 of 5 under a plain description.
+Structured output: 15 of 15 conformed across the three framings. Thinking: 5
+pairable markers and 59 the probe could not pair, `[gMASK]` among them; no
+turn opened one. Language cost, counted by the server and said so on the
+page: English 16 tokens for 71 characters, German 19 (118.7%), French 23
+(143.7%), Spanish 21 (131.2%), Japanese 23 for 26 characters (143.7%),
+Arabic 24 (150.0%). Every one of these was refused before, with the same
+sentence — *this vocabulary asks for a pre-tokenizer the stand-in engine
+does not implement* — because the probe could not build its turn.
+
+**`mcf segment` on Devstral-Small-2-24B, tekken.** 24 tokens for 77
+characters on a vocabulary of 131,072, read by the provisioned server, with
+the refusal quoted on the line below so the reader knows why it was not
+MCF's own. A typed `<s>` in the prompt became ` <`, `s`, `>[` — three
+ordinary tokens — and typed `[INST]` four, `[/INST]` five: the property F37
+depends on, that text cannot smuggle a marker, held through the engine's
+tokenizer as it holds through MCF's. Eight of twelve words segmented whole.
+
+**The half that was not met by reading alone.** The first probe of
+GLM-4.7-Flash after the change said, of chat-template: *the file declares a
+chat template, and no addressing could be built from it that this model's
+vocabulary can express*. Zero trials. The turn-building was fine; the
+template reading was not. GLM's template writes `<|user|>` and then
+`<|assistant|>` and nothing between the turns — the next role's marker is
+the turn boundary — and its file names `<|endoftext|>` as the ending, a
+token the template never mentions. The reading MCF had was *opener, then
+the file's end-of-turn marker*, which is ChatML's shape and gemma's and
+found nothing here, honestly. A second reading was added for a template
+that writes no closer: the marker spelled *user* opens, the marker spelled
+*assistant* follows the question, and where the template writes `</think>`
+as a token of its own, a second candidate closes the thinking first, which
+is what the template itself writes when thinking is off. Rerun:
+
+- `user…assistant` — 4 of 5 answered and ended, turns of 7–54 tokens,
+  middle 11
+- `user…assistant, thinking closed` — 5 of 5, turns of 2–11 tokens,
+  middle 8
+- raw — 1 of 5, a turn of 41
+
+Best is the closed form, and it is what the probe recorded. GLM-4.7-Flash
+has an addressing on file, which is the row's exit criterion, and it was
+reached by reading the template a second way rather than by running it —
+the door §3.7 keeps shut stays shut.
+
+**What the closed form does to the thinking probe.** The thinking probe
+asks under the addressing on file, and the addressing on file now ends in
+`</think>`; *no turn opened a marker* is then a fact about a turn whose
+thinking was closed before it began, not about whether this model thinks.
+The page says which addressing it asked under, and a reader who wants the
+open form's thinking budget asks under `user…assistant`. This is the
+probe measuring what it was given, which is what it should do, and the
+finding says so rather than leaving the two sentences to be confused.
+
+**What this does not settle.** Devstral-Small's own chat-template probe was
+not run to its end: its usable-context probe asks for the 393,215 tokens
+the file declares, which on the processor is hours, and the run was stopped
+there. Its addressing is `[INST]…[/INST]`, which `known_shapes` offers from
+the vocabulary alone, so the reading is not in doubt; the trials are.
+
 ## 170 · F170 — Five forms of one prompt, five answers a full stop apart: the form the words wear moved a two-billion model less than a numbered list did, and the word figure could not tell a dropped full stop from a different river (B-444, B-443, F159, A7, A19, §3.15)
 
 A persona is written once and read as it is written, and until now the
@@ -11823,6 +11902,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 117 — read by the engine that answers
+
+F171 added: the probes build their turns as pieces and the answering engine
+segments them, so a tekken or glm4 file is probed whole; GLM's
+role-marker template is read by its roles. B-442.
 
 ### Version 116 — one river, one bar
 

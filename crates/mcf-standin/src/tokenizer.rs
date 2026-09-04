@@ -100,6 +100,88 @@ pub enum Piece {
     Text(String),
 }
 
+/// The token list of a model file, whatever segments it.
+///
+/// A vocabulary this crate's tokenizer refuses — a third scheme, a
+/// pre-tokenizer it does not implement — still lists its tokens, and which
+/// markers that list holds is a fact about the file that can be read before
+/// any engine is asked to segment anything. A probe that needs only that fact
+/// reads this, and leaves the segmenting to the engine that will answer
+/// (B-442, F158).
+#[derive(Debug, Clone)]
+pub struct Tokens {
+    /// Every token, in identifier order.
+    spelled: Vec<String>,
+    by_token: BTreeMap<String, usize>,
+    /// The identifier of the beginning-of-text token, where the file names one.
+    pub beginning: Option<usize>,
+    /// The identifier of the end-of-text token, where the file names one.
+    pub ending: Option<usize>,
+}
+
+impl Tokens {
+    /// Reads the token list out of a model file.
+    ///
+    /// # Errors
+    ///
+    /// `artifact.provenance.incomplete` when the file lists no tokens.
+    pub fn read(file: &File) -> Result<Self> {
+        let tokens: Vec<String> = file
+            .get("tokenizer.ggml.tokens")
+            .and_then(Value::as_list)
+            .ok_or_else(|| missing("tokenizer.ggml.tokens"))?
+            .iter()
+            .filter_map(|value| value.as_text().map(str::to_owned))
+            .collect();
+        if tokens.is_empty() {
+            return Err(missing("tokenizer.ggml.tokens"));
+        }
+        // First wins. A vocabulary that spells one token twice is a file MCF
+        // did not write, and the lower identifier is what a segmentation
+        // should prefer for reproducibility.
+        let mut by_token = BTreeMap::new();
+        for (identifier, token) in tokens.iter().enumerate() {
+            by_token.entry(token.clone()).or_insert(identifier);
+        }
+        Ok(Self {
+            spelled: tokens,
+            by_token,
+            beginning: identifier(file, "tokenizer.ggml.bos_token_id"),
+            ending: identifier(file, "tokenizer.ggml.eos_token_id"),
+        })
+    }
+
+    /// How many tokens the file lists.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.spelled.len()
+    }
+
+    /// Whether it lists none, which no readable file does.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.spelled.is_empty()
+    }
+
+    /// The token an identifier names.
+    #[must_use]
+    pub fn token(&self, identifier: usize) -> Option<&str> {
+        self.spelled.get(identifier).map(String::as_str)
+    }
+
+    /// Whether a spelling is one token of the list.
+    #[must_use]
+    pub fn has_token(&self, spelled: &str) -> bool {
+        self.by_token.contains_key(spelled)
+    }
+
+    /// The identifier of a spelling that is one token of the list.
+    #[must_use]
+    pub fn identifier(&self, spelled: &str) -> Option<usize> {
+        self.by_token.get(spelled).copied()
+    }
+}
+
 /// A vocabulary, as a model file carries it.
 #[derive(Debug, Clone)]
 pub struct Vocabulary {
@@ -217,16 +299,12 @@ impl Vocabulary {
             return Err(missing("tokenizer.ggml.merges"));
         }
 
-        let tokens: Vec<String> = file
-            .get("tokenizer.ggml.tokens")
-            .and_then(Value::as_list)
-            .ok_or_else(|| missing("tokenizer.ggml.tokens"))?
-            .iter()
-            .filter_map(|value| value.as_text().map(str::to_owned))
-            .collect();
-        if tokens.is_empty() {
-            return Err(missing("tokenizer.ggml.tokens"));
-        }
+        let Tokens {
+            spelled: tokens,
+            by_token,
+            beginning,
+            ending,
+        } = Tokens::read(file)?;
 
         let scores: Vec<f32> = match file.get("tokenizer.ggml.scores").and_then(Value::as_list) {
             Some(values) => values
@@ -271,14 +349,6 @@ impl Vocabulary {
                 .collect(),
         };
 
-        let mut by_token = BTreeMap::new();
-        for (identifier, token) in tokens.iter().enumerate() {
-            // First wins. A vocabulary that spells one token twice is a file
-            // MCF did not write, and the lower identifier is what a
-            // segmentation should prefer for reproducibility.
-            by_token.entry(token.clone()).or_insert(identifier);
-        }
-
         // Type 4 is GGUF's USER_DEFINED. Longest first, so that a token which
         // is a prefix of another cannot claim the text the longer one wanted —
         // which is what the reference does too, and for the same reason.
@@ -321,8 +391,8 @@ impl Vocabulary {
             tokens,
             scores,
             by_token,
-            beginning: identifier(file, "tokenizer.ggml.bos_token_id"),
-            ending: identifier(file, "tokenizer.ggml.eos_token_id"),
+            beginning,
+            ending,
         })
     }
 

@@ -3,7 +3,14 @@
 use super::{Addressing, CHAT_TEMPLATE, Trial, chat_template};
 
 /// `<|im_start|>` in the fixture vocabularies below.
-const MARKER: usize = 3;
+/// Whether a turn the probe built carries the fixture's chat marker — the
+/// way the tests tell the template addressing from raw, now that a turn is
+/// markers and text for the answering engine to read (B-442).
+fn wrapped(pieces: &[mcf_standin::tokenizer::Piece]) -> bool {
+    pieces
+        .iter()
+        .any(|piece| matches!(piece, mcf_standin::tokenizer::Piece::Marker(marker) if marker == "<|im_start|>"))
+}
 
 /// A model file with a vocabulary and nothing else.
 ///
@@ -240,11 +247,9 @@ fn the_addressing_the_model_stops_under_is_the_one_reported() {
         4,
         6,
         "test",
-        // The marker is token 3 in this fixture — `<s>`, `▁a`, `a`, then
-        // `<|im_start|>`. Its presence is how the test tells the addressings
-        // apart, now that one is identifiers rather than text.
-        &mut |identifiers, _budget| {
-            if identifiers.contains(&MARKER) {
+        // The marker's presence is how the test tells the addressings apart.
+        &mut |pieces, _budget| {
+            if wrapped(pieces) {
                 Trial::Stopped { after: 4 }
             } else {
                 Trial::RanOut
@@ -268,8 +273,8 @@ fn the_addressing_the_model_stops_under_is_the_one_reported() {
         4,
         6,
         "test",
-        &mut |identifiers, _budget| {
-            if identifiers.contains(&MARKER) {
+        &mut |pieces, _budget| {
+            if wrapped(pieces) {
                 Trial::RanOut
             } else {
                 Trial::Stopped { after: 4 }
@@ -284,8 +289,8 @@ fn the_addressing_the_model_stops_under_is_the_one_reported() {
 #[test]
 fn addressings_come_from_the_vocabulary_not_from_a_family() {
     let file = mcf_standin::gguf::parse(&chatml()).expect("a model");
-    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).expect("a vocabulary");
-    let names: Vec<String> = super::addressings(&file, &vocabulary)
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let names: Vec<String> = super::addressings(&file, &tokens)
         .iter()
         .map(|a| a.name.clone())
         .collect();
@@ -294,8 +299,8 @@ fn addressings_come_from_the_vocabulary_not_from_a_family() {
     assert_eq!(names[1], "raw");
 
     let file = mcf_standin::gguf::parse(&plain()).expect("a model");
-    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).expect("a vocabulary");
-    let names: Vec<String> = super::addressings(&file, &vocabulary)
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let names: Vec<String> = super::addressings(&file, &tokens)
         .iter()
         .map(|a| a.name.clone())
         .collect();
@@ -319,8 +324,8 @@ fn ending_a_turn_having_said_nothing_is_not_ending_a_turn() {
         5,
         6,
         "test",
-        &mut |identifiers, _budget| {
-            if identifiers.contains(&MARKER) {
+        &mut |pieces, _budget| {
+            if wrapped(pieces) {
                 Trial::RanOut
             } else {
                 Trial::Stopped { after: 0 }
@@ -348,8 +353,8 @@ fn speaking_then_stopping_is_what_counts() {
         5,
         6,
         "test",
-        &mut |identifiers, _budget| {
-            if identifiers.contains(&MARKER) {
+        &mut |pieces, _budget| {
+            if wrapped(pieces) {
                 Trial::Stopped { after: 9 }
             } else {
                 Trial::Stopped { after: 0 }
@@ -576,15 +581,16 @@ fn what_is_applied_addresses_it_as_the_probe_did() {
     let file = mcf_standin::gguf::parse(&bytes).expect("the fixture reads");
     let vocabulary =
         mcf_standin::tokenizer::Vocabulary::read(&file).expect("the fixture has a vocabulary");
-    let candidates = super::addressings(&file, &vocabulary);
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("the fixture lists tokens");
+    let candidates = super::addressings(&file, &tokens);
     let chosen = candidates
         .iter()
         .find(|candidate| candidate.name != "raw")
         .expect("the fixture declares a template");
 
-    // What the probe sent.
-    let measured = chosen
-        .wrap(&vocabulary, super::QUESTION)
+    // What the probe sent, as the engine that answered read it (B-442).
+    let measured = vocabulary
+        .addressed(&chosen.wrap(super::QUESTION))
         .expect("the probe could assemble it");
 
     // The same thing, through the file a person's decision writes.
@@ -735,8 +741,8 @@ fn the_opener_is_the_marker_a_role_follows() {
     let tokens = with_bytes(&["<s>", "\u{2581}a", "a", "[]", "<|im_start|>", "<|im_end|>"]);
     let file =
         mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(5))).expect("a model");
-    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).expect("a vocabulary");
-    let found = super::from_template(&file, &vocabulary);
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let found = super::from_template(&file, &tokens);
     let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();
     assert_eq!(names, vec!["im_start…im_end as assistant"], "{names:?}");
     assert_eq!(
@@ -750,6 +756,51 @@ fn the_opener_is_the_marker_a_role_follows() {
     let coder = "{%- if tools is defined %}\n    {%- set tools = [] %}\n{%- endif %}\n\n{%- if system_message is defined %}\n    {{- \"<|im_start|>system\\n\" + system_message }}\n{%- else %}{{ '<|im_start|>' + message.role + '\\n' }}";
     assert!(super::opens_a_role(coder, "<|im_start|>"));
     assert!(!super::opens_a_role(coder, "[]"));
+}
+
+/// A template that writes no end-of-turn marker is read by its roles: the
+/// marker spelled *user* opens, the one spelled *assistant* follows the
+/// question, and where `</think>` is a token the template writes, a second
+/// candidate closes the thinking first (F171).
+#[test]
+fn a_template_whose_markers_are_the_roles_is_read_by_them() {
+    let template = "[gMASK]<sop>{% for m in messages %}{%- if m.role == 'user' -%}<|user|>{{ m.content }}{%- elif m.role == 'assistant' -%}<|assistant|>{{ '</think>' }}{{ m.content }}{%- endif -%}{%- endfor -%}<|assistant|>";
+    let tokens = with_bytes(&[
+        "<|endoftext|>",
+        "\u{2581}a",
+        "a",
+        "[gMASK]",
+        "<|user|>",
+        "<|assistant|>",
+        "</think>",
+    ]);
+    // The file's ending is a token the template never writes.
+    let file =
+        mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(0))).expect("a model");
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let found = super::from_template(&file, &tokens);
+    let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["user…assistant", "user…assistant, thinking closed"],
+        "{names:?}"
+    );
+    assert_eq!(
+        found[0].shown("hello"),
+        "<|user|>hello<|assistant|>",
+        "the turn boundary is the next role's marker, nothing between"
+    );
+    assert_eq!(
+        found[1].shown("hello"),
+        "<|user|>hello<|assistant|></think>"
+    );
+
+    // The same template on a vocabulary that spells no role as a marker
+    // yields nothing — the shape cannot be sent as itself (F37).
+    let bare = with_bytes(&["<|endoftext|>", "\u{2581}a", "a", "[gMASK]"]);
+    let file = mcf_standin::gguf::parse(&a_file(&bare, Some(template), Some(0))).expect("a model");
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    assert!(super::from_template(&file, &tokens).is_empty());
 }
 
 /// A template that emits the role it was given assigns nothing, and the

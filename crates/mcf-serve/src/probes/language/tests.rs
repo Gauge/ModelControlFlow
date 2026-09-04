@@ -4,17 +4,100 @@
 // checks/tests/taxonomy_agreement.rs.
 #![allow(clippy::panic, clippy::expect_used)]
 
-use super::{LANGUAGE_COST, SAMPLES, language_cost};
+use super::{Counted, LANGUAGE_COST, SAMPLES, language_cost};
 
-/// A file that is not a model is inconclusive, not a cost of nought.
+/// A counter that cannot read the file is inconclusive, not a cost of nought
+/// — and the counter's own reason is the probe's (A7, B-442).
 #[test]
-fn a_file_that_is_not_a_model_decides_nothing() {
-    let probed = language_cost(std::path::Path::new("/nowhere.gguf"), b"not a model at all");
+fn a_counter_that_cannot_read_decides_nothing() {
+    let probed = language_cost(
+        std::path::Path::new("/nowhere.gguf"),
+        "stand-in",
+        &mut |_text| Err("a model this machine is not holding: nowhere.gguf".to_owned()),
+    );
     assert!(
         probed.outcome.observed().is_none(),
-        "a probe that could not read the file must not report costs"
+        "a probe that could not count must not report costs"
     );
     assert_eq!(probed.tokens, 0);
+    let said = format!("{:?}", probed.outcome);
+    assert!(
+        said.contains("not holding: nowhere.gguf"),
+        "the counter's reason is the reason: {said}"
+    );
+}
+
+/// The count is the counter's, sample by sample, and the reader is named:
+/// six samples in, six costs out against the English one, with the dearest
+/// and cheapest read off the counts (B-442).
+#[test]
+fn the_costs_are_what_the_counter_said() {
+    let probed = language_cost(
+        std::path::Path::new("/a-model.gguf"),
+        "llama-server",
+        &mut |text| {
+            Ok(Counted {
+                tokens: text.chars().count().div_ceil(4),
+                by: "the llama-server tokenizer at /engine".to_owned(),
+            })
+        },
+    );
+    let spend = probed
+        .outcome
+        .observed()
+        .expect("a counter that answers every sample is a cost");
+    assert_eq!(spend.costs.len(), SAMPLES.len());
+    assert_eq!(spend.read_by, "the llama-server tokenizer at /engine");
+    assert!(spend.unencodable.is_empty(), "{:?}", spend.unencodable);
+    let english = spend
+        .costs
+        .iter()
+        .find(|cost| cost.language == "English")
+        .expect("the baseline");
+    assert_eq!(english.against_english_ppm, 1_000_000);
+    let dearest = spend
+        .costs
+        .iter()
+        .max_by_key(|cost| cost.tokens)
+        .expect("six costs");
+    assert_eq!(spend.dearest, dearest.language);
+}
+
+/// One sample the counter refuses is a fact about that sample, in the
+/// counter's words, and not a reason to withhold the other five (A7).
+#[test]
+fn one_unreadable_sample_is_reported_beside_the_rest() {
+    let probed = language_cost(
+        std::path::Path::new("/a-model.gguf"),
+        "stand-in",
+        &mut |text| {
+            if text.chars().any(|held| held as u32 > 0x2FFF) {
+                Err("no token spells this byte".to_owned())
+            } else {
+                Ok(Counted {
+                    tokens: text.split_whitespace().count(),
+                    by: "MCF's own tokenizer".to_owned(),
+                })
+            }
+        },
+    );
+    let spend = probed
+        .outcome
+        .observed()
+        .expect("English counted, so there is a baseline");
+    assert!(
+        !spend.unencodable.is_empty(),
+        "the sample outside the counter's range is named"
+    );
+    assert!(
+        spend
+            .unencodable
+            .iter()
+            .all(|(_, why)| why == "no token spells this byte"),
+        "{:?}",
+        spend.unencodable
+    );
+    assert_eq!(spend.costs.len() + spend.unencodable.len(), SAMPLES.len());
 }
 
 /// Every sample is the same meaning, so that what differs between two counts is

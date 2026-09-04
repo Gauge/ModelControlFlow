@@ -418,6 +418,101 @@ fn what_it_is_holding_is_read_from_the_disk() {
     let _ended = handle.join();
 }
 
+/// A count is a reading, and the answer names its reader: on a machine with
+/// nothing provisioned MCF's own tokenizer counts, says so, and counts
+/// without the beginning marker — a text's cost, not a turn's. A count of a
+/// model that is not there is refused with the file named (B-442, A2).
+#[test]
+fn a_count_names_who_counted() {
+    let machine = Machine::new("tokenize");
+    let places = machine.places();
+    let (handle, socket) = running(places.clone());
+
+    let model = places.models.join("owner/model/model.gguf");
+    std::fs::create_dir_all(model.parent().expect("a parent")).expect("a directory");
+    std::fs::write(&model, crate::probes::tests::chatml()).expect("a model file");
+
+    let counted = ask(
+        &socket,
+        &Request::Tokenize {
+            model: "owner/model/model.gguf".to_owned(),
+            text: "a".to_owned(),
+            engine: None,
+            beginning: false,
+        },
+    );
+    assert!(counted.served, "{:?}", counted.body);
+    assert_eq!(
+        counted.body.get("tokens").and_then(Value::as_integer),
+        Some(1),
+        "`a` is one token of this fixture and the beginning marker is not counted: {:?}",
+        counted.body
+    );
+    assert!(
+        counted
+            .body
+            .get("read_by")
+            .and_then(Value::as_text)
+            .is_some_and(|reader| reader.contains("MCF's own")),
+        "{:?}",
+        counted.body
+    );
+    let read = counted
+        .body
+        .get("read")
+        .and_then(Value::as_list)
+        .expect("the reading itself comes back");
+    // `▁a`, identifier 1: the unigram convention puts a space before the
+    // first word, and the reading shows it rather than tidying it away (A1).
+    assert_eq!(
+        read.first()
+            .and_then(|token| token.get("piece"))
+            .and_then(Value::as_text),
+        Some(" a"),
+        "{read:?}"
+    );
+
+    let as_a_turn = ask(
+        &socket,
+        &Request::Tokenize {
+            model: "owner/model/model.gguf".to_owned(),
+            text: "a".to_owned(),
+            engine: None,
+            beginning: true,
+        },
+    );
+    // This fixture names no beginning-of-text token, so a turn's start costs
+    // what the text costs: the convention is the file's, and a marker the
+    // file does not name is not invented for it (A7).
+    assert!(as_a_turn.served, "{:?}", as_a_turn.body);
+    assert_eq!(
+        as_a_turn.body.get("tokens").and_then(Value::as_integer),
+        Some(1),
+        "{:?}",
+        as_a_turn.body
+    );
+
+    let missing = ask(
+        &socket,
+        &Request::Tokenize {
+            model: "not-a-model.gguf".to_owned(),
+            text: "a".to_owned(),
+            engine: None,
+            beginning: false,
+        },
+    );
+    assert!(!missing.served);
+    assert!(missing.body.to_line().contains("not-a-model.gguf"));
+
+    let _stopped = ask(
+        &socket,
+        &Request::Stop {
+            reason: "done".to_owned(),
+        },
+    );
+    let _ended = handle.join();
+}
+
 /// A cross-check of a model that is not there is refused in one line, with
 /// the file named — before any engine is asked for anything (A2, B-424).
 #[test]

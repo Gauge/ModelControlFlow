@@ -167,6 +167,7 @@ fn the_new_requests_survive_the_wire() {
             limit: Some(17),
             seed: 0,
             tokens: Some(vec![1; 4]),
+            pieces: None,
             engine: None,
             whose: mcf_record::content::Whose::Fixture,
             pinned: true,
@@ -180,6 +181,10 @@ fn the_new_requests_survive_the_wire() {
             limit: None,
             seed: 7,
             tokens: None,
+            pieces: Some(vec![
+                mcf_standin::tokenizer::Piece::Marker("<|im_start|>".to_owned()),
+                mcf_standin::tokenizer::Piece::Text("user\nyes".to_owned()),
+            ]),
             engine: Some("stand-in".to_owned()),
             whose: mcf_record::content::Whose::User,
             pinned: false,
@@ -216,6 +221,54 @@ fn the_new_requests_survive_the_wire() {
         let read = Request::read(&line).expect("a request MCF wrote is a request MCF reads");
         assert_eq!(format!("{request:?}"), format!("{read:?}"), "{line}");
     }
+}
+
+/// A turn sent as markers and text, and a request to count some, survive
+/// the wire unchanged: which piece is a marker is the whole safety property
+/// (D46), and a marker read back as text would be a turn nobody sent (B-442).
+#[test]
+fn a_turn_of_pieces_and_a_count_survive_the_wire() {
+    let asked = [
+        Request::Generate {
+            whose: mcf_record::content::Whose::Fixture,
+            model: "a-model.gguf".to_owned(),
+            prompt: String::new(),
+            limit: Some(8),
+            seed: 7,
+            tokens: None,
+            pieces: Some(vec![
+                mcf_standin::tokenizer::Piece::Marker("<|im_start|>".to_owned()),
+                mcf_standin::tokenizer::Piece::Text("user\n<|im_start|>".to_owned()),
+                mcf_standin::tokenizer::Piece::Marker("<|im_end|>".to_owned()),
+            ]),
+            engine: Some("llama-server".to_owned()),
+            pinned: false,
+            turn: None,
+            image: None,
+            started: crate::declared::Started::default(),
+        },
+        Request::Tokenize {
+            model: "a-model.gguf".to_owned(),
+            text: "Le rapide renard brun".to_owned(),
+            engine: None,
+            beginning: false,
+        },
+        Request::Tokenize {
+            model: "a-model.gguf".to_owned(),
+            text: "The quick brown fox".to_owned(),
+            engine: Some("stand-in".to_owned()),
+            beginning: true,
+        },
+    ];
+    for request in asked {
+        let line = request.to_line();
+        let read = Request::read(&line).expect("a request MCF wrote is a request MCF reads");
+        assert_eq!(format!("{request:?}"), format!("{read:?}"), "{line}");
+    }
+    assert!(
+        Request::read(r#"{"protocol":1,"ask":"tokenize","model":"a-model.gguf"}"#).is_err(),
+        "a count of nothing is refused rather than answered nought"
+    );
 }
 
 /// A measurement with no depth is refused rather than given one.

@@ -1074,6 +1074,7 @@ fn generate(
         limit,
         seed,
         tokens: identifiers.cloned(),
+        pieces: None,
         engine: engine.map(str::to_owned),
         // A timing divides by the count, so the count is pinned, and the
         // account's own count is read back below to prove it was (B-396).

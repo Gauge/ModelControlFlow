@@ -24,6 +24,14 @@
 //! by decoding it alone. Decoding a token alone is wrong for every
 //! byte-level vocabulary, where one character is two to four tokens' worth of
 //! bytes and each on its own is a replacement mark (F19).
+//!
+//! **Whose reading.** MCF's own tokenizer reads the file in this process
+//! where it can. Where it cannot — a scheme it does not implement, a
+//! pre-tokenizer it refuses — the prompt is read by the daemon through the
+//! tokenizer of the engine that generates for this model, which is the
+//! reading a generation would actually be charged (B-442, F158). The page
+//! says which read it, because the two are different readers and a count
+//! with no reader named is a number with no provenance (A21).
 
 use std::path::Path;
 
@@ -91,9 +99,12 @@ fn segmented(path: &Path, prompt: &str) -> Result<String, String> {
     let file = mcf_standin::gguf::parse(&bytes).map_err(|failure| {
         crate::say::refusal("the file could not be read as a model", &failure)
     })?;
-    let vocabulary = mcf_standin::tokenizer::Vocabulary::read(&file).map_err(|failure| {
-        crate::say::refusal("this file carries no vocabulary MCF can read", &failure)
-    })?;
+    let vocabulary = match mcf_standin::tokenizer::Vocabulary::read(&file) {
+        Ok(vocabulary) => vocabulary,
+        // MCF's own tokenizer cannot read this file; the engine that
+        // generates for it can, and the daemon reads through that one.
+        Err(failure) => return through_the_daemon(path, prompt, &file, &failure),
+    };
     let identifiers = vocabulary.encode(prompt, true).map_err(|failure| {
         crate::say::refusal("this vocabulary cannot represent that text", &failure)
     })?;
@@ -123,6 +134,149 @@ fn segmented(path: &Path, prompt: &str) -> Result<String, String> {
         mcf_serve::probes::declared_context(&file),
         crate::history::probed_context(path),
     ))
+}
+
+/// The prompt as the engine that generates for this model reads it, asked of
+/// the daemon — for a file MCF's own tokenizer refuses (B-442, F158).
+///
+/// The refusal is kept on the page: that MCF's own tokenizer cannot read
+/// this file is a fact about the file a reader should have, and the daemon's
+/// reading is not a substitute for it but the other reader (A7, A21).
+fn through_the_daemon(
+    path: &Path,
+    prompt: &str,
+    file: &mcf_standin::gguf::Model,
+    refusal: &mcf_core::Failure,
+) -> Result<String, String> {
+    let read = read_by_the_daemon(path, prompt, true).map_err(|why| {
+        format!(
+            "{}\n  the engine that generates for this model could read it, through the \
+             daemon: {why}",
+            crate::say::refusal("this file carries no vocabulary MCF can read", refusal)
+        )
+    })?;
+    let listed = mcf_standin::tokenizer::Tokens::read(file).ok();
+    let fragments: Vec<Fragment> = read
+        .pieces
+        .into_iter()
+        .map(|(identifier, piece)| Fragment {
+            identifier,
+            byte: is_a_byte_piece(&piece),
+            text: piece,
+        })
+        .collect();
+
+    let mut lines = vec![
+        format!(
+            "{} token(s) for {} character(s) of text{}, read by {}",
+            fragments.len(),
+            prompt.chars().count(),
+            listed.as_ref().map_or_else(String::new, |tokens| format!(
+                ", on a vocabulary of {} token(s)",
+                tokens.len()
+            )),
+            read.by
+        ),
+        format!(
+            "  MCF's own tokenizer does not read this file — {} — so this is the engine's \
+             reading and not MCF's, which is the reading a generation is charged (B-442)",
+            refusal.detail()
+        ),
+        String::new(),
+    ];
+    for (at, fragment) in fragments.iter().enumerate() {
+        let shown = if fragment.text.is_empty() {
+            "(nothing visible)".to_owned()
+        } else {
+            format!("{:?}", fragment.text)
+        };
+        lines.push(format!(
+            "  #{at:<4} {:>7}  {shown}{}",
+            fragment.identifier,
+            if fragment.byte {
+                "   ← a raw byte: this vocabulary has no piece for that text"
+            } else {
+                ""
+            }
+        ));
+    }
+    lines.push(String::new());
+    lines.push(what_it_spends(
+        fragments.len(),
+        mcf_serve::probes::declared_context(file),
+        crate::history::probed_context(path),
+    ));
+    lines.push(String::new());
+    lines.push(whole_or_shattered(prompt, &fragments));
+    if let Some(tokens) = listed {
+        let has_token = |marker: &str| tokens.has_token(marker);
+        let ordinary = |marker: &str| {
+            read_by_the_daemon(path, marker, false).map_or_else(
+                |why| format!("could not be read: {why}"),
+                |read| format!("{} ordinary token(s)", read.pieces.len()),
+            )
+        };
+        lines.extend(marker_fidelity(prompt, &has_token, &ordinary));
+    }
+    Ok(lines.join("\n"))
+}
+
+/// A text as the daemon reads it, and who read it.
+struct Reading {
+    /// Each token: its identifier and what it spells.
+    pieces: Vec<(usize, String)>,
+    /// The tokenizer that read, in the daemon's words.
+    by: String,
+}
+
+/// Asks the daemon to read a text through the tokenizer of the engine that
+/// generates for this model — as the start of a turn, with the beginning
+/// marker, or as text alone.
+fn read_by_the_daemon(path: &Path, text: &str, beginning: bool) -> Result<Reading, String> {
+    let body = crate::hosting::ask(&mcf_serve::control::Request::Tokenize {
+        model: path.display().to_string(),
+        text: text.to_owned(),
+        engine: None,
+        beginning,
+    })?;
+    let pieces = body
+        .get("read")
+        .and_then(mcf_record::json::Value::as_list)
+        .ok_or_else(|| "the daemon's answer carried no reading".to_owned())?
+        .iter()
+        .map(|token| {
+            (
+                token
+                    .get("id")
+                    .and_then(mcf_record::json::Value::as_integer)
+                    .and_then(|held| usize::try_from(held).ok())
+                    .unwrap_or(0),
+                token
+                    .get("piece")
+                    .and_then(mcf_record::json::Value::as_text)
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let by = body
+        .get("read_by")
+        .and_then(mcf_record::json::Value::as_text)
+        .map_or_else(
+            || "a tokenizer the daemon did not name".to_owned(),
+            str::to_owned,
+        );
+    Ok(Reading { pieces, by })
+}
+
+/// Whether a piece is one raw byte, spelled the way the engine spells one.
+fn is_a_byte_piece(piece: &str) -> bool {
+    piece.len() == 6
+        && piece.starts_with("<0x")
+        && piece.ends_with('>')
+        && piece
+            .get(3..5)
+            .is_some_and(|hex| hex.chars().all(|held| held.is_ascii_hexdigit()))
 }
 
 /// What a reader sees.
@@ -169,9 +323,14 @@ fn render(
     lines.push(what_it_spends(fragments.len(), context, measured));
     lines.push(String::new());
     lines.push(whole_or_shattered(prompt, fragments));
-    for said in marker_fidelity(prompt, vocabulary) {
-        lines.push(said);
-    }
+    let has_token = |marker: &str| vocabulary.has_token(marker);
+    let ordinary = |marker: &str| {
+        vocabulary.encode(marker, false).map_or_else(
+            |_| "no tokens at all".to_owned(),
+            |held| format!("{} ordinary token(s)", held.len()),
+        )
+    };
+    lines.extend(marker_fidelity(prompt, &has_token, &ordinary));
     if decoded != prompt {
         // A1 and §3.15: what the model receives is not always what was typed,
         // and the difference is the reader's to see rather than MCF's to
@@ -207,18 +366,24 @@ fn render(
 ///
 /// **No judgement** (§3.15). Writing a marker into a prompt is not a mistake;
 /// it is a thing whose effect is invisible, and this makes it visible.
-fn marker_fidelity(prompt: &str, vocabulary: &mcf_standin::tokenizer::Vocabulary) -> Vec<String> {
+///
+/// Two questions of whichever tokenizer read the prompt: whether it *has* a
+/// token spelled so, and what the spelling becomes as typed text — so the
+/// same page is written whether MCF's own tokenizer read or the engine's
+/// did (B-442).
+fn marker_fidelity(
+    prompt: &str,
+    has_token: &dyn Fn(&str) -> bool,
+    ordinary: &dyn Fn(&str) -> String,
+) -> Vec<String> {
     let found = marker_shaped(prompt);
     if found.is_empty() {
         return Vec::new();
     }
     let mut lines = vec![String::new(), "Markers written into the prompt:".to_owned()];
     for marker in &found {
-        let spelled = vocabulary.encode(marker, false).map_or_else(
-            |_| "no tokens at all".to_owned(),
-            |held| format!("{} ordinary token(s)", held.len()),
-        );
-        lines.push(if vocabulary.has_token(marker) {
+        let spelled = ordinary(marker);
+        lines.push(if has_token(marker) {
             format!(
                 "  {marker:?} → {spelled}. This vocabulary HAS a token spelled exactly that, \
                  and typed text still does not become it: nothing a person writes can produce \

@@ -581,3 +581,50 @@ fn the_file_decides_whether_a_space_is_prefixed() {
         "a unigram vocabulary that does not say should add the prefix"
     );
 }
+
+/// The token list reads on a file whose scheme the vocabulary refuses.
+///
+/// A file that names a tokenizer this crate does not implement is still a
+/// file that lists its tokens, and which markers that list holds is a fact
+/// a probe can read before any engine segments anything. The refusal is the
+/// vocabulary's, and the list is not party to it (B-442, F158).
+#[test]
+fn the_token_list_reads_where_the_vocabulary_refuses() {
+    let bytes = file_with(
+        &["<s>", "[INST]", "[/INST]", "hello"],
+        &[0.0, 0.0, 0.0, -1.0],
+        "tekken",
+        Some(0),
+    );
+    let file = gguf::parse(&bytes).expect("well formed");
+    let refused = Vocabulary::read(&file).expect_err("a third scheme is refused");
+    assert_eq!(refused.category(), Category::EngineUnavailable);
+
+    let tokens = super::Tokens::read(&file).expect("the list is there regardless");
+    assert_eq!(tokens.len(), 4);
+    assert!(tokens.has_token("[INST]"));
+    assert!(!tokens.has_token("[INST"));
+    assert_eq!(tokens.identifier("[/INST]"), Some(2));
+    assert_eq!(tokens.token(3), Some("hello"));
+    assert_eq!(tokens.token(4), None);
+    assert_eq!(tokens.beginning, Some(0));
+    assert_eq!(tokens.ending, None);
+}
+
+/// A file with no token list refuses as a list, in the same words as a
+/// vocabulary would: the absence is the same absence.
+#[test]
+fn a_file_with_no_tokens_is_no_list() {
+    let mut out = b"GGUF".to_vec();
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(&length(0));
+    out.extend_from_slice(&length(1));
+    out.extend_from_slice(&length("tokenizer.ggml.model".len()));
+    out.extend_from_slice(b"tokenizer.ggml.model");
+    out.extend_from_slice(&8_u32.to_le_bytes());
+    out.extend_from_slice(&length("tekken".len()));
+    out.extend_from_slice(b"tekken");
+    let file = gguf::parse(&out).expect("well formed");
+    let failure = super::Tokens::read(&file).expect_err("nothing is listed");
+    assert_eq!(failure.category(), Category::ArtifactProvenanceIncomplete);
+}

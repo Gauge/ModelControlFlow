@@ -30,7 +30,7 @@ use std::path::Path;
 
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::Vocabulary;
+use mcf_standin::tokenizer::Tokens;
 
 use super::Trial;
 
@@ -94,26 +94,26 @@ fn spelled_as_a_byte(token: &str) -> bool {
 /// Counted rather than interpreted: which of them delimits thinking is a fact
 /// about a family, and a table of families is the thing F79 refuses to keep.
 #[must_use]
-pub fn unpairable(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<String> {
-    candidates(file, vocabulary)
+pub fn unpairable(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
+    candidates(file, tokens)
         .into_iter()
-        .filter(|marker| closing_form(marker).is_none_or(|closing| !vocabulary.has_token(&closing)))
+        .filter(|marker| closing_form(marker).is_none_or(|closing| !tokens.has_token(&closing)))
         .collect()
 }
 
 /// Every marker-shaped token this file holds, from its template and its
 /// vocabulary.
-fn candidates(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<String> {
+fn candidates(file: &gguf::Model, tokens: &Tokens) -> Vec<String> {
     let template = file
         .get("tokenizer.chat_template")
         .and_then(gguf::Value::as_text)
         .unwrap_or_default();
     let mut seen: Vec<String> = super::markers_in(template)
         .into_iter()
-        .filter(|marker| vocabulary.has_token(marker))
+        .filter(|marker| tokens.has_token(marker))
         .collect();
-    for identifier in 0..vocabulary.len() {
-        if let Some(token) = vocabulary.token(identifier)
+    for identifier in 0..tokens.len() {
+        if let Some(token) = tokens.token(identifier)
             && (token.starts_with('<') || token.starts_with('['))
             // A byte-fallback token is spelled like a marker and is not one:
             // `<0x41>` is how a vocabulary writes the letter A when it can
@@ -137,13 +137,13 @@ fn candidates(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<String> {
 /// Read from the vocabulary rather than from a list: a spelling that is not a
 /// token is text, and text cannot open anything (D46, F26).
 #[must_use]
-pub fn pairs(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<(String, String)> {
+pub fn pairs(file: &gguf::Model, tokens: &Tokens) -> Vec<(String, String)> {
     let mut found: Vec<(String, String)> = Vec::new();
-    for marker in candidates(file, vocabulary) {
+    for marker in candidates(file, tokens) {
         let Some(closing) = closing_form(&marker) else {
             continue;
         };
-        if vocabulary.has_token(&closing) && !found.iter().any(|(held, _)| *held == marker) {
+        if tokens.has_token(&closing) && !found.iter().any(|(held, _)| *held == marker) {
             found.push((marker, closing));
         }
     }
@@ -215,18 +215,18 @@ pub fn thinking(
             conditions,
         );
     };
-    let Ok(vocabulary) = Vocabulary::read(&file) else {
+    let Ok(tokens) = Tokens::read(&file) else {
         return Probed::inconclusive(
             THINKING,
-            "the vocabulary could not be read, so what this file holds as a marker is not \
-             something MCF can say",
+            "the file lists no tokens, so what it holds as a marker is not something MCF can \
+             say",
             0,
             0,
             conditions,
         );
     };
-    let available = pairs(&file, &vocabulary);
-    let could_not_pair = unpairable(&file, &vocabulary);
+    let available = pairs(&file, &tokens);
+    let could_not_pair = unpairable(&file, &tokens);
     if available.is_empty() {
         // **And it says how many it could not pair.** Withholding that here
         // was the defect this whole `unpairable` list exists to prevent, kept

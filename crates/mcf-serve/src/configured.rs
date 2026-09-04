@@ -54,27 +54,10 @@ impl Addressing {
     /// The record's shape.
     #[must_use]
     pub fn to_value(&self) -> Value {
-        let pieces = |pieces: &[Piece]| {
-            Value::List(
-                pieces
-                    .iter()
-                    .map(|piece| match piece {
-                        Piece::Marker(marker) => Value::map([
-                            ("kind", Value::text("marker")),
-                            ("value", Value::text(marker.clone())),
-                        ]),
-                        Piece::Text(text) => Value::map([
-                            ("kind", Value::text("text")),
-                            ("value", Value::text(text.clone())),
-                        ]),
-                    })
-                    .collect(),
-            )
-        };
         Value::map([
             ("name", Value::text(self.name.clone())),
-            ("before", pieces(&self.before)),
-            ("after", pieces(&self.after)),
+            ("before", pieces_to_value(&self.before)),
+            ("after", pieces_to_value(&self.after)),
             ("probe", Value::text(self.probe.clone())),
             ("at", Value::text(self.at.clone())),
             ("build", Value::text(self.build.clone())),
@@ -91,22 +74,7 @@ impl Addressing {
     #[must_use]
     pub fn from_value(value: &Value) -> Option<Self> {
         let text = |key: &str| value.get(key).and_then(Value::as_text).map(str::to_owned);
-        let pieces = |key: &str| -> Option<Vec<Piece>> {
-            match value.get(key) {
-                Some(Value::List(items)) => items
-                    .iter()
-                    .map(|item| {
-                        let held = item.get("value").and_then(Value::as_text)?.to_owned();
-                        match item.get("kind").and_then(Value::as_text) {
-                            Some("marker") => Some(Piece::Marker(held)),
-                            Some("text") => Some(Piece::Text(held)),
-                            _ => None,
-                        }
-                    })
-                    .collect(),
-                _ => None,
-            }
-        };
+        let pieces = |key: &str| value.get(key).and_then(pieces_from_value);
         Some(Self {
             name: text("name")?,
             before: pieces("before")?,
@@ -144,6 +112,47 @@ impl Addressing {
                 .next()
                 .unwrap_or(&self.conditions),
         )
+    }
+}
+
+/// Pieces as the record and the wire carry them: a kind and a value each,
+/// so that a marker and text that happen to be spelled the same stay two
+/// things (D46).
+#[must_use]
+pub fn pieces_to_value(pieces: &[Piece]) -> Value {
+    Value::List(
+        pieces
+            .iter()
+            .map(|piece| match piece {
+                Piece::Marker(marker) => Value::map([
+                    ("kind", Value::text("marker")),
+                    ("value", Value::text(marker.clone())),
+                ]),
+                Piece::Text(text) => Value::map([
+                    ("kind", Value::text("text")),
+                    ("value", Value::text(text.clone())),
+                ]),
+            })
+            .collect(),
+    )
+}
+
+/// Pieces read back, or `None` where any one of them is not a piece.
+#[must_use]
+pub fn pieces_from_value(value: &Value) -> Option<Vec<Piece>> {
+    match value {
+        Value::List(items) => items
+            .iter()
+            .map(|item| {
+                let held = item.get("value").and_then(Value::as_text)?.to_owned();
+                match item.get("kind").and_then(Value::as_text) {
+                    Some("marker") => Some(Piece::Marker(held)),
+                    Some("text") => Some(Piece::Text(held)),
+                    _ => None,
+                }
+            })
+            .collect(),
+        _ => None,
     }
 }
 

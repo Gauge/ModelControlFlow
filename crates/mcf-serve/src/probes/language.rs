@@ -1,11 +1,17 @@
 //! What a language costs this model's vocabulary — and what that is not
 //! (B-057, B-379, F81, D42, §X, A6, A7).
 //!
-//! **The one modality question answerable today without an engine, a rater or
-//! a judgement.** How many tokens a sentence spends is the tokenizer's answer,
-//! it is exact, it is deterministic, and it arrives in milliseconds. Every
-//! other multilingual question — whether a model *speaks* a language well — is
-//! a graded task and belongs to a laboratory (§XIII).
+//! **The one modality question answerable today without a generation, a rater
+//! or a judgement.** How many tokens a sentence spends is the tokenizer's
+//! answer, it is exact, it is deterministic, and it arrives in milliseconds.
+//! Every other multilingual question — whether a model *speaks* a language
+//! well — is a graded task and belongs to a laboratory (§XIII).
+//!
+//! **Whose tokenizer.** The one that generates for this model: the count a
+//! turn is charged is that tokenizer's reading, and a vocabulary MCF's own
+//! tokenizer refuses is still read by the engine that answers for it — so the
+//! counting goes through the daemon, which reads with whichever engine the
+//! model resolves to, and the result names it (B-442, B-441, F158).
 //!
 //! **Why it earns a place under D42's test.** *A probe earns its place when a
 //! wrong answer to it would corrupt a measurement or a served answer.* This one
@@ -30,8 +36,8 @@
 use std::path::Path;
 
 use mcf_core::probe::{Method, Outcome, Probed};
-use mcf_standin::gguf;
-use mcf_standin::tokenizer::Vocabulary;
+
+use super::Counted;
 
 /// The same meaning in each language, so that what differs between two counts
 /// is the vocabulary rather than the sentence.
@@ -93,16 +99,20 @@ pub struct Spend {
     pub dearest: &'static str,
     /// The cheapest.
     pub cheapest: &'static str,
-    /// Any sample the vocabulary could not encode at all, which is a fact
-    /// about the file rather than a failure of the probe (A7).
-    pub unencodable: Vec<&'static str>,
+    /// Any sample the tokenizer could not read at all, and why in its own
+    /// words — a fact about the file rather than a failure of the probe (A7).
+    pub unencodable: Vec<(&'static str, String)>,
+    /// The tokenizer that counted, in the daemon's words: a count is a
+    /// reading, and a reading has a reader (B-442).
+    pub read_by: String,
 }
 
 /// The method.
 pub const LANGUAGE_COST: Method = Method {
     name: "language-cost",
-    asks: "the same sentence in six languages of this model's own vocabulary, and counts the \
-           identifiers each one spends — no generation, no engine, no rater, and no judgement",
+    asks: "the same sentence in six languages of the tokenizer that generates for this model, \
+           and counts the identifiers each one spends — no generation, no rater, and no \
+           judgement",
     decides: "how much of a context budget, a token budget and a turn each language costs on \
               this file — and nothing whatever about how well the model speaks it, which is a \
               graded task and belongs to a laboratory (D42, §XIII)",
@@ -110,48 +120,38 @@ pub const LANGUAGE_COST: Method = Method {
 
 /// Runs the language-cost probe.
 ///
-/// **It takes no engine**, which is unusual enough to be worth saying in the
-/// result: D42 makes the engine a condition of a probe because a probe asks a
-/// model to do something. This one asks the *file*, so its answer holds for
-/// every engine that reads that file, and the conditions say so rather than
-/// naming an engine that did not participate (A7).
+/// `count` is how a sample is counted: the text in, how many identifiers it
+/// cost and who counted out, or why it could not be. Passing it in keeps the
+/// probe independent of which tokenizer read — the engine is a condition and
+/// the caller states it (D42) — and the caller's counter is the daemon's,
+/// which reads with the engine that generates for this model (B-442). No
+/// generation runs; the engine is named because its tokenizer took part.
 ///
 /// # Errors
 ///
 /// Never: a probe that cannot decide reports `Inconclusive` with its reason
 /// (D42's third state).
 #[must_use]
-pub fn language_cost(model: &Path, bytes: &[u8]) -> Probed<Spend> {
-    let conditions = super::conditions(&LANGUAGE_COST, model, NO_ENGINE);
-    let Ok(file) = gguf::parse(bytes) else {
-        return Probed::inconclusive(
-            LANGUAGE_COST,
-            "the file could not be read as a model",
-            0,
-            0,
-            conditions,
-        );
-    };
-    let Ok(vocabulary) = Vocabulary::read(&file) else {
-        return Probed::inconclusive(
-            LANGUAGE_COST,
-            "the vocabulary could not be read, and the cost of a language is a fact about the \
-             vocabulary",
-            0,
-            0,
-            conditions,
-        );
-    };
+pub fn language_cost(
+    model: &Path,
+    engine: &str,
+    count: &mut dyn FnMut(&str) -> Result<Counted, String>,
+) -> Probed<Spend> {
+    let conditions = super::conditions(&LANGUAGE_COST, model, engine);
 
     let mut counted: Vec<(&'static str, usize, usize)> = Vec::new();
     let mut unencodable = Vec::new();
+    let mut read_by: Option<String> = None;
     for (language, sample) in SAMPLES {
         // Without the beginning-of-text marker: it is a property of the turn,
         // not of the language, and counting it would add one to every sample
-        // and change every ratio.
-        match vocabulary.encode(sample, false) {
-            Ok(identifiers) => counted.push((language, identifiers.len(), sample.chars().count())),
-            Err(_) => unencodable.push(language),
+        // and change every ratio. The counter is asked without it.
+        match count(sample) {
+            Ok(Counted { tokens, by }) => {
+                counted.push((language, tokens, sample.chars().count()));
+                let _named = read_by.get_or_insert(by);
+            }
+            Err(why) => unencodable.push((language, why)),
         }
     }
 
@@ -159,10 +159,18 @@ pub fn language_cost(model: &Path, bytes: &[u8]) -> Probed<Spend> {
         .iter()
         .find(|(language, _, _)| *language == "English")
     else {
+        // The English sample is asked first, so where nothing was counted
+        // the reason is its reason, in the counter's own words (A7).
+        let why = unencodable
+            .iter()
+            .find(|(language, _)| *language == "English")
+            .map_or_else(String::new, |(_, why)| format!(": {why}"));
         return Probed::inconclusive(
             LANGUAGE_COST,
-            "the English sample could not be encoded, so there is no baseline to express the \
-             others against",
+            format!(
+                "the English sample could not be counted, so there is no baseline to express \
+                 the others against{why}"
+            ),
             counted.len(),
             0,
             conditions,
@@ -211,6 +219,7 @@ pub fn language_cost(model: &Path, bytes: &[u8]) -> Probed<Spend> {
             dearest,
             cheapest,
             unencodable,
+            read_by: read_by.unwrap_or_default(),
         }),
         trials,
         // No tokens were generated. Nought is the true figure and the surface
@@ -220,13 +229,6 @@ pub fn language_cost(model: &Path, bytes: &[u8]) -> Probed<Spend> {
         conditions,
     }
 }
-
-/// What stands where an engine's name would be.
-///
-/// Spelled out rather than left empty: a condition set with a blank in it reads
-/// as a condition nobody recorded, and this one is a condition nobody *needed*
-/// (A7).
-pub const NO_ENGINE: &str = "none — this asks the file's vocabulary, not a model";
 
 #[cfg(test)]
 mod tests;

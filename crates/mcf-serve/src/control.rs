@@ -137,6 +137,18 @@ pub enum Request {
         /// same way. `prompt` stays beside it for the record and for a client
         /// that has only text.
         tokens: Option<Vec<usize>>,
+        /// The turn as markers and text, where the caller built it and
+        /// left the segmenting to the engine that answers (B-442).
+        ///
+        /// A caller that segmented for itself sends `tokens`; a caller that
+        /// knows which markers go around its question but not how this
+        /// model's vocabulary spells them as identifiers sends these, and
+        /// the daemon reads them through the tokenizer of whichever engine
+        /// answers — MCF's own where its engine does, the provisioned
+        /// server's where that does. So a model whose vocabulary MCF's own
+        /// tokenizer refuses can still be asked an addressed turn, by the
+        /// engine that can read it (F158).
+        pieces: Option<Vec<mcf_standin::tokenizer::Piece>>,
         /// Which engine, where the client says: `stand-in` for MCF's own,
         /// `provisioned` for the one MCF built. Absent means the daemon's
         /// stated rule: the provisioned engine where there is exactly one,
@@ -285,6 +297,27 @@ pub enum Request {
         /// A path, or a name under the daemon's store.
         model: String,
     },
+    /// How many identifiers a text costs this model, read by the tokenizer
+    /// of the engine that would answer for it (B-442).
+    ///
+    /// The count a generation would be charged, from the tokenizer that
+    /// would charge it: the provisioned server's where the model resolves
+    /// to one, MCF's own where its engine answers. A count taken through
+    /// any other tokenizer is a count of a different reading (F158).
+    Tokenize {
+        /// A path, or a name under the daemon's store.
+        model: String,
+        /// The text to count, read as a person's text: a marker spelled in
+        /// it stays spelled.
+        text: String,
+        /// Which engine, as a generation names one; absent for the daemon's
+        /// stated rule.
+        engine: Option<String>,
+        /// Whether to read it as the start of a turn, with the beginning
+        /// marker the model's own convention asks for — what a prompt costs
+        /// — or as text alone, which is what a sentence costs.
+        beginning: bool,
+    },
 }
 
 /// An optional string, as the protocol carries one.
@@ -307,6 +340,7 @@ fn generate_line(
     limit: Option<usize>,
     seed: u64,
     tokens: Option<&[usize]>,
+    pieces: Option<&[mcf_standin::tokenizer::Piece]>,
     engine: Option<&str>,
     whose: mcf_record::content::Whose,
     pinned: bool,
@@ -342,6 +376,10 @@ fn generate_line(
             },
         ),
         (
+            "pieces",
+            pieces.map_or(Value::Null, crate::configured::pieces_to_value),
+        ),
+        (
             "engine",
             match engine {
                 Some(engine) => Value::text(engine.to_owned()),
@@ -367,6 +405,29 @@ fn generate_line(
 /// Its own function because `to_line` is one match arm per request and the
 /// whole of it has a line cap: a request added inside it is a request that
 /// makes every other one harder to read.
+/// The line a measurement goes as.
+fn measure_line(request: &Request) -> Value {
+    let Request::Measure {
+        model,
+        engine,
+        deepest,
+        started,
+    } = request
+    else {
+        return Value::Null;
+    };
+    Value::map([
+        ("ask", Value::text("measure")),
+        ("model", Value::text(model.clone())),
+        ("engine", maybe(engine.as_deref())),
+        (
+            "deepest",
+            Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
+        ),
+        ("started_with", started.to_value()),
+    ])
+}
+
 fn prompt_report_line(request: &Request) -> Value {
     let Request::PromptReport {
         model,
@@ -438,6 +499,7 @@ impl Request {
                 limit,
                 seed,
                 tokens,
+                pieces,
                 engine,
                 whose,
                 pinned,
@@ -450,6 +512,7 @@ impl Request {
                 *limit,
                 *seed,
                 tokens.as_deref(),
+                pieces.as_deref(),
                 engine.as_deref(),
                 *whose,
                 *pinned,
@@ -480,6 +543,18 @@ impl Request {
                 ("ask", Value::text("anatomy")),
                 ("model", Value::text(model.clone())),
             ]),
+            Self::Tokenize {
+                model,
+                text,
+                engine,
+                beginning,
+            } => Value::map([
+                ("ask", Value::text("tokenize")),
+                ("model", Value::text(model.clone())),
+                ("text", Value::text(text.clone())),
+                ("engine", maybe(engine.as_deref())),
+                ("beginning", Value::Bool(*beginning)),
+            ]),
             Self::Host { model, settings } => Value::map([
                 ("ask", Value::text("host")),
                 ("model", Value::text(model.clone())),
@@ -491,21 +566,7 @@ impl Request {
                 ("ask", Value::text("cross_check")),
                 ("model", Value::text(model.clone())),
             ]),
-            Self::Measure {
-                model,
-                engine,
-                deepest,
-                started,
-            } => Value::map([
-                ("ask", Value::text("measure")),
-                ("model", Value::text(model.clone())),
-                ("engine", maybe(engine.as_deref())),
-                (
-                    "deepest",
-                    Value::Integer(i64::try_from(*deepest).unwrap_or(i64::MAX)),
-                ),
-                ("started_with", started.to_value()),
-            ]),
+            Self::Measure { .. } => measure_line(self),
         };
         let Value::Map(mut fields) = body else {
             return String::new();
@@ -594,6 +655,26 @@ impl Request {
                     .and_then(Value::as_text)
                     .ok_or_else(|| refused("an anatomy request naming no model", line))?
                     .to_owned(),
+            }),
+            Some("tokenize") => Ok(Self::Tokenize {
+                model: value
+                    .get("model")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a tokenize request naming no model", line))?
+                    .to_owned(),
+                text: value
+                    .get("text")
+                    .and_then(Value::as_text)
+                    .ok_or_else(|| refused("a tokenize request with no text to count", line))?
+                    .to_owned(),
+                engine: value
+                    .get("engine")
+                    .and_then(Value::as_text)
+                    .map(str::to_owned),
+                beginning: value
+                    .get("beginning")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             }),
             Some("host") => Ok(Self::Host {
                 model: value
@@ -743,6 +824,11 @@ impl Request {
                             .filter_map(|token| usize::try_from(token).ok())
                             .collect()
                     }),
+                    // Absent means no turn was built: a client that predates
+                    // the field sent text or identifiers.
+                    pieces: value
+                        .get("pieces")
+                        .and_then(crate::configured::pieces_from_value),
                     engine: value
                         .get("engine")
                         .and_then(Value::as_text)

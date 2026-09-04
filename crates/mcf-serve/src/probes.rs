@@ -32,7 +32,7 @@ const SILENCE: std::time::Duration = std::time::Duration::from_secs(3600);
 use mcf_core::measurement::{ConditionValue, Conditions, Floor};
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::{Piece, Vocabulary};
+use mcf_standin::tokenizer::{Piece, Tokens};
 
 /// Role words a template *assigns*, in the order it assigns them.
 ///
@@ -81,18 +81,32 @@ pub struct Addressing {
 }
 
 impl Addressing {
-    /// The question, wrapped, as identifiers.
+    /// The question, wrapped, as the markers and text the engine will read.
     ///
-    /// `None` where a marker is not a token of this vocabulary — which cannot
-    /// happen for a candidate that was built from it, and is checked anyway
-    /// because the alternative is sending something else and calling it this
-    /// (F37).
+    /// Pieces rather than identifiers: which identifiers a marker and a text
+    /// become is the reading of whichever tokenizer generates, and the daemon
+    /// reads them through that one — so an addressing built from a
+    /// vocabulary MCF's own tokenizer refuses still reaches the engine that
+    /// can read it (B-442, F158). That every marker is one token of the
+    /// vocabulary is checked there, because the alternative is sending
+    /// something else and calling it this (F37).
     #[must_use]
-    pub fn wrap(&self, vocabulary: &Vocabulary, question: &str) -> Option<Vec<usize>> {
+    pub fn wrap(&self, question: &str) -> Vec<Piece> {
         let mut pieces = self.pieces_before.clone();
         pieces.push(Piece::Text(question.to_owned()));
         pieces.extend(self.pieces_after.iter().cloned());
-        vocabulary.addressed(&pieces)
+        pieces
+    }
+
+    /// The question wrapped the way an addressing found for this model asks,
+    /// or bare where none was found: the text alone, which the engine that
+    /// answers reads with its own beginning convention (B-442).
+    #[must_use]
+    pub fn wrapped(addressing: Option<&Self>, question: &str) -> Vec<Piece> {
+        addressing.map_or_else(
+            || vec![Piece::Text(question.to_owned())],
+            |addressing| addressing.wrap(question),
+        )
     }
 
     /// The turn as text, for a reader — never for sending.
@@ -175,10 +189,10 @@ pub(crate) fn markers_in(text: &str) -> Vec<String> {
 /// `raw` is always last and always present, because it is what MCF does today
 /// and the probe has to be able to say that it is better.
 #[must_use]
-pub fn addressings(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing> {
-    let mut found = from_template(file, vocabulary);
+pub fn addressings(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
+    let mut found = from_template(file, tokens);
     if found.is_empty() {
-        found = known_shapes(vocabulary);
+        found = known_shapes(tokens);
     }
     found.push(Addressing {
         name: "raw".to_owned(),
@@ -189,7 +203,7 @@ pub fn addressings(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressin
 }
 
 /// What the file's own template says, read as data.
-fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing> {
+fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
     let Some(template) = file
         .get("tokenizer.chat_template")
         .and_then(gguf::Value::as_text)
@@ -203,7 +217,7 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
     // spelling that segments into several tokens cannot be sent as a marker.
     let mut markers: Vec<String> = Vec::new();
     for marker in markers_in(template) {
-        if vocabulary.has_token(&marker) && !markers.contains(&marker) {
+        if tokens.has_token(&marker) && !markers.contains(&marker) {
             markers.push(marker);
         }
     }
@@ -211,13 +225,17 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
     // outright — not "the second marker the template mentions", which picked
     // `<start_of_image>` out of gemma's template and would have addressed it
     // with a marker for pictures (F38).
-    let Some(close) = vocabulary
+    let Some(close) = tokens
         .ending
-        .and_then(|ending| vocabulary.token(ending))
+        .and_then(|ending| tokens.token(ending))
         .map(str::to_owned)
         .filter(|ending| markers.contains(ending))
     else {
-        return Vec::new();
+        // A template that never writes the end-of-turn token has no closer
+        // to read: GLM's writes `<|user|>` and `<|assistant|>` and nothing
+        // between the turns, because the next role's marker *is* the turn
+        // boundary. That shape is read by its roles instead (F171).
+        return role_named(template, &markers, tokens);
     };
     // **The opener is the marker the template writes a role after.** The
     // first marker that is not the closer picked `[]` out of Qwen3-Coder's
@@ -289,6 +307,41 @@ fn from_template(file: &gguf::Model, vocabulary: &Vocabulary) -> Vec<Addressing>
         .collect()
 }
 
+/// The shape whose markers are the roles: `<|user|>` question
+/// `<|assistant|>`, with no end-of-turn marker written between.
+///
+/// GLM-4.7-Flash's template writes its turns this way, and its file names
+/// `<|endoftext|>` as the ending — a token the template never mentions — so
+/// reading the template for an opener and a closer found nothing, and the
+/// chat-template probe had no addressing to try against raw (F171). Here the
+/// opener is the marker spelled *user* and what follows the question is the
+/// marker spelled *assistant*; where the template also writes `</think>` as
+/// a token of its own, a second candidate closes the thinking before the
+/// answer, which is what the template itself writes when thinking is off.
+fn role_named(template: &str, markers: &[String], tokens: &Tokens) -> Vec<Addressing> {
+    const THINKING_CLOSED: &str = "</think>";
+    let spelled = |role: &str| markers.iter().find(|marker| trim(marker) == role).cloned();
+    let (Some(user), Some(assistant)) = (spelled("user"), spelled("assistant")) else {
+        return Vec::new();
+    };
+    let mut found = vec![Addressing {
+        name: format!("{}…{}", trim(&user), trim(&assistant)),
+        pieces_before: vec![Piece::Marker(user.clone())],
+        pieces_after: vec![Piece::Marker(assistant.clone())],
+    }];
+    if template.contains(THINKING_CLOSED) && tokens.has_token(THINKING_CLOSED) {
+        found.push(Addressing {
+            name: format!("{}…{}, thinking closed", trim(&user), trim(&assistant)),
+            pieces_before: vec![Piece::Marker(user)],
+            pieces_after: vec![
+                Piece::Marker(assistant),
+                Piece::Marker(THINKING_CLOSED.to_owned()),
+            ],
+        });
+    }
+    found
+}
+
 /// Whether the template writes a role right after this marker, somewhere:
 /// `'<|im_start|>' + message['role']`, `"<|im_start|>system\n"`, or
 /// `<start_of_turn>` before `role`.
@@ -324,7 +377,7 @@ fn opens_a_role(template: &str, marker: &str) -> bool {
 }
 
 /// The shapes MCF knows without being told, for a file that says nothing.
-fn known_shapes(vocabulary: &Vocabulary) -> Vec<Addressing> {
+fn known_shapes(tokens: &Tokens) -> Vec<Addressing> {
     let turn = |open: &str, close: &str, role: &str| Addressing {
         name: format!("{}…{} as {role}", trim(open), trim(close)),
         pieces_before: vec![
@@ -343,11 +396,11 @@ fn known_shapes(vocabulary: &Vocabulary) -> Vec<Addressing> {
         ("<|im_start|>", "<|im_end|>", "assistant"),
         ("<start_of_turn>", "<end_of_turn>", "model"),
     ] {
-        if vocabulary.has_token(open) && vocabulary.has_token(close) {
+        if tokens.has_token(open) && tokens.has_token(close) {
             found.push(turn(open, close, role));
         }
     }
-    if vocabulary.has_token("[INST]") && vocabulary.has_token("[/INST]") {
+    if tokens.has_token("[INST]") && tokens.has_token("[/INST]") {
         found.push(Addressing {
             name: "[INST]…[/INST]".to_owned(),
             pieces_before: vec![
@@ -417,11 +470,13 @@ pub const CHAT_TEMPLATE: Method = Method {
 
 /// Runs the chat-template probe.
 ///
-/// `generate` is how a trial is run: it takes the wrapped question and a token
-/// budget, and answers with the identifiers produced and whether generation
-/// ended because the model emitted a stop token. Passing it in is what keeps
-/// this crate's probe independent of *which* engine ran it — the engine is a
-/// condition, and the caller states it.
+/// `generate` is how a trial is run: it takes the wrapped question as markers
+/// and text and a token budget, and answers with how many identifiers were
+/// produced and whether generation ended because the model emitted a stop
+/// token. Passing it in is what keeps this crate's probe independent of
+/// *which* engine ran it — the engine is a condition, and the caller states
+/// it — and the turn goes as pieces so that the engine's own tokenizer reads
+/// them (B-442).
 ///
 /// # Errors
 ///
@@ -439,7 +494,7 @@ pub fn chat_template(
     trials: usize,
     budget: usize,
     engine: &str,
-    generate: &mut dyn FnMut(&[usize], usize) -> Trial,
+    generate: &mut dyn FnMut(&[Piece], usize) -> Trial,
 ) -> Probed<Addressed> {
     let conditions = conditions(&CHAT_TEMPLATE, model, engine);
     let Ok(file) = gguf::parse(bytes) else {
@@ -452,20 +507,17 @@ pub fn chat_template(
         );
     };
     let declared_a_template = file.get("tokenizer.chat_template").is_some();
-    let Ok(vocabulary) = Vocabulary::read(&file) else {
-        return Probed::inconclusive(
-            CHAT_TEMPLATE,
-            "the vocabulary could not be read",
-            0,
-            0,
-            conditions,
-        );
+    // The token list and not the tokenizer: which markers the file holds is
+    // a fact about the file, readable whatever segments it, and the
+    // segmenting is the engine's (B-442).
+    let Ok(tokens) = Tokens::read(&file) else {
+        return Probed::inconclusive(CHAT_TEMPLATE, "the file lists no tokens", 0, 0, conditions);
     };
     // Every candidate is built from this vocabulary's own tokens, so each one
     // can be sent as itself. The check that it *can* is still made when the
-    // turn is assembled, because the alternative is sending something else and
+    // turn is read, because the alternative is sending something else and
     // calling it this (F37).
-    let candidates = addressings(&file, &vocabulary);
+    let candidates = addressings(&file, &tokens);
     let only_raw = candidates.len() == 1;
     if only_raw && declared_a_template {
         return Probed::inconclusive(
@@ -500,19 +552,7 @@ pub fn chat_template(
                 .get(trial % QUESTIONS.len())
                 .copied()
                 .unwrap_or(QUESTION);
-            let Some(identifiers) = addressing.wrap(&vocabulary, question) else {
-                return Probed::inconclusive(
-                    CHAT_TEMPLATE,
-                    format!(
-                        "the {} addressing could not be assembled from this vocabulary's tokens",
-                        addressing.name
-                    ),
-                    ran,
-                    spent,
-                    conditions,
-                );
-            };
-            match generate(&identifiers, budget) {
+            match generate(&addressing.wrap(question), budget) {
                 // Stopping counts only if the model spoke first. Ending a
                 // turn having said nothing is a refusal to speak, and the
                 // whole of F38 is that the two are opposite observations
@@ -767,20 +807,23 @@ pub fn trial(
     socket: &Path,
     model: &Path,
     prompt: &str,
-    tokens: Option<&[usize]>,
+    pieces: Option<&[Piece]>,
     budget: usize,
     engine: Option<&str>,
 ) -> Trial {
-    spoken(socket, model, prompt, tokens, budget, engine).trial
+    spoken(socket, model, prompt, pieces, budget, engine).trial
 }
 
 /// The same trial, keeping what the model said.
+///
+/// The turn goes as markers and text where the probe built one, and the
+/// daemon reads it through the tokenizer of the engine that answers (B-442).
 #[must_use]
 pub fn spoken(
     socket: &Path,
     model: &Path,
     prompt: &str,
-    tokens: Option<&[usize]>,
+    pieces: Option<&[Piece]>,
     budget: usize,
     engine: Option<&str>,
 ) -> Spoken {
@@ -799,7 +842,8 @@ pub fn spoken(
         prompt: prompt.to_owned(),
         limit: Some(budget),
         seed: 0,
-        tokens: tokens.map(<[usize]>::to_vec),
+        tokens: None,
+        pieces: pieces.map(<[Piece]>::to_vec),
         engine: engine.map(str::to_owned),
         pinned: false,
         turn: None,
@@ -931,6 +975,78 @@ pub fn describe_engine(socket: &Path) -> Option<String> {
         || "a daemon that did not say".to_owned(),
         |version| format!("whatever the daemon at build {version}+{instrument} chooses"),
     ))
+}
+
+/// One text counted by a running daemon, through the tokenizer of the engine
+/// that would answer for the model (B-442).
+///
+/// # Errors
+///
+/// Nothing listening, a daemon that refused, or an answer that did not carry
+/// a count — each in a sentence, since a probe reports why it could not read
+/// rather than reading nothing (A7).
+pub fn counted(
+    socket: &Path,
+    model: &Path,
+    text: &str,
+    engine: Option<&str>,
+) -> Result<Counted, String> {
+    use std::io::{BufRead as _, BufReader, Write as _};
+
+    let mut connection = std::os::unix::net::UnixStream::connect(socket)
+        .map_err(|_| "nothing is listening on the control socket".to_owned())?;
+    let _deadline = connection.set_read_timeout(Some(SILENCE));
+    let request = crate::control::Request::Tokenize {
+        model: model.display().to_string(),
+        text: text.to_owned(),
+        engine: engine.map(str::to_owned),
+        // A sentence, not a turn: the beginning marker would add one to every
+        // sample and change every ratio.
+        beginning: false,
+    };
+    writeln!(connection, "{}", request.to_line())
+        .and_then(|()| connection.flush())
+        .map_err(|_| "the request could not be sent".to_owned())?;
+    let mut line = String::new();
+    BufReader::new(&connection)
+        .read_line(&mut line)
+        .map_err(|_| "the daemon closed the connection before answering".to_owned())?;
+    let answer = crate::control::Answer::read(line.trim_end())
+        .map_err(|failure| format!("the daemon's answer could not be read: {failure}"))?;
+    if !answer.served {
+        return Err(
+            mcf_record::decode::failure_said(&answer.body).unwrap_or_else(|| {
+                format!(
+                    "the daemon refused with something that is not a failure: {}",
+                    answer.body.to_line()
+                )
+            }),
+        );
+    }
+    let tokens = answer
+        .body
+        .get("tokens")
+        .and_then(mcf_record::json::Value::as_integer)
+        .and_then(|held| usize::try_from(held).ok())
+        .ok_or_else(|| "the daemon's answer carried no count".to_owned())?;
+    let by = answer
+        .body
+        .get("read_by")
+        .and_then(mcf_record::json::Value::as_text)
+        .map_or_else(
+            || "a tokenizer the daemon did not name".to_owned(),
+            str::to_owned,
+        );
+    Ok(Counted { tokens, by })
+}
+
+/// A count of identifiers, and whose reading it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Counted {
+    /// How many identifiers the text cost.
+    pub tokens: usize,
+    /// The tokenizer that counted, in the daemon's words.
+    pub by: String,
 }
 
 #[cfg(test)]
@@ -1245,6 +1361,7 @@ pub fn accepts(
         limit: Some(1),
         seed: 0,
         tokens: Some(vec![filler; length]),
+        pieces: None,
         engine: engine.map(str::to_owned),
         pinned: false,
         turn: None,
@@ -1338,9 +1455,9 @@ pub fn declared_context(file: &gguf::Model) -> Option<usize> {
 /// and it counts them.
 #[must_use]
 pub fn a_filler_token(file: &gguf::Model) -> Option<usize> {
-    let vocabulary = Vocabulary::read(file).ok()?;
-    (0..vocabulary.len()).find(|at| {
-        vocabulary
+    let tokens = Tokens::read(file).ok()?;
+    (0..tokens.len()).find(|at| {
+        tokens
             .token(*at)
             .is_some_and(|spelled| spelled.chars().count() > 1 && !spelled.starts_with('<'))
     })

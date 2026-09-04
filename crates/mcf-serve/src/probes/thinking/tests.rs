@@ -161,14 +161,14 @@ fn a_marker_that_cannot_be_paired_is_still_reported() {
     // exactly the shape that used to vanish from the report.
     let bytes = crate::probes::tests::with_markers(&["<|channel|>", "<think>", "</think>"]);
     let file = gguf::parse(&bytes).expect("the fixture parses");
-    let vocabulary = Vocabulary::read(&file).expect("the fixture has a vocabulary");
+    let tokens = Tokens::read(&file).expect("the fixture lists tokens");
 
-    let paired = pairs(&file, &vocabulary);
+    let paired = pairs(&file, &tokens);
     assert!(
         paired.iter().any(|(marker, _)| marker == "<think>"),
         "a marker whose closing form is present is a pair: {paired:?}"
     );
-    let could_not = unpairable(&file, &vocabulary);
+    let could_not = unpairable(&file, &tokens);
     assert!(
         could_not.iter().any(|marker| marker == "<|channel|>"),
         "a marker whose closing form is absent is reported: {could_not:?}"
@@ -220,8 +220,8 @@ fn a_file_whose_markers_all_fail_to_pair_says_how_many() {
 fn byte_fallback_tokens_are_not_markers() {
     let bytes = crate::probes::tests::with_markers(&["<|channel|>"]);
     let file = gguf::parse(&bytes).expect("the fixture parses");
-    let vocabulary = Vocabulary::read(&file).expect("the fixture has a vocabulary");
-    let could_not = unpairable(&file, &vocabulary);
+    let tokens = Tokens::read(&file).expect("the fixture lists tokens");
+    let could_not = unpairable(&file, &tokens);
     assert!(
         could_not.iter().any(|marker| marker == "<|channel|>"),
         "a real marker is still reported: {could_not:?}"

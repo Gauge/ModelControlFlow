@@ -130,6 +130,7 @@ fn one_first_token(socket: &Path, model: &Path, clock: SystemClock) -> Option<Du
         limit: Some(2),
         seed: 0,
         tokens: None,
+        pieces: None,
         // D24's figure is about what MCF interposes around its own engine; a
         // provisioned one would put its own load inside the number.
         engine: Some("stand-in".to_owned()),

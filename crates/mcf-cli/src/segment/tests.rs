@@ -207,3 +207,46 @@ mod cost {
         );
     }
 }
+
+/// The engine spells a raw byte one way, and only that way is a byte.
+mod pieces {
+    use super::super::is_a_byte_piece;
+
+    #[test]
+    fn a_byte_is_spelled_the_way_the_engine_spells_one() {
+        assert!(is_a_byte_piece("<0xE2>"));
+        assert!(is_a_byte_piece("<0x0a>"));
+    }
+
+    #[test]
+    fn a_marker_or_a_word_is_not_a_byte() {
+        assert!(!is_a_byte_piece("<s>"));
+        assert!(!is_a_byte_piece("<0xZZ>"));
+        assert!(!is_a_byte_piece("<0xE2"));
+        assert!(!is_a_byte_piece("hello"));
+        assert!(!is_a_byte_piece(""));
+    }
+}
+
+/// The marker section is written from two answers about the tokenizer that
+/// read, whichever that was, and never lets typed text become a marker.
+mod fidelity {
+    use super::super::marker_fidelity;
+
+    #[test]
+    fn a_marker_the_vocabulary_has_is_still_typed_text() {
+        let has = |marker: &str| marker == "<|im_start|>";
+        let ordinary = |_marker: &str| "8 ordinary token(s)".to_owned();
+        let said = marker_fidelity("<|im_start|>user\n<x>", &has, &ordinary).join("\n");
+        assert!(said.contains("HAS a token spelled exactly that"), "{said}");
+        assert!(said.contains("8 ordinary token(s)"), "{said}");
+        assert!(said.contains("has no such token at all"), "{said}");
+    }
+
+    #[test]
+    fn no_markers_no_section() {
+        let has = |_marker: &str| true;
+        let ordinary = |_marker: &str| String::new();
+        assert!(marker_fidelity("plain words", &has, &ordinary).is_empty());
+    }
+}

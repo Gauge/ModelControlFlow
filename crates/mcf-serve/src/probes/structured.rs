@@ -44,7 +44,7 @@ use std::path::Path;
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_record::json::Value;
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::Vocabulary;
+use mcf_standin::tokenizer::Piece;
 
 use super::{Addressing, Trial};
 
@@ -215,7 +215,7 @@ impl Structured {
 
 /// How a caller runs one trial, as in [`super::tools`]: the wrapped turn and a
 /// budget in, what the model said and how the turn ended out.
-pub type Ask<'a> = &'a mut dyn FnMut(&[usize], usize) -> (Trial, String);
+pub type Ask<'a> = &'a mut dyn FnMut(&[Piece], usize) -> (Trial, String);
 
 /// The method, written where the result carries it.
 pub const STRUCTURED_OUTPUT: Method = Method {
@@ -249,7 +249,9 @@ pub fn structured_output(
     generate: Ask<'_>,
 ) -> Probed<Structured> {
     let conditions = super::conditions(&STRUCTURED_OUTPUT, model, engine);
-    let Ok(file) = gguf::parse(bytes) else {
+    // Read and not otherwise used: a file that is not a model is answered
+    // here rather than by six trials that each say so.
+    if gguf::parse(bytes).is_err() {
         return Probed::inconclusive(
             STRUCTURED_OUTPUT,
             "the file could not be read as a model",
@@ -257,16 +259,7 @@ pub fn structured_output(
             0,
             conditions,
         );
-    };
-    let Ok(vocabulary) = Vocabulary::read(&file) else {
-        return Probed::inconclusive(
-            STRUCTURED_OUTPUT,
-            "the vocabulary could not be read",
-            0,
-            0,
-            conditions,
-        );
-    };
+    }
 
     let mut conformed = Vec::new();
     let mut departed = Vec::new();
@@ -280,13 +273,7 @@ pub fn structured_output(
     for framing in framings() {
         let mut tally = Tally::default();
         for _ in 0..trials {
-            let Some(wrapped) = wrap(addressing, &vocabulary, &framing.text) else {
-                undecidable.push(format!(
-                    "{}: the question could not be put through this model's vocabulary",
-                    framing.name
-                ));
-                break;
-            };
+            let wrapped = Addressing::wrapped(addressing, &framing.text);
             let (trial, said) = generate(&wrapped, budget);
             spent = spent.saturating_add(budget);
             tally.add(
@@ -393,19 +380,6 @@ impl Tally {
             Attempt::Unfinished => self.unfinished = self.unfinished.saturating_add(1),
             Attempt::CouldNotTell { because } => undecidable.push(format!("{framing}: {because}")),
         }
-    }
-}
-
-/// The question, wrapped the way the chat-template probe found this model wants
-/// to be addressed — or bare, where nothing was found.
-fn wrap(
-    addressing: Option<&Addressing>,
-    vocabulary: &Vocabulary,
-    question: &str,
-) -> Option<Vec<usize>> {
-    match addressing {
-        Some(addressing) => addressing.wrap(vocabulary, question),
-        None => vocabulary.encode(question, true).ok(),
     }
 }
 

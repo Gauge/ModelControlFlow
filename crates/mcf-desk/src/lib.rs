@@ -1924,6 +1924,7 @@ impl Desk {
                 limit: Some(256),
                 seed: 0,
                 tokens: None,
+                pieces: None,
                 engine: None,
                 // A person's, which is what this window is for. B-146 and
                 // §6.8: whose text it is travels with the request rather than

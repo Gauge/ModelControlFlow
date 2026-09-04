@@ -361,29 +361,87 @@ impl Produced {
     }
 }
 
+/// What the caller sent beside the prompt's text, if anything.
+///
+/// Three callers, three shapes. A prompt alone is addressed and framed here;
+/// identifiers are the caller's own segmentation and go as sent; pieces are
+/// the caller's own turn — its markers and its text — left for the tokenizer
+/// of the engine that answers to read, which is the only tokenizer that can
+/// read every vocabulary that engine generates from (B-442, F158).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Given<'a> {
+    /// The prompt's text and nothing else.
+    Text,
+    /// The turn, segmented by the caller.
+    Identifiers(&'a [usize]),
+    /// The turn as markers and text, segmented by whichever engine answers.
+    Pieces(&'a [mcf_standin::tokenizer::Piece]),
+}
+
+impl<'a> Given<'a> {
+    /// What a request carried, in order of how much of the work the caller
+    /// did: identifiers first, since they are already read.
+    pub(crate) fn from_request(
+        tokens: Option<&'a [usize]>,
+        pieces: Option<&'a [mcf_standin::tokenizer::Piece]>,
+    ) -> Self {
+        match (tokens, pieces) {
+            (Some(tokens), _) => Self::Identifiers(tokens),
+            (None, Some(pieces)) => Self::Pieces(pieces),
+            (None, None) => Self::Text,
+        }
+    }
+
+    /// The caller's own segmentation, where they sent one.
+    pub(crate) fn identifiers(self) -> Option<&'a [usize]> {
+        match self {
+            Self::Identifiers(tokens) => Some(tokens),
+            Self::Text | Self::Pieces(_) => None,
+        }
+    }
+
+    /// Whether the caller built the turn, either way — so it is not
+    /// addressed or framed again.
+    pub(crate) fn is_own_turn(self) -> bool {
+        !matches!(self, Self::Text)
+    }
+}
+
 /// The identifiers the engine is sent, or `None` where a prompt goes as text.
 ///
-/// The caller's identifiers are never touched; a prompt is framed by the
-/// engine from the model's template where a turn was asked for, addressed
-/// as somebody derived where they did, and otherwise read plainly by the
-/// engine that will answer it (B-441, F160).
+/// The caller's identifiers are never touched; the caller's pieces are read
+/// by the tokenizer of the engine that answers and nothing is put around
+/// them; a prompt is framed by the engine from the model's template where a
+/// turn was asked for, addressed as somebody derived where they did, and
+/// otherwise read plainly by the engine that will answer it (B-441, B-442,
+/// F160).
 fn wrapped_turn(
     place: &Place<'_>,
     prompt: &str,
-    tokens: Option<&[usize]>,
+    given: Given<'_>,
     framed: Result<&Option<crate::turn::Frame>, &Failure>,
     derived: Option<&crate::configured::Addressing>,
     chosen: &Result<Chosen, Failure>,
 ) -> Result<Option<Vec<usize>>, Failure> {
-    match (tokens, framed, derived, chosen) {
+    use Given::{Pieces, Text};
+    let read = |read: Vec<Read>| Some(read.into_iter().map(|held| held.id).collect());
+    match (given, framed, derived, chosen) {
         (_, Err(failure), _, _) => Err(failure.clone()),
-        (None, Ok(Some(frame)), _, Ok(Chosen::Provisioned(llama))) => {
+        (Pieces(pieces), _, _, Ok(Chosen::Provisioned(llama))) => {
+            place.engine(llama).addressed(pieces).map(read)
+        }
+        (Pieces(pieces), _, _, Ok(Chosen::StandIn)) => {
+            Tokenizer::own(&resolved(place.store, place.named))
+                .and_then(|tokenizer| tokenizer.addressed(pieces))
+                .map(read)
+        }
+        (Text, Ok(Some(frame)), _, Ok(Chosen::Provisioned(llama))) => {
             framed_as(&place.engine(llama), prompt, frame).map(Some)
         }
-        (None, _, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
+        (Text, _, Some(addressing), Ok(Chosen::Provisioned(llama))) => {
             addressed_as(&place.engine(llama), prompt, addressing).map(Some)
         }
-        (None, _, Some(addressing), Ok(Chosen::StandIn)) => {
+        (Text, _, Some(addressing), Ok(Chosen::StandIn)) => {
             Tokenizer::own(&resolved(place.store, place.named))
                 .and_then(|tokenizer| addressed_as(&tokenizer, prompt, addressing))
                 .map(Some)
@@ -397,10 +455,9 @@ fn wrapped_turn(
         // engine* of an engine that was serving. The bare prompt is read the
         // way the ranking reads it, with the beginning marker and nothing
         // else, so the answer and the reading are of one prompt (§3.4, F160).
-        (None, _, None, Ok(Chosen::Provisioned(llama))) => place
-            .engine(llama)
-            .encode(prompt, true)
-            .map(|read| Some(read.into_iter().map(|held| held.id).collect())),
+        (Text, _, None, Ok(Chosen::Provisioned(llama))) => {
+            place.engine(llama).encode(prompt, true).map(read)
+        }
         _ => Ok(None),
     }
 }
@@ -421,7 +478,7 @@ pub(crate) fn serve_generation(
     prompt: &str,
     limit: Option<usize>,
     draw: Draw,
-    tokens: Option<&[usize]>,
+    given: Given<'_>,
     engine: Option<&str>,
     // The engine the daemon resolved for this model, and how many of the
     // model's layers go on the card. Passed in rather than decided here:
@@ -499,11 +556,11 @@ pub(crate) fn serve_generation(
         (None, Ok(Some(_))) => Some(&shown_turn),
         (turn, _) => turn,
     };
-    let framed = framed_turn(&place, tokens, turn, &chosen);
+    let framed = framed_turn(&place, given.is_own_turn(), turn, &chosen);
     let wrapped = wrapped_turn(
         &place,
         prompt,
-        tokens,
+        given,
         framed.as_ref(),
         derived.as_ref(),
         &chosen,
@@ -518,7 +575,7 @@ pub(crate) fn serve_generation(
         _ => None,
     };
     let addressed = frame.as_ref().map_or_else(
-        || addressing_label(derived.as_ref(), tokens.is_some(), wrapped.is_ok()),
+        || addressing_label(derived.as_ref(), given, wrapped.is_ok()),
         |frame| Some(framed_label(frame, shown.is_some())),
     );
     // Which engine a failure is charged to. An account of a served engine's
@@ -539,7 +596,7 @@ pub(crate) fn serve_generation(
         // A turn of identifiers goes to the server, which can be given one;
         // a prompt goes to the completion tool, which cannot (B-376).
         (Ok(Chosen::Provisioned(llama)), Ok(wrapped), Ok(_)) => {
-            match wrapped.as_deref().or(tokens) {
+            match wrapped.as_deref().or(given.identifiers()) {
                 Some(tokens) => {
                     let sent = Sent {
                         tokens,
@@ -563,7 +620,7 @@ pub(crate) fn serve_generation(
             resident,
             named,
             prompt,
-            wrapped.as_deref().or(tokens),
+            wrapped.as_deref().or(given.identifiers()),
             limit,
             draw,
             free,
@@ -667,23 +724,34 @@ fn framed_label(frame: &crate::turn::Frame, shown: bool) -> String {
 
 /// What the prompt went to the model as, for the account: the derived
 /// addressing's provenance where one is on file (and that it was not
-/// applied, where the caller sent its own identifiers), the bare prompt
-/// where none is; nothing where the turn was never built.
+/// applied, where the caller sent its own turn), the caller's own pieces as
+/// the engine read them, the bare prompt where nothing is on file; nothing
+/// where the turn was never built.
 fn addressing_label(
     derived: Option<&crate::configured::Addressing>,
-    own_identifiers: bool,
+    given: Given<'_>,
     built: bool,
 ) -> Option<String> {
-    match derived {
-        Some(addressing) if own_identifiers => Some(format!(
+    match (derived, given) {
+        (Some(addressing), Given::Identifiers(_)) => Some(format!(
             "{} — not applied here: the caller sent its own identifiers",
             addressing.provenance()
         )),
-        Some(addressing) => Some(addressing.provenance()),
-        None if built && !own_identifiers => Some(BARE_PROMPT.to_owned()),
-        None => None,
+        (Some(addressing), Given::Pieces(_)) => Some(format!(
+            "{} — not applied here: the caller sent its own markers and text",
+            addressing.provenance()
+        )),
+        (Some(addressing), Given::Text) => Some(addressing.provenance()),
+        (None, Given::Pieces(_)) if built => Some(OWN_PIECES.to_owned()),
+        (None, Given::Text) if built => Some(BARE_PROMPT.to_owned()),
+        (None, _) => None,
     }
 }
+
+/// What a turn the caller sent as markers and text went as, in words
+/// (§3.15, B-442).
+pub(crate) const OWN_PIECES: &str = "the caller's own markers and text, each read by the \
+                                     tokenizer of the engine that answered";
 
 /// What a prompt with no addressing on file went as, in words (§3.15).
 pub(crate) const BARE_PROMPT: &str = "the prompt alone: no addressing is on file for this \
@@ -766,7 +834,7 @@ impl<'a> Place<'a> {
 /// `Ok(None)` where no frame was asked for.
 fn framed_turn(
     place: &Place<'_>,
-    tokens: Option<&[usize]>,
+    own_turn: bool,
     turn: Option<&crate::turn::Turn>,
     chosen: &Result<Chosen, Failure>,
 ) -> Result<Option<crate::turn::Frame>, Failure> {
@@ -779,16 +847,16 @@ fn framed_turn(
             why,
         )
     };
-    match (tokens, turn, chosen) {
-        (None, Some(turn), Ok(Chosen::Provisioned(llama))) => {
+    match (own_turn, turn, chosen) {
+        (false, Some(turn), Ok(Chosen::Provisioned(llama))) => {
             place.engine(llama).framed(turn).map(Some)
         }
-        (None, Some(_), Ok(Chosen::StandIn)) => Err(refused(
+        (false, Some(_), Ok(Chosen::StandIn)) => Err(refused(
             "MCF's own engine runs no template, so it cannot frame a turn: the provisioned \
              engine can",
         )),
-        (Some(_), Some(_), _) => Err(refused(
-            "a turn sent as identifiers is already framed; the engine cannot frame it again",
+        (true, Some(_), _) => Err(refused(
+            "a turn the caller built is already framed; the engine cannot frame it again",
         )),
         _ => Ok(None),
     }
@@ -891,12 +959,31 @@ impl Tokenizer<'_> {
         Vocabulary::read(&file).map(Self::Own)
     }
 
-    /// Who read the prompt, in words, for the account.
+    /// Who read the prompt, in words, for the account of a generation.
     pub(crate) fn named(&self) -> String {
         match self {
             Self::Own(_) => "MCF's own tokenizer, which its engine generates with".to_owned(),
+            Self::Engine { .. } => format!("{}, which generated", self.who()),
+        }
+    }
+
+    /// Who read, in words, where nothing was generated: a count is a reading
+    /// by the tokenizer that *would* generate, and saying it generated would
+    /// be a claim about a run that did not happen (A7, B-442).
+    pub(crate) fn reader(&self) -> String {
+        match self {
+            Self::Own(_) => "MCF's own tokenizer, which its engine generates with".to_owned(),
+            Self::Engine { .. } => format!("{}, which generates for this model", self.who()),
+        }
+    }
+
+    /// The tokenizer as a noun: MCF's own, or the provisioned server's by
+    /// component and commit.
+    fn who(&self) -> String {
+        match self {
+            Self::Own(_) => "MCF's own tokenizer".to_owned(),
             Self::Engine { where_it_lives, .. } => format!(
-                "provisioned {} server @{}, which generated",
+                "provisioned {} server @{}",
                 where_it_lives.llama.component,
                 where_it_lives
                     .llama
@@ -2852,25 +2939,66 @@ mod tokenizer_tests {
     }
 
     /// What the account says the prompt went as: the addressing on file,
-    /// that it was not applied over a caller's own identifiers, or the bare
-    /// prompt — and nothing where the turn was never built (§3.15, F160).
+    /// that it was not applied over a caller's own identifiers or own
+    /// pieces, the caller's pieces as the engine read them, or the bare
+    /// prompt — and nothing where the turn was never built (§3.15, F160,
+    /// B-442).
     #[test]
     fn the_account_says_what_the_prompt_went_as() {
-        use super::{BARE_PROMPT, addressing_label};
+        use super::{BARE_PROMPT, Given, OWN_PIECES, addressing_label};
         let on_file = chatml_addressing();
+        let identifiers = [1_usize, 2, 3];
+        let pieces = [mcf_standin::tokenizer::Piece::Text("a".to_owned())];
+        let (own_identifiers, own_pieces) =
+            (Given::Identifiers(&identifiers), Given::Pieces(&pieces));
         assert_eq!(
-            addressing_label(Some(&on_file), false, true).as_deref(),
+            addressing_label(Some(&on_file), Given::Text, true).as_deref(),
             Some(on_file.provenance().as_str())
         );
         assert!(
-            addressing_label(Some(&on_file), true, true)
+            addressing_label(Some(&on_file), own_identifiers, true)
                 .is_some_and(|label| label.ends_with("the caller sent its own identifiers"))
         );
+        assert!(
+            addressing_label(Some(&on_file), own_pieces, true)
+                .is_some_and(|label| label.ends_with("the caller sent its own markers and text"))
+        );
         assert_eq!(
-            addressing_label(None, false, true).as_deref(),
+            addressing_label(None, Given::Text, true).as_deref(),
             Some(BARE_PROMPT)
         );
-        assert_eq!(addressing_label(None, true, true), None);
-        assert_eq!(addressing_label(None, false, false), None);
+        assert_eq!(
+            addressing_label(None, own_pieces, true).as_deref(),
+            Some(OWN_PIECES)
+        );
+        assert_eq!(addressing_label(None, own_identifiers, true), None);
+        assert_eq!(addressing_label(None, own_pieces, false), None);
+        assert_eq!(addressing_label(None, Given::Text, false), None);
+    }
+
+    /// What a request carried, read in the order of how much of the work the
+    /// caller did: identifiers are already read and win; pieces are a turn
+    /// the engine reads; text alone is neither (B-442).
+    #[test]
+    fn what_a_request_carried_is_read_in_order() {
+        use super::Given;
+        let identifiers = [4_usize, 5];
+        let pieces = [mcf_standin::tokenizer::Piece::Marker("<s>".to_owned())];
+        assert!(matches!(
+            Given::from_request(Some(&identifiers), Some(&pieces)),
+            Given::Identifiers(_)
+        ));
+        assert!(matches!(
+            Given::from_request(None, Some(&pieces)),
+            Given::Pieces(_)
+        ));
+        assert!(matches!(Given::from_request(None, None), Given::Text));
+        assert_eq!(
+            Given::from_request(Some(&identifiers), None).identifiers(),
+            Some(&identifiers[..])
+        );
+        assert_eq!(Given::from_request(None, Some(&pieces)).identifiers(), None);
+        assert!(Given::from_request(None, Some(&pieces)).is_own_turn());
+        assert!(!Given::from_request(None, None).is_own_turn());
     }
 }

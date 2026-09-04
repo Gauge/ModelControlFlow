@@ -2204,6 +2204,7 @@ impl Daemon {
             | Request::Offered { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
+            | Request::Tokenize { .. }
             | Request::Host { .. }
             | Request::Hosted
             | Request::Unhost
@@ -2260,6 +2261,7 @@ impl Daemon {
                 whose,
                 seed,
                 tokens,
+                pieces,
                 engine,
                 pinned,
                 turn,
@@ -2278,7 +2280,7 @@ impl Daemon {
                     &prompt,
                     limit,
                     seed,
-                    tokens.as_deref(),
+                    crate::generation::Given::from_request(tokens.as_deref(), pieces.as_deref()),
                     engine.as_deref(),
                     whose,
                     pinned,
@@ -2338,6 +2340,7 @@ impl Daemon {
             | Request::Offered { .. }
             | Request::Settings { .. }
             | Request::Anatomy { .. }
+            | Request::Tokenize { .. }
             | Request::Host { .. }
             | Request::Hosted
             | Request::Unhost
@@ -2369,7 +2372,7 @@ impl Daemon {
         prompt: &str,
         limit: Option<usize>,
         seed: u64,
-        tokens: Option<&[usize]>,
+        given: crate::generation::Given<'_>,
         engine: Option<&str>,
         whose: mcf_record::content::Whose,
         pinned: bool,
@@ -2404,7 +2407,7 @@ impl Daemon {
             prompt,
             limit,
             crate::generation::Draw::greedy(seed),
-            tokens,
+            given,
             engine,
             picked,
             system_memory_free(),
@@ -2789,7 +2792,7 @@ impl Daemon {
                 prompt,
                 Some(PROMPT_REPORT_LIMIT),
                 draw,
-                None,
+                crate::generation::Given::Text,
                 None,
                 picked,
                 system_memory_free(),
@@ -3043,6 +3046,15 @@ impl Daemon {
             }
             Request::Settings { model } => (self.settings_for(model), None),
             Request::Anatomy { model } => (self.anatomy_of(model), None),
+            Request::Tokenize {
+                model,
+                text,
+                engine,
+                beginning,
+            } => (
+                self.tokenized(model, text, engine.as_deref(), *beginning),
+                None,
+            ),
             Request::Host { model, settings } => (self.host(model, settings), None),
             Request::Hosted => (Answer::served(self.hosted()), None),
             Request::Unhost => (Answer::served(self.unhost()), None),
@@ -3716,7 +3728,7 @@ impl Daemon {
                 "",
                 Some(produce),
                 crate::generation::Draw::greedy(0),
-                Some(tokens),
+                crate::generation::Given::Identifiers(tokens),
                 engine,
                 picked,
                 system_memory_free(),
@@ -4047,6 +4059,63 @@ impl Daemon {
     ///
     /// The prefix that holds the header holds the tensor directory too, so
     /// this reads what `mcf explain` reads and loads nothing.
+    /// What a text costs this model, counted by the tokenizer of the engine
+    /// that would answer for it (B-442).
+    ///
+    /// The same choice a generation makes, made the same way: the caller's
+    /// word for MCF's own engine is honoured, the provisioned server reads
+    /// where the model resolves to one, MCF's own reads otherwise — and the
+    /// answer names which, because a count is a reading and a reading has a
+    /// reader (§3.15, F158).
+    fn tokenized(&self, named: &str, text: &str, engine: Option<&str>, beginning: bool) -> Answer {
+        let path = crate::generation::resolved(&self.places.models, named);
+        if !path.is_file() {
+            return Answer::refused(&crate::control::refused(
+                "a model this machine is not holding",
+                named,
+            ));
+        }
+        let picked = match engine {
+            Some("stand-in") => None,
+            _ => self.picked_engine(named),
+        };
+        let tokenizer = match self.tokenizer_for(named, picked.as_ref()) {
+            Ok(tokenizer) => tokenizer,
+            Err(failure) => return Answer::refused(&failure),
+        };
+        // The beginning marker is a property of a turn, not of a text, so
+        // the caller says which it is asking about: a prompt costs it, a
+        // sentence does not. The reading itself goes back token by token,
+        // because a count says how much and only the pieces say where (A1).
+        match tokenizer.encode(text, beginning) {
+            Ok(read) => Answer::served(Value::map([
+                ("model", Value::text(named.to_owned())),
+                (
+                    "tokens",
+                    Value::Integer(i64::try_from(read.len()).unwrap_or(i64::MAX)),
+                ),
+                ("read_by", Value::text(tokenizer.reader())),
+                (
+                    "read",
+                    Value::List(
+                        read.into_iter()
+                            .map(|token| {
+                                Value::map([
+                                    (
+                                        "id",
+                                        Value::Integer(i64::try_from(token.id).unwrap_or(i64::MAX)),
+                                    ),
+                                    ("piece", Value::text(token.piece)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])),
+            Err(failure) => Answer::refused(&failure),
+        }
+    }
+
     fn anatomy_of(&self, named: &str) -> Answer {
         let path = crate::generation::resolved(&self.places.models, named);
         if !path.is_file() {

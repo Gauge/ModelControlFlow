@@ -222,16 +222,17 @@ pub(crate) fn run(
     // provisioned build is a genuinely different condition and is only
     // visible if the commit is part of the name.
     let engine = format!("{}, through the daemon at {build}", resolved_engine(asked));
-    let mut trial = |identifiers: &[usize], budget: usize| {
+    let mut trial = |pieces: &[mcf_standin::tokenizer::Piece], budget: usize| {
         probes::trial(
             &socket,
             &path,
-            // Empty on purpose: the turn travels as identifiers, and the
-            // probe varies the question between trials. A prompt here would
-            // be recorded as the thing asked and would be wrong for four
-            // trials in five (A1).
+            // Empty on purpose: the turn travels as markers and text for the
+            // answering engine's tokenizer to read (B-442), and the probe
+            // varies the question between trials. A prompt here would be
+            // recorded as the thing asked and would be wrong for four trials
+            // in five (A1).
             "",
-            Some(identifiers),
+            Some(pieces),
             budget,
             Some(asked),
         )
@@ -292,7 +293,7 @@ pub(crate) fn run(
             .observed()
             .and_then(|addressed: &Addressed| addressed.best_addressing.as_ref()),
     ));
-    lines.extend(language_lines(&path, &bytes));
+    lines.extend(language_lines(&socket, &path, &engine, asked));
     lines.extend(embedding_lines(&path, &bytes));
     lines.extend(vision_lines(&path, &bytes));
     lines.extend(declined_lines());
@@ -517,13 +518,21 @@ fn addressing_fields(addressed: &Addressed) -> Vec<(&'static str, mcf_record::js
 
 /// What each language costs this model's vocabulary (B-057, B-379, F81).
 ///
-/// **It asks no engine**, which is why it is here rather than beside the
-/// trials: the answer is a property of the file and holds for every engine that
-/// reads it. D42 makes the engine a condition because a probe asks a *model* to
-/// do something; this one asks the vocabulary, and the conditions say so rather
-/// than naming an engine that did not participate (A7).
-fn language_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
-    let probed = mcf_serve::probes::language::language_cost(path, bytes);
+/// **It generates nothing**: the answer is a count, and the count is taken by
+/// the daemon through the tokenizer of the engine that generates for this
+/// model — so a vocabulary MCF's own tokenizer refuses is still counted when
+/// a provisioned engine can read it, and the same reading that frames a turn
+/// is the one that costs it (B-442, B-441, F158). The engine is a condition
+/// because its tokenizer took part (D42), and the report names which one
+/// counted.
+fn language_lines(
+    socket: &std::path::Path,
+    path: &std::path::Path,
+    engine: &str,
+    asked: &str,
+) -> Vec<String> {
+    let mut count = |text: &str| mcf_serve::probes::counted(socket, path, text, Some(asked));
+    let probed = mcf_serve::probes::language::language_cost(path, engine, &mut count);
     let mut lines = vec![
         format!("  {}", probed.method.name),
         format!(" asks {}", probed.method.asks),
@@ -542,16 +551,17 @@ fn language_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
                     per_cent(cost.against_english_ppm)
                 ));
             }
-            for language in &spend.unencodable {
+            for (language, why) in &spend.unencodable {
                 lines.push(format!(
-                    "   {language:<9} could not be encoded by this vocabulary at all, which is \
-                     a fact about the file (A7)"
+                    "   {language:<9} could not be counted, which is a fact about the file \
+                     rather than about the language: {why}"
                 ));
             }
+            lines.push(format!(" counted by {}", spend.read_by));
             lines.push(recorded(crate::log::record_probed(
                 path,
                 probed.method.name,
-                mcf_serve::probes::language::NO_ENGINE,
+                engine,
                 language_fields(spend),
             )));
             lines.push(format!(
@@ -573,7 +583,7 @@ fn language_lines(path: &std::path::Path, bytes: &[u8]) -> Vec<String> {
     }
     lines.push(String::new());
     lines.push(format!(
-        "  {} sample(s), {} token(s) generated — none: this reads the vocabulary",
+        "  {} sample(s), {} token(s) generated — none: this counts, it does not generate",
         probed.trials, probed.tokens
     ));
     lines.push(format!("  under: {}", probed.conditions));
@@ -611,6 +621,10 @@ fn language_fields(
                     .collect(),
             ),
         ),
+        (
+            "counted_by",
+            mcf_record::json::Value::text(spend.read_by.clone()),
+        ),
     ]
 }
 
@@ -627,18 +641,15 @@ fn thinking_lines(
     // way it was NOT trained is a turn that says nothing about where its
     // tokens go.
     let mut ask = |budget: usize| {
-        let identifiers = addressing.and_then(|held| {
-            mcf_standin::gguf::parse(bytes)
-                .ok()
-                .and_then(|file| mcf_standin::tokenizer::Vocabulary::read(&file).ok())
-                .and_then(|vocabulary| {
-                    held.wrap(&vocabulary, mcf_serve::probes::thinking::QUESTION)
-                })
-        });
-        let spoken = match identifiers {
-            Some(held) => {
-                mcf_serve::probes::spoken(socket, path, "", Some(&held), budget, Some(asked))
-            }
+        let spoken = match addressing {
+            Some(held) => mcf_serve::probes::spoken(
+                socket,
+                path,
+                "",
+                Some(&held.wrap(mcf_serve::probes::thinking::QUESTION)),
+                budget,
+                Some(asked),
+            ),
             None => mcf_serve::probes::spoken(
                 socket,
                 path,
@@ -1131,9 +1142,8 @@ fn tool_lines(
     asked: &str,
     addressing: Option<&mcf_serve::probes::Addressing>,
 ) -> Vec<String> {
-    let mut ask = |identifiers: &[usize], budget: usize| {
-        let spoken =
-            mcf_serve::probes::spoken(socket, path, "", Some(identifiers), budget, Some(asked));
+    let mut ask = |pieces: &[mcf_standin::tokenizer::Piece], budget: usize| {
+        let spoken = mcf_serve::probes::spoken(socket, path, "", Some(pieces), budget, Some(asked));
         (spoken.trial, spoken.text)
     };
     let probed = mcf_serve::probes::tools::tool_calling(
@@ -1250,9 +1260,8 @@ fn structured_lines(
     asked: &str,
     addressing: Option<&mcf_serve::probes::Addressing>,
 ) -> Vec<String> {
-    let mut ask = |identifiers: &[usize], budget: usize| {
-        let spoken =
-            mcf_serve::probes::spoken(socket, path, "", Some(identifiers), budget, Some(asked));
+    let mut ask = |pieces: &[mcf_standin::tokenizer::Piece], budget: usize| {
+        let spoken = mcf_serve::probes::spoken(socket, path, "", Some(pieces), budget, Some(asked));
         (spoken.trial, spoken.text)
     };
     let probed = mcf_serve::probes::structured::structured_output(
@@ -1509,12 +1518,9 @@ fn stopping_lines(
     asked: &str,
     apply: bool,
 ) -> Vec<String> {
-    let Ok(file) = mcf_serve::probes::gguf_of(bytes) else {
+    if mcf_serve::probes::gguf_of(bytes).is_err() {
         return Vec::new();
-    };
-    let Ok(vocabulary) = mcf_standin::tokenizer::Vocabulary::read(&file) else {
-        return Vec::new();
-    };
+    }
     let home = crate::models::default_root()
         .and_then(|models| models.parent().map(std::path::Path::to_path_buf));
     let addressing = home
@@ -1523,26 +1529,21 @@ fn stopping_lines(
 
     let mut ask = |question: &str, budget: usize| {
         // The turn as it will really be sent: through what was applied, or
-        // raw where nothing was.
-        let identifiers = addressing.as_ref().and_then(|held| {
-            let mut pieces = held.before.clone();
-            pieces.push(mcf_standin::tokenizer::Piece::Text(question.to_owned()));
+        // unwrapped where nothing was — as markers and text either way, for
+        // the tokenizer of the engine that answers to read (B-442). The
+        // question travels as a turn rather than as a prompt because a
+        // prompt is routed to the engine that takes a command line and
+        // cannot say why it stopped, so the probe would report inconclusive
+        // on every unconfigured model — most of them — for a reason that is
+        // MCF's plumbing rather than the model's behaviour (B-376, F48).
+        let mut pieces = addressing
+            .as_ref()
+            .map_or_else(Vec::new, |held| held.before.clone());
+        pieces.push(mcf_standin::tokenizer::Piece::Text(question.to_owned()));
+        if let Some(held) = addressing.as_ref() {
             pieces.extend(held.after.iter().cloned());
-            vocabulary.addressed(&pieces)
-        });
-        // Where nothing was applied the question still travels as identifiers,
-        // just unwrapped. Sending it as *text* routes it to the engine that
-        // takes a command line and cannot say why it stopped, so the probe
-        // would report inconclusive on every unconfigured model — most of
-        // them — for a reason that is MCF's plumbing rather than the model's
-        // behaviour (B-376, F48).
-        let identifiers = identifiers.or_else(|| vocabulary.encode(question, true).ok());
-        match identifiers {
-            Some(identifiers) => {
-                probes::trial(socket, path, "", Some(&identifiers), budget, Some(asked))
-            }
-            None => probes::trial(socket, path, question, None, budget, Some(asked)),
         }
+        probes::trial(socket, path, "", Some(&pieces), budget, Some(asked))
     };
     let probed = probes::stop_conditions(
         path,

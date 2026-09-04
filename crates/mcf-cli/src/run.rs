@@ -313,6 +313,7 @@ fn served(
         limit,
         seed,
         tokens: None,
+        pieces: None,
         engine: engine.map(str::to_owned),
         // A ceiling: a person asking a model a question wants its answer,
         // which ends where the model ends it.

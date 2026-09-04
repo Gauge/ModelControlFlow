@@ -40,7 +40,7 @@ use std::path::Path;
 
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::Vocabulary;
+use mcf_standin::tokenizer::{Piece, Tokens};
 
 use super::{Addressing, Trial};
 
@@ -186,7 +186,7 @@ impl Declared {
 ///
 /// Named because it is the seam that keeps this probe independent of which
 /// engine ran it — the engine is a condition and the caller states it.
-pub type Ask<'a> = &'a mut dyn FnMut(&[usize], usize) -> (Trial, String);
+pub type Ask<'a> = &'a mut dyn FnMut(&[Piece], usize) -> (Trial, String);
 
 /// The method, written where the result carries it.
 pub const TOOL_CALLING: Method = Method {
@@ -230,16 +230,10 @@ pub fn tool_calling(
             conditions,
         );
     };
-    let Ok(vocabulary) = Vocabulary::read(&file) else {
-        return Probed::inconclusive(
-            TOOL_CALLING,
-            "the vocabulary could not be read",
-            0,
-            0,
-            conditions,
-        );
+    let Ok(tokens) = Tokens::read(&file) else {
+        return Probed::inconclusive(TOOL_CALLING, "the file lists no tokens", 0, 0, conditions);
     };
-    let declared = declared(&file, &vocabulary);
+    let declared = declared(&file, &tokens);
     let offerings = offerings(&declared);
 
     let mut well_formed = Vec::new();
@@ -254,13 +248,7 @@ pub fn tool_calling(
         let mut bad = 0_usize;
         let mut none = 0_usize;
         for _ in 0..trials {
-            let Some(wrapped) = wrap(addressing, &vocabulary, &offering.text) else {
-                undecidable.push(format!(
-                    "{}: the question could not be put through this model's vocabulary",
-                    offering.name
-                ));
-                break;
-            };
+            let wrapped = Addressing::wrapped(addressing, &offering.text);
             let (trial, said) = generate(&wrapped, budget);
             spent = spent.saturating_add(budget);
             match read(&said, offering, &trial) {
@@ -325,21 +313,8 @@ pub fn tool_calling(
     }
 }
 
-/// The question, wrapped the way the chat-template probe found this model wants
-/// to be addressed — or bare, where nothing was found.
-fn wrap(
-    addressing: Option<&Addressing>,
-    vocabulary: &Vocabulary,
-    question: &str,
-) -> Option<Vec<usize>> {
-    match addressing {
-        Some(addressing) => addressing.wrap(vocabulary, question),
-        None => vocabulary.encode(question, true).ok(),
-    }
-}
-
 /// What the file says about tools. Read, never believed (A21).
-fn declared(file: &gguf::Model, vocabulary: &Vocabulary) -> Declared {
+fn declared(file: &gguf::Model, tokens: &Tokens) -> Declared {
     let template = file
         .get("tokenizer.chat_template")
         .and_then(gguf::Value::as_text)
@@ -354,7 +329,7 @@ fn declared(file: &gguf::Model, vocabulary: &Vocabulary) -> Declared {
     // run of this probe printed the same two markers five times over.
     let mut markers: Vec<String> = Vec::new();
     for marker in super::markers_in(&template) {
-        if !marker.to_lowercase().contains("tool") || !vocabulary.has_token(&marker) {
+        if !marker.to_lowercase().contains("tool") || !tokens.has_token(&marker) {
             continue;
         }
         if !markers.contains(&marker) {

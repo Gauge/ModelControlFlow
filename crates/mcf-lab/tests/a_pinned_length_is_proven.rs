@@ -66,6 +66,7 @@ fn generated(socket: &Path, model: &Path, limit: usize, pinned: bool) -> Value {
         seed: 0,
         // The token the model answers with itself, and its end of text.
         tokens: Some(vec![0]),
+        pieces: None,
         engine: Some("stand-in".to_owned()),
         whose: mcf_record::content::Whose::Fixture,
         pinned,
