@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 239 |
+| **Version** | 240 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **354 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 299 build items (203 done, 2 dropped, 15 in progress,
-37 blocked on a decision, 42 open).** Every item cites
+decided, 23 resolved) and 299 build items (204 done, 2 dropped, 15 in progress,
+37 blocked on a decision, 41 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -284,7 +284,7 @@ first and importance second.
 | B-452 | The daemon's own served engine starts a model's projector where one sits beside it, so `mcf run` and the prompt report can be shown a picture, and the vision probe and `mcf host` and `mcf run` agree on what the model takes | B-449, B-072, F163, §3.15 | A picture through `mcf run` reaches the same model the port's caller sees | done. `mcf run --image <file>`: the daemon's engine starts the projector beside the model, MCF makes up the engine's media marker for the engine's life, the turn goes as one string with the picture at the marker, and the account says so (`shown`, `identifiers_sent` null). Refused before the engine is asked where no projector sits beside the model, the file is empty or unreadable, the engine is MCF's own, or no daemon is listening. A completion refused by the engine carries its last words. The window's picture is B-462 |
 | B-453 | The tools probe reads a call in the form the model's template writes it — one family's is XML, `<tool_call><function=…><parameter=…>` — rather than judging JSON alone, either through the engine's own parser for that template or by reading the form off the rendering | B-053, B-450, F165, D47, A21 | A model that calls a tool in its template's own form is not reported as making no call | done. The form is read from the template's own text; where it writes a function block the probe offers the tool in that form with an example built for it, and the reader takes either shape wherever it appears — a call in the shape the offering did not ask for is reported as that, never as silence. A tie between offerings goes to the model's own form. The engine's structured reader is not on this path, which the finding says |
 | B-454 | The served path streams tokens as they arrive rather than answering whole, and a server that dies mid-answer leaves what it had produced on the page with the failure after it | B-450, B-451, F166, A2, A4 | A long thought is watched, not waited for | done. The engine is asked to stream and its events are read as they arrive — chunked framing, one event a token — each piece written to whoever asked at once; a body that is not a stream is one event of itself, so a refusal reaches the same reader. The engine is started with its own switch for special tokens, so the words watched are the words the account holds, and the last piece is held back until the turn's end says whether it was the model ending its turn. A pinned length keeps the whole-answer path, since a timing must not carry work MCF added to it |
-| B-455 | The prompt report takes the same turn as `mcf run`: a system turn and the thinking switch, so a persona is read under the frame it will be used in, and the thought's cost is a column of the report | B-450, B-451, D43, B-443 | A persona read as a system turn is read where it will live | open |
+| B-455 | The prompt report takes the same turn as `mcf run`: a system turn and the thinking switch, so a persona is read under the frame it will be used in, and the thought's cost is a column of the report | B-450, B-451, F167, D43, B-443 | A persona read as a system turn is read where it will live | done. `--system`, `--thinking` and `--effort` on `mcf prompt` reach every generation and the forced reading, which is taken over the engine's own rendering of the turn rather than the bare prompt; the report names what was asked in its conditions. What each generation spent before its answer is carried from the account into a column — the prompt as written, each removal, the control — shown only where something was counted. A thought written as channels counts nothing yet, which is B-457 |
 | B-456 | What a model file declares that the engine was not started with — a rope scaling for a longer context, a draft head — is read, reported, and offered as a condition rather than applied or ignored in silence | D43, F164, A7, A21, §3.15 | A model hosted without a feature its file declares says so | done. The file's draft head, its rope scaling and its context are read from the header and carried in every served account beside what the engine was started with; `mcf run`, `mcf host` and `mcf settings` print what the plain load leaves in the file. `--draft-head`, `--rope-scaling <none\|linear\|yarn>` and `--rope-scale <n>` on run and host, never on by themselves, recommended nowhere, and refused before an engine is started where the file has no draft head, where a scaling would stretch by one, or where MCF's own engine would run. An engine started under one set is not reused for another |
 | B-457 | A thought written as channels is counted before the answer: gpt-oss's `<\|channel\|>analysis<\|message\|>` … `<\|end\|>` and then `<\|start\|>assistant<\|channel\|>final<\|message\|>` is not a marker pair, so `before_the_answer` says nothing for it; the form is the template's, read from it as the pair is, and the count is the same figure | B-451, B-450, D47, A7 | A reasoning effort on gpt-oss shows its cost in tokens the way it does on Qwen3.8 | open. Seen in F161: low 36 tokens, high 147, the split not on the page |
 | B-458 | The client waits for a run it asked for and shows the engine's own progress while it does: no read timeout on a generation, the server's slot read as identifiers read so far against the prompt's length, and a client that is told to stop tells the daemon so | D48, A2, A7, §3.15 | A twenty-minute patience nobody chose no longer turns a six-hour trial into *inconclusive* | done. The clients' patience is a bound on silence, an hour, and not on a turn; the daemon puts the served engine's reading on the stream every ten seconds — read, of, produced, seconds — and `mcf run` prints it beside the answer. The slot's prompt figure is read for what it is: the context's contents, less what was produced (F162) |
@@ -471,6 +471,11 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 240 — read inside the turn it will live in
+
+B-455 done: the prompt report takes `mcf run`'s switches, every figure is
+taken under them, and what a thought costs is a column. F167.
 
 ### Version 239 — watched, not waited for
 

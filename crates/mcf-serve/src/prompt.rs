@@ -461,6 +461,10 @@ pub struct Clause {
     /// this sentence. `None` where the reading could not be taken, which the
     /// report says separately from a rank (A7).
     pub held: Option<Held>,
+    /// How many tokens the model spent thinking before its answer, without
+    /// this sentence — so that a part which costs a long thought is visible
+    /// beside one that changes what is said (B-455).
+    pub thought: Option<usize>,
 }
 
 /// The condition the settledness seeds are drawn under: the caller's
@@ -543,6 +547,8 @@ pub struct Reading {
     pub held: Option<Held>,
     /// The answer, as the model wrote it.
     pub answer: String,
+    /// What the model spent thinking before it, where that was counted.
+    pub thought: Option<usize>,
 }
 
 /// What every variant is read against: the answer as written and its
@@ -563,16 +569,17 @@ impl Bench<'_, '_> {
     /// The opening is an empty list where the baseline said nothing, and a
     /// rank over nothing is not taken rather than read as kept.
     fn read(&mut self, prompt: &str) -> Reading {
-        let answer = (self.ask)(prompt, Draw::greedy(self.seed)).text;
+        let said = (self.ask)(prompt, Draw::greedy(self.seed));
         let held = if self.opening.is_empty() {
             None
         } else {
             (self.force)(prompt, self.opening)
         };
         Reading {
-            moved: moved_by(self.baseline.trim(), answer.trim()),
+            moved: moved_by(self.baseline.trim(), said.text.trim()),
             held,
-            answer,
+            answer: said.text,
+            thought: said.thought,
         }
     }
 }
@@ -590,6 +597,10 @@ pub struct Report {
     /// opening ranks with a sentence carrying no instruction put in. The
     /// floor of `held`, taken by the same operation.
     pub floor_held: Option<Held>,
+    /// What the model spent thinking under the control, by the same
+    /// operation: the floor of the thought's cost, so that a part which
+    /// raises it is told from one that merely perturbs it (B-455).
+    pub floor_thought: Option<usize>,
     /// The floor at every position, in position order, where the caller
     /// asked for it; `None` where one draw was taken (B-434).
     pub floors: Option<Vec<FloorAt>>,
@@ -619,6 +630,11 @@ pub struct Report {
     /// The answer to the prompt as written, which every ablation is compared
     /// against.
     pub baseline: String,
+    /// What the model spent thinking before that answer, where the turn had
+    /// a marker it thinks inside and the account counted it: the cost of the
+    /// prompt as written, which a persona can raise as surely as it can
+    /// change what is said (B-455).
+    pub baseline_thought: Option<usize>,
     /// Each sentence, and what happened without it.
     pub clauses: Vec<Clause>,
     /// How many parts the document had beyond the ones ablated.
@@ -1199,6 +1215,11 @@ pub struct Answered {
     pub text: String,
     /// The same thing as identifiers.
     pub tokens: Vec<usize>,
+    /// How many tokens the model spent before its answer began, where the
+    /// turn it was asked under has a marker it thinks inside and the
+    /// account counted them (B-455, B-451). `None` is *not counted*, which
+    /// is not nought (A7).
+    pub thought: Option<usize>,
 }
 
 /// How a caller asks the model one question.
@@ -1238,6 +1259,7 @@ pub fn measure(
     let Answered {
         text: baseline,
         tokens: opening,
+        thought: baseline_thought,
     } = ask(&prompt, Draw::greedy(seed));
     let opening: Vec<usize> = opening.into_iter().take(MOST_FORCED).collect();
     let mut bench = Bench {
@@ -1266,6 +1288,7 @@ pub fn measure(
                     .unwrap_or_default(),
                 without: read.answer,
                 held: read.held,
+                thought: read.thought,
             });
         }
     }
@@ -1285,6 +1308,7 @@ pub fn measure(
     // another, which is the comparison the numbers above need.
     let read = bench.read(&with_inert(&all));
     let floor = read.moved;
+    let floor_thought = read.thought;
     let floor_held = if all.len() <= 1 { None } else { read.held };
     let floors = (taken.extras.has(Extra::Floors) && all.len() > 1)
         .then(|| floors_of(&mut bench, &all, (floor, floor_held)));
@@ -1304,12 +1328,14 @@ pub fn measure(
     Report {
         floor,
         floor_held,
+        floor_thought,
         floors,
         alone,
         alone_floor,
         prefixes,
         swaps,
         baseline,
+        baseline_thought,
         clauses,
         clauses_over_the_cap: all.len().saturating_sub(ablated),
         unit,

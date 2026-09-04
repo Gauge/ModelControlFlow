@@ -247,6 +247,14 @@ fn settled_value(settled: Option<&crate::prompt::Settled>) -> Value {
 }
 
 /// One ablated part, as a client reads it.
+/// A count where one was taken, and null where none was: nought is a
+/// figure and *not counted* is not one (A7).
+fn counted(held: Option<usize>) -> Value {
+    held.map_or(Value::Null, |held| {
+        Value::Integer(i64::try_from(held).unwrap_or(i64::MAX))
+    })
+}
+
 fn clause_value(clause: &crate::prompt::Clause) -> Value {
     Value::map([
         ("text", Value::text(clause.text.clone())),
@@ -257,6 +265,10 @@ fn clause_value(clause: &crate::prompt::Clause) -> Value {
         ),
         ("without", Value::text(clause.without.clone())),
         ("held", held_value(clause.held)),
+        // What the model spent thinking without this part. Null is *not
+        // counted* — a turn with no marker to think inside — and not
+        // nought (A7, B-455).
+        ("thought", counted(clause.thought)),
     ])
 }
 
@@ -293,6 +305,7 @@ fn prompt_report_conditions(
         ("token_limit", kept("token_limit")),
         ("sampler", kept("sampler")),
         ("addressed_as", kept("addressed_as")),
+        ("asked_as", kept("asked_as")),
         ("ranked_under", kept("ranked_under")),
         ("read_by", kept("read_by")),
         ("forced_depth", kept("forced_depth")),
@@ -597,6 +610,9 @@ fn prompt_report_value(
     let by_word = expected_by_word_value(parts, &ranked);
     Value::map([
         ("baseline", Value::text(report.baseline.clone())),
+        // What the prompt as written cost in thinking before its answer
+        // began, where the turn had a marker to think inside (B-455).
+        ("baseline_thought", counted(report.baseline_thought)),
         (
             "floor_parts_per_million",
             Value::Integer(i64::try_from(report.floor).unwrap_or(i64::MAX)),
@@ -606,6 +622,7 @@ fn prompt_report_value(
         // the inert one. `forced_depth` bounds a null `first_rank`: outside
         // the sixty read is a bound, not an absence (A7).
         ("floor_held", held_value(report.floor_held)),
+        ("floor_thought", counted(report.floor_thought)),
         // Why the forced reading was not taken, where it was not: the first
         // reason met, since every part's reading is the same operation and
         // fails the same way (A2, F160).
@@ -651,6 +668,10 @@ fn prompt_report_value(
         // Filled in by the caller from the generations' own accounts: what
         // they were addressed as is theirs to say (A21, F160).
         ("addressed_as", Value::Null),
+        // What was asked of the model's own template, where anything was: a
+        // report taken under a system turn is a report of the prompt inside
+        // that turn, and the figures are not the bare prompt's (B-455, D43).
+        ("asked_as", Value::Null),
         // **Settledness, under its condition or not at all.** The seeds are
         // drawn at a temperature the caller stated, and where none was the
         // question was not asked: `settled` is then null, which a reader
@@ -2214,6 +2235,7 @@ impl Daemon {
                 by,
                 most,
                 extras,
+                turn,
                 temperature,
                 seed,
             } => {
@@ -2231,6 +2253,7 @@ impl Daemon {
                     },
                     seed,
                     temperature,
+                    turn.as_ref(),
                     waiting,
                     writer,
                 );
@@ -2529,19 +2552,26 @@ impl Daemon {
         prompt: &str,
         opening: &[usize],
         picked: core::result::Result<(crate::adapters::ProvisionedLlama, u32, u64), String>,
+        turn: Option<&crate::turn::Turn>,
     ) -> core::result::Result<crate::prompt::Held, String> {
         let (llama, gpu_layers, context) =
             picked.map_err(|why| format!("no engine resolves this model: {why}"))?;
         let path = crate::generation::resolved(&self.places.models, named);
-        let received = crate::generation::received(
-            tokenizer.as_ref().map_err(ToString::to_string)?,
-            &self.mcf_home(),
-            &path,
-            prompt,
-            true,
-        )
-        .map_err(|failure| failure.to_string())?;
-        let mut tokens = received.tokens();
+        let reads = tokenizer.as_ref().map_err(ToString::to_string)?;
+        // **Read under the frame the answers were read under** (B-455). A
+        // rank taken over a bare prompt while every answer was framed by the
+        // model's own template would be two conditions in one report, and
+        // the rank would be the one nobody could act on (A6, §3.4).
+        let mut tokens = match turn {
+            Some(turn) => {
+                let frame = reads.framed(turn).map_err(|failure| failure.to_string())?;
+                crate::generation::framed_as(reads, prompt, &frame)
+                    .map_err(|failure| failure.to_string())?
+            }
+            None => crate::generation::received(reads, &self.mcf_home(), &path, prompt, true)
+                .map_err(|failure| failure.to_string())?
+                .tokens(),
+        };
         let from = tokens.len();
         tokens.extend_from_slice(opening);
         let runtime = self
@@ -2669,6 +2699,7 @@ impl Daemon {
         prompt: &str,
         draw: crate::prompt::Draw,
         picked: Option<(crate::adapters::ProvisionedLlama, u32, u64)>,
+        turn: Option<&crate::turn::Turn>,
         waiting: crate::served::Waiting<'_>,
     ) -> Option<crate::generation::Produced> {
         let (mine, theirs) = UnixStream::pair().ok()?;
@@ -2698,7 +2729,7 @@ impl Daemon {
                 // What the model says to a prompt, ended where the model
                 // ends it: a report on the prompt is not a timing.
                 false,
-                None,
+                turn,
                 None,
                 crate::declared::Started::default(),
                 waiting,
@@ -2710,27 +2741,52 @@ impl Daemon {
         Some(produced)
     }
 
+    /// The settling this model would be read under, where a temperature was
+    /// asked for at all.
+    fn settle_asked(
+        &self,
+        named: &str,
+        settle: Option<mcf_core::configuration::Thousandths>,
+    ) -> core::result::Result<Option<crate::prompt::Settle>, mcf_core::Failure> {
+        match settle {
+            Some(temperature) => self.settle_for(named, temperature).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// What an account says the model spent before its answer began, where
+    /// it counted anything (B-451).
+    fn thought_in(account: &Value) -> Option<usize> {
+        account
+            .get("before_the_answer")
+            .and_then(|before| before.get("tokens"))
+            .and_then(Value::as_integer)
+            .and_then(|tokens| usize::try_from(tokens).ok())
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one report's conditions, each named in what it writes"
+    )]
     fn prompt_report(
         &self,
         named: &str,
         taken: &crate::prompt::Taken<'_>,
         seed: u64,
         settle: Option<mcf_core::configuration::Thousandths>,
+        turn: Option<&crate::turn::Turn>,
         waiting: crate::served::Waiting<'_>,
         writer: &mut &UnixStream,
     ) {
         let picked = self.picked_engine_or_why(named);
-        let settle = match settle {
-            Some(temperature) => match self.settle_for(named, temperature) {
-                Ok(settle) => Some(settle),
-                Err(failure) => {
-                    let answer = Answer::refused(&failure);
-                    let _written = writeln!(writer, "{}", answer.to_line());
-                    let _flushed = writer.flush();
-                    return;
-                }
-            },
-            None => None,
+        let settle = match self.settle_asked(named, settle) {
+            Ok(settle) => settle,
+            Err(failure) => {
+                let answer = Answer::refused(&failure);
+                let _written = writeln!(writer, "{}", answer.to_line());
+                let _flushed = writer.flush();
+                return;
+            }
         };
         let mut asked = 0_usize;
         // Which engine answered is a condition of every figure below, and
@@ -2752,7 +2808,7 @@ impl Daemon {
         let mut ask = |prompt: &str, draw: crate::prompt::Draw| {
             asked = asked.saturating_add(1);
             let Some(produced) =
-                self.generated_quietly(named, prompt, draw, picked.clone().ok(), waiting)
+                self.generated_quietly(named, prompt, draw, picked.clone().ok(), turn, waiting)
             else {
                 return crate::prompt::Answered::default();
             };
@@ -2776,11 +2832,17 @@ impl Daemon {
             if let Some(under) = Self::condition_of(&produced.account, "addressed_as") {
                 let _seen = addressed.insert(under);
             }
+            // What the model spent before its answer, from the account
+            // that counted it: a persona that makes the model think for
+            // three hundred tokens costs that on every turn it is used
+            // (B-455, B-451).
+            let thought = Self::thought_in(&produced.account);
             produced
                 .said
                 .map(|held| crate::prompt::Answered {
                     text: held.text,
                     tokens: held.tokens,
+                    thought,
                 })
                 .unwrap_or_default()
         };
@@ -2792,6 +2854,7 @@ impl Daemon {
             prompt,
             opening,
             picked.clone(),
+            turn,
         ) {
             Ok(held) => Some(held),
             Err(why) => {
@@ -2832,6 +2895,10 @@ impl Daemon {
             let _was = fields.insert(
                 "addressed_as".to_owned(),
                 Value::text(addressed_as(&addressed)),
+            );
+            let _was = fields.insert(
+                "asked_as".to_owned(),
+                turn.map_or(Value::Null, |turn| Value::text(turn.said())),
             );
             if let Some((tokens, stopped)) = baseline_account {
                 let _was = fields.insert("answer_tokens".to_owned(), Value::Integer(tokens));

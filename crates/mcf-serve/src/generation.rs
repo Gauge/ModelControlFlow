@@ -1106,7 +1106,7 @@ fn addressed_as(
 /// # Errors
 ///
 /// A server that did not answer, or text it cannot represent.
-fn framed_as(
+pub(crate) fn framed_as(
     tokenizer: &Tokenizer<'_>,
     prompt: &str,
     frame: &crate::turn::Frame,

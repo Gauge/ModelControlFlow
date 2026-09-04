@@ -186,6 +186,7 @@ fn the_new_requests_survive_the_wire() {
             started: crate::declared::Started::default(),
         },
         Request::PromptReport {
+            turn: None,
             model: "a-model.gguf".to_owned(),
             prompt: "Be brief.\n\nBe right.".to_owned(),
             by: None,
@@ -195,6 +196,7 @@ fn the_new_requests_survive_the_wire() {
             seed: 41,
         },
         Request::PromptReport {
+            turn: None,
             model: "a-model.gguf".to_owned(),
             prompt: "Be brief.\n\nBe right.".to_owned(),
             by: Some(crate::prompt::Unit::Sentence),

@@ -11,6 +11,7 @@ fn said(text: &str) -> Answered {
     Answered {
         text: text.to_owned(),
         tokens: text.split_whitespace().map(str::len).collect(),
+        thought: None,
     }
 }
 
@@ -1063,4 +1064,52 @@ fn a_first_piece_nothing_preceded_is_unread_not_a_first_choice_and_strands_nothi
         "the unread piece is counted, not called past the depth"
     );
     assert_eq!(by_part.iter().map(|part| part.past_depth).sum::<usize>(), 0);
+}
+
+/// What the model spent before its answer is carried from every generation
+/// into the report: the prompt as written, each part removed, and the
+/// control, so a part that costs a long thought is visible beside one that
+/// changes what is said (B-455).
+#[test]
+fn the_thoughts_cost_reaches_the_report() {
+    // A model that thinks longer the more it is given: the whole prompt
+    // costs most, each removal less, and the control — a sentence longer
+    // than the whole — most of all.
+    let mut ask = |prompt: &str, _: Draw| Answered {
+        text: "Blue.".to_owned(),
+        tokens: vec![1],
+        thought: Some(prompt.len()),
+    };
+    let report = measure(&only("One. Two. Three."), 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.baseline_thought, Some("One. Two. Three.".len()));
+    let thoughts: Vec<Option<usize>> = report
+        .clauses
+        .iter()
+        .map(|clause| clause.thought)
+        .collect();
+    assert!(
+        thoughts.iter().all(Option::is_some),
+        "every removal's thought is counted: {thoughts:?}"
+    );
+    assert!(
+        thoughts
+            .iter()
+            .flatten()
+            .all(|thought| *thought < "One. Two. Three.".len()),
+        "a shorter prompt is a shorter thought here: {thoughts:?}"
+    );
+    // The control is measured by the same operation, so its cost is a
+    // figure and not a dash.
+    assert!(report.floor_thought.is_some(), "the control's own thought");
+}
+
+/// A model that thinks nowhere counts nothing, and *not counted* is not
+/// nought (A7).
+#[test]
+fn a_turn_with_no_thought_counts_none() {
+    let mut ask = |_: &str, _: Draw| said("Blue.");
+    let report = measure(&only("One. Two."), 41, None, &mut ask, &mut unforced);
+    assert_eq!(report.baseline_thought, None);
+    assert_eq!(report.floor_thought, None);
+    assert!(report.clauses.iter().all(|clause| clause.thought.is_none()));
 }

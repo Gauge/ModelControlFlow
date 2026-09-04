@@ -77,6 +77,10 @@ pub enum Request {
         /// The further readings asked for, each costing generations
         /// (B-434, B-435).
         extras: crate::prompt::Extras,
+        /// How the turn is framed, where the caller asked the engine to
+        /// frame it from the model's own template (D47): a persona read as
+        /// a system turn is read where it will live (B-455).
+        turn: Option<crate::turn::Turn>,
         /// The temperature the settledness seeds are drawn at, in
         /// thousandths; `None` spends no generation on the question (B-431).
         temperature: Option<mcf_core::configuration::Thousandths>,
@@ -365,6 +369,7 @@ fn prompt_report_line(request: &Request) -> Value {
         by,
         most,
         extras,
+        turn,
         temperature,
         seed,
     } = request
@@ -389,6 +394,9 @@ fn prompt_report_line(request: &Request) -> Value {
         .collect();
     if !asked.is_empty() {
         fields.push(("extras", Value::List(asked)));
+    }
+    if let Some(turn) = turn {
+        fields.push(("turn", turn.to_value()));
     }
     if let Some(temperature) = temperature {
         fields.push((
@@ -648,6 +656,9 @@ impl Request {
                             })?,
                     ),
                 },
+                // Absent means the prompt goes as it always did: a client
+                // that predates the field asked for no frame.
+                turn: value.get("turn").and_then(crate::turn::Turn::from_value),
                 extras: crate::prompt::Extras::named(
                     value
                         .get("extras")

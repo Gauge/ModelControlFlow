@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 111 |
+| **Version** | 112 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 167 | [F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)](#167--f167--the-prompt-report-read-every-persona-bare-the-turn-it-will-be-used-in-was-not-applied-so-what-a-system-turn-does-to-the-answer-and-what-a-thought-costs-were-both-invisible-b-455-b-451-b-443-d43-d47-34) |
 | 166 | [F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)](#166--f166--the-served-path-answered-whole-so-a-ten-minute-thought-was-ten-minutes-of-nothing-and-an-engine-that-died-in-the-ninth-left-no-trace-of-what-it-had-written-b-454-b-451-f142-d48-a2-a4) |
 | 165 | [F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)](#165--f165--a-tool-call-written-in-the-form-the-models-own-template-uses-was-read-as-no-call-at-all-the-reader-knew-one-shape-and-the-family-that-writes-another-was-reported-as-never-calling-b-453-b-053-f161-d42-a21-318) |
 | 164 | [F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)](#164--f164--a-file-can-carry-more-than-the-engine-loads-a-draft-head-declared-in-the-weights-is-never-read-in-unless-the-engine-is-told-to-and-a-scaling-asked-for-with-no-factor-stretches-nothing-b-456-b-449-d43-a7-a21-315) |
@@ -9589,6 +9590,59 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 167 · F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)
+
+A persona is written to be a system turn and was read as a user prompt. The
+report's generations went with whatever addressing was on file for the model
+and nothing else — no system turn, no thinking switch, no reasoning effort —
+so a page that told a person which sentences of their persona steered the
+answer told them about a prompt they would never send. The switches existed
+on `mcf run` and stopped there.
+
+**The same switches, and every figure under them.** `mcf prompt` now takes
+`--system`, `--thinking` and `--effort` as `mcf run` does, and they reach
+every generation of the report: the prompt as written, each removal, the
+control, and each further reading. The report says what was asked in its
+conditions — *asked: thinking on* beside *addressed: framed by the engine
+from the model's own template* — because a report taken inside a turn is a
+report of the prompt inside that turn and not of the bare text (§3.4, A6).
+
+**The forced reading moved with them.** The rank of the baseline's opening
+under each shortened prompt is taken by tokenizing the prompt and asking the
+engine what it would have written; done bare while the answers were framed,
+it would have been a rank under conditions no answer was produced under —
+two conditions in one report, and the one number a reader would act on the
+wrong one. Where a turn is asked for, the prompt is framed by the engine's
+own rendering of the template first and the rank is taken over that.
+
+**What a thought costs is a column.** The account already counted what a
+model spends inside a marker before its answer begins (B-451); the report
+threw it away. Every generation's count is now carried: the prompt as
+written, each part removed, and the control, so a part that makes the model
+think longer is visible beside one that changes what is said. A 30B mixture
+asked *You are terse. Answer in one word. What colour is a clear sky at
+noon?* with thinking on spent 160 tokens thinking before its answer; without
+*You are terse.* it spent 332 — twice as long a thought for the removal of
+three words — while the control, an inert sentence put in, cost 168. The
+column appears only where something was counted: a column of dashes for
+every model that does not think would be a column about MCF.
+
+**Not counted is not nought.** A model whose thought is written as channels
+rather than as a marker pair — `<|channel|>analysis<|message|>` … `<|end|>`
+— counts nothing here, and the rows say so with a dash rather than a zero.
+Asked with a reasoning effort, a 20B produced exactly that shape in every
+answer of its report and the column stayed away; counting it is B-457.
+
+**What ran.** One daemon under a 40 GiB memory cap, the processor only,
+llama-server @925e1179, greedy at one seed, two models. The timings are not
+measurements (D39).
+
+**What this does not settle.** The parts removed are the user prompt's; a
+persona sitting in the system turn is a constant here, and ablating *it* is
+the reading a persona's author most wants. The window cannot ask for a turn
+at all. And a report under one turn and a report under another are two
+reports: nothing compares them for you.
+
 ## 166 · F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)
 
 The path through the provisioned server asked for a completion and waited
@@ -11608,6 +11662,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 112 — read inside the turn it will live in
+
+F167 added: the prompt report takes `mcf run`'s switches, every figure is
+taken under them, and what the thought costs is a column. B-455.
 
 ### Version 111 — watched, not waited for
 

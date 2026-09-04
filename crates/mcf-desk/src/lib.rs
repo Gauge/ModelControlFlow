@@ -1750,6 +1750,9 @@ impl Desk {
         self.doing = Doing::Reporting(job::Job::start(
             self.socket.clone(),
             Request::PromptReport {
+                // The window has no way to ask for a turn yet; the socket
+                // takes one (B-455), and the window's turn is B-462.
+                turn: None,
                 model: held.path.clone(),
                 prompt: taken.text.to_owned(),
                 by: taken.by,

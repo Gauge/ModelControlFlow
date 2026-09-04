@@ -321,6 +321,10 @@ enum Request<'a> {
         /// The further readings asked for, each costing generations
         /// (B-434, B-435).
         extras: mcf_serve::prompt::Extras,
+        /// How the turn is framed, where the person asked for one of the
+        /// template's switches (B-455). Boxed for the size of the request,
+        /// not for any sharing.
+        turn: Box<mcf_serve::turn::Turn>,
         /// Whether to answer as data rather than as prose.
         as_json: bool,
     },
@@ -894,6 +898,21 @@ fn probe_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a
 /// persona is a page and a page is a file, and `-` reads the standard input
 /// so that one can be piped in. `--by` and `--most` are choices the report
 /// would otherwise make and say it made (§3.15, B-430).
+/// A report reads one document: given inline or in a file, and never both.
+fn one_document<'a>(prompt: Option<&'a str>, file: Option<&'a str>) -> Option<Request<'a>> {
+    match (prompt, file) {
+        (None, None) => Some(Request::MissingArgument {
+            command: "prompt",
+            needs: "--prompt <text> or --file <path>",
+        }),
+        (Some(_), Some(_)) => Some(Request::UnexpectedArgument {
+            command: "prompt (takes --prompt or --file, not both)",
+            argument: "--file",
+        }),
+        _ => None,
+    }
+}
+
 fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'a>, &'a str> {
     let mut prompt = None;
     let mut file = None;
@@ -901,6 +920,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
     let mut most = None;
     let mut temperature = None;
     let mut extras = mcf_serve::prompt::Extras::NONE;
+    let mut turn = mcf_serve::turn::Turn::default();
     let mut as_json = false;
     let mut rest = arguments.iter();
     while let Some(argument) = rest.next() {
@@ -915,6 +935,16 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
                 Ok(text) => prompt = Some(text),
                 Err(missing) => return Ok(missing),
             },
+            // The template's own switches, as `mcf run` takes them: what is
+            // read is the prompt inside the turn it will be used in (B-455).
+            "--thinking" | "--effort" | "--system" => {
+                if let Some(needs) = turn_switch(&mut turn, argument, rest.next().copied()) {
+                    return Ok(Request::MissingArgument {
+                        command: "prompt",
+                        needs,
+                    });
+                }
+            }
             "--file" => match value("--file <path>, or - for the standard input", &mut rest) {
                 Ok(path) => file = Some(path),
                 Err(missing) => return Ok(missing),
@@ -971,17 +1001,8 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
             },
         }
     }
-    if prompt.is_none() && file.is_none() {
-        return Ok(Request::MissingArgument {
-            command: "prompt",
-            needs: "--prompt <text> or --file <path>",
-        });
-    }
-    if prompt.is_some() && file.is_some() {
-        return Ok(Request::UnexpectedArgument {
-            command: "prompt (takes --prompt or --file, not both)",
-            argument: "--file",
-        });
+    if let Some(wrong) = one_document(prompt, file) {
+        return Ok(wrong);
     }
     Ok(Request::PromptReport {
         model,
@@ -991,6 +1012,7 @@ fn prompt_options<'a>(model: &'a str, arguments: &[&'a str]) -> Result<Request<'
         most,
         temperature,
         extras,
+        turn: Box::new(turn),
         as_json,
     })
 }
@@ -1761,7 +1783,10 @@ const COMMANDS: &str = "\
     \x20       [--json]                      relevance. A\n\
     \x20       [--temperature <t>] [--floors] persona goes in --file, whole;\n\
     \x20       [--alone] [--prefixes]        --temperature draws three seeds\n\
-    \x20       [--swaps]                     at t to see whether it settles;\n\
+    \x20       [--swaps] [--system <text>]   at t to see whether it settles;\n\
+    \x20       [--thinking on|off]           --system, --thinking and --effort\n\
+    \x20       [--effort <word>]             read the prompt inside the turn\n\
+    \x20                                     it will be used in;\n\
     \x20                                     --floors puts the control at\n\
     \x20                                     every position, one each;\n\
     \x20                                     --alone asks each part as the\n\
@@ -1994,6 +2019,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
             most,
             temperature,
             extras,
+            turn,
             as_json,
         } => prompt::report(
             model,
@@ -2004,6 +2030,7 @@ fn respond(request: &Request<'_>, identity: BuildIdentity) -> Response {
                 most: *most,
                 temperature: *temperature,
                 extras: *extras,
+                turn: (**turn).clone(),
             },
             *as_json,
         ),
@@ -2458,6 +2485,7 @@ mod tests {
                 .with(mcf_serve::prompt::Extra::Alone, true)
                 .with(mcf_serve::prompt::Extra::Prefixes, true)
                 .with(mcf_serve::prompt::Extra::Swaps, true),
+            turn: Box::new(mcf_serve::turn::Turn::default()),
             as_json: true,
         };
         assert_eq!(
@@ -2510,6 +2538,7 @@ mod tests {
                 most: None,
                 temperature: None,
                 extras: mcf_serve::prompt::Extras::NONE,
+                turn: Box::new(mcf_serve::turn::Turn::default()),
                 as_json: false,
             }
         );

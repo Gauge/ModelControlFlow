@@ -728,6 +728,8 @@ fn a_served_report_groups_the_rank_reading_by_part_or_says_it_has_none() {
     };
     let parts = taken.parts();
     let report = Report {
+        baseline_thought: None,
+        floor_thought: None,
         floor: 0,
         floor_held: None,
         floors: None,
@@ -827,11 +829,14 @@ fn a_served_report_carries_each_part_alone_with_its_answer() {
     };
     let parts = taken.parts();
     let read = |moved: u64, answer: &str| Reading {
+        thought: None,
         moved,
         held: None,
         answer: answer.to_owned(),
     };
     let report = Report {
+        baseline_thought: None,
+        floor_thought: None,
         floor: 0,
         floor_held: None,
         floors: None,

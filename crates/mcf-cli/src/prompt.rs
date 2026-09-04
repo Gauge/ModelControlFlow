@@ -25,7 +25,7 @@ use crate::Response;
 const SEED: u64 = 41;
 
 /// What the command line asked to have taken apart, before the file is read.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Asked<'a> {
     /// The document, given inline.
     pub prompt: Option<&'a str>,
@@ -40,6 +40,10 @@ pub(crate) struct Asked<'a> {
     pub temperature: Option<mcf_core::configuration::Thousandths>,
     /// The further readings asked for (B-434, B-435).
     pub extras: mcf_serve::prompt::Extras,
+    /// How the turn is framed, where the person asked for a system turn or
+    /// one of the template's switches: a persona is read under the frame it
+    /// will be used in (B-455).
+    pub turn: mcf_serve::turn::Turn,
 }
 
 /// The document, from wherever the caller put it.
@@ -106,6 +110,7 @@ pub(crate) fn report(named: &str, asked: &Asked<'_>, as_json: bool) -> Response 
         by: asked.by,
         most: asked.most,
         extras: asked.extras,
+        turn: asked.turn.asks_anything().then(|| asked.turn.clone()),
         temperature: asked.temperature,
         seed: SEED,
     };
@@ -382,6 +387,11 @@ fn conditions(body: &Value) -> Vec<String> {
     if let Some(addressed) = text("addressed_as") {
         rows.push(("addressed", addressed.to_owned()));
     }
+    // What was asked of the model's own template, where anything was: every
+    // figure below is of the prompt inside that turn (B-455, §3.4).
+    if let Some(asked) = text("asked_as") {
+        rows.push(("asked", asked.to_owned()));
+    }
     // **Who read the prompt** (B-441): the engine that answered it, named,
     // or why there is no count at all (A7).
     let read_by = text("read_by").unwrap_or("not recorded");
@@ -534,10 +544,16 @@ fn removed(body: &Value) -> Vec<String> {
         return lines;
     }
     let by_part = body.get("expected_by_part");
+    // The thought's cost is a column only where there was a thought: a
+    // column of dashes for every model that does not think would be a
+    // column about MCF (B-455, §3.15).
+    let thinking = clauses
+        .iter()
+        .any(|clause| thought_of(clause, "thought").is_some());
     let mut rows = Vec::new();
     for (at, clause) in clauses.iter().enumerate() {
         let moved = moved_of(clause);
-        rows.push(vec![
+        let mut row = vec![
             format!("{}", at.saturating_add(1)),
             percent(moved),
             bar(moved),
@@ -545,15 +561,19 @@ fn removed(body: &Value) -> Vec<String> {
             rank_cell(clause.get("held"), depth),
             open_cell(clause.get("held")),
             own_cell(by_part, at),
-            part_text(body, at),
-        ]);
+        ];
+        if thinking {
+            row.push(thought_cell(clause));
+        }
+        row.push(part_text(body, at));
+        rows.push(row);
         if clause.get("changed").and_then(Value::as_bool) == Some(true)
             && let Some(row) = answer_row(clause, "without")
         {
             rows.push(row);
         }
     }
-    rows.push(vec![
+    let mut control = vec![
         "ctl".to_owned(),
         percent(floor),
         bar(floor),
@@ -561,21 +581,26 @@ fn removed(body: &Value) -> Vec<String> {
         rank_cell(body.get("floor_held"), depth),
         open_cell(body.get("floor_held")),
         "—".to_owned(),
-        "control sentence".to_owned(),
-    ]);
-    lines.extend(table(
-        &[
-            figure("#"),
-            figure("moved"),
-            text(""),
-            figure("vs floor"),
-            figure("1st"),
-            figure("open"),
-            figure("own"),
-            text(unit),
-        ],
-        &rows,
-    ));
+    ];
+    if thinking {
+        control.push(thought_cell_of(thought_of(body, "floor_thought")));
+    }
+    control.push("control sentence".to_owned());
+    rows.push(control);
+    let mut columns = vec![
+        figure("#"),
+        figure("moved"),
+        text(""),
+        figure("vs floor"),
+        figure("1st"),
+        figure("open"),
+        figure("own"),
+    ];
+    if thinking {
+        columns.push(figure("thought"));
+    }
+    columns.push(text(unit));
+    lines.extend(table(&columns, &rows));
     lines.extend(under_the_floor(body, floor));
     lines.extend(floors(body, unit));
     let over = integer(body, "clauses_over_the_cap");
@@ -588,6 +613,17 @@ fn removed(body: &Value) -> Vec<String> {
     lines.extend(least_expected(body));
     lines.push(String::new());
     lines
+}
+
+/// What the model spent thinking without this part, in tokens; a dash
+/// where nothing was counted (A7).
+fn thought_cell(clause: &Value) -> String {
+    thought_cell_of(thought_of(clause, "thought"))
+}
+
+/// The same, from a figure already read.
+fn thought_cell_of(thought: Option<i64>) -> String {
+    thought.map_or_else(|| "—".to_owned(), |thought| thought.to_string())
 }
 
 /// A part's share of the rank reading, `first choice/pieces`; a dash
@@ -1180,6 +1216,12 @@ fn answer(body: &Value) -> Vec<String> {
         conditions.push(format!("cap {limit} tokens"));
     }
     conditions.extend(mcf_desk::answer_marks(body));
+    // What the model spent before this answer began, where the turn gave it
+    // a marker to think inside: a persona that costs three hundred tokens of
+    // thinking costs them on every turn it is used (B-455, B-451).
+    if let Some(thought) = thought_of(body, "baseline_thought") {
+        conditions.push(format!("{} before it", count_of(thought, "token")));
+    }
     let mut lines = vec![head("ANSWER", &conditions)];
     let written: Vec<&str> = baseline.lines().collect();
     // An empty answer is a figure, not a blank (A7, F160): Devstral, bare,
@@ -1201,6 +1243,12 @@ fn answer(body: &Value) -> Vec<String> {
     }
     lines.push(String::new());
     lines
+}
+
+/// What was spent thinking, where it was counted at all: null is *not
+/// counted*, which is not nought (A7).
+fn thought_of(held: &Value, key: &str) -> Option<i64> {
+    held.get(key).and_then(Value::as_integer)
 }
 
 /// A count and the thing counted, in English.
