@@ -758,22 +758,29 @@ fn the_opener_is_the_marker_a_role_follows() {
     assert!(!super::opens_a_role(coder, "[]"));
 }
 
-/// A template that writes no end-of-turn marker is read by its roles: the
-/// marker spelled *user* opens, the one spelled *assistant* follows the
-/// question, and where `</think>` is a token the template writes, a second
-/// candidate closes the thinking first (F171).
-#[test]
-fn a_template_whose_markers_are_the_roles_is_read_by_them() {
-    let template = "[gMASK]<sop>{% for m in messages %}{%- if m.role == 'user' -%}<|user|>{{ m.content }}{%- elif m.role == 'assistant' -%}<|assistant|>{{ '</think>' }}{{ m.content }}{%- endif -%}{%- endfor -%}<|assistant|>";
-    let tokens = with_bytes(&[
+/// GLM's shape of vocabulary: the ending is a token its template never
+/// writes, and the roles are markers.
+fn tokens_of_glm() -> Vec<String> {
+    with_bytes(&[
         "<|endoftext|>",
         "\u{2581}a",
         "a",
         "[gMASK]",
         "<|user|>",
         "<|assistant|>",
+        "<think>",
         "</think>",
-    ]);
+    ])
+}
+
+/// A template that writes no end-of-turn marker is read by its roles: the
+/// marker spelled *user* opens, the one spelled *assistant* follows the
+/// question, and where `</think>` is a token the template writes, a second
+/// candidate closes the thinking first (F171).
+#[test]
+fn a_template_whose_markers_are_the_roles_is_read_by_them() {
+    let template = "[gMASK]<sop>{% for m in messages %}{%- if m.role == 'user' -%}<|user|>{{ m.content }}{%- elif m.role == 'assistant' -%}<|assistant|>{{ '</think>' }}{{ m.content }}{%- endif -%}{%- endfor -%}<|assistant|>{{ '<think>' }}";
+    let tokens = tokens_of_glm();
     // The file's ending is a token the template never writes.
     let file =
         mcf_standin::gguf::parse(&a_file(&tokens, Some(template), Some(0))).expect("a model");
@@ -782,18 +789,38 @@ fn a_template_whose_markers_are_the_roles_is_read_by_them() {
     let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();
     assert_eq!(
         names,
-        vec!["user…assistant", "user…assistant, thinking closed"],
-        "{names:?}"
+        vec!["user…assistant, thinking open"],
+        "the form the template writes unswitched, and not the bare role: {names:?}"
     );
     assert_eq!(
         found[0].shown("hello"),
-        "<|user|>hello<|assistant|>",
+        "<|user|>hello<|assistant|><think>",
         "the turn boundary is the next role's marker, nothing between"
     );
+
+    // A template that only ever closes the thinking ends the turn closed.
+    let closing = "{% for m in messages %}{%- if m.role == 'user' -%}<|user|>{{ m.content }}{%- elif m.role == 'assistant' -%}<|assistant|>{{ '</think>' }}{{ m.content }}{%- endif -%}{%- endfor -%}<|assistant|>{{ '</think>' }}";
+    let file = mcf_standin::gguf::parse(&a_file(&tokens_of_glm(), Some(closing), Some(0)))
+        .expect("a model");
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let found = super::from_template(&file, &tokens);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].name, "user…assistant, thinking closed");
     assert_eq!(
-        found[1].shown("hello"),
+        found[0].shown("hello"),
         "<|user|>hello<|assistant|></think>"
     );
+
+    // A template that writes no thinking marker after the role is the bare
+    // role, which is then the form it writes.
+    let plain = "{% for m in messages %}{%- if m.role == 'user' -%}<|user|>{{ m.content }}{%- elif m.role == 'assistant' -%}<|assistant|>{{ m.content }}{%- endif -%}{%- endfor -%}<|assistant|>";
+    let file =
+        mcf_standin::gguf::parse(&a_file(&tokens_of_glm(), Some(plain), Some(0))).expect("a model");
+    let tokens = mcf_standin::tokenizer::Tokens::read(&file).expect("a token list");
+    let found = super::from_template(&file, &tokens);
+    let names: Vec<&str> = found.iter().map(|held| held.name.as_str()).collect();
+    assert_eq!(names, vec!["user…assistant"], "{names:?}");
+    assert_eq!(found[0].shown("hello"), "<|user|>hello<|assistant|>");
 
     // The same template on a vocabulary that spells no role as a marker
     // yields nothing — the shape cannot be sent as itself (F37).

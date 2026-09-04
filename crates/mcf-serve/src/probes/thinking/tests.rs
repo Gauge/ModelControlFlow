@@ -38,6 +38,7 @@ fn a_file_with_no_marker_decides_nothing() {
         3,
         200,
         "a test",
+        None,
         &mut ask,
     );
     let Outcome::Inconclusive { because } = &probed.outcome else {
@@ -59,6 +60,7 @@ fn a_file_that_is_not_a_model_decides_nothing() {
         1,
         200,
         "a test",
+        None,
         &mut ask,
     );
     assert!(matches!(probed.outcome, Outcome::Inconclusive { .. }));
@@ -109,6 +111,7 @@ fn the_budget_is_set_by_the_longest_turn_not_the_mean() {
         2,
         200,
         "a test",
+        None,
         &mut ask,
     );
     match probed.outcome {
@@ -195,6 +198,7 @@ fn a_file_whose_markers_all_fail_to_pair_says_how_many() {
         1,
         200,
         "a test",
+        None,
         &mut ask,
     );
     let Outcome::Inconclusive { because } = &probed.outcome else {
@@ -235,4 +239,84 @@ fn byte_fallback_tokens_are_not_markers() {
         "the count is markers, not the byte alphabet: {} found",
         could_not.len()
     );
+}
+
+/// An addressing that ends in the closing half of a pair is asked with the
+/// opening half in its place, and the turn is what opened it; one that ends
+/// in an opener already is asked as it is, with the turn opening it; one
+/// that ends in neither is asked as it is (F171).
+#[test]
+fn an_addressing_that_closes_the_thinking_is_asked_with_it_opened() {
+    use mcf_standin::tokenizer::Piece;
+    let pairs = vec![("<think>".to_owned(), "</think>".to_owned())];
+    let closed = super::super::Addressing {
+        name: "user…assistant, thinking closed".to_owned(),
+        pieces_before: vec![Piece::Marker("<|user|>".to_owned())],
+        pieces_after: vec![
+            Piece::Marker("<|assistant|>".to_owned()),
+            Piece::Marker("</think>".to_owned()),
+        ],
+    };
+    let under = super::under(&closed, &pairs);
+    assert!(under.changed);
+    assert_eq!(under.opened_by_turn.as_deref(), Some("<think>"));
+    assert_eq!(
+        under.addressing.name,
+        "user…assistant, thinking closed, think opened by the turn"
+    );
+    assert_eq!(under.addressing.shown("q"), "<|user|>q<|assistant|><think>");
+
+    let open = under.addressing.clone();
+    let again = super::under(&open, &pairs);
+    assert!(!again.changed);
+    assert_eq!(again.opened_by_turn.as_deref(), Some("<think>"));
+    assert_eq!(again.addressing, open);
+
+    let plain = super::super::Addressing {
+        name: "user…assistant".to_owned(),
+        pieces_before: vec![Piece::Marker("<|user|>".to_owned())],
+        pieces_after: vec![Piece::Marker("<|assistant|>".to_owned())],
+    };
+    let under = super::under(&plain, &pairs);
+    assert!(!under.changed && under.opened_by_turn.is_none());
+    assert_eq!(under.addressing, plain);
+    // Text at the end is not a marker, whatever it spells.
+    let text = super::super::Addressing {
+        name: "typed".to_owned(),
+        pieces_before: Vec::new(),
+        pieces_after: vec![Piece::Text("</think>".to_owned())],
+    };
+    assert!(super::under(&text, &pairs).opened_by_turn.is_none());
+    assert!(!super::under(&closed, &[]).changed);
+}
+
+/// A marker the turn opened is counted as opened, and what came back up to
+/// its closer is the inside — the model wrote no opener of its own, and the
+/// probe does not wait for one (F171).
+#[test]
+fn a_marker_the_turn_opened_is_measured_from_the_first_token() {
+    let bytes = crate::probes::tests::with_markers(&["<think>", "</think>"]);
+    let mut turns = vec![
+        (
+            Trial::Stopped { after: 9 },
+            "three times seven</think> 21".to_owned(),
+        ),
+        (Trial::RanOut, "three times seven is".to_owned()),
+    ]
+    .into_iter();
+    let probed = thinking(
+        std::path::Path::new("m"),
+        &bytes,
+        2,
+        16,
+        "test",
+        Some("<think>"),
+        &mut |_| turns.next().unwrap_or((Trial::RanOut, String::new())),
+    );
+    let Outcome::Observed(spends) = &probed.outcome else {
+        panic!("observed: {probed:?}");
+    };
+    assert_eq!(spends.used.as_deref(), Some("<think>"));
+    assert_eq!((spends.opened, spends.closed), (2, 1));
+    assert_eq!(spends.longest_inside, 3);
 }

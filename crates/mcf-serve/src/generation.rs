@@ -330,6 +330,12 @@ pub(crate) struct Said {
     /// step by step where text cannot (B-362): past the first disagreement two
     /// engines are writing different sentences.
     pub(crate) tokens: Vec<usize>,
+    /// The text after a marker the turn closed, where it closed one: the
+    /// answer, apart from what was spent before it. A caller that reads a
+    /// call or a shape out of the whole text reads drafts out of the thought
+    /// (B-442); this is the same text again from where the answer begins.
+    /// `None` where no marker was closed, and the whole text is the answer.
+    pub(crate) answer: Option<String>,
 }
 
 impl Produced {
@@ -345,6 +351,11 @@ impl Produced {
         let mut fields = fields.clone();
         if let Some(said) = &self.said {
             fields.insert("text".to_owned(), Value::text(said.text.clone()));
+            if let (Some(answer), Some(Value::Map(before))) =
+                (&said.answer, fields.get_mut("before_the_answer"))
+            {
+                before.insert("answer".to_owned(), Value::text(answer.clone()));
+            }
             if !said.tokens.is_empty() {
                 fields.insert(
                     "produced_tokens".to_owned(),
@@ -405,6 +416,48 @@ impl<'a> Given<'a> {
     pub(crate) fn is_own_turn(self) -> bool {
         !matches!(self, Self::Text)
     }
+
+    /// What the caller's own turn left the model inside of: the markers
+    /// after its last text, as one string, or `None` where it ends in text
+    /// or was not sent as pieces.
+    ///
+    /// A probe's turn that ends `<|assistant|><think>` has opened the
+    /// thinking for the model the way a template's frame does, and what the
+    /// model spends before its answer is read the same way for both (F171).
+    pub(crate) fn trailing_markers(self) -> Option<String> {
+        let Self::Pieces(pieces) = self else {
+            return None;
+        };
+        let markers: Vec<&str> = pieces
+            .iter()
+            .rev()
+            .map_while(|piece| match piece {
+                mcf_standin::tokenizer::Piece::Marker(marker) => Some(marker.as_str()),
+                mcf_standin::tokenizer::Piece::Text(_) => None,
+            })
+            .collect();
+        (!markers.is_empty()).then(|| markers.into_iter().rev().collect())
+    }
+}
+
+/// What somebody derived for this model, and the limit in force: the
+/// caller's word first, then the budget somebody derived, then MCF's stated
+/// default. A caller who said nothing is not a caller who said the default
+/// (D43, §3.15).
+fn derived_for(
+    mcf_home: &Path,
+    model: &Path,
+    limit: Option<usize>,
+) -> (
+    Option<crate::configured::Addressing>,
+    Option<crate::configured::Budget>,
+    usize,
+) {
+    let derived = crate::configured::read_derived(mcf_home, model);
+    let limit = limit
+        .or_else(|| derived.budget.as_ref().map(|budget| budget.tokens))
+        .unwrap_or(crate::control::DEFAULT_LIMIT);
+    (derived.addressing, derived.budget, limit)
 }
 
 /// The identifiers the engine is sent, or `None` where a prompt goes as text.
@@ -519,15 +572,7 @@ pub(crate) fn serve_generation(
     // it wants and is not overridden; a caller that sent a prompt gets the
     // addressing that was applied, and the account says so — MCF doing
     // something other than the plain thing must never be invisible (§3.15).
-    let derived = crate::configured::read_derived(mcf_home, &resolved(store, named));
-    // The caller's word first, then what somebody derived for this model, then
-    // MCF's stated default. A caller who said nothing is not a caller who said
-    // the default (D43, §3.15).
-    let limit = limit
-        .or_else(|| derived.budget.as_ref().map(|budget| budget.tokens))
-        .unwrap_or(crate::control::DEFAULT_LIMIT);
-    let derived_budget = derived.budget.clone();
-    let derived = derived.addressing;
+    let (derived, derived_budget, limit) = derived_for(mcf_home, &resolved(store, named), limit);
 
     // What the file says it has, read before anything is loaded: it decides
     // whether a switch can be honoured at all, and it is what the account
@@ -586,6 +631,13 @@ pub(crate) fn serve_generation(
         Ok(Chosen::Provisioned(llama)) => Some(served_engine_name(llama)),
         Ok(Chosen::StandIn) | Err(_) => None,
     };
+    // What the model was left inside of: the frame's tail where the engine
+    // framed the turn, the caller's own trailing markers where they built it.
+    let trailing = given.trailing_markers();
+    let tail = frame
+        .as_ref()
+        .map(|frame| frame.after.as_str())
+        .or(trailing.as_deref());
     let produced = match (chosen, wrapped, &picture) {
         // MCF's own engine reads text and nothing else; a picture sent to
         // it is refused rather than dropped on the way (A2), and refused
@@ -602,7 +654,7 @@ pub(crate) fn serve_generation(
                         tokens,
                         limit,
                         pinned,
-                        tail: frame.as_ref().map(|frame| frame.after.as_str()),
+                        tail,
                         shown,
                     };
                     through_served(
@@ -1678,6 +1730,9 @@ fn served_account(
         said: Some(Said {
             text,
             tokens: completed.produced.clone(),
+            answer: before
+                .filter(|before| before.closed)
+                .map(|before| before.answer.clone()),
         }),
     }
 }
@@ -2217,6 +2272,7 @@ fn through_provisioned(
         said: Some(Said {
             text,
             tokens: Vec::new(),
+            answer: None,
         }),
     })
 }
@@ -2462,6 +2518,7 @@ fn attempt(
         said: Some(Said {
             text,
             tokens: produced.tokens.clone(),
+            answer: None,
         }),
     })
 }
@@ -3000,5 +3057,82 @@ mod tokenizer_tests {
         assert_eq!(Given::from_request(None, Some(&pieces)).identifiers(), None);
         assert!(Given::from_request(None, Some(&pieces)).is_own_turn());
         assert!(!Given::from_request(None, None).is_own_turn());
+    }
+
+    /// A turn of pieces that ends in markers has left the model inside
+    /// them; one that ends in text has not, and the other forms say nothing.
+    #[test]
+    fn what_a_turn_of_pieces_leaves_the_model_inside_of() {
+        use super::Given;
+        use mcf_standin::tokenizer::Piece;
+        let opened = [
+            Piece::Marker("<|user|>".to_owned()),
+            Piece::Text("q".to_owned()),
+            Piece::Marker("<|assistant|>".to_owned()),
+            Piece::Marker("<think>".to_owned()),
+        ];
+        assert_eq!(
+            Given::Pieces(&opened).trailing_markers().as_deref(),
+            Some("<|assistant|><think>")
+        );
+        let text_last = [
+            Piece::Marker("<|im_start|>".to_owned()),
+            Piece::Text("assistant\n".to_owned()),
+        ];
+        assert_eq!(Given::Pieces(&text_last).trailing_markers(), None);
+        assert_eq!(Given::Pieces(&[]).trailing_markers(), None);
+        assert_eq!(Given::Identifiers(&[1]).trailing_markers(), None);
+        assert_eq!(Given::Text.trailing_markers(), None);
+    }
+
+    /// The wire carries the answer apart from the thought where a marker
+    /// was closed, inside the account of what came before it; the record's
+    /// own shape has only the count. Where nothing was closed, nothing is
+    /// added.
+    #[test]
+    fn the_answer_past_a_closed_marker_goes_on_the_wire_apart() {
+        use super::{Produced, Said};
+        use mcf_record::json::Value;
+        let account = Value::map([(
+            "before_the_answer",
+            Value::map([("closed", Value::Bool(true)), ("tokens", Value::Integer(3))]),
+        )]);
+        let produced = Produced {
+            account: account.clone(),
+            said: Some(Said {
+                text: "<think>hm</think>4".to_owned(),
+                tokens: vec![1, 2, 3, 4],
+                answer: Some("4".to_owned()),
+            }),
+        };
+        let wire = produced.on_the_wire();
+        assert_eq!(
+            wire.get("before_the_answer")
+                .and_then(|before| before.get("answer"))
+                .and_then(Value::as_text),
+            Some("4")
+        );
+        assert_eq!(
+            wire.get("text").and_then(Value::as_text),
+            Some("<think>hm</think>4")
+        );
+        assert_eq!(
+            account
+                .get("before_the_answer")
+                .and_then(|before| before.get("answer")),
+            None
+        );
+        let unclosed = Produced {
+            account: Value::map([("before_the_answer", Value::Null)]),
+            said: Some(Said {
+                text: "4".to_owned(),
+                tokens: vec![4],
+                answer: None,
+            }),
+        };
+        assert_eq!(
+            unclosed.on_the_wire().get("before_the_answer"),
+            Some(&Value::Null)
+        );
     }
 }

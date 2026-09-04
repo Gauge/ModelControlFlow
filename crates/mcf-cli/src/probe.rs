@@ -639,7 +639,11 @@ fn thinking_lines(
 ) -> Vec<String> {
     // Through the addressing this run just measured: a turn put to a model the
     // way it was NOT trained is a turn that says nothing about where its
-    // tokens go.
+    // tokens go. An addressing that closes the thinking itself is asked with
+    // it opened instead, or the probe would measure the closing and not the
+    // model.
+    let under = thinking_turn(bytes, addressing);
+    let addressing = under.as_ref().map(|held| &held.addressing);
     let mut ask = |budget: usize| {
         let spoken = match addressing {
             Some(held) => mcf_serve::probes::spoken(
@@ -667,6 +671,9 @@ fn thinking_lines(
         TRIALS,
         THINKING_BUDGET,
         engine,
+        under
+            .as_ref()
+            .and_then(|held| held.opened_by_turn.as_deref()),
         &mut ask,
     );
 
@@ -678,6 +685,7 @@ fn thinking_lines(
     ];
     match &probed.outcome {
         Outcome::Observed(spends) => {
+            lines.extend(thinking_under(under.as_ref()));
             lines.push(format!(
                 " markers  this file holds {} it could be inside{}",
                 spends.available.len(),
@@ -706,11 +714,18 @@ fn thinking_lines(
                 None => lines.push(format!(" none of them opened in {} turn(s)", spends.trials)),
             }
             // From the observation, before either verdict (A9, F106).
+            let mut fields = thinking_fields(spends);
+            fields.push((
+                "under",
+                addressing.map_or(mcf_record::json::Value::Null, |held| {
+                    mcf_record::json::Value::text(held.name.clone())
+                }),
+            ));
             lines.push(recorded(crate::log::record_probed(
                 path,
                 probed.method.name,
                 engine,
-                thinking_fields(spends),
+                fields,
             )));
             lines.push(String::new());
             lines.push(thinking_verdict(spends));
@@ -727,6 +742,49 @@ fn thinking_lines(
     ));
     lines.push(format!("  under: {}", probed.conditions));
     lines.push(String::new());
+    lines
+}
+
+/// The addressing the turns go under: the one on file, or where that one
+/// closes the thinking itself, the same addressing with it opened.
+fn thinking_turn(
+    bytes: &[u8],
+    addressing: Option<&mcf_serve::probes::Addressing>,
+) -> Option<mcf_serve::probes::thinking::Under> {
+    let held = addressing?;
+    let pairs = mcf_standin::gguf::parse(bytes)
+        .ok()
+        .and_then(|file| {
+            mcf_standin::tokenizer::Tokens::read(&file)
+                .ok()
+                .map(|tokens| mcf_serve::probes::thinking::pairs(&file, &tokens))
+        })
+        .unwrap_or_default();
+    Some(mcf_serve::probes::thinking::under(held, &pairs))
+}
+
+/// Which addressing the turns were put under, and why it is not the one on
+/// file where it is not.
+fn thinking_under(under: Option<&mcf_serve::probes::thinking::Under>) -> Vec<String> {
+    let Some(under) = under else {
+        return vec![" under    the bare question, since no addressing was found".to_owned()];
+    };
+    let mut lines = vec![format!(" under    {}", under.addressing.name)];
+    if under.changed {
+        lines.push(
+            "          the addressing on file ends in the marker that closes the thinking, so \
+             a turn under it could never open one; the same addressing is asked with the \
+             opening marker in its place, which is the other form this file's template \
+             writes, and the closed form is still what MCF would address it as"
+                .to_owned(),
+        );
+    } else if under.opened_by_turn.is_some() {
+        lines.push(
+            "          the addressing ends in the opening marker, so the turn itself opened it \
+             and what is counted is how long the model stayed inside"
+                .to_owned(),
+        );
+    }
     lines
 }
 
@@ -1144,7 +1202,10 @@ fn tool_lines(
 ) -> Vec<String> {
     let mut ask = |pieces: &[mcf_standin::tokenizer::Piece], budget: usize| {
         let spoken = mcf_serve::probes::spoken(socket, path, "", Some(pieces), budget, Some(asked));
-        (spoken.trial, spoken.text)
+        // The answer and not the thought before it: a model that drafts its
+        // call inside its thinking is read where it made the call (F171).
+        let answered = spoken.answered().to_owned();
+        (spoken.trial, answered)
     };
     let probed = mcf_serve::probes::tools::tool_calling(
         path,
@@ -1262,7 +1323,10 @@ fn structured_lines(
 ) -> Vec<String> {
     let mut ask = |pieces: &[mcf_standin::tokenizer::Piece], budget: usize| {
         let spoken = mcf_serve::probes::spoken(socket, path, "", Some(pieces), budget, Some(asked));
-        (spoken.trial, spoken.text)
+        // The answer and not the thought before it: a model that drafts its
+        // call inside its thinking is read where it made the call (F171).
+        let answered = spoken.answered().to_owned();
+        (spoken.trial, answered)
     };
     let probed = mcf_serve::probes::structured::structured_output(
         path,

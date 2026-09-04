@@ -315,31 +315,45 @@ fn from_template(file: &gguf::Model, tokens: &Tokens) -> Vec<Addressing> {
 /// reading the template for an opener and a closer found nothing, and the
 /// chat-template probe had no addressing to try against raw (F171). Here the
 /// opener is the marker spelled *user* and what follows the question is the
-/// marker spelled *assistant*; where the template also writes `</think>` as
-/// a token of its own, a second candidate closes the thinking before the
-/// answer, which is what the template itself writes when thinking is off.
+/// marker spelled *assistant*; where the template writes `<think>` after
+/// that as a token of its own, the turn ends with it, as the template's own
+/// default rendering does — and not with the bare role, which it never
+/// writes.
 fn role_named(template: &str, markers: &[String], tokens: &Tokens) -> Vec<Addressing> {
+    const THINKING_OPEN: &str = "<think>";
     const THINKING_CLOSED: &str = "</think>";
     let spelled = |role: &str| markers.iter().find(|marker| trim(marker) == role).cloned();
     let (Some(user), Some(assistant)) = (spelled("user"), spelled("assistant")) else {
         return Vec::new();
     };
-    let mut found = vec![Addressing {
-        name: format!("{}…{}", trim(&user), trim(&assistant)),
-        pieces_before: vec![Piece::Marker(user.clone())],
-        pieces_after: vec![Piece::Marker(assistant.clone())],
-    }];
-    if template.contains(THINKING_CLOSED) && tokens.has_token(THINKING_CLOSED) {
-        found.push(Addressing {
-            name: format!("{}…{}, thinking closed", trim(&user), trim(&assistant)),
+    let base = format!("{}…{}", trim(&user), trim(&assistant));
+    let writes = |marker: &str| template.contains(marker) && tokens.has_token(marker);
+    if !writes(THINKING_OPEN) && !writes(THINKING_CLOSED) {
+        return vec![Addressing {
+            name: base,
             pieces_before: vec![Piece::Marker(user)],
-            pieces_after: vec![
-                Piece::Marker(assistant),
-                Piece::Marker(THINKING_CLOSED.to_owned()),
-            ],
-        });
+            pieces_after: vec![Piece::Marker(assistant)],
+        }];
     }
-    found
+    // The template writes a thinking marker after the answering role, and
+    // `<|assistant|>` alone is a form it never writes: asked that way
+    // GLM-4.7-Flash thinks without a marker, at length, and nothing on the
+    // page could tell the thought from the answer (F171). The candidate is
+    // the form the template writes when nobody has switched anything —
+    // `<think>` where it writes one, the closed form where closing is all
+    // it does. Thinking off is a switch a person throws on the turn, not a
+    // second addressing: offered as one, the two forms ended the turn
+    // equally often and the probe could not choose between them.
+    let (marker, how) = if writes(THINKING_OPEN) {
+        (THINKING_OPEN, "open")
+    } else {
+        (THINKING_CLOSED, "closed")
+    };
+    vec![Addressing {
+        name: format!("{base}, thinking {how}"),
+        pieces_before: vec![Piece::Marker(user)],
+        pieces_after: vec![Piece::Marker(assistant), Piece::Marker(marker.to_owned())],
+    }]
 }
 
 /// Whether the template writes a role right after this marker, somewhere:
@@ -417,7 +431,7 @@ fn known_shapes(tokens: &Tokens) -> Vec<Addressing> {
 }
 
 /// A marker without its brackets, for a name a person reads.
-fn trim(marker: &str) -> &str {
+pub(crate) fn trim(marker: &str) -> &str {
     marker
         .trim_start_matches(['<', '|', '['])
         .trim_end_matches(['>', '|', ']'])
@@ -795,6 +809,21 @@ pub struct Spoken {
     /// Empty where the model said nothing, which both engines agree on even
     /// where they disagree about the token count (F39).
     pub text: String,
+    /// What followed the model's thinking, where the turn was inside a
+    /// marker and closed it: the answer, as the account separates it. A
+    /// probe that reads a call or a shape out of the turn reads it here,
+    /// or it would read the model's draft of one out of its thought (F171).
+    /// `None` where nothing was closed, and the text is the whole answer.
+    pub answer: Option<String>,
+}
+
+impl Spoken {
+    /// The answer as such: what followed a closed marker where there was
+    /// one, and everything otherwise.
+    #[must_use]
+    pub fn answered(&self) -> &str {
+        self.answer.as_deref().unwrap_or(&self.text)
+    }
 }
 
 /// One trial through a running daemon: the wrapped question in, the answer
@@ -919,6 +948,11 @@ pub fn spoken(
                     )),
                     None => Trial::CouldNotTell("the account did not say how it ended".to_owned()),
                 };
+                let before = account.get("before_the_answer");
+                let closed = before
+                    .and_then(|before| before.get("closed"))
+                    .and_then(mcf_record::json::Value::as_bool)
+                    .unwrap_or(false);
                 return Spoken {
                     trial: ended,
                     text: account
@@ -926,6 +960,11 @@ pub fn spoken(
                         .and_then(mcf_record::json::Value::as_text)
                         .unwrap_or_default()
                         .to_owned(),
+                    answer: before
+                        .filter(|_| closed)
+                        .and_then(|before| before.get("answer"))
+                        .and_then(mcf_record::json::Value::as_text)
+                        .map(str::to_owned),
                 };
             }
             Err(_) => return could_not_tell("a line of the stream was unreadable".to_owned()),
@@ -939,6 +978,7 @@ fn could_not_tell(because: impl Into<String>) -> Spoken {
     Spoken {
         trial: Trial::CouldNotTell(because.into()),
         text: String::new(),
+        answer: None,
     }
 }
 

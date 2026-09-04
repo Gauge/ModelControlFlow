@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 117 |
+| **Version** | 118 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -9610,18 +9610,20 @@ sent identifiers and `mcf run` already sent text. Which markers the file
 segments the text.
 
 **What ran on GLM-4.7-Flash, through the provisioned llama.cpp server @925e1179,
-on the processor, `--up-to 1024`.** Usable-context accepted 1024 tokens of
-prompt whole. Stop-conditions: the turn ended in 2 of 5 trials, the longest
-running 442 tokens, 25 trials. Tool-calling: 5 of 5 well formed under the
-file's own `<tool_call>…</tool_call>`, 5 of 5 under a plain description.
-Structured output: 15 of 15 conformed across the three framings. Thinking: 5
-pairable markers and 59 the probe could not pair, `[gMASK]` among them; no
-turn opened one. Language cost, counted by the server and said so on the
-page: English 16 tokens for 71 characters, German 19 (118.7%), French 23
-(143.7%), Spanish 21 (131.2%), Japanese 23 for 26 characters (143.7%),
-Arabic 24 (150.0%). Every one of these was refused before, with the same
-sentence — *this vocabulary asks for a pre-tokenizer the stand-in engine
-does not implement* — because the probe could not build its turn.
+on the processor, `--up-to 1024`, under the addressing the last section of
+this finding arrives at.** Usable-context accepted 1024 tokens of prompt
+whole. Stop-conditions: the turn ended in 2 of 5 trials, the longest running
+442 tokens, 25 trials. Tool-calling: 5 of 5 well formed under the file's own
+`<tool_call>…</tool_call>`, 5 of 5 under a plain description. Structured
+output: 15 of 15 conformed across the three framings. Thinking: `<think>`
+opened by the turn in 5 of 5, closed in 5, up to 149 words inside; 5
+pairable markers and 59 the probe could not pair, `[gMASK]` among them.
+Language cost, counted by the server and said so on the page: English 16
+tokens for 71 characters, German 19 (118.7%), French 23 (143.7%), Spanish 21
+(131.2%), Japanese 23 for 26 characters (143.7%), Arabic 24 (150.0%). Every
+one of these was refused before, with the same sentence — *this vocabulary
+asks for a pre-tokenizer the stand-in engine does not implement* — because
+the probe could not build its turn.
 
 **`mcf segment` on Devstral-Small-2-24B, tekken.** 24 tokens for 77
 characters on a vocabulary of 131,072, read by the provisioned server, with
@@ -9642,29 +9644,46 @@ token the template never mentions. The reading MCF had was *opener, then
 the file's end-of-turn marker*, which is ChatML's shape and gemma's and
 found nothing here, honestly. A second reading was added for a template
 that writes no closer: the marker spelled *user* opens, the marker spelled
-*assistant* follows the question, and where the template writes `</think>`
-as a token of its own, a second candidate closes the thinking first, which
-is what the template itself writes when thinking is off. Rerun:
-
-- `user…assistant` — 4 of 5 answered and ended, turns of 7–54 tokens,
-  middle 11
-- `user…assistant, thinking closed` — 5 of 5, turns of 2–11 tokens,
-  middle 8
-- raw — 1 of 5, a turn of 41
-
-Best is the closed form, and it is what the probe recorded. GLM-4.7-Flash
+*assistant* follows the question, and where the template writes `<think>`
+as a token of its own the turn ends there, inside it — which is what the
+template writes when thinking is on, and thinking on is its unswitched
+form. Rerun: `user…assistant, thinking open` answered and ended 5 of 5,
+turns of 137–247 tokens, middle 157; raw 1 of 5, a turn of 41. GLM-4.7-Flash
 has an addressing on file, which is the row's exit criterion, and it was
 reached by reading the template a second way rather than by running it —
 the door §3.7 keeps shut stays shut.
 
-**What the closed form does to the thinking probe.** The thinking probe
-asks under the addressing on file, and the addressing on file now ends in
-`</think>`; *no turn opened a marker* is then a fact about a turn whose
-thinking was closed before it began, not about whether this model thinks.
-The page says which addressing it asked under, and a reader who wants the
-open form's thinking budget asks under `user…assistant`. This is the
-probe measuring what it was given, which is what it should do, and the
-finding says so rather than leaving the two sentences to be confused.
+**Why one candidate and not two.** The first cut offered the closed form as
+well — `<|assistant|></think>`, what the template writes when thinking is
+off — and the two tied, 5 of 5 against 5 of 5, which left the chat-template
+probe to pick by order and a reader to wonder what the tie meant. It meant
+nothing: thinking off is a switch on the turn, which `mcf run --thinking
+off` already sends to the template, and a switch is not a second way of
+addressing a model. One candidate, the template's own unswitched form, and
+the switch stays where it was. Under the *bare* `<|user|>q<|assistant|>`,
+which neither form of the template writes, this model thinks anyway —
+around two hundred tokens of it, with no `<think>` to mark where it began or
+ended — so a probe that dropped the marker to keep the addressing short
+would be measuring a thought it could not see.
+
+**What the open form does to the thinking probe.** The addressing on file
+now ends in `<think>`; the turn itself opened the marker, and a probe that
+counted only the markers a model opens would say *none opened* of a turn
+that spent 149 words inside one. The thinking probe now knows which marker
+its addressing ended in and counts that turn from its first token to the
+closer, and the page says so: *the addressing ends in the opening marker,
+so the turn itself opened it and what is counted is how long the model
+stayed inside*. On the same footing, the daemon's account of a turn sent as
+pieces now says what the turn left the model inside of, as it already did
+for a framed one, and carries the answer past the closer apart from the
+thought. That mattered at once: the tool-calling and structured probes read
+their call and their shape out of the whole text, and under the open form
+the whole text begins with a draft — *then a JSON object with "name" and
+"arguments", then `</think>`* — so the file's own `<tool_call>` form went
+0 well formed and 5 malformed, and the example-filled-in shape 0 of 5, on a
+model that then wrote both correctly. Read from where the answer begins,
+5 of 5 and 5 of 5. A probe that reads the thought reads what the model
+said before it said anything.
 
 **What this does not settle.** Devstral-Small's own chat-template probe was
 not run to its end: its usable-context probe asks for the 393,215 tokens
@@ -11902,6 +11921,15 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 118 — the answer, apart from the thought
+
+F171 extended: GLM's template is read as one unswitched candidate,
+`user…assistant, thinking open`, after the closed form tied it 5 of 5
+against 5 of 5; the thinking probe counts a marker the turn opened; the
+daemon's account carries the answer past a closed marker apart, and the
+tool-calling and structured probes read that rather than the thought —
+0 of 5 became 5 of 5 on both (B-442).
 
 ### Version 117 — read by the engine that answers
 

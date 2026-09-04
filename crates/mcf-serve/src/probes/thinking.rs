@@ -30,7 +30,7 @@ use std::path::Path;
 
 use mcf_core::probe::{Method, Outcome, Probed};
 use mcf_standin::gguf;
-use mcf_standin::tokenizer::Tokens;
+use mcf_standin::tokenizer::{Piece, Tokens};
 
 use super::Trial;
 
@@ -150,6 +150,74 @@ pub fn pairs(file: &gguf::Model, tokens: &Tokens) -> Vec<(String, String)> {
     found
 }
 
+/// The addressing the thinking probe asks under, and whether the turn
+/// itself opens the marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Under {
+    /// What the turn is wrapped in.
+    pub addressing: super::Addressing,
+    /// The opener the turn ends with, where it ends with one: the model then
+    /// begins inside the marker and only the closing is its own to write.
+    pub opened_by_turn: Option<String>,
+    /// Whether this differs from the addressing on file.
+    pub changed: bool,
+}
+
+/// The addressing to ask under, from the one on file.
+///
+/// **A turn that closes the thinking itself cannot be watched opening it.**
+/// GLM's template writes `<|assistant|>` and then `<think>` when thinking is
+/// on and `</think>` when it is off, and the chat-template probe can choose
+/// the closed form (F171). Asked under that, *no turn opened a marker* is a
+/// fact about a turn whose marker was closed for it. And asked under
+/// `<|assistant|>` alone — a form the template never writes — the model
+/// thinks *unmarked*, two hundred tokens of working with no opener and no
+/// closer, which the probe would count as an answer. So an addressing that
+/// ends in the closing half of a pair is asked with the opening half in its
+/// place, which is the same template's other form, and the turn is what
+/// opened it. An addressing that already ends in an opener is asked as it
+/// is, and one that ends in neither is asked as it is.
+#[must_use]
+pub fn under(addressing: &super::Addressing, pairs: &[(String, String)]) -> Under {
+    let last = match addressing.pieces_after.last() {
+        Some(Piece::Marker(last)) => last.as_str(),
+        _ => {
+            return Under {
+                addressing: addressing.clone(),
+                opened_by_turn: None,
+                changed: false,
+            };
+        }
+    };
+    if let Some((opener, _)) = pairs.iter().find(|(opener, _)| opener == last) {
+        return Under {
+            addressing: addressing.clone(),
+            opened_by_turn: Some(opener.clone()),
+            changed: false,
+        };
+    }
+    let Some((opener, _)) = pairs.iter().find(|(_, closer)| closer == last) else {
+        return Under {
+            addressing: addressing.clone(),
+            opened_by_turn: None,
+            changed: false,
+        };
+    };
+    let mut turned = addressing.clone();
+    turned.pieces_after.pop();
+    turned.pieces_after.push(Piece::Marker(opener.clone()));
+    turned.name = format!(
+        "{}, {} opened by the turn",
+        addressing.name,
+        super::trim(opener)
+    );
+    Under {
+        addressing: turned,
+        opened_by_turn: Some(opener.clone()),
+        changed: true,
+    }
+}
+
 /// What the thinking probe observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spends {
@@ -203,6 +271,7 @@ pub fn thinking(
     trials: usize,
     budget: usize,
     engine: &str,
+    opened_by_turn: Option<&str>,
     ask: &mut dyn FnMut(usize) -> (Trial, String),
 ) -> Probed<Spends> {
     let conditions = super::conditions(&THINKING, model, engine);
@@ -265,19 +334,30 @@ pub fn thinking(
             spent = spent.saturating_add(budget);
         }
         // The first pair this turn opened, if any. Whichever the model used is
-        // the one this file's turns are inside; MCF does not pick for it.
-        let Some((marker, closing)) = available
+        // the one this file's turns are inside; MCF does not pick for it. A
+        // turn that ended with an opener put the model inside it, and then
+        // the whole of what came back until the closer is the inside.
+        let by_turn = available
             .iter()
-            .find(|(marker, _)| said.contains(marker.as_str()))
-        else {
+            .find(|(marker, _)| opened_by_turn == Some(marker.as_str()));
+        let Some((marker, closing)) = by_turn.or_else(|| {
+            available
+                .iter()
+                .find(|(marker, _)| said.contains(marker.as_str()))
+        }) else {
             continue;
         };
         opened = opened.saturating_add(1);
         if used.is_none() {
             used = Some(marker.clone());
         }
-        let Some(after_open) = said.split_once(marker.as_str()).map(|(_, rest)| rest) else {
-            continue;
+        let after_open = if by_turn.is_some() {
+            said.as_str()
+        } else {
+            let Some((_, rest)) = said.split_once(marker.as_str()) else {
+                continue;
+            };
+            rest
         };
         let Some((inside, _)) = after_open.split_once(closing.as_str()) else {
             // Opened and never closed: the turn was still inside its marker
