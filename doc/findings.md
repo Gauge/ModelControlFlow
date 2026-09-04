@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 110 |
+| **Version** | 111 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 166 | [F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)](#166--f166--the-served-path-answered-whole-so-a-ten-minute-thought-was-ten-minutes-of-nothing-and-an-engine-that-died-in-the-ninth-left-no-trace-of-what-it-had-written-b-454-b-451-f142-d48-a2-a4) |
 | 165 | [F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)](#165--f165--a-tool-call-written-in-the-form-the-models-own-template-uses-was-read-as-no-call-at-all-the-reader-knew-one-shape-and-the-family-that-writes-another-was-reported-as-never-calling-b-453-b-053-f161-d42-a21-318) |
 | 164 | [F164 — A file can carry more than the engine loads: a draft head declared in the weights is never read in unless the engine is told to, and a scaling asked for with no factor stretches nothing (B-456, B-449, D43, A7, A21, §3.15)](#164--f164--a-file-can-carry-more-than-the-engine-loads-a-draft-head-declared-in-the-weights-is-never-read-in-unless-the-engine-is-told-to-and-a-scaling-asked-for-with-no-factor-stretches-nothing-b-456-b-449-d43-a7-a21-315) |
 | 163 | [F163 — A picture through the daemon's engine went nowhere: the marker the engine stands a picture at is made up fresh for each process, and a turn with a picture in it goes as one string the engine parses whole (B-452, B-449, F161, F26, A2, A4, A7, §3.15)](#163--f163--a-picture-through-the-daemons-engine-went-nowhere-the-marker-the-engine-stands-a-picture-at-is-made-up-fresh-for-each-process-and-a-turn-with-a-picture-in-it-goes-as-one-string-the-engine-parses-whole-b-452-b-449-f161-f26-a2-a4-a7-315) |
@@ -9588,6 +9589,69 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 166 · F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)
+
+The path through the provisioned server asked for a completion and waited
+for the whole of it. Everything else about the turn was already watched —
+D48 put the engine's progress on the error stream every ten seconds, so a
+person could see identifiers being read — but the answer itself arrived in
+one piece at the end, and a model that thinks for four hundred tokens before
+its first word of answer showed nothing at all until it had finished. Worse,
+an engine that died with the request in hand left nothing: whatever it had
+written was in the connection MCF had not been reading.
+
+**The engine will send it as it writes it.** Asked to stream, the server
+answers in server-sent events, one per token, each carrying the piece and
+the identifier it came from, and a last event carrying the account. MCF now
+reads that framing — chunked transfer encoding, `data:` events — and hands
+each piece to whoever asked the moment it arrives. A body that is *not* a
+stream is one event of itself, which is how a refusal the engine makes
+before it starts writing reaches the same reader as an answer.
+
+**The words a person watches are the words the account holds.** The engine's
+pieces leave every special token out unless it is told otherwise, so the
+turn watched would have been a different text from the turn recorded — a
+`</think>` in the account and not on the page. The engine is now started
+with its own switch for that, and the two agree: asked with a reasoning
+effort, a 20B wrote `<|channel|>analysis<|message|>Simple addition. 17+26=43.
+<|end|><|start|>assistant<|channel|>final<|message|>17 + 26 = 43.` onto the
+page, token by token, exactly as the account spells it.
+
+**One piece is always held back.** A turn that ends at the model's own
+end-of-turn token ends with a token the account leaves out — the model
+ending its turn is not the model saying something (F142) — and the only way
+to keep it off the page as well is to hold each piece until the next one
+proves it was not the last. The 20B's `<|return|>` never appeared; thirty
+tokens were produced and twenty-nine were written.
+
+**A timing does not stream.** A pinned length is a request whose duration is
+the measurement, and framing and writing every token as it goes is work the
+engine would not otherwise do — a condition MCF would have added to the
+thing it was measuring (A6). Those requests take the whole-answer path they
+always took, and nobody is watching them: they are spent by a bench or a
+probe.
+
+**What arrived stays arrived.** An engine that stops part way through leaves
+its pieces on the page and the failure after them, and the failure carries
+what was produced before it stopped. A stand-in engine that writes two
+pieces and then takes a segmentation fault now leaves both on the page,
+`engine.exit.midstream` under them and the engine's own last words with it —
+and the daemon is still there afterwards (§3.1). An engine that dies before
+it writes anything still leaves nothing, because there was nothing: that is
+a different fact and it reads differently.
+
+**What ran.** A 2B on one daemon under a 40 GiB memory cap, the processor
+only, llama-server @925e1179, greedy at one seed: eight planets arrived as
+twenty-five separate pieces about fifteen milliseconds apart, where before
+the first of them would have come with the last. The timings are not
+measurements (D39).
+
+**What this does not settle.** The account is still assembled at the end, so
+a client that leaves mid-turn has seen tokens MCF never filed; the pieces
+are the engine's own spelling of each token, and MCF's own engine still
+writes its answer its own way; and nothing yet re-reads a partial answer
+back to the model.
+
 ## 165 · F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)
 
 The tool-calling probe asked three mechanical questions of every answer: did
@@ -11544,6 +11608,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 111 — watched, not waited for
+
+F166 added: the served path streams the answer as the engine writes it, the
+words watched are the words the account holds, and what arrived before a
+death stays on the page. B-454.
 
 ### Version 110 — a call in the family's own hand
 

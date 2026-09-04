@@ -1460,12 +1460,13 @@ fn through_served(
         },
         _ => crate::served::Prompt::Identifiers(tokens),
     };
-    let completed = engine.complete(prompt, limit, draw, pinned, waiting)?;
+    let (completed, pieces) = as_it_arrives(engine, prompt, limit, draw, pinned, waiting, writer)?;
     // Read after the turn, while the mark includes it (B-424).
     let peak_resident = engine.peak_resident_bytes();
     let ran_in = engine.window;
 
-    let (before, text) = streamed(writer, engine, &path, sent, &completed)?;
+    let (before, text) = streamed(engine, &path, sent, &completed)?;
+    whole_where_nothing_arrived(writer, pieces, &text);
 
     let mut conditions = conditions(named, Some((&path, held)), draw, limit);
     if let Value::Map(fields) = &mut conditions {
@@ -1650,18 +1651,60 @@ fn before_the_answer(
     crate::turn::before_the_answer(engine, &template, tail, produced)
 }
 
-/// The answer onto the stream, with what came before it and the text that
-/// was sent.
+/// The turn, with every piece of it written to whoever asked as the engine
+/// writes it (B-454).
+///
+/// **What has arrived stays arrived.** An engine that dies in the ninth
+/// minute of a ten-minute thought leaves what it produced on the page, with
+/// the failure after it, which is the most useful thing it can leave (A2,
+/// A4). The last piece is held back until the turn's end says whether it was
+/// the model ending its turn, which the account leaves out (F142).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's conditions, each named in the account"
+)]
+fn as_it_arrives(
+    engine: &Served,
+    prompt: crate::served::Prompt<'_>,
+    limit: usize,
+    draw: Draw,
+    pinned: bool,
+    waiting: crate::served::Waiting<'_>,
+    writer: &mut &UnixStream,
+) -> Result<(Completed, usize), Failure> {
+    // **A timing does not stream.** A pinned length is a request whose
+    // duration is the measurement, and asking the engine to frame and write
+    // every token as it goes is work it would not otherwise do — a condition
+    // MCF would have added to the thing it was measuring (A6, B-396). Nobody
+    // is watching those anyway: they are spent by a bench or a probe.
+    if pinned {
+        return engine
+            .complete(prompt, limit, draw, pinned, waiting)
+            .map(|completed| (completed, 0));
+    }
+    let mut arriving = Arriving::new(writer);
+    let completed =
+        engine.complete_while(prompt, limit, draw, pinned, waiting, &mut |at, piece| {
+            arriving.piece(at, piece);
+        });
+    match completed {
+        Ok(completed) => {
+            arriving.close(completed.stop == crate::served::Stop::Eos);
+            Ok((completed, arriving.written))
+        }
+        Err(failure) => Err(arriving.left_off(failure)),
+    }
+}
+
+/// What the turn came to, once its pieces have all been written.
 ///
 /// The text is the model's words spelled by the engine (A4), not the
-/// server's `content`, which leaves every marker out: a `</think>` the model
-/// wrote is where its answer began, and the one path that could not see it
-/// was this one. The answer arrives whole rather than token by token, so it
-/// is one chunk of the stream — two where the model closed a marker before
-/// answering, which is a shape the model gave it. Calling it more would be
-/// inventing one the engine did not have.
+/// server's `content` as a whole-answer request returns it, which leaves
+/// every marker out: a `</think>` the model wrote is where its answer began.
+/// The pieces reached the person as they arrived; this is the same text
+/// again, for the account, and what the model spent inside a marker before
+/// it began answering.
 fn streamed(
-    writer: &mut &UnixStream,
     engine: &Served,
     path: &Path,
     sent: &Sent<'_>,
@@ -1673,21 +1716,95 @@ fn streamed(
     } else {
         before_the_answer(engine, path, sent.tail, words)?
     };
-    let chunks = match &before {
-        Some(before) => vec![
-            (0, before.text.clone()),
-            (before.tokens, before.answer.clone()),
-        ],
-        None => vec![(0, engine.detokenize(words)?)],
-    };
-    let mut text = String::new();
-    for (at, chunk) in chunks {
-        text.push_str(&chunk);
-        let line = Streamed::Token { at, text: chunk }.to_line();
-        let _written = writeln!(writer, "{line}");
+    Ok((before, engine.detokenize(words)?))
+}
+
+/// An engine that answered whole wrote no pieces, so the answer goes as
+/// one — which is what this path did before it could be watched (B-454).
+fn whole_where_nothing_arrived(writer: &mut &UnixStream, pieces: usize, text: &str) {
+    if pieces > 0 {
+        return;
     }
+    let line = Streamed::Token {
+        at: 0,
+        text: text.to_owned(),
+    }
+    .to_line();
+    let _written = writeln!(writer, "{line}");
     let _flushed = writer.flush();
-    Ok((before, text))
+}
+
+/// The answer on its way to whoever asked, a piece at a time (B-454).
+///
+/// **One piece is always held back.** A turn that ends at the model's own
+/// end-of-turn token ends with a token the account leaves out — the model
+/// ending its turn is not the model saying something (F142) — and the only
+/// way to leave it out of what a person watches is to hold each piece until
+/// the next one proves it was not the last.
+struct Arriving<'a, 'w> {
+    /// Where the pieces go.
+    writer: &'a mut &'w UnixStream,
+    /// The piece that has arrived and may be the last.
+    held: Option<(usize, String)>,
+    /// Everything handed on so far, for a failure to carry.
+    text: String,
+    /// How many pieces have gone. Nought at the end is an engine that
+    /// answered whole rather than one that said nothing.
+    written: usize,
+}
+
+impl<'a, 'w> Arriving<'a, 'w> {
+    /// Nothing written yet.
+    fn new(writer: &'a mut &'w UnixStream) -> Self {
+        Self {
+            writer,
+            held: None,
+            text: String::new(),
+            written: 0,
+        }
+    }
+
+    /// One piece from the engine: the one before it is now known not to be
+    /// the last, so it goes.
+    fn piece(&mut self, at: usize, piece: &str) {
+        let held = self.held.replace((at, piece.to_owned()));
+        self.write(held);
+    }
+
+    /// The turn is over: the held piece goes unless it was the model
+    /// ending its turn.
+    fn close(&mut self, ended_itself: bool) {
+        let held = self.held.take();
+        if !ended_itself {
+            self.write(held);
+        }
+        let _flushed = self.writer.flush();
+    }
+
+    /// The engine stopped: what had arrived goes, and is named on the
+    /// failure so that an account of the failure says what was produced
+    /// before it (A4).
+    fn left_off(&mut self, failure: Failure) -> Failure {
+        let held = self.held.take();
+        self.write(held);
+        let _flushed = self.writer.flush();
+        if self.text.is_empty() {
+            return failure;
+        }
+        failure.with_context("produced_before_it_stopped", self.text.clone())
+    }
+
+    /// One piece onto the wire.
+    fn write(&mut self, piece: Option<(usize, String)>) {
+        let Some((at, text)) = piece else {
+            return;
+        };
+        self.text.push_str(&text);
+        self.written = self.written.saturating_add(1);
+        let line = Streamed::Token { at, text }.to_line();
+        let _written = writeln!(self.writer, "{line}");
+        let _flushed = self.writer.flush();
+    }
 }
 
 /// One turn as it goes to the served engine: the identifiers, how many

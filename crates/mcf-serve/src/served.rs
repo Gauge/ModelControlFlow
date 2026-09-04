@@ -36,7 +36,7 @@
 //! and did not mention (§3.15). What that number turns out to be is B-055's
 //! question, and this does not prejudge it.
 
-use std::io::{Read as _, Write as _};
+use std::io::{BufRead as _, Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -657,7 +657,14 @@ impl Served {
             .arg("-ngl")
             .arg(gpu_layers.to_string())
             .arg("--no-webui")
-            .arg("--no-warmup");
+            .arg("--no-warmup")
+            // **The engine's own pieces carry the markers.** A turn watched
+            // as it arrives is the same text as the turn accounted for at
+            // the end, and without this the engine's pieces leave every
+            // special token out — so a `</think>` the model wrote would be
+            // on the page in the account and missing from the stream a
+            // person actually read (B-454, B-451, A4).
+            .arg("--special");
         // **The projector goes in with the model, or a picture has nowhere
         // to go** (B-452). `mcf host` started it and the daemon's own engine
         // did not, so the same model took a picture on the port and reported
@@ -795,13 +802,143 @@ impl Served {
         pinned: bool,
         waiting: Waiting<'_>,
     ) -> Result<Completed, Failure> {
-        let body = completion_body(prompt, limit, draw, pinned).to_line();
+        let body = completion_body(prompt, limit, draw, pinned, false).to_line();
         // A refusal comes back with the server's one line for it; the reason
         // is on the engine's error stream, where it wrote one, and goes on
         // the refusal too, so that a person reads why and not only that
         // (A4, B-452).
         interpret(&self.request_while("POST", "/completion", Some(&body), waiting)?)
             .map_err(|failure| self.with_last_words(failure))
+    }
+
+    /// The same, watched as it arrives (B-454).
+    ///
+    /// **A long thought is watched rather than waited for.** The whole-answer
+    /// path returns nothing until the model has finished, so a turn that
+    /// takes ten minutes is ten minutes of a blank terminal — and an engine
+    /// that dies in the ninth leaves nothing at all, when what it had
+    /// produced was the most useful thing it could leave (A2, A4). Here each
+    /// piece is handed on as the engine writes it, with how many tokens came
+    /// before it, and what has arrived stays arrived whatever happens next.
+    ///
+    /// The pieces are the engine's own, markers included, so the text watched
+    /// is the text accounted for; the identifiers come back the same way, so
+    /// the account is built from the same figures as the whole-answer path.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::complete`]. A failure after pieces have arrived is a
+    /// failure *after* them: the caller has them already.
+    pub fn complete_while(
+        &self,
+        prompt: Prompt<'_>,
+        limit: usize,
+        draw: crate::generation::Draw,
+        pinned: bool,
+        waiting: Waiting<'_>,
+        arriving: &mut dyn FnMut(usize, &str),
+    ) -> Result<Completed, Failure> {
+        let body = completion_body(prompt, limit, draw, pinned, true).to_line();
+        let mut produced: Vec<usize> = Vec::new();
+        let mut text = String::new();
+        let mut last = String::new();
+        let mut on_event = |event: &str| {
+            let Ok(value) = json::parse(event) else {
+                return;
+            };
+            // The end of the stream carries the account and no words: the
+            // words were the pieces. An engine that ignored the asking and
+            // answered whole sends that account as its only event, which is
+            // read the same way — its words are then in the account, and the
+            // caller writes them once (B-454).
+            let ends = matches!(value.get("stop"), Some(Value::Bool(true)))
+                || value.get("stop_type").is_some()
+                || value.get("error").is_some();
+            if ends {
+                event.clone_into(&mut last);
+                return;
+            }
+            let piece = value.get("content").and_then(Value::as_text).unwrap_or("");
+            if let Some(Value::List(tokens)) = value.get("tokens") {
+                produced.extend(
+                    tokens
+                        .iter()
+                        .filter_map(Value::as_integer)
+                        .filter_map(|token| usize::try_from(token).ok()),
+                );
+            }
+            if piece.is_empty() {
+                return;
+            }
+            text.push_str(piece);
+            arriving(produced.len().saturating_sub(1), piece);
+        };
+        let answer = self.streamed_while("/completion", &body, waiting, &mut on_event)?;
+        let end = if last.is_empty() { answer } else { last };
+        if end.trim().is_empty() {
+            // Nothing at all came back: a connection that closed before the
+            // engine wrote, which is an engine that died with the request in
+            // hand — and its last words are the account of that (A4).
+            return Err(self.with_last_words(Failure::new(
+                Category::EngineExitMidstream,
+                Attribution::Machine,
+                Disposition::Aborted,
+                Subsystem::new("mcf-serve::served"),
+                "the provisioned server's answer had no body",
+            )));
+        }
+        let mut completed = interpret(&end).map_err(|failure| self.with_last_words(failure))?;
+        // In this shape the engine sends its words as it goes and its
+        // account at the end, so what came from the pieces is what the
+        // account would otherwise have carried (B-454).
+        if completed.produced.is_empty() {
+            completed.produced = produced;
+        }
+        if completed.text.is_empty() {
+            completed.text = text;
+        }
+        Ok(completed)
+    }
+
+    /// A request whose answer arrives in events, each handed on as it comes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::request_while`].
+    fn streamed_while(
+        &self,
+        path: &str,
+        body: &str,
+        waiting: Waiting<'_>,
+        on_event: &mut dyn FnMut(&str),
+    ) -> Result<String, Failure> {
+        match while_watched(&self.socket, waiting, |connection| {
+            sent_and_streamed(connection, "POST", path, body, on_event)
+        }) {
+            Ok(answer) => Ok(answer),
+            Err(Interrupted::Closed(closed)) => {
+                Err(closed_failure(&self.model, closed, waiting.progress))
+            }
+            Err(Interrupted::Connecting(error) | Interrupted::Reading(error)) => Err(self
+                .with_last_words(
+                    Failure::new(
+                        Category::EngineExitMidstream,
+                        Attribution::Machine,
+                        Disposition::Aborted,
+                        Subsystem::new("mcf-serve::served"),
+                        "the provisioned server stopped while it was answering",
+                    )
+                    .with_context("error", error.to_string()),
+                )),
+            Err(Interrupted::Sending(error)) => Err(Failure::new(
+                Category::EngineExitMidstream,
+                Attribution::Machine,
+                Disposition::Aborted,
+                Subsystem::new("mcf-serve::served"),
+                "the request could not be sent to the server",
+            )
+            .with_context("error", error.to_string())),
+        }
     }
 
     /// Where the model ranked the token that actually came next, and what it
@@ -1044,6 +1181,7 @@ impl Served {
 }
 
 /// Why a request did not come back with an answer.
+#[derive(Debug)]
 enum Interrupted {
     /// The engine's socket would not take a connection.
     Connecting(std::io::Error),
@@ -1067,13 +1205,30 @@ fn exchange(
     body: Option<&str>,
     waiting: Waiting<'_>,
 ) -> Result<String, Interrupted> {
+    while_watched(socket, waiting, |connection| {
+        sent_and_read(connection, method, path, body)
+    })
+}
+
+/// One exchange with somebody watching over it (D48).
+///
+/// The connection is opened, the work is done on it, and a watcher beside it
+/// closes it where the client that asked has left or the daemon is stopping
+/// — which is what stops an engine answering a question nobody is waiting
+/// for. Written once, because a second copy of it would be a second answer
+/// to *when does a request end* (B-072).
+fn while_watched<T>(
+    socket: &Path,
+    waiting: Waiting<'_>,
+    work: impl FnOnce(&UnixStream) -> Result<T, Interrupted>,
+) -> Result<T, Interrupted> {
     let connection = UnixStream::connect(socket).map_err(Interrupted::Connecting)?;
     let done = AtomicBool::new(false);
     let (answer, closed) = std::thread::scope(|scope| {
         let watcher = waiting
             .watches_anything()
             .then(|| scope.spawn(|| watched(socket, &connection, waiting, &done)));
-        let answer = sent_and_read(&connection, method, path, body);
+        let answer = work(&connection);
         done.store(true, Ordering::Release);
         let closed = watcher.and_then(|watcher| watcher.join().ok().flatten());
         (answer, closed)
@@ -1182,6 +1337,117 @@ fn sent_and_read(
     let mut answer = Vec::new();
     connection.read_to_end(&mut answer).map_err(Reading)?;
     Ok(String::from_utf8_lossy(&answer).into_owned())
+}
+
+/// Sends one request and hands on each event of the answer as it arrives.
+///
+/// **The framing, read rather than assumed.** The engine writes an answer it
+/// is streaming in chunked transfer encoding — a size in hexadecimal, the
+/// bytes, and again — and an answer it refuses before it starts streaming as
+/// one ordinary body. Both are read here: the head says which, and a body
+/// that is not chunked is one event of itself, which is how a refusal
+/// reaches the same reader as an answer.
+///
+/// Each event is a `data:` line of server-sent events. Returns the last one,
+/// which is the engine's account of the whole turn.
+fn sent_and_streamed(
+    mut connection: &UnixStream,
+    method: &str,
+    path: &str,
+    body: &str,
+    on_event: &mut dyn FnMut(&str),
+) -> Result<String, Interrupted> {
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    connection
+        .write_all(request.as_bytes())
+        .and_then(|()| connection.flush())
+        .map_err(Sending)?;
+
+    let mut reader = std::io::BufReader::new(connection);
+    let mut chunked = false;
+    loop {
+        let mut line = String::new();
+        let read = reader.read_line(&mut line).map_err(Reading)?;
+        if read == 0 || line.trim().is_empty() {
+            break;
+        }
+        if line.to_ascii_lowercase().starts_with("transfer-encoding:")
+            && line.to_ascii_lowercase().contains("chunked")
+        {
+            chunked = true;
+        }
+    }
+
+    let mut held = String::new();
+    let mut last = String::new();
+    let mut hand_on = |held: &mut String, at_end: bool| {
+        while let Some(at) = held.find("\n\n") {
+            let event: String = held.drain(..at).collect();
+            held.drain(.."\n\n".len().min(held.len()));
+            deliver(&event, &mut last, on_event);
+        }
+        if at_end && !held.trim().is_empty() {
+            let event = std::mem::take(held);
+            deliver(&event, &mut last, on_event);
+        }
+    };
+
+    loop {
+        let piece = if chunked {
+            match next_chunk(&mut reader)? {
+                Some(piece) => piece,
+                None => break,
+            }
+        } else {
+            let mut bytes = [0_u8; 4096];
+            let read = reader.read(&mut bytes).map_err(Reading)?;
+            if read == 0 {
+                break;
+            }
+            String::from_utf8_lossy(bytes.get(..read).unwrap_or_default()).into_owned()
+        };
+        held.push_str(&piece);
+        hand_on(&mut held, false);
+    }
+    hand_on(&mut held, true);
+    Ok(last)
+}
+
+/// One event of the stream, to whoever is watching, keeping the last.
+fn deliver(event: &str, last: &mut String, on_event: &mut dyn FnMut(&str)) {
+    let payload = event
+        .trim()
+        .strip_prefix("data:")
+        .map_or_else(|| event.trim(), str::trim);
+    if payload.is_empty() {
+        return;
+    }
+    last.clear();
+    last.push_str(payload);
+    on_event(payload);
+}
+
+/// The next chunk of a chunked body, or nothing at its end.
+fn next_chunk(reader: &mut std::io::BufReader<&UnixStream>) -> Result<Option<String>, Interrupted> {
+    let mut line = String::new();
+    let read = reader.read_line(&mut line).map_err(Reading)?;
+    if read == 0 {
+        return Ok(None);
+    }
+    let size = usize::from_str_radix(line.trim(), 16).unwrap_or(0);
+    if size == 0 {
+        return Ok(None);
+    }
+    let mut bytes = vec![0_u8; size];
+    reader.read_exact(&mut bytes).map_err(Reading)?;
+    // The two bytes that end a chunk, read and thrown away.
+    let mut ending = [0_u8; 2];
+    let _ended = reader.read_exact(&mut ending);
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// A request to a server by its socket alone, with nobody watching: what
@@ -1588,6 +1854,7 @@ fn completion_body(
     limit: usize,
     draw: crate::generation::Draw,
     pinned: bool,
+    streaming: bool,
 ) -> Value {
     let prompt = match prompt {
         Prompt::Identifiers(tokens) => Value::List(
@@ -1654,6 +1921,12 @@ fn completion_body(
         // pinned: the server keeps sampling to `n_predict` and says it
         // stopped at the limit, which the caller reads back (B-396).
         ("ignore_eos", Value::Bool(pinned)),
+        // Whether the answer arrives token by token or whole. Asked for
+        // only where somebody is watching it arrive: a probe that reads
+        // nothing until the end has no use for the pieces, and the
+        // whole-answer path is the one every other caller runs on
+        // (B-454, D48).
+        ("stream", Value::Bool(streaming)),
     ])
 }
 
@@ -1704,6 +1977,7 @@ mod request_tests {
             8,
             Draw::greedy(0),
             false,
+            false,
         )
         .to_line();
         assert!(
@@ -1725,7 +1999,7 @@ mod request_tests {
             temperature: Thousandths(700),
             truncation: Truncation::OFF,
         };
-        let body = completion_body(Prompt::Identifiers(&[1, 2]), 8, draw, false).to_line();
+        let body = completion_body(Prompt::Identifiers(&[1, 2]), 8, draw, false, false).to_line();
         assert!(body.contains(r#""top_k":0"#), "{body}");
         assert!(body.contains(r#""top_p":1.000"#), "{body}");
         assert!(body.contains(r#""min_p":0.000"#), "{body}");
@@ -1746,7 +2020,7 @@ mod request_tests {
                 whose: Whose::File,
             },
         };
-        let body = completion_body(Prompt::Identifiers(&[1]), 8, draw, false).to_line();
+        let body = completion_body(Prompt::Identifiers(&[1]), 8, draw, false, false).to_line();
         assert!(body.contains(r#""top_k":20"#), "{body}");
         assert!(body.contains(r#""top_p":0.950"#), "{body}");
         assert!(body.contains(r#""min_p":0.000"#), "{body}");
@@ -1756,7 +2030,8 @@ mod request_tests {
     /// whatever the temperature, so nothing is filled in either way.
     #[test]
     fn a_greedy_draw_states_the_cut_as_well() {
-        let body = completion_body(Prompt::Identifiers(&[1]), 8, Draw::greedy(0), false).to_line();
+        let body =
+            completion_body(Prompt::Identifiers(&[1]), 8, Draw::greedy(0), false, false).to_line();
         assert!(body.contains(r#""temperature":0,"#), "{body}");
         assert!(body.contains(r#""top_k":0"#), "{body}");
     }
@@ -1863,5 +2138,100 @@ mod tokenize_tests {
             assert!(tokens_in(answer).is_err(), "{answer}");
         }
         assert_eq!(tokens_in(r#"{"tokens":[]}"#).unwrap(), Vec::<Token>::new());
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    // A test says what went wrong by failing.
+    #![allow(clippy::panic, clippy::expect_used, clippy::unwrap_used)]
+
+    use std::io::Write as _;
+    use std::os::unix::net::{UnixListener, UnixStream};
+
+    use super::sent_and_streamed;
+
+    /// The events of a stream as the engine frames them: each one a chunk
+    /// of its own true length, and the zero chunk that ends the body.
+    fn chunked(events: &[&str]) -> String {
+        let mut out = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                       Transfer-Encoding: chunked\r\n\r\n"
+            .to_owned();
+        for event in events {
+            let piece = format!("data: {event}\n\n");
+            let size = format!("{:x}\r\n", piece.len());
+            out.push_str(&size);
+            out.push_str(&piece);
+            out.push_str("\r\n");
+        }
+        out.push_str("0\r\n\r\n");
+        out
+    }
+
+    /// A server that writes one answer and closes, on a socket of its own.
+    fn answering(name: &str, answer: String) -> (UnixStream, std::thread::JoinHandle<()>) {
+        let socket = std::env::temp_dir().join(format!("mcf-stream-{}-{name}", std::process::id()));
+        let _gone = std::fs::remove_file(&socket);
+        let listener = UnixListener::bind(&socket).expect("the socket binds");
+        let serving = std::thread::spawn(move || {
+            if let Ok((mut connection, _)) = listener.accept() {
+                // The request, read and thrown away: this server answers the
+                // same thing to anything.
+                let mut byte = [0_u8; 4096];
+                let _read = std::io::Read::read(&mut connection, &mut byte);
+                let _written = connection.write_all(answer.as_bytes());
+                let _flushed = connection.flush();
+            }
+        });
+        let connection = UnixStream::connect(&socket).expect("a connection");
+        let _gone = std::fs::remove_file(&socket);
+        (connection, serving)
+    }
+
+    /// An answer sent in chunked pieces arrives as its events, in order.
+    #[test]
+    fn events_arrive_as_the_engine_writes_them() {
+        let answer = chunked(&[
+            "{\"content\":\"one\"}",
+            "{\"content\":\"two\"}",
+            "{\"stop\":true}",
+        ]);
+        let (connection, serving) = answering("chunked", answer);
+        let mut seen = Vec::new();
+        let last = sent_and_streamed(&connection, "POST", "/completion", "{}", &mut |event| {
+            seen.push(event.to_owned());
+        })
+        .unwrap_or_else(|why| panic!("the stream is read: {why:?}"));
+        let _joined = serving.join();
+        assert_eq!(
+            seen,
+            vec![
+                "{\"content\":\"one\"}".to_owned(),
+                "{\"content\":\"two\"}".to_owned(),
+                "{\"stop\":true}".to_owned(),
+            ]
+        );
+        assert_eq!(last, "{\"stop\":true}");
+    }
+
+    /// A refusal comes back as one ordinary body and reaches the same
+    /// reader: the engine says no before it says anything else.
+    #[test]
+    fn a_body_that_is_not_a_stream_is_one_event() {
+        let body = "{\"error\":{\"message\":\"no\"}}";
+        let answer = format!(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let (connection, serving) = answering("plain", answer);
+        let mut seen = Vec::new();
+        let last = sent_and_streamed(&connection, "POST", "/completion", "{}", &mut |event| {
+            seen.push(event.to_owned());
+        })
+        .unwrap_or_else(|why| panic!("the body is read: {why:?}"));
+        let _joined = serving.join();
+        assert_eq!(seen, vec![body.to_owned()]);
+        assert_eq!(last, body);
     }
 }

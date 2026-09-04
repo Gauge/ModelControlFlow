@@ -2172,6 +2172,30 @@ fn fake_provisioned_engine(machine: &Machine, does: &str) -> PathBuf {
     prefix
 }
 
+/// Some of a turn, in the shape the engine streams one, and then a death
+/// with the rest of it unwritten (B-454).
+fn dies_part_way(connection: &mut std::os::unix::net::UnixStream) -> ! {
+    use std::io::Write as _;
+    let mut body = String::new();
+    for piece in ["Paris is ", "the capital"] {
+        let event = format!("data: {{\"content\":\"{piece}\",\"tokens\":[1]}}\n\n");
+        let framed = format!("{:x}\r\n{event}\r\n", event.len());
+        body.push_str(&framed);
+    }
+    let _written = write!(
+        connection,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+         Transfer-Encoding: chunked\r\n\r\n{body}"
+    );
+    let _flushed = connection.flush();
+    eprintln!("segmentation fault, or thereabouts");
+    #[allow(
+        clippy::exit,
+        reason = "the stand-in engine dies here, which is what it is for"
+    )]
+    std::process::exit(139);
+}
+
 /// What the stand-in engine says to everything.
 const STAND_IN_ANSWER: &str = "Paris is the capital.";
 
@@ -2222,6 +2246,11 @@ fn fake_llama_server() {
             }
         };
         let path = head.split_whitespace().nth(1).unwrap_or("");
+        // Some of a turn, and then a death: written here rather than in the
+        // table below, because it answers on the connection itself (B-454).
+        if path == "/completion" && does == "dies_part_way" {
+            dies_part_way(&mut connection);
+        }
         let answer = match path {
             "/health" => "{\"status\":\"ok\"}".to_owned(),
             "/tokenize" => {
@@ -2371,6 +2400,65 @@ fn a_provisioned_engine_is_chosen_streamed_and_named() {
     assert!(serving.0.wait().expect("the daemon exits").success());
 }
 
+/// What arrived stays arrived: an engine that dies part way through a turn
+/// leaves what it had written on the page, with the failure after it
+/// (B-454, A2, A4).
+#[test]
+fn what_the_engine_wrote_before_it_died_is_on_the_page() {
+    struct Reaped(std::process::Child);
+    impl Drop for Reaped {
+        fn drop(&mut self) {
+            let _killed = self.0.kill();
+            let _waited = self.0.wait();
+        }
+    }
+    let machine = Machine::new("provisioned-dies-part-way");
+    let models = machine
+        .0
+        .join("mcf")
+        .join("models")
+        .join("lab")
+        .join("fixture");
+    std::fs::create_dir_all(&models).expect("a store");
+    std::fs::write(models.join("m.gguf"), mcf_lab::fixture::a_model_that_runs()).expect("a file");
+    fake_provisioned_engine(&machine, "dies_part_way");
+
+    let mut serving = Reaped(
+        machine
+            .command(&["serve"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("the daemon starts"),
+    );
+    {
+        use std::io::BufRead as _;
+        let stdout = serving.0.stdout.as_mut().expect("it prints where it is");
+        let mut line = String::new();
+        let _read = std::io::BufReader::new(stdout).read_line(&mut line);
+        assert!(line.contains("mcf is up on"), "{line}");
+    }
+
+    let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "yes"]);
+    assert!(!ran.status.success());
+    let said = text(&ran);
+    // The pieces that arrived, in the order they arrived — all but the last,
+    // which was still being held when the engine stopped and goes with it.
+    assert!(said.starts_with("Paris is "), "what arrived: {said:?}");
+    let out = format!("{said}{}", error_text(&ran));
+    assert!(out.contains("engine.exit.midstream"), "{out}");
+    assert!(
+        out.contains("segmentation fault, or thereabouts"),
+        "the engine's own words: {out}"
+    );
+
+    // And the daemon is still there (§3.1).
+    let status = machine.run(&["status"]);
+    assert!(status.status.success(), "the daemon died with its engine");
+    let stopped = machine.run(&["stop", "--because", "done"]);
+    assert!(stopped.status.success(), "{}", error_text(&stopped));
+    assert!(serving.0.wait().expect("the daemon exits").success());
+}
+
 #[test]
 fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemon() {
     struct Reaped(std::process::Child);
@@ -2408,10 +2496,10 @@ fn a_provisioned_engine_that_dies_mid_answer_leaves_a_partial_answer_and_a_daemo
 
     let ran = machine.run(&["run", "lab/fixture:m.gguf", "--prompt", "yes"]);
     // Unserved — an answer that ended in a death is not served — and how it
-    // ended is said with the engine's own last words (A4, B-033). What the
-    // server had produced before it died is not printed: the server answers
-    // whole rather than as a stream, so a death with the request in hand is
-    // a death before any of the answer, and there is nothing to keep.
+    // ended is said with the engine's own last words (A4, B-033). Nothing of
+    // the answer is printed because this engine died with the request in
+    // hand, before it wrote any of it; an engine that dies part way through
+    // leaves what it wrote, which is the test below (B-454).
     assert!(!ran.status.success());
     let out = format!("{}{}", text(&ran), error_text(&ran));
     assert!(out.contains("engine.exit.midstream"), "{out}");
