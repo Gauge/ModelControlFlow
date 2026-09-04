@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Type** | Register — every outstanding decision and build item |
-| **Version** | 240 |
+| **Version** | 241 |
 | **Status** | Living |
 | **Authority** | Derived from [document-of-intent.md](document-of-intent.md) v43, governed by [rules.md](rules.md), sequenced by [roadmap.md](roadmap.md) |
 
 **354 items: 55 decisions (22 open, 1 drafted, 2 narrowed, 2 partly settled, 5
-decided, 23 resolved) and 299 build items (204 done, 2 dropped, 15 in progress,
-37 blocked on a decision, 41 open).** Every item cites
+decided, 23 resolved) and 299 build items (205 done, 2 dropped, 15 in progress,
+37 blocked on a decision, 40 open).** Every item cites
 the clause that justifies it; an item that cannot cite is a finding, not a task, and the
 response is to record a void in §7 rather than invent intent here (A23).
 
@@ -286,7 +286,7 @@ first and importance second.
 | B-454 | The served path streams tokens as they arrive rather than answering whole, and a server that dies mid-answer leaves what it had produced on the page with the failure after it | B-450, B-451, F166, A2, A4 | A long thought is watched, not waited for | done. The engine is asked to stream and its events are read as they arrive — chunked framing, one event a token — each piece written to whoever asked at once; a body that is not a stream is one event of itself, so a refusal reaches the same reader. The engine is started with its own switch for special tokens, so the words watched are the words the account holds, and the last piece is held back until the turn's end says whether it was the model ending its turn. A pinned length keeps the whole-answer path, since a timing must not carry work MCF added to it |
 | B-455 | The prompt report takes the same turn as `mcf run`: a system turn and the thinking switch, so a persona is read under the frame it will be used in, and the thought's cost is a column of the report | B-450, B-451, F167, D43, B-443 | A persona read as a system turn is read where it will live | done. `--system`, `--thinking` and `--effort` on `mcf prompt` reach every generation and the forced reading, which is taken over the engine's own rendering of the turn rather than the bare prompt; the report names what was asked in its conditions. What each generation spent before its answer is carried from the account into a column — the prompt as written, each removal, the control — shown only where something was counted. A thought written as channels counts nothing yet, which is B-457 |
 | B-456 | What a model file declares that the engine was not started with — a rope scaling for a longer context, a draft head — is read, reported, and offered as a condition rather than applied or ignored in silence | D43, F164, A7, A21, §3.15 | A model hosted without a feature its file declares says so | done. The file's draft head, its rope scaling and its context are read from the header and carried in every served account beside what the engine was started with; `mcf run`, `mcf host` and `mcf settings` print what the plain load leaves in the file. `--draft-head`, `--rope-scaling <none\|linear\|yarn>` and `--rope-scale <n>` on run and host, never on by themselves, recommended nowhere, and refused before an engine is started where the file has no draft head, where a scaling would stretch by one, or where MCF's own engine would run. An engine started under one set is not reused for another |
-| B-457 | A thought written as channels is counted before the answer: gpt-oss's `<\|channel\|>analysis<\|message\|>` … `<\|end\|>` and then `<\|start\|>assistant<\|channel\|>final<\|message\|>` is not a marker pair, so `before_the_answer` says nothing for it; the form is the template's, read from it as the pair is, and the count is the same figure | B-451, B-450, D47, A7 | A reasoning effort on gpt-oss shows its cost in tokens the way it does on Qwen3.8 | open. Seen in F161: low 36 tokens, high 147, the split not on the page |
+| B-457 | A thought written as channels is counted before the answer: one family's `<\|channel\|>analysis<\|message\|>` … `<\|end\|>` and then `<\|start\|>assistant<\|channel\|>final<\|message\|>` is not a marker pair, so `before_the_answer` said nothing for it; the form is the template's, read from it as the pair is, and the count is the same figure | B-451, B-450, F168, D47, A7 | A reasoning effort on a channel family shows its cost in tokens the way it does on a marker pair | done. The engine renders an assistant message with a sentinel where its words go and MCF takes the answer's opener from what precedes it; the answer begins after the last time that run of identifiers appears, and what came before it is the same field the pair path fills. Tried only where no pair opened and where the model wrote the channel marker, so a model that thinks nowhere still counts nothing. Low effort 19 tokens, high 47 |
 | B-458 | The client waits for a run it asked for and shows the engine's own progress while it does: no read timeout on a generation, the server's slot read as identifiers read so far against the prompt's length, and a client that is told to stop tells the daemon so | D48, A2, A7, §3.15 | A twenty-minute patience nobody chose no longer turns a six-hour trial into *inconclusive* | done. The clients' patience is a bound on silence, an hour, and not on a turn; the daemon puts the served engine's reading on the stream every ten seconds — read, of, produced, seconds — and `mcf run` prints it beside the answer. The slot's prompt figure is read for what it is: the context's contents, less what was produced (F162) |
 | B-459 | The daemon cancels a generation whose client has gone: the served engine's request is closed when the socket that asked for it closes, the record says the run was cancelled and by what, and the next request is not queued behind a run for nobody | D48, A2, §3.4 | A run nobody will read does not hold the machine; the record does not call it a failure | done. A watcher beside each carried request closes the engine's request when the client's connection ends or the daemon is stopping; the pinned server takes the closed connection as a cancellation. The account is `lab.interrupted`, attributed to the user, with the engine's reading at the moment it was closed, and is charged to the engine that was serving rather than to the stand-in every served failure named before. A laboratory scenario builds the client that left (F162) |
 | B-460 | The daemon answers a question about its state while a generation runs: `mcf status` and the window's reading come from the daemon's own state without waiting for the control loop's turn, and say that a generation is running, for whom, and how far the engine has read | D48, A22, B-072 | Status is never *os error 11* on a machine that is busy | done. Long requests are carried on threads of their own and the short ones answered on the accept loop; status lists what is running — what, on which model, for how long, and the engine's reading — and a stop raises the flag that closes every request in flight, then waits for their accounts to land before recording its own (F162) |
@@ -471,6 +471,12 @@ Recorded rather than deleted, per §8.
 ---
 
 ## Changelog
+
+### Version 241 — a thought that names its channel
+
+B-457 done: a thought written as channels is counted before the answer, from
+the opener the template renders, and a reasoning effort's cost is on the page
+for that family as it is for a marker pair. F168.
 
 ### Version 240 — read inside the turn it will live in
 

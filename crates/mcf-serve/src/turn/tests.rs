@@ -90,3 +90,19 @@ fn the_account_of_what_came_before_counts_and_does_not_quote() {
     assert_eq!(value.get("text"), None);
     assert_eq!(value.get("answer"), None);
 }
+
+/// A run of identifiers is found where it last sits, and nowhere it does
+/// not sit at all — which is how the answer's opener is found among the
+/// channels a model wrote before it (B-457).
+#[test]
+fn a_run_is_found_where_it_last_sits() {
+    let held = [1, 2, 3, 9, 9, 1, 2, 3, 7, 7];
+    assert_eq!(super::last_run(&held, &[1, 2, 3]), Some(5));
+    assert_eq!(super::last_run(&held, &[7, 7]), Some(8));
+    assert_eq!(super::last_run(&held, &[9, 9, 9]), None);
+    assert_eq!(super::last_run(&held, &[]), None);
+    // A run longer than what holds it is not in it.
+    assert_eq!(super::last_run(&[1], &[1, 2]), None);
+    // The whole of it is a run of itself.
+    assert_eq!(super::last_run(&held, &held), Some(0));
+}

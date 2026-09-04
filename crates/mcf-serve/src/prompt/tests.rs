@@ -1082,11 +1082,7 @@ fn the_thoughts_cost_reaches_the_report() {
     };
     let report = measure(&only("One. Two. Three."), 41, None, &mut ask, &mut unforced);
     assert_eq!(report.baseline_thought, Some("One. Two. Three.".len()));
-    let thoughts: Vec<Option<usize>> = report
-        .clauses
-        .iter()
-        .map(|clause| clause.thought)
-        .collect();
+    let thoughts: Vec<Option<usize>> = report.clauses.iter().map(|clause| clause.thought).collect();
     assert!(
         thoughts.iter().all(Option::is_some),
         "every removal's thought is counted: {thoughts:?}"

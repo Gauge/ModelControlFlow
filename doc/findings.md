@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 112 |
+| **Version** | 113 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -169,6 +169,7 @@ forward as one.
 | 158 | [F158 — The prompt report read the prompt with one tokenizer and answered it with another; on a tekken or glm4 vocabulary it read nothing, and the turn somebody put on file went unwrapped without a word (B-441, B-072, §3.4, §3.15, A7, F19, F37)](#158-f158-the-prompt-report-read-the-prompt-with-one-tokenizer-and-answered-it-with-another-on-a-tekken-or-glm4-vocabulary-it-read-nothing-and-the-turn-somebody-put-on-file-went-unwrapped-without-a-word-b-441-b-072-34-315-a7-f19-f37) |
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
+| 168 | [F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)](#168--f168--a-thought-written-as-channels-was-not-a-marker-pair-so-the-one-family-that-shows-its-reasoning-effort-in-the-account-showed-nothing-at-all-b-457-b-451-b-455-d47-a7) |
 | 167 | [F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)](#167--f167--the-prompt-report-read-every-persona-bare-the-turn-it-will-be-used-in-was-not-applied-so-what-a-system-turn-does-to-the-answer-and-what-a-thought-costs-were-both-invisible-b-455-b-451-b-443-d43-d47-34) |
 | 166 | [F166 — The served path answered whole, so a ten-minute thought was ten minutes of nothing and an engine that died in the ninth left no trace of what it had written (B-454, B-451, F142, D48, A2, A4)](#166--f166--the-served-path-answered-whole-so-a-ten-minute-thought-was-ten-minutes-of-nothing-and-an-engine-that-died-in-the-ninth-left-no-trace-of-what-it-had-written-b-454-b-451-f142-d48-a2-a4) |
 | 165 | [F165 — A tool call written in the form the model's own template uses was read as no call at all: the reader knew one shape and the family that writes another was reported as never calling (B-453, B-053, F161, D42, A21, §3.18)](#165--f165--a-tool-call-written-in-the-form-the-models-own-template-uses-was-read-as-no-call-at-all-the-reader-knew-one-shape-and-the-family-that-writes-another-was-reported-as-never-calling-b-453-b-053-f161-d42-a21-318) |
@@ -9590,6 +9591,60 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 168 · F168 — A thought written as channels was not a marker pair, so the one family that shows its reasoning effort in the account showed nothing at all (B-457, B-451, B-455, D47, A7)
+
+What a model spends before its answer begins is counted by finding the
+marker it opened and the same marker closed (B-451). One family here opens
+nothing: it names a channel, opens a message, says its piece, ends it, and
+turns to another channel for the answer —
+
+```
+<|channel|>analysis<|message|>Simple addition. 17+26=43.<|end|>
+<|start|>assistant<|channel|>final<|message|>17 + 26 = 43.
+```
+
+— and `</|channel|>` is not a token any file carries, so the pair search
+found nothing and the account said nothing. A reasoning effort is the one
+switch that family takes, its whole cost is the tokens it spends in that
+first channel, and the account of a turn under it was silent about them.
+
+**The place the answer begins is written down, and the engine will render
+it.** MCF asks the template to render an assistant message with a sentinel
+where its words go, and takes the tail of what comes back before the
+sentinel from its second-to-last marker: for a channel family that is the
+channel marker, the channel's own name and the marker a message opens with —
+`<|channel|>final<|message|>`, the exact string the model writes when it
+turns to its answer. The answer begins after the last time that run of
+identifiers appears; everything before it is what was spent, which is the
+same figure the pair path reports and is reported in the same field. A
+family whose assistant turn opens with one marker renders fewer than two,
+and nothing here applies to it.
+
+**Not counted stays not counted.** The channel reading is tried only where
+the pair reading found nothing, and only where the model actually wrote the
+channel marker: a model that opened no channel and no pair still reports
+nothing rather than *nought tokens of thought*, and a 2B that thinks nowhere
+said nothing under this change as it did before it.
+
+**What ran.** A 20B of the channel family on one daemon under a 40 GiB
+memory cap, the processor only, llama-server @925e1179, greedy at one seed.
+Asked *What is 17 plus 26?* at a low reasoning effort it spent 19 tokens
+inside `<|channel|>analysis<|message|>` before answering, and at a high one
+47 — the switch's cost in tokens, on the page, the way a marker pair's is.
+The prompt report's thought column, which had stayed away from this family
+entirely (F167), now reads: 15 tokens as written, 14 and 13 without each
+sentence of a two-sentence persona, and 23 for the control. The timings are
+not measurements (D39).
+
+**What this does not settle.** The answer is taken to begin at the *last*
+opener the model wrote, so a family that writes a channel after its answer —
+a tool call, say — would have that read as the answer. The opener is
+tokenized on its own and matched as identifiers, which holds while a
+channel's name is spelled the same in and out of context. And a turn cut off
+inside its first channel is reported as having spent all of it before an
+answer that never came, which is true and says nothing about how much longer
+it would have been.
+
 ## 167 · F167 — The prompt report read every persona bare: the turn it will be used in was not applied, so what a system turn does to the answer and what a thought costs were both invisible (B-455, B-451, B-443, D43, D47, §3.4)
 
 A persona is written to be a system turn and was read as a user prompt. The
@@ -11662,6 +11717,12 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 113 — a thought that names its channel
+
+F168 added: a thought written as channels is counted before the answer, from
+the opener the template itself renders, and reported as the same figure a
+marker pair's is. B-457.
 
 ### Version 112 — read inside the turn it will live in
 

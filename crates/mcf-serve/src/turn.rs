@@ -421,7 +421,10 @@ pub fn before_the_answer(
         (Some(pair), _) => (pair, OpenedBy::Turn, 0),
         (None, Some(first)) => match pairs.iter().find(|pair| pair.opener_id == *first) {
             Some(pair) => (pair, OpenedBy::Model, 1),
-            None => return Ok(None),
+            // No pair of this file's own opened. A family that writes its
+            // thought as channels rather than as a marker pair is counted
+            // the other way, by the same figure (B-457).
+            None => return channelled(engine, produced),
         },
         (None, None) => return Ok(None),
     };
@@ -440,6 +443,125 @@ pub fn before_the_answer(
         text: engine.detokenize(thought)?,
         answer: engine.detokenize(rest)?,
     }))
+}
+
+/// What stands in for the model's own answer while the template is asked
+/// where it puts one.
+///
+/// The same shape as [`PLACE`] and for the same reason: plain letters and
+/// digits, which no template trims, escapes or re-spells.
+const ANSWER_PLACE: &str = "MCFANSWERPLACEd41c7e";
+
+/// Where a template opens the model's answer, read from the template's own
+/// rendering of one (B-457, D47).
+///
+/// **Some families do not write a thought inside a marker pair.** They write
+/// it in a channel — the model names a channel, opens a message, says its
+/// piece, ends it, and turns to another channel for the answer — and there
+/// is no closer to find, because nothing was opened in the pair's sense. The
+/// place the answer begins is still written down: it is what the template
+/// puts in front of an assistant message, and the engine will render one on
+/// request at no forward pass.
+///
+/// What comes back is the tail of that rendering from its second-to-last
+/// marker: for a channel family that is the channel marker, the channel's
+/// own name and the marker a message opens with — the string the model
+/// writes when it turns to its answer. `None` where the rendering carries
+/// fewer than two markers before the answer, which is every family that
+/// opens an assistant turn with one marker and needs none of this.
+fn answer_opener(engine: &Served) -> Option<String> {
+    let turn = |role: &str, content: &str| {
+        Value::map([
+            ("role", Value::text(role)),
+            ("content", Value::text(content)),
+        ])
+    };
+    let rendered = engine
+        .render(
+            Value::List(vec![turn("user", PLACE), turn("assistant", ANSWER_PLACE)]),
+            Value::map::<&str>([]),
+        )
+        .ok()?;
+    let before = rendered.split(ANSWER_PLACE).next()?;
+    let mut at: Vec<usize> = Vec::new();
+    for marker in crate::probes::markers_in(before) {
+        at.extend(before.match_indices(&marker).map(|(found, _)| found));
+    }
+    at.sort_unstable();
+    at.dedup();
+    let second_to_last = at.len().checked_sub(2).and_then(|back| at.get(back))?;
+    before.get(*second_to_last..).map(str::to_owned)
+}
+
+/// What a model spent before its answer where its family writes channels
+/// rather than a marker pair (B-457).
+///
+/// Counted as the same figure the pair path counts: every token up to and
+/// including the one that opens the answer, the answer being what follows.
+/// A turn that never reached that opener spent all of it before an answer
+/// that never came, which is what `closed` says.
+///
+/// `Ok(None)` where this is not a channel family at all — the model wrote no
+/// channel marker — because *not counted* is not nought (A7).
+fn channelled(engine: &Served, produced: &[usize]) -> Result<Option<BeforeTheAnswer>, Failure> {
+    let Some(opener) = answer_opener(engine) else {
+        return Ok(None);
+    };
+    let ids: Vec<usize> = engine
+        .tokenize(&opener, false, true)?
+        .into_iter()
+        .map(|token| token.id)
+        .collect();
+    let (Some(first), true) = (ids.first(), ids.len() > 1) else {
+        return Ok(None);
+    };
+    // The model wrote a channel of its own, or this is not that kind of turn.
+    let opened_at = produced.iter().position(|token| token == first);
+    let Some(opened_at) = opened_at else {
+        return Ok(None);
+    };
+    let closed_at = last_run(produced, &ids);
+    let spent = closed_at.map_or(produced.len(), |at| at.saturating_add(ids.len()));
+    let (thought, rest) = produced.split_at(spent.min(produced.len()));
+    Ok(Some(BeforeTheAnswer {
+        inside: what_it_opened(engine, produced, opened_at, &ids)?,
+        // The turn's tail ended before the channel: the model opened it.
+        opened_by: OpenedBy::Model,
+        tokens: spent,
+        closed: closed_at.is_some(),
+        text: engine.detokenize(thought)?,
+        answer: engine.detokenize(rest)?,
+    }))
+}
+
+/// What the model opened, spelled: the channel it named and the marker its
+/// message began with, from where it opened it.
+fn what_it_opened(
+    engine: &Served,
+    produced: &[usize],
+    opened_at: usize,
+    ids: &[usize],
+) -> Result<String, Failure> {
+    let ends = ids.last();
+    let until = produced
+        .iter()
+        .skip(opened_at)
+        .position(|token| Some(token) == ends)
+        .map_or(produced.len(), |at| {
+            opened_at.saturating_add(at).saturating_add(1)
+        });
+    engine.detokenize(produced.get(opened_at..until).unwrap_or_default())
+}
+
+/// Where a run of identifiers last appears in another, or nothing where it
+/// does not appear at all.
+fn last_run(held: &[usize], run: &[usize]) -> Option<usize> {
+    if run.is_empty() || held.len() < run.len() {
+        return None;
+    }
+    (0..=held.len().saturating_sub(run.len()))
+        .rev()
+        .find(|at| held.get(*at..at.saturating_add(run.len())) == Some(run))
 }
 
 #[cfg(test)]
