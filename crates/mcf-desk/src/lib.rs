@@ -2024,11 +2024,22 @@ impl Desk {
     pub fn state_word(&self) -> String {
         if self.refusal.is_some() {
             "not answering".to_owned()
-        } else if self.doing.busy() {
-            "working".to_owned()
+        } else if let Some(said) = self.under_way() {
+            format!("working — {said}")
         } else {
             "MCF".to_owned()
         }
+    }
+
+    /// What is running and how long it has run, where anything is: the
+    /// job's own sentence and the seconds since it was asked for. On every
+    /// page rather than the one that started it, because a measurement is
+    /// minutes and the operator may have gone to look at something else
+    /// (A7). `None` where nothing is running.
+    #[must_use]
+    pub fn under_way(&self) -> Option<String> {
+        let job = self.doing.job().filter(|job| !job.finished)?;
+        Some(format!("{}, {} s so far", job.what, job.ran()))
     }
 
     /// The line under the monitor's divider: what MCF is doing, and what that

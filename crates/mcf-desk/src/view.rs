@@ -117,15 +117,26 @@ fn menu_bar(paint: &mut Painter, desk: &Desk, mouse: &Mouse, width: f32) -> Opti
         x += wide + 4.0;
     }
 
-    // What MCF is, at the right, where the console puts it.
-    let said = desk.state_word();
+    // What MCF is, at the right, where the console puts it — and what it is
+    // doing and for how long, where it is doing anything, on every page. Cut
+    // to the room left of the menu rather than drawn over it.
+    let said = paint.elide(
+        &desk.state_word(),
+        Weight::Bold,
+        size::SMALL,
+        (width - 16.0 - x - 12.0).max(40.0),
+    );
     paint.say_right(
         width - 16.0,
         15.0,
         &said,
         Weight::Bold,
         size::SMALL,
-        ink.faint,
+        if desk.doing.busy() {
+            ink.accent
+        } else {
+            ink.faint
+        },
     );
     act
 }
@@ -1321,12 +1332,19 @@ fn run_buttons(
     let mut act = None;
     let quick = Box::new(area.x, area.y, 150.0, 34.0);
     let selected = Box::new(quick.right() + 18.0, area.y, 170.0, 34.0);
-    if ui::button(paint, mouse, quick, "Quick Run", Kind::Primary) && !running {
+    // Drawn quiet while a run is going: a button that will not do anything
+    // should not look like the one thing to do (§3.15).
+    let (quick_kind, selected_kind) = if running {
+        (Kind::Quiet, Kind::Quiet)
+    } else {
+        (Kind::Primary, Kind::Ordinary)
+    };
+    if ui::button(paint, mouse, quick, "Quick Run", quick_kind) && !running {
         act = Some(Act::Measure {
             deepest: desk.quick_depth(),
         });
     }
-    if ui::button(paint, mouse, selected, "Run Selected", Kind::Ordinary)
+    if ui::button(paint, mouse, selected, "Run Selected", selected_kind)
         && !running
         && desk.runs_something()
     {
@@ -1668,6 +1686,15 @@ fn cross_check_progress(paint: &mut Painter, job: &crate::job::Job, area: Box) {
         255,
     );
     let mut lines: Vec<(String, Weight, crate::paint::Rgb)> = Vec::new();
+    // What it is and how long so far, first — the same line the window
+    // carries at the top right, here where the run was started (A7).
+    if !job.finished {
+        lines.push((
+            format!("{}, {} s so far", job.what, job.ran()),
+            Weight::Bold,
+            ink.ink,
+        ));
+    }
     for answer in &job.answers {
         if let (Some(low), Some(high)) = (
             answer
@@ -1757,6 +1784,18 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
         ink.line,
         255,
     );
+    // The run under way, before its readings: what it is and how long so
+    // far, then the daemon's estimate. A run still loading its first model
+    // has no readings, and drawing nothing there drew a run that looked
+    // stopped (A7). The console's arrangement (B-072).
+    if let Some(said) = desk.under_way() {
+        paint.say_at(area.x, y, &said, Weight::Bold, size::BODY, ink.ink);
+        y += 22.0;
+    }
+    if let Some(estimate) = mcf_tui::screens::diagnostics::estimated_seconds(job) {
+        paint.say_at(area.x, y, &estimate, Weight::Regular, size::BODY, ink.quiet);
+        y += 22.0;
+    }
     for answer in &job.answers {
         let Some(reading) = answer.get("reading") else {
             continue;
@@ -1792,6 +1831,15 @@ fn readings(paint: &mut Painter, desk: &Desk, area: Box) {
         if y > area.bottom() - 24.0 {
             return;
         }
+    }
+    // Where it is now, after what it has found: the step the daemon last
+    // announced, which changes every generation and is the sign the run is
+    // alive between one reading and the next.
+    if !job.finished
+        && let Some(step) = mcf_tui::screens::diagnostics::step_of(job)
+    {
+        let shown = paint.elide(&step, Weight::Regular, size::BODY, area.w);
+        paint.say_at(area.x, y, &shown, Weight::Regular, size::BODY, ink.accent);
     }
     if let Some(conditions) = job.conclusion().and_then(|body| body.get("conditions")) {
         // B65 and D31: a timing from MCF's own stand-in measures the stand-in.

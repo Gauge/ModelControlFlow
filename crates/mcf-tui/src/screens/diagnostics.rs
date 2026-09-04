@@ -427,26 +427,24 @@ fn under_the_table(
     }
 }
 
-/// What a run has said so far, one line each, in the order it said them.
-fn progress_of(job: &Job) -> Vec<(String, Ink)> {
+/// What a run has said so far: the estimate, every reading, the step it is
+/// on now, in that order.
+///
+/// **The step it is on now, not every step it has been on.** A rung is six
+/// generations and a ladder is several rungs; the daemon announces each as
+/// it starts, and a screen that listed every announcement would push the
+/// readings off the bottom of a terminal with the history of how it got
+/// them. The readings are what has been found and the latest step is where
+/// the run is; both are drawn, and the steps between are not.
+pub fn progress_of(job: &Job) -> Vec<(String, Ink)> {
     let mut lines = Vec::new();
     if let Some(why) = &job.refused {
         lines.push((why.clone(), Ink::Refusal));
     }
+    if let Some(estimate) = estimated_seconds(job) {
+        lines.push((estimate, Ink::Quiet));
+    }
     for answer in &job.answers {
-        if let (Some(low), Some(high)) = (
-            answer
-                .get("estimate_low_seconds")
-                .and_then(Value::as_integer),
-            answer
-                .get("estimate_high_seconds")
-                .and_then(Value::as_integer),
-        ) {
-            lines.push((
-                format!("somewhere between {low} and {high} seconds, MCF estimates"),
-                Ink::Quiet,
-            ));
-        }
         if let Some(reading) = answer.get("reading") {
             let depth = reading
                 .get("depth")
@@ -466,7 +464,72 @@ fn progress_of(job: &Job) -> Vec<(String, Ink)> {
             ));
         }
     }
+    if !job.finished
+        && let Some(step) = step_of(job)
+    {
+        lines.push((step, Ink::Held));
+    }
     lines
+}
+
+/// The daemon's estimate for the run, where it gave one, in the console's
+/// words.
+#[must_use]
+pub fn estimated_seconds(job: &Job) -> Option<String> {
+    job.answers.iter().find_map(|answer| {
+        let low = answer
+            .get("estimate_low_seconds")
+            .and_then(Value::as_integer)?;
+        let high = answer
+            .get("estimate_high_seconds")
+            .and_then(Value::as_integer)?;
+        Some(format!(
+            "somewhere between {low} and {high} seconds, MCF estimates"
+        ))
+    })
+}
+
+/// Where the run is right now, as the daemon last announced it.
+///
+/// A rung is announced as it starts and each generation inside it as it
+/// starts; the latest of those is the step under way. Each generation loads
+/// the model, which is the long silence an operator on a processor waits
+/// through, and the line says so rather than leaving the wait unexplained
+/// (A7). `None` where the daemon has announced nothing yet.
+#[must_use]
+pub fn step_of(job: &Job) -> Option<String> {
+    job.answers.iter().rev().find_map(step_line)
+}
+
+/// One announcement from the daemon as a line, where the answer is one: a
+/// rung starting, or a generation inside it starting. The same words on the
+/// console, in the window and at the command line (B-072, A22).
+#[must_use]
+pub fn step_line(answer: &Value) -> Option<String> {
+    let figure = |held: &Value, key: &str| {
+        held.get(key)
+            .and_then(Value::as_integer)
+            .and_then(|found| u64::try_from(found).ok())
+    };
+    if let Some(running) = answer.get("running") {
+        // Every generation loads: a rung is timed per request so that the
+        // load cancels between its two runs, and a line that said only the
+        // first one loaded would be wrong about the other five.
+        return Some(format!(
+            "at {} tokens, repeat {} of {}: loading the model and asking for {} token(s)",
+            grouped(figure(running, "depth")?),
+            figure(running, "repeat")?,
+            figure(running, "of_repeats")?,
+            figure(running, "produce")?,
+        ));
+    }
+    let starting = answer.get("starting")?;
+    Some(format!(
+        "step {} of {}: measuring at {} tokens",
+        figure(starting, "step")?,
+        figure(starting, "of")?,
+        grouped(figure(starting, "depth")?)
+    ))
 }
 
 /// The estimate column: the run's time on the row that names the run, and

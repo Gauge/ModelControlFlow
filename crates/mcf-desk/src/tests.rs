@@ -1358,3 +1358,58 @@ fn a_stale_caret_does_not_take_another_screens_typing() {
     assert_eq!(desk.picture, "/tmp/a.png");
     assert_eq!(desk.typed, "a document");
 }
+
+/// A run under way is said on every page: what it is and how long so far, at
+/// the top right where the state word is, and where it is now on the page
+/// that started it.
+///
+/// The buttons used to press and nothing on screen changed until the first
+/// reading arrived, minutes later on a processor; an operator told nothing
+/// reasonably concludes nothing is happening (A7).
+#[test]
+fn a_run_under_way_is_said_on_every_page() {
+    let mut desk = Desk::new(std::path::PathBuf::from("/nowhere/control.sock"));
+    assert_eq!(desk.state_word(), "MCF");
+    assert!(
+        desk.under_way().is_none(),
+        "nothing runs, nothing is under way"
+    );
+
+    let mut job = crate::job::Job::start(
+        std::path::PathBuf::from("/nowhere/control.sock"),
+        mcf_serve::control::Request::Hosted,
+        "measuring a-model".to_owned(),
+    );
+    job.answers.push(Value::map([(
+        "running",
+        Value::map([
+            ("depth", Value::Integer(1024)),
+            ("produce", Value::Integer(1)),
+            ("repeat", Value::Integer(1)),
+            ("of_repeats", Value::Integer(3)),
+        ]),
+    )]));
+    desk.doing = crate::Doing::Measuring(job);
+    desk.page = Page::Monitor;
+    let word = desk.state_word();
+    assert!(word.starts_with("working — measuring a-model"), "{word}");
+    assert!(
+        word.contains("so far"),
+        "how long it has run, not a promise: {word}"
+    );
+    let step = desk
+        .doing
+        .job()
+        .and_then(mcf_tui::screens::diagnostics::step_of)
+        .unwrap_or_default();
+    assert!(
+        step.contains("1,024 tokens") && step.contains("loading the model"),
+        "{step}"
+    );
+
+    // Once it has finished, it is not still working.
+    if let crate::Doing::Measuring(job) = &mut desk.doing {
+        job.finished = true;
+    }
+    assert_eq!(desk.state_word(), "MCF");
+}

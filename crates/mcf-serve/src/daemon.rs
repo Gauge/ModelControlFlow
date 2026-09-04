@@ -993,6 +993,51 @@ fn measured(
     ]))
 }
 
+/// A count as the record holds numbers.
+fn as_whole<N: TryInto<i64>>(held: N) -> Value {
+    Value::Integer(held.try_into().unwrap_or(i64::MAX))
+}
+
+/// One line of a run's progress: what is being measured and one announcement
+/// under the given key, not yet done.
+fn announced(named: &str, key: &'static str, what: Value) -> Answer {
+    Answer::served(Value::map([
+        ("measuring", Value::text(named.to_owned())),
+        (key, what),
+        ("done", Value::Bool(false)),
+    ]))
+}
+
+/// A rung about to be measured: which depth, and which of how many.
+fn a_rung_starting(depth: u64, step: usize, of: usize) -> Value {
+    let count = |held: usize| Value::Integer(i64::try_from(held).unwrap_or(i64::MAX));
+    Value::map([
+        (
+            "depth",
+            Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX)),
+        ),
+        ("step", count(step.saturating_add(1))),
+        ("of", count(of)),
+    ])
+}
+
+/// A generation about to run inside a rung: at which depth, asked for how
+/// many tokens, in which repeat of how many.
+fn a_run_starting(depth: u64, produce: u32, repeat: u32) -> Value {
+    Value::map([
+        (
+            "depth",
+            Value::Integer(i64::try_from(depth).unwrap_or(i64::MAX)),
+        ),
+        ("produce", Value::Integer(i64::from(produce))),
+        (
+            "repeat",
+            Value::Integer(i64::from(repeat.saturating_add(1))),
+        ),
+        ("of_repeats", Value::Integer(i64::from(REPEATS))),
+    ])
+}
+
 /// What the header and the machine say about memory before a run, for the
 /// measured figure to be set against.
 ///
@@ -3179,9 +3224,24 @@ impl Daemon {
         let planned = planned_memory(&path, held, &ladder);
         let mut readings: Vec<Value> = Vec::new();
         let mut ran_on: Option<String> = None;
-        for depth in &ladder {
-            let (reading, engine) =
-                self.one_depth(named, engine, *depth, picked.as_ref(), started, waiting);
+        for (step, depth) in ladder.iter().enumerate() {
+            // Where the run is, before it is there: the depth about to be
+            // measured, then each generation inside it as it starts. These
+            // are the daemon's own account of what it is doing, for the
+            // screen that asked to draw as it goes rather than to guess from
+            // what has arrived so far (A7).
+            let starting = a_rung_starting(*depth, step, ladder.len());
+            say(writer, &announced(named, "starting", starting));
+            let mut report = |running: Value| say(writer, &announced(named, "running", running));
+            let (reading, engine) = self.one_depth(
+                named,
+                engine,
+                *depth,
+                picked.as_ref(),
+                started,
+                waiting,
+                &mut report,
+            );
             ran_on = ran_on.take().or(engine);
             readings.push(reading.clone());
             say(
@@ -3462,6 +3522,13 @@ impl Daemon {
     }
 
     /// One rung of the ladder: the repeats, the median, and what ran them.
+    ///
+    /// **Every run is announced before it starts**, through `report`. A rung
+    /// is six generations and the first of them loads the model, which on a
+    /// processor is minutes with nothing else to show; a screen that heard
+    /// nothing between the estimate and the first reading drew a run that
+    /// looked stopped, and an operator who is told nothing reasonably
+    /// concludes nothing is happening (A7).
     #[allow(
         clippy::too_many_arguments,
         reason = "one rung's conditions, each named in what it writes"
@@ -3474,6 +3541,7 @@ impl Daemon {
         picked: Option<&(crate::adapters::ProvisionedLlama, u32, u64)>,
         started: crate::declared::Started,
         waiting: crate::served::Waiting<'_>,
+        report: &mut dyn FnMut(Value),
     ) -> (Value, Option<String>) {
         // Repeats, because one pair is one sample and a fall-off read off
         // single samples is a reading of the noise. The median is taken
@@ -3492,9 +3560,11 @@ impl Daemon {
         // sixteen because sixteen is what separates the two runs, and a
         // pair where that is not so is not divided (B-396).
         let mut fell_short: Option<String> = None;
-        for _ in 0..REPEATS {
+        for repeat in 0..REPEATS {
+            report(a_run_starting(depth, 1, repeat));
             let one =
                 self.timed_generation(named, engine, depth, 1, picked.cloned(), started, waiting);
+            report(a_run_starting(depth, 1 + SETTLED, repeat));
             let many = self.timed_generation(
                 named,
                 engine,
@@ -3563,14 +3633,8 @@ impl Daemon {
                     ("spread_ms", Value::text(as_milliseconds(spread))),
                     // As a whole number too, for the bracket the slope read
                     // between rungs sits in (B-427).
-                    (
-                        "spread_ns",
-                        Value::Integer(i64::try_from(spread).unwrap_or(i64::MAX)),
-                    ),
-                    (
-                        "samples",
-                        Value::Integer(i64::try_from(samples.len()).unwrap_or(i64::MAX)),
-                    ),
+                    ("spread_ns", as_whole(spread)),
+                    ("samples", as_whole(samples.len())),
                     // The window the engine ran in and its peak resident
                     // memory across the repeats, for what is read between
                     // rungs (B-424).

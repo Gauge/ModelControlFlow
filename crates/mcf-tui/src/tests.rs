@@ -516,3 +516,75 @@ fn after_the_run(mut console: Console, ladder_ran: Option<u64>) {
     act(&mut console, Key::Enter);
     assert_eq!(console.at, Where::Models);
 }
+
+/// A run under way says where it is: the estimate, what has been read, and
+/// the step the daemon last announced — and a finished run does not claim to
+/// still be on a step.
+///
+/// The step is the thing the screen had nothing of: between the estimate and
+/// the first reading a processor loads a model for minutes, and a screen that
+/// drew nothing in that time drew a run that looked stopped (A7).
+#[test]
+fn a_run_under_way_says_which_step_it_is_on() {
+    let mut job = crate::job::Job::start(
+        std::path::PathBuf::from("/nowhere/control.sock"),
+        mcf_serve::control::Request::Hosted,
+        "measuring a-model".to_owned(),
+    );
+    job.answers.push(Value::map([
+        ("estimate_low_seconds", Value::Integer(52)),
+        ("estimate_high_seconds", Value::Integer(127)),
+    ]));
+    job.answers.push(Value::map([(
+        "starting",
+        Value::map([
+            ("depth", Value::Integer(512)),
+            ("step", Value::Integer(1)),
+            ("of", Value::Integer(2)),
+        ]),
+    )]));
+    assert_eq!(
+        screens::diagnostics::step_of(&job).as_deref(),
+        Some("step 1 of 2: measuring at 512 tokens")
+    );
+    job.answers.push(Value::map([(
+        "running",
+        Value::map([
+            ("depth", Value::Integer(512)),
+            ("produce", Value::Integer(1)),
+            ("repeat", Value::Integer(1)),
+            ("of_repeats", Value::Integer(3)),
+        ]),
+    )]));
+    assert_eq!(
+        screens::diagnostics::step_of(&job).as_deref(),
+        Some("at 512 tokens, repeat 1 of 3: loading the model and asking for 1 token(s)"),
+        "each generation loads the model, and the line says so"
+    );
+    job.answers.push(Value::map([(
+        "running",
+        Value::map([
+            ("depth", Value::Integer(512)),
+            ("produce", Value::Integer(17)),
+            ("repeat", Value::Integer(2)),
+            ("of_repeats", Value::Integer(3)),
+        ]),
+    )]));
+    let lines = screens::diagnostics::progress_of(&job);
+    let said: Vec<&str> = lines.iter().map(|(line, _)| line.as_str()).collect();
+    assert_eq!(
+        said,
+        vec![
+            "somewhere between 52 and 127 seconds, MCF estimates",
+            "at 512 tokens, repeat 2 of 3: loading the model and asking for 17 token(s)",
+        ],
+        "the estimate once, then the latest step and not the ones before it"
+    );
+
+    job.finished = true;
+    let lines = screens::diagnostics::progress_of(&job);
+    assert!(
+        lines.iter().all(|(line, _)| !line.contains("repeat")),
+        "a finished run is not on a step: {lines:?}"
+    );
+}

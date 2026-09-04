@@ -122,6 +122,12 @@ fn said(body: &Value) -> Vec<String> {
         ];
     }
 
+    // Where the run is, as the daemon announces it: the same words the
+    // console and the window use for the same line (A22, B-072).
+    if let Some(step) = mcf_tui::screens::diagnostics::step_line(body) {
+        return vec![format!("  {step}")];
+    }
+
     if let Some(reading) = body.get("reading") {
         let depth = number(reading, "depth").unwrap_or(0);
         return vec![
