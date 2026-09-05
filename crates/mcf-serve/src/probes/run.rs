@@ -459,31 +459,94 @@ pub fn recorded_said(body: &mcf_record::json::Value) -> String {
             }
             _ => text("because").map_or_else(|| "could not tell".to_owned(), str::to_owned),
         },
-        _ => {
-            // The rest as their figures, in the order they were written,
-            // leaving out what names the run rather than what it found.
-            let Some(Value::Map(fields)) = Some(body) else {
-                return "recorded".to_owned();
-            };
-            let said: Vec<String> = fields
-                .iter()
-                .filter(|(key, _)| !matches!(key.as_str(), "model" | "method" | "engine"))
-                .filter_map(|(key, value)| match value {
-                    Value::Integer(held) => Some(format!("{} {held}", key.replace('_', " "))),
-                    Value::Bool(held) => Some(format!("{} {held}", key.replace('_', " "))),
-                    Value::Text(held) if held.len() <= 40 => {
-                        Some(format!("{} {held}", key.replace('_', " ")))
-                    }
-                    _ => None,
-                })
-                .take(4)
-                .collect();
-            if said.is_empty() {
-                "recorded".to_owned()
-            } else {
-                said.join(", ")
+        Some("tool-calling") => match (
+            figure("well_formed"),
+            figure("malformed"),
+            figure("no_call"),
+        ) {
+            (Some(well), Some(malformed), Some(none)) => format!(
+                "{}called well-formed in {well} trial(s), {malformed} malformed, {none} without a call{}",
+                if matches!(body.get("declared_support"), Some(Value::Bool(false))) {
+                    "declares no support; "
+                } else {
+                    ""
+                },
+                text("best_offering")
+                    .map_or_else(String::new, |best| format!("; best offered {best}"))
+            ),
+            _ => "could not tell".to_owned(),
+        },
+        Some("structured-output") => {
+            match (figure("conformed"), figure("departed"), figure("no_object")) {
+                (Some(conformed), Some(departed), Some(none)) => format!(
+                    "conformed in {conformed} trial(s), {departed} departed, {none} gave no object{}",
+                    text("best_framing")
+                        .map_or_else(String::new, |best| format!("; best framed {best}"))
+                ),
+                _ => "could not tell".to_owned(),
             }
         }
+        Some("thinking") => match (figure("opened"), figure("closed"), figure("trials")) {
+            (Some(0), _, Some(trials)) => format!("did not think in {trials} trial(s)"),
+            (Some(opened), Some(closed), Some(trials)) => format!(
+                "thought in {opened} of {trials} trial(s), closed it in {closed}{}",
+                figure("before_the_answer_tokens").map_or_else(String::new, |before| format!(
+                    "; {before} token(s) before the answer"
+                ))
+            ),
+            _ => "could not tell".to_owned(),
+        },
+        Some("language-cost") => match (text("cheapest_language"), text("dearest_language")) {
+            (Some(cheapest), Some(dearest)) => {
+                format!("cheapest in {cheapest}, dearest in {dearest}")
+            }
+            _ => "could not tell".to_owned(),
+        },
+        Some("vision") => match body.get("answers_differ") {
+            Some(Value::Bool(true)) => "told a circle from a triangle".to_owned(),
+            Some(Value::Bool(false)) => "did not tell a circle from a triangle".to_owned(),
+            _ => "could not tell".to_owned(),
+        },
+        Some("embedding") => match figure("width") {
+            Some(width) => format!(
+                "embeds at width {width}{}",
+                match body.get("identical_twice") {
+                    Some(Value::Bool(true)) => ", the same vector twice",
+                    Some(Value::Bool(false)) => ", a different vector the second time",
+                    _ => "",
+                }
+            ),
+            None => "does not embed".to_owned(),
+        },
+        _ => recorded_figures(body),
+    }
+}
+
+/// A finding as its figures, in the order they were written, leaving out
+/// what names the run rather than what it found: the reading for a probe
+/// this sentence-maker does not know.
+fn recorded_figures(body: &mcf_record::json::Value) -> String {
+    use mcf_record::json::Value;
+    let Value::Map(fields) = body else {
+        return "recorded".to_owned();
+    };
+    let said: Vec<String> = fields
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "model" | "method" | "engine"))
+        .filter_map(|(key, value)| match value {
+            Value::Integer(held) => Some(format!("{} {held}", key.replace('_', " "))),
+            Value::Bool(held) => Some(format!("{} {held}", key.replace('_', " "))),
+            Value::Text(held) if held.len() <= 40 => {
+                Some(format!("{} {held}", key.replace('_', " ")))
+            }
+            _ => None,
+        })
+        .take(4)
+        .collect();
+    if said.is_empty() {
+        "recorded".to_owned()
+    } else {
+        said.join(", ")
     }
 }
 
@@ -2395,11 +2458,30 @@ mod tests {
         let bare = Value::map([("method", Value::text("chat-template"))]);
         assert_eq!(super::recorded_said(&bare), "could not tell");
         let other = Value::map([
-            ("method", Value::text("language-cost")),
+            ("method", Value::text("something-new")),
             ("model", Value::text("m")),
             ("english_tokens", Value::Integer(16)),
         ]);
         assert_eq!(super::recorded_said(&other), "english tokens 16");
+        let thinking = Value::map([
+            ("method", Value::text("thinking")),
+            ("opened", Value::Integer(5)),
+            ("closed", Value::Integer(5)),
+            ("trials", Value::Integer(5)),
+            ("before_the_answer_tokens", Value::Integer(242)),
+        ]);
+        assert_eq!(
+            super::recorded_said(&thinking),
+            "thought in 5 of 5 trial(s), closed it in 5; 242 token(s) before the answer"
+        );
+        let vision = Value::map([
+            ("method", Value::text("vision")),
+            ("answers_differ", Value::Bool(true)),
+        ]);
+        assert_eq!(
+            super::recorded_said(&vision),
+            "told a circle from a triangle"
+        );
         assert_eq!(super::RECORDED.len(), super::PROBES.len());
     }
 }
