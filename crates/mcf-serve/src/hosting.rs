@@ -33,6 +33,7 @@
 //! authorship of the thing A19 says not to advertise.
 
 use mcf_record::json::Value;
+use mcf_standin::anatomy::grouped;
 
 /// Where a hosted model listens.
 ///
@@ -261,8 +262,8 @@ impl Hosting {
         vec![
             Setting {
                 name: "context window",
-                value: format!("{} tokens", self.context),
-                recommended: format!("{} tokens", against.context),
+                value: format!("{} tokens", grouped(self.context)),
+                recommended: format!("{} tokens", grouped(against.context)),
                 because: "how long a conversation it can hold. Every token of it costs \
                           memory on the device the model runs on",
             },

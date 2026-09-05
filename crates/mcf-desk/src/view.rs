@@ -715,18 +715,9 @@ fn statistics_tab(
 ) -> Option<Act> {
     let ink = paint.ink;
     let mut act = None;
-    let left = Box::new(area.x, area.y, area.w.min(440.0), area.h);
-    let after = detail(paint, left, held);
-    let _after = what_was_measured(
-        paint,
-        Box::new(
-            left.x,
-            after + 10.0,
-            left.w,
-            (left.bottom() - after).max(10.0),
-        ),
-        held,
-    );
+    // The detail block draws the throughput table and the chart itself.
+    let left = Box::new(area.x, area.y, area.w.min(400.0), area.h);
+    let _after = detail(paint, left, held);
     // The right column: what was read off the ladder, then the rest, each
     // a short heading and the daemon's own sentences under it.
     let right = Box::new(
@@ -742,10 +733,15 @@ fn statistics_tab(
         }
         spaced(paint, right.x, *y, head, ink.faint);
         *y += 18.0;
-        for line in lines.iter().take(4) {
-            let shown = paint.elide(line, Weight::Regular, size::SMALL, right.w);
-            paint.say_at(right.x, *y, &shown, Weight::Regular, size::SMALL, colour);
-            *y += 16.0;
+        for line in lines.iter().take(3) {
+            for shown in paint
+                .wrap(line, Weight::Regular, size::SMALL, right.w)
+                .iter()
+                .take(3)
+            {
+                paint.say_at(right.x, *y, shown, Weight::Regular, size::SMALL, colour);
+                *y += 15.0;
+            }
         }
         *y += 10.0;
     };
@@ -985,7 +981,7 @@ fn configure_tab(
             .map(|setting| setting.recommended.clone())
     };
     let column = area.x + 190.0;
-    let control = (area.w - 190.0).min(300.0);
+    let control = (area.w - 190.0).min(360.0);
     let mut act = None;
     let mut hovered: Option<&'static str> = None;
     let mut menu: Option<(Picker, Box)> = None;
@@ -1007,7 +1003,7 @@ fn configure_tab(
                 size::SMALL,
                 ink.faint,
             );
-            *y += 16.0;
+            *y += 20.0;
         }
     };
     let typed_in = |paint: &mut Painter,
@@ -1115,7 +1111,7 @@ fn configure_tab(
     let typed_window = text.trim().replace([',', '_'], "").parse::<u64>().ok();
     if let Some(said) = reserve_line(held, typed_window.unwrap_or(settings.context)) {
         paint.say_at(column, y, &said, Weight::Regular, size::SMALL, ink.faint);
-        y += 16.0;
+        y += 18.0;
     }
     recommends(paint, &mut y, "context window");
 
@@ -3210,8 +3206,8 @@ fn rate_line(paint: &mut Painter, rates: &std::collections::VecDeque<f32>, at: B
         }
     }
     paint.say_right(
-        plot.right() - 8.0,
-        plot.y + 4.0,
+        at.right(),
+        at.y - 2.0,
         &format!("peak {peak:.1}"),
         Weight::Regular,
         size::SMALL,
@@ -3313,9 +3309,10 @@ fn where_it_answers(
         },
         format!(
             "Context {}   ·   Started {}",
-            hosting
-                .context
-                .map_or_else(|| UNKNOWN.to_owned(), |context| format!("{context} tokens")),
+            hosting.context.map_or_else(
+                || UNKNOWN.to_owned(),
+                |context| format!("{} tokens", words::grouped(context))
+            ),
             hosting.since
         ),
         // What the held window costs, where the model is listed here and
@@ -5930,7 +5927,13 @@ fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said)
     // Two columns: the figures and the header check on the left, the tables
     // on the right. The window does not scroll, so a table that does not fit
     // is cut at a row that says so rather than drawn over the edge.
-    let figures = 460.0_f32.min(area.w / 2.0);
+    // A narrow pane stacks the two columns instead of squeezing them.
+    let stacked = area.w < 900.0;
+    let figures = if stacked {
+        area.w
+    } else {
+        460.0_f32.min(area.w / 2.0)
+    };
     let left = Box::new(area.x, top, figures, area.bottom() - top);
     let after = counted(paint, left, said);
     // The header check before the arithmetic: a disagreement is the finding
@@ -5941,17 +5944,29 @@ fn anatomy_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said)
         Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
         &said.agreements,
     );
-    arithmetic(
+    let after = arithmetic(
         paint,
         Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
         said,
     );
-    let right = Box::new(
-        area.x + figures + 40.0,
-        top,
-        (area.w - figures - 40.0).max(200.0),
-        area.bottom() - top,
-    );
+    let right = if stacked {
+        Box::new(
+            area.x,
+            after + 32.0,
+            area.w,
+            (area.bottom() - after - 32.0).max(0.0),
+        )
+    } else {
+        Box::new(
+            area.x + figures + 40.0,
+            top,
+            (area.w - figures - 40.0).max(200.0),
+            area.bottom() - top,
+        )
+    };
+    if right.h < 40.0 {
+        return;
+    }
     let after = share_table(paint, right, "by part", &said.parts, said.elements);
     let after = share_table(
         paint,
@@ -6082,21 +6097,37 @@ fn vocabulary(paint: &mut Painter, desk: &Desk, mouse: &Mouse, area: Box) -> Opt
 fn vocabulary_body(paint: &mut Painter, area: Box, said: &mcf_serve::anatomy::Said) {
     let top = area.y;
     let spoken = &said.vocabulary;
-    let figures = 560.0_f32.min(area.w / 2.0);
+    let stacked = area.w < 900.0;
+    let figures = if stacked {
+        area.w
+    } else {
+        560.0_f32.min(area.w / 2.0)
+    };
     let left = Box::new(area.x, top, figures, area.bottom() - top);
     let after = spoken_figures(paint, left, spoken);
-    template(
+    let after = template(
         paint,
         Box::new(area.x, after + 24.0, figures, area.bottom() - after - 24.0),
         spoken,
     );
-    let right = Box::new(
-        area.x + figures + 40.0,
-        top,
-        (area.w - figures - 40.0).max(200.0),
-        area.bottom() - top,
-    );
-    named_tokens(paint, right, spoken);
+    let right = if stacked {
+        Box::new(
+            area.x,
+            after + 32.0,
+            area.w,
+            (area.bottom() - after - 32.0).max(0.0),
+        )
+    } else {
+        Box::new(
+            area.x + figures + 40.0,
+            top,
+            (area.w - figures - 40.0).max(200.0),
+            area.bottom() - top,
+        )
+    };
+    if right.h >= 40.0 {
+        named_tokens(paint, right, spoken);
+    }
 }
 
 /// The list, counted: one figure a line, the long ones wrapped.

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Type** | Record — what a prototype or a run established, and what it changed |
-| **Version** | 129 |
+| **Version** | 130 |
 | **Status** | Living |
 | **Authority** | Reports to [document-of-intent.md](document-of-intent.md) v25; a finding that changes intent is migrated there and cited from here |
 | **Registers to** | [backlog.md](backlog.md) |
@@ -170,6 +170,7 @@ forward as one.
 | 159 | [F159 — The prompt report answered a question nobody asked: it ranked tokens a person cannot use and never said which words the model fought, or which the prompt could do without (B-443, B-438, B-433, A7, A19, §3.15)](#159-f159-the-prompt-report-answered-a-question-nobody-asked-it-ranked-tokens-a-person-cannot-use-and-never-said-which-words-the-model-fought-or-which-the-prompt-could-do-without-b-443-b-438-b-433-a7-a19-315) |
 | 160 | [F160 — Six models by four prompts on one daemon: the report refused an engine it was holding, placed no word of a prompt it had not addressed, and answered through a tool that loaded the model ten times (B-445, B-446, B-447, B-443, B-441, D41, A2, A7, A21, §3.4)](#160-f160-six-models-by-four-prompts-on-one-daemon-the-report-refused-an-engine-it-was-holding-placed-no-word-of-a-prompt-it-had-not-addressed-and-answered-through-a-tool-that-loaded-the-model-ten-times-b-445-b-446-b-447-b-443-b-441-d41-a2-a7-a21-34) |
 | 169 | [F169 — What a draft head is worth could not be measured, only asserted: the two timing surfaces could not start one, so the switch existed and its cost did not (B-463, B-456, F164, D39, A18, §3.4)](#169--f169--what-a-draft-head-is-worth-could-not-be-measured-only-asserted-the-two-timing-surfaces-could-not-start-one-so-the-switch-existed-and-its-cost-did-not-b-463-b-456-f164-d39-a18-34) |
+| 181 | [F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)](#181--f181-the-window-is-read-from-its-own-renders-the-review-pass-drew-every-page-as-a-person-meets-it-and-found-the-throughput-table-twice-a-right-column-cut-at-the-pane-two-columns-drawn-over-each-other-at-670-pixels-a-peak-label-over-its-bars-a-recommendation-crowding-the-next-row-and-a-line-that-read-b-481-a22-315-d49) |
 | 180 | [F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)](#180--f180--a-word-searches-the-hub-the-add-model-page-took-only-ownerrepository-and-refused-everything-else-in-the-reference-parsers-words-and-now-a-word-lists-the-repositories-with-gguf-files-the-hub-has-for-it-most-downloaded-first-twenty-for-gemma-each-a-press-from-its-files-mcf-pull-answers-a-word-the-same-way-b-476-a2-a22) |
 | 179 | [F179 — Four places down the left and a Running page that reads the held engine's own counters: Qwen3-VL-2B on the card answered one request and Running said 41 generated, 16 prompted, 151.8 tokens a second, nought in hand, and what the hold has in memory and on the card, once a second while somebody looks (B-474, D49, A7, B4)](#179--f179--four-places-down-the-left-and-a-running-page-that-reads-the-held-engines-own-counters-qwen3-vl-2b-on-the-card-answered-one-request-and-running-said-41-generated-16-prompted-1518-tokens-a-second-nought-in-hand-and-what-the-hold-has-in-memory-and-on-the-card-once-a-second-while-somebody-looks-b-474-d49-a7-b4) |
 | 178 | [F178 — The model page, first tab: every setting a hold takes with the control its value wants, a typed window whose reserve follows the typing, a word typed where a number goes refused with the word, and Host as the last button; the probes' applied addressing and budget travel with the model so a hold is configured whole (B-473, D49, §3.15, A7)](#178--f178--the-model-page-first-tab-every-setting-a-hold-takes-with-the-control-its-value-wants-a-typed-window-whose-reserve-follows-the-typing-a-word-typed-where-a-number-goes-refused-with-the-word-and-host-as-the-last-button-the-probes-applied-addressing-and-budget-travel-with-the-model-so-a-hold-is-configured-whole-b-473-d49-315-a7) |
@@ -9603,6 +9604,51 @@ Seed-Coder, bare, 98.2 %. Of the persona's 34 words, 6 (Seed-Coder,
 gpt-oss), 8 (Qwen3-VL-2B) and 12 (Qwen3-Coder-30B) were the model's first
 choice, and 8 or 9 were past the depth read on every one of them.
 
+## 181 · F181 — The window is read from its own renders: the review pass drew every page as a person meets it and found the throughput table twice, a right column cut at the pane, two columns drawn over each other at 670 pixels, a peak label over its bars, a recommendation crowding the next row and a line that read "?" (B-481, A22, §3.15, D49)
+
+The operator said they were done reviewing the window by hand for a
+while and that MCF should take the testing over. A window reviewed only
+by a person is reviewed only when a person has time; a window that draws
+itself to a file can be read by MCF's own eyes as often as it changes
+(A22). So the window tests now draw every page in the states a person
+meets — Configure with a setting moved, with a number being typed, with a
+word refused; Statistics with a measurement, a cross-check and a last
+hold; Contents; the Server page running with the engine's counters and a
+rate line, by day and by night; the add-model page with a search
+answered — to image files when asked, and the pass over them is a read
+of the images, not a person's afternoon.
+
+**What the first pass found.** Six things, none of which a test of the
+window's words had caught, because each was a matter of where the words
+sat (§3.15):
+
+- The Statistics tab drew the throughput table twice — the detail block
+  already ends with it, and the tab called it again below.
+- Its right column, sixteen sections of small text, was elided at the
+  pane's edge, so *measured on provisioned llama.cpp-vulkan server…*
+  ended in an ellipsis where the device's name was; it wraps now, three
+  lines to a section.
+- Contents put its figures and its tables side by side at half the pane
+  each, and in a 670-pixel pane the tables were drawn over the figures;
+  under 900 pixels the two stack, and a table that has no room is not
+  drawn rather than drawn over the edge.
+- The Server page's rate line wrote *peak 150.0* inside the plot, over
+  its own bars; it sits on the heading line now.
+- Configure's *Recommended: 32768 tokens* was drawn two pixels above the
+  Threads field, and its figure was the one number on the page not
+  grouped; the row moves down and the figure reads 32,768 in every
+  surface that prints the recommendation.
+- Time to first token showed a second line that read *?* — the line for
+  what the time includes, printed whether or not the daemon had said
+  it; the line is printed when it was said.
+
+**What ran.** `MCF_LOOK=<dir> cargo test -p mcf-desk --test
+the_window_is_looked_at every_page_is_drawn_for_review` writes eight
+images; the second pass over them found the six put right and nothing
+new. The pictures are not kept in the repository — they are what a
+render of the current code draws, and a stale picture is a claim about a
+window that no longer exists.
+
 ## 180 · F180 — A word searches the hub: the add-model page took only owner/repository and refused everything else in the reference parser's words, and now a word lists the repositories with GGUF files the hub has for it, most downloaded first, twenty for gemma, each a press from its files; mcf pull answers a word the same way (B-476, A2, A22)
 
 The operator typed into the add-model page and nothing came of it; they
@@ -12423,6 +12469,11 @@ instruction to lower the constant. The count can only go down. B-403 is the row
 that takes it to zero.
 
 ## Changelog
+
+### Version 130 — the window read from its renders
+
+F181: the window tests draw every page to image files, and the first
+pass over them found six layout defects, put right (B-481).
 
 ### Version 129 — a word searches the hub
 

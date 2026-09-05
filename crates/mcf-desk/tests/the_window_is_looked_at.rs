@@ -2243,3 +2243,241 @@ fn the_ask_screen_carries_the_turn_and_the_picture() {
         "the turn a question goes under is not on the screen that asks it"
     );
 }
+
+/// Every page, in the states a person meets, written out as images when
+/// `MCF_LOOK` names a directory — the review pass over the window that
+/// reads what it draws rather than asking a person to (D49).
+#[test]
+fn every_page_is_drawn_for_review() {
+    if std::env::var("MCF_LOOK").is_err() {
+        return;
+    }
+    let recommended = mcf_serve::hosting::Hosting::recommended(
+        "llama.cpp-vulkan",
+        "Radeon 8060S Graphics",
+        true,
+        32_768,
+        Some(32),
+        true,
+        None,
+    );
+    let placements = vec![
+        mcf_desk::Placement {
+            on: "resolved".to_owned(),
+            engine: "llama.cpp-vulkan".to_owned(),
+            device: "Radeon 8060S Graphics".to_owned(),
+            gpu_layers: 999,
+            free: Some(97_000_000_000),
+        },
+        mcf_desk::Placement {
+            on: "processor".to_owned(),
+            engine: "llama.cpp".to_owned(),
+            device: "CPU".to_owned(),
+            gpu_layers: 0,
+            free: Some(40_000_000_000),
+        },
+        mcf_desk::Placement {
+            on: "card".to_owned(),
+            engine: "llama.cpp-vulkan".to_owned(),
+            device: "Radeon 8060S Graphics".to_owned(),
+            gpu_layers: 999,
+            free: Some(97_000_000_000),
+        },
+    ];
+
+    // Configure, with one setting moved and the mouse over a row.
+    let mut desk = four_models();
+    desk.page = Page::Models;
+    desk.chosen = Some(0);
+    desk.recommended = Some(recommended.clone());
+    let mut moved = recommended.clone();
+    moved.context = 16_384;
+    desk.settings = Some(moved);
+    desk.placements = placements.clone();
+    desk.models[0].applied_addressing = Some(
+        "user…assistant, thinking open — set by the chat-template probe at 2026-09-04T22:53:58"
+            .to_owned(),
+    );
+    let _ = drawn(&desk, DAY, "review-configure");
+    desk.editing = Some((mcf_desk::Field::Context, "16,3".to_owned()));
+    let _ = drawn(&desk, DAY, "review-configure-typing");
+    desk.editing = None;
+    desk.edit_refused = Some("the context window wants a whole number, not \"lots\"".to_owned());
+    let _ = drawn(&desk, NIGHT, "review-configure-refused");
+    desk.edit_refused = None;
+
+    // Statistics, with a measurement, a cross-check and a last hold.
+    desk.models[0].measured_body = Some(a_measurement());
+    desk.models[0].ladder = vec![
+        mcf_desk::chart::Reading {
+            depth: 512,
+            ms: 6.43,
+        },
+        mcf_desk::chart::Reading {
+            depth: 1024,
+            ms: 6.91,
+        },
+        mcf_desk::chart::Reading {
+            depth: 2048,
+            ms: 7.66,
+        },
+    ];
+    desk.models[0].cross_checked = vec![
+        "MCF's own engine read 120 position(s) of what the provisioned engine produced, and would have chosen the same token at 118".to_owned(),
+        "AGREE — where they differed, the other engine's token was never worse than MCF's rank 2".to_owned(),
+    ];
+    desk.last_hold = Some(mcf_desk::LastHold {
+        model: desk.models[0].path.clone(),
+        device: "Radeon 8060S Graphics".to_owned(),
+        engine: "llama.cpp-vulkan".to_owned(),
+        stopped: true,
+        ago_seconds: Some(5_400),
+    });
+    desk.tab = mcf_desk::Tab::Statistics;
+    let _ = drawn(&desk, DAY, "review-statistics");
+
+    // Contents.
+    desk.tab = mcf_desk::Tab::Contents;
+    desk.anatomy = Some(an_anatomy_answer());
+    let _ = drawn(&desk, DAY, "review-contents");
+
+    // Server, running, with the engine's counters and a rate line.
+    desk.page = Page::Hosting;
+    desk.hosted = Some(an_engine_in_use(&desk.models[0].path));
+    for at in 0..90_u32 {
+        #[allow(clippy::cast_precision_loss, reason = "a sample index")]
+        desk.rates
+            .push_back(120.0 + 30.0 * ((at as f32) / 9.0).sin());
+    }
+    let _ = drawn(&desk, DAY, "review-server-running");
+    let _ = drawn(&desk, NIGHT, "review-server-running-night");
+
+    // Add model, with search results.
+    let mut adding = four_models();
+    adding.page = Page::Adding;
+    adding.typed = "gemma".to_owned();
+    adding.doing = a_search_answer();
+    let _ = drawn(&adding, DAY, "review-add-search");
+}
+
+/// A measurement as the daemon answers it: three rungs on the card.
+fn a_measurement() -> mcf_record::json::Value {
+    let reading = |depth: i64, ms: &str| {
+        mcf_record::json::Value::map([
+            ("depth", mcf_record::json::Value::Integer(depth)),
+            ("ms_per_token", mcf_record::json::Value::text(ms)),
+            ("measured", mcf_record::json::Value::Bool(true)),
+        ])
+    };
+    let figure = |ms: &str, why: &str| {
+        mcf_record::json::Value::map([
+            ("measured", mcf_record::json::Value::Bool(!ms.is_empty())),
+            ("ms", mcf_record::json::Value::text(ms)),
+            ("why", mcf_record::json::Value::text(why)),
+        ])
+    };
+    mcf_record::json::Value::map([
+        (
+            "readings",
+            mcf_record::json::Value::List(vec![
+                reading(512, "6.43"),
+                reading(1024, "6.91"),
+                reading(2048, "7.66"),
+            ]),
+        ),
+        (
+            "first_token",
+            mcf_record::json::Value::map([
+                ("measured", mcf_record::json::Value::Bool(true)),
+                ("ms", mcf_record::json::Value::text("412.7")),
+                ("depth", mcf_record::json::Value::Integer(512)),
+                (
+                    "includes",
+                    mcf_record::json::Value::text("includes reading the prompt"),
+                ),
+            ]),
+        ),
+        (
+            "prompt_reading",
+            figure(
+                "",
+                "one rung measured, and a prompt cost is read between two",
+            ),
+        ),
+        (
+            "memory",
+            figure("", "every rung ran in one window of 4,096 tokens"),
+        ),
+        ("fall_off", figure("", "one rung measured")),
+        (
+            "conditions",
+            mcf_record::json::Value::map([
+                (
+                    "engine_ran",
+                    mcf_record::json::Value::text(
+                        "provisioned llama.cpp-vulkan server @925e1179947e",
+                    ),
+                ),
+                (
+                    "device",
+                    mcf_record::json::Value::text("Radeon 8060S Graphics"),
+                ),
+                ("gpu_layers", mcf_record::json::Value::Integer(999)),
+            ]),
+        ),
+    ])
+}
+
+/// A server an hour up, with the engine's counters.
+fn an_engine_in_use(path: &str) -> mcf_desk::Hosted {
+    mcf_desk::Hosted {
+        model: path.to_owned(),
+        address: "http://127.0.0.1:17817".to_owned(),
+        since: "2026-09-05T05:59:21Z".to_owned(),
+        context: Some(32_768),
+        projector: None,
+        takes: None,
+        api_key: false,
+        in_use: Some(mcf_desk::Use {
+            generated: Some(41_320),
+            prompted: Some(12_004),
+            generated_per_second: Some(151.7),
+            prompted_per_second: Some(2_310.0),
+            cache_used: None,
+            processing: Some(1),
+            queued: Some(0),
+            resident: Some(6_700_000_000),
+            card: Some(23_200_000_000),
+            uptime_seconds: Some(3_725),
+        }),
+    }
+}
+
+/// A hub search, answered.
+fn a_search_answer() -> mcf_desk::Doing {
+    mcf_desk::Doing::Listing(mcf_desk::job::Job::already(
+        "searching the hub for \"gemma\"".to_owned(),
+        vec![mcf_record::json::Value::map([
+            ("query", mcf_record::json::Value::text("gemma")),
+            (
+                "repositories",
+                mcf_record::json::Value::List(
+                    [
+                        ("someone/gemma-4-12B-it-qat-GGUF", 1_295_081),
+                        ("google/gemma-4-12B-it-qat-q4_0-gguf", 754_658),
+                        ("lmstudio-community/gemma-4-E4B-it-GGUF", 630_574),
+                    ]
+                    .into_iter()
+                    .map(|(id, downloads)| {
+                        mcf_record::json::Value::map([
+                            ("id", mcf_record::json::Value::text(id)),
+                            ("downloads", mcf_record::json::Value::Integer(downloads)),
+                        ])
+                    })
+                    .collect(),
+                ),
+            ),
+            ("done", mcf_record::json::Value::Bool(true)),
+        ])],
+    ))
+}

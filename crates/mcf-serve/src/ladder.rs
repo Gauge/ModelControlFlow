@@ -904,14 +904,17 @@ pub fn first_token_said(held: Option<&Value>) -> Vec<String> {
         .and_then(Value::as_integer)
         .and_then(|depth| u64::try_from(depth).ok())
         .unwrap_or(0);
-    vec![
-        format!(
-            "{} ms to the first token, {} tokens deep",
-            text(held, "ms"),
-            grouped(depth)
-        ),
-        text(held, "includes").to_owned(),
-    ]
+    let mut said = vec![format!(
+        "{} ms to the first token, {} tokens deep",
+        text(held, "ms"),
+        grouped(depth)
+    )];
+    // What the time includes is said when the daemon said it; a line that
+    // reads "?" tells a person nothing.
+    if let Some(includes) = held.get("includes").and_then(Value::as_text) {
+        said.push(includes.to_owned());
+    }
+    said
 }
 
 /// The figure, where it says it measured.
